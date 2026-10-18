@@ -25,6 +25,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     prompt: "A lighthouse at dawn",
     aspectRatio: "16:9",
     style: null,
+    camera: null,
     provider: "mock",
     model: "practice",
     status: "completed",

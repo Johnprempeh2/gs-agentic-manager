@@ -331,6 +331,7 @@ export function Routines() {
   const [folderDialogTarget, setFolderDialogTarget] = useState<FolderListItem | null>(null);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<FolderListItem | null>(null);
   const [mobileFoldersOpen, setMobileFoldersOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<string[]>([]);
   const [moveAfterCreateIds, setMoveAfterCreateIds] = useState<string[]>([]);
@@ -460,7 +461,7 @@ export function Routines() {
           ]);
         } catch (moveError) {
           pushToast({
-            title: "Folder created, move failed",
+            title: "Folder made, but the routines did not move",
             body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
             tone: "error",
           });
@@ -473,7 +474,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to save folder",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the folder.",
         tone: "error",
       });
@@ -489,7 +490,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the folder.",
         tone: "error",
       });
@@ -508,7 +509,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder delete failed",
+        title: "Could not delete the folder",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not delete the folder.",
         tone: "error",
       });
@@ -525,7 +526,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Move failed",
+        title: "Could not move it",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not move the routine.",
         tone: "error",
       });
@@ -547,7 +548,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -625,9 +626,13 @@ export function Routines() {
     () => new Map((routineFolders?.folders ?? []).map((folder) => [folder.id, folder])),
     [routineFolders],
   );
-  const visibleRoutines = useMemo(
-    () => (routines ?? []).filter((routine) => routine.status !== "archived"),
+  const archivedRoutineCount = useMemo(
+    () => (routines ?? []).filter((routine) => routine.status === "archived").length,
     [routines],
+  );
+  const visibleRoutines = useMemo(
+    () => (routines ?? []).filter((routine) => showArchived || routine.status !== "archived"),
+    [routines, showArchived],
   );
   const folderFilteredRoutines = useMemo(() => {
     if (routineViewState.groupBy !== "folder") return visibleRoutines;
@@ -715,7 +720,7 @@ export function Routines() {
       pushToast({ title: "Routines moved", body: `${ids.length} routine${ids.length === 1 ? "" : "s"} filed.`, tone: "success" });
     } catch (moveError) {
       pushToast({
-        title: "Failed to move routines",
+        title: "Could not move the routines",
         body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
         tone: "error",
       });
@@ -1228,6 +1233,19 @@ export function Routines() {
                 setSelectedRoutineIds([]);
               }}
             />
+          ) : null}
+          {archivedRoutineCount > 0 ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-pressed={showArchived}
+                onClick={() => setShowArchived((current) => !current)}
+              >
+                {showArchived ? "Hide archived routines" : `Show archived routines (${archivedRoutineCount})`}
+              </Button>
+            </div>
           ) : null}
           {visibleRoutines.length === 0 ? (
             <div className="py-12">

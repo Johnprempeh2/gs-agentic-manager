@@ -622,6 +622,16 @@ export function Deliverables() {
             icon={Search}
             message="No deliverables match."
             description="Try fewer words or clear a filter."
+            action="Clear search and filters"
+            hideActionIcon
+            onAction={() => {
+              setDraftQuery("");
+              updateParams((next) => {
+                for (const key of ["q", "kind", "projectId", "agentId", "brand", "label", "audience", "links", "date"]) {
+                  next.delete(key);
+                }
+              });
+            }}
           />
         ) : (
           <div className="flex flex-col items-center pb-16 text-center" data-testid="deliverables-empty">

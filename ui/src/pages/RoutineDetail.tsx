@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, History, Pencil, Repeat, Sparkles, X } from "lucide-react";
 import { ApiError } from "../api/client";
@@ -23,6 +23,7 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { type InlineEntityOption } from "../components/InlineEntitySelector";
 import { type MarkdownEditorRef, type MentionOption } from "../components/MarkdownEditor";
@@ -164,7 +165,7 @@ export function RoutineDetail() {
     [navigate, routineId],
   );
 
-  const { data: routine, isLoading, error } = useQuery({
+  const { data: routine, isLoading, error, refetch: refetchRoutine } = useQuery({
     queryKey: queryKeys.routines.detail(routineId!),
     queryFn: () => routinesApi.get(routineId!),
     enabled: !!routineId,
@@ -379,7 +380,7 @@ export function RoutineDetail() {
         return;
       }
       pushToast({
-        title: "Failed to save routine",
+        title: "Your routine was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the routine.",
         tone: "error",
       });
@@ -414,7 +415,7 @@ export function RoutineDetail() {
     },
     onError: (runError) => {
       pushToast({
-        title: "Routine run failed",
+        title: "Could not start the routine",
         body: runError instanceof Error ? runError.message : "GS Agentic Manager could not start the routine run.",
         tone: "error",
       });
@@ -436,7 +437,7 @@ export function RoutineDetail() {
     },
     onError: (statusError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: statusError instanceof Error ? statusError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -475,7 +476,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to add trigger",
+        title: "Could not add the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not create the trigger.",
         tone: "error",
       });
@@ -494,7 +495,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to update trigger",
+        title: "Could not change the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not update the trigger.",
         tone: "error",
       });
@@ -513,7 +514,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to delete trigger",
+        title: "Could not delete the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not delete the trigger.",
         tone: "error",
       });
@@ -534,7 +535,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to rotate webhook secret",
+        title: "Could not make a new webhook secret",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not rotate the webhook secret.",
         tone: "error",
       });
@@ -662,10 +663,14 @@ export function RoutineDetail() {
 
   if (error || !routine || !routineDefaults) {
     return (
-      <EmptyState
-        icon={AlertCircle}
-        message={error instanceof Error ? error.message : "We couldn't load this routine."}
-      />
+      <div className="space-y-3">
+        {error ? (
+          <ErrorState error={error} title="This routine did not load" onRetry={() => void refetchRoutine()} />
+        ) : (
+          <EmptyState icon={AlertCircle} message="We couldn't find this routine." description="It may have been deleted." />
+        )}
+        <Link to="/routines" className="text-sm underline underline-offset-4">Back to routines</Link>
+      </div>
     );
   }
 

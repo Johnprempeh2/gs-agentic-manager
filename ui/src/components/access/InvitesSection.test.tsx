@@ -82,6 +82,7 @@ describe("InvitesSection", () => {
   });
 
   beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     container = document.createElement("div");
     document.body.appendChild(container);
 

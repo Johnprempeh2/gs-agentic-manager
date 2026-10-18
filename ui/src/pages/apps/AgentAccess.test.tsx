@@ -22,6 +22,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...rest }: { to: string; children: unknown }) =>
     createElement("a", { href: to, ...rest }, children as never),
+  useNavigate: () => () => undefined,
 }));
 
 import { AgentAccess, companyAccessHeadline, sortAgentsForAccess } from "./AgentAccess";

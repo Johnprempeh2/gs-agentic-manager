@@ -63,6 +63,7 @@ import {
 import { StatusIcon } from "./StatusIcon";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { EmptyState } from "./EmptyState";
+import { ErrorState } from "./ErrorState";
 import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
@@ -2161,7 +2162,7 @@ export function IssuesList({
       />
 
       {(isLoading || externalObjectFilterLoading) && <PageSkeleton variant="issues-list" />}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} title="Tasks did not load" compact />}
       {!searchWithinLoadedIssues && normalizedIssueSearch.length > 0 && searchedIssues.length === ISSUE_SEARCH_RESULT_LIMIT && (
         <p className="text-xs text-muted-foreground">
           Showing up to {ISSUE_SEARCH_RESULT_LIMIT} matches. Refine the search to narrow further.
@@ -2173,12 +2174,30 @@ export function IssuesList({
         </p>
       )}
       {!isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
-        <EmptyState
-          icon={CircleDot}
-          message="No tasks match the current filters or search."
-          action={createActionLabel}
-          onAction={() => openCreateIssueDialog()}
-        />
+        issues.length === 0 && activeFilterCount === 0 && normalizedIssueSearch.length === 0 ? (
+          <EmptyState
+            icon={CircleDot}
+            message="No tasks yet."
+            description="A task is a piece of work for an agent or a person. Agents pick up the tasks assigned to them."
+            action={createActionLabel}
+            onAction={() => openCreateIssueDialog()}
+          />
+        ) : activeFilterCount > 0 ? (
+          <EmptyState
+            icon={CircleDot}
+            message="No tasks match the current filters or search."
+            action="Clear filters"
+            onAction={() => updateView(defaultIssueFilterState)}
+            hideActionIcon
+          />
+        ) : (
+          <EmptyState
+            icon={CircleDot}
+            message="No tasks match the current filters or search."
+            action={createActionLabel}
+            onAction={() => openCreateIssueDialog()}
+          />
+        )
       )}
 
       {viewState.viewMode === "board" ? (

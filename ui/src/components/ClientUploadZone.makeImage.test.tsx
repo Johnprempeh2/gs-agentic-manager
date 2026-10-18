@@ -24,6 +24,7 @@ const image: GeneratedImage = {
   prompt: "Proposal cover with a skyline",
   aspectRatio: "16:9",
   style: "client-proposal",
+  camera: null,
   provider: "mock",
   model: "practice",
   status: "completed",

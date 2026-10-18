@@ -484,7 +484,7 @@ export function AuditFeed({
       pushToast({ title: "Audit exported", body: "Your CSV download has started.", tone: "success" });
     } catch (error) {
       pushToast({
-        title: "Export failed",
+        title: "Could not export",
         body: error instanceof Error ? error.message : "Could not export the audit log.",
         tone: "error",
       });

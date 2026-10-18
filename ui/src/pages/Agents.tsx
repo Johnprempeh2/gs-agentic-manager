@@ -645,7 +645,8 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         <EmptyState
           icon={Bot}
           message="Create your first agent to get started."
-          action="New Agent"
+          description="An agent is an AI teammate with a job, such as a researcher or a writer. Give it tasks and it works on them."
+          action="New agent"
           onAction={openNewAgent}
         />
       )}

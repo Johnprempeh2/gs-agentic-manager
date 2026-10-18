@@ -16,6 +16,10 @@ export type AskIntent =
   | { kind: "stuck"; subject: string | null }
   | { kind: "agent"; agentId: string; agentName: string; window: AskWindow }
   | { kind: "subject"; subject: string }
+  /** "When did we last speak to Acme?": imported notes, calls and meetings. */
+  | { kind: "history"; subject: string | null }
+  /** "Who is our contact at Acme?": the people we hold for a client. */
+  | { kind: "people"; subject: string | null }
   | { kind: "overview" };
 
 export interface AskAgentRef {
@@ -63,6 +67,14 @@ const STOP_WORDS = new Set([
 const AWAY_RE = /\b(since (i|we) (was|were|last) ?(last )?(here|away|gone|in|on)|since my last (visit|login|look)|while i was (away|out|gone|asleep|sleeping|off)|what did i miss|catch me up|overnight|what happened since)\b/i;
 const DECIDE_RE = /\b(decide|decision|decisions|approve|approval|approvals|sign[- ]?off|required from (me|us)|need(s)? (from )?(me|us)|waiting (on|for) (me|us)|needs me|my attention|what do i (need|have) to)\b/i;
 const STUCK_RE = /\b(stuck|blocked|blocking|blockers?|held up|on hold|behind|late|overdue)\b/i;
+const HISTORY_WORDS = [
+  "discuss", "discussed", "discussing", "talk", "talked", "talking", "spoke", "speak", "spoken", "call", "called",
+  "calls", "meeting", "meetings", "met", "note", "notes", "contact", "contacted", "email", "emailed", "emails",
+  "heard", "hear", "conversation", "conversations", "history", "said", "say", "agree", "agreed", "with",
+];
+const HISTORY_RE = /\b(discuss(ed|ing)?|talk(ed|ing)?|spoke|spoken|speak|call(ed|s)?|meetings?|met|notes?|contacted|emailed|emails?|heard from|hear from|conversations?|history|what did (we|they) (say|agree))\b/i;
+const PEOPLE_WORDS = ["who", "whom", "contact", "contacts", "people", "person", "know", "speak", "talk", "call", "email", "address", "phone", "number", "main", "key", "decision", "maker", "makers", "should", "best"];
+const PEOPLE_RE = /\b(who do we know|who should (i|we) (speak|talk) to|who (do|should) (i|we) (call|email|contact)|contacts? (at|for)|people at|our contact|main contact|decision makers?|email (address )?for|phone (number )?for)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
 
 function words(text: string): string[] {
@@ -101,7 +113,13 @@ function mentionedAgent(question: string, agents: readonly AskAgentRef[]): AskAg
 export function classifyQuestion(question: string, agents: readonly AskAgentRef[]): AskIntent {
   const trimmed = question.trim();
   if (AWAY_RE.test(trimmed)) return { kind: "away" };
+  if (PEOPLE_RE.test(trimmed) && !STUCK_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
+    return { kind: "people", subject: questionSubject(trimmed, PEOPLE_WORDS) };
+  }
   if (DECIDE_RE.test(trimmed)) return { kind: "decide" };
+  if (HISTORY_RE.test(trimmed) && !STUCK_RE.test(trimmed)) {
+    return { kind: "history", subject: questionSubject(trimmed, HISTORY_WORDS) };
+  }
   const agent = mentionedAgent(trimmed, agents.filter((candidate) => candidate.status !== "terminated"));
   if (agent && !STUCK_RE.test(trimmed)) {
     return { kind: "agent", agentId: agent.id, agentName: agent.name, window: WEEK_RE.test(trimmed) ? "week" : "today" };
@@ -265,6 +283,46 @@ export function answerSubject(subject: string, issues: readonly Issue[], records
     headline: `${plural(issues.length, "task")} about ${subject}: ${parts.join(", ")}.`,
     lines: [...found, ...lines],
     more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` },
+  };
+}
+
+/** The latest imported notes, calls and meetings about a client, newest first. */
+export function answerHistory(subject: string, records: readonly CompanySearchResult[]): AskAnswer {
+  const activity = records
+    .filter((result) => result.type === "record" && result.record?.kind === "activity")
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+    .slice(0, 5);
+  const more = {
+    label: `All notes and calls about ${subject}`,
+    href: `/search?q=${encodeURIComponent(subject)}&scope=records&kind=activity`,
+  };
+  if (activity.length === 0) {
+    return { headline: `I could not find any notes, calls or meetings about ${subject}.`, lines: [], more };
+  }
+  const latest = activity[0]!;
+  const lines = activity.map((result) => ({ text: result.title, detail: result.record!.subtitle ?? undefined, href: result.href }));
+  return {
+    headline: `The latest with ${subject}: ${latest.title}${latest.record!.subtitle ? ` (${latest.record!.subtitle})` : ""}.`,
+    lines,
+    more,
+  };
+}
+
+/** The people we hold for a client: name, role and where they work. */
+export function answerPeople(subject: string, records: readonly CompanySearchResult[]): AskAnswer {
+  const people = records.filter((result) => result.type === "record" && result.record?.kind === "person").slice(0, 6);
+  const more = {
+    label: `All people for ${subject}`,
+    href: `/search?q=${encodeURIComponent(subject)}&scope=records&kind=person`,
+  };
+  if (people.length === 0) return { headline: `I could not find anyone for ${subject}.`, lines: [], more };
+  const first = people[0]!;
+  return {
+    headline: people.length === 1
+      ? `Your contact for ${subject} is ${first.title}${first.record!.subtitle ? ` (${first.record!.subtitle})` : ""}.`
+      : `${plural(people.length, "person", "people")} for ${subject}, starting with ${first.title}.`,
+    lines: people.map((result) => ({ text: result.title, detail: result.record!.subtitle ?? undefined, href: result.href })),
+    more,
   };
 }
 
@@ -521,6 +579,9 @@ export interface AskContext {
 /** Point an instant answer at the page's subject when the question does not name one. */
 export function intentWithContext(intent: AskIntent, context: AskContext | null): AskIntent {
   const subject = context?.subject?.trim();
+  if ((intent.kind === "history" || intent.kind === "people") && !intent.subject) {
+    return subject ? { kind: intent.kind, subject } : { kind: "overview" };
+  }
   if (!subject) return intent;
   if (intent.kind === "stuck" && !intent.subject) return { kind: "stuck", subject };
   if (intent.kind === "subject" || intent.kind === "overview") return { kind: "subject", subject };

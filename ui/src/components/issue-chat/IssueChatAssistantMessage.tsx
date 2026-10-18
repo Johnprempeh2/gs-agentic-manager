@@ -208,7 +208,7 @@ export function IssueChatAssistantMessage({
             })
             .catch((error) => {
               toastActions?.pushToast({
-                title: "Copy failed",
+                title: "Could not copy",
                 body:
                   error instanceof Error
                     ? error.message
@@ -262,7 +262,7 @@ export function IssueChatAssistantMessage({
             onClick={() => {
               void copyTextToClipboard(copyText).catch((error) => {
                 toastActions?.pushToast({
-                  title: "Copy failed",
+                  title: "Could not copy",
                   body:
                     error instanceof Error
                       ? error.message

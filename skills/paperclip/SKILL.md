@@ -225,7 +225,7 @@ Because of that, follow these rules:
 - **Never imply a live watcher on a task you are marking `done`.** `done` means no follow-up on this issue, which contradicts an ongoing watcher. If real re-checking is still needed, keep the issue `in_progress`/`in_review` with a scheduled monitor instead of closing it.
 - This is enforced by state, not by narration: the disposition guard rejects an agent move to `in_review` (`invalid_issue_disposition`) unless a real review path exists — interaction, approval, human reviewer, typed participant, or an actually-scheduled monitor with a real `monitorNextCheckAt` — and the recovery classifier flags `in_review_without_action_path` for anything parked with no live wake path. Keep your comments consistent with that real state.
 
-**Step 9 — Delegate if needed.** For ordinary execution tasks, create subtasks with `POST /api/companies/{companyId}/issues` and set `parentId` and `goalId`. For conversation tasks, use the project handoff above instead. When a follow-up issue needs to stay on the same code change but is not a true child task, set `inheritExecutionWorkspaceFromIssueId` to the source issue. Set `billingCode` for cross-team work.
+**Step 9 — Delegate if needed.** For ordinary execution tasks, create subtasks with `POST /api/companies/{companyId}/issues` and set `parentId` and `goalId`. For conversation tasks, use the project handoff above instead. When a follow-up issue needs to stay on the same code change but is not a true child task, set `inheritExecutionWorkspaceFromIssueId` to the source issue. Set `billingCode` for cross-team work. To find who should take the work, call `GET /api/companies/{companyId}/agents/directory?q=<what you need>`: it ranks colleagues by the role, title and capabilities they publish, working agents before paused ones.
 
 ### Delegating review tasks
 
@@ -715,7 +715,8 @@ See [the API reference](references/api-reference.md#questions-and-waiting-for-hu
 **Search.** Before asking someone for context, look it up: `gsam search <words>` finds tasks,
 comments, docs, words inside uploaded files, clients, organisations, people, deals, imported
 Pipedrive notes and calls, and images (`--scope records` for clients and people only,
-`--scope files` for file contents, `--json` for the full result).
+`--kind person,activity` for only people and Pipedrive notes, `--scope files` for file
+contents, `--json` for the full result).
 
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your

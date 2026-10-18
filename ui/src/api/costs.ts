@@ -6,6 +6,7 @@ import type {
   UpdateCompanySubscription,
   CostSummary,
   CostByAgent,
+  CostByBillingCode,
   CostByProviderModel,
   CostByBiller,
   CostByAgentModel,
@@ -36,6 +37,8 @@ export const costsApi = {
     api.get<CostByAgentModel[]>(`/companies/${companyId}/costs/by-agent-model${dateParams(from, to)}`),
   byProject: (companyId: string, from?: string, to?: string) =>
     api.get<CostByProject[]>(`/companies/${companyId}/costs/by-project${dateParams(from, to)}`),
+  byBillingCode: (companyId: string, from?: string, to?: string) =>
+    api.get<CostByBillingCode[]>(`/companies/${companyId}/costs/by-billing-code${dateParams(from, to)}`),
   byProvider: (companyId: string, from?: string, to?: string) =>
     api.get<CostByProviderModel[]>(`/companies/${companyId}/costs/by-provider${dateParams(from, to)}`),
   byBiller: (companyId: string, from?: string, to?: string) =>

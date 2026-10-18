@@ -2491,7 +2491,7 @@ export function Inbox() {
       issueFilters.statuses.includes(status as IssueFilterState["statuses"][number]),
     );
   const issueFilterFeedback = issueFilters.liveOnly
-    ? "Live runs only: tasks currently connected to an agent run."
+    ? "Only tasks an agent is working on right now."
     : activeStatusFilterApplied
       ? "Active statuses: open tasks, whether or not an agent is running."
       : null;
@@ -2857,6 +2857,9 @@ export function Inbox() {
               ? "New activity on tasks you are part of lands here. Anything that needs your answer is in Decisions."
               : undefined
           }
+          action={searchQuery.trim() ? "Clear search" : undefined}
+          onAction={searchQuery.trim() ? () => setSearchQuery("") : undefined}
+          hideActionIcon
         />
       )}
 

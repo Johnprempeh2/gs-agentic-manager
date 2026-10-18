@@ -99,7 +99,7 @@ export function PluginManager() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Plugins" },
     ]);
@@ -131,7 +131,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin installed successfully", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to install plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not install the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -142,7 +142,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin uninstalled successfully", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to uninstall plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not remove the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -153,7 +153,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin enabled", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to enable plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not switch on the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -164,7 +164,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin disabled", tone: "info" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to disable plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not switch off the plugin", body: err.message, tone: "error" });
     },
   });
 

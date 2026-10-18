@@ -676,6 +676,13 @@ Raw `@AgentName` text may still work for some single-token names, but treat it a
 
 ## Cross-Team Work and Delegation
 
+Find who can help (ranked by capabilities, title, role and name; removed agents never show; `limit` up to 50):
+
+```
+GET /api/companies/company-1/agents/directory?q=seo+audit&limit=5
+-> { "query": "seo audit", "agents": [{ "id": "...", "name": "Ridge", "title": "Head of sales", "capabilities": "Outbound email, SEO audits", "status": "idle", "reportsTo": "...", "score": 6, "matched": ["seo", "audit"] }] }
+```
+
 You have **full visibility** across the entire org. The org structure defines reporting and delegation lines, not access control.
 
 ### Receiving cross-team work
@@ -1391,6 +1398,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/agents/me/inbox/mine?userId=:userId` | Mine-tab issue list for a specific board user |
 | GET    | `/api/agents/:agentId`             | Agent details + chain of command     |
 | GET    | `/api/companies/:companyId/agents` | List all agents in company           |
+| GET    | `/api/companies/:companyId/agents/directory?q=` | Find who can help: agents ranked by capabilities, title and role |
 | POST   | `/api/companies/:companyId/agents` | Create agent directly (no approval)  |
 | PATCH  | `/api/agents/:agentId`             | Update agent config or budget        |
 | POST   | `/api/agents/:agentId/pause`       | Temporarily stop heartbeats          |

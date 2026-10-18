@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { assets, generatedImages, issues, organisations } from "@greatstone/db";
 import {
   composeImagePrompt,
+  hasStudioCamera,
   imageAltText,
   createGeneratedImageSchema,
   generatedImagesQuerySchema,
@@ -16,6 +17,7 @@ import {
   type ImageAspectRatio,
   type ImageGenerationProviderId,
   type ImageStylePresetId,
+  type StudioCameraSettings,
   type UpdateGeneratedImageCover,
 } from "@greatstone/shared";
 import { notFound, tooManyRequests, unprocessable } from "../errors.js";
@@ -61,6 +63,7 @@ export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageL
     prompt: row.prompt,
     aspectRatio: row.aspectRatio as ImageAspectRatio,
     style: (row.style as ImageStylePresetId | null) ?? null,
+    camera: (row.camera as StudioCameraSettings | null) ?? null,
     provider: row.provider as ImageGenerationProviderId,
     model: row.model,
     status: row.status as GeneratedImageStatus,
@@ -134,7 +137,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     activeJobs.add(row.id);
     try {
       const result = await provider.generate({
-        prompt: composeImagePrompt(row.prompt, row.style),
+        prompt: composeImagePrompt(row.prompt, row.style, row.camera as StudioCameraSettings | null),
         aspectRatio: row.aspectRatio as ImageAspectRatio,
       });
       const stored = await storage.putFile({
@@ -316,6 +319,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           prompt: parsed.prompt,
           aspectRatio: parsed.aspectRatio,
           style: parsed.style ?? null,
+          camera: hasStudioCamera(parsed.camera) ? parsed.camera : null,
           issueId,
           organisationId,
           provider: provider.id,
@@ -342,6 +346,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           model: provider.model,
           aspectRatio: parsed.aspectRatio,
           style: parsed.style ?? null,
+          camera: hasStudioCamera(parsed.camera) ? parsed.camera : null,
           issueId,
           organisationId,
         },

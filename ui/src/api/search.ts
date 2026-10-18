@@ -1,4 +1,4 @@
-import type { CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
+import type { CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -15,6 +15,8 @@ export interface CompanySearchParams {
   updatedWithin?: string;
   updatedAfter?: string;
   sort?: CompanySearchSort;
+  /** Narrow business records to these kinds. */
+  recordKind?: CompanySearchRecordKind[];
 }
 
 function appendMulti(search: URLSearchParams, key: string, values: readonly string[] | undefined) {
@@ -37,6 +39,7 @@ export const searchApi = {
     if (params.updatedWithin !== undefined) search.set("updatedWithin", params.updatedWithin);
     if (params.updatedAfter !== undefined) search.set("updatedAfter", params.updatedAfter);
     if (params.sort !== undefined) search.set("sort", params.sort);
+    if (params.recordKind?.length) search.set("recordKind", params.recordKind.join(","));
     const qs = search.toString();
     return api.get<CompanySearchResponse>(
       `/companies/${companyId}/search${qs ? `?${qs}` : ""}`,
