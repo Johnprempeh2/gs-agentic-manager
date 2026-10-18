@@ -202,6 +202,19 @@ describe("IssueRow", () => {
     act(() => root.unmount());
   });
 
+  it("marks open tasks past their due date as overdue", () => {
+    const root = createRoot(container);
+    for (const presentation of ["task", "legacy"] as const) {
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ dueDate: "2020-01-01", status: "todo" })} />));
+      expect(container.querySelector("[data-testid='issue-row-overdue']")?.textContent).toBe("Overdue");
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ dueDate: "2020-01-01", status: "done" })} />));
+      expect(container.querySelector("[data-testid='issue-row-overdue']")).toBeNull();
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ dueDate: "2099-12-31", status: "todo" })} />));
+      expect(container.querySelector("[data-testid='issue-row-overdue']")).toBeNull();
+    }
+    act(() => root.unmount());
+  });
+
   it("shows the Strategic badge only for work linked to an objective or initiative", () => {
     const root = createRoot(container);
     for (const presentation of ["task", "legacy"] as const) {

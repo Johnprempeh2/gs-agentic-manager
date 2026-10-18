@@ -2,13 +2,14 @@ import { isStrategicWorkGoalKind, requiresExecutionReconciliation } from "@great
 import type { ReactNode } from "react";
 import type { ExternalObjectSummary, Issue, IssueRecoveryAction } from "@greatstone/shared";
 import { Link } from "@/lib/router";
-import { Archive, Flag, Target } from "lucide-react";
+import { Archive, CalendarClock, Flag, Target } from "lucide-react";
 import {
   createIssueDetailPath,
   rememberIssueDetailLocationState,
   withIssueDetailHeaderSeed,
 } from "../lib/issueDetailBreadcrumb";
-import { cn } from "../lib/utils";
+import { cn, formatCalendarDay } from "../lib/utils";
+import { isPastDue } from "./issue-properties/IssueDueDateRow";
 import {
   deriveActiveRecoveryDisplayState,
   RECOVERY_CHIP_DEFAULT_TONE,
@@ -284,6 +285,20 @@ export function IssueRow({
     </Badge>
   ) : null;
 
+  const overdueBadge = issue.dueDate && issue.status !== "done" && issue.status !== "cancelled" && isPastDue(issue.dueDate) ? (
+    <Badge variant="outline"
+      data-testid="issue-row-overdue"
+      className={cn(
+        "shrink-0 gap-0.5 border-status-danger/40 bg-status-danger-soft text-(length:--text-nano) text-status-danger",
+        selected ? "!border-muted-foreground !text-muted-foreground" : null,
+      )}
+      title={`Was due ${formatCalendarDay(issue.dueDate, { includeYear: true })}`}
+    >
+      <CalendarClock className="h-2.5 w-2.5" aria-hidden />
+      Overdue
+    </Badge>
+  ) : null;
+
   const strategicBadge = isStrategicWorkGoalKind(issue.goalKind) ? (
     <Badge variant="outline"
       data-testid="issue-row-strategic"
@@ -398,6 +413,7 @@ export function IssueRow({
             </span>
             {ownerLabel}
             {strategicBadge}
+            {overdueBadge}
             {/* In a narrow card (the dashboard column) these notes crowd the title out;
                 the status glyph still shows the task is blocked. */}
             {blockedNote || recoveryIndicator ? (
@@ -501,6 +517,7 @@ export function IssueRow({
           </span>
           {ownerLabel}
           {strategicBadge}
+          {overdueBadge}
           {blockedNote}
           {recoveryIndicator}
         </span>
