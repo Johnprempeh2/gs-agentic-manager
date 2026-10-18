@@ -21,17 +21,25 @@ export const notificationPreferences = pgTable(
     morningSummary: boolean("morning_summary").notNull().default(true),
     /** Local hour (0 to 23) the morning summary goes out. */
     morningSummaryHour: integer("morning_summary_hour").notNull().default(8),
+    /** The evening wrap-up: what got done today and what still needs you. Off until chosen. */
+    eveningSummary: boolean("evening_summary").notNull().default(false),
+    /** Local hour (0 to 23) the evening wrap-up goes out. */
+    eveningSummaryHour: integer("evening_summary_hour").notNull().default(18),
     /** The weekly report on Monday mornings, at the morning summary hour. Off until chosen. */
     weeklyReport: boolean("weekly_report").notNull().default(false),
     /** Local quiet hours, start inclusive and end exclusive; both null means none. */
     quietHoursStart: integer("quiet_hours_start"),
     quietHoursEnd: integer("quiet_hours_end"),
+    /** Hold everything on Saturday and Sunday, local time, until Monday. */
+    quietWeekends: boolean("quiet_weekends").notNull().default(false),
     /** IANA time zone the hours above are read in, taken from the person's browser. */
     timeZone: text("time_zone").notNull().default("Europe/London"),
     /** Nothing goes to the phone before this time ("Pause for an hour"); null means not paused. */
     pausedUntil: timestamp("paused_until", { withTimezone: true }),
     /** Local date (YYYY-MM-DD) of the last morning summary sent, so it goes once a day. */
     lastMorningSummaryOn: text("last_morning_summary_on"),
+    /** Local date (YYYY-MM-DD) of the last evening wrap-up sent, so it goes once a day. */
+    lastEveningSummaryOn: text("last_evening_summary_on"),
     /** Local date (YYYY-MM-DD) of the last weekly report sent, so it goes once a week. */
     lastWeeklyReportOn: text("last_weekly_report_on"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

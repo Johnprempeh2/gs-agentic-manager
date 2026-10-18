@@ -42,9 +42,16 @@ export function isPaused(prefs: Pick<NotificationPreferences, "pausedUntil">, no
   return prefs.pausedUntil != null && Date.parse(prefs.pausedUntil) > now.getTime();
 }
 
-/** True when nothing should go to the phone now: quiet hours or a pause. What arrives is held for later. */
+/** True on Saturday and Sunday in the person's time zone, when weekends are quiet. */
+export function isQuietWeekend(prefs: Pick<NotificationPreferences, "quietWeekends" | "timeZone">, now: Date): boolean {
+  if (!prefs.quietWeekends) return false;
+  const day = new Date(`${localClock(prefs.timeZone, now).date}T12:00:00Z`).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+/** True when nothing should go to the phone now: quiet hours, a quiet weekend or a pause. What arrives is held for later. */
 export function isHeld(prefs: NotificationPreferences, now: Date): boolean {
-  return isQuietHour(prefs, now) || isPaused(prefs, now);
+  return isQuietHour(prefs, now) || isQuietWeekend(prefs, now) || isPaused(prefs, now);
 }
 
 /** Whether a notification on this topic may go out now. */
@@ -64,9 +71,12 @@ function fromRow(row: Row | undefined): NotificationPreferences {
     dealsClosed: row.dealsClosed,
     morningSummary: row.morningSummary,
     morningSummaryHour: row.morningSummaryHour,
+    eveningSummary: row.eveningSummary,
+    eveningSummaryHour: row.eveningSummaryHour,
     weeklyReport: row.weeklyReport,
     quietHoursStart: row.quietHoursStart,
     quietHoursEnd: row.quietHoursEnd,
+    quietWeekends: row.quietWeekends,
     timeZone: row.timeZone,
     pausedUntil: row.pausedUntil ? row.pausedUntil.toISOString() : null,
   };
@@ -105,6 +115,19 @@ export function notificationPreferencesService(db: Db) {
 
     /** The local date of the last morning summary sent, or null. */
     lastMorningSummaryOn: async (companyId: string, userId: string) => (await row(companyId, userId))?.lastMorningSummaryOn ?? null,
+
+    /** The local date of the last evening wrap-up sent, or null. */
+    lastEveningSummaryOn: async (companyId: string, userId: string) => (await row(companyId, userId))?.lastEveningSummaryOn ?? null,
+
+    async markEveningSummarySent(companyId: string, userId: string, localDate: string) {
+      await db
+        .insert(notificationPreferences)
+        .values({ companyId, userId, lastEveningSummaryOn: localDate })
+        .onConflictDoUpdate({
+          target: [notificationPreferences.companyId, notificationPreferences.userId],
+          set: { lastEveningSummaryOn: localDate, updatedAt: new Date() },
+        });
+    },
 
     /** The local date of the last weekly report sent, or null. */
     lastWeeklyReportOn: async (companyId: string, userId: string) => (await row(companyId, userId))?.lastWeeklyReportOn ?? null,

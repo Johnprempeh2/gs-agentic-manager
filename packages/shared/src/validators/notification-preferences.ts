@@ -24,9 +24,12 @@ export const updateNotificationPreferencesSchema = z
     dealsClosed: z.boolean().optional(),
     morningSummary: z.boolean().optional(),
     morningSummaryHour: hour.optional(),
+    eveningSummary: z.boolean().optional(),
+    eveningSummaryHour: hour.optional(),
     weeklyReport: z.boolean().optional(),
     quietHoursStart: hour.nullable().optional(),
     quietHoursEnd: hour.nullable().optional(),
+    quietWeekends: z.boolean().optional(),
     timeZone: z.string().min(1).max(64).refine(isTimeZone, "Unknown time zone").optional(),
     /** Pause phone notifications until this time; null resumes them. */
     pausedUntil: z

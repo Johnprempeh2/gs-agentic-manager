@@ -63,6 +63,44 @@ export function morningSummaryMessage(summary: MorningSummary, prefix: string): 
   return { title, body: parts.join(" "), url: `/${prefix}/morning`, tag: "morning-summary", badge: summary.needsYou.count };
 }
 
+/** The evening wrap-up: the headline is what still needs you; the body is what got done today. */
+export function eveningSummaryMessage(summary: MorningSummary, prefix: string): DecisionPushMessage {
+  const needs = summary.needsYou.count;
+  const title = needs === 0 ? "Today's wrap-up. Nothing needs you" : `Today's wrap-up. ${plural(needs, "thing still needs", "things still need")} you`;
+  const won = summary.deals?.won ?? 0;
+  const lost = summary.deals?.lost ?? 0;
+  const parts = [
+    summary.finished.count === 0 ? "No tasks finished today." : `${plural(summary.finished.count, "task", "tasks")} finished today.`,
+    ...(won > 0 ? [`${plural(won, "deal", "deals")} won.`] : []),
+    ...(lost > 0 ? [`${plural(lost, "deal", "deals")} lost.`] : []),
+    summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
+    ...((summary.workingNow?.count ?? 0) > 0 ? [`${plural(summary.workingNow!.count, "task is", "tasks are")} still being worked on.`] : []),
+  ];
+  return { title, body: parts.join(" "), url: `/${prefix}/morning`, tag: "evening-summary", badge: needs };
+}
+
+/** True when this round should send today's evening wrap-up to this person. */
+export function eveningSummaryDue(
+  prefs: NotificationPreferences,
+  lastSentOn: string | null,
+  now: Date,
+): { due: boolean; localDate: string } {
+  const { hour, date } = localClock(prefs.timeZone, now);
+  if (!prefs.eveningSummary || lastSentOn === date) return { due: false, localDate: date };
+  const sinceChosen = hour - prefs.eveningSummaryHour;
+  if (sinceChosen < 0 || sinceChosen > CATCH_UP_HOURS) return { due: false, localDate: date };
+  return { due: !isHeld(prefs, now), localDate: date };
+}
+
+/**
+ * About the start of the person's day: their local hour and the minutes past
+ * it. Minutes are read in UTC, which is exact for whole-hour time zones.
+ */
+export function startOfLocalDay(timeZone: string, now: Date): Date {
+  const { hour } = localClock(timeZone, now);
+  return new Date(now.getTime() - (hour * 60 + now.getUTCMinutes()) * 60 * 1000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds());
+}
+
 /** True when this round should send today's summary to this person. */
 export function morningSummaryDue(
   prefs: NotificationPreferences,
@@ -88,10 +126,12 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
   const buildNeedsMe = options.buildNeedsMe ?? ((companyId: string, userId: string) => needsMe.build(companyId, { userId }));
   const preferences = notificationPreferencesService(db);
 
-  async function build(companyId: string, userId: string, now = new Date()): Promise<MorningSummary> {
-    const since = new Date(now.getTime() - DAY_MS);
+  /** `window` "day" (the evening wrap-up) counts from the start of the person's day instead of the last 24 hours. */
+  async function build(companyId: string, userId: string, now = new Date(), window: "24h" | "day" = "24h"): Promise<MorningSummary> {
+    const { timeZone } = await preferences.get(companyId, userId);
+    const since = window === "day" ? startOfLocalDay(timeZone, now) : new Date(now.getTime() - DAY_MS);
     // "Today" is the person's own date, not the server's.
-    const { date: today } = localClock((await preferences.get(companyId, userId)).timeZone, now);
+    const { date: today } = localClock(timeZone, now);
     const due = and(
       eq(issues.companyId, companyId),
       isNotNull(issues.dueDate),
@@ -255,6 +295,33 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
           sent += delivered;
         } catch (error) {
           logger.warn({ err: error, companyId }, "morning summary failed for one user");
+        }
+      }
+      return sent;
+    },
+
+    /**
+     * One round: the evening wrap-up for each person with a phone registered
+     * who chose it, once their evening hour has come. Once a day per company.
+     */
+    async sendEveningDue(deliver: Deliver, now = new Date()): Promise<number> {
+      const audiences = await db
+        .selectDistinct({ companyId: pushSubscriptions.companyId, userId: pushSubscriptions.userId, prefix: companies.issuePrefix })
+        .from(pushSubscriptions)
+        .innerJoin(companies, eq(companies.id, pushSubscriptions.companyId));
+      let sent = 0;
+      for (const { companyId, userId, prefix } of audiences) {
+        try {
+          const prefs = await preferences.get(companyId, userId);
+          const { due, localDate } = eveningSummaryDue(prefs, await preferences.lastEveningSummaryOn(companyId, userId), now);
+          if (!due) continue;
+          // Mark first: a slow or failing push service never sends it twice.
+          await preferences.markEveningSummarySent(companyId, userId, localDate);
+          const summary = await build(companyId, userId, now, "day");
+          const { delivered } = await deliver(companyId, userId, eveningSummaryMessage(summary, prefix));
+          sent += delivered;
+        } catch (error) {
+          logger.warn({ err: error, companyId }, "evening wrap-up failed for one user");
         }
       }
       return sent;

@@ -124,6 +124,26 @@ describe("NotificationSettings", () => {
     expect(container.textContent).toContain("From 22:00 to 07:00, your time.");
   });
 
+  it("offers an evening wrap-up, off until chosen", async () => {
+    await render();
+    const label = "Send me an evening wrap-up";
+    expect(toggle(label).getAttribute("aria-checked")).toBe("false");
+    await act(async () => { toggle(label).click(); });
+    await flush();
+    expect(server.patches).toEqual([{ eveningSummary: true }]);
+    expect(container.textContent).toContain("Every day at 18:00, your time.");
+  });
+
+  it("keeps weekends quiet when chosen", async () => {
+    await render();
+    const label = "Keep weekends quiet";
+    expect(toggle(label).getAttribute("aria-checked")).toBe("false");
+    await act(async () => { toggle(label).click(); });
+    await flush();
+    expect(server.patches).toEqual([{ quietWeekends: true }]);
+    expect(container.textContent).toContain("Nothing is sent on Saturday or Sunday");
+  });
+
   it("offers the weekly report on Monday mornings, off until chosen", async () => {
     await render();
     const label = "Send me the weekly report on Monday mornings";

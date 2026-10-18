@@ -13,11 +13,17 @@ export interface NotificationPreferences {
   morningSummary: boolean;
   /** Local hour (0 to 23) the morning summary goes out. */
   morningSummaryHour: number;
+  /** One message each evening: what got done today and what still needs you. */
+  eveningSummary: boolean;
+  /** Local hour (0 to 23) the evening wrap-up goes out. */
+  eveningSummaryHour: number;
   /** "This week at ..." on Monday mornings, at the morning summary hour. */
   weeklyReport: boolean;
   /** Quiet hours, start inclusive and end exclusive. Both null means none. */
   quietHoursStart: number | null;
   quietHoursEnd: number | null;
+  /** Nothing goes out on Saturday or Sunday; what arrives is held until Monday. */
+  quietWeekends: boolean;
   /** IANA time zone the hours are read in. */
   timeZone: string;
   /**
@@ -35,9 +41,12 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   dealsClosed: true,
   morningSummary: true,
   morningSummaryHour: 8,
+  eveningSummary: false,
+  eveningSummaryHour: 18,
   weeklyReport: false,
   quietHoursStart: null,
   quietHoursEnd: null,
+  quietWeekends: false,
   timeZone: "Europe/London",
   pausedUntil: null,
 };

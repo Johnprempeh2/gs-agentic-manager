@@ -6,7 +6,7 @@ import path from "node:path";
 import { agents, createDb, companies, heartbeatRuns, issues, notificationPreferences, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type MorningSummary, type NeedsMe } from "@greatstone/shared";
-import { morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems } from "../services/morning-summary.js";
+import { eveningSummaryDue, eveningSummaryMessage, morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems, startOfLocalDay } from "../services/morning-summary.js";
 
 const summary = (needs: number, finished: number, stuck: number, due = 0): MorningSummary => ({
   companyId: "c",
@@ -56,6 +56,36 @@ describe("morning summary wording", () => {
       { id: "a", identifier: "GRE-1", title: "Approve brief" },
       { id: "b", identifier: "GRE-2", title: "Pick a date" },
     ]);
+  });
+});
+
+describe("evening wrap-up", () => {
+  it("leads with what still needs you, then what got done today", () => {
+    expect(eveningSummaryMessage({ ...summary(2, 4, 0), deals: { won: 1, lost: 1, items: [] }, workingNow: { count: 3, items: [] } }, "GRE")).toEqual({
+      title: "Today's wrap-up. 2 things still need you",
+      body: "4 tasks finished today. 1 deal won. 1 deal lost. Nothing is stuck. 3 tasks are still being worked on.",
+      url: "/GRE/morning",
+      tag: "evening-summary",
+      badge: 2,
+    });
+    expect(eveningSummaryMessage(summary(0, 0, 1), "GRE")).toMatchObject({
+      title: "Today's wrap-up. Nothing needs you",
+      body: "No tasks finished today. 1 task is stuck.",
+    });
+  });
+
+  it("goes at the chosen evening hour once a day, only when chosen", () => {
+    const prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, timeZone: "Europe/London", eveningSummary: true, eveningSummaryHour: 18 };
+    expect(eveningSummaryDue(prefs, null, new Date("2026-10-16T16:59:00Z")).due).toBe(false);
+    expect(eveningSummaryDue(prefs, null, new Date("2026-10-16T17:00:00Z"))).toEqual({ due: true, localDate: "2026-10-16" });
+    expect(eveningSummaryDue(prefs, "2026-10-16", new Date("2026-10-16T17:30:00Z")).due).toBe(false);
+    expect(eveningSummaryDue({ ...prefs, eveningSummary: false }, null, new Date("2026-10-16T17:00:00Z")).due).toBe(false);
+    expect(eveningSummaryDue(DEFAULT_NOTIFICATION_PREFERENCES, null, new Date("2026-10-16T17:00:00Z")).due).toBe(false);
+  });
+
+  it("counts the day from local midnight", () => {
+    expect(startOfLocalDay("Europe/London", new Date("2026-10-16T17:42:10.500Z")).toISOString()).toBe("2026-10-15T23:00:00.000Z");
+    expect(startOfLocalDay("UTC", new Date("2026-10-16T17:42:00Z")).toISOString()).toBe("2026-10-16T00:00:00.000Z");
   });
 });
 
@@ -212,5 +242,27 @@ describe("morning summary service", () => {
     expect(await service().sendDue(deliver, now)).toBe(1);
     expect(await service().sendDue(deliver, new Date(now.getTime() + 60_000))).toBe(0);
     expect(sent).toEqual([{ userId: "john", title: "Good morning. 2 things need you" }]);
+  });
+
+  it("counts only today in the evening wrap-up", async () => {
+    const built = await service().build(companyId, "john", now, "day");
+    expect(built.since).toBe("2026-10-15T23:00:00.000Z");
+    expect(built.deals?.won).toBe(1);
+    expect(built.deals?.lost).toBe(0);
+  });
+
+  it("sends the evening wrap-up once a day to people who chose it", async () => {
+    await db.insert(pushSubscriptions).values({ companyId, userId: "john", endpoint: "https://push.example/1", p256dh: "k", auth: "a" });
+    const sent: string[] = [];
+    const deliver = async (_companyId: string, _userId: string, message: { title: string }) => {
+      sent.push(message.title);
+      return { targets: 1, delivered: 1 };
+    };
+    const evening = new Date("2026-10-16T17:05:00Z");
+    expect(await service().sendEveningDue(deliver, evening)).toBe(0);
+    await db.insert(notificationPreferences).values({ companyId, userId: "john", eveningSummary: true });
+    expect(await service().sendEveningDue(deliver, evening)).toBe(1);
+    expect(await service().sendEveningDue(deliver, new Date(evening.getTime() + 60_000))).toBe(0);
+    expect(sent).toEqual(["Today's wrap-up. 2 things still need you"]);
   });
 });

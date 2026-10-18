@@ -256,6 +256,20 @@ export function NotificationSettings() {
         ) : null}
       </Section>
 
+      <Section title="Evening wrap-up" description="One message at the end of the day: what got done today and what still needs you.">
+        <ChoiceRow
+          label="Send me an evening wrap-up"
+          description={prefs.eveningSummary ? `Every day at ${hourLabel(prefs.eveningSummaryHour)}, your time.` : "Off."}
+          checked={prefs.eveningSummary}
+          onChange={(eveningSummary) => change({ eveningSummary })}
+        />
+        {prefs.eveningSummary ? (
+          <div className="w-32">
+            <HourPicker label="Evening at" value={prefs.eveningSummaryHour} onChange={(eveningSummaryHour) => change({ eveningSummaryHour })} />
+          </div>
+        ) : null}
+      </Section>
+
       <Section title="Weekly report" description="This week at a glance: what the agents finished, what is stuck, how the client pipeline moved and what needs you.">
         <ChoiceRow
           label="Send me the weekly report on Monday mornings"
@@ -287,6 +301,12 @@ export function NotificationSettings() {
             />
           </div>
         ) : null}
+        <ChoiceRow
+          label="Keep weekends quiet"
+          description={prefs.quietWeekends ? "Nothing is sent on Saturday or Sunday, including the morning summary. What came in goes out on Monday." : "Off. Notifications can arrive at weekends."}
+          checked={prefs.quietWeekends}
+          onChange={(quietWeekends) => change({ quietWeekends })}
+        />
       </Section>
 
       <RecentNotifications companyId={selectedCompanyId} />
