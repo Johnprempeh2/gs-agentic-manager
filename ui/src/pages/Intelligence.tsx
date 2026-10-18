@@ -761,6 +761,16 @@ export function Intelligence() {
 
   if (!selectedCompanyId) return <EmptyState icon={Radar} message="Choose an organisation to see its intelligence." />;
   if (settingsQuery.isLoading) return <PageSkeleton variant="dashboard" />;
+  if (settingsQuery.error) {
+    return (
+      <ErrorState
+        error={settingsQuery.error}
+        title="Intelligence did not load"
+        onRetry={() => void settingsQuery.refetch()}
+        retrying={settingsQuery.isFetching}
+      />
+    );
+  }
   if (!on) {
     return (
       <EmptyState

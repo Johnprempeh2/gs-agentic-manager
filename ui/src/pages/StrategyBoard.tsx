@@ -114,7 +114,7 @@ export function StrategyBoard() {
     queryFn: () => strategyBoardApi.summary(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const { data: packs } = useQuery({
+  const { data: packs, error: packsError, refetch: refetchPacks, isFetching: packsFetching } = useQuery({
     queryKey: queryKeys.strategyBoard.packs(selectedCompanyId!),
     queryFn: () => strategyBoardApi.listPacks(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -228,6 +228,14 @@ export function StrategyBoard() {
                 </li>
               ))}
             </ul>
+          ) : packsError ? (
+            <ErrorState
+              compact
+              error={packsError}
+              title="Board packs did not load"
+              onRetry={() => void refetchPacks()}
+              retrying={packsFetching}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">No board pack yet.</p>
           )}

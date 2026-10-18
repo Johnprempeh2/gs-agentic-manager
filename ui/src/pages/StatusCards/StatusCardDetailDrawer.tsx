@@ -139,7 +139,7 @@ export function StatusCardDetailDrawer({
     },
     onSuccess: async () => {
       await invalidateCard();
-      setActionNote("Run queued. The Summarizer is updating this card.");
+      setActionNote("Update requested. The Summarizer is updating this card.");
     },
     onError: (err) => setActionError(err instanceof Error ? err.message : "Could not run the card."),
   });
@@ -515,7 +515,7 @@ function QueryDebugSection({ card }: { card: StatusCardView }) {
         </pre>
         <p className="text-xs text-muted-foreground">
           {card.queryCompiledAt
-            ? `Compiled by Summarizer ${relativeTime(card.queryCompiledAt)} · version ${card.queryVersion}. Edit “What this card watches” above to rebuild it.`
+            ? `Set up by the Summarizer ${relativeTime(card.queryCompiledAt)} · version ${card.queryVersion}. Edit “What this card watches” above to rebuild it.`
             : "Not compiled yet. The query builds automatically once the card finishes setting up."}
         </p>
       </CollapsibleContent>

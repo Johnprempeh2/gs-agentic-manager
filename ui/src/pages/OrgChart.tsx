@@ -277,7 +277,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   }, [orgTree, agentMap, liveRuns, openIssues]);
 
   useEffect(() => {
-    if (!embedded) setBreadcrumbs([{ label: "Org Chart" }]);
+    if (!embedded) setBreadcrumbs([{ label: "Org chart" }]);
   }, [embedded, setBreadcrumbs]);
 
   // Layout computation

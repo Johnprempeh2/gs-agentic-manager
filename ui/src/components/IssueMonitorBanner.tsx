@@ -82,10 +82,10 @@ export function buildMonitorSurfaceCopy(
 
   if (derived.source === "scheduled-retry" && scheduledRetryReason === "workspace_busy") {
     return {
-      bannerTitle: "Waiting for workspace",
-      stripTitle: "Waiting for workspace",
-      bannerMeta: ["Another task is using this workspace. Work starts automatically when it is available."],
-      stripMeta: ["Work starts automatically when the workspace is available."],
+      bannerTitle: "Waiting for another task to finish",
+      stripTitle: "Waiting for another task",
+      bannerMeta: ["Another task is using the same files. Work starts automatically when it is free."],
+      stripMeta: ["Work starts automatically when the other task finishes."],
       tone: "info",
       workspaceWait: true,
     };
@@ -101,24 +101,24 @@ export function buildMonitorSurfaceCopy(
   switch (derived.state) {
     case "scheduled":
     case "retrying":
-      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Waiting on monitor: resumes ${eta}`;
+      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Agent checks back ${eta}`;
       stripTitle = `Resumes ${eta}`;
       break;
     case "due-now":
-      bannerTitle = isScheduledRetryOnly ? "Agent retry due now" : "Waiting on monitor: due now";
+      bannerTitle = isScheduledRetryOnly ? "Agent tries again now" : "Agent checks back now";
       stripTitle = "Due now";
       statusHint = "Checking momentarily…";
       break;
     case "overdue":
     default:
-      bannerTitle = isScheduledRetryOnly ? `Agent retry ${eta}` : `Waiting on monitor: ${eta}`;
+      bannerTitle = isScheduledRetryOnly ? `Agent tries again: ${eta}` : `Agent checks back: ${eta}`;
       stripTitle = capitalize(eta);
-      statusHint = "Fires on next tick";
+      statusHint = "Starting shortly";
       break;
   }
 
   const attemptLabel = derived.attemptCount >= 1 ? `Attempt ${derived.attemptCount}` : null;
-  const serviceLabel = derived.serviceName ? `Watching: ${derived.serviceName}` : null;
+  const serviceLabel = derived.serviceName ? `Checking: ${derived.serviceName}` : null;
 
   const bannerMeta = [statusHint, `${absolute} (your time)`, attemptLabel, serviceLabel].filter(
     (piece): piece is string => Boolean(piece),

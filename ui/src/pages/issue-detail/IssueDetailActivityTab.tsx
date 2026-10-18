@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { ErrorState } from "@/components/ErrorState";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../api/client";
@@ -70,7 +71,13 @@ export function IssueDetailActivityTab({
   handoffFocusSignal = 0,
   externalReferences,
 }: IssueDetailActivityTabProps) {
-  const { data: activity, isLoading: activityLoading } = useQuery({
+  const {
+    data: activity,
+    isLoading: activityLoading,
+    error: activityError,
+    refetch: refetchActivity,
+    isFetching: activityFetching,
+  } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
     placeholderData: keepPreviousDataForSameQueryTail<ActivityEvent[]>(issueId),
@@ -201,7 +208,7 @@ export function IssueDetailActivityTab({
       {shouldShowCostSummary && (
         <div className="mb-3 px-3 py-2 rounded-lg border border-border">
           <div className="text-sm font-medium text-muted-foreground mb-1">
-            Cost Summary
+            Cost summary
           </div>
           {!issueCostSummary.hasCost &&
           !issueCostSummary.hasTokens &&
@@ -228,14 +235,14 @@ export function IssueDetailActivityTab({
                 ) : null}
                 {issueCostSummary.hasRuntime ? (
                   <span>
-                    Runtime {formatDurationMs(issueCostSummary.runtimeMs)}
-                    {` (${issueCostSummary.runCount} run${issueCostSummary.runCount === 1 ? "" : "s"})`}
+                    Agent time {formatDurationMs(issueCostSummary.runtimeMs)}
+                    {` (worked ${issueCostSummary.runCount} time${issueCostSummary.runCount === 1 ? "" : "s"})`}
                   </span>
                 ) : null}
                 {!issueCostSummary.hasCost &&
                 !issueCostSummary.hasTokens &&
                 !issueCostSummary.hasRuntime ? (
-                  <span>No direct cost data.</span>
+                  <span>No cost recorded for this task yet.</span>
                 ) : null}
               </div>
               {hasIssueTreeCost && issueTreeCostSummary ? (
@@ -260,8 +267,8 @@ export function IssueDetailActivityTab({
                   </span>
                   {issueTreeCostSummary.runCount > 0 ? (
                     <span>
-                      Runtime {formatDurationMs(issueTreeCostSummary.runtimeMs)}
-                      {` (${issueTreeCostSummary.runCount} run${issueTreeCostSummary.runCount === 1 ? "" : "s"})`}
+                      Agent time {formatDurationMs(issueTreeCostSummary.runtimeMs)}
+                      {` (worked ${issueTreeCostSummary.runCount} time${issueTreeCostSummary.runCount === 1 ? "" : "s"})`}
                     </span>
                   ) : null}
                   <span>
@@ -277,6 +284,16 @@ export function IssueDetailActivityTab({
           )}
         </div>
       )}
+      {activityError ? (
+        <ErrorState
+          compact
+          className="mb-3"
+          error={activityError}
+          title="This task's history did not load"
+          onRetry={() => void refetchActivity()}
+          retrying={activityFetching}
+        />
+      ) : null}
       <div className="mb-3">
         <IssueRunLedger
           issueId={issueId}
