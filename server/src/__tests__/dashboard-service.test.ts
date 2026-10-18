@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { agents, companies, createDb, heartbeatRuns } from "@greatstone/db";
+import { agents, companies, createDb, heartbeatRuns, issues } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -47,6 +47,7 @@ describeEmbeddedPostgres("dashboard service", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(issues);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companies);
@@ -54,6 +55,27 @@ describeEmbeddedPostgres("dashboard service", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
+  });
+
+  it("counts open tasks past their due date as overdue", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Overdue Co",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(issues).values([
+      { companyId, title: "Late", status: "todo", priority: "medium", dueDate: utcDateKey(utcDay(-2)) },
+      { companyId, title: "Late but done", status: "done", priority: "medium", dueDate: utcDateKey(utcDay(-2)) },
+      { companyId, title: "Due today", status: "todo", priority: "medium", dueDate: utcDateKey(utcDay(0)) },
+      { companyId, title: "No date", status: "todo", priority: "medium" },
+    ]);
+
+    const summary = await dashboardService(db).summary(companyId);
+
+    expect(summary.tasks.overdue).toBe(1);
+    expect(summary.tasks.open).toBe(3);
   });
 
   it("aggregates the full 14-day run activity window without recent-run truncation", async () => {

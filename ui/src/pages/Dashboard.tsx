@@ -563,6 +563,11 @@ export function Dashboard() {
                     <span>
                       {data.tasks.open} open{", "}
                       {data.tasks.blocked} blocked
+                      {data.tasks.overdue ? (
+                        <span className="text-status-danger" data-testid="dashboard-overdue">
+                          {", "}{data.tasks.overdue} overdue
+                        </span>
+                      ) : null}
                     </span>
                   }
                 />
