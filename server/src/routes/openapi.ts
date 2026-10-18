@@ -12269,6 +12269,11 @@ for (const route of [
   ],
   [
     "get",
+    "/api/companies/{companyId}/search/client-brief",
+    "Brief on the organisation that best matches a name",
+  ],
+  [
+    "get",
     "/api/companies/{companyId}/issues/count",
     "Count issues in a company",
   ],

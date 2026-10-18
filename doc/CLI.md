@@ -1016,6 +1016,10 @@ npx gsam search <words...> --company-id <company-id> [--scope all|issues|comment
 
 # Open deals and leads with no note, call, meeting or email for a while, quietest first.
 npx gsam quiet-clients --company-id <company-id> [--days 30] [--limit 10] [--json]
+# One-glance brief on an organisation: status, open deals, people and last contact.
+npx gsam client-brief <name...> --company-id <company-id> [--json]
+# Recent client notes, calls, meetings and emails, newest first.
+npx gsam client-activity --company-id <company-id> [--days 7] [--limit 20] [--json]
 ```
 
 ```sh

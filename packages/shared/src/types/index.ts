@@ -428,6 +428,8 @@ export type {
   CompanyQuietClientsResponse,
   CompanyClientActivity,
   CompanyRecentClientActivityResponse,
+  CompanyClientBrief,
+  CompanyClientBriefResponse,
   CompanySearchResult,
   CompanySearchResultType,
   CompanySearchScope,

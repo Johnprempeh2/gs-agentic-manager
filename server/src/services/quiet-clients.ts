@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import type {
   CompanyClientActivity,
+  CompanyClientBriefResponse,
   CompanyQuietClient,
   CompanyQuietClientsResponse,
   CompanyRecentClientActivityResponse,
@@ -142,10 +143,13 @@ export function quietClientsService(db: Db) {
      */
     recentActivity: async (
       companyId: string,
-      options: { days: number; limit: number; now?: Date },
+      options: { days: number; limit: number; now?: Date; since?: Date },
     ): Promise<CompanyRecentClientActivityResponse> => {
       const now = options.now ?? new Date();
-      const since = new Date(now.getTime() - options.days * DAY_MS);
+      const earliest = new Date(now.getTime() - 365 * DAY_MS);
+      const since = options.since
+        ? new Date(Math.max(options.since.getTime(), earliest.getTime()))
+        : new Date(now.getTime() - options.days * DAY_MS);
       const inWindow = sql`
         FROM crm_timeline_entries te
         LEFT JOIN pipeline_cases tc ON tc.id = te.case_id AND tc.retired_at IS NULL
@@ -194,6 +198,76 @@ export function quietClientsService(db: Db) {
         total: Number(totalRow?.count ?? 0),
         clientCount: Number(totalRow?.clients ?? 0),
         byKind,
+      };
+    },
+
+    /**
+     * A brief on the organisation that best matches `name`: exact name first,
+     * then names starting with it, then names containing it.
+     */
+    clientBrief: async (companyId: string, name: string, options: { now?: Date } = {}): Promise<CompanyClientBriefResponse> => {
+      const now = options.now ?? new Date();
+      const needle = name.trim();
+      if (!needle) return { brief: null };
+      const escaped = needle.replace(/[\\%_]/g, (char) => `\\${char}`);
+      const orgs = await db.execute(sql`
+        SELECT o.id, o.name, o.status, o.industry, o.country
+        FROM organisations o
+        WHERE o.company_id = ${companyId} AND o.archived_at IS NULL
+          AND o.name ILIKE ${`%${escaped}%`}
+        ORDER BY CASE WHEN lower(o.name) = lower(${needle}) THEN 0
+          WHEN o.name ILIKE ${`${escaped}%`} THEN 1 ELSE 2 END,
+          length(o.name), o.updated_at DESC
+        LIMIT 1
+      `) as unknown as Array<{ id: string; name: string; status: string; industry: string | null; country: string | null }>;
+      const org = orgs[0];
+      if (!org) return { brief: null };
+      const [people, deals, touches] = await Promise.all([
+        db.execute(sql`
+          SELECT c.name, c.role, c.email, count(*) OVER ()::int AS total
+          FROM organisation_contacts c
+          WHERE c.company_id = ${companyId} AND c.organisation_id = ${org.id} AND c.archived_at IS NULL
+          ORDER BY c.is_key_contact DESC, c.updated_at DESC
+          LIMIT 3
+        `) as unknown as Promise<Array<{ name: string; role: string | null; email: string | null; total: number }>>,
+        db.execute(sql`
+          SELECT pc.id, pc.title, pc.pipeline_id AS "pipelineId", st.name AS "stageName", p.name AS "pipelineName"
+          FROM pipeline_cases pc
+          JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
+          JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('working', 'review')
+          WHERE pc.company_id = ${companyId} AND pc.organisation_id = ${org.id}
+            AND pc.retired_at IS NULL AND pc.terminal_at IS NULL AND pc.hidden_from_board_at IS NULL
+          ORDER BY pc.created_at DESC
+          LIMIT 5
+        `) as unknown as Promise<Array<{ id: string; title: string; pipelineId: string; stageName: string; pipelineName: string }>>,
+        db.execute(sql`
+          SELECT coalesce(te.occurred_at, te.created_at) AS at, coalesce(te.activity_type, te.kind) AS kind,
+            coalesce(nullif(te.subject, ''), te.body) AS subject
+          FROM crm_timeline_entries te
+          LEFT JOIN pipeline_cases tc ON tc.id = te.case_id
+          WHERE te.company_id = ${companyId} AND te.kind <> 'stage_change'
+            AND (te.organisation_id = ${org.id} OR tc.organisation_id = ${org.id})
+          ORDER BY coalesce(te.occurred_at, te.created_at) DESC
+          LIMIT 1
+        `) as unknown as Promise<Array<{ at: Date | string; kind: string; subject: string | null }>>,
+      ]);
+      const prefix = await routePrefix(db, companyId);
+      const touch = touches[0];
+      const lastTouchAt = touch ? iso(touch.at)! : null;
+      return {
+        brief: {
+          organisation: { ...org, href: `/${prefix}/organisations/${org.id}` },
+          people: people.map(({ name: personName, role, email }) => ({ name: personName, role, email })),
+          peopleCount: Number(people[0]?.total ?? 0),
+          openDeals: deals.map((deal) => ({
+            title: deal.title,
+            stageName: deal.stageName,
+            pipelineName: deal.pipelineName,
+            href: `/${prefix}/pipelines/${deal.pipelineId}/items/${deal.id}`,
+          })),
+          lastTouch: touch && lastTouchAt ? { at: lastTouchAt, label: touchLabel(touch.kind, touch.subject) ?? "Contact" } : null,
+          quietDays: lastTouchAt ? Math.max(0, Math.floor((now.getTime() - new Date(lastTouchAt).getTime()) / DAY_MS)) : null,
+        },
       };
     },
   };

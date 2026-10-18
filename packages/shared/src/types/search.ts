@@ -229,3 +229,27 @@ export interface CompanyRecentClientActivityResponse {
   /** Counts by kind label, largest first: [["Call", 4], ["Note", 2]]. */
   byKind: Array<[string, number]>;
 }
+
+/** A one-glance brief on the organisation that best matches a name. */
+export interface CompanyClientBrief {
+  organisation: {
+    id: string;
+    name: string;
+    status: string;
+    industry: string | null;
+    country: string | null;
+    href: string;
+  };
+  /** Up to three people, key contacts first. */
+  people: Array<{ name: string; role: string | null; email: string | null }>;
+  peopleCount: number;
+  /** Open deals and leads, newest first. */
+  openDeals: Array<{ title: string; stageName: string; pipelineName: string; href: string }>;
+  lastTouch: { at: string; label: string } | null;
+  /** Days since the last note, call or meeting; null when never. */
+  quietDays: number | null;
+}
+
+export interface CompanyClientBriefResponse {
+  brief: CompanyClientBrief | null;
+}

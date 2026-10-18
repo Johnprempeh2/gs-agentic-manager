@@ -434,6 +434,75 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(result.activity.map((entry) => entry.title)).toEqual(["Pricing call", "Sent the proposal"]);
     expect(result.activity[0]).toMatchObject({ kindLabel: "Call", clientName: "Heron Ltd", ownerName: "Ama", href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)) });
     expect(await quietClientsService(db).recentActivity(companyId, { days: 1, limit: 10, now: new Date("2026-12-01T00:00:00Z") })).toMatchObject({ total: 0, clientCount: 0, byKind: [], activity: [] });
+    const sinceVisit = await quietClientsService(db).recentActivity(companyId, { days: 7, limit: 10, now, since: new Date("2026-10-16T00:00:00Z") });
+    expect(sinceVisit.activity.map((entry) => entry.title)).toEqual(["Pricing call"]);
+  });
+
+  it("finds organisations and people by their imported CRM fields", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({
+      id: orgId,
+      companyId,
+      name: "Plover Ltd",
+      crmFields: [
+        { key: "sector", label: "Sector", value: "Aquaculture" },
+        { key: "tags", label: "Tags", value: ["shortlist", "west"] },
+        { key: "headcount", label: "Headcount", value: 42 },
+      ],
+    });
+    await db.insert(organisationContacts).values({ companyId, organisationId: orgId, name: "Kofi Mensah", crmFields: [{ key: "source", label: "Lead source", value: "Trade fair" }] });
+
+    const bySector = await svc.search(companyId, companySearchQuerySchema.parse({ q: "aquaculture", scope: "records" }));
+    expect(bySector.results.map((row) => row.title)).toEqual(["Plover Ltd"]);
+    const byTag = await svc.search(companyId, companySearchQuerySchema.parse({ q: "shortlist", scope: "records" }));
+    expect(byTag.results.map((row) => row.title)).toEqual(["Plover Ltd"]);
+    const bySource = await svc.search(companyId, companySearchQuerySchema.parse({ q: "trade fair", scope: "records", recordKind: "person" }));
+    expect(bySource.results.map((row) => row.title)).toEqual(["Kofi Mensah"]);
+    expect((await svc.search(companyId, companySearchQuerySchema.parse({ q: "42", scope: "records" }))).results).toEqual([]);
+  });
+
+  it("briefs on the best-matching organisation: people, open deals and last contact", async () => {
+    const companyId = await createCompany();
+    const now = new Date("2026-10-18T09:00:00Z");
+    const [orgId, otherId] = [randomUUID(), randomUUID()];
+    await db.insert(organisations).values([
+      { id: otherId, companyId, name: "Grebe Holdings International" },
+      { id: orgId, companyId, name: "Grebe", status: "client", industry: "Mining", country: "Ghana" },
+    ]);
+    await db.insert(organisationContacts).values([
+      { companyId, organisationId: orgId, name: "Esi Boateng", role: "COO" },
+      { companyId, organisationId: orgId, name: "Yaw Darko", role: "CFO", isKeyContact: true },
+    ]);
+    const pipelineId = randomUUID();
+    const [working, done] = [randomUUID(), randomUUID()];
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values([
+      { id: working, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 },
+      { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 1 },
+    ]);
+    const caseId = randomUUID();
+    await db.insert(pipelineCases).values([
+      { id: caseId, companyId, pipelineId, stageId: working, caseKey: "g1", title: "Grebe expansion", organisationId: orgId },
+      { companyId, pipelineId, stageId: done, caseKey: "g0", title: "Grebe pilot", organisationId: orgId },
+    ]);
+    await db.insert(crmTimelineEntries).values([
+      { companyId, source: "pipedrive", externalId: "g-1", kind: "activity", activityType: "meeting", subject: "Quarterly review", occurredAt: new Date("2026-10-08T09:00:00Z"), caseId },
+      { companyId, source: "pipedrive", externalId: "g-2", kind: "note", body: "Older note", occurredAt: new Date("2026-09-01T09:00:00Z"), organisationId: orgId },
+    ]);
+
+    const { brief } = await quietClientsService(db).clientBrief(companyId, "grebe", { now });
+
+    expect(brief).toMatchObject({
+      organisation: { id: orgId, name: "Grebe", status: "client", industry: "Mining", country: "Ghana" },
+      peopleCount: 2,
+      openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales" }],
+      lastTouch: { label: "Meeting: Quarterly review" },
+      quietDays: 10,
+    });
+    expect(brief!.people.map((person) => person.name)).toEqual(["Yaw Darko", "Esi Boateng"]);
+    expect((await quietClientsService(db).clientBrief(companyId, "nobody")).brief).toBeNull();
+    expect((await quietClientsService(db).clientBrief(companyId, "%")).brief).toBeNull();
   });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
