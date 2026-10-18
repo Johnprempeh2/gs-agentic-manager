@@ -12360,7 +12360,7 @@ for (const route of [
   [
     "get",
     "/api/companies/{companyId}/search/pipeline-summary",
-    "Summarise open deals per stage with value and the largest deals",
+    "Summarise open deals per stage with value and the largest deals, optionally for one owner",
   ],
   [
     "get",

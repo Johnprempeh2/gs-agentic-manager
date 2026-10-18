@@ -396,8 +396,11 @@ export function quietClientsService(db: Db) {
      * Open deals and leads across pipelines: count and value per stage, the
      * overall value per currency, and the largest deals by value.
      */
-    pipelineSummary: async (companyId: string, options: { limit: number }): Promise<CompanyPipelineSummaryResponse> => {
-      const open = sql`
+    pipelineSummary: async (companyId: string, options: { limit: number; owner?: string | null }): Promise<CompanyPipelineSummaryResponse> => {
+      // An owner filter matches the full imported owner name, its first name or its last name, ignoring case.
+      const ownerFilter = options.owner?.trim().replace(/\s+/g, " ") || null;
+      const ownerEscaped = ownerFilter?.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`) ?? null;
+      const scoped = sql`
         SELECT pc.id, pc.title, pc.pipeline_id, p.name AS pipeline_name, st.name AS stage_name, st.position AS stage_position,
           o.name AS organisation_name,
           CASE WHEN pc.fields->>'expectedCloseDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN pc.fields->>'expectedCloseDate' END AS close_date,
@@ -417,6 +420,9 @@ export function quietClientsService(db: Db) {
           AND pc.terminal_at IS NULL
           AND pc.hidden_from_board_at IS NULL
       `;
+      const open = ownerFilter
+        ? sql`SELECT * FROM (${scoped}) owned WHERE lower(owner) = ${ownerFilter.toLowerCase()} OR lower(owner) LIKE ${`${ownerEscaped} %`} OR lower(owner) LIKE ${`% ${ownerEscaped}`}`
+        : scoped;
       const ownerRows = await db.execute(sql`
         WITH open_cases AS (${open})
         SELECT owner, currency, count(*)::int AS count, coalesce(sum(value), 0)::float8 AS value
@@ -456,10 +462,10 @@ export function quietClientsService(db: Db) {
         SELECT id AS "caseId", title, pipeline_id AS "pipelineId", pipeline_name AS "pipelineName", stage_name AS "stageName",
           organisation_name AS "organisationName", value::float8 AS value, currency, close_date AS "closeDate"
         FROM open_cases
-        WHERE value > 0
-        ORDER BY value DESC, id
+        WHERE ${ownerFilter ? sql`TRUE` : sql`value > 0`}
+        ORDER BY value DESC NULLS LAST, id
         LIMIT ${options.limit}
-      `) as unknown as Array<{ caseId: string; title: string; pipelineId: string; pipelineName: string; stageName: string; organisationName: string | null; value: number; currency: string | null; closeDate: string | null }>;
+      `) as unknown as Array<{ caseId: string; title: string; pipelineId: string; pipelineName: string; stageName: string; organisationName: string | null; value: number | null; currency: string | null; closeDate: string | null }>;
 
       const stages: CompanyPipelineStageSummary[] = [];
       const totals = new Map<string | null, { value: number; count: number }>();
@@ -483,12 +489,13 @@ export function quietClientsService(db: Db) {
         pipelineName: row.pipelineName,
         stageName: row.stageName,
         organisationName: row.organisationName,
-        value: Number(row.value),
+        value: row.value === null ? null : Number(row.value),
         currency: row.currency,
         expectedCloseDate: row.closeDate,
         href: `/${prefix}/pipelines/${row.pipelineId}/items/${row.caseId}`,
       }));
       return {
+        ownerFilter,
         total: stages.reduce((sum, stage) => sum + stage.count, 0),
         valueByCurrency: [...totals.entries()]
           .map(([currency, total]) => ({ currency, value: total.value, count: total.count }))

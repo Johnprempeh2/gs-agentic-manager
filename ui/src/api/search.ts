@@ -72,8 +72,13 @@ export const searchApi = {
     return api.get<CompanyClosingDealsResponse>(`/companies/${companyId}/search/closing-deals${qs ? `?${qs}` : ""}`);
   },
   /** Open deals per stage, value per currency and the largest deals. */
-  pipelineSummary: (companyId: string, params: { limit?: number } = {}) =>
-    api.get<CompanyPipelineSummaryResponse>(`/companies/${companyId}/search/pipeline-summary${params.limit !== undefined ? `?limit=${params.limit}` : ""}`),
+  pipelineSummary: (companyId: string, params: { limit?: number; owner?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    if (params.owner) search.set("owner", params.owner);
+    const query = search.toString();
+    return api.get<CompanyPipelineSummaryResponse>(`/companies/${companyId}/search/pipeline-summary${query ? `?${query}` : ""}`);
+  },
   /** Deals won and lost in the last `days` days, with value and lost reasons. */
   wonLost: (companyId: string, params: { days?: number; limit?: number } = {}) => {
     const search = new URLSearchParams();

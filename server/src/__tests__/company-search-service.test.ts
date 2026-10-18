@@ -585,6 +585,38 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(all.missing.deals.find((deal) => deal.title === "Big proposal")?.missing).toEqual(["organisation"]);
   });
 
+  it("narrows the pipeline summary to one owner by full, first or last name", async () => {
+    const companyId = await createCompany();
+    const pipelineId = randomUUID();
+    const [proposal, done] = [randomUUID(), randomUUID()];
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values([
+      { id: proposal, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 },
+      { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 1 },
+    ]);
+    await db.insert(pipelineCases).values([
+      { companyId, pipelineId, stageId: proposal, caseKey: "o1", title: "Sarah big", fields: { dealValue: 8000, dealCurrency: "GBP", dealOwner: "Sarah Jones" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "o2", title: "Sarah unpriced", fields: { leadOwner: "sarah jones", expectedCloseDate: "2026-11-02" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "o3", title: "Sarahbeth deal", fields: { dealValue: 50, dealOwner: "Sarahbeth Ode" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "o4", title: "Kofi deal", fields: { dealValue: 9999, dealOwner: "Kofi Mensah" } },
+      { companyId, pipelineId, stageId: done, caseKey: "o5", title: "Sarah won", fields: { dealValue: 1, dealOwner: "Sarah Jones" } },
+    ]);
+    const service = quietClientsService(db);
+
+    for (const owner of ["Sarah Jones", "sarah", "JONES", "  Sarah   Jones "]) {
+      const summary = await service.pipelineSummary(companyId, { limit: 5, owner });
+      expect(summary.total).toBe(2);
+      expect(summary.topDeals.map((deal) => deal.title)).toEqual(["Sarah big", "Sarah unpriced"]);
+    }
+    const sarah = await service.pipelineSummary(companyId, { limit: 5, owner: "sarah" });
+    expect(sarah.ownerFilter).toBe("sarah");
+    expect(sarah.topDeals[1]).toMatchObject({ value: null, expectedCloseDate: "2026-11-02" });
+    expect(sarah.valueByCurrency[0]).toEqual({ currency: "GBP", value: 8000, count: 1 });
+    expect((await service.pipelineSummary(companyId, { limit: 5, owner: "%" })).total).toBe(0);
+    expect((await service.pipelineSummary(companyId, { limit: 5, owner: "Nobody" })).total).toBe(0);
+    expect((await service.pipelineSummary(companyId, { limit: 5 })).ownerFilter).toBeNull();
+  });
+
   it("lists deals won and lost in the window with value and lost reasons", async () => {
     const companyId = await createCompany();
     const now = new Date("2026-10-18T09:00:00Z");

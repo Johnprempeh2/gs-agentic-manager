@@ -188,8 +188,13 @@ converted. Ask Everest answers "How is the pipeline looking?", "What are our
 biggest deals?", "Who has the most deals?" (by owner) and "Which deals have no
 close date?" (counts of open deals missing a close date, value, owner or
 organisation, oldest first) from it; a pipeline
-question with a time ("this quarter") goes to deals closing instead. Agents use
-`gsam pipeline-summary`.
+question with a time ("this quarter") goes to deals closing instead. Add
+`owner=<name>` to narrow it to one owner, matching the full imported owner name,
+the first name or the last name, ignoring case; the response echoes
+`ownerFilter` and lists all that owner's deals, valued ones first (`value` is
+null for one with no value). Ask Everest answers "Show me Sarah's deals",
+"Which deals are owned by Kofi Mensah?" and "What does Ama own?" this way.
+Agents use `gsam pipeline-summary [--owner <name>]`.
 
 `GET /api/companies/:companyId/search/won-lost?days=30&limit=5` lists deals and
 leads won (done stage) and lost (cancelled stage) in the last `days` days (1 to
