@@ -937,6 +937,9 @@ cancel. With the required secret and approval authentication present, malformed
 IDs return HTTP 400 before database access. A status request without a secret
 returns HTTP 404. Unknown challenges or incorrect challenge secrets still return
 HTTP 404. Approval requires board authentication, checked before ID validation.
+The approver must have active access to the requested company. A second approval
+cannot transfer the key to another user. CLI login retries status reads after
+HTTP 429 within the original challenge expiry; it never retries approval.
 
 ## Instance Settings Commands
 

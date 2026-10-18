@@ -11,6 +11,17 @@ import {
 } from "../redaction.js";
 
 describe("redaction", () => {
+  it("keeps only UUID Board key record IDs in audit details", () => {
+    const id = "12345678-1234-4123-8123-123456789abc";
+    expect(sanitizeRecord({ boardApiKeyId: id, boardApiToken: "pcp_board_secret" })).toEqual({
+      boardApiKeyId: id,
+      boardApiToken: REDACTED_EVENT_VALUE,
+    });
+    expect(sanitizeRecord({ boardApiKeyId: "pcp_board_secret" })).toEqual({
+      boardApiKeyId: REDACTED_EVENT_VALUE,
+    });
+  });
+
   it("keeps Office MIME types visible on approval cards but still redacts JWTs (GRE-809)", () => {
     const docx =
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document";

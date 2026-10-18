@@ -9,6 +9,9 @@ const SECRET_PAYLOAD_KEY_RE = new RegExp(SECRET_FIELD_NAME_PATTERN, "i");
 // "authorization". JWT-shaped values are still caught by the value guard below.
 const AUDIT_REASON_PAYLOAD_KEY_RE = /^authorizationReason$/;
 const AUDIT_SURFACE_PAYLOAD_KEY_RE = /^surface$/;
+// A Board key's database UUID is needed to join creation and revocation audit
+// rows. It is not the bearer credential, which has a different field and shape.
+const BOARD_KEY_RECORD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * Cleanup counts on a connection-removal receipt (PAP-17119). Their names name
  * the thing they counted — secrets, bindings, tokens — so the key guard above
@@ -881,6 +884,10 @@ export function sanitizeRecord(
 ): Record<string, unknown> {
   const redacted: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
+    if (key === "boardApiKeyId" && typeof value === "string" && BOARD_KEY_RECORD_ID_RE.test(value)) {
+      redacted[key] = value;
+      continue;
+    }
     if (COMMAND_ARGS_PAYLOAD_KEY_RE.test(key) && Array.isArray(value)) {
       redacted[key] = sanitizeCommandArgs(value);
       continue;
