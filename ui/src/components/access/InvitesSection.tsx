@@ -11,6 +11,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/context/ConfirmContext";
+import { ShareTextButton } from "@/components/ShareTextButton";
 
 const inviteRoleOptions = [
   {
@@ -49,7 +50,7 @@ function isInviteHistoryRow(value: unknown): value is Awaited<ReturnType<typeof 
 /** The Invites tab of the Members page (extracted from the former standalone Invites page). */
 export function InvitesSection() {
   const confirm = useConfirm();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [humanRole, setHumanRole] = useState<"owner" | "admin" | "operator" | "viewer">("operator");
@@ -273,6 +274,11 @@ export function InvitesSection() {
                 <Copy className="h-4 w-4" />
                 Copy link
               </Button>
+              <ShareTextButton
+                label="Share invite"
+                title={`Join ${selectedCompany?.name || "us"} on GS Agentic Manager`}
+                getText={() => `You're invited to join ${selectedCompany?.name || "us"} on GS Agentic Manager: ${latestInviteUrl}`}
+              />
             </div>
           </div>
         ) : null}
