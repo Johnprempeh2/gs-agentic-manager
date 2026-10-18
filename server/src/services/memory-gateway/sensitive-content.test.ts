@@ -28,6 +28,8 @@ describe("detectSensitiveContent (GRE-868)", () => {
     "Placeholder 0000 0000 0000 0000.",
     "postgres://localhost/syn has no password.",
     "Call the office on 020 7946 0000.",
+    // Its digit groups 8483-5871-4799-8095 pass Luhn; an id is not a card number.
+    "Source issue bfbf8483-5871-4799-8095-f9027c6f9ac5.",
   ])("leaves ordinary text alone: %s", (text) => {
     expect(detectSensitiveContent(text)).toEqual([]);
   });
