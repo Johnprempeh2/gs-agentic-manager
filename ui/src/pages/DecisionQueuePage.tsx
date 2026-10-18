@@ -209,7 +209,7 @@ export function DecisionQueuePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.decisionQueues.list(selectedCompanyId!) }),
     onError: (err) =>
       pushToast({
-        title: "Could not update seeding",
+        title: "Could not change automatic adding",
         body: err instanceof Error ? err.message : "Please try again.",
         tone: "error",
       }),
@@ -456,7 +456,7 @@ function QueueItemRow({
     },
     onError: (err) =>
       pushToast({
-        title: "Could not exclude",
+        title: "Could not remove it from the queue",
         body: err instanceof Error ? err.message : "Please try again.",
         tone: "error",
       }),

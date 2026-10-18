@@ -671,14 +671,14 @@ export function IssueRunLedgerContent({
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-medium text-muted-foreground">
-            Run ledger
+            Work history
           </h3>
           <p className="text-xs text-muted-foreground">
             {latestRun
               ? runSummary(latestRun, agentMap)
               : issueStatus === "in_progress"
-                ? "Waiting for the first run record."
-                : "No runs linked yet."}
+                ? "Waiting for the agent to start."
+                : "No work on this yet."}
           </p>
         </div>
         {latestRun ? (
@@ -686,7 +686,7 @@ export function IssueRunLedgerContent({
             to={`/agents/${latestRun.agentId}/runs/${latestRun.runId}`}
             className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            Latest run
+            Latest work
           </Link>
         ) : null}
       </div>
@@ -739,8 +739,8 @@ export function IssueRunLedgerContent({
         >
           <p className="font-medium">
             {latestSilentRun.outputSilence.level === "critical"
-              ? "Critical output silence"
-              : "Output silence watchdog warning"}
+              ? "The agent has gone quiet"
+              : "The agent has been quiet for a while"}
           </p>
           <p className="mt-1">
             Latest active run has been silent for{" "}
@@ -831,8 +831,8 @@ export function IssueRunLedgerContent({
       {feedItems.length === 0 ? (
         <div className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
           {renderActivityEvent
-            ? "Runs and activity will appear here once this task has history."
-            : "Historical runs without liveness metadata will appear here once linked to this task."}
+            ? "Work and updates will show here once this task has history."
+            : "Past work on this task will show here."}
         </div>
       ) : (
         <div className="space-y-1.5">
@@ -948,7 +948,7 @@ export function IssueRunLedgerContent({
                     className="rounded-md border border-border px-1.5 py-0.5 text-(length:--text-micro) text-foreground hover:bg-accent/40"
                     onClick={() => setInspectedRun(run)}
                   >
-                    Inspect run
+                    See what the agent did
                   </button>
                 </div>
 

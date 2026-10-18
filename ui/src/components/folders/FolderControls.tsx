@@ -341,7 +341,7 @@ export function FolderRailItem({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={onStartRename}>Rename</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onEdit}>Edit color</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onEdit}>Edit colour</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={onDelete}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -654,7 +654,7 @@ export function FolderFormDialog({
             />
           </div>
           <div className="space-y-2">
-            <div className="text-sm font-medium">Color</div>
+            <div className="text-sm font-medium">Colour</div>
             <div className="flex flex-wrap gap-2">
               {FOLDER_COLORS.map((swatch) => (
                 <button

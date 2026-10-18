@@ -873,8 +873,8 @@ export function IssueProperties({
   const assigneeOptionsContent = supportsAssigneeOverrides ? (
     <div className="w-full space-y-3 p-2">
       <div className="space-y-1.5">
-        <div className="text-xs text-muted-foreground">Model lane</div>
-        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Model lane">
+        <div className="text-xs text-muted-foreground">Which AI model</div>
+        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Which AI model">
           {(["primary", "custom"] as const).map((lane) => (
             <button
               key={lane}
@@ -882,12 +882,12 @@ export function IssueProperties({
               role="radio"
               aria-checked={assigneeOverrideLane === lane}
               className={cn(
-                "flex-1 px-2 py-1 text-xs capitalize transition-colors hover:bg-accent/40",
+                "flex-1 px-2 py-1 text-xs transition-colors hover:bg-accent/40",
                 assigneeOverrideLane === lane && "bg-accent text-foreground",
               )}
               onClick={() => setAssigneeOverrideLane(lane)}
             >
-              {lane === "primary" ? "Primary" : "Override"}
+              {lane === "primary" ? "Agent's usual" : "Pick one for this task"}
             </button>
           ))}
         </div>

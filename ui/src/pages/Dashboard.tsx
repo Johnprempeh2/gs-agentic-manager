@@ -21,6 +21,7 @@ import { DashboardHero } from "../components/DashboardHero";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
@@ -157,17 +158,29 @@ export function Dashboard() {
   // tolerated so one bad agent never blocks the rest, and the refetch below
   // re-renders the banner with whatever remains paused.
   const queryClient = useQueryClient();
+  const toastActions = useOptionalToastActions();
   const resumeImportedAgents = useMutation({
     mutationFn: async () => {
       const targets = derivePausedAgentBanner(agents);
-      if (!targets || targets.kind !== "imported") return;
+      if (!targets || targets.kind !== "imported") return 0;
+      let failed = 0;
       for (const agentId of targets.pausedImportedAgentIds) {
         try {
           await agentsApi.resume(agentId, selectedCompanyId ?? undefined);
         } catch {
           // Leave the agent paused; the banner re-renders with the remainder.
+          failed += 1;
         }
       }
+      return failed;
+    },
+    onSuccess: (failed) => {
+      if (!failed) return;
+      toastActions?.pushToast({
+        title: failed === 1 ? "Could not resume 1 agent" : `Could not resume ${failed} agents`,
+        body: "They are still paused. Open each one from Agents to see why.",
+        tone: "error",
+      });
     },
     onSettled: async () => {
       await Promise.all([
@@ -544,7 +557,7 @@ export function Dashboard() {
                 <MetricCard
                   icon={Bot}
                   value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
-                  label="Agents Enabled"
+                  label="Agents switched on"
                   to="/agents"
                   description={
                     <span>
@@ -557,7 +570,7 @@ export function Dashboard() {
                 <MetricCard
                   icon={CircleDot}
                   value={data.tasks.inProgress}
-                  label="Tasks In Progress"
+                  label="Tasks in progress"
                   to="/issues"
                   description={
                     <span>
@@ -569,7 +582,7 @@ export function Dashboard() {
                 <MetricCard
                   icon={DollarSign}
                   value={formatCents(data.costs.monthSpendCents)}
-                  label="Month Spend"
+                  label="Spent this month"
                   to="/costs"
                   description={
                     <span>
@@ -590,7 +603,7 @@ export function Dashboard() {
                 <MetricCard
                   icon={ShieldCheck}
                   value={data.pendingApprovals + data.budgets.pendingApprovals}
-                  label="Pending Approvals"
+                  label="Waiting for your approval"
                   to={data.pendingApprovals === 0 && data.budgets.pendingApprovals > 0 ? "/costs" : "/approvals"}
                   description={
                     <span>
@@ -616,14 +629,14 @@ export function Dashboard() {
                 </ChartCard>
                 {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
                 {SHOW_TASK_PRIORITY_UI && (
-                  <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(companyStart)}>
+                  <ChartCard title="Tasks by priority" subtitle={chartWindowLabel(companyStart)}>
                     <PriorityChart issues={issues ?? []} start={companyStart} />
                   </ChartCard>
                 )}
-                <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Tasks by status" subtitle={chartWindowLabel(companyStart)}>
                   <IssueStatusChart issues={issues ?? []} start={companyStart} />
                 </ChartCard>
-                <ChartCard title="Success Rate" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Work finished cleanly" subtitle={chartWindowLabel(companyStart)}>
                   <SuccessRateChart activity={data.runActivity} start={companyStart} />
                 </ChartCard>
               </div>

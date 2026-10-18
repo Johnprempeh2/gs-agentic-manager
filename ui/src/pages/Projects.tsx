@@ -260,7 +260,7 @@ export function Projects() {
         <div className="space-y-6">
           {([
             ["My Projects", groupedProjects.mine],
-            ["Other Projects", groupedProjects.other],
+            ["Other projects", groupedProjects.other],
           ] as const).map(([label, sectionProjects]) => {
             if (sectionProjects.length === 0) return null;
 
