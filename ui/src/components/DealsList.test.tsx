@@ -5,10 +5,10 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineStage } from "../api/pipelines";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DealsList, buildDealRows, sortDealRows, withDealOwner } from "./DealsList";
+import { DealsList, buildDealRows, bulkMoveStages, sortDealRows, withDealOwner } from "./DealsList";
 
-const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), pushToast: vi.fn() }));
-vi.mock("../api/pipelines", () => ({ pipelinesApi: { updateCase: mocks.updateCase } }));
+const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), transitionCase: vi.fn(), pushToast: vi.fn() }));
+vi.mock("../api/pipelines", () => ({ pipelinesApi: { updateCase: mocks.updateCase, transitionCase: mocks.transitionCase } }));
 vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: mocks.pushToast }) }));
 
 vi.mock("@/lib/router", () => ({
@@ -19,9 +19,9 @@ vi.mock("@/lib/router", () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 const stages = [
-  { id: "s1", name: "Qualified", kind: "working", position: 0 },
-  { id: "s2", name: "Proposal", kind: "working", position: 1 },
-  { id: "won", name: "Won", kind: "done", position: 2 },
+  { id: "s1", key: "qualified", name: "Qualified", kind: "working", position: 0 },
+  { id: "s2", key: "proposal", name: "Proposal", kind: "working", position: 1 },
+  { id: "won", key: "won", name: "Won", kind: "done", position: 2 },
 ] as PipelineStage[];
 
 const cases = [
@@ -81,6 +81,41 @@ describe("DealsList", () => {
     });
     expect(mocks.updateCase.mock.calls.map((call) => [call[0], call[1].fields.dealOwner])).toEqual([["b", "Ben"], ["a", "Ben"]]);
     expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Owner changed on 2 deals", tone: "success" });
+    root.unmount();
+  });
+
+  it("offers only open stages for a bulk move", () => {
+    expect(bulkMoveStages(stages).map((stage) => stage.id)).toEqual(["s1", "s2"]);
+  });
+
+  it("moves the selected deals to a stage and reports the ones a rule stopped", async () => {
+    mocks.pushToast.mockClear();
+    mocks.transitionCase.mockReset();
+    mocks.transitionCase.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("gate"));
+    const extra = { id: "d", pipelineId: "p", title: "Delta", stageId: "s1", stageEnteredAt: "2026-10-16T12:00:00Z", fields: {} };
+    const versioned = [...cases, extra].map((item, index) => ({ ...item, version: index + 3 }));
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><DealsList cases={versioned} stages={stages} /></QueryClientProvider>));
+    const box = (label: string) => container.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement;
+    await act(async () => box("Select every deal").click());
+    const select = container.querySelector('select[aria-label="Stage to move to"]') as HTMLSelectElement;
+    await act(async () => {
+      select.value = "s2";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector('form[aria-label="Move to stage"]') as HTMLFormElement).requestSubmit();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    // Acme is already in Proposal and Corp is won, so only Beta and Delta are sent.
+    expect(mocks.transitionCase.mock.calls.map((call) => call[0]).sort()).toEqual(["b", "d"]);
+    expect(mocks.transitionCase).toHaveBeenCalledWith("b", { toStageKey: "proposal", expectedVersion: 4 });
+    expect(mocks.pushToast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Moved 1 deal to Proposal",
+      tone: "warn",
+      body: expect.stringContaining("1 won or lost deal was left as it was."),
+    }));
     root.unmount();
   });
 });
