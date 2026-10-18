@@ -168,7 +168,16 @@ export function routineRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
-    const result = await svc.list(companyId, { projectId });
+    // "me" lets an agent list the routines it runs without knowing its own id.
+    const rawAssignee = typeof req.query.assigneeAgentId === "string" ? req.query.assigneeAgentId : undefined;
+    const assigneeAgentId = rawAssignee === "me"
+      ? (req.actor.type === "agent" ? req.actor.agentId : undefined)
+      : rawAssignee;
+    if (rawAssignee === "me" && !assigneeAgentId) {
+      res.status(400).json({ error: "assigneeAgentId=me needs an agent key" });
+      return;
+    }
+    const result = await svc.list(companyId, { projectId, assigneeAgentId });
     res.json(result);
   });
 

@@ -71,6 +71,29 @@ const blocking = (result: AdapterEnvironmentTestResult) =>
   result.status === "fail" ||
   result.checks.some((check) => check.code === ADAPTER_AUTH_MISSING_CHECK_CODE);
 
+const CREDENTIAL_PROVIDER_NAMES: Record<string, string> = {
+  ANTHROPIC: "Anthropic",
+  OPENAI: "OpenAI",
+  CURSOR: "Cursor",
+  GEMINI: "Gemini",
+  GOOGLE: "Google",
+  HERMES: "Hermes",
+  OPENROUTER: "OpenRouter",
+};
+
+/** "ANTHROPIC_API_KEY" reads "Anthropic API key", never the raw variable name. */
+function credentialKeyLabel(envKey: string): string {
+  const match = /^(.*?)_?API_KEY$/.exec(envKey);
+  if (match && !match[1]) return "API key";
+  if (match && CREDENTIAL_PROVIDER_NAMES[match[1]]) return `${CREDENTIAL_PROVIDER_NAMES[match[1]]} API key`;
+  const words = envKey.split("_").filter(Boolean).map((word, index) => {
+    if (word === "API" || word === "URL") return word;
+    const lower = word.toLowerCase();
+    return index === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+  });
+  return words.join(" ");
+}
+
 export function NewAgentSetup() {
   const { selectedCompanyId } = useCompany();
   const [params] = useSearchParams();
@@ -268,6 +291,7 @@ function Setup({
     caps.data?.sandboxProviders?.[sandboxProvider]?.supportsLoginPty === true;
   const envKey =
     SETUP_CREDENTIAL_KEYS[adapterType] ?? providerKeys[provider] ?? "API_KEY";
+  const envKeyName = credentialKeyLabel(envKey);
   const savedKey = userSecrets.data?.find(
     (entry) => entry.definition.key === envKey && entry.secret,
   );
@@ -393,7 +417,7 @@ function Setup({
       throw new Error(
         adapterType === "cursor_cloud"
           ? "Enter a Cursor API key."
-          : `Enter ${envKey} or choose a saved organisation key.`,
+          : `Enter your ${envKeyName} or choose a saved one.`,
       );
     if (adapterType === "hermes_gateway") {
       try {
@@ -589,7 +613,7 @@ function Setup({
   ];
   const labels = {
     connect: "Connect",
-    runtime: "Configure",
+    runtime: "Set up",
     saved: "Confirmation",
   };
   const confirmationEnvironment = created?.defaultEnvironmentId
@@ -763,7 +787,7 @@ function Setup({
                             </dd>
                           </>
                         )}
-                        <dt className="text-muted-foreground">Environment</dt>
+                        <dt className="text-muted-foreground">Where it runs</dt>
                         <dd>{environmentLabel}</dd>
                       </dl>
                       <p className="text-sm text-muted-foreground">
@@ -935,10 +959,10 @@ function Setup({
                                   : undefined
                               }
                             >
-                              <Field label={envKey}>
+                              <Field label={envKeyName}>
                                 <div className="flex items-center gap-3">
                                   <Input
-                                    aria-label={envKey}
+                                    aria-label={envKeyName}
                                     type="password"
                                     autoComplete="off"
                                     value={apiKey}
@@ -955,7 +979,7 @@ function Setup({
                                               "hermes_gateway",
                                             ].includes(adapterType)
                                           ? "Required"
-                                          : "Optional if already configured"
+                                          : "Leave blank if you already set one up"
                                     }
                                   />
                                   {adapterType === "cursor_cloud" && (
@@ -965,7 +989,7 @@ function Setup({
                                       rel="noopener noreferrer"
                                       className="shrink-0 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
                                     >
-                                      get api key
+                                      Get an API key
                                     </a>
                                   )}
                                 </div>
@@ -1098,9 +1122,9 @@ function Setup({
                         adapterType,
                       ) && (
                         <section className="space-y-5">
-                          <h3 className="text-sm font-semibold">Environment</h3>
+                          <h3 className="text-sm font-semibold">Where it runs</h3>
                           <select
-                            aria-label="Environment"
+                            aria-label="Where it runs"
                             className={controlClass}
                             value={environmentOverride}
                             disabled={forced.forced || managedOnly}

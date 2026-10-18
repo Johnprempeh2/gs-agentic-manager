@@ -609,6 +609,7 @@ export function registerAgentCommands(program: Command): void {
     ["terminate", "terminate", "Terminate an agent"],
     ["heartbeat:invoke", "heartbeat/invoke", "Invoke an agent heartbeat"],
     ["claude-login", "claude-login", "Trigger Claude login for an agent"],
+    ["clear-error", "clear-error", "Clear an agent's error state"],
   ] as const) {
     addCommonClientOptions(
       agent

@@ -21,6 +21,7 @@ import {
   databaseSignInLockoutStore,
   signInLockoutPlugin,
 } from "./sign-in-lockout.js";
+import { signInHistoryPlugin } from "./sign-in-history.js";
 import { twoStepRequiredPlugin } from "./two-step-requirement.js";
 import {
   workspaceLoginHandoffPlugin,
@@ -297,6 +298,9 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
           twoFactor({ issuer: TWO_FACTOR_ISSUER, backupCodeOptions: { amount: 10 } }),
           // While an admin requires two-step sign-in, nobody can turn it off.
           twoStepRequiredPlugin(db),
+          // Each person's recent sign-in attempts, for Profile. After
+          // twoFactor, so it sees a password step held for its code.
+          signInHistoryPlugin(db, AUTH_CLIENT_IP_HEADER),
         ]
       : []),
     // Closed sign-up is enforced here rather than by Better Auth's own

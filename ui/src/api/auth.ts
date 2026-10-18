@@ -23,6 +23,16 @@ export type SignedInDevice = {
   current: boolean;
 };
 
+/** One recent sign-in attempt on this person's account. */
+export type SignInAttempt = {
+  id: string;
+  /** signed_in, wrong_password, or code_needed (password right, two-step code not given). */
+  outcome: "signed_in" | "wrong_password" | "code_needed";
+  ipAddress: string | null;
+  userAgent: string | null;
+  at: string;
+};
+
 type AuthErrorBody =
   | {
     code?: string;
@@ -284,6 +294,18 @@ export const authApi = {
     if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
     const rows = (payload as { sessions?: unknown } | null)?.sessions;
     return Array.isArray(rows) ? (rows as SignedInDevice[]) : [];
+  },
+
+  /** This person's recent sign-in attempts, newest first. */
+  listSignInHistory: async (): Promise<SignInAttempt[]> => {
+    const res = await fetch("/api/auth/sign-in-history", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
+    const rows = (payload as { events?: unknown } | null)?.events;
+    return Array.isArray(rows) ? (rows as SignInAttempt[]) : [];
   },
 
   signOutDevice: async (sessionId: string) => {

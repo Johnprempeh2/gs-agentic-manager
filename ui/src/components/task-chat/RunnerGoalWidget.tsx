@@ -20,10 +20,10 @@ const PENDING_LABELS: Record<string, string> = {
   starting: "Starting",
   editing: "Saving",
   replacing: "Replacing",
-  pausing: "Pausing after current turn",
+  pausing: "Pausing after this step",
   resuming: "Resuming",
   clearing: "Clearing",
-  continuing: "Continuing in a new run",
+  continuing: "Carrying on",
 };
 
 function requestId() {
@@ -98,7 +98,7 @@ export function useRunnerGoalControl(issueId: string | null, agentId: string | n
       const current = query.data ?? (await query.refetch()).data;
       if (!current?.agentId) throw new Error(current?.capability.reason ?? "Select an agent to use /goal.");
       if (current.capability.availability !== "available") {
-        throw new Error(current.capability.reason ?? "Session goals are unsupported by this agent.");
+        throw new Error(current.capability.reason ?? "This agent cannot work towards a goal on its own.");
       }
       await mutation.mutateAsync({
         requestId: requestId(),
@@ -300,7 +300,7 @@ export function RunnerGoalWidget({ control }: { control: RunnerGoalControl }) {
             void control.submitDialog();
           }}>
             <DialogHeader>
-              <DialogTitle>{control.dialog?.action === "replace" ? "Replace session goal?" : "Edit session goal"}</DialogTitle>
+              <DialogTitle>{control.dialog?.action === "replace" ? "Replace the goal?" : "Edit the goal"}</DialogTitle>
               <DialogDescription>
                 {control.dialog?.action === "replace"
                   ? "This clears the unfinished goal and starts a new goal with the objective below."

@@ -18,6 +18,7 @@ const mockAuthApi = vi.hoisted(() => ({
   signOut: vi.fn(),
   getTwoStepStatus: vi.fn(async () => ({ enabled: false, available: false })),
   listSessions: vi.fn(async () => []),
+    listSignInHistory: vi.fn(async () => []),
   signOutDevice: vi.fn(),
   signOutOtherDevices: vi.fn(),
 }));

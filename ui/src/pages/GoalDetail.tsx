@@ -106,13 +106,13 @@ export function GoalDetail() {
   });
   const resolvedCompanyId = goal?.companyId ?? selectedCompanyId;
 
-  const { data: allGoals } = useQuery({
+  const { data: allGoals, error: allGoalsError, refetch: refetchAllGoals, isFetching: allGoalsFetching } = useQuery({
     queryKey: queryKeys.goals.list(resolvedCompanyId!),
     queryFn: () => goalsApi.list(resolvedCompanyId!),
     enabled: !!resolvedCompanyId
   });
 
-  const { data: allProjects } = useQuery({
+  const { data: allProjects, error: allProjectsError, refetch: refetchAllProjects, isFetching: allProjectsFetching } = useQuery({
     queryKey: queryKeys.projects.list(resolvedCompanyId!, { includeArchived: true }),
     queryFn: () => projectsApi.list(resolvedCompanyId!, { includeArchived: true }),
     enabled: !!resolvedCompanyId
@@ -124,7 +124,7 @@ export function GoalDetail() {
     enabled: !!resolvedCompanyId
   });
 
-  const { data: checkIns } = useQuery({
+  const { data: checkIns, error: checkInsError, refetch: refetchCheckIns, isFetching: checkInsFetching } = useQuery({
     queryKey: queryKeys.goals.checkIns(goalId!),
     queryFn: () => goalsApi.listCheckIns(goalId!),
     enabled: !!goalId
@@ -452,17 +452,27 @@ export function GoalDetail() {
         <h3 id="goal-recap-heading" className="text-sm font-semibold">
           Recap
         </h3>
-        <GoalCheckIns
-          checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
-          agentsById={agentsById}
-          ownerName={ownerName}
-        />
+        {checkInsError && !goal.latestCheckIn ? (
+          <ErrorState
+            compact
+            error={checkInsError}
+            title="Check-ins did not load"
+            onRetry={() => void refetchCheckIns()}
+            retrying={checkInsFetching}
+          />
+        ) : (
+          <GoalCheckIns
+            checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
+            agentsById={agentsById}
+            ownerName={ownerName}
+          />
+        )}
       </section>
 
       <Tabs defaultValue="children">
         <TabsList>
           <TabsTrigger value="children">
-            Sub-Goals ({childGoals.length})
+            Smaller goals ({childGoals.length})
           </TabsTrigger>
           <TabsTrigger value="projects">
             Projects ({linkedProjects.length})
@@ -477,7 +487,7 @@ export function GoalDetail() {
               onClick={() => openNewGoal({ parentId: goalId })}
             >
               <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Sub Goal
+              Smaller goal
             </Button>
             {kind && GOAL_KIND_PARENTS.kpi?.includes(kind) ? (
               <Button size="sm" variant="outline" className="ml-2" onClick={() => setPackDialogOpen(true)}>
@@ -486,7 +496,15 @@ export function GoalDetail() {
               </Button>
             ) : null}
           </div>
-          {childGoals.length === 0 ? (
+          {allGoalsError ? (
+            <ErrorState
+              compact
+              error={allGoalsError}
+              title="Smaller goals did not load"
+              onRetry={() => void refetchAllGoals()}
+              retrying={allGoalsFetching}
+            />
+          ) : childGoals.length === 0 ? (
             <p className="text-sm text-muted-foreground">This goal has no smaller goals yet.</p>
           ) : (
             <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
@@ -500,7 +518,15 @@ export function GoalDetail() {
               New project
             </Button>
           </div>
-          {linkedProjects.length === 0 ? (
+          {allProjectsError ? (
+            <ErrorState
+              compact
+              error={allProjectsError}
+              title="Projects did not load"
+              onRetry={() => void refetchAllProjects()}
+              retrying={allProjectsFetching}
+            />
+          ) : linkedProjects.length === 0 ? (
             <p className="text-sm text-muted-foreground">No projects are linked to this goal yet. Create one here and it is linked for you.</p>
           ) : (
             <div className="border border-border">

@@ -873,8 +873,8 @@ export function IssueProperties({
   const assigneeOptionsContent = supportsAssigneeOverrides ? (
     <div className="w-full space-y-3 p-2">
       <div className="space-y-1.5">
-        <div className="text-xs text-muted-foreground">Model lane</div>
-        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Model lane">
+        <div className="text-xs text-muted-foreground">Which AI model</div>
+        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Which AI model">
           {(["primary", "custom"] as const).map((lane) => (
             <button
               key={lane}
@@ -882,12 +882,12 @@ export function IssueProperties({
               role="radio"
               aria-checked={assigneeOverrideLane === lane}
               className={cn(
-                "flex-1 px-2 py-1 text-xs capitalize transition-colors hover:bg-accent/40",
+                "flex-1 px-2 py-1 text-xs transition-colors hover:bg-accent/40",
                 assigneeOverrideLane === lane && "bg-accent text-foreground",
               )}
               onClick={() => setAssigneeOverrideLane(lane)}
             >
-              {lane === "primary" ? "Primary" : "Override"}
+              {lane === "primary" ? "Agent's usual" : "Pick one for this task"}
             </button>
           ))}
         </div>
@@ -1498,7 +1498,7 @@ export function IssueProperties({
         ) : null}
         {scheduledRetry.retryOfRunId ? (
           <>
-            <dt className="text-muted-foreground">Replaces run</dt>
+            <dt className="text-muted-foreground">Follows</dt>
             <dd className="text-foreground">
               <Link
                 to={`/agents/${scheduledRetry.agentId}/runs/${scheduledRetry.retryOfRunId}`}
@@ -1554,7 +1554,7 @@ export function IssueProperties({
           ) : scheduledRetryRetryNowSuccess ? (
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              {retryNow.data?.outcome === "already_promoted" ? "Already promoted" : "Promoted"}
+              {retryNow.data?.outcome === "already_promoted" ? "Already starting" : "Started"}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5">
@@ -1565,14 +1565,14 @@ export function IssueProperties({
         </Button>
         <span className="text-right text-xs text-muted-foreground">
           {retryNow.isPending
-            ? "Promoting scheduled retry"
+            ? "Starting now…"
             : scheduledRetryRetryNowSuccess
               ? retryNow.data?.outcome === "already_promoted"
-                ? "Already promoted: run starting"
-                : "Promoted: run starting"
+                ? "Already starting"
+                : "The agent is starting again"
               : scheduledRetryIsContinuation
-                ? "Pulls continuation forward immediately"
-                : "Pulls retry forward immediately"}
+                ? "Start it now instead of waiting"
+                : "Try again now instead of waiting"}
         </span>
       </div>
     </div>
@@ -2809,7 +2809,7 @@ export function IssueProperties({
 
         {showScheduledRetryRow && scheduledRetry?.scheduledRetryReason === "workspace_busy" ? (
           <PropertyRow label="Workspace">
-            <span className="text-sm text-muted-foreground">Waiting for workspace</span>
+            <span className="text-sm text-muted-foreground">Waiting for another task to finish</span>
           </PropertyRow>
         ) : showScheduledRetryRow && scheduledRetryContent ? (
           <PropertyPicker

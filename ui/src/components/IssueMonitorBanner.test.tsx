@@ -34,8 +34,8 @@ describe("buildMonitorSurfaceCopy", () => {
     const copy = buildMonitorSurfaceCopy(derived({
       state, source: "scheduled-retry", nextCheckAt: NOW.toISOString(), attemptCount: 4,
     }), NOW, "workspace_busy");
-    expect(copy!.bannerTitle).toBe("Waiting for workspace");
-    expect(copy!.stripTitle).toBe("Waiting for workspace");
+    expect(copy!.bannerTitle).toBe("Waiting for another task to finish");
+    expect(copy!.stripTitle).toBe("Waiting for another task");
     expect(copy!.tone).toBe("info");
     expect(copy!.workspaceWait).toBe(true);
     expect(copy!.bannerMeta.join(" ")).not.toMatch(/Attempt|overdue|retry/i);
@@ -52,11 +52,11 @@ describe("buildMonitorSurfaceCopy", () => {
     );
 
     expect(copy).not.toBeNull();
-    expect(copy!.bannerTitle).toBe("Waiting on monitor: resumes in 2h 12m");
+    expect(copy!.bannerTitle).toBe("Agent checks back in 2h 12m");
     expect(copy!.stripTitle).toBe("Resumes in 2h 12m");
     expect(copy!.tone).toBe("info");
     expect(copy!.bannerMeta).toContain("Attempt 1");
-    expect(copy!.bannerMeta).toContain("Watching: vercel-deploy");
+    expect(copy!.bannerMeta).toContain("Checking: vercel-deploy");
     // Absolute time carries the "(your time)" hint on the banner only.
     expect(copy!.bannerMeta.some((piece) => piece.includes("(your time)"))).toBe(true);
     expect(copy!.stripMeta.some((piece) => piece.includes("(your time)"))).toBe(false);
@@ -95,7 +95,7 @@ describe("buildMonitorSurfaceCopy", () => {
       derived({ state: "due-now", nextCheckAt: NOW.toISOString(), attemptCount: 1 }),
       NOW,
     );
-    expect(dueNow!.bannerTitle).toBe("Waiting on monitor: due now");
+    expect(dueNow!.bannerTitle).toBe("Agent checks back now");
     expect(dueNow!.stripTitle).toBe("Due now");
     expect(dueNow!.bannerMeta).toContain("Checking momentarily…");
     expect(dueNow!.tone).toBe("info");
@@ -108,9 +108,9 @@ describe("buildMonitorSurfaceCopy", () => {
       }),
       NOW,
     );
-    expect(overdue!.bannerTitle).toBe("Waiting on monitor: overdue by 18m");
+    expect(overdue!.bannerTitle).toBe("Agent checks back: overdue by 18m");
     expect(overdue!.stripTitle).toBe("Overdue by 18m");
-    expect(overdue!.bannerMeta).toContain("Fires on next tick");
+    expect(overdue!.bannerMeta).toContain("Starting shortly");
     expect(overdue!.tone).toBe("warning");
   });
 
@@ -152,7 +152,7 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
     } as Issue;
     const root = createRoot(container);
     flushSync(() => root.render(<><IssueMonitorBanner issue={issue} onCheckNow={vi.fn()} /><IssueMonitorComposerStrip issue={issue} onCheckNow={vi.fn()} /></>));
-    expect(container.textContent).toContain("Waiting for workspace");
+    expect(container.textContent).toContain("Waiting for another task to finish");
     expect(container.textContent).toContain("You can keep sending instructions while the agent waits.");
     expect(container.textContent).not.toContain("wakes the agent now");
     expect(container.querySelector("button")).toBeNull();
@@ -186,8 +186,8 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
       );
     });
 
-    expect(container.textContent).toContain("Waiting on monitor: resumes in 2h");
-    expect(container.textContent).toContain("Watching: vercel-deploy");
+    expect(container.textContent).toContain("Agent checks back in 2h");
+    expect(container.textContent).toContain("Checking: vercel-deploy");
 
     const button = Array.from(container.querySelectorAll("button")).find((b) =>
       b.textContent?.includes("Check now"),

@@ -5371,6 +5371,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/api/labels/{labelId}",
+  tags: ["issues"],
+  summary: "Rename or recolour a label",
+  request: {
+    params: z.object({ labelId: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ name: z.string().optional(), color: z.string().optional() }) } } },
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "delete",
   path: "/api/labels/{labelId}",
   tags: ["issues"],
@@ -5578,7 +5590,13 @@ registry.registerPath({
   path: "/api/companies/{companyId}/routines",
   tags: ["routines"],
   summary: "List routines in a company",
-  request: { params: z.object({ companyId: z.string() }) },
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      projectId: z.string().optional(),
+      assigneeAgentId: z.string().optional().describe("Agent id, or me for the calling agent"),
+    }),
+  },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -9151,6 +9169,14 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/auth/sign-in-history",
+  tags: ["auth"],
+  summary: "The current user's recent sign-in attempts (signed in, wrong password, waiting for a two-step code)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/auth/sessions/revoke-others",
   tags: ["auth"],
@@ -12317,6 +12343,11 @@ for (const route of [
     "get",
     "/api/companies/{companyId}/search/pipeline-summary",
     "Summarise open deals per stage with value and the largest deals",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/won-lost",
+    "List deals won and lost lately with value and lost reasons",
   ],
   [
     "get",

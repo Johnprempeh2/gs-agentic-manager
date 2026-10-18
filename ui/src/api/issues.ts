@@ -230,6 +230,7 @@ export const issuesApi = {
     api.get<IssueLabel[]>(`/companies/${companyId}/labels`),
   createLabel: (companyId: string, data: { name: string; color: string }) =>
     api.post<IssueLabel>(`/companies/${companyId}/labels`, data),
+  updateLabel: (id: string, data: { name?: string; color?: string }) => api.patch<IssueLabel>(`/labels/${id}`, data),
   deleteLabel: (id: string) => api.delete<IssueLabel>(`/labels/${id}`),
   get: (id: string, options?: RequestOptions) =>
     options

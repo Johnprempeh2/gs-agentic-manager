@@ -335,7 +335,35 @@ describe("routine routes", () => {
       .query({ projectId });
 
     expect(res.status).toBe(200);
-    expect(mockRoutineService.list).toHaveBeenCalledWith(companyId, { projectId });
+    expect(mockRoutineService.list).toHaveBeenCalledWith(companyId, { projectId, assigneeAgentId: undefined });
+  });
+
+  it("lists only the calling agent's routines for assigneeAgentId=me", async () => {
+    const app = await createApp({ type: "agent", agentId, companyId, source: "agent_key" });
+
+    const res = await request(app)
+      .get(`/api/companies/${companyId}/routines`)
+      .query({ assigneeAgentId: "me" });
+
+    expect(res.status).toBe(200);
+    expect(mockRoutineService.list).toHaveBeenCalledWith(companyId, { projectId: undefined, assigneeAgentId: agentId });
+  });
+
+  it("refuses assigneeAgentId=me from a board user", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "board-user",
+      source: "session",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await request(app)
+      .get(`/api/companies/${companyId}/routines`)
+      .query({ assigneeAgentId: "me" });
+
+    expect(res.status).toBe(400);
+    expect(mockRoutineService.list).not.toHaveBeenCalled();
   });
 
   it("lists routine revisions for a board member in newest-first service order", async () => {

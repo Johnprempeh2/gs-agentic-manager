@@ -256,7 +256,7 @@ export function NotificationSettings() {
         ) : null}
       </Section>
 
-      <Section title="Evening wrap-up" description="One message at the end of the day: what got done today and what still needs you.">
+      <Section title="Evening wrap-up" description="One message at the end of the day: what got done today, what still needs you and what is due tomorrow.">
         <ChoiceRow
           label="Send me an evening wrap-up"
           description={prefs.eveningSummary ? `Every day at ${hourLabel(prefs.eveningSummaryHour)}, your time.` : "Off."}

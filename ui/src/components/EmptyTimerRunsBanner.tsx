@@ -42,7 +42,7 @@ export function EmptyTimerRunsBanner({ companyId, agents }: { companyId: string;
       return done;
     },
     onSuccess: (done) => {
-      pushToast({ tone: "success", title: `${done} ${done === 1 ? "agent now skips" : "agents now skip"} empty timer runs` });
+      pushToast({ tone: "success", title: `${done} ${done === 1 ? "agent now skips" : "agents now skip"} needless check-ins` });
     },
     onError: (error) => {
       pushToast({ tone: "error", title: "Could not change every agent", body: error instanceof Error ? error.message : undefined });
@@ -68,14 +68,14 @@ export function EmptyTimerRunsBanner({ companyId, agents }: { companyId: string;
             disabled={apply.isPending}
             onClick={async () => {
               const ok = await confirm({
-                title: `Skip empty timer runs for ${targets.length} ${targets.length === 1 ? "agent" : "agents"}?`,
-                description: `${shown} will still wake for new tasks, comments and changes. Timer runs with nothing new are skipped. You can turn this off on each agent's settings.`,
-                confirmLabel: "Skip empty runs",
+                title: `Stop needless check-ins for ${targets.length} ${targets.length === 1 ? "agent" : "agents"}?`,
+                description: `${shown} will still wake for new tasks, comments and changes. Check-ins with nothing new are skipped. You can turn this off on each agent's settings.`,
+                confirmLabel: "Skip needless check-ins",
               });
               if (ok) apply.mutate(targets);
             }}
           >
-            {apply.isPending ? "Saving" : "Skip empty runs"}
+            {apply.isPending ? "Saving" : "Skip needless check-ins"}
           </Button>
           <Button
             size="sm"

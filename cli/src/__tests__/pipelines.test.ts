@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { completeDealNextStep, registerPipelineCommands, selectDealsDue } from "../commands/pipelines.js";
+import { applyDealSettings, completeDealNextStep, registerPipelineCommands, selectDealsDue } from "../commands/pipelines.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
@@ -229,3 +229,48 @@ describe("completeDealNextStep", () => {
   });
 });
 
+
+describe("applyDealSettings", () => {
+  it("changes only the given fields and removes the ones set to an empty string", () => {
+    expect(applyDealSettings(
+      { dealStatus: "open", dealOwner: "Ann", dealValue: 100, probability: 20, nextActivityDate: "2026-10-15", nextActivitySubject: "Call" },
+      { owner: " Ben ", value: "5000", currency: "gbp", expectedClose: "2026-11-30", probability: "" },
+    )).toEqual({
+      dealStatus: "open",
+      dealOwner: "Ben",
+      dealValue: 5000,
+      dealCurrency: "GBP",
+      expectedCloseDate: "2026-11-30",
+      nextActivityDate: "2026-10-15",
+      nextActivitySubject: "Call",
+    });
+    expect(applyDealSettings({ dealStatus: "open", nextActivityDate: "2026-10-15", nextActivitySubject: "Call" }, { nextDate: "" }))
+      .toEqual({ dealStatus: "open" });
+  });
+
+  it("keeps a lead's keys and rejects bad input", () => {
+    expect(applyDealSettings({ leadValue: 1, leadOwner: "Ann" }, { owner: "Ben", value: "2" })).toEqual({ leadValue: 2, leadOwner: "Ben" });
+    expect(() => applyDealSettings({}, { probability: "120" })).toThrow("--probability must be between 0 and 100");
+    expect(() => applyDealSettings({}, { expectedClose: "30/11/2026" })).toThrow("--expected-close must be YYYY-MM-DD");
+    expect(() => applyDealSettings({}, { value: "lots" })).toThrow("--value must be a number");
+    expect(() => applyDealSettings({ dealStatus: "open" }, { nextSubject: "Demo" })).toThrow("--next-subject needs --next-date");
+  });
+
+  it("sends the changed fields with the case version", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        case: { id: CASE_ID, title: "Acme", version: 4, fields: { dealStatus: "open", dealOwner: "Ann" } },
+        stage: { kind: "working" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ case: { id: CASE_ID } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await run(["pipelines", "case", "set-deal", CASE_ID, "--probability", "60", "--next-date", "2026-10-25", "--next-subject", "Demo"]);
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("PATCH");
+    const body = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(body).toEqual({
+      expectedVersion: 4,
+      fields: { dealStatus: "open", dealOwner: "Ann", probability: 60, nextActivityDate: "2026-10-25", nextActivitySubject: "Demo" },
+    });
+  });
+});

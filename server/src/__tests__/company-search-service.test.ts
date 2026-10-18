@@ -551,10 +551,10 @@ describeEmbeddedPostgres("companySearchService", () => {
       { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 2 },
     ]);
     await db.insert(pipelineCases).values([
-      { companyId, pipelineId, stageId: lead, caseKey: "p1", title: "Small lead", fields: { leadValue: 100, leadCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: lead, caseKey: "p1", title: "Small lead", fields: { leadValue: 100, leadCurrency: "GBP", leadOwner: "Ama" } },
       { companyId, pipelineId, stageId: lead, caseKey: "p2", title: "Unpriced lead", fields: {} },
-      { companyId, pipelineId, stageId: proposal, caseKey: "p3", title: "Big proposal", fields: { dealValue: 9000, dealCurrency: "GBP", expectedCloseDate: "2026-11-01" } },
-      { companyId, pipelineId, stageId: proposal, caseKey: "p4", title: "Dollar proposal", fields: { dealValue: 3000, dealCurrency: "USD" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "p3", title: "Big proposal", fields: { dealValue: 9000, dealCurrency: "GBP", expectedCloseDate: "2026-11-01", dealOwner: "Kofi" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "p4", title: "Dollar proposal", fields: { dealValue: 3000, dealCurrency: "USD", dealOwner: "Kofi" } },
       { companyId, pipelineId, stageId: done, caseKey: "p5", title: "Already won", fields: { dealValue: 99999, dealCurrency: "GBP" } },
     ]);
 
@@ -572,6 +572,43 @@ describeEmbeddedPostgres("companySearchService", () => {
     ]);
     expect(summary.topDeals.map((deal) => deal.title)).toEqual(["Big proposal", "Dollar proposal"]);
     expect(summary.topDeals[0]).toMatchObject({ value: 9000, currency: "GBP", stageName: "Proposal", expectedCloseDate: "2026-11-01" });
+    expect(summary.owners).toEqual([
+      { owner: "Kofi", count: 2, valueByCurrency: [{ currency: "GBP", value: 9000 }, { currency: "USD", value: 3000 }] },
+      { owner: "Ama", count: 1, valueByCurrency: [{ currency: "GBP", value: 100 }] },
+      { owner: null, count: 1, valueByCurrency: [] },
+    ]);
+  });
+
+  it("lists deals won and lost in the window with value and lost reasons", async () => {
+    const companyId = await createCompany();
+    const now = new Date("2026-10-18T09:00:00Z");
+    const pipelineId = randomUUID();
+    const [working, won, lost] = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values([
+      { id: working, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 },
+      { id: won, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 1 },
+      { id: lost, companyId, pipelineId, key: "lost", name: "Lost", kind: "cancelled", position: 2 },
+    ]);
+    await db.insert(pipelineCases).values([
+      { companyId, pipelineId, stageId: won, caseKey: "w1", title: "Imported win", fields: { wonOn: "2026-10-01", dealValue: 4000, dealCurrency: "GBP" }, terminalAt: new Date("2026-10-17T00:00:00Z") },
+      { companyId, pipelineId, stageId: won, caseKey: "w2", title: "Recent win", terminalAt: new Date("2026-10-15T12:00:00Z"), fields: { dealValue: 1000, dealCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: won, caseKey: "w3", title: "Old win", fields: { wonOn: "2025-01-01", dealValue: 99 } },
+      { companyId, pipelineId, stageId: lost, caseKey: "l1", title: "Lost on price", fields: { lostOn: "2026-10-10", lostReason: "Price", dealValue: 500, dealCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: lost, caseKey: "l2", title: "Lost again", fields: { lostOn: "2026-10-12", lostReason: "Price" } },
+      { companyId, pipelineId, stageId: lost, caseKey: "l3", title: "Went quiet", fields: { lostOn: "2026-10-11", lostReason: "No response" } },
+      { companyId, pipelineId, stageId: working, caseKey: "o1", title: "Still open", fields: { wonOn: "2026-10-10" } },
+    ]);
+
+    const result = await quietClientsService(db).wonLost(companyId, { days: 30, limit: 5, now });
+
+    expect(result.won).toMatchObject({ count: 2, valueByCurrency: [{ currency: "GBP", value: 5000 }] });
+    expect(result.won.deals.map((deal) => [deal.title, deal.closedOn])).toEqual([["Recent win", "2026-10-15"], ["Imported win", "2026-10-01"]]);
+    expect(result.lost.count).toBe(3);
+    expect(result.lost.deals[0]).toMatchObject({ title: "Lost again", lostReason: "Price", value: null });
+    expect(result.lost.reasons).toEqual([{ reason: "Price", count: 2 }, { reason: "No response", count: 1 }]);
+    const limited = await quietClientsService(db).wonLost(companyId, { days: 30, limit: 1, now });
+    expect(limited.lost).toMatchObject({ count: 3, deals: [{ title: "Lost again" }] });
   });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {

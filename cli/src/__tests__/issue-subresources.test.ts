@@ -47,6 +47,46 @@ describe("issue subresource commands", () => {
     vi.restoreAllMocks();
   });
 
+  it("wraps diagnostics, execution, digests, agent questions and document links", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({})));
+    vi.stubGlobal("fetch", fetchMock);
+    const AGENT = "12121212-1212-4212-8212-121212121212";
+    const SOURCE = "34343434-3434-4434-8434-343434343434";
+    const LINK = "56565656-5656-4656-8656-565656565656";
+
+    await run(["issue", "diagnose", ISSUE_ID]);
+    await run(["issue", "diagnose", ISSUE_ID, "--wakes"]);
+    await run(["issue", "diagnose", ISSUE_ID, "--subtree"]);
+    await run(["issue", "execution", ISSUE_ID]);
+    await run(["issue", "transcript-digests", ISSUE_ID, "--runs", `${AGENT}, ${SOURCE}`]);
+    await run(["issue", "ask-agent", ISSUE_ID, "--agent", AGENT, "--question", "Which client is this for?"]);
+    await run(["issue", "answer-question", ISSUE_ID, INTERACTION_ID, "--answer", "Acme"]);
+    await run(["issue", "document-links", ISSUE_ID]);
+    await run(["issue", "document-link:create", ISSUE_ID, "--source-issue", SOURCE, "--key", "plan"]);
+    await run(["issue", "document-link:delete", ISSUE_ID, LINK]);
+    await run(["issue", "watchdog", ISSUE_ID]);
+    await run(["issue", "watchdog:set", ISSUE_ID, "--agent", AGENT, "--instructions", "Nudge if idle for a day"]);
+    await run(["issue", "watchdog:clear", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/blockers`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/wakes`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/subtree`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/execution`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/run-transcript-digests?runIds=${AGENT}%2C${SOURCE}`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/agent-questions`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/agent-questions/${INTERACTION_ID}/answer`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links`],
+      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links/${LINK}`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[5]?.[1]?.body))).toEqual({ targetAgentId: AGENT, question: "Which client is this for?" });
+    expect(JSON.parse(String(fetchMock.mock.calls[8]?.[1]?.body))).toEqual({ sourceIssueId: SOURCE, key: "plan" });
+  });
+
   it("lists blocked tasks and what holds them up", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       generatedAt: "2026-10-18T00:00:00Z",
@@ -222,6 +262,7 @@ describe("issue subresource commands", () => {
       await run(["issue", "attachment:delete", ATTACHMENT_ID]);
       await run(["issue", "label:list", "--company-id", COMPANY_ID]);
       await run(["issue", "label:create", "--company-id", COMPANY_ID, "--name", "bug", "--color", "#ff0000"]);
+      await run(["issue", "label:update", LABEL_ID, "--name", "defect"]);
       await run(["issue", "label:delete", LABEL_ID]);
       await run(["issue", "feedback:votes", ISSUE_ID]);
       await run([
@@ -253,6 +294,7 @@ describe("issue subresource commands", () => {
       ["DELETE", `http://localhost:3100/api/attachments/${ATTACHMENT_ID}`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
+      ["PATCH", `http://localhost:3100/api/labels/${LABEL_ID}`],
       ["DELETE", `http://localhost:3100/api/labels/${LABEL_ID}`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],

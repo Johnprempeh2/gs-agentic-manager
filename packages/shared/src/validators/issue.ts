@@ -864,6 +864,15 @@ export const createIssueLabelSchema = z.object({
 
 export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
+/** Rename or recolour a label without removing it from its tasks. */
+export const updateIssueLabelSchema = createIssueLabelSchema
+  .partial()
+  .refine((value) => value.name !== undefined || value.color !== undefined, {
+    message: "Give a new name or colour",
+  });
+
+export type UpdateIssueLabel = z.infer<typeof updateIssueLabelSchema>;
+
 const issueCommentAttachmentIdsSchema = z
   .array(z.string().uuid())
   .max(20)

@@ -187,6 +187,7 @@ describe("AskEverestPanel", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("What is stuck?");
       expect(container.textContent).toContain("What did Mason do today?");
+      expect(container.textContent).toContain("Which deals are closing this month?");
     });
   });
 

@@ -1183,6 +1183,8 @@ The current app also exposes V1-supporting surfaces for:
   close date (overdue first) with value per currency; Ask Everest uses it for "Which deals are closing this month?"
 - `GET /companies/:companyId/search/pipeline-summary?limit=5` returns open deals per stage with value per currency and
   the largest deals; Ask Everest uses it for "How is the pipeline looking?" and agents use `gsam pipeline-summary`
+- `GET /companies/:companyId/search/won-lost?days=30&limit=5` lists deals won and lost in the window with value per
+  currency and top lost reasons; Ask Everest uses it for "What did we win this month?" and agents use `gsam won-lost`
 - execution workspaces, project workspaces, workspace runtime services, and workspace operations. Workspace reads
   derive `deliveryState` as `merged_via_pr | merged_by_ancestry | unmerged | unknown`; terminal issue trees with a
   merged delivery and no active checkout run become cleanup-eligible with reason `issue_terminal` and are archived

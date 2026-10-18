@@ -135,6 +135,16 @@ interface NextStepDoneOptions extends PipelineOptions {
   nextSubject?: string;
 }
 
+interface SetDealOptions extends PipelineOptions {
+  owner?: string;
+  value?: string;
+  currency?: string;
+  expectedClose?: string;
+  probability?: string;
+  nextDate?: string;
+  nextSubject?: string;
+}
+
 interface EditOptions extends PipelineOptions {
   expectedVersion?: string;
   title?: string;
@@ -283,6 +293,48 @@ export function completeDealNextStep(
     delete next.nextActivityDate;
     delete next.nextActivitySubject;
   }
+  return next;
+}
+
+/**
+ * A deal's fields after `case set-deal`. Only the options given change; an
+ * empty string removes that field. A Pipedrive lead keeps its lead keys, like
+ * "Edit deal" on the deal page.
+ */
+export function applyDealSettings(fields: JsonObject | null | undefined, input: Omit<SetDealOptions, keyof PipelineOptions>): JsonObject {
+  const next: JsonObject = { ...(fields ?? {}) };
+  const lead = "leadValue" in next && !("dealValue" in next);
+  const set = (key: string, value: unknown) => {
+    if (value === "" || value == null) delete next[key];
+    else next[key] = value;
+  };
+  const date = (value: string, flag: string) => {
+    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${flag} must be YYYY-MM-DD`);
+    return value;
+  };
+  const number = (value: string, flag: string) => {
+    if (value.trim() === "") return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) throw new Error(`${flag} must be a number`);
+    return parsed;
+  };
+  if (input.owner !== undefined) set(lead ? "leadOwner" : "dealOwner", input.owner.trim());
+  if (input.value !== undefined) set(lead ? "leadValue" : "dealValue", number(input.value, "--value"));
+  if (input.currency !== undefined) set(lead ? "leadCurrency" : "dealCurrency", input.currency.trim().toUpperCase());
+  if (input.expectedClose !== undefined) set("expectedCloseDate", date(input.expectedClose.trim(), "--expected-close"));
+  if (input.probability !== undefined) {
+    const probability = number(input.probability, "--probability");
+    if (probability != null && (probability < 0 || probability > 100)) throw new Error("--probability must be between 0 and 100");
+    set("probability", probability);
+  }
+  if (input.nextSubject !== undefined && !input.nextDate && !fieldString(next, "nextActivityDate")) {
+    throw new Error("--next-subject needs --next-date");
+  }
+  if (input.nextDate !== undefined) {
+    set("nextActivityDate", date(input.nextDate.trim(), "--next-date"));
+    if (!input.nextDate.trim()) delete next.nextActivitySubject;
+  }
+  if (input.nextSubject !== undefined) set("nextActivitySubject", input.nextSubject.trim());
   return next;
 }
 
@@ -627,6 +679,40 @@ function registerCaseCommands(caseCommand: Command): void {
         console.log(opts.nextDate
           ? `Next step done on ${detail.case.title}. Follow-up booked for ${opts.nextDate}.`
           : `Next step done on ${detail.case.title}. No follow-up booked.`);
+      })),
+  );
+
+  addPipelineOptions(
+    caseCommand
+      .command("set-deal")
+      .description("Change a Pipedrive deal's owner, value, expected close, probability or next step (GSAM only)")
+      .argument("<caseId>", "Case ID")
+      .option("--owner <name>", "Deal owner (\"\" removes it)")
+      .option("--value <amount>", "Deal value (\"\" removes it)")
+      .option("--currency <code>", "Currency code, such as GBP")
+      .option("--expected-close <yyyy-mm-dd>", "Expected close date (\"\" removes it)")
+      .option("--probability <0-100>", "Win probability in percent (\"\" removes it)")
+      .option("--next-date <yyyy-mm-dd>", "Next step date (\"\" removes the next step)")
+      .option("--next-subject <text>", "Next step subject")
+      .action((caseId: string, opts: SetDealOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        const { owner, value, currency, expectedClose, probability, nextDate, nextSubject } = opts;
+        const input = { owner, value, currency, expectedClose, probability, nextDate, nextSubject };
+        if (Object.values(input).every((item) => item === undefined)) {
+          throw new Error("Give at least one of --owner, --value, --currency, --expected-close, --probability, --next-date or --next-subject");
+        }
+        const detail = await ctx.api.get<CaseDetail>(apiPath`/api/cases/${caseId}`);
+        if (!detail) throw new Error(`Case ${caseId} not found`);
+        const fields = detail.case.fields ?? null;
+        if (!fields || !("dealStatus" in fields || "leadValue" in fields || "dealValue" in fields)) {
+          throw new Error("This case is not a Pipedrive deal");
+        }
+        const result = await ctx.api.patch(apiPath`/api/cases/${caseId}`, {
+          fields: applyDealSettings(fields, input),
+          expectedVersion: detail.case.version,
+        });
+        if (ctx.json) return printOutput(result, { json: true });
+        console.log(`Updated ${detail.case.title}.`);
       })),
   );
 

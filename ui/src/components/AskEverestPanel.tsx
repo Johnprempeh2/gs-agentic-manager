@@ -19,6 +19,7 @@ import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useDictation } from "../hooks/useDictation";
 import { useFileIntake } from "../hooks/useFileIntake";
 import {
+  SALES_QUESTIONS,
   SUGGESTED_QUESTIONS,
   answerAgent,
   answerAway,
@@ -29,6 +30,7 @@ import {
   answerPeople,
   answerClosing,
   answerPipeline,
+  answerResults,
   answerQuiet,
   answerActivity,
   answerBrief,
@@ -202,6 +204,7 @@ function AskEverestBody({
   const suggestions = context?.suggestions?.length
     ? context.suggestions
     : [...SUGGESTED_QUESTIONS, ...(exampleAgent ? [`What did ${exampleAgent.name} do today?`] : [])];
+  const salesSuggestions: readonly string[] = context?.suggestions?.length ? [] : SALES_QUESTIONS;
   const lastTurn = turns[turns.length - 1] ?? null;
 
   // A question like "and which of those are overdue?" narrows the last answer's tasks.
@@ -285,6 +288,23 @@ function AskEverestBody({
                 </button>
               ))}
             </div>
+            {salesSuggestions.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">About clients and deals:</p>
+                <div className="flex flex-wrap gap-2" data-testid="ask-everest-sales-suggestions">
+                  {salesSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => ask(suggestion)}
+                      className="rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         )}
       </div>
@@ -618,6 +638,12 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     enabled: active && intent.kind === "pipeline",
     retry: false,
   });
+  const results = useQuery({
+    queryKey: ["ask-everest", companyId, "won-lost", intent.kind === "results" ? intent.days : null],
+    queryFn: () => searchApi.wonLost(companyId, { days: intent.kind === "results" ? intent.days : 30, limit: 4 }),
+    enabled: active && intent.kind === "results",
+    retry: false,
+  });
   const setLabel = taskSetLabel(intent);
   const set = useMemo(
     () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
@@ -634,6 +660,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (intent.kind === "brief" && brief.isPending)
     || (intent.kind === "closing" && closing.isPending)
     || (intent.kind === "pipeline" && pipeline.isPending)
+    || (intent.kind === "results" && results.isPending)
     || (intent.kind === "away" && digest.isPending)
     || (awaySince !== null && awayContact.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
@@ -644,6 +671,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (intent.kind === "brief" && brief.error)
     || (intent.kind === "closing" && closing.error)
     || (intent.kind === "pipeline" && pipeline.error)
+    || (intent.kind === "results" && results.error)
     || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
@@ -679,7 +707,9 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     case "closing":
       return { value: answerClosing(closing.data!) };
     case "pipeline":
-      return { value: answerPipeline(pipeline.data!) };
+      return { value: answerPipeline(pipeline.data!, intent.view) };
+    case "results":
+      return { value: answerResults(results.data!) };
     case "people":
       return { value: answerPeople(intent.subject ?? "", records.data?.results ?? []) };
     default:

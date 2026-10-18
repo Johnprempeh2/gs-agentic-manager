@@ -1843,7 +1843,7 @@ function OnboardingWizardInner({
       // dashboard) so they land on the conversation the agent will start in.
       navigate(prefix ? `/${prefix}/issues/${issueRef}` : `/issues/${issueRef}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to launch first task");
+      setError(err instanceof Error ? err.message : "Could not start the first task. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -2233,7 +2233,7 @@ function OnboardingWizardInner({
           setError(
             result.status === "fail"
               ? "The connection test failed. Fix the items marked below, then try again."
-              : "No working authentication was found. Fix the reported checks before you hire this agent.",
+              : "We could not sign in to your AI provider. Fix the items marked below, then try again.",
           );
           return;
         }
@@ -2314,7 +2314,7 @@ function OnboardingWizardInner({
       setStep(5);
     } catch (err) {
       if (!isCurrent()) return;
-      setError(err instanceof Error ? err.message : "Failed to create agent");
+      setError(err instanceof Error ? err.message : "Could not create the agent. Please try again.");
     } finally {
       if (hiringAgentRef.current === attempt) hiringAgentRef.current = null;
       if (isCurrent()) setLoading(false);

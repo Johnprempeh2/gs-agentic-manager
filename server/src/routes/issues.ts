@@ -83,6 +83,7 @@ import {
   answerAgentQuestionSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
+  updateIssueLabelSchema,
   createAcceptedPlanDecompositionSchema,
   checkoutIssueSchema,
   createDocumentAnnotationCommentSchema,
@@ -8494,6 +8495,32 @@ export function issueRoutes(
     res.json(await quietClientsService(db).pipelineSummary(companyId, { limit }));
   });
 
+  // Deals won and lost lately, with value and lost reasons (Ask Everest: "What did we win this month?").
+  router.get("/companies/:companyId/search/won-lost", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 30 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 5 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 1 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).wonLost(companyId, { days, limit }));
+  });
+
   router.get("/companies/:companyId/search", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -9084,6 +9111,48 @@ export function issueRoutes(
       res.status(201).json(label);
     },
   );
+
+  router.patch("/labels/:labelId", validate(updateIssueLabelSchema), async (req, res) => {
+    const labelId = req.params.labelId as string;
+    const existing = await getAccessibleResource(
+      req,
+      res,
+      svc.getLabelById(labelId),
+      "Label not found",
+    );
+    if (!existing) return;
+    const nextName = typeof req.body.name === "string" ? req.body.name.trim() : undefined;
+    if (nextName !== undefined && nextName.toLowerCase() !== existing.name.toLowerCase()) {
+      const clash = (await svc.listLabels(existing.companyId)).find(
+        (label) => label.id !== existing.id && label.name.toLowerCase() === nextName.toLowerCase(),
+      );
+      if (clash) throw conflict(`A label called "${clash.name}" already exists`);
+    }
+    const updated = await svc.updateLabel(labelId, { name: nextName, color: req.body.color });
+    if (!updated) {
+      res.status(404).json({ error: "Label not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: updated.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "label.updated",
+      entityType: "label",
+      entityId: updated.id,
+      details: {
+        name: updated.name,
+        color: updated.color,
+        previousName: existing.name,
+        previousColor: existing.color,
+      },
+    });
+    res.json(updated);
+  });
 
   router.delete("/labels/:labelId", async (req, res) => {
     const labelId = req.params.labelId as string;

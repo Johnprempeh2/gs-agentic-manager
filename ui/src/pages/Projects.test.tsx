@@ -221,8 +221,8 @@ describe("Projects", () => {
     expect(intro?.querySelector('[data-testid="help-term-project"]')).toBeTruthy();
     expect(content.indexOf("My Projects")).toBeLessThan(content.indexOf("Alpha"));
     expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Charlie"));
-    expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Other Projects"));
-    expect(content.indexOf("Other Projects")).toBeLessThan(content.indexOf("Bravo"));
+    expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Other projects"));
+    expect(content.indexOf("Other projects")).toBeLessThan(content.indexOf("Bravo"));
     expect(content).toContain("in progress");
   });
 
@@ -234,7 +234,7 @@ describe("Projects", () => {
     const content = container.textContent ?? "";
     expect(content.indexOf("My Projects")).toBeLessThan(content.indexOf("Charlie"));
     expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Alpha"));
-    expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Other Projects"));
+    expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Other projects"));
   });
 
   it("reserves description line height for projects without descriptions", async () => {

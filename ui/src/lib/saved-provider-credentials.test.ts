@@ -48,7 +48,7 @@ describe("saved provider keys", () => {
       },
       {
         id: "company:s1",
-        label: "Claude (Organization key)",
+        label: "Claude (Organisation key)",
         binding: { type: "secret_ref", secretId: "s1", version: "latest" },
       },
     ]);

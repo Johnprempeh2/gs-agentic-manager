@@ -143,6 +143,7 @@ describe("gsam search", () => {
           { pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", count: 1, valueByCurrency: [{ currency: "GBP", value: 9000 }] },
         ],
         topDeals: [{ caseId: "c1", title: "Big proposal", pipelineName: "Sales", stageName: "Proposal", organisationName: null, value: 9000, currency: "GBP", expectedCloseDate: null, href: "/GRE/pipelines/p/items/c1" }],
+        owners: [{ owner: "Kofi", count: 2, valueByCurrency: [] }, { owner: null, count: 1, valueByCurrency: [] }],
       });
     }));
     await run(["pipeline-summary", "--limit", "1"]);
@@ -153,8 +154,29 @@ describe("gsam search", () => {
       "3 open deals and leads (worth GBP 9100):",
       "Sales / Lead: 2, GBP 100",
       "Sales / Proposal: 1, GBP 9000",
+      "Owners: Kofi 2",
       "Largest:",
       "GBP 9000 | Big proposal | Proposal in Sales  /GRE/pipelines/p/items/c1",
+    ]);
+  });
+
+  it("prints deals won and lost with lost reasons", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        days: 30,
+        won: { count: 1, valueByCurrency: [{ currency: "GBP", value: 1000 }], deals: [{ caseId: "w", title: "Recent win", pipelineName: "Sales", organisationName: null, closedOn: "2026-10-15", value: 1000, currency: "GBP", lostReason: null, href: "/GRE/pipelines/p/items/w" }] },
+        lost: { count: 1, valueByCurrency: [], deals: [{ caseId: "l", title: "Lost again", pipelineName: "Sales", organisationName: null, closedOn: "2026-10-12", value: null, currency: null, lostReason: "Price", href: "/GRE/pipelines/p/items/l" }], reasons: [{ reason: "Price", count: 1 }] },
+      });
+    }));
+    await run(["won-lost"]);
+    expect(new URL(urls[0]!).pathname).toBe(`/api/companies/${COMPANY_ID}/search/won-lost`);
+    expect(lines).toEqual([
+      "Won 1 (worth GBP 1000) and lost 1 in the last 30 days.",
+      "won 2026-10-15 | Recent win | GBP 1000 | Sales  /GRE/pipelines/p/items/w",
+      "lost 2026-10-12 | Lost again | Price | Sales  /GRE/pipelines/p/items/l",
+      "Lost reasons: Price (1)",
     ]);
   });
 
