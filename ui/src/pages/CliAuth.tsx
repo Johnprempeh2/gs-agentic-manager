@@ -4,8 +4,17 @@ import { Link, useParams, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { accessApi } from "../api/access";
+import { ApiError } from "../api/client";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
+
+// The challenge read is rate limited per IP (HTTP 429). The error body does not
+// carry the server delay, so wait a full limiter window before retrying.
+const CLI_AUTH_RATE_LIMIT_RETRY_MS = 60_000;
+
+function isCliAuthRateLimit(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 429;
+}
 
 export function CliAuthPage() {
   const queryClient = useQueryClient();
@@ -23,11 +32,21 @@ export function CliAuthPage() {
     queryFn: () => authApi.getSession(),
     retry: false,
   });
+  const challengeQueryKey = useMemo(() => ["cli-auth-challenge", challengeId, token] as const, [challengeId, token]);
+  const retryWindowEndsAt = useMemo(() => Date.now() + 10 * 60_000, [challengeId, token]);
   const challengeQuery = useQuery({
-    queryKey: ["cli-auth-challenge", challengeId, token],
+    queryKey: challengeQueryKey,
     queryFn: () => accessApi.getCliAuthChallenge(challengeId, token),
     enabled: challengeId.length > 0 && token.length > 0,
-    retry: false,
+    // Retry only rate-limited reads, at most 3 times, and never past the challenge expiry.
+    retry: (failureCount, error) => {
+      if (!isCliAuthRateLimit(error) || failureCount >= 3) return false;
+      const knownChallenge = queryClient.getQueryData<{ expiresAt: string }>(challengeQueryKey);
+      const knownExpiry = Date.parse(knownChallenge?.expiresAt ?? "");
+      const deadline = Number.isFinite(knownExpiry) ? Math.min(knownExpiry, retryWindowEndsAt) : retryWindowEndsAt;
+      return Date.now() + CLI_AUTH_RATE_LIMIT_RETRY_MS < deadline;
+    },
+    retryDelay: CLI_AUTH_RATE_LIMIT_RETRY_MS,
   });
 
   const approveMutation = useMutation({
@@ -49,8 +68,13 @@ export function CliAuthPage() {
     return <div className="mx-auto max-w-xl py-10 text-sm text-destructive">Invalid CLI auth URL.</div>;
   }
 
-  if (sessionQuery.isLoading || challengeQuery.isLoading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading CLI auth challenge...</div>;
+  const waitingForRateLimit = isCliAuthRateLimit(challengeQuery.failureReason) && challengeQuery.isFetching;
+  if (sessionQuery.isLoading || challengeQuery.isLoading || waitingForRateLimit) {
+    return (
+      <div role="status" className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+        {waitingForRateLimit ? "Too many CLI approval requests. Trying again in a minute..." : "Loading CLI auth challenge..."}
+      </div>
+    );
   }
 
   if (challengeQuery.error) {
@@ -123,7 +147,8 @@ export function CliAuthPage() {
       <Card className="block p-6">
         <h1 className="text-xl font-semibold">Approve GS Agentic Manager CLI access</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          A local GS Agentic Manager CLI process is requesting board access to this instance.
+          A CLI client is asking for full board access to every organisation you can access on this instance.
+          Approve only if you started this request in your own terminal.
         </p>
 
         <div className="mt-5 space-y-3 text-sm">
@@ -143,7 +168,7 @@ export function CliAuthPage() {
           </div>
           {challenge.requestedCompanyName && (
             <div>
-              <div className="text-muted-foreground">Requested organisation</div>
+              <div className="text-muted-foreground">Organisation for audit context</div>
               <div className="text-foreground">{challenge.requestedCompanyName}</div>
             </div>
           )}
@@ -159,7 +184,9 @@ export function CliAuthPage() {
 
         {!challenge.canApprove && (
           <p className="mt-4 text-sm text-destructive">
-            This challenge requires instance-admin access. Sign in with an instance admin account to approve it.
+            {challenge.requestedAccess === "instance_admin_required"
+              ? "This challenge requires instance-admin access. Sign in with an instance admin account to approve it."
+              : "You do not have access to the requested organisation."}
           </p>
         )}
 
