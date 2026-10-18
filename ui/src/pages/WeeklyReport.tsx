@@ -26,6 +26,7 @@ import {
   weeklyReportSpeech,
 } from "../lib/weekly-report";
 import { ListenButton } from "../components/ListenButton";
+import { ShareTextButton } from "../components/ShareTextButton";
 import { downloadTextFile } from "../lib/issues-csv";
 import { setFirstWeekMark } from "../lib/first-week";
 import { Button } from "@/components/ui/button";
@@ -351,6 +352,7 @@ export function WeeklyReport() {
             {copyState === "copied" ? <Check className="size-4" /> : <ClipboardCopy className="size-4" />}
             {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy as text"}
           </Button>
+          {data ? <ShareTextButton title={`This week at ${data.companyName || "the company"}`} getText={() => weeklyReportText(data)} /> : null}
         </div>
       </header>
 
