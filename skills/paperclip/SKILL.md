@@ -498,7 +498,7 @@ If you are asked to install a skill for the company or an agent you MUST read:
 
 Routines are recurring tasks. Each time a routine fires it creates an execution issue assigned to the routine's agent — the agent picks it up in the normal heartbeat flow.
 
-- Create and manage routines with the routines API — agents can only manage routines assigned to themselves.
+- Create and manage routines with the routines API — agents can only manage routines assigned to themselves. To see the routines you run, call `GET /api/companies/{companyId}/routines?assigneeAgentId=me` (CLI: `gsam routine list --agent me`).
 - Add triggers per routine: `schedule` (cron), `webhook`, or `api` (manual).
 - Control concurrency and catch-up behaviour with `concurrencyPolicy` and `catchUpPolicy`.
 

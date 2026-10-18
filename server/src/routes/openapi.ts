@@ -5580,7 +5580,13 @@ registry.registerPath({
   path: "/api/companies/{companyId}/routines",
   tags: ["routines"],
   summary: "List routines in a company",
-  request: { params: z.object({ companyId: z.string() }) },
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      projectId: z.string().optional(),
+      assigneeAgentId: z.string().optional().describe("Agent id, or me for the calling agent"),
+    }),
+  },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
