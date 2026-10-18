@@ -248,3 +248,35 @@ test("a gate that is stopped stops its lanes too, frees its lock and writes no m
   assert.equal(existsSync(join(box.gateDir, "lock")), false);
   assert.equal(existsSync(join(box.gateDir, "passed", commit)), false);
 });
+
+test("a full commit sha is gated like a tag, and its marker is keyed by that commit", (t) => {
+  // The release queue gates each new origin/main commit before any tag is cut.
+  const box = sandbox(t);
+  const commit = box.candidate("rc-2026-10-18.1", "ok: true\n");
+  git(box.dev, "tag", "-d", "rc-2026-10-18.1");
+  const run = box.gate([commit]);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(readFileSync(join(box.gateDir, "passed", commit), "utf8"), new RegExp(`^tag=${commit}$`, "m"));
+  assert.equal(box.gate(["--check", commit]).status, 0);
+  assert.match(box.gate([commit.slice(0, 9)]).stderr, /unknown tag/);
+});
+
+test("the queue's background gate on main gives way to any other gate, never the other way round", async (t) => {
+  const box = sandbox(t);
+  const commit = box.candidate("rc-2026-10-18.1", "slow: sleep 300\n");
+  const background = box.gateAsync([commit], { GSAM_TEST_GATE_YIELD: "1" });
+  const exited = new Promise((resolve) => background.on("exit", (code) => resolve(code)));
+  await waitFor("the background gate's lock", () => existsSync(join(box.gateDir, "lock", "owner")) && /^yield$/m.test(readFileSync(join(box.gateDir, "lock", "owner"), "utf8")));
+  // Another background gate does not push it aside.
+  const second = box.gate([commit], { GSAM_TEST_GATE_YIELD: "1" });
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /another test gate runs/);
+  // A release's own gate (here on a quick commit) stops it and runs.
+  const quick = box.candidate("rc-2026-10-18.2", "ok: true\n");
+  const run = box.gate(["rc-2026-10-18.2"]);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(run.stdout, /^Stopping the background test gate of main \(pid \d+, /m);
+  assert.equal(await exited, 143);
+  assert.ok(existsSync(join(box.gateDir, "passed", quick)));
+  assert.equal(existsSync(join(box.gateDir, "passed", commit)), false);
+});
