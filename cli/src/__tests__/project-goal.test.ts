@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerGoalCommands } from "../commands/client/goal.js";
 import { registerProjectCommands } from "../commands/client/project.js";
+import { registerWorkflowCommands } from "../commands/client/workflow.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const PROJECT_ID = "33333333-3333-4333-8333-333333333333";
@@ -19,6 +20,7 @@ function createProgram(): Command {
   });
   registerProjectCommands(program);
   registerGoalCommands(program);
+  registerWorkflowCommands(program);
   return program;
 }
 
@@ -191,5 +193,40 @@ describe("project and goal commands", () => {
       blockers: ["Waiting on copy", "No budget for ads"],
     });
     expect(fetchMock.mock.calls[1]?.[0]).toBe(`http://localhost:3100/api/goals/${GOAL_ID}/check-ins`);
+  });
+
+  it("records and lists KPI readings", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "r1" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "r1", value: 12, readingDate: "2026-10-17", source: "agent_verified", note: null }]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const base = ["--api-base", "http://localhost:3100", "--api-key", "board-token"];
+
+    await createProgram().parseAsync(["goal", "reading", GOAL_ID, ...base, "--value", "12", "--date", "2026-10-17", "--source", "agent_verified"], { from: "user" });
+    await createProgram().parseAsync(["goal", "readings", GOAL_ID, ...base], { from: "user" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/goals/${GOAL_ID}/readings`);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ value: 12, readingDate: "2026-10-17", source: "agent_verified" });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`http://localhost:3100/api/goals/${GOAL_ID}/readings`);
+  });
+
+  it("lists and starts saved workflows", async () => {
+    const TEMPLATE_ID = "55555555-5555-4555-8555-555555555555";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: TEMPLATE_ID, key: "launch", name: "Launch", definition: { steps: [{}, {}] } }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ coordinator: { id: "i1" } }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const base = ["--api-base", "http://localhost:3100", "--api-key", "board-token"];
+
+    await createProgram().parseAsync(["workflow", "list", ...base, "--company-id", COMPANY_ID], { from: "user" });
+    await createProgram().parseAsync(["workflow", "start", TEMPLATE_ID, ...base, "--title", "Launch for Acme", "--project-id", PROJECT_ID], { from: "user" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/companies/${COMPANY_ID}/workflow-templates`);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`http://localhost:3100/api/workflow-templates/${TEMPLATE_ID}/start`);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ title: "Launch for Acme", projectId: PROJECT_ID });
   });
 });
