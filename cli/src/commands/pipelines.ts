@@ -145,6 +145,12 @@ interface SetDealOptions extends PipelineOptions {
   nextSubject?: string;
 }
 
+interface CloseDealOptions extends PipelineOptions {
+  won?: boolean;
+  lost?: boolean;
+  reason?: string;
+}
+
 interface EditOptions extends PipelineOptions {
   expectedVersion?: string;
   title?: string;
@@ -339,6 +345,23 @@ export function summariseDeals(pipelines: Array<{ id: string; name: string; rows
 function formatAmounts(amounts: Record<string, number>) {
   const parts = Object.entries(amounts).map(([currency, total]) => `${Math.round(total)}${currency ? ` ${currency}` : ""}`);
   return parts.length > 0 ? parts.join(" + ") : "0";
+}
+
+/** The stage a deal moves to when it is won or lost. Matches the deal page's Mark won and Mark lost. */
+export function dealOutcomeStage(stages: readonly PipelineStage[], outcome: "won" | "lost"): PipelineStage | null {
+  const kind = outcome === "won" ? "done" : "cancelled";
+  return stages.find((stage) => stage.key === outcome) ?? stages.find((stage) => stage.kind === kind) ?? null;
+}
+
+/** A deal's fields once it is won or lost on `today`; a loss keeps its reason, if given. */
+export function closeDealFields(fields: Record<string, unknown>, outcome: "won" | "lost", today: string, reason?: string) {
+  const next: Record<string, unknown> = { ...fields, dealStatus: outcome === "won" ? "Won" : "Lost" };
+  if (outcome === "won") next.wonOn = today;
+  else {
+    next.lostOn = today;
+    if (reason?.trim()) next.lostReason = reason.trim();
+  }
+  return next;
 }
 
 /**
@@ -812,6 +835,45 @@ function registerCaseCommands(caseCommand: Command): void {
         });
         if (ctx.json) return printOutput(result, { json: true });
         console.log(`Updated ${detail.case.title}.`);
+      })),
+  );
+
+  addPipelineOptions(
+    caseCommand
+      .command("close-deal")
+      .description("Mark a Pipedrive deal won or lost, as Mark won and Mark lost do on the deal page (GSAM only)")
+      .argument("<caseId>", "Case ID")
+      .option("--won", "The deal was won")
+      .option("--lost", "The deal was lost")
+      .option("--reason <text>", "Why it was lost")
+      .action((caseId: string, opts: CloseDealOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        if (opts.won === opts.lost) throw new Error("Give exactly one of --won or --lost");
+        if (opts.won && opts.reason) throw new Error("--reason is only for a lost deal");
+        const outcome = opts.won ? "won" : "lost";
+        const detail = await ctx.api.get<CaseDetail>(apiPath`/api/cases/${caseId}`);
+        if (!detail) throw new Error(`Case ${caseId} not found`);
+        const fields = detail.case.fields ?? null;
+        if (!fields || !("dealStatus" in fields)) throw new Error("This case is not a Pipedrive deal");
+        const status = fieldString(fields, "dealStatus")?.toLowerCase();
+        if (status && status !== "open") throw new Error(`This deal is already ${status}`);
+        const pipeline = await ctx.api.get<PipelineDetail>(apiPath`/api/pipelines/${detail.case.pipelineId}`);
+        const stage = dealOutcomeStage(pipeline?.stages ?? [], outcome);
+        if (!stage) throw new Error(`This pipeline has no ${outcome === "won" ? "Won" : "Lost"} stage`);
+        const reason = opts.reason?.trim();
+        const moved = await ctx.api.post<{ case?: { version?: number } }>(apiPath`/api/cases/${caseId}/transition`, {
+          toStageKey: stage.key,
+          expectedVersion: detail.case.version,
+          reason: outcome === "won" ? "Marked won from the CLI." : `Marked lost from the CLI${reason ? `: ${reason}` : "."}`,
+          force: true,
+        });
+        const today = new Date().toISOString().slice(0, 10);
+        const result = await ctx.api.patch(apiPath`/api/cases/${caseId}`, {
+          fields: closeDealFields(fields, outcome, today, reason),
+          expectedVersion: moved?.case?.version ?? detail.case.version + 1,
+        });
+        if (ctx.json) return printOutput(result, { json: true });
+        console.log(`${detail.case.title} marked ${outcome}.`);
       })),
   );
 
