@@ -452,7 +452,7 @@ export function ChoosePathButton() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              OK
+              Got it
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,7 +3,7 @@ import {
   createTenantSessionRecoveryCoordinator,
   tenantSessionRecovery,
 } from "@/lib/tenant-session-recovery";
-import { __inflightGetCount, api, detachInflightGet, plainHttpErrorMessage } from "./client";
+import { __inflightGetCount, api, detachInflightGet, NetworkError, plainHttpErrorMessage } from "./client";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -74,6 +74,24 @@ describe("tenant-session recovery", () => {
       status: 401,
       message: "unauthorized",
     });
+  });
+});
+
+describe("network failures", () => {
+  it("replaces the browser's wording with a plain message and stays a TypeError", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const error = await api.post("/network-down", {}).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(NetworkError);
+    expect(error).toBeInstanceOf(TypeError);
+    expect((error as Error).message).toBe("We couldn't reach the server. Check your connection and try again.");
+  });
+
+  it("leaves aborts alone", async () => {
+    const abort = new DOMException("The operation was aborted.", "AbortError");
+    fetchMock.mockRejectedValue(abort);
+
+    await expect(api.post("/aborted", {})).rejects.toBe(abort);
   });
 });
 

@@ -3566,7 +3566,7 @@ function SubmittedBrowserCodeLoginPanel({
                   disabled={!canSubmit}
                   onClick={handleSubmit}
                 >
-                  Submit
+                  Send code
                 </Button>
               </div>
             </div>
