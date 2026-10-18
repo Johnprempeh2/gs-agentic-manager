@@ -250,7 +250,7 @@ export function useIssueMutations({
           body:
             error instanceof Error
               ? error.message
-              : "Unable to restore this task to the inbox",
+              : "Could not return this task to the inbox",
           tone: "error",
         });
       } finally {
@@ -415,7 +415,7 @@ export function useIssueMutations({
       pushToast({
         title: "Your change was not saved",
         body:
-          err instanceof Error ? err.message : "Unable to save task changes",
+          err instanceof Error ? err.message : "Could not save your changes to this task",
         tone: "error",
       });
     },
@@ -720,7 +720,7 @@ export function useIssueMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to save sub-task changes",
+            : "Could not save sub-task changes",
         tone: "error",
       });
     },
@@ -794,7 +794,7 @@ export function useIssueMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to trigger the monitor right now",
+            : "Could not start the check right now",
         tone: "error",
       });
     },

@@ -4376,7 +4376,7 @@ export function CompanySkills() {
       setSource("");
     },
     onError: (error) => {
-      reportSkillError(error, "Skill import failed", "Failed to import skill source.", "Importing skills");
+      reportSkillError(error, "Skill import failed", "Could not import skill source.", "Importing skills");
     },
   });
 
@@ -4419,7 +4419,7 @@ export function CompanySkills() {
     },
     onError: (error) => {
       setScanStatusMessage(null);
-      reportSkillError(error, "Project skill scan failed", "Failed to scan project workspaces.", "Scanning projects for skills");
+      reportSkillError(error, "Project skill scan failed", "Could not scan project workspaces.", "Scanning projects for skills");
     },
   });
 
@@ -4437,9 +4437,9 @@ export function CompanySkills() {
       });
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : "Failed to create skill.";
+      const message = error instanceof Error ? error.message : "Could not create skill.";
       setCreateError(message);
-      reportSkillError(error, "Skill creation failed", "Failed to create skill.", "Creating a skill");
+      reportSkillError(error, "Skill creation failed", "Could not create skill.", "Creating a skill");
     },
   });
 
@@ -4468,7 +4468,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Your change was not saved",
-        body: error instanceof Error ? error.message : "Failed to save skill file.",
+        body: error instanceof Error ? error.message : "Could not save skill file.",
       });
     },
   });
@@ -4491,7 +4491,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Could not star it",
-        body: error instanceof Error ? error.message : "Failed to update star.",
+        body: error instanceof Error ? error.message : "Could not update star.",
       });
     },
   });
@@ -4518,7 +4518,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Your skill settings were not saved",
-        body: error instanceof Error ? error.message : "Failed to update skill settings.",
+        body: error instanceof Error ? error.message : "Could not update skill settings.",
       });
     },
   });
@@ -4540,7 +4540,7 @@ export function CompanySkills() {
       });
     },
     onError: (error) => {
-      reportSkillError(error, "Update failed", "Failed to install skill update.", "Updating this skill");
+      reportSkillError(error, "Update failed", "Could not install skill update.", "Updating this skill");
     },
   });
 
@@ -4692,7 +4692,7 @@ export function CompanySkills() {
       }
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : "Failed to install catalog skill.";
+      const message = error instanceof Error ? error.message : "Could not install catalog skill.";
       setInstallDialogState((current) => ({ ...current, error: message }));
       // Also surface explicit-policy / platform denials in the persistent banner
       // so the reason stays visible after the dialog closes.
@@ -4722,7 +4722,7 @@ export function CompanySkills() {
           pushToast({
             tone: "error",
             title: "Folder made, but nothing moved into it",
-            body: moveError instanceof Error ? moveError.message : "Failed to move the selected skills.",
+            body: moveError instanceof Error ? moveError.message : "Could not move the selected skills.",
           });
           return;
         }
@@ -4735,7 +4735,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Your folder was not saved",
-        body: error instanceof Error ? error.message : "Failed to save folder.",
+        body: error instanceof Error ? error.message : "Could not save folder.",
       });
     },
   });
@@ -4751,7 +4751,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Your folder was not saved",
-        body: error instanceof Error ? error.message : "Failed to update folder.",
+        body: error instanceof Error ? error.message : "Could not update folder.",
       });
     },
   });
@@ -4771,7 +4771,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Could not move the folder",
-        body: error instanceof Error ? error.message : "Failed to move folder.",
+        body: error instanceof Error ? error.message : "Could not move folder.",
       });
     },
   });
@@ -4790,7 +4790,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Could not delete the folder",
-        body: error instanceof Error ? error.message : "Failed to delete folder.",
+        body: error instanceof Error ? error.message : "Could not delete folder.",
       });
     },
   });
@@ -4807,7 +4807,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Could not move it",
-        body: error instanceof Error ? error.message : "Failed to move skill.",
+        body: error instanceof Error ? error.message : "Could not move skill.",
       });
     },
   });
@@ -4823,7 +4823,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Couldn't open My Skills",
-        body: error instanceof Error ? error.message : "Failed to create your personal folder.",
+        body: error instanceof Error ? error.message : "Could not create your personal folder.",
       });
     },
   });
@@ -4869,7 +4869,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Could not make the folder",
-        body: error instanceof Error ? error.message : "Failed to create folder.",
+        body: error instanceof Error ? error.message : "Could not create folder.",
       });
       return null;
     }
@@ -4900,7 +4900,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Could not move it",
-        body: moveError instanceof Error ? moveError.message : "Failed to move.",
+        body: moveError instanceof Error ? moveError.message : "Could not move.",
       });
     }
   }
@@ -4969,7 +4969,7 @@ export function CompanySkills() {
       }
       pushToast({ tone: "success", title: "Agents updated", body: `${nextAgentIds.length} agent(s) attached.` });
     } catch (error) {
-      pushToast({ tone: "error", title: "Your change was not saved", body: error instanceof Error ? error.message : "Failed to update agent skills." });
+      pushToast({ tone: "error", title: "Your change was not saved", body: error instanceof Error ? error.message : "Could not update agent skills." });
     }
   }
 
@@ -5024,7 +5024,7 @@ export function CompanySkills() {
       });
     },
     onError: (error) => {
-      reportSkillError(error, "Remove failed", "Failed to remove skill.", "Removing this skill");
+      reportSkillError(error, "Remove failed", "Could not remove skill.", "Removing this skill");
     },
   });
 

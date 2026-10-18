@@ -788,7 +788,7 @@ export function Routines() {
             </Button>
           ) : null}
           <Button variant="outline" asChild>
-            <Link to={auditSectionHref("runs", {})}>View all runs</Link>
+            <Link to={auditSectionHref("runs", {})}>See all activity</Link>
           </Button>
           <Button onClick={openCreateRoutine} data-tour="routines-create">
             <Plus className="mr-2 h-4 w-4" />

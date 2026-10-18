@@ -317,7 +317,7 @@ export function AgentActionButtons({
       }
     },
     onError: (err) => {
-      reportError(err instanceof Error ? err.message : "Failed to start traced run");
+      reportError(err instanceof Error ? err.message : "Could not start the traced check");
     },
   });
 
@@ -348,7 +348,7 @@ export function AgentActionButtons({
       navigate(`/agents/${agentRouteRef(createdAgent)}/dashboard`);
     },
     onError: (err) => {
-      const message = err instanceof Error ? err.message : "Failed to duplicate agent";
+      const message = err instanceof Error ? err.message : "Could not copy this agent";
       onActionError?.(message);
       pushToast({ title: "Could not duplicate agent", body: message, tone: "error" });
     },
@@ -375,7 +375,7 @@ export function AgentActionButtons({
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agent.id) });
     },
     onError: (err) => {
-      reportError(err instanceof Error ? err.message : "Failed to reset session");
+      reportError(err instanceof Error ? err.message : "Could not start a fresh session");
     },
   });
 

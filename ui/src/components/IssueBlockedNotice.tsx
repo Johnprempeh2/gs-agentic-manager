@@ -32,6 +32,7 @@ import {
   readRecoveryRetryLineage,
 } from "../lib/recovery-lineage";
 import { StatusGlyph } from "./StatusGlyph";
+import { taskStatusLabel } from "../lib/task-status-labels";
 
 function BlockerRecoveryIndicator({
   action,
@@ -138,7 +139,7 @@ function SuccessfulRunRetryNowControl({
 const EMPTY_LIVE_IDS: ReadonlySet<string> = new Set<string>();
 
 function waitingTaskStatusLabel(status: string): string {
-  return status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+  return taskStatusLabel(status);
 }
 
 function WaitingChipLink({
@@ -539,7 +540,7 @@ export function IssueBlockedNotice({
     ? reopenSuppressedLeaf.identifier ?? reopenSuppressedLeaf.id.slice(0, 8)
     : null;
   const reopenSuppressedLeafStatus = reopenSuppressedLeaf
-    ? reopenSuppressedLeaf.status.replace(/_/g, " ")
+    ? taskStatusLabel(reopenSuppressedLeaf.status)
     : null;
   const reopenSuppressedOtherCount = Math.max(unresolvedLeafBlockers.length - 1, 0);
 

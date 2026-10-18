@@ -194,7 +194,7 @@ describe("RoutineOverview", () => {
     ));
 
     expect(container.textContent).toContain("1 active schedule");
-    expect(container.textContent).toContain("Next run");
+    expect(container.textContent).toContain("Next time");
     expect(container.textContent).toContain("Release Manager");
     expect(container.textContent).toContain("Summarize **release readiness** for the operator.");
     expect(container.textContent).toContain("Prepare the release digest");

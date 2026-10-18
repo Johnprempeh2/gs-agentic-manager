@@ -176,13 +176,13 @@ export function RoutineOverview() {
         />
         <OverviewFact
           icon={Clock3}
-          label="Next run"
+          label="Next time"
           value={schedule.nextRunAt ? formatRoutineTimestamp(schedule.nextRunAt) : hasWebhook ? "When another app sends an update" : "Not scheduled"}
           detail={schedule.nextRunAt ? "Scheduled" : hasWebhook ? "Waiting for an incoming request" : "Add or enable a schedule"}
         />
         <OverviewFact
           icon={Play}
-          label="Last run"
+          label="Last time"
           value={lastRun ? <StatusBadge status={lastRun.status} label={routineRunStatusLabel(lastRun.status)} /> : "No runs yet"}
           detail={lastRun ? formatRoutineTimestamp(lastRun.triggeredAt) : "Run manually or wait for a trigger"}
         />
@@ -216,9 +216,9 @@ export function RoutineOverview() {
 
       <section className="flex flex-col gap-2" aria-labelledby="routine-recent-runs-heading">
         <div className="flex items-center justify-between gap-3">
-          <h2 id="routine-recent-runs-heading" className="text-sm font-semibold">Recent runs</h2>
+          <h2 id="routine-recent-runs-heading" className="text-sm font-semibold">Recent activity</h2>
           <Button variant="ghost" size="sm" asChild>
-            <Link to={routineDetailHref(routine.id, "runs")}>View all runs</Link>
+            <Link to={routineDetailHref(routine.id, "runs")}>See all activity</Link>
           </Button>
         </div>
         {recentRuns.length === 0 ? (

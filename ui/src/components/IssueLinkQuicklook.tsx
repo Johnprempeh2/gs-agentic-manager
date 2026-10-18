@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusGlyph } from "@/components/StatusGlyph";
 import { ProjectTile } from "@/components/ProjectTile";
+import { taskStatusLabel } from "../lib/task-status-labels";
 
 /* ------------------------------------------------------------------ */
 /*  Single-flight quicklook store                                      */
@@ -129,8 +130,7 @@ function QuicklookSeparator({ className }: { className?: string }) {
 
 /** "in_review" -> "In review". The card states the status as a word, not a chip. */
 function statusLabel(status: string): string {
-  const words = status.replace(/_/g, " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return taskStatusLabel(status);
 }
 
 /**
@@ -442,7 +442,7 @@ export const IssueLinkQuicklook = React.forwardRef<
             <div className="h-4 w-full rounded bg-accent/40" />
             <div className="h-4 w-3/4 rounded bg-accent/30" />
             {!isLoading ? (
-              <p className="text-xs text-muted-foreground">Unable to load task preview.</p>
+              <p className="text-xs text-muted-foreground">Could not load a preview of this task.</p>
             ) : null}
           </div>
         )}

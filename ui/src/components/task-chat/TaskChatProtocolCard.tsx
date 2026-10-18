@@ -49,6 +49,7 @@ import { TaskChatComposerTakeoverHeader } from "./TaskChatComposerTakeoverContex
 import { RichWorkProductCard } from "./RichWorkProductCard";
 import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
 import { isPlainPrimaryClick } from "@/lib/attachment-preview";
+import { taskStatusLabel } from "../../lib/task-status-labels";
 
 export interface TaskChatProtocolCardProps {
   item: TaskChatProtocolItem;
@@ -157,12 +158,12 @@ function CardShell({
       {status && status !== "pending" ? (
         <span
           className={cn(
-            "inline-flex shrink-0 items-center gap-1 text-xs capitalize",
+            "inline-flex shrink-0 items-center gap-1 text-xs",
             statusTone(status),
           )}
         >
           <StatusIcon status={status} className="h-3.5 w-3.5" />
-          {status.replaceAll("_", " ")}
+          {taskStatusLabel(status)}
         </span>
       ) : null}
     </div>
@@ -211,12 +212,12 @@ function CardShell({
             {status ? (
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 text-xs capitalize",
+                  "inline-flex items-center gap-1 text-xs",
                   statusTone(status),
                 )}
               >
                 <StatusIcon status={status} className="h-3.5 w-3.5" />
-                {status.replaceAll("_", " ")}
+                {taskStatusLabel(status)}
               </span>
             ) : null}
           </div>

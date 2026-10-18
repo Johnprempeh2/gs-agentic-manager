@@ -245,18 +245,18 @@ describe("ActiveAgentsPanel", () => {
         />
       ))}</>);
     });
-    const headers = [...container.querySelectorAll('a[aria-label$=". View run"]')];
+    const headers = [...container.querySelectorAll('a[aria-label$=". View work"]')];
     expect(headers.map((header) => header.getAttribute("aria-label"))).toEqual([
-      "Agent 0: Running. View run", "Agent 1: Queued. View run",
-      "Agent 2: Succeeded. View run", "Agent 3: Failed. View run",
-      "Agent 4: Timed out. View run", "Agent 5: Cancelled. View run",
-      "Agent 6: Interrupted. View run",
+      "Agent 0: Running. View work", "Agent 1: Queued. View work",
+      "Agent 2: Succeeded. View work", "Agent 3: Failed. View work",
+      "Agent 4: Timed out. View work", "Agent 5: Cancelled. View work",
+      "Agent 6: Interrupted. View work",
     ]);
     expect(headers.every((header) => header.querySelector("svg") === null)).toBe(true);
     expect(container.querySelector(".status-chip")).toBeNull();
-    expect(container.querySelectorAll('[aria-label="Task in review"]')).toHaveLength(7);
+    expect(container.querySelectorAll('[aria-label="Task: In review"]')).toHaveLength(7);
     expect(container.querySelectorAll(".motion-safe\\:animate-spin")).toHaveLength(0);
-    expect(container.querySelector('a[aria-label="Agent 0: Running. View run"]')?.getAttribute("href"))
+    expect(container.querySelector('a[aria-label="Agent 0: Running. View work"]')?.getAttribute("href"))
       .toBe("/agents/agent-0/runs/run-0");
     await act(async () => root.unmount());
   });
@@ -268,9 +268,9 @@ describe("ActiveAgentsPanel", () => {
         run={{ ...createIssueRun(0, "issue-1"), status: "succeeded" }}
         issue={{ title: "Slack conversation", identifier: "PAP-559", status: "in_review", externalConversationState: "waiting" }} />);
     });
-    expect(container.querySelector('[aria-label="Agent 0: Succeeded. View run"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Task idle"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Task in review"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Agent 0: Succeeded. View work"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Task: Idle"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Task: In review"]')).toBeNull();
     await act(async () => root.unmount());
   });
 
@@ -300,7 +300,7 @@ describe("ActiveAgentsPanel", () => {
         }}
       />);
     });
-    expect(container.querySelector('a[aria-label="Agent 0: Running. View run"]')).not.toBeNull();
+    expect(container.querySelector('a[aria-label="Agent 0: Running. View work"]')).not.toBeNull();
     expect(container.querySelector(".status-chip")).toBeNull();
     expect(container.querySelectorAll(".motion-safe\\:animate-spin")).toHaveLength(0);
     await act(async () => root.unmount());

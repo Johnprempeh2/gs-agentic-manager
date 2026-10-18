@@ -131,7 +131,7 @@ export function InvitesSection() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to create invite",
+        title: "Could not create the invite",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -146,7 +146,7 @@ export function InvitesSection() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to revoke invite",
+        title: "Could not revoke the invite",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -167,7 +167,7 @@ export function InvitesSection() {
         ? "Only organisation owners can send or cancel invites."
         : invitesQuery.error instanceof Error
           ? invitesQuery.error.message
-          : "Failed to load invites.";
+          : "Could not load invites.";
     return <div className="text-sm text-destructive">{message}</div>;
   }
 

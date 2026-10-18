@@ -15,7 +15,7 @@ export function useComposerStop(onStop?: () => Promise<void>, pending = false) {
       await onStop();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Unable to stop. Try again.",
+        err instanceof Error ? err.message : "Could not stop. Try again.",
       );
     } finally {
       inFlight.current = false;
