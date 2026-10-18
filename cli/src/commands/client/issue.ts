@@ -2,6 +2,9 @@ import { Command } from "commander";
 import { readFile, writeFile } from "node:fs/promises";
 import {
   addIssueCommentSchema,
+  answerAgentQuestionSchema,
+  createAgentQuestionSchema,
+  createIssueDocumentLinkSchema,
   acceptIssueThreadInteractionSchema,
   cancelIssueThreadInteractionSchema,
   checkoutIssueSchema,
@@ -135,6 +138,29 @@ interface IssueAttachmentUploadOptions extends BaseClientOptions {
 
 interface IssueAttachmentDownloadOptions extends BaseClientOptions {
   out?: string;
+}
+
+interface IssueDiagnoseOptions extends BaseClientOptions {
+  wakes?: boolean;
+  subtree?: boolean;
+}
+
+interface IssueAskAgentOptions extends BaseClientOptions {
+  agent: string;
+  question: string;
+}
+
+interface IssueAnswerQuestionOptions extends BaseClientOptions {
+  answer: string;
+}
+
+interface IssueDocumentLinkCreateOptions extends BaseClientOptions {
+  sourceIssue: string;
+  key: string;
+}
+
+interface IssueTranscriptDigestOptions extends BaseClientOptions {
+  runs: string;
 }
 
 interface IssueLabelUpdateOptions extends BaseClientOptions {
@@ -1058,6 +1084,149 @@ export function registerIssueCommands(program: Command): void {
           const ctx = resolveCommandContext(opts);
           const result = await ctx.api.delete(apiPath`/api/attachments/${attachmentId}`);
           printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("diagnose")
+      .description("Explain why an issue is stuck: its blockers, or with --wakes or --subtree its wakes or child tree")
+      .argument("<issueId>", "Issue ID")
+      .option("--wakes", "Show why the assignee was or was not woken")
+      .option("--subtree", "Show the state of the issue's child tree")
+      .action(async (issueId: string, opts: IssueDiagnoseOptions) => {
+        try {
+          if (opts.wakes && opts.subtree) throw new Error("Pick one of --wakes or --subtree");
+          const ctx = resolveCommandContext(opts);
+          const view = opts.wakes ? "wakes" : opts.subtree ? "subtree" : "blockers";
+          const result = await ctx.api.get(`${apiPath`/api/issues/${issueId}`}/diagnostics/${view}`);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("execution")
+      .description("Show who is working an issue now: the live run, its agent and any recovery action")
+      .argument("<issueId>", "Issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.get(apiPath`/api/issues/${issueId}/execution`), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("transcript-digests")
+      .description("Summarise runs on an issue without pulling their full logs")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--runs <ids>", "Comma-separated run IDs")
+      .action(async (issueId: string, opts: IssueTranscriptDigestOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const runIds = opts.runs.split(",").map((id) => id.trim()).filter(Boolean);
+          if (runIds.length === 0) throw new Error("Give at least one run ID with --runs");
+          const query = new URLSearchParams({ runIds: runIds.join(",") }).toString();
+          printOutput(await ctx.api.get(`${apiPath`/api/issues/${issueId}/run-transcript-digests`}?${query}`), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("ask-agent")
+      .description("Ask another agent a question on this issue (agent keys only)")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--agent <id>", "Agent to ask")
+      .requiredOption("--question <text>", "The question")
+      .action(async (issueId: string, opts: IssueAskAgentOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = createAgentQuestionSchema.parse({ targetAgentId: opts.agent, question: opts.question });
+          printOutput(await ctx.api.post(apiPath`/api/issues/${issueId}/agent-questions`, payload), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("answer-question")
+      .description("Answer a question another agent asked you on this issue (agent keys only)")
+      .argument("<issueId>", "Issue ID")
+      .argument("<interactionId>", "Question interaction ID")
+      .requiredOption("--answer <text>", "Your answer")
+      .action(async (issueId: string, interactionId: string, opts: IssueAnswerQuestionOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = answerAgentQuestionSchema.parse({ answer: opts.answer });
+          const result = await ctx.api.post(
+            apiPath`/api/issues/${issueId}/agent-questions/${interactionId}/answer`,
+            payload,
+          );
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document-links")
+      .description("List documents linked into an issue from other issues")
+      .argument("<issueId>", "Issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.get(apiPath`/api/issues/${issueId}/document-links`), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document-link:create")
+      .description("Link another issue's document (such as its plan) into this issue")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--source-issue <id>", "Issue that owns the document")
+      .requiredOption("--key <key>", "Document key, e.g. plan")
+      .action(async (issueId: string, opts: IssueDocumentLinkCreateOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = createIssueDocumentLinkSchema.parse({ sourceIssueId: opts.sourceIssue, key: opts.key });
+          printOutput(await ctx.api.post(apiPath`/api/issues/${issueId}/document-links`, payload), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document-link:delete")
+      .description("Remove a linked document from an issue")
+      .argument("<issueId>", "Issue ID")
+      .argument("<linkId>", "Document link ID")
+      .action(async (issueId: string, linkId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.delete(apiPath`/api/issues/${issueId}/document-links/${linkId}`), { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
