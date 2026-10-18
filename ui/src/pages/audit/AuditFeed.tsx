@@ -46,7 +46,7 @@ const ACTION_DOMAINS: { value: string; label: string }[] = [
 
 /** Entity types offered in the filter (server does an exact match). */
 const ENTITY_TYPES: { value: string; label: string }[] = [
-  { value: ALL, label: "All entities" },
+  { value: ALL, label: "All kinds" },
   { value: "issue", label: "Task" },
   { value: "agent", label: "Agent" },
   { value: "heartbeat_run", label: "Run" },
@@ -187,7 +187,8 @@ function AuditEntityNode({ record }: { record: AuditActionRecord }) {
     );
   }
   // Non-linkable entities (company, agent, goal, …) — show a plain descriptor.
-  return <span className="text-muted-foreground">{record.entityType}</span>;
+  const entityLabel = ENTITY_TYPES.find((entry) => entry.value === record.entityType)?.label;
+  return <span className="text-muted-foreground">{entityLabel ? entityLabel.toLowerCase() : record.entityType.replace(/_/g, " ")}</span>;
 }
 
 function AuditRow({
@@ -212,7 +213,7 @@ function AuditRow({
   const documentKey = record.entity.issue && record.entity.document ? record.entity.document.key : null;
 
   return (
-    <li className="px-4 py-3 text-sm">
+    <li className="px-4 py-3 text-sm" title={record.action}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-foreground">
@@ -244,7 +245,6 @@ function AuditRow({
                 View run
               </Link>
             ) : null}
-            <span className="font-mono text-(length:--text-micro) text-subtle-foreground">{record.action}</span>
           </div>
         </div>
         <time
@@ -270,9 +270,7 @@ function AuditUpsell() {
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             The agent audit log gives you a searchable, exportable record of everything your agents
             did (every comment, task change, approval, and run) with the responsible person for
-            each action. Ask an administrator to grant you the{" "}
-            <span className="font-mono text-(length:--text-micro)">audit:view_agent_actions</span>{" "}
-            permission to view it.
+            each action. Ask an administrator to let you see agent activity.
           </p>
         </div>
       </CardContent>
@@ -530,10 +528,10 @@ export function AuditFeed({
       {hasLockedScope ? (
         <div className="border-y border-border px-1 py-2 text-xs text-muted-foreground">
           {lockedRunId
-            ? `Scoped to run ${lockedRunId.slice(0, 8)}`
+            ? "Showing this run only"
             : lockedAgentId
-              ? "Scoped to one agent"
-              : `Scoped to ${lockedEntity?.label ?? lockedEntity?.type ?? "entity"}`}
+              ? "Showing one agent only"
+              : `Showing ${lockedEntity?.label ?? "one item"} only`}
         </div>
       ) : null}
 
@@ -592,10 +590,10 @@ export function AuditFeed({
         </label>
         {!lockedEntity ? (
           <label className="grid gap-1 text-(length:--text-micro) font-medium text-muted-foreground">
-            <span>Entity</span>
+            <span>Kind</span>
             <Select value={entityType} onValueChange={setEntityType}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="Entity" />
+                <SelectValue placeholder="Kind" />
               </SelectTrigger>
               <SelectContent>
                 {ENTITY_TYPES.map((e) => (

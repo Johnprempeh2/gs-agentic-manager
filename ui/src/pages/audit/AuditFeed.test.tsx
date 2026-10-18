@@ -232,7 +232,7 @@ describe("AuditFeed", () => {
     );
     expect(container.textContent).toContain("tested get repository on");
     expect(container.querySelector('a[href="/apps/conn-1/permissions"]')).toBeTruthy();
-    expect(container.textContent).toContain("tool_gateway.call_completed");
+    expect(container.querySelector('li[title="tool_gateway.call_completed"]')).toBeTruthy();
   });
 
   it("shows the permission-denied upsell when the feed 403s", async () => {
@@ -242,7 +242,7 @@ describe("AuditFeed", () => {
     await render();
 
     expect(container.textContent).toContain("Agent audit is an Enterprise view");
-    expect(container.textContent).toContain("audit:view_agent_actions");
+    expect(container.textContent).toContain("Ask an administrator to let you see agent activity");
     // The feed chrome (filters, footer) is not rendered in the denied state.
     expect(container.textContent).not.toContain("Recorded by GS Agentic Manager");
   });
@@ -256,7 +256,7 @@ describe("AuditFeed", () => {
     expect(container.textContent).not.toContain("All responsible users");
     expect(container.textContent).not.toContain("Export CSV");
     expect(container.textContent).toContain("Action");
-    expect(container.textContent).toContain("Entity");
+    expect(container.textContent).toContain("Kind");
     expect(container.textContent).toContain("From");
     expect(container.textContent).toContain("To");
   });
@@ -549,7 +549,7 @@ describe("AuditFeed", () => {
     expect(container.textContent).toContain("Agent");
     expect(container.textContent).toContain("Responsible user");
     expect(container.textContent).toContain("Action");
-    expect(container.textContent).toContain("Entity");
+    expect(container.textContent).toContain("Kind");
   });
 
   it("pins run and entity scopes into distinct audit requests", async () => {
@@ -557,14 +557,14 @@ describe("AuditFeed", () => {
     expect(listAgentActionsMock.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({ actorScope: "agents", runId: "run-42" }),
     );
-    expect(container.textContent).toContain("Scoped to run run-42");
+    expect(container.textContent).toContain("Showing this run only");
 
     flushSync(() => root.unmount());
     await render({ lockedEntity: { type: "routine", id: "routine-7", label: "Nightly triage" } });
     expect(listAgentActionsMock.mock.calls.at(-1)?.[1]).toEqual(
       expect.objectContaining({ entityType: "routine", entityId: "routine-7" }),
     );
-    expect(container.textContent).toContain("Scoped to Nightly triage");
+    expect(container.textContent).toContain("Showing Nightly triage only");
   });
 
   it("only offers action domains present in the agent-action feed", async () => {

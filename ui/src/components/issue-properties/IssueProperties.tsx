@@ -1,4 +1,5 @@
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { normalizeLegacyRunnerProvider } from "@greatstone/adapter-utils";
@@ -489,6 +490,7 @@ export function IssueProperties({
     enabled: !!companyId && parentOpen && normalizedParentSearch.length > 0,
   });
 
+  const toastActions = useOptionalToastActions();
   const createLabel = useMutation({
     mutationFn: (data: { name: string; color: string }) => issuesApi.createLabel(companyId!, data),
     onSuccess: async (created) => {
@@ -503,6 +505,13 @@ export function IssueProperties({
       onUpdate({ labelIds: [...(issue.labelIds ?? []), created.id] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.issues.labels(companyId!) });
       setNewLabelName("");
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "The label was not created",
+        body: error instanceof Error && error.message.trim() ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 
@@ -522,7 +531,7 @@ export function IssueProperties({
     onError: (error) => {
       setUnarchiveErrorMessage(error instanceof Error && error.message.trim().length > 0
         ? error.message
-        : "Failed to unarchive this issue. Please try again.");
+        : "The task could not be brought back. Try again in a moment.");
     },
   });
 
@@ -849,7 +858,7 @@ export function IssueProperties({
         assigneeOverrideThinkingEffort,
         assigneeOverrideChrome ? "Chrome" : "",
       ].filter(Boolean);
-      const summary = details.length > 0 ? `Override · ${details.join(" · ")}` : "Override · adapter options";
+      const summary = details.length > 0 ? `Custom settings · ${details.join(" · ")}` : "Custom settings";
       return (
         <span
           className="min-w-0 truncate text-sm"
@@ -922,7 +931,7 @@ export function IssueProperties({
           </div>
           {assigneeAdapterType === "claude_local" ? (
             <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
-              <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
+              <div className="text-xs text-muted-foreground">Let the agent use a Chrome browser</div>
               <ToggleSwitch
                 checked={assigneeOverrideChrome}
                 onCheckedChange={(next) => updateAssigneeOverrideConfig({ chrome: next ? true : undefined })}
@@ -936,8 +945,8 @@ export function IssueProperties({
     <div className="w-full space-y-2 p-2">
       <p className="text-xs text-muted-foreground">
         {assignee
-          ? "This assignee's adapter does not expose editable task overrides."
-          : "Select a compatible assignee agent to edit these overrides."}
+          ? "The AI service this agent uses has no settings to change for one task."
+          : "Assign the task to an agent first to change these settings."}
       </p>
       <button
         type="button"
