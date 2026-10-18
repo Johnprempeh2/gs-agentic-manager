@@ -7,6 +7,7 @@ import {
   type CompanyClosingDeal,
   type CompanyClosingDealsResponse,
   type CompanyPipelineSummaryResponse,
+  type CompanyWonLostResponse,
   type CompanyQuietClient,
   type CompanyQuietClientsResponse,
   type CompanyRecentClientActivityResponse,
@@ -121,11 +122,31 @@ export function formatPipelineSummary(summary: CompanyPipelineSummaryResponse): 
   for (const stage of summary.stages) {
     lines.push(`${stage.pipelineName} / ${stage.stageName}: ${[`${stage.count}`, ...stage.valueByCurrency.map((entry) => amount(entry.value, entry.currency))].join(", ")}`);
   }
+  const owners = (summary.owners ?? []).filter((entry) => entry.owner !== null);
+  if (owners.length > 0) {
+    lines.push(`Owners: ${owners.map((entry) => `${entry.owner} ${entry.count}`).join(", ")}`);
+  }
   if (summary.topDeals.length > 0) {
     lines.push("Largest:");
     for (const deal of summary.topDeals) {
       lines.push(`${[amount(deal.value, deal.currency), deal.title, `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${deal.expectedCloseDate}` : null].filter(Boolean).join(" | ")}  ${deal.href}`);
     }
+  }
+  return lines;
+}
+
+/** Wins and losses as short lines: a summary, each deal, then lost reasons. */
+export function formatWonLost(result: CompanyWonLostResponse): string[] {
+  const worth = result.won.valueByCurrency.map((entry) => amount(entry.value, entry.currency)).join(", ");
+  const lines = [`Won ${result.won.count}${worth ? ` (worth ${worth})` : ""} and lost ${result.lost.count} in the last ${result.days} days.`];
+  for (const deal of result.won.deals) {
+    lines.push(`won ${deal.closedOn} | ${[deal.title, deal.value !== null ? amount(deal.value, deal.currency) : null, deal.pipelineName].filter(Boolean).join(" | ")}  ${deal.href}`);
+  }
+  for (const deal of result.lost.deals) {
+    lines.push(`lost ${deal.closedOn} | ${[deal.title, deal.lostReason, deal.value !== null ? amount(deal.value, deal.currency) : null, deal.pipelineName].filter(Boolean).join(" | ")}  ${deal.href}`);
+  }
+  if (result.lost.reasons.length > 0) {
+    lines.push(`Lost reasons: ${result.lost.reasons.map((entry) => `${entry.reason} (${entry.count})`).join(", ")}`);
   }
   return lines;
 }
@@ -245,7 +266,36 @@ export function registerSearchCommands(program: Command): void {
             printOutput(response, { json: true });
             return;
           }
-          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [] })) console.log(line);
+          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] })) console.log(line);
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
+  addCommonClientOptions(
+    program
+      .command("won-lost")
+      .description("Deals and leads won and lost lately, with value and lost reasons")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--days <n>", "Days back to look (1 to 365)", "30")
+      .option("--limit <n>", "Most deals to list for each of won and lost (1 to 50)", "5")
+      .action(async (opts: QuietClientsOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const days = Math.min(Math.max(Number.parseInt(opts.days ?? "30", 10) || 30, 1), 365);
+          const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "5", 10) || 5, 1), 50);
+          const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+          const response = await ctx.api.get<CompanyWonLostResponse>(
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/won-lost?${params.toString()}`,
+          );
+          if (ctx.json) {
+            printOutput(response, { json: true });
+            return;
+          }
+          if (!response) return;
+          for (const line of formatWonLost(response)) console.log(line);
         } catch (err) {
           handleCommandError(err);
         }

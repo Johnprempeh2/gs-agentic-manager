@@ -1,4 +1,4 @@
-import type { CompanyClientBriefResponse, CompanyClosingDealsResponse, CompanyPipelineSummaryResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
+import type { CompanyClientBriefResponse, CompanyClosingDealsResponse, CompanyPipelineSummaryResponse, CompanyWonLostResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -74,4 +74,12 @@ export const searchApi = {
   /** Open deals per stage, value per currency and the largest deals. */
   pipelineSummary: (companyId: string, params: { limit?: number } = {}) =>
     api.get<CompanyPipelineSummaryResponse>(`/companies/${companyId}/search/pipeline-summary${params.limit !== undefined ? `?limit=${params.limit}` : ""}`),
+  /** Deals won and lost in the last `days` days, with value and lost reasons. */
+  wonLost: (companyId: string, params: { days?: number; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.days !== undefined) search.set("days", String(params.days));
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api.get<CompanyWonLostResponse>(`/companies/${companyId}/search/won-lost${qs ? `?${qs}` : ""}`);
+  },
 };

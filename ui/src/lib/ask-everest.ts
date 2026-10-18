@@ -4,7 +4,7 @@
  * history). This is the instant answer; the panel can also pass the
  * question to Everest itself, whose reply arrives in its chat.
  */
-import type { AgentWorkDigest, CompanyClientBrief, CompanyClosingDealsResponse, CompanyPipelineSummaryResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, CompanyClientBrief, CompanyClosingDealsResponse, CompanyPipelineSummaryResponse, CompanyWonLostResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
 import { ORGANISATION_STATUS_LABELS, type OrganisationStatus } from "@greatstone/shared";
 import { timeAgo } from "./timeAgo";
 import { plainTaskStatus } from "./global-search";
@@ -27,7 +27,9 @@ export type AskIntent =
   /** "Which deals are closing this month?": open deals by expected close date within `days` (0 means only those past their date). */
   | { kind: "closing"; days: number }
   /** "How is the pipeline looking?": open deals per stage, value and the largest deals. */
-  | { kind: "pipeline" }
+  | { kind: "pipeline"; view: "stages" | "owners" }
+  /** "What did we win this month?": deals won and lost in the last `days` days. */
+  | { kind: "results"; days: number }
   /** "Tell me about Acme": a one-glance brief on an organisation. */
   | { kind: "brief"; subject: string | null }
   /** "What calls did we have this week?": recent notes, calls and meetings across clients. */
@@ -92,6 +94,8 @@ const BRIEF_WORDS = ["tell", "brief", "catch", "know", "background", "summary", 
 const BRIEF_RE = /\b(tell me about|brief me (on|about)|catch me up on|what do we know (about|on)|background on|(give me )?(a |an )?(summary|overview|profile) of|summari[sz]e)\b/i;
 const QUIET_RE = /\b(gone (quiet|cold|silent)|went (quiet|cold)|going (quiet|cold)|(have not|haven't|not) (we |i )?(heard from|spoken to|spoken with|talked to|contacted)|no contact|neglected|cold (clients|deals|leads)|(who|which (clients|deals|leads)) (should|do|must) (i|we) (chase|follow up)|need(s)? chasing|chase up|to chase|follow[- ]ups? due)\b/i;
 const CLOSING_RE = /\b(closing|close (this|next|by|in|soon|before|within)|due to close|expected to close|expected close|close dates?|past (their |the )?close|slipp(ed|ing)|forecast)\b/i;
+const RESULTS_RE = /\b(what (did|have) we (win|won|lose|lost)|(deals?|leads?) (did )?we (won|lost|win|lose)|(won|lost|win|lose) (this|last) (week|month|quarter|year)|(our|any|recent) (wins|losses)|lost (deals|leads|reasons?)|won (deals|leads)|why (are|did|have) we (losing|lose|lost)|win rate|what (have we|did we) close[d]?)\b/i;
+const OWNERS_RE = /\b((deals|leads|pipeline) (by|per) (owner|rep|salesperson|person)|by owner|per owner|who (owns|has) the most (deals|leads)|whose deals|who owns (which|what) deals)\b/i;
 const PIPELINE_RE = /\b(how('s| is| does) (the |our |my )?pipeline|pipeline (looking|look|summary|overview|health|value|worth|total)|how much is in (the |our |my )?pipeline|what('s| is) in (the |our |my )?pipeline|(biggest|largest|top|most valuable) (deals|leads|opportunities)|deals by stage|how many (open )?deals)\b/i;
 const PAST_CLOSE_RE = /\b(past (their |the )?close( date)?|slipp(ed|ing)|missed (their |the )?close)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
@@ -142,6 +146,13 @@ export function closingDays(question: string): number {
   return windowDays(question, 30);
 }
 
+/** "this week" 7, "this quarter" 90, "this year" 365; 30 otherwise. */
+export function resultsDays(question: string): number {
+  if (/\b(this|last|the) quarter\b/i.test(question)) return 90;
+  if (/\b(this|last|the) year\b/i.test(question)) return 365;
+  return windowDays(question, 30);
+}
+
 /** How far back a question looks: "today" 1, "this week" 7, "3 months" 90, otherwise `fallback`. */
 export function windowDays(question: string, fallback: number): number {
   const match = /\b(\d{1,3})\s*(day|days|week|weeks|month|months)\b/i.exec(question);
@@ -163,10 +174,12 @@ export function classifyQuestion(question: string, agents: readonly AskAgentRef[
   const trimmed = question.trim();
   if (AWAY_RE.test(trimmed)) return { kind: "away" };
   if (QUIET_RE.test(trimmed)) return { kind: "quiet", days: quietDays(trimmed) };
+  if (RESULTS_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) return { kind: "results", days: resultsDays(trimmed) };
   if (CLOSING_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) return { kind: "closing", days: closingDays(trimmed) };
+  if (OWNERS_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) return { kind: "pipeline", view: "owners" };
   if (PIPELINE_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
     const timed = windowDays(trimmed, 0) > 0 || /\b(this|next|the) (quarter|year)\b/i.test(trimmed);
-    return timed ? { kind: "closing", days: closingDays(trimmed) } : { kind: "pipeline" };
+    return timed ? { kind: "closing", days: closingDays(trimmed) } : { kind: "pipeline", view: "stages" };
   }
   if (BRIEF_RE.test(trimmed) && !STUCK_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
     return { kind: "brief", subject: questionSubject(trimmed, BRIEF_WORDS) };
@@ -446,11 +459,28 @@ export function answerClosing(result: CompanyClosingDealsResponse): AskAnswer {
 }
 
 /** Open deals per stage with value, then the largest deals. */
-export function answerPipeline(result: CompanyPipelineSummaryResponse): AskAnswer {
+export function answerPipeline(result: CompanyPipelineSummaryResponse, view: "stages" | "owners" = "stages"): AskAnswer {
   const { total, valueByCurrency, stages, topDeals } = result;
   const more = { label: "Open the pipelines", href: "/pipelines" };
   if (total === 0) return { headline: "There are no open deals or leads in any pipeline.", lines: [], more };
   const worth = valueByCurrency.filter((entry) => entry.value > 0).slice(0, 3).map((entry) => money(entry.value, entry.currency)).join(" and ");
+  if (view === "owners") {
+    const owners = result.owners ?? [];
+    const named = owners.filter((entry) => entry.owner !== null);
+    if (named.length === 0) {
+      return { headline: `None of the ${plural(total, "open deal or lead", "open deals and leads")} has an owner recorded.`, lines: [], more };
+    }
+    const top = named[0]!;
+    return {
+      headline: `${plural(total, "open deal or lead", "open deals and leads")} across ${plural(named.length, "owner")}. ${top.owner} has the most (${top.count}${top.valueByCurrency[0] ? `, ${money(top.valueByCurrency[0].value, top.valueByCurrency[0].currency)}` : ""}).`,
+      lines: owners.slice(0, 8).map((entry) => ({
+        text: entry.owner ?? "No owner",
+        detail: [plural(entry.count, "open deal"), ...entry.valueByCurrency.map((value) => money(value.value, value.currency))].join(", "),
+        href: "/pipelines",
+      })),
+      more,
+    };
+  }
   const busiest = [...stages].sort((a, b) => b.count - a.count)[0]!;
   const largest = topDeals[0];
   const lines: AnswerLine[] = [
@@ -468,6 +498,33 @@ export function answerPipeline(result: CompanyPipelineSummaryResponse): AskAnswe
   return {
     headline: `${plural(total, "open deal or lead", "open deals and leads")}${worth ? ` worth ${worth}` : ""}. Most are in ${busiest.stageName} (${busiest.count})${largest ? `; the largest is ${largest.title} at ${money(largest.value, largest.currency)}` : ""}.`,
     lines,
+    more,
+  };
+}
+
+/** Deals won and lost lately, with value and the main lost reason. */
+export function answerResults(result: CompanyWonLostResponse): AskAnswer {
+  const { won, lost, days } = result;
+  const period = days === 7 ? "this week" : days === 30 ? "this month" : days === 90 ? "this quarter" : days === 365 ? "this year" : `in the last ${plural(days, "day")}`;
+  const more = { label: "Open the pipelines", href: "/pipelines" };
+  if (won.count === 0 && lost.count === 0) return { headline: `No deals or leads were won or lost ${period}.`, lines: [], more };
+  const worth = won.valueByCurrency.slice(0, 3).map((entry) => money(entry.value, entry.currency)).join(" and ");
+  const reason = lost.reasons[0];
+  const day = (closedOn: string) => formatShortDate(`${closedOn}T12:00:00Z`);
+  return {
+    headline: `Won ${plural(won.count, "deal")}${worth ? ` worth ${worth}` : ""} and lost ${lost.count} ${period}.${reason ? ` The most common lost reason is ${reason.reason} (${reason.count}).` : ""}`,
+    lines: [
+      ...won.deals.map((deal) => ({
+        text: deal.title,
+        detail: [`Won ${day(deal.closedOn)}`, deal.value !== null ? money(deal.value, deal.currency) : null, deal.organisationName].filter(Boolean).join(", "),
+        href: deal.href,
+      })),
+      ...lost.deals.map((deal) => ({
+        text: deal.title,
+        detail: [`Lost ${day(deal.closedOn)}`, deal.lostReason, deal.value !== null ? money(deal.value, deal.currency) : null].filter(Boolean).join(", "),
+        href: deal.href,
+      })),
+    ],
     more,
   };
 }

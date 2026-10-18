@@ -308,4 +308,33 @@ export interface CompanyPipelineSummaryResponse {
   stages: CompanyPipelineStageSummary[];
   /** The largest open deals by value (values are not converted between currencies). */
   topDeals: CompanyPipelineDeal[];
+  /** Open deals per imported owner, most deals first; null owner when none was set. */
+  owners: Array<{ owner: string | null; count: number; valueByCurrency: Array<{ currency: string | null; value: number }> }>;
+}
+
+export interface CompanyClosedDeal {
+  caseId: string;
+  title: string;
+  pipelineName: string;
+  organisationName: string | null;
+  /** The day it was won or lost, YYYY-MM-DD. */
+  closedOn: string;
+  value: number | null;
+  currency: string | null;
+  /** Why it was lost, when recorded. */
+  lostReason: string | null;
+  href: string;
+}
+
+export interface CompanyClosedDealsGroup {
+  count: number;
+  valueByCurrency: Array<{ currency: string | null; value: number }>;
+  /** Most recent first. */
+  deals: CompanyClosedDeal[];
+}
+
+export interface CompanyWonLostResponse {
+  days: number;
+  won: CompanyClosedDealsGroup;
+  lost: CompanyClosedDealsGroup & { reasons: Array<{ reason: string; count: number }> };
 }
