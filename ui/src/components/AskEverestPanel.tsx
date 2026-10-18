@@ -27,6 +27,8 @@ import {
   answerStuck,
   answerHistory,
   answerPeople,
+  answerClosing,
+  answerPipeline,
   answerQuiet,
   answerActivity,
   answerBrief,
@@ -604,6 +606,18 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     enabled: active && intent.kind === "activity",
     retry: false,
   });
+  const closing = useQuery({
+    queryKey: ["ask-everest", companyId, "closing-deals", intent.kind === "closing" ? intent.days : null],
+    queryFn: () => searchApi.closingDeals(companyId, { days: intent.kind === "closing" ? intent.days : 30, limit: 8 }),
+    enabled: active && intent.kind === "closing",
+    retry: false,
+  });
+  const pipeline = useQuery({
+    queryKey: ["ask-everest", companyId, "pipeline-summary"],
+    queryFn: () => searchApi.pipelineSummary(companyId, { limit: 3 }),
+    enabled: active && intent.kind === "pipeline",
+    retry: false,
+  });
   const setLabel = taskSetLabel(intent);
   const set = useMemo(
     () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
@@ -618,6 +632,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (intent.kind === "quiet" && quiet.isPending)
     || (intent.kind === "activity" && recentActivity.isPending)
     || (intent.kind === "brief" && brief.isPending)
+    || (intent.kind === "closing" && closing.isPending)
+    || (intent.kind === "pipeline" && pipeline.isPending)
     || (intent.kind === "away" && digest.isPending)
     || (awaySince !== null && awayContact.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
@@ -626,6 +642,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (intent.kind === "quiet" && quiet.error)
     || (intent.kind === "activity" && recentActivity.error)
     || (intent.kind === "brief" && brief.error)
+    || (intent.kind === "closing" && closing.error)
+    || (intent.kind === "pipeline" && pipeline.error)
     || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
@@ -658,6 +676,10 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       return { value: answerActivity(recentActivity.data!) };
     case "quiet":
       return { value: answerQuiet(quiet.data!) };
+    case "closing":
+      return { value: answerClosing(closing.data!) };
+    case "pipeline":
+      return { value: answerPipeline(pipeline.data!) };
     case "people":
       return { value: answerPeople(intent.subject ?? "", records.data?.results ?? []) };
     default:
