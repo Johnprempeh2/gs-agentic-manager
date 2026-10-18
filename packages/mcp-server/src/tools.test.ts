@@ -586,4 +586,18 @@ describe("paperclip MCP tools", () => {
     const both = await getTool("studio_attach_to_task").execute({});
     expect(both.content[0]?.text).toContain("Give imageId or videoId");
   });
+
+  it("stars a studio image and lists the favourites", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "55555555-5555-4555-8555-555555555555", favourite: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getTool("studio_favourite_image").execute({ imageId: "55555555-5555-4555-8555-555555555555", favourite: true });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/generated-images/55555555-5555-4555-8555-555555555555/favourite");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ favourite: true });
+
+    await getTool("studio_list_images").execute({ favourite: true });
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("favourite=true");
+  });
 });

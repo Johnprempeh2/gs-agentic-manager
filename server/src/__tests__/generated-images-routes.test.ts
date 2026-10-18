@@ -255,6 +255,49 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(logged).toHaveLength(3);
   });
 
+  it("stars favourites, lists only them, and refuses to star an unfinished image", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images favourites");
+    const { storage } = memoryStorage();
+    let fail = false;
+    const server = app(actor, storage, () =>
+      provider(async () => {
+        if (fail) throw new ImageGenerationError("Higgsfield could not make this image. Please try again.", "provider_error");
+        return { image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null };
+      }),
+    );
+    const make = async (prompt: string) =>
+      (await request(server).post(`/api/companies/${companyId}/generated-images`).send({ prompt })).body as GeneratedImage;
+    const keeper = await make("Barista pouring a flat white");
+    const other = await make("Empty cafe at closing time");
+    await waitForGeneratedImageJobs();
+    fail = true;
+    const broken = await make("Neon cafe sign in the rain");
+    await waitForGeneratedImageJobs();
+
+    expect((await request(server).get(`/api/generated-images/${keeper.id}`)).body.favourite).toBe(false);
+    const starred = await request(server).patch(`/api/generated-images/${keeper.id}/favourite`).send({ favourite: true });
+    expect(starred.status).toBe(200);
+    expect(starred.body).toMatchObject({ id: keeper.id, favourite: true });
+
+    const favourites = await request(server).get(`/api/companies/${companyId}/generated-images?favourite=true`);
+    expect(favourites.body.images.map((image: GeneratedImage) => image.id)).toEqual([keeper.id]);
+    const rest = await request(server).get(`/api/companies/${companyId}/generated-images?favourite=false`);
+    expect(rest.body.images.map((image: GeneratedImage) => image.id).sort()).toEqual([other.id, broken.id].sort());
+    const bad = await request(server).get(`/api/companies/${companyId}/generated-images?favourite=maybe`);
+    expect(bad.status).toBe(400);
+
+    const notReady = await request(server).patch(`/api/generated-images/${broken.id}/favourite`).send({ favourite: true });
+    expect(notReady.status).toBe(422);
+    expect(notReady.body.details.code).toBe("generated_image_not_ready");
+    const missing = await request(server).patch(`/api/generated-images/${keeper.id}/favourite`).send({});
+    expect(missing.status).toBe(400);
+
+    const unstarred = await request(server).patch(`/api/generated-images/${keeper.id}/favourite`).send({ favourite: false });
+    expect(unstarred.body.favourite).toBe(false);
+    const logged = await ctx.db.select().from(activityLog).where(eq(activityLog.action, "generated_image.favourite_changed"));
+    expect(logged.map((row) => row.details)).toEqual([{ favourite: true }, { favourite: false }]);
+  });
+
   it("records a plain reason when the provider fails", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images fail");
     const { storage } = memoryStorage();

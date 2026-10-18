@@ -16,6 +16,7 @@ const imagesApiMock = vi.hoisted(() => ({
   createVariations: vi.fn(),
   get: vi.fn(),
   remove: vi.fn(),
+  setFavourite: vi.fn(),
 }));
 vi.mock("../api/images", () => ({ imagesApi: imagesApiMock }));
 const studioLooksApiMock = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() }));
@@ -54,6 +55,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     altText: "A test image",
     issueCover: false,
     organisationCover: false,
+    favourite: false,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,
@@ -72,7 +74,11 @@ async function render() {
       </QueryClientProvider>,
     );
   });
-  // Let the queries settle.
+  await settle();
+}
+
+/** Let queries and mutations settle. */
+async function settle() {
   for (let index = 0; index < 5; index += 1) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -338,5 +344,32 @@ describe("Images page", () => {
     expect(cards[1]!.textContent).toContain("You");
     expect(cards[2]!.textContent).toContain("run out of credits");
     expect(cards[2]!.textContent).toContain("Try again");
+  });
+
+  it("stars a favourite and shows only favourites when asked", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    let starred = false;
+    imagesApiMock.list.mockImplementation(async (_companyId: string, params: { favourite?: boolean }) => {
+      const all = [image({ id: "image-1", favourite: starred }), image({ id: "image-2", prompt: "A harbour at dusk" })];
+      const images = params.favourite ? all.filter((item) => item.favourite) : all;
+      return { images, total: images.length, nextOffset: null };
+    });
+    imagesApiMock.setFavourite.mockImplementation(async (_id: string, body: { favourite: boolean }) => {
+      starred = body.favourite;
+      return image({ id: "image-1", favourite: starred });
+    });
+    await render();
+
+    const star = container.querySelector('[data-testid="image-favourite"]') as HTMLButtonElement;
+    expect(star.getAttribute("aria-label")).toBe("Add to favourites");
+    await act(async () => star.click());
+    await settle();
+    expect(imagesApiMock.setFavourite).toHaveBeenCalledWith("image-1", { favourite: true });
+    expect(container.querySelector('[data-testid="image-favourite"]')?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => (container.querySelector('[data-testid="image-favourites-filter"]') as HTMLButtonElement).click());
+    await settle();
+    expect(imagesApiMock.list).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ favourite: true }));
+    expect(container.querySelectorAll('[data-testid="generated-image-card"]')).toHaveLength(1);
   });
 });

@@ -190,6 +190,24 @@ describe("gsam image", () => {
     expect(String(error.mock.calls[0]?.[0])).toContain("--compare needs 2 to 4 look names");
   });
 
+  it("stars a favourite and lists only favourites", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.includes("/generated-images?")) return json({ images: [image("completed", { favourite: true })], total: 1, nextOffset: null });
+      return json(image("completed", { favourite: true }));
+    }));
+    const base = ["--api-base", "http://localhost:3100", "--api-key", "t"];
+
+    await createProgram().parseAsync(["image", "favourite", IMAGE_ID, ...base], { from: "user" });
+    await createProgram().parseAsync(["image", "favourite", IMAGE_ID, "--off", ...base], { from: "user" });
+    await createProgram().parseAsync(["image", "list", "--favourites", "--company-id", COMPANY_ID, ...base], { from: "user" });
+
+    expect(calls[0]).toMatchObject({ url: `http://localhost:3100/api/generated-images/${IMAGE_ID}/favourite`, method: "PATCH", body: { favourite: true } });
+    expect(calls[1]).toMatchObject({ method: "PATCH", body: { favourite: false } });
+    expect(calls[2]!.url).toBe(`http://localhost:3100/api/companies/${COMPANY_ID}/generated-images?limit=20&favourite=true`);
+  });
+
   it("reads camera flags and numbers output files", () => {
     expect(cameraFromOptions({})).toBeNull();
     expect(cameraFromOptions({ aperture: "f1.4", focal: "85" })).toEqual({ aperture: "f1.4", focalLength: 85 });

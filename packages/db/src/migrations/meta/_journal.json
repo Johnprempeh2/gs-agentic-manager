@@ -2605,6 +2605,13 @@
       "when": 1792284278311,
       "tag": "0373_phone_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 374,
+      "version": "7",
+      "when": 1792290342239,
+      "tag": "0374_studio_image_favourites",
+      "breakpoints": true
     }
   ]
 }

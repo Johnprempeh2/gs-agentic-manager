@@ -162,3 +162,14 @@ endpoint with `shots` (up to 300 characters each) and an optional `lookId`.
 Agents use `--shot` once per shot on `gsam image generate`, or `shots` on
 `studio_make_image`.
 
+### Favourites
+
+The star on a finished image marks it as a favourite, a keeper. **Favourites**
+next to the gallery search shows only starred images, so after several
+versions, a look comparison or a storyboard the picks are easy to find. The
+API is `PATCH /api/generated-images/:id/favourite` with `{ "favourite": true }`
+(`422` `generated_image_not_ready` for an image that is not finished), and the
+list takes `?favourite=true`. Agents use `gsam image favourite <id>` (`--off`
+to unstar) and `gsam image list --favourites`, or `studio_favourite_image` and
+`favourite` on `studio_list_images`.
+

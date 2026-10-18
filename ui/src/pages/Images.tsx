@@ -24,6 +24,7 @@ import {
   Loader2,
   RotateCcw,
   Search,
+  Star,
   Trash2,
   Wand2,
 } from "lucide-react";
@@ -105,17 +106,44 @@ function NotSetUp({ provider }: { provider?: string | null }) {
   );
 }
 
+/** Star toggle for a finished image; filled when it is a favourite. */
+function FavouriteButton({
+  image,
+  onToggle,
+  className,
+}: {
+  image: GeneratedImage;
+  onToggle: (favourite: boolean) => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={image.favourite}
+      aria-label={image.favourite ? "Remove from favourites" : "Add to favourites"}
+      title={image.favourite ? "Remove from favourites" : "Add to favourites"}
+      onClick={() => onToggle(!image.favourite)}
+      className={className}
+      data-testid="image-favourite"
+    >
+      <Star className={image.favourite ? "h-4 w-4 fill-current text-primary" : "h-4 w-4"} aria-hidden="true" />
+    </button>
+  );
+}
+
 function ImageCard({
   image,
   makerName,
   onOpen,
   onRetry,
+  onFavourite,
   retrying,
 }: {
   image: GeneratedImage;
   makerName: string;
   onOpen: () => void;
   onRetry: () => void;
+  onFavourite: (favourite: boolean) => void;
   retrying: boolean;
 }) {
   return (
@@ -130,6 +158,13 @@ function ImageCard({
               className="h-full w-full object-cover transition-transform motion-safe:duration-300 group-hover:scale-105"
             />
           </button>
+        ) : null}
+        {image.status === "completed" && image.contentPath ? (
+          <FavouriteButton
+            image={image}
+            onToggle={onFavourite}
+            className="absolute right-2 top-2 rounded-full bg-background/80 p-1.5 text-foreground shadow-sm hover:bg-background"
+          />
         ) : image.status === "pending" ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground motion-safe:animate-pulse" role="status">
             <Loader2 className="h-6 w-6 motion-safe:animate-spin" aria-hidden="true" />
@@ -207,6 +242,7 @@ export function Images() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
+  const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tab, setTab] = useState<"images" | "videos">("images");
@@ -223,10 +259,14 @@ export function Images() {
 
   const companyId = selectedCompanyId ?? "";
   const filters = useMemo(
-    () => ({ q: debouncedSearch || undefined, organisationId: clientFilter || undefined }),
-    [debouncedSearch, clientFilter],
+    () => ({
+      q: debouncedSearch || undefined,
+      organisationId: clientFilter || undefined,
+      ...(favouritesOnly ? { favourite: true } : {}),
+    }),
+    [debouncedSearch, clientFilter, favouritesOnly],
   );
-  const filtering = !!filters.q || !!filters.organisationId;
+  const filtering = !!filters.q || !!filters.organisationId || favouritesOnly;
   const statusQuery = useQuery({
     queryKey: queryKeys.images.status(companyId),
     queryFn: () => imagesApi.status(companyId),
@@ -309,6 +349,22 @@ export function Images() {
       pushToast({ title: "Image deleted", tone: "success", ttlMs: 2500 });
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
     },
+    onError: (error) => pushToast({ title: errorMessage(error), tone: "error" }),
+  });
+
+  const favourite = useMutation({
+    mutationFn: ({ id, favourite: value }: { id: string; favourite: boolean }) => imagesApi.setFavourite(id, { favourite: value }),
+    onMutate: async ({ id, favourite: value }) => {
+      // Fill the star straight away (after any refetch in flight, which would undo it);
+      // the refetch afterwards settles the favourites filter.
+      await queryClient.cancelQueries({ queryKey: queryKeys.images.list(companyId) });
+      queryClient.setQueriesData<GeneratedImagesResponse>({ queryKey: queryKeys.images.list(companyId) }, (current) =>
+        current
+          ? { ...current, images: current.images.map((image) => (image.id === id ? { ...image, favourite: value } : image)) }
+          : current,
+      );
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) }),
     onError: (error) => pushToast({ title: errorMessage(error), tone: "error" }),
   });
 
@@ -557,12 +613,23 @@ export function Images() {
                 ))}
               </NativeSelect>
             ) : null}
+            <Button
+              variant={favouritesOnly ? "default" : "outline"}
+              aria-pressed={favouritesOnly}
+              onClick={() => setFavouritesOnly((value) => !value)}
+              data-testid="image-favourites-filter"
+            >
+              <Star className={favouritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} aria-hidden="true" />
+              Favourites
+            </Button>
           </div>
         ) : null}
 
         {images.length === 0 ? (
-          filtering ? (
-            <EmptyState icon={Search} title="No images match" message="Try other words, or show all clients." />
+          favouritesOnly && !filters.q && !filters.organisationId ? (
+            <EmptyState icon={Star} title="No favourites yet" message="Tap the star on an image to keep it here." />
+          ) : filtering ? (
+            <EmptyState icon={Search} title="No images match" message="Try other words, or show all clients and images." />
           ) : (
             <EmptyState
               icon={ImageIcon}
@@ -593,6 +660,7 @@ export function Images() {
                     issueId: image.issue?.id ?? null,
                   })
                 }
+                onFavourite={(value) => favourite.mutate({ id: image.id, favourite: value })}
                 retrying={create.isPending || !configured}
               />
             ))}
@@ -608,7 +676,16 @@ export function Images() {
           {opened ? (
             <>
               <DialogHeader>
-                <DialogTitle>Image</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  Image
+                  {opened.status === "completed" ? (
+                    <FavouriteButton
+                      image={opened}
+                      onToggle={(value) => favourite.mutate({ id: opened.id, favourite: value })}
+                      className="rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    />
+                  ) : null}
+                </DialogTitle>
                 <DialogDescription className="whitespace-pre-wrap">{opened.prompt}</DialogDescription>
               </DialogHeader>
               {opened.contentPath ? (

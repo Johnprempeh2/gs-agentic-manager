@@ -22,6 +22,7 @@ import {
   type ImageStylePresetId,
   type StudioCameraSettings,
   type UpdateGeneratedImageCover,
+  type UpdateGeneratedImageFavourite,
 } from "@greatstone/shared";
 import { notFound, tooManyRequests, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -81,6 +82,7 @@ export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageL
     altText: imageAltText(row.prompt, row.style),
     issueCover: row.issueCover,
     organisationCover: row.organisationCover,
+    favourite: row.favourite,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -363,12 +365,13 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     },
 
     list: async (companyId: string, query: Partial<GeneratedImagesQuery> = {}): Promise<GeneratedImagesResponse> => {
-      const { limit, offset, q, issueId, organisationId } = generatedImagesQuerySchema.parse(query);
+      const { limit, offset, q, issueId, organisationId, favourite } = generatedImagesQuerySchema.parse(query);
       await failLostJobs(companyId);
       const filters: SQL[] = [eq(generatedImages.companyId, companyId)];
       if (q) filters.push(ilike(generatedImages.prompt, `%${q.replace(/[\\%_]/g, (match) => `\\${match}`)}%`));
       if (issueId) filters.push(eq(generatedImages.issueId, issueId));
       if (organisationId) filters.push(eq(generatedImages.organisationId, organisationId));
+      if (favourite !== undefined) filters.push(eq(generatedImages.favourite, favourite));
       const where = and(...filters);
       const [rows, [{ total }]] = await Promise.all([
         db
@@ -447,6 +450,19 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           .then((rows) => rows[0]!);
       });
       return updated;
+    },
+
+    /** Star or unstar an image as a favourite. Only a finished image can be starred. */
+    setFavourite: async (row: GeneratedImageRow, patch: UpdateGeneratedImageFavourite) => {
+      if (patch.favourite && (row.status !== "completed" || !row.assetId)) {
+        throw unprocessable("Only a finished image can be a favourite", { code: "generated_image_not_ready" });
+      }
+      return db
+        .update(generatedImages)
+        .set({ favourite: patch.favourite, updatedAt: new Date() })
+        .where(eq(generatedImages.id, row.id))
+        .returning()
+        .then((rows) => rows[0] ?? row);
     },
 
     /** Every cover in the company, keyed by task id and by client id, for the boards. */

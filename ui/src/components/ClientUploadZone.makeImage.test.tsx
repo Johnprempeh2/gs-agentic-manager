@@ -38,6 +38,7 @@ const image: GeneratedImage = {
   altText: "Proposal cover with a skyline",
   issueCover: false,
   organisationCover: false,
+  favourite: false,
   createdAt: new Date().toISOString(),
   completedAt: new Date().toISOString(),
 };
