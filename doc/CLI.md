@@ -6,6 +6,30 @@ GS Agentic Manager CLI now supports both:
 - instance setup/diagnostics (`onboard`, `doctor`, `configure`, `env`, `allowed-hostname`, `env-lab`)
 - control-plane client operations (issues, approvals, agents, activity, dashboard)
 
+## Browser-approved Board authentication
+
+`npx gsam auth login --api-base <instance-url>` creates a ten-minute challenge
+and opens a browser approval link. Review the command and full Board access
+before approving. A requested company supplies audit context, not a restriction
+on the key. Approval requires current membership in that company or instance-admin
+authority. A different person cannot take over an approved challenge. A pending
+key cannot authenticate. The CLI checks the approved identity before storing
+the key. Board keys expire after thirty days by default.
+
+Challenge creation is limited to ten requests per ten minutes per client IP.
+Status polling has a separate limit of 120 requests per minute per client IP.
+HTTP 429 includes `Retry-After`. The CLI waits within the original challenge
+deadline and does not create another challenge. The browser retries only
+rate-limited status reads, at most three times within ten minutes or a known
+earlier expiry. It never repeats an approval automatically. Configure
+`TRUST_PROXY` for the actual trusted proxy boundary if needed; untrusted
+forwarding headers do not change the client IP budget.
+
+Approval, cancellation and revocation serialize their decisions. Approval and
+revocation commit their audit rows with the key state. Revocation uses the key's
+owner and trusted creation context, including after company membership ends.
+`npx gsam auth logout` attempts server revocation and removes the local key.
+
 ## Security: safe invocation for content-bearing arguments
 
 Use `npx gsam` for any command whose argument can hold untrusted or

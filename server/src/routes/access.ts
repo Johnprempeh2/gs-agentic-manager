@@ -12,7 +12,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
-import type { Request } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
@@ -2664,6 +2664,8 @@ export function accessRoutes(
     allowedHostnames: string[];
     inviteResolutionNetwork?: Partial<InviteResolutionNetwork>;
     inviteRateLimiter?: InviteRateLimiter;
+    cliAuthCreateRateLimiter?: InviteRateLimiter;
+    cliAuthPollRateLimiter?: InviteRateLimiter;
     authPublicBaseUrl?: string;
   }
 ) {
@@ -2789,18 +2791,27 @@ export function accessRoutes(
   // Anyone can open a CLI sign-in challenge, and each one is a database row
   // plus an approval link that could be sent to an admin. Bound how many one
   // address can open (same unforgeable `req.ip` key as the invite limiter).
-  const cliAuthChallengeRateLimiter = createInviteRateLimiter({ windowMs: 10 * 60_000, maxRequests: 10 });
+  const cliAuthChallengeRateLimiter = opts.cliAuthCreateRateLimiter ?? createInviteRateLimiter({ windowMs: 10 * 60_000, maxRequests: 10 });
+  const cliAuthPollRateLimiter = opts.cliAuthPollRateLimiter ?? createInviteRateLimiter({ maxRequests: 120 });
+  const limitCliAuth = (limiter: ReturnType<typeof createInviteRateLimiter>) => (req: Request, res: Response, next: NextFunction) => {
+    const result = limiter.consume(req.ip || req.socket?.remoteAddress || "unknown");
+    res.setHeader("X-RateLimit-Limit", String(result.limit));
+    res.setHeader("X-RateLimit-Remaining", String(result.remaining));
+    if (!result.allowed) {
+      res.setHeader("Retry-After", String(result.retryAfterSeconds));
+      next(tooManyRequests("Too many CLI auth requests", { retryAfterSeconds: result.retryAfterSeconds }));
+      return;
+    }
+    next();
+  };
+  router.use("/cli-auth/challenges", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
   router.post(
     "/cli-auth/challenges",
-    (req, res, next) => {
-      const result = cliAuthChallengeRateLimiter.consume(req.ip || req.socket?.remoteAddress || "unknown");
-      if (!result.allowed) {
-        res.setHeader("Retry-After", String(result.retryAfterSeconds));
-        next(tooManyRequests("Too many sign-in requests", { retryAfterSeconds: result.retryAfterSeconds }));
-        return;
-      }
-      next();
-    },
+    limitCliAuth(cliAuthChallengeRateLimiter),
     validate(createCliAuthChallengeSchema),
     async (req, res) => {
       const created = await boardAuth.createCliAuthChallenge(req.body);
@@ -2822,13 +2833,15 @@ export function accessRoutes(
     },
   );
 
-  router.get("/cli-auth/challenges/:id", async (req, res) => {
+  router.get("/cli-auth/challenges/:id", limitCliAuth(cliAuthPollRateLimiter), async (req, res) => {
     const id = (req.params.id as string).trim();
     const token =
       typeof req.query.token === "string" ? req.query.token.trim() : "";
     if (!id || !token) throw notFound("CLI auth challenge not found");
     if (!isUuidLike(id)) throw badRequest("Invalid CLI auth challenge ID");
-    const challenge = await boardAuth.describeCliAuthChallenge(id, token);
+    const challenge = await boardAuth.describeCliAuthChallenge(id, token, {
+      viewerUserId: req.actor.type === "board" ? req.actor.userId : undefined,
+    });
     if (!challenge) throw notFound("CLI auth challenge not found");
 
     const isSignedInBoardUser =
@@ -2837,6 +2850,8 @@ export function accessRoutes(
       Boolean(req.actor.userId);
     const canApprove =
       isSignedInBoardUser &&
+      (!challenge.requestedCompanyId || Boolean(req.actor.isInstanceAdmin) || isLocalImplicit(req)
+        || Boolean(req.actor.companyIds?.includes(challenge.requestedCompanyId))) &&
       (challenge.requestedAccess !== "instance_admin_required" ||
         isLocalImplicit(req) ||
         Boolean(req.actor.isInstanceAdmin));
@@ -2868,30 +2883,6 @@ export function accessRoutes(
         req.body.token,
         userId,
       );
-
-      if (approved.status === "approved") {
-        const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
-          userId,
-          requestedCompanyId: approved.challenge.requestedCompanyId,
-          boardApiKeyId: approved.challenge.boardApiKeyId,
-        });
-        for (const companyId of companyIds) {
-          await logActivity(db, {
-            companyId,
-            actorType: "user",
-            actorId: userId,
-            action: "board_api_key.created",
-            entityType: "user",
-            entityId: userId,
-            details: {
-              boardApiKeyId: approved.challenge.boardApiKeyId,
-              requestedAccess: approved.challenge.requestedAccess,
-              requestedCompanyId: approved.challenge.requestedCompanyId,
-              challengeId: approved.challenge.id,
-            },
-          });
-        }
-      }
 
       res.json({
         approved: approved.status === "approved",
@@ -2974,7 +2965,7 @@ export function accessRoutes(
           entityType: "user",
           entityId: req.actor.userId,
           details: {
-            boardApiKeyId: key.id,
+            keyId: key.id,
             name: key.name,
             requestedCompanyId: req.body.requestedCompanyId ?? null,
             expiresAt: key.expiresAt?.toISOString() ?? null,
@@ -2996,28 +2987,8 @@ export function accessRoutes(
     }
     const key = await boardAuth.getBoardApiKeyForUser(keyId, req.actor.userId);
     if (!key) throw notFound("Board API key not found");
-    const revoked = await boardAuth.revokeBoardApiKey(key.id);
+    const revoked = await boardAuth.revokeBoardApiKey(key.id, { userId: req.actor.userId, revokedVia: "board_api_key_lifecycle" });
     if (!revoked) throw notFound("Board API key not found");
-
-    const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
-      userId: req.actor.userId,
-      boardApiKeyId: key.id,
-    });
-    for (const companyId of companyIds) {
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: req.actor.userId,
-        action: "board_api_key.revoked",
-        entityType: "user",
-        entityId: req.actor.userId,
-        details: {
-          boardApiKeyId: key.id,
-          name: key.name,
-          revokedVia: "board_api_key_lifecycle",
-        },
-      });
-    }
 
     res.json({ ok: true, keyId: key.id });
   });
@@ -3030,25 +3001,7 @@ export function accessRoutes(
       req.actor.keyId,
       req.actor.userId,
     );
-    await boardAuth.revokeBoardApiKey(key.id);
-    const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
-      userId: key.userId,
-      boardApiKeyId: key.id,
-    });
-    for (const companyId of companyIds) {
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: key.userId,
-        action: "board_api_key.revoked",
-        entityType: "user",
-        entityId: key.userId,
-        details: {
-          boardApiKeyId: key.id,
-          revokedVia: "cli_auth_logout",
-        },
-      });
-    }
+    await boardAuth.revokeBoardApiKey(key.id, { userId: key.userId, revokedVia: "cli_auth_logout" });
     res.json({ revoked: true, keyId: key.id });
   });
 
