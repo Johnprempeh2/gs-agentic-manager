@@ -98,6 +98,27 @@ export function withDealOwner(fields: Record<string, unknown> | null | undefined
   return next;
 }
 
+/**
+ * A deal's fields with a new expected close date and probability. A blank input leaves that field as it is;
+ * throws when the probability is not a number from 0 to 100.
+ */
+export function withDealForecast(
+  fields: Record<string, unknown> | null | undefined,
+  { expectedClose, probability }: { expectedClose: string; probability: string },
+) {
+  const next: Record<string, unknown> = { ...(fields ?? {}) };
+  if (expectedClose.trim()) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expectedClose.trim())) throw new Error("Expected close must be a date");
+    next.expectedCloseDate = expectedClose.trim();
+  }
+  if (probability.trim()) {
+    const value = Number(probability);
+    if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error("Probability must be between 0 and 100");
+    next.probability = value;
+  }
+  return next;
+}
+
 /** Stages several deals can be moved to at once: open stages only, because won and lost need an outcome each. */
 export function bulkMoveStages(stages: readonly PipelineStage[]) {
   return [...stages]
@@ -173,6 +194,39 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
     },
     onError: (error) => {
       pushToast({ title: error instanceof Error ? error.message : "Could not move the deals", tone: "error" });
+    },
+  });
+
+  const [forecast, setForecast] = useState({ expectedClose: "", probability: "" });
+  const updateForecast = useMutation({
+    mutationFn: async () => {
+      withDealForecast({}, forecast);
+      let updated = 0;
+      let closed = 0;
+      for (const row of selectedRows) {
+        // Won and lost deals keep the close date and probability they ended with.
+        if (row.days == null && !moveTargets.some((stage) => stage.id === row.item.stageId)) {
+          closed += 1;
+          continue;
+        }
+        await pipelinesApi.updateCase(row.item.id, { fields: withDealForecast(row.item.fields, forecast) });
+        updated += 1;
+      }
+      return { updated, closed };
+    },
+    onSuccess: async ({ updated, closed }) => {
+      const pipelineIds = selectedRows.map((row) => row.item.pipelineId);
+      setSelected(new Set());
+      setForecast({ expectedClose: "", probability: "" });
+      await refreshBoards(pipelineIds);
+      const title = `Updated ${updated} ${updated === 1 ? "deal" : "deals"}`;
+      pushToast(closed > 0
+        ? { title, body: `${closed} won or lost ${closed === 1 ? "deal was" : "deals were"} left as ${closed === 1 ? "it was" : "they were"}.`, tone: "info" }
+        : { title, tone: "success" });
+    },
+    onError: async (error) => {
+      await refreshBoards(selectedRows.map((row) => row.item.pipelineId));
+      pushToast({ title: error instanceof Error ? error.message : "Could not update every deal", tone: "error" });
     },
   });
 
@@ -254,6 +308,43 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
           {moveDeals.isPending ? "Moving…" : "Move"}
         </Button>
         <span className="text-xs text-muted-foreground">Mark won or lost on each deal.</span>
+      </form>
+    ) : null}
+    {selectedRows.length > 0 ? (
+      <form
+        className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 text-sm"
+        aria-label="Set close date and probability"
+        onSubmit={(event) => {
+          event.preventDefault();
+          updateForecast.mutate();
+        }}
+      >
+        <span className="font-medium">Set on {selectedRows.length}</span>
+        <Input
+          type="date"
+          value={forecast.expectedClose}
+          onChange={(event) => setForecast((current) => ({ ...current, expectedClose: event.target.value }))}
+          aria-label="Expected close"
+          className="h-9 w-auto"
+        />
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          value={forecast.probability}
+          onChange={(event) => setForecast((current) => ({ ...current, probability: event.target.value }))}
+          placeholder="Probability %"
+          aria-label="Probability"
+          className="h-9 w-(--sz-180px)"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={updateForecast.isPending || (!forecast.expectedClose && !forecast.probability.trim())}
+        >
+          {updateForecast.isPending ? "Saving…" : "Set"}
+        </Button>
+        <span className="text-xs text-muted-foreground">A blank box leaves that field as it is.</span>
       </form>
     ) : null}
     <div className="overflow-x-auto rounded-md border border-border">

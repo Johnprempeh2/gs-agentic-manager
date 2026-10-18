@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineStage } from "../api/pipelines";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DealsList, buildDealRows, bulkMoveStages, sortDealRows, withDealOwner } from "./DealsList";
+import { DealsList, buildDealRows, bulkMoveStages, sortDealRows, withDealForecast, withDealOwner } from "./DealsList";
 
 const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), transitionCase: vi.fn(), pushToast: vi.fn() }));
 vi.mock("../api/pipelines", () => ({ pipelinesApi: { updateCase: mocks.updateCase, transitionCase: mocks.transitionCase } }));
@@ -81,6 +81,35 @@ describe("DealsList", () => {
     });
     expect(mocks.updateCase.mock.calls.map((call) => [call[0], call[1].fields.dealOwner])).toEqual([["b", "Ben"], ["a", "Ben"]]);
     expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Owner changed on 2 deals", tone: "success" });
+    root.unmount();
+  });
+
+  it("sets close date and probability, leaving blank inputs alone", () => {
+    expect(withDealForecast({ probability: 20 }, { expectedClose: "2026-11-30", probability: "" })).toEqual({ probability: 20, expectedCloseDate: "2026-11-30" });
+    expect(withDealForecast({ expectedCloseDate: "2026-11-01" }, { expectedClose: "", probability: "60" })).toEqual({ expectedCloseDate: "2026-11-01", probability: 60 });
+    expect(() => withDealForecast({}, { expectedClose: "", probability: "120" })).toThrow("Probability must be between 0 and 100");
+  });
+
+  it("sets the close date on the selected open deals and leaves won deals alone", async () => {
+    mocks.updateCase.mockReset();
+    mocks.updateCase.mockResolvedValue({});
+    mocks.pushToast.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><DealsList cases={cases} stages={stages} /></QueryClientProvider>));
+    await act(async () => (container.querySelector('[aria-label="Select every deal"]') as HTMLButtonElement).click());
+    const input = container.querySelector('input[aria-label="Expected close"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(input, "2026-11-30");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector('form[aria-label="Set close date and probability"]') as HTMLFormElement).requestSubmit();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(mocks.updateCase.mock.calls.map((call) => [call[0], call[1].fields.expectedCloseDate])).toEqual([["b", "2026-11-30"], ["a", "2026-11-30"]]);
+    expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Updated 2 deals", body: "1 won or lost deal was left as it was.", tone: "info" });
     root.unmount();
   });
 
