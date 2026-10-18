@@ -3785,6 +3785,15 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/approvals",
+  tags: ["agents"],
+  summary: "List approval requests the current agent filed that are still open, oldest first",
+  request: { query: z.object({ all: z.enum(["true", "1"]).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
 const AgentSecretListResponseSchema = z.object({
   secrets: z.array(
     z.object({

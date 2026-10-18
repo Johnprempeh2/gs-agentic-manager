@@ -18,7 +18,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "@greatstone/db";
 import type { ChatChannelService } from "../services/chat-channels.js";
-import { activityLog, agents as agentsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@greatstone/db";
+import { activityLog, agents as agentsTable, approvals as approvalsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@greatstone/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { sha256Digest } from "../services/feedback-redaction.js";
 import { rankDirectory } from "../services/agent-directory.js";
@@ -4386,6 +4386,39 @@ export function agentRoutes(
           oldestWaitingSince: cause.oldestWaitingSince,
         })),
     );
+  });
+
+  // Approval requests this agent filed that are still open, oldest first, so it
+  // does not file the same request twice and sees which ones need a resubmit.
+  router.get("/agents/me/approvals", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const includeClosed = req.query.all === "true" || req.query.all === "1";
+    const conditions = [
+      eq(approvalsTable.companyId, req.actor.companyId),
+      eq(approvalsTable.requestedByAgentId, req.actor.agentId),
+    ];
+    if (!includeClosed) conditions.push(inArray(approvalsTable.status, ["pending", "revision_requested"]));
+    const rows = await db
+      .select({
+        id: approvalsTable.id,
+        type: approvalsTable.type,
+        status: approvalsTable.status,
+        decisionNote: approvalsTable.decisionNote,
+        createdAt: approvalsTable.createdAt,
+        updatedAt: approvalsTable.updatedAt,
+      })
+      .from(approvalsTable)
+      .where(and(...conditions))
+      .orderBy(approvalsTable.createdAt)
+      .limit(100);
+    const now = Date.now();
+    res.json(rows.map((row) => ({
+      ...row,
+      ageDays: Math.max(0, Math.floor((now - row.createdAt.getTime()) / 86_400_000)),
+    })));
   });
 
   router.get("/agents/me/inbox/mine", async (req, res) => {

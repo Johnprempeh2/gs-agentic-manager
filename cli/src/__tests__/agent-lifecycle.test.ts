@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerAgentCommands } from "../commands/client/agent.js";
+import { agentBudgetSummary, registerAgentCommands } from "../commands/client/agent.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -133,6 +133,28 @@ describe("agent lifecycle commands", () => {
       "http://localhost:3100/api/agents/me/recent-done?limit=5",
       `http://localhost:3100/api/companies/${COMPANY_ID}/agents/directory?q=seo+audit&limit=10`,
     ]);
+  });
+
+  it("shows the agent's budget and its open approval requests", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({ id: AGENT_ID, budgetMonthlyCents: 5000, spentMonthlyCents: 1240 })))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse([{ id: "ap1", type: "hire_agent", status: "pending", decisionNote: null, ageDays: 2 }])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["agent", "budget"]);
+    await run(["agent", "approvals", "--all"]);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "http://localhost:3100/api/agents/me",
+      "http://localhost:3100/api/agents/me/approvals?all=true",
+    ]);
+  });
+
+  it("summarises a budget, and no cap when it is zero", () => {
+    expect(agentBudgetSummary(5000, 1240).text).toBe("Spent $12.40 of $50.00 this month (25%). $37.60 left.");
+    expect(agentBudgetSummary(0, 300)).toMatchObject({ remainingCents: null, text: "Spent $3.00 this month. No monthly budget is set." });
+    expect(agentBudgetSummary(1000, 1500)).toMatchObject({ remainingCents: 0, percentUsed: 150 });
   });
 
   it("lists what waits on the agent and its last failures", async () => {

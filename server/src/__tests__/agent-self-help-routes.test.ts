@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { agents, companies, createDb, heartbeatRuns, issueRelations, issues } from "@greatstone/db";
+import { agents, approvals, companies, createDb, heartbeatRuns, issueRelations, issues } from "@greatstone/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/index.js";
 import { agentRoutes } from "../routes/agents.js";
@@ -35,6 +35,7 @@ describeEmbeddedPostgres("agent self-help routes", () => {
 
   afterEach(async () => {
     await db.delete(heartbeatRuns);
+    await db.delete(approvals);
     await db.delete(issueRelations);
     await db.delete(issues);
     await db.delete(agents);
@@ -106,9 +107,30 @@ describeEmbeddedPostgres("agent self-help routes", () => {
     expect(res.body[0].waitingCount).toBe(2);
   });
 
+  it("lists the calling agent's open approval requests, oldest first", async () => {
+    const { companyId, agentId, otherId } = await seed();
+    await db.insert(approvals).values([
+      { companyId, type: "hire_agent", status: "pending", requestedByAgentId: agentId, payload: {}, createdAt: new Date(Date.now() - 3 * 86_400_000) },
+      { companyId, type: "request_board_approval", status: "revision_requested", requestedByAgentId: agentId, payload: {}, decisionNote: "Say why", createdAt: new Date(Date.now() - 86_400_000) },
+      { companyId, type: "hire_agent", status: "approved", requestedByAgentId: agentId, payload: {} },
+      { companyId, type: "hire_agent", status: "pending", requestedByAgentId: otherId, payload: {} },
+    ]);
+    const app = createApp(db, { type: "agent", agentId, companyId, source: "agent_jwt" });
+    const res = await request(app).get("/api/agents/me/approvals");
+    expect(res.status).toBe(200);
+    expect(res.body.map((row: { status: string }) => row.status)).toEqual(["pending", "revision_requested"]);
+    expect(res.body[0].ageDays).toBe(3);
+    expect(res.body[1].decisionNote).toBe("Say why");
+    expect(res.body[0].payload).toBeUndefined();
+
+    const all = await request(app).get("/api/agents/me/approvals?all=true");
+    expect(all.body).toHaveLength(3);
+  });
+
   it("refuses a board user", async () => {
     const app = createApp(db, { type: "board", userId: "local-board", source: "local_implicit" });
     expect((await request(app).get("/api/agents/me/failed-runs")).status).toBe(401);
     expect((await request(app).get("/api/agents/me/waiting-on-me")).status).toBe(401);
+    expect((await request(app).get("/api/agents/me/approvals")).status).toBe(401);
   });
 });
