@@ -343,32 +343,6 @@ gs_lock() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$dir/owner"
 }
 
-# preview_exclude_data <commit>: the tables whose rows the preview leaves out
-# (GSAM_PREVIEW_EXCLUDE_DATA, comma separated; large append-only logs that
-# nothing references). Their schema is still copied. A table that a migration
-# new in <commit> since live names keeps its rows, so that migration still
-# runs on real data.
-PREVIEW_EXCLUDE_DATA_DEFAULT="secret_access_events,heartbeat_run_events,tool_access_audit_events"
-preview_exclude_data() {
-  local commit="$1" live new table out=() tables=()
-  live="$(git -C "$LIVE_DIR" rev-parse HEAD 2>/dev/null || true)"
-  new=""
-  [ -z "$live" ] || new="$(git -C "$RELEASE_REPO" diff --name-only --diff-filter=AM "$live" "$commit" -- packages/db/src/migrations/ 2>/dev/null \
-    | grep '\.sql$' | while read -r f; do git -C "$RELEASE_REPO" show "$commit:$f" 2>/dev/null; done)"
-  IFS=, read -r -a tables <<<"${GSAM_PREVIEW_EXCLUDE_DATA-$PREVIEW_EXCLUDE_DATA_DEFAULT}"
-  for table in "${tables[@]}"; do
-    table="$(printf '%s' "$table" | tr -d '[:space:]')"
-    [ -n "$table" ] || continue
-    if printf '%s' "$new" | grep -qw -- "$table"; then
-      say "Keeping the rows of $table: a new migration in this candidate names it." >&2
-      continue
-    fi
-    out+=("$table")
-  done
-  local IFS=,
-  printf '%s' "${out[*]}"
-}
-
 # preview_check <commit> <tag>
 # Fails with the reason unless the preview runs <commit> and answers on
 # /api/health now. On 15 Oct 2026 the preview of rc-2026-10-15.3 never came up

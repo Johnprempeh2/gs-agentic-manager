@@ -115,8 +115,9 @@ to it.
   on every pull request. A newer push cancels the older run. A red Tests lane
   blocks the merge like any other lane: fix the test or the code (never skip
   a test); if you think it is a flake, rerun the job once and say so on the
-  issue. Only the runner's Rust tests stay manual. The release test gate still
-  runs the same lanes on the exact commit before each release (step 3).
+  issue. Only the runner's Rust tests stay manual. Every push to main runs the
+  same matrix on the merged commit, and that GitHub run is the release gate
+  (step 3).
   Run the tests your change touches before you open the pull request, and
   name them under "Tests run".
 
@@ -296,36 +297,41 @@ Merging does not change the live app. A version goes live in these steps.
    a version that never ran (GRE-239). A release from the app that is cancelled,
    or stops before the switch, deletes the `rc-*` tag it cut.
 
-   **Test gate.** A candidate is releasable only when the full test suite
-   passed on its exact commit. `greatstone-candidate.mjs` runs it right after
-   it cuts the tag (`scripts/greatstone-test-gate.sh <rc-tag>`, about 20
-   minutes on the PC): the lanes in `scripts/greatstone-test-gate.lanes` (the
-   Fork CI Tests matrix: server, chat, serialized route suites, UI and CLI,
-   packages) in parallel, in a clean clone at `~/GSAM/test-gate/code`. Run it
-   on the PC, never on the Mac. A pass writes `~/GSAM/test-gate/passed/<commit>`;
-   `greatstone-release.sh` refuses an `rc-*` tag without one. A failure names
-   each failing lane and test, with logs under `~/GSAM/test-gate/logs/<commit>/`,
-   and the candidate is not releasable: fix the tests on `main` (root cause:
-   fix the code, or the test if it asserts stale behaviour; never skip or
-   delete a test to go green) and cut a new candidate. A test that passes
-   alone but fails under the gate's load is a flake: fix its timing or give it
-   a longer timeout, and say so. `--no-test-gate` cuts the tag only; run the
-   gate before the hand-off to Flint. `scripts/greatstone-test-gate.sh --check
-   <rc-tag>` says whether a tag has passed. The release task names the gate
-   result ("Test gate: passed <time>").
+   **Test gate: GitHub (18 Oct 2026).** A candidate is releasable only when
+   Fork CI's full test matrix (the 13 lanes of
+   `scripts/greatstone-test-gate.lanes`, on GitHub's runners) is green for its
+   exact commit. `scripts/greatstone-github-gate.mjs <commit sha>` decides,
+   through the GitHub API (`gh`), and `greatstone-release.sh` and the release
+   queue call it. It passes when:
 
-   **The queue gates main by itself.** The release queue's worker on the PC
-   (see "The release queue" below) runs the same gate on every new
-   `origin/main` commit while nothing is queued: by commit, before any tag is
-   cut (`scripts/greatstone-test-gate.sh <full sha>` also works by hand). Only
-   the newest commit is tested: when main moves during a run, that run stops
-   and the newest starts; nothing piles up. It runs at low priority (`nice`,
-   `ionice`) and gives way: any other gate that finds it holding the lock stops
-   it and runs (the lock's `owner` file says `yield`). A candidate cut on a
-   commit that already passed needs no second gate: the pass marker is keyed by
-   commit. `scripts/greatstone-release-queue.mjs status` and the Releases page
-   show "main at <sha>: passed / failing (the failing lanes and tests) /
-   testing".
+   - a push run (every merge to main gets one) or a manual run on exactly that
+     commit is green: every job that ran succeeded and all 13 Tests lanes ran;
+     or
+   - the commit has the same files (git tree) as the merge commit that a green
+     pull request run tested. A merge of that pull request into an unchanged
+     main is such a commit, so it needs no second run.
+
+   While Fork CI still runs on the commit, it waits (at most
+   `GSAM_GITHUB_GATE_WAIT_SECONDS`, 30 minutes). A red job refuses the release
+   and names the failing jobs; fix it on `main` (root cause: fix the code, or
+   the test if it asserts stale behaviour; never skip or delete a test to go
+   green). A test that fails only sometimes is a flake: fix its timing, and
+   say so. The release task names the gate result.
+
+   **The PC gate is the fallback.** When GitHub cannot be asked (no `gh`, no
+   network), the release falls back to the PC's pass marker by itself and says
+   so. `greatstone-release.sh --pc-gate <rc-tag>` (and
+   `greatstone-release-queue.mjs enqueue --pc-gate ...`) uses it on purpose.
+   The PC gate is `scripts/greatstone-test-gate.sh <rc-tag or full sha>`: the
+   same lanes in parallel in a clean clone at `~/GSAM/test-gate/code` (about 22
+   to 45 minutes on the PC; never on the Mac). A pass writes
+   `~/GSAM/test-gate/passed/<commit>`; a failure names each failing lane and
+   test, with logs under `~/GSAM/test-gate/logs/<commit>/`.
+   `greatstone-candidate.mjs` still runs it after it cuts a tag unless you
+   pass `--no-test-gate` (the queue always does; with GitHub as the gate,
+   cutting a tag by hand with `--no-test-gate` is the normal way).
+   `scripts/greatstone-test-gate.sh --check <rc-tag>` says whether a tag has
+   a PC pass.
 
    **From an agent run, start the gate detached** (GRE-1643). The gate takes
    longer than most runs, and when a run ends the server stops its processes
@@ -415,7 +421,7 @@ Merging does not change the live app. A version goes live in these steps.
    (see "The release queue" below): **Release now** on the Releases page,
    from his phone or any device, or
    `node scripts/greatstone-release-queue.mjs enqueue main "<title>"` over SSH
-   on the PC. The queue runs the gate (skipped when main already passed), the
+   on the PC. The queue checks the commit's tests on GitHub (waiting while they run), the
    preview and the release script, with every check and the backup below. He
    can still run the release from the dev checkout by hand (see "By hand"
    below). He marks his task done. The **Releases** page (board only; agents
@@ -491,8 +497,9 @@ Merging does not change the live app. A version goes live in these steps.
    (an older candidate), so a release never goes backwards; to go back, roll
    back with a `live-*` tag (GRE-839).
 
-   It refuses an `rc-*` tag whose commit has no test gate pass (step 3) and
-   says how to run the gate; nothing is backed up or tagged. Only in an
+   It refuses an `rc-*` tag whose commit is not green on GitHub (step 3),
+   naming the failing jobs, or still running after the wait; nothing is backed
+   up or tagged. Only in an
    emergency (live is broken and the fix cannot wait for the gate):
 
    ```sh
@@ -534,8 +541,8 @@ Merging does not change the live app. A version goes live in these steps.
 ### The release queue
 
 One queue on the PC that every release request feeds, and one worker that
-works through it in order. It keeps every safety step: the full test suite on
-the exact commit, the preview on a copy of the live data with its switch
+works through it in order. It keeps every safety step: the full test matrix
+green on GitHub for the exact commit, the preview on a copy of the live data with its switch
 tests, the database backup before the switch, and the rollback command.
 
 **Ask for a release.**
@@ -545,7 +552,7 @@ tests, the database backup before the switch, and the rollback command.
 
   ```sh
   node scripts/greatstone-release-queue.mjs enqueue main "Decisions in the sidebar"   # or an rc-* tag, or a commit sha on main
-  node scripts/greatstone-release-queue.mjs status                                    # main's gate, the running request, the queue, results
+  node scripts/greatstone-release-queue.mjs status                                    # main on GitHub, the running request, the queue, results
   node scripts/greatstone-release-queue.mjs cancel rq-1a2b3c
   ```
 
@@ -564,9 +571,12 @@ tests, the database backup before the switch, and the rollback command.
    become one release of the newest main (the newest request's title names
    it); the others show "Released with another". A request whose commit live
    already runs ends as "Nothing to release".
-2. **Gate:** skipped when the commit has a pass marker (the queue's background
-   gate usually got there first); otherwise the full gate, and a failure ends
-   the request with the failing lanes and tests.
+2. **Gate (tests on GitHub):** `greatstone-github-gate.mjs` on the commit
+   (step 3). Green: on at once. Still running: it waits, at most 30 minutes.
+   Red: the request ends with the failing jobs. GitHub out of reach, or a
+   request made with `--pc-gate`: the PC gate runs instead (and the release
+   uses `--pc-gate`). With nothing queued the worker runs no tests; it only
+   records what GitHub says about `origin/main` for the Releases page.
 3. **Candidate:** `greatstone-candidate.mjs` cuts the next `rc-*` tag on that
    commit with the title (proposed from the changes when none was given).
 4. **Preview:** stops any preview, starts the candidate on a fresh copy of the
@@ -587,10 +597,10 @@ tests, the database backup before the switch, and the rollback command.
    rollback command and the backup file.
 
 A request is cancelled at once while it waits, or before its next step while
-it runs (a running gate is stopped). The release step itself cannot be
+it runs (a GitHub wait or a running PC gate is stopped). The release step itself cannot be
 cancelled; roll back afterwards.
 
-**State.** `~/GSAM/release-queue/queue.json` (requests, main's gate, the
+**State.** `~/GSAM/release-queue/queue.json` (requests, main's GitHub status, the
 worker's last run; it survives restarts) and one log per request in
 `~/GSAM/release-queue/logs/`. The worker writes it under the lock
 `~/GSAM/locks/release-queue-state.lock`; one worker runs at a time
