@@ -721,7 +721,8 @@ contacted for 30 days (`--days 14` to change it), so you know who to follow up. 
 gives a client's status, open deals, people and last contact before you write to them.
 `gsam client-activity` lists this week's client notes and calls. `gsam closing-deals` lists deals
 expected to close in the next 30 days, overdue first, with their value; `gsam pipeline-summary`
-gives open deals per stage and the largest ones.
+gives open deals per stage and the largest ones; `gsam won-lost` lists recent wins and losses
+with lost reasons.
 
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your

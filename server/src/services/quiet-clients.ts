@@ -8,6 +8,8 @@ import type {
   CompanyPipelineDeal,
   CompanyPipelineStageSummary,
   CompanyPipelineSummaryResponse,
+  CompanyClosedDeal,
+  CompanyWonLostResponse,
   CompanyQuietClient,
   CompanyQuietClientsResponse,
   CompanyRecentClientActivityResponse,
@@ -38,6 +40,21 @@ interface ClosingRow {
   closeDate: string | null;
   value: number | string | null;
   currency: string | null;
+  count: number | null;
+}
+
+interface WonLostRow {
+  row_kind: "deal" | "currency" | "reason";
+  outcome: "won" | "lost";
+  caseId: string | null;
+  title: string | null;
+  pipelineId: string | null;
+  pipelineName: string | null;
+  organisationName: string | null;
+  closedOn: string | null;
+  value: number | string | null;
+  currency: string | null;
+  lostReason: string | null;
   count: number | null;
 }
 
@@ -441,6 +458,94 @@ export function quietClientsService(db: Db) {
           .sort((a, b) => b.value - a.value),
         stages,
         topDeals,
+      };
+    },
+
+    /**
+     * Deals and leads won or lost in the last `days` days, by the imported won,
+     * lost or closed date, else when the case reached its done or cancelled
+     * stage. Lost deals also carry their reasons.
+     */
+    wonLost: async (companyId: string, options: { days: number; limit: number; now?: Date }): Promise<CompanyWonLostResponse> => {
+      const now = options.now ?? new Date();
+      const from = new Date(now.getTime() - options.days * DAY_MS).toISOString().slice(0, 10);
+      const today = now.toISOString().slice(0, 10);
+      const rows = await db.execute(sql`
+        WITH closed AS (
+          SELECT pc.id, pc.title, pc.pipeline_id, p.name AS pipeline_name, o.name AS organisation_name,
+            CASE WHEN st.kind = 'done' THEN 'won' ELSE 'lost' END AS outcome,
+            coalesce(
+              CASE WHEN st.kind = 'done' AND pc.fields->>'wonOn' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN pc.fields->>'wonOn' END,
+              CASE WHEN st.kind = 'cancelled' AND pc.fields->>'lostOn' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN pc.fields->>'lostOn' END,
+              CASE WHEN pc.fields->>'closedOn' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN pc.fields->>'closedOn' END,
+              to_char(coalesce(pc.terminal_at, pc.updated_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+            ) AS closed_on,
+            CASE
+              WHEN jsonb_typeof(pc.fields->'dealValue') = 'number' THEN (pc.fields->>'dealValue')::numeric
+              WHEN jsonb_typeof(pc.fields->'leadValue') = 'number' THEN (pc.fields->>'leadValue')::numeric
+            END AS value,
+            nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency,
+            CASE WHEN st.kind = 'cancelled' THEN nullif(trim(pc.fields->>'lostReason'), '') END AS lost_reason
+          FROM pipeline_cases pc
+          JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
+          JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('done', 'cancelled')
+          LEFT JOIN organisations o ON o.id = pc.organisation_id AND o.archived_at IS NULL
+          WHERE pc.company_id = ${companyId}
+            AND pc.retired_at IS NULL
+        ),
+        windowed AS (
+          SELECT *, row_number() OVER (PARTITION BY outcome ORDER BY closed_on DESC, id) AS rank
+          FROM closed WHERE closed_on >= ${from} AND closed_on <= ${today}
+        )
+        SELECT 'deal' AS row_kind, outcome, id AS "caseId", title, pipeline_id AS "pipelineId", pipeline_name AS "pipelineName",
+          organisation_name AS "organisationName", closed_on AS "closedOn", value::float8 AS value, currency,
+          lost_reason AS "lostReason", NULL::int AS count
+        FROM windowed WHERE rank <= ${options.limit}
+        UNION ALL
+        SELECT 'currency', outcome, NULL, NULL, NULL, NULL, NULL, NULL, coalesce(sum(value), 0)::float8, currency, NULL, count(*)::int
+        FROM windowed GROUP BY outcome, currency
+        UNION ALL
+        SELECT 'reason', outcome, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, lost_reason, count(*)::int
+        FROM windowed WHERE outcome = 'lost' AND lost_reason IS NOT NULL GROUP BY outcome, lost_reason
+      `) as unknown as WonLostRow[];
+
+      const prefix = await routePrefix(db, companyId);
+      const group = (outcome: "won" | "lost") => {
+        const currencies = rows.filter((row) => row.row_kind === "currency" && row.outcome === outcome);
+        const deals: CompanyClosedDeal[] = rows
+          .filter((row) => row.row_kind === "deal" && row.outcome === outcome)
+          .sort((a, b) => (a.closedOn! > b.closedOn! ? -1 : a.closedOn! < b.closedOn! ? 1 : 0))
+          .map((row) => ({
+            caseId: row.caseId!,
+            title: row.title!,
+            pipelineName: row.pipelineName!,
+            organisationName: row.organisationName,
+            closedOn: row.closedOn!,
+            value: row.value === null ? null : Number(row.value),
+            currency: row.currency,
+            lostReason: row.lostReason,
+            href: `/${prefix}/pipelines/${row.pipelineId}/items/${row.caseId}`,
+          }));
+        return {
+          count: currencies.reduce((sum, row) => sum + Number(row.count ?? 0), 0),
+          valueByCurrency: currencies
+            .filter((row) => Number(row.value) > 0)
+            .map((row) => ({ currency: row.currency, value: Number(row.value) }))
+            .sort((a, b) => b.value - a.value),
+          deals,
+        };
+      };
+      return {
+        days: options.days,
+        won: group("won"),
+        lost: {
+          ...group("lost"),
+          reasons: rows
+            .filter((row) => row.row_kind === "reason")
+            .map((row) => ({ reason: row.lostReason!, count: Number(row.count ?? 0) }))
+            .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+            .slice(0, 5),
+        },
       };
     },
   };

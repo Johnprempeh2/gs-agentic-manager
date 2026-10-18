@@ -188,6 +188,14 @@ is the pipeline looking?" and "What are our biggest deals?" from it; a pipeline
 question with a time ("this quarter") goes to deals closing instead. Agents use
 `gsam pipeline-summary`.
 
+`GET /api/companies/:companyId/search/won-lost?days=30&limit=5` lists deals and
+leads won (done stage) and lost (cancelled stage) in the last `days` days (1 to
+365), most recent first, with the count and value per currency for each and the
+top lost reasons. The day is the imported won or lost date, else the imported
+closed date, else when the case reached that stage. Ask Everest answers "What
+did we win this month?", "Which deals did we lose this quarter?" and "Why are we
+losing deals?" from it; agents use `gsam won-lost`.
+
 ## Reproduce the evaluation
 
 ```sh

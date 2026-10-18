@@ -1024,6 +1024,8 @@ npx gsam client-activity --company-id <company-id> [--days 7] [--limit 20] [--js
 npx gsam closing-deals --company-id <company-id> [--days 30] [--limit 10] [--json]
 # Open deals and leads per stage with their value, and the largest deals.
 npx gsam pipeline-summary --company-id <company-id> [--limit 5] [--json]
+# Deals and leads won and lost lately, with value and lost reasons.
+npx gsam won-lost --company-id <company-id> [--days 30] [--limit 5] [--json]
 ```
 
 ```sh

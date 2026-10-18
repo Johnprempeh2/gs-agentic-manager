@@ -9,6 +9,7 @@ import {
   answerQuiet,
   answerClosing,
   answerPipeline,
+  answerResults,
   closingDays,
   answerActivity,
   answerBrief,
@@ -169,6 +170,25 @@ describe("answers", () => {
     expect(classifyQuestion("Which leads are past their close date?", agents)).toEqual({ kind: "closing", days: 0 });
     expect(closingDays("expected to close in 2 weeks")).toBe(14);
     expect(classifyQuestion("What is Mason closing today?", agents).kind).toBe("agent");
+  });
+
+  it("spots questions about deals won and lost", () => {
+    expect(classifyQuestion("What did we win this month?", agents)).toEqual({ kind: "results", days: 30 });
+    expect(classifyQuestion("Which deals did we lose this quarter?", agents)).toEqual({ kind: "results", days: 90 });
+    expect(classifyQuestion("Why are we losing deals?", agents)).toEqual({ kind: "results", days: 30 });
+    expect(classifyQuestion("Any wins this week?", agents)).toEqual({ kind: "results", days: 7 });
+  });
+
+  it("sums up wins and losses with the main lost reason", () => {
+    const deal = (title: string, closedOn: string, extra: object = {}) => ({ caseId: title, title, pipelineName: "Sales", organisationName: null, closedOn, value: null, currency: null, lostReason: null, href: `/GRE/pipelines/p/items/${title}`, ...extra });
+    const answer = answerResults({
+      days: 30,
+      won: { count: 2, valueByCurrency: [{ currency: "GBP", value: 5000 }], deals: [deal("Recent win", "2026-10-15", { value: 1000, currency: "GBP", organisationName: "Heron Ltd" })] },
+      lost: { count: 3, valueByCurrency: [], deals: [deal("Lost again", "2026-10-12", { lostReason: "Price" })], reasons: [{ reason: "Price", count: 2 }] },
+    });
+    expect(answer.headline).toBe("Won 2 deals worth GBP 5,000 and lost 3 this month. The most common lost reason is Price (2).");
+    expect(answer.lines.map((line) => line.detail)).toEqual(["Won 15 Oct, GBP 1,000, Heron Ltd", "Lost 12 Oct, Price"]);
+    expect(answerResults({ days: 7, won: { count: 0, valueByCurrency: [], deals: [] }, lost: { count: 0, valueByCurrency: [], deals: [], reasons: [] } }).headline).toBe("No deals or leads were won or lost this week.");
   });
 
   it("spots questions about the pipeline as a whole", () => {

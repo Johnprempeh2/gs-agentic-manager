@@ -158,6 +158,26 @@ describe("gsam search", () => {
     ]);
   });
 
+  it("prints deals won and lost with lost reasons", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        days: 30,
+        won: { count: 1, valueByCurrency: [{ currency: "GBP", value: 1000 }], deals: [{ caseId: "w", title: "Recent win", pipelineName: "Sales", organisationName: null, closedOn: "2026-10-15", value: 1000, currency: "GBP", lostReason: null, href: "/GRE/pipelines/p/items/w" }] },
+        lost: { count: 1, valueByCurrency: [], deals: [{ caseId: "l", title: "Lost again", pipelineName: "Sales", organisationName: null, closedOn: "2026-10-12", value: null, currency: null, lostReason: "Price", href: "/GRE/pipelines/p/items/l" }], reasons: [{ reason: "Price", count: 1 }] },
+      });
+    }));
+    await run(["won-lost"]);
+    expect(new URL(urls[0]!).pathname).toBe(`/api/companies/${COMPANY_ID}/search/won-lost`);
+    expect(lines).toEqual([
+      "Won 1 (worth GBP 1000) and lost 1 in the last 30 days.",
+      "won 2026-10-15 | Recent win | GBP 1000 | Sales  /GRE/pipelines/p/items/w",
+      "lost 2026-10-12 | Lost again | Price | Sales  /GRE/pipelines/p/items/l",
+      "Lost reasons: Price (1)",
+    ]);
+  });
+
   it("prints a client brief", async () => {
     const urls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
