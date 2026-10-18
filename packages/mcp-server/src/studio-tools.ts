@@ -4,6 +4,7 @@ import {
   createGeneratedVideoSchema,
   createStudioLookSchema,
   IMAGE_STYLE_PRESETS,
+  LOCAL_IMAGE_MODELS,
   mcpToolHints,
   STUDIO_APERTURES,
   STUDIO_CAMERAS,
@@ -40,6 +41,8 @@ const STUDIO_MAKE_IMAGE_DESCRIPTION = [
   `shots: 2 to ${STUDIO_MAX_VARIATIONS} storyboard moments; each is joined to prompt, which they share, with the same lookId (leave out count).`,
   "Several versions start together or not at all.",
   "issueId links the image to a task; organisationId to a client.",
+  `provider "local" with model ${LOCAL_IMAGE_MODELS.map((model) => model.id).join(" or ")} makes it on this PC's graphics card at no cost`,
+  "(studio_status shows local.imageModels when it is ready); seed repeats a picture and negativePrompt keeps things out (sdxl).",
 ].join(" ");
 
 const STUDIO_MAKE_VIDEO_DESCRIPTION = [
@@ -48,6 +51,7 @@ const STUDIO_MAKE_VIDEO_DESCRIPTION = [
   `model: ${VIDEO_MODELS.map((model) => `${model.id} (${model.durations.join(" or ")} s${model.textPath ? "" : ", needs sourceImageId"})`).join("; ")}.`,
   `motion: ${VIDEO_MOTION_PRESETS.map((preset) => preset.id).join(", ")}. camera takes the same fields as studio_make_image.`,
   "lookId applies a saved house look's camera and words. issueId links the clip to a task; organisationId to a client.",
+  "wan-2.2-5b runs on this PC's graphics card at no cost, one clip at a time; while pending, progress gives its queuePosition and percent.",
 ].join(" ");
 
 const studioMakeVideoSchema = createGeneratedVideoSchema.safeExtend({ companyId: companyIdOptional });

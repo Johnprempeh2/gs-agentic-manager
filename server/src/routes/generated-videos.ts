@@ -17,10 +17,11 @@ export function generatedVideoRoutes(db: Db, storage: StorageService, options: G
   const router = Router();
   const svc = generatedVideoService(db, storage, options);
 
-  router.get("/companies/:companyId/video-generation", (req, res) => {
+  router.get("/companies/:companyId/video-generation", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    res.json(describeVideoGeneration(svc.status()));
+    const { provider, local } = await svc.status();
+    res.json(describeVideoGeneration(provider, local));
   });
 
   router.get("/companies/:companyId/generated-videos", async (req, res) => {
@@ -61,6 +62,28 @@ export function generatedVideoRoutes(db: Db, storage: StorageService, options: G
       details: { favourite: updated.favourite },
     });
     res.json(await svc.toResponse(updated));
+  });
+
+  router.post("/generated-videos/:id/cancel", async (req, res) => {
+    const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Clip not found");
+    if (!row) return;
+    // Write path: the oracle guard wants the read gate named before the write check.
+    if (!hasCompanyAccess(req, row.companyId)) throw notFound("Clip not found");
+    assertCompanyAccess(req, row.companyId);
+    const actor = getActorInfo(req);
+    const cancelled = await svc.cancel(row, actor.actorType === "agent" ? "an agent" : "a board member");
+    await logActivity(db, {
+      companyId: row.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "generated_video.cancelled",
+      entityType: "generated_video",
+      entityId: row.id,
+      details: { provider: row.provider, model: row.model },
+    });
+    res.json(await svc.toResponse(cancelled));
   });
 
   router.delete("/generated-videos/:id", async (req, res) => {

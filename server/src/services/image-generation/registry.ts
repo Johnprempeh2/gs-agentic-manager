@@ -2,6 +2,7 @@ import {
   IMAGE_GENERATION_PROVIDER_LABELS,
   type ImageGenerationProviderId,
   type ImageGenerationStatus,
+  type LocalGpuStatus,
 } from "@greatstone/shared";
 import { createHiggsfieldProvider, higgsfieldCredentialsFromEnv } from "./higgsfield.js";
 import { createMockImageProvider } from "./mock.js";
@@ -41,12 +42,18 @@ export function resolveImageGenerationProvider(env: NodeJS.ProcessEnv = process.
   return null;
 }
 
-export function describeImageGeneration(provider: ImageGenerationProvider | null): ImageGenerationStatus {
-  if (!provider) return { configured: false, provider: null, providerLabel: null, model: null };
+/** The default service, or the local GPU's first model when no other is set up. */
+export function describeImageGeneration(
+  provider: ImageGenerationProvider | null,
+  local: LocalGpuStatus | null = null,
+): ImageGenerationStatus {
+  const fallback = provider ?? (local?.imageModels[0] ? { id: "local" as const, model: local.imageModels[0] } : null);
+  if (!fallback) return { configured: false, provider: null, providerLabel: null, model: null, local };
   return {
     configured: true,
-    provider: provider.id,
-    providerLabel: IMAGE_GENERATION_PROVIDER_LABELS[provider.id],
-    model: provider.model,
+    provider: fallback.id,
+    providerLabel: IMAGE_GENERATION_PROVIDER_LABELS[fallback.id],
+    model: fallback.model,
+    local,
   };
 }

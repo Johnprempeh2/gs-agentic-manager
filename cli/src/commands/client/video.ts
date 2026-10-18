@@ -168,6 +168,21 @@ export function registerVideoCommands(program: Command): void {
 
   addCommonClientOptions(
     video
+      .command("cancel")
+      .description("Stop a clip that is waiting or being made (for example, a long one on this PC's graphics card)")
+      .argument("<videoId>", "Generated video ID")
+      .action(async (videoId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.post<GeneratedVideo>(apiPath`/api/generated-videos/${videoId}/cancel`, {}), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    video
       .command("favourite")
       .description("Star a finished clip as a favourite (a keeper), or unstar it with --off")
       .argument("<videoId>", "Generated video ID")

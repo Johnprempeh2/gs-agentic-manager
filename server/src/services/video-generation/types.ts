@@ -7,6 +7,8 @@ export interface VideoGenerationInput {
   durationSeconds: number;
   /** The picture to animate, for image to video. */
   sourceImage: { bytes: Buffer; contentType: string } | null;
+  /** The generated video id, so the local GPU queue can report progress. */
+  jobId?: string;
   signal?: AbortSignal;
 }
 

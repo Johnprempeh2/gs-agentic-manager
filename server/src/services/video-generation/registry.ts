@@ -1,4 +1,4 @@
-import { VIDEO_GENERATION_PROVIDER_LABELS, type VideoGenerationStatus } from "@greatstone/shared";
+import { VIDEO_GENERATION_PROVIDER_LABELS, type LocalGpuStatus, type VideoGenerationStatus } from "@greatstone/shared";
 import { higgsfieldCredentialsFromEnv } from "../image-generation/higgsfield.js";
 import { PRACTICE_VIDEO_MP4_BASE64 } from "./practice-video.js";
 import { createHiggsfieldVideoProvider } from "./higgsfield.js";
@@ -32,7 +32,12 @@ export function resolveVideoGenerationProvider(env: NodeJS.ProcessEnv = process.
   return null;
 }
 
-export function describeVideoGeneration(provider: VideoGenerationProvider | null): VideoGenerationStatus {
-  if (!provider) return { configured: false, provider: null, providerLabel: null };
-  return { configured: true, provider: provider.id, providerLabel: VIDEO_GENERATION_PROVIDER_LABELS[provider.id] };
+/** The default service, or the local GPU when it can make clips and no other is set up. */
+export function describeVideoGeneration(
+  provider: VideoGenerationProvider | null,
+  local: LocalGpuStatus | null = null,
+): VideoGenerationStatus {
+  const id = provider?.id ?? (local?.videoModels.length ? "local" : null);
+  if (!id) return { configured: false, provider: null, providerLabel: null, local };
+  return { configured: true, provider: id, providerLabel: VIDEO_GENERATION_PROVIDER_LABELS[id], local };
 }

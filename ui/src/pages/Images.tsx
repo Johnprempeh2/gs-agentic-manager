@@ -5,11 +5,16 @@ import {
   GENERATED_IMAGE_PROMPT_MAX_LENGTH,
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
   HIGGSFIELD_API_KEYS_URL,
+  IMAGE_SEED_MAX,
+  LOCAL_GPU_LABEL,
+  LOCAL_IMAGE_MODELS,
+  localImageModel,
   imageShapeLabel,
   imageStyleLabel,
   hasStudioCamera,
   studioCameraLabel,
   STUDIO_VARIATION_COUNTS,
+  type CreateGeneratedImage,
   type GeneratedImage,
   type GeneratedImagesResponse,
   type ImageAspectRatio,
@@ -23,6 +28,7 @@ import {
   Clapperboard,
   Columns2,
   Copy,
+  Cpu,
   Download,
   ExternalLink,
   Film,
@@ -269,6 +275,10 @@ export function Images() {
   const [lookName, setLookName] = useState<string | null>(null);
   const [openChip, setOpenChip] = useState<string | null>(null);
   const [variations, setVariations] = useState<number>(1);
+  /** "" is the server's default; "cloud" its paid service; "local:<model>" this PC. */
+  const [engine, setEngine] = useState("");
+  const [seed, setSeed] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [compareLookIds, setCompareLookIds] = useState<string[]>([]);
   const [shots, setShots] = useState<string[]>([]);
   const [organisationId, setOrganisationId] = useState("");
@@ -349,6 +359,10 @@ export function Images() {
       count?: number;
       lookIds?: string[];
       shots?: string[];
+      provider?: CreateGeneratedImage["provider"];
+      model?: string;
+      seed?: number;
+      negativePrompt?: string;
     }) => {
       const { count = 1, lookIds, shots: storyboard, ...body } = input;
       if (storyboard && storyboard.length >= 2) {
@@ -402,8 +416,34 @@ export function Images() {
   });
 
   const configured = statusQuery.data?.configured === true;
+  // The model picker: the paid service when one is set up, and this PC's models only while ComfyUI answers.
+  const cloudProvider = statusQuery.data?.provider && statusQuery.data.provider !== "local" ? statusQuery.data : null;
+  const engineChoices = [
+    ...(cloudProvider
+      ? [{ key: "cloud", label: cloudProvider.providerLabel ?? "Image service", hint: `Uses ${cloudProvider.providerLabel ?? "its"} credits` }]
+      : []),
+    ...LOCAL_IMAGE_MODELS.filter((model) => statusQuery.data?.local?.imageModels.includes(model.id)).map((model) => ({
+      key: `local:${model.id}`,
+      label: `${model.label}, ${LOCAL_GPU_LABEL}`,
+      hint: `${model.hint}. No cost.`,
+    })),
+  ];
+  const pickedEngine = engineChoices.find((choice) => choice.key === engine) ?? engineChoices[0] ?? null;
+  const localModel = pickedEngine?.key.startsWith("local:") ? localImageModel(pickedEngine.key.slice("local:".length)) : null;
+  const seedNumber = seed.trim() === "" ? undefined : Number(seed);
+  const seedValid = seedNumber === undefined || (Number.isInteger(seedNumber) && seedNumber >= 0 && seedNumber <= IMAGE_SEED_MAX);
+  const engineRequest = localModel
+    ? {
+        provider: "local" as const,
+        model: localModel.id,
+        ...(seedNumber !== undefined && seedValid ? { seed: seedNumber } : {}),
+        ...(localModel.negativePrompt && negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+      }
+    : engine === "cloud" && cloudProvider?.provider
+      ? { provider: cloudProvider.provider }
+      : {};
   const trimmed = prompt.trim();
-  const canSubmit = configured && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
+  const canSubmit = configured && seedValid && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
 
   const shotLines = shots.map((shot) => shot.trim()).filter(Boolean);
   const storyboarding = shotLines.length >= 2;
@@ -421,6 +461,7 @@ export function Images() {
         count: variations,
         ...(comparing ? { lookIds: compareLookIds } : {}),
         ...(storyboarding ? { shots: shotLines } : {}),
+        ...engineRequest,
       },
       {
         onSuccess: () => {
@@ -475,6 +516,79 @@ export function Images() {
   const pickedClient = organisations?.find((organisation) => organisation.id === organisationId)?.name ?? null;
 
   const chips: StudioComposerChip[] = [
+    ...(engineChoices.some((choice) => choice.key.startsWith("local:"))
+      ? [
+          {
+            id: "model",
+            icon: Cpu,
+            label: "Model",
+            value: pickedEngine?.label ?? null,
+            panel: (
+              <div className="space-y-3">
+                <fieldset className="space-y-2" disabled={!configured}>
+                  <legend className="text-sm font-medium">Which model makes it?</legend>
+                  <div className="flex flex-col gap-2" role="radiogroup" aria-label="Model" data-testid="image-model">
+                    {engineChoices.map((choice) => (
+                      <button
+                        key={choice.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={pickedEngine?.key === choice.key}
+                        onClick={() => setEngine(choice.key)}
+                        className={
+                          pickedEngine?.key === choice.key
+                            ? "rounded-md border border-primary bg-primary/10 px-3 py-2 text-left text-sm ring-1 ring-primary"
+                            : "rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/40"
+                        }
+                      >
+                        <span className="block font-medium">{choice.label}</span>
+                        <span className="block text-xs text-muted-foreground">{choice.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                {localModel ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-sm font-medium" htmlFor="image-seed">
+                      <span className="block">
+                        Seed <span className="font-normal text-muted-foreground">(optional)</span>
+                      </span>
+                      <Input
+                        id="image-seed"
+                        inputMode="numeric"
+                        value={seed}
+                        onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
+                        placeholder="Random"
+                        aria-invalid={!seedValid}
+                        aria-describedby="image-seed-hint"
+                        data-testid="image-seed"
+                      />
+                      <span id="image-seed-hint" className="block text-xs font-normal text-muted-foreground">
+                        {seedValid ? "The same seed and words make the same picture again." : "Use a whole number up to 4294967295."}
+                      </span>
+                    </label>
+                    {localModel.negativePrompt ? (
+                      <label className="space-y-1 text-sm font-medium" htmlFor="image-negative">
+                        <span className="block">
+                          Leave out <span className="font-normal text-muted-foreground">(optional)</span>
+                        </span>
+                        <Input
+                          id="image-negative"
+                          value={negativePrompt}
+                          onChange={(event) => setNegativePrompt(event.target.value)}
+                          placeholder="For example: text, blur, extra fingers"
+                          maxLength={1000}
+                          data-testid="image-negative"
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ),
+          },
+        ]
+      : []),
     {
       id: "shape",
       icon: Proportions,
@@ -573,7 +687,9 @@ export function Images() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            More versions give you more to choose from. Each one costs the same as a single image.
+            {localModel
+              ? "More versions give you more to choose from. They are made on this PC one after another, at no cost."
+              : "More versions give you more to choose from. Each one costs the same as a single image."}
           </p>
         </fieldset>
       ),
@@ -679,7 +795,15 @@ export function Images() {
           <div className="flex flex-col gap-6">
             <StudioComposer
               title="Make an image"
-              aside={statusQuery.data?.providerLabel ? `Using ${statusQuery.data.providerLabel}` : null}
+              aside={
+                localModel
+                  ? `Using ${LOCAL_GPU_LABEL}, no cost`
+                  : pickedEngine
+                    ? `Using ${pickedEngine.label}`
+                    : statusQuery.data?.providerLabel
+                      ? `Using ${statusQuery.data.providerLabel}`
+                      : null
+              }
               chips={chips}
               openChip={openChip}
               onOpenChipChange={setOpenChip}
