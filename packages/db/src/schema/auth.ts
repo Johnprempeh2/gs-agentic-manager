@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex, jsonb, uuid } from "drizzle-orm/pg-core";
 
 export const authUsers = pgTable("user", {
   id: text("id").primaryKey(),
@@ -111,5 +111,29 @@ export const authSignInLockouts = pgTable(
   },
   (table) => ({
     updatedAtIdx: index("sign_in_lockout_updated_at_idx").on(table.updatedAt),
+  }),
+);
+
+/**
+ * Each person's recent sign-in attempts (server/src/auth/sign-in-history.ts),
+ * shown to them on Profile so they can spot a password someone else knows.
+ * Only attempts on an existing account are kept, and rows older than 90 days
+ * are removed as new ones come in.
+ */
+export const authSignInEvents = pgTable(
+  "sign_in_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    /** signed_in, wrong_password, or code_needed (password right, two-step code not yet given). */
+    outcome: text("outcome").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userCreatedIdx: index("sign_in_event_user_created_idx").on(table.userId, table.createdAt),
   }),
 );

@@ -9141,6 +9141,14 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/auth/sign-in-history",
+  tags: ["auth"],
+  summary: "The current user's recent sign-in attempts (signed in, wrong password, waiting for a two-step code)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/auth/sessions/revoke-others",
   tags: ["auth"],
