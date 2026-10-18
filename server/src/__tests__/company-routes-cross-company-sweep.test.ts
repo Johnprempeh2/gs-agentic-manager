@@ -95,6 +95,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
     + "the claim secret in the body is the credential, not a session. Company join-request routes are swept above.",
   "/api/board-api-keys/:keyId": "Board API keys belong to the signed-in user, not a company.",
   "/api/cli-auth/challenges/:id": "CLI login challenges belong to the signed-in user, not a company.",
+  "/api/auth/sessions/:sessionId": "Sign-in sessions belong to the signed-in user, not a company; "
+    + "the revoke handler only matches the caller's own sessions.",
   "/api/admin/users/:userId": "Instance-admin only; the id is a user, not a company record.",
   "/api/adapters/:type": "Adapter types are instance-wide code, not company records.",
   "/api/skills/:skillName": "Bundled skill docs, the same for every company.",

@@ -28,6 +28,7 @@ import type { InspectDatabaseBackupHealthOptions } from "./services/database-bac
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
+import { twoStepRequiredGuard } from "./auth/two-step-requirement.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { boardQuestionRunGuard } from "./middleware/board-question-run-guard.js";
 import {
@@ -634,6 +635,9 @@ export async function createApp(
   // A memory_only key reaches organization memory and nothing else (GRE-958),
   // and only while it belongs to an active person's app link (GRE-1081).
   app.use(memoryOnlyKeyGuard(db));
+  // While an admin requires two-step sign-in, a password-only session reaches
+  // sign-in and two-step setup only (see two-step-requirement.ts).
+  app.use(twoStepRequiredGuard(db));
   app.use("/api/auth", authRoutes(db));
   if (opts.betterAuthHandler) {
     app.all("/api/auth/{*authPath}", opts.betterAuthHandler);

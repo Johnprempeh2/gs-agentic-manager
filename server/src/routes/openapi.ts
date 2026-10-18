@@ -1594,6 +1594,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/members/{memberId}",
   "PATCH /api/companies/{companyId}/members/{memberId}/role-and-grants",
   "POST /api/companies/{companyId}/members/{memberId}/archive",
+  "POST /api/companies/{companyId}/members/{memberId}/two-step/reset",
   "POST /api/companies/{companyId}/legacy-board/retire",
   "POST /api/companies/{companyId}/legacy-board/restore",
   "POST /api/companies/{companyId}/members/{memberId}/handover",
@@ -8803,6 +8804,17 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/companies/{companyId}/members/{memberId}/two-step/reset",
+  tags: ["access"],
+  summary: "Reset a member's two-step sign-in after a lost phone",
+  description:
+    "Removes the person's authenticator key and backup codes and signs them out everywhere. An instance admin may reset anyone but themselves; a company owner or admin may reset someone below their role who belongs to no other organisation.",
+  request: { params: z.object({ companyId: z.string(), memberId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/companies/{companyId}/legacy-board/retire",
   tags: ["access"],
   summary: "Retire the legacy local-board account",
@@ -9072,6 +9084,31 @@ registry.registerPath({
   tags: ["auth"],
   summary: "Get current user profile",
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/sessions",
+  tags: ["auth"],
+  summary: "Where the current user is signed in (live sessions, no tokens)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/sessions/revoke-others",
+  tags: ["auth"],
+  summary: "Sign the current user out everywhere except this device",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/sessions/{sessionId}/revoke",
+  tags: ["auth"],
+  summary: "Sign the current user out on one other device",
+  request: { params: z.object({ sessionId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

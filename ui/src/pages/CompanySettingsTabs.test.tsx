@@ -134,7 +134,7 @@ describe("CompanySettings tabs", () => {
     chooseTab("Security");
     await vi.waitFor(() => expect(observedSearch).toBe("?tab=security"));
     // Radix keeps the old panel mounted for a tick while it leaves.
-    await vi.waitFor(() => expect(sections()).toEqual(["deploymentStatus,censorUsernameInLogs"]));
+    await vi.waitFor(() => expect(sections()).toEqual(["deploymentStatus,requireTwoStepSignIn,censorUsernameInLogs"]));
 
     chooseTab("Backups and data");
     await vi.waitFor(() => expect(observedSearch).toBe("?tab=backups"));
@@ -148,6 +148,7 @@ describe("CompanySettings tabs", () => {
   it("drops a tab the operator has emptied and falls back to General", () => {
     render("/ACM/company/settings?tab=security", [
       "instance.general.deploymentStatus",
+      "instance.general.requireTwoStepSignIn",
       "instance.general.censorUsernameInLogs",
     ]);
 

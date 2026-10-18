@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import {
   activityLog,
   agentRuntimeState,
+  companySkills,
   agents,
   agentWakeupRequests,
   authUsers,
@@ -75,6 +76,9 @@ describeEmbeddedPostgres("board agent chat (GRE-1186)", () => {
       await db.delete(agentRuntimeState);
       await db.delete(agents);
       await db.delete(principalPermissionGrants);
+      // A started run can install the company's bundled skills in the
+      // background, after the test body ends.
+      await db.delete(companySkills);
       await resetCompanyIssueFixtures(db);
     },
   });

@@ -14,6 +14,7 @@ import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
 import { setAuthMode } from "./commands/auth-mode.js";
 import { resetBoardPassword } from "./commands/auth-reset-password.js";
+import { resetBoardTwoStep } from "./commands/auth-reset-two-step.js";
 import { dbBackupCommand } from "./commands/db-backup.js";
 import { registerEnvLabCommands } from "./commands/env-lab.js";
 import { registerContextCommands } from "./commands/client/context.js";
@@ -314,6 +315,15 @@ auth
   .option("--password-stdin", "Read the new password from stdin", false)
   .option("--generate", "Generate a password and print it", false)
   .action(resetBoardPassword);
+
+auth
+  .command("reset-two-step")
+  .description("Turn off two-step sign-in for a user who lost their phone, and sign them out everywhere")
+  .requiredOption("--email <email>", "Email of the user")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--db-url <url>", "Database connection string (default: found from the install)")
+  .action(resetBoardTwoStep);
 
 registerClientAuthCommands(auth);
 

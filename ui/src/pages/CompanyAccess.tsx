@@ -4,7 +4,7 @@ import {
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
   hidesCompanyPage,
 } from "@greatstone/shared";
-import { Shield, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
+import { KeyRound, Shield, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { ApiError } from "@/api/client";
@@ -82,6 +82,7 @@ export function CompanyAccess() {
   // Kept as a snapshot: once handed over, the person leaves the list but the
   // dialog still shows the result.
   const [handingOverMember, setHandingOverMember] = useState<CompanyMember | null>(null);
+  const [resettingTwoStepMember, setResettingTwoStepMember] = useState<CompanyMember | null>(null);
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
 
@@ -202,6 +203,26 @@ export function CompanyAccess() {
       pushToast({
         title: "Could not restore access",
         body: error instanceof Error ? error.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+    },
+  });
+
+  const resetTwoStepMutation = useMutation({
+    mutationFn: (memberId: string) => accessApi.resetMemberTwoStep(selectedCompanyId!, memberId),
+    onSuccess: async () => {
+      setResettingTwoStepMember(null);
+      await refreshAccessData();
+      pushToast({
+        title: "Two-step sign-in reset",
+        body: "They are signed out. They sign in with their password and set it up again.",
+        tone: "success",
+      });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Could not reset two-step sign-in",
+        body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
     },
@@ -385,6 +406,12 @@ export function CompanyAccess() {
                         <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
                           Edit
                         </Button>
+                        {member.twoStep?.canReset ? (
+                          <Button size="sm" variant="outline" onClick={() => setResettingTwoStepMember(member)}>
+                            <KeyRound className="mr-1 h-3.5 w-3.5" />
+                            Reset two-step
+                          </Button>
+                        ) : null}
                         {member.status === "active" || member.status === "pending" ? (
                           <span
                             className="inline-flex"
@@ -500,6 +527,32 @@ export function CompanyAccess() {
               disabled={updateMemberMutation.isPending}
             >
               {updateMemberMutation.isPending ? "Saving…" : "Save member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!resettingTwoStepMember} onOpenChange={(open) => !open && setResettingTwoStepMember(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset two-step sign-in?</DialogTitle>
+            <DialogDescription>
+              For when {resettingTwoStepMember ? memberDisplayName(resettingTwoStepMember) : "this person"} has lost
+              their phone and their backup codes. They are signed out everywhere and can then sign in with their
+              password alone, so check it is really them asking. If two-step sign-in is required, they set it up again
+              straight away.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResettingTwoStepMember(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => resettingTwoStepMember && resetTwoStepMutation.mutate(resettingTwoStepMember.id)}
+              disabled={resetTwoStepMutation.isPending}
+            >
+              {resetTwoStepMutation.isPending ? "Resetting…" : "Reset two-step sign-in"}
             </Button>
           </DialogFooter>
         </DialogContent>
