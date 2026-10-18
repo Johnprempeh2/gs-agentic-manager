@@ -347,3 +347,20 @@ export function dealNextStepLabel(fields: Record<string, unknown> | null | undef
   const subject = readText(fields?.nextActivitySubject);
   return `${formatDay(date.slice(0, 10))}${subject ? ` · ${subject}` : ""}`;
 }
+
+/** Why deals were lost in the last `days` days: one row per reason, most common first. */
+export function lostReasonBreakdown(cases: Array<{ fields?: Record<string, unknown> | null }>, now: Date = new Date(), days = 90) {
+  const since = now.getTime() - days * DAY_MS;
+  const groups = new Map<string, Array<{ fields?: Record<string, unknown> | null }>>();
+  for (const item of cases) {
+    const deal = readDevtoolsDeal(item.fields);
+    if (deal.status?.trim().toLowerCase() !== "lost") continue;
+    const time = deal.closedOn ? new Date(deal.closedOn).getTime() : Number.NaN;
+    if (!Number.isFinite(time) || time < since) continue;
+    const reason = deal.lostReason ?? "No reason given";
+    groups.set(reason, [...(groups.get(reason) ?? []), item]);
+  }
+  return [...groups.entries()]
+    .map(([reason, items]) => ({ reason, count: items.length, totals: sumDealValues(items) }))
+    .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason));
+}

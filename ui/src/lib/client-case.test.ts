@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, lostReasonBreakdown, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -146,5 +146,22 @@ describe("dealNextStepLabel", () => {
     expect(dealNextStepLabel({ nextActivityDate: "2026-10-20", nextActivitySubject: "Demo call" }, day)).toBe("day 2026-10-20 · Demo call");
     expect(dealNextStepLabel({ nextActivityDate: "2026-10-20T09:00:00Z" }, day)).toBe("day 2026-10-20");
     expect(dealNextStepLabel({ nextActivitySubject: "Demo" }, day)).toBeNull();
+  });
+});
+
+describe("lostReasonBreakdown", () => {
+  it("groups deals lost in the last 90 days by reason, most common first", () => {
+    const lost = (lostReason: string | null, lostOn: string, dealValue = 1000) => ({
+      fields: { dealStatus: "Lost", lostOn, dealValue, dealCurrency: "GBP", ...(lostReason ? { lostReason } : {}) },
+    });
+    expect(
+      lostReasonBreakdown(
+        [lost("Price", "2026-10-01"), lost("Price", "2026-09-01", 500), lost(null, "2026-10-10"), lost("Timing", "2026-05-01"), { fields: { dealStatus: "Won", wonOn: "2026-10-01" } }],
+        new Date("2026-10-17T12:00:00Z"),
+      ),
+    ).toEqual([
+      { reason: "Price", count: 2, totals: [{ currency: "GBP", total: 1500 }] },
+      { reason: "No reason given", count: 1, totals: [{ currency: "GBP", total: 1000 }] },
+    ]);
   });
 });

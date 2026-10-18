@@ -47,3 +47,27 @@ export function DealForecast({ buckets }: { buckets: ForecastBucket[] }) {
     </section>
   );
 }
+
+/** Why DevTools deals were lost in the last 90 days, most common reason first. */
+export function LostReasons({ rows }: { rows: Array<{ reason: string; count: number; totals: Array<{ currency: string; total: number }> }> }) {
+  if (rows.length === 0) return null;
+  const lost = rows.reduce((sum, row) => sum + row.count, 0);
+  return (
+    <details className="rounded-lg border border-border bg-card p-3 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
+        Why we lost {lost} {lost === 1 ? "deal" : "deals"} in the last 90 days
+      </summary>
+      <ul className="mt-2 divide-y divide-border" aria-label="Lost reasons">
+        {rows.map((row) => (
+          <li key={row.reason} className="flex items-center justify-between gap-3 py-1.5" data-testid="lost-reason">
+            <span className="min-w-0 flex-1 truncate">{row.reason}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {row.count} {row.count === 1 ? "deal" : "deals"}
+              {row.totals.length > 0 ? ` · ${formatDealTotals(row.totals)}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
