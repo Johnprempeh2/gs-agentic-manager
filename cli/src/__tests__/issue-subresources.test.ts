@@ -64,6 +64,9 @@ describe("issue subresource commands", () => {
     await run(["issue", "document-links", ISSUE_ID]);
     await run(["issue", "document-link:create", ISSUE_ID, "--source-issue", SOURCE, "--key", "plan"]);
     await run(["issue", "document-link:delete", ISSUE_ID, LINK]);
+    await run(["issue", "watchdog", ISSUE_ID]);
+    await run(["issue", "watchdog:set", ISSUE_ID, "--agent", AGENT, "--instructions", "Nudge if idle for a day"]);
+    await run(["issue", "watchdog:clear", ISSUE_ID]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/blockers`],
@@ -76,6 +79,9 @@ describe("issue subresource commands", () => {
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links`],
       ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links/${LINK}`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[5]?.[1]?.body))).toEqual({ targetAgentId: AGENT, question: "Which client is this for?" });
     expect(JSON.parse(String(fetchMock.mock.calls[8]?.[1]?.body))).toEqual({ sourceIssueId: SOURCE, key: "plan" });

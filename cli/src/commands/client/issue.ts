@@ -5,6 +5,7 @@ import {
   answerAgentQuestionSchema,
   createAgentQuestionSchema,
   createIssueDocumentLinkSchema,
+  upsertIssueWatchdogSchema,
   acceptIssueThreadInteractionSchema,
   cancelIssueThreadInteractionSchema,
   checkoutIssueSchema,
@@ -157,6 +158,11 @@ interface IssueAnswerQuestionOptions extends BaseClientOptions {
 interface IssueDocumentLinkCreateOptions extends BaseClientOptions {
   sourceIssue: string;
   key: string;
+}
+
+interface IssueWatchdogSetOptions extends BaseClientOptions {
+  agent: string;
+  instructions?: string;
 }
 
 interface IssueTranscriptDigestOptions extends BaseClientOptions {
@@ -1227,6 +1233,54 @@ export function registerIssueCommands(program: Command): void {
         try {
           const ctx = resolveCommandContext(opts);
           printOutput(await ctx.api.delete(apiPath`/api/issues/${issueId}/document-links/${linkId}`), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("watchdog")
+      .description("Show the agent watching over an issue, if any")
+      .argument("<issueId>", "Issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.get(apiPath`/api/issues/${issueId}/watchdog`), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("watchdog:set")
+      .description("Ask an agent to watch over an issue and step in if it stalls")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--agent <id>", "Watchdog agent ID")
+      .option("--instructions <text>", "What the watchdog should look out for")
+      .action(async (issueId: string, opts: IssueWatchdogSetOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = upsertIssueWatchdogSchema.parse({ agentId: opts.agent, instructions: opts.instructions });
+          printOutput(await ctx.api.put(apiPath`/api/issues/${issueId}/watchdog`, payload), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("watchdog:clear")
+      .description("Remove the watchdog from an issue")
+      .argument("<issueId>", "Issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.delete(apiPath`/api/issues/${issueId}/watchdog`), { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
