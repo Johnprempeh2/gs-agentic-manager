@@ -91,6 +91,7 @@ import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineExportButton } from "../components/DataExport";
 import { DealForecast, LostReasons, OwnerScorecard } from "../components/DealForecast";
+import { DealAgenda } from "../components/DealAgenda";
 import { DealsList } from "../components/DealsList";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
@@ -1152,6 +1153,8 @@ function PipelinesIndex() {
           Could not check your pipeline rights, so the controls to create pipelines are hidden. Reload the page to try again.
         </p>
       ) : null}
+
+      <DealAgenda pipelines={pipelines} />
 
       {pipelines.length === 0 && !pipelinesQuery.error ? (
         <EmptyState
