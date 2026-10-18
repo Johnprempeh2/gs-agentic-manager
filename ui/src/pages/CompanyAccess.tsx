@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { membershipStatusLabel } from "@/lib/membership-labels";
 import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -397,7 +398,7 @@ export function CompanyAccess() {
                     </td>
                     <td className="px-3 py-3">
                       <Badge variant={member.status === "active" ? "secondary" : member.status === "suspended" ? "destructive" : "outline"}>
-                        {member.status.replace("_", " ")}
+                        {membershipStatusLabel(member.status)}
                       </Badge>
                     </td>
                     <td className="px-3 py-3 text-right">

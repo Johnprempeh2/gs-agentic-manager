@@ -1927,7 +1927,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
   if (deleteBlastRadius && !deleteBlockMessage) {
     if (deleteBlastRadius.staticReferences.agentDefaultCount > agentsUsingEnvironment.length) {
       deleteImpactNotes.push(
-        "Other references to this environment (agents in other organizations or terminated agents) fall back to the instance default.",
+        "Other references to this environment (agents in other organisations or removed agents) use the default instead.",
       );
     }
     const selectionCount =
@@ -2178,7 +2178,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <div className="py-4">
             <Field
               label="Environment variables"
-              hint="Injected into runs that resolve through this environment. Use plain values or organization secrets."
+              hint="Added to agent work that uses this environment. Use plain values or organisation secrets."
             >
               <EnvironmentVariablesEditor
                 ref={environmentVariablesEditorRef}
@@ -2473,7 +2473,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
 
               <Field
                 label="Environment variables"
-                hint="Injected into runs that resolve through this environment. Use plain values or organization secrets."
+                hint="Added to agent work that uses this environment. Use plain values or organisation secrets."
               >
                 <EnvironmentVariablesEditor
                   ref={environmentVariablesEditorRef}

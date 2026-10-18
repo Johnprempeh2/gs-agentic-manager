@@ -1,5 +1,5 @@
 {
-  "id": "68ba1f97-ae9a-43e7-8adc-7eab8ba447ed",
+  "id": "66a4e28d-c105-42af-88ec-9cae514d67ef",
   "prevId": "72f9fb8a-88c8-4013-bcb8-129a9ecb82e5",
   "version": "7",
   "dialect": "postgresql",
@@ -3789,6 +3789,61 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sign_in_lockout": {
+      "name": "sign_in_lockout",
+      "schema": "",
+      "columns": {
+        "account_key": {
+          "name": "account_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "failure_times": {
+          "name": "failure_times",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "locked_until": {
+          "name": "locked_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sign_in_lockout_updated_at_idx": {
+          "name": "sign_in_lockout_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -27446,13 +27501,6 @@
           "notNull": true,
           "default": false
         },
-        "favourite": {
-          "name": "favourite",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -27549,27 +27597,6 @@
             },
             {
               "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "generated_images_company_favourite_idx": {
-          "name": "generated_images_company_favourite_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "favourite",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

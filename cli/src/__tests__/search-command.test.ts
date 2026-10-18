@@ -105,6 +105,59 @@ describe("gsam search", () => {
     ]);
   });
 
+  it("lists deals by expected close date with value and an overdue count", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        days: 7,
+        total: 2,
+        overdueCount: 1,
+        valueByCurrency: [{ currency: "GBP", value: 7500, count: 2 }],
+        deals: [
+          { caseId: "c1", title: "Renewal", pipelineName: "Sales", stageName: "Proposal", organisationName: "Heron Ltd", expectedCloseDate: "2026-10-10", overdue: true, value: 5000, currency: "GBP", href: "/GRE/pipelines/p/items/c1" },
+          { caseId: "c2", title: "Wren lead", pipelineName: "Sales", stageName: "Lead", organisationName: null, expectedCloseDate: "2026-10-22", overdue: false, value: null, currency: null, href: "/GRE/pipelines/p/items/c2" },
+        ],
+      });
+    }));
+    await run(["closing-deals", "--days", "7"]);
+    const url = new URL(urls[0]!);
+    expect(url.pathname).toBe(`/api/companies/${COMPANY_ID}/search/closing-deals`);
+    expect(url.searchParams.get("days")).toBe("7");
+    expect(lines).toEqual([
+      "2 open deals and leads expected to close within 7 days (worth GBP 7500), 1 already past the date:",
+      "was due 2026-10-10 | Renewal (Heron Ltd) | GBP 5000 | Proposal in Sales  /GRE/pipelines/p/items/c1",
+      "due 2026-10-22 | Wren lead | Lead in Sales  /GRE/pipelines/p/items/c2",
+    ]);
+  });
+
+  it("prints the pipeline by stage and its largest deals", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        total: 3,
+        valueByCurrency: [{ currency: "GBP", value: 9100, count: 2 }, { currency: null, value: 0, count: 1 }],
+        stages: [
+          { pipelineId: "p", pipelineName: "Sales", stageName: "Lead", count: 2, valueByCurrency: [{ currency: "GBP", value: 100 }] },
+          { pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", count: 1, valueByCurrency: [{ currency: "GBP", value: 9000 }] },
+        ],
+        topDeals: [{ caseId: "c1", title: "Big proposal", pipelineName: "Sales", stageName: "Proposal", organisationName: null, value: 9000, currency: "GBP", expectedCloseDate: null, href: "/GRE/pipelines/p/items/c1" }],
+      });
+    }));
+    await run(["pipeline-summary", "--limit", "1"]);
+    const url = new URL(urls[0]!);
+    expect(url.pathname).toBe(`/api/companies/${COMPANY_ID}/search/pipeline-summary`);
+    expect(url.searchParams.get("limit")).toBe("1");
+    expect(lines).toEqual([
+      "3 open deals and leads (worth GBP 9100):",
+      "Sales / Lead: 2, GBP 100",
+      "Sales / Proposal: 1, GBP 9000",
+      "Largest:",
+      "GBP 9000 | Big proposal | Proposal in Sales  /GRE/pipelines/p/items/c1",
+    ]);
+  });
+
   it("prints a client brief", async () => {
     const urls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {

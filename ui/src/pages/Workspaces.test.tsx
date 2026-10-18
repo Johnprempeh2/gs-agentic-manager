@@ -29,6 +29,7 @@ vi.mock("../context/BreadcrumbContext", () => ({
 }));
 vi.mock("../context/ToastContext", () => ({
   useToastActions: () => ({ pushToast: vi.fn() }),
+  useOptionalToastActions: () => ({ pushToast: vi.fn() }),
 }));
 vi.mock("@/lib/router", () => ({
   Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => <a href={to} {...props}>{children}</a>,

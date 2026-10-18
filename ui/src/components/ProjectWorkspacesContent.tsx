@@ -4,6 +4,7 @@ import type { ExecutionWorkspace } from "@greatstone/shared";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
+import { useOptionalToastActions } from "../context/ToastContext";
 import type { ProjectWorkspaceSummary } from "../lib/project-workspaces-tab";
 import { ExecutionWorkspaceCloseDialog } from "./ExecutionWorkspaceCloseDialog";
 import { ProjectWorkspaceSummaryCard } from "./ProjectWorkspaceSummaryCard";
@@ -20,6 +21,7 @@ export function ProjectWorkspacesContent({
   summaries: ProjectWorkspaceSummary[];
 }) {
   const queryClient = useQueryClient();
+  const toastActions = useOptionalToastActions();
   const [runtimeActionKey, setRuntimeActionKey] = useState<string | null>(null);
   const [closingWorkspace, setClosingWorkspace] = useState<{
     id: string;
@@ -39,6 +41,14 @@ export function ProjectWorkspacesContent({
       }
       return await executionWorkspacesApi.controlRuntimeServices(input.workspaceId, input.action);
     },
+    onError: (err, input) => {
+      const verb = input.action === "start" ? "start" : input.action === "stop" ? "stop" : "restart";
+      toastActions?.pushToast({
+        title: `Could not ${verb} the service`,
+        body: err instanceof Error ? err.message : "Please try again.",
+        tone: "error",
+      });
+    },
     onSettled: () => {
       setRuntimeActionKey(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.overview(companyId) });
@@ -52,7 +62,7 @@ export function ProjectWorkspacesContent({
   });
 
   if (summaries.length === 0) {
-    return <p className="text-sm text-muted-foreground">No non-default workspace activity yet.</p>;
+    return <p className="text-sm text-muted-foreground">No work happening in separate copies yet.</p>;
   }
 
   const activeSummaries = summaries.filter((summary) => summary.executionWorkspaceStatus !== "cleanup_failed");

@@ -165,8 +165,10 @@ self.addEventListener("fetch", (event) => {
 });
 
 // Phone notifications for decisions (Web Push). The server sends
-// { title, body, url, tag, badge }; every push shows a notification (iOS
-// requires one per push) and sets the Home Screen icon's count.
+// { title, body, url, tag, badge, companyId }; every push shows a notification
+// (iOS requires one per push) and sets the Home Screen icon's count. With a
+// companyId the notification offers "Pause for an hour" where the phone
+// supports notification buttons.
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -176,11 +178,13 @@ self.addEventListener("push", (event) => {
   }
   const title = typeof data.title === "string" && data.title ? data.title : "GS Agentic Manager";
   const url = typeof data.url === "string" ? data.url : "/";
+  const companyId = typeof data.companyId === "string" && /^[A-Za-z0-9-]+$/.test(data.companyId) ? data.companyId : null;
   const show = () => self.registration.showNotification(title, {
     body: typeof data.body === "string" ? data.body : "",
     icon: "/android-chrome-192x192.png",
     tag: typeof data.tag === "string" ? data.tag : undefined,
-    data: { url },
+    data: companyId ? { url, companyId } : { url },
+    ...(companyId ? { actions: [{ action: "pause-hour", title: "Pause for an hour" }] } : {}),
   });
   // A team chat message for the chat someone is reading right now needs no alert.
   // The url carries a #comment-<id> anchor, so compare paths only.
@@ -202,6 +206,28 @@ self.addEventListener("push", (event) => {
 // Only paths inside this app are followed.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  // "Pause for an hour" holds further notifications without opening the app.
+  // It sends the person's own sign-in cookie and is never cached.
+  const companyId = event.notification.data && event.notification.data.companyId;
+  if (event.action === "pause-hour" && typeof companyId === "string") {
+    const pausedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    event.waitUntil(fetch(`/api/companies/${encodeURIComponent(companyId)}/notification-preferences`, {
+      method: "PATCH",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pausedUntil }),
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .then((paused) => paused ? undefined : self.registration.showNotification("Notifications were not paused", {
+        body: "Open GSAM to pause them.",
+        icon: "/android-chrome-192x192.png",
+        tag: "pause-failed",
+        data: { url: "/" },
+      })));
+    return;
+  }
   const raw = event.notification.data && event.notification.data.url;
   const target = new URL(typeof raw === "string" ? raw : "/", self.location.origin);
   if (target.origin !== self.location.origin) return;

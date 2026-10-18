@@ -126,7 +126,7 @@ export function Workspaces() {
         companyId={selectedCompanyId}
         scopeKind="workspaces_overview"
         title="Workspace summary"
-        description="Summarizer tracks workspace activity, live services, and follow-up needs across projects."
+        description="A summary of work in progress, running services and follow-ups across your projects."
       />
 
       {groups.length === 0 ? (

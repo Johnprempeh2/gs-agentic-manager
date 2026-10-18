@@ -776,17 +776,28 @@ function ApprovalResolver({ item, companyId, toggle }: { item: AttentionItem; co
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(companyId) });
   };
+  const { pushToast } = useToastActions();
+  const onDecisionError = (err: unknown) => {
+    pushToast({
+      title: "Your decision was not saved",
+      body: err instanceof Error ? err.message : "Please try again.",
+      tone: "error",
+    });
+  };
   const approve = useMutation({
     mutationFn: () => approvalsApi.approve(item.subject.id, note.trim() || undefined),
     onSuccess: invalidate,
+    onError: onDecisionError,
   });
   const reject = useMutation({
     mutationFn: () => approvalsApi.reject(item.subject.id, note.trim() || undefined),
     onSuccess: invalidate,
+    onError: onDecisionError,
   });
   const revise = useMutation({
     mutationFn: () => approvalsApi.requestRevision(item.subject.id, note.trim() || undefined),
     onSuccess: invalidate,
+    onError: onDecisionError,
   });
   const pending = approve.isPending || reject.isPending || revise.isPending;
   // GRE-601: a missing-permission request is only granted or denied.
@@ -828,13 +839,23 @@ function JoinRequestResolver({ item, companyId, toggle }: { item: AttentionItem;
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(companyId) });
   };
+  const { pushToast } = useToastActions();
+  const onRequestError = (err: unknown) => {
+    pushToast({
+      title: "This request was not updated",
+      body: err instanceof Error ? err.message : "Please try again.",
+      tone: "error",
+    });
+  };
   const approve = useMutation({
     mutationFn: () => accessApi.approveJoinRequest(companyId, item.subject.id),
     onSuccess: invalidate,
+    onError: onRequestError,
   });
   const reject = useMutation({
     mutationFn: () => accessApi.rejectJoinRequest(companyId, item.subject.id),
     onSuccess: invalidate,
+    onError: onRequestError,
   });
   const pending = approve.isPending || reject.isPending;
 

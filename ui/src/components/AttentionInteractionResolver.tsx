@@ -17,6 +17,7 @@ import {
   type SuggestTasksInteraction,
 } from "../lib/issue-thread-interactions";
 import { IssueThreadInteractionCard } from "./IssueThreadInteractionCard";
+import { ErrorState } from "./ErrorState";
 
 interface AttentionInteractionResolverProps {
   companyId: string;
@@ -145,7 +146,7 @@ export function AttentionInteractionResolver({
   onResolved,
   embedded,
 }: AttentionInteractionResolverProps) {
-  const { data: interactions, isLoading, error } = useQuery({
+  const { data: interactions, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.issues.interactions(issueId),
     queryFn: () => issuesApi.listInteractions(issueId),
     enabled: !!issueId,
@@ -167,7 +168,19 @@ export function AttentionInteractionResolver({
     );
   }
 
-  if (error || !interaction) {
+  if (error) {
+    return (
+      <ErrorState
+        compact
+        error={error}
+        title="Could not load this decision"
+        onRetry={() => void refetch()}
+        retrying={isFetching}
+      />
+    );
+  }
+
+  if (!interaction) {
     return (
       <p className="py-3 text-xs text-muted-foreground">
         This decision is no longer available. It may have been resolved elsewhere.

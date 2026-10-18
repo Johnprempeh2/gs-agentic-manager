@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { membershipStatusLabel } from "@/lib/membership-labels";
+import { HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS } from "@greatstone/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Shield, ShieldCheck } from "lucide-react";
 import { accessApi } from "@/api/access";
@@ -270,7 +272,9 @@ export function InstanceAccess() {
                       <div>
                         <div className="font-medium">{membership.companyName || membership.companyId}</div>
                         <div className="text-muted-foreground">
-                          {membership.membershipRole || "unset"} • {membership.status}
+                          {membership.membershipRole
+                            ? HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS[membership.membershipRole as keyof typeof HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS] ?? membership.membershipRole
+                            : "No role yet"} • {membershipStatusLabel(membership.status)}
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">

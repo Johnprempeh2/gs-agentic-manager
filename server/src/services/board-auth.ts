@@ -73,6 +73,7 @@ export function boardAuthService(db: Db) {
           id: authUsers.id,
           name: authUsers.name,
           email: authUsers.email,
+          twoFactorEnabled: authUsers.twoFactorEnabled,
         })
         .from(authUsers)
         .where(eq(authUsers.id, userId))

@@ -136,7 +136,7 @@ describe("BuiltInBundlePanel (PAP-13099)", () => {
     render(makeState("ready", READY_RESOURCES));
     const text = container.textContent ?? "";
     expect(text).toContain("Bundle status");
-    expect(text).toContain("Adapter");
+    expect(text).toContain("AI engine");
     expect(text).toContain("Skill");
     expect(text).toContain("Instructions");
     expect(text).toContain("Routine");

@@ -6,6 +6,7 @@
  * Direction C (PAP-12422): dense rows, mini-map brush, custom inline SVG.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Clock3, Coins, GanttChartSquare, Minus, Plus, RotateCcw, type LucideIcon } from "lucide-react";
 import type { WorkTimelineResult } from "@greatstone/shared";
@@ -331,7 +332,7 @@ export function Timeline({ embedded = false }: { embedded?: boolean } = {}) {
     return scopedProjectId ? { ...window, projectId: scopedProjectId } : window;
   }, [dateRange, scopedProjectId]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: [...queryKeys.workTimeline(selectedCompanyId ?? ""), dateRange.fromDate, dateRange.toDate, scopedProjectId ?? null],
     queryFn: ({ signal }) => loadTimelineWindow(selectedCompanyId!, params!, signal),
     enabled: !!selectedCompanyId && !!params,
@@ -492,9 +493,11 @@ export function Timeline({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {error && (
-        <EmptyState
-          icon={GanttChartSquare}
-          message="Couldn't load the timeline. The aggregation endpoint may be unavailable."
+        <ErrorState
+          error={error}
+          title="Could not load the timeline"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
         />
       )}
 

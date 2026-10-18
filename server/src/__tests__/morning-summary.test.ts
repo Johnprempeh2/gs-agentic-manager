@@ -64,7 +64,7 @@ describe("evening wrap-up", () => {
     expect(eveningSummaryMessage({ ...summary(2, 4, 0), deals: { won: 1, lost: 1, items: [] }, workingNow: { count: 3, items: [] } }, "GRE")).toEqual({
       title: "Today's wrap-up. 2 things still need you",
       body: "4 tasks finished today. 1 deal won. 1 deal lost. Nothing is stuck. 3 tasks are still being worked on.",
-      url: "/GRE/morning",
+      url: "/GRE/morning?window=day",
       tag: "evening-summary",
       badge: 2,
     });
@@ -249,6 +249,10 @@ describe("morning summary service", () => {
     expect(built.since).toBe("2026-10-15T23:00:00.000Z");
     expect(built.deals?.won).toBe(1);
     expect(built.deals?.lost).toBe(0);
+    expect(built.dueTomorrow).toEqual({ count: 1, items: [expect.objectContaining({ title: "Due tomorrow", dueDate: "2026-10-17" })] });
+    expect(eveningSummaryMessage(built, "GRE").body).toContain("1 task is due tomorrow.");
+    // The morning view does not look ahead.
+    expect((await service().build(companyId, "john", now)).dueTomorrow).toBeUndefined();
   });
 
   it("sends the evening wrap-up once a day to people who chose it", async () => {

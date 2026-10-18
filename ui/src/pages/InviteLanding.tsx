@@ -645,7 +645,7 @@ export function InviteLandingPage() {
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1 block text-zinc-400">Adapter type</span>
+                  <span className="mb-1 block text-zinc-400">AI engine</span>
                   <select
                     className={fieldClassName}
                     value={adapterType}

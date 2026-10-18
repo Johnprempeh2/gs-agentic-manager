@@ -1,4 +1,6 @@
 import { formatActivityVerb } from "../lib/activity-format";
+import { ErrorState } from "@/components/ErrorState";
+import { ApiError } from "@/api/client";
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, UserRound } from "lucide-react";
@@ -201,7 +203,7 @@ export function UserProfile() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const companyId = selectedCompanyId ?? NO_COMPANY;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.userProfile(companyId, userSlug),
     queryFn: () => userProfilesApi.get(companyId, userSlug),
     enabled: !!selectedCompanyId && !!userSlug,
@@ -251,8 +253,19 @@ export function UserProfile() {
     return <PageSkeleton variant="dashboard" />;
   }
 
+  if (error && !(error instanceof ApiError && error.status === 404)) {
+    return (
+      <ErrorState
+        error={error}
+        title="Could not load this profile"
+        onRetry={() => void refetch()}
+        retrying={isFetching}
+      />
+    );
+  }
+
   if (error || !data) {
-    return <EmptyState icon={AlertCircle} message="User profile not found for this organisation." />;
+    return <EmptyState icon={AlertCircle} message="We could not find this person in your organisation." />;
   }
 
   const allTimeTokens = allTime ? totalTokens(allTime) : 0;

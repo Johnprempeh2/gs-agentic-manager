@@ -102,7 +102,7 @@ describe("CompanyPauseSection (GRE-1380)", () => {
     mockCompaniesApi.pause.mockResolvedValue(company({ status: "paused" }));
     await render(company());
 
-    await click(button("Pause organization"));
+    await click(button("Pause organisation"));
     await typeInto(field<HTMLTextAreaElement>("company-pause-reason"), "  Checking billing  ");
     await click(button("Pause"));
 
@@ -113,7 +113,7 @@ describe("CompanyPauseSection (GRE-1380)", () => {
     mockCompaniesApi.pause.mockResolvedValue(company({ status: "paused" }));
     await render(company());
 
-    await click(button("Pause organization"));
+    await click(button("Pause organisation"));
     await click(button("Pause"));
 
     expect(mockCompaniesApi.pause).toHaveBeenCalledWith("company-1", {});
@@ -125,15 +125,15 @@ describe("CompanyPauseSection (GRE-1380)", () => {
     expect(container.querySelector('[data-testid="company-paused-since"]')?.textContent).toMatch(
       /^Paused since 10 Oct 2026/,
     );
-    expect(button("Resume organization")).toBeDefined();
-    expect(button("Pause organization")).toBeUndefined();
+    expect(button("Resume organisation")).toBeDefined();
+    expect(button("Pause organisation")).toBeUndefined();
   });
 
   it("needs an operator name and a reason before it resumes", async () => {
     mockCompaniesApi.resume.mockResolvedValue(company());
     await render(company({ status: "paused", pausedAt: new Date("2026-10-10T09:30:00Z") }));
 
-    await click(button("Resume organization"));
+    await click(button("Resume organisation"));
     expect(button("Resume")?.disabled).toBe(true);
 
     await typeInto(field<HTMLInputElement>("company-resume-operator"), "John");
@@ -153,7 +153,7 @@ describe("CompanyPauseSection (GRE-1380)", () => {
     mockCompaniesApi.resume.mockRejectedValue(new Error("Company is not paused"));
     await render(company({ status: "paused", pausedAt: new Date("2026-10-10T09:30:00Z") }));
 
-    await click(button("Resume organization"));
+    await click(button("Resume organisation"));
     await typeInto(field<HTMLInputElement>("company-resume-operator"), "John");
     await typeInto(field<HTMLTextAreaElement>("company-resume-reason"), "Billing fixed");
     await click(button("Resume"));

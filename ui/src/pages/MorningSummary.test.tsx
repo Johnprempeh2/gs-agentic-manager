@@ -7,10 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MorningSummary as Summary } from "@greatstone/shared";
 import { MorningSummary, greeting, lateLabel } from "./MorningSummary";
 
-const server = vi.hoisted(() => ({ summary: null as Summary | null, pausedUntil: null as string | null }));
+const server = vi.hoisted(() => ({ summary: null as Summary | null, pausedUntil: null as string | null, windows: [] as string[] }));
 
 vi.mock("../api/notificationPreferences", () => ({
-  morningSummaryApi: { get: async () => server.summary },
+  morningSummaryApi: { get: async (_companyId: string, window = "24h") => { server.windows.push(window); return server.summary; } },
   notificationPreferencesApi: {
     get: async () => ({ morningSummaryHour: 8, pausedUntil: server.pausedUntil }),
     update: async () => ({ morningSummaryHour: 8, pausedUntil: null }),
@@ -32,13 +32,13 @@ afterEach(() => {
   container.remove();
 });
 
-async function render() {
+async function render(path = "/morning") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   root = createRoot(container);
   await act(async () => {
     root!.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
           <MorningSummary />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -48,6 +48,35 @@ async function render() {
 }
 
 describe("MorningSummary", () => {
+  it("shows today so far when opened from the evening wrap-up", async () => {
+    server.summary = {
+      companyId: "company-1",
+      generatedAt: "",
+      since: "",
+      needsYou: { count: 0, items: [] },
+      dueToday: { count: 0, items: [] },
+      finished: { count: 1, items: [{ id: "i1", identifier: "GRE-1", title: "Send the brief" }] },
+      stuck: { count: 0, items: [] },
+      dueTomorrow: { count: 1, items: [{ id: "i2", identifier: "GRE-2", title: "Board pack" }] },
+    };
+    server.windows = [];
+    await render("/morning?window=day");
+    expect(server.windows).toEqual(["day"]);
+    expect(container.textContent).toContain("Finished today");
+    expect(container.textContent).toContain("Due tomorrow");
+    expect(container.textContent).toContain("Board pack");
+    expect(container.textContent).toContain("what the team did today");
+    expect(container.querySelector('a[href="/morning"]')?.textContent).toBe("Since yesterday");
+    act(() => root?.unmount());
+
+    server.windows = [];
+    await render("/morning");
+    expect(server.windows).toEqual(["24h"]);
+    expect(container.textContent).toContain("Finished since yesterday");
+    expect(container.querySelector('a[href="/morning?window=day"]')?.textContent).toBe("Today so far");
+  });
+
+
   it("says when notifications are paused, and nothing when they are not", async () => {
     server.summary = {
       companyId: "company-1",
