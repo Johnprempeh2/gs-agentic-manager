@@ -1,4 +1,5 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { ErrorState } from "@/components/ErrorState";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
@@ -183,7 +184,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   const showImport = !isCloud && !hiddenSettings.has("company.import");
   const showExport = !hiddenSettings.has("company.export");
 
-  const { data: queriedOrgTree, isLoading } = useQuery({
+  const { data: queriedOrgTree, isLoading, error: orgTreeError, refetch: refetchOrgTree, isFetching: isOrgTreeFetching } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId && providedOrgTree === undefined,
@@ -645,6 +646,17 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
   if (providedOrgTree === undefined && isLoading) {
     return <PageSkeleton variant="org-chart" />;
+  }
+
+  if (providedOrgTree === undefined && orgTreeError && !queriedOrgTree) {
+    return (
+      <ErrorState
+        error={orgTreeError}
+        title="The org chart did not load"
+        onRetry={() => void refetchOrgTree()}
+        retrying={isOrgTreeFetching}
+      />
+    );
   }
 
   if (orgTree && orgTree.length === 0) {

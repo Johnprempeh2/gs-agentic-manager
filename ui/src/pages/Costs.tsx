@@ -222,7 +222,7 @@ export function Costs({
   const weekRange = useMemo(() => currentWeekRange(), [today]);
   const companyId = selectedCompanyId ?? NO_COMPANY;
 
-  const { data: budgetData, isLoading: budgetLoading, error: budgetError } = useQuery({
+  const { data: budgetData, isLoading: budgetLoading, error: budgetError, refetch: refetchBudget } = useQuery({
     queryKey: queryKeys.budgets.overview(companyId),
     queryFn: () => budgetsApi.overview(companyId),
     enabled: !!selectedCompanyId && customReady,
@@ -276,7 +276,7 @@ export function Costs({
   });
 
   const costsCopy = useCopyAction();
-  const { data: spendData, isLoading: spendLoading, error: spendError } = useQuery({
+  const { data: spendData, isLoading: spendLoading, error: spendError, refetch: refetchSpend } = useQuery({
     queryKey: queryKeys.costs(companyId, from || undefined, to || undefined),
     queryFn: async () => {
       const [summary, byAgent, byProject, byAgentModel, byBillingCode] = await Promise.all([
@@ -303,7 +303,7 @@ export function Costs({
     enabled: !!selectedCompanyId && showSummaryChrome,
   });
 
-  const { data: financeData, isLoading: financeLoading, error: financeError } = useQuery({
+  const { data: financeData, isLoading: financeLoading, error: financeError, refetch: refetchFinance } = useQuery({
     queryKey: [
       queryKeys.financeSummary(companyId, from || undefined, to || undefined),
       queryKeys.financeByBiller(companyId, from || undefined, to || undefined),
@@ -733,7 +733,14 @@ export function Costs({
           ) : showOverviewLoading ? (
             <PageSkeleton variant="costs" />
           ) : overviewError ? (
-            <ErrorState error={overviewError} title="We could not load spending figures" />
+            <ErrorState
+              error={overviewError}
+              title="We could not load spending figures"
+              onRetry={() => {
+                void refetchSpend();
+                void refetchFinance();
+              }}
+            />
           ) : (
             <>
               {activeBudgetIncidents.length > 0 ? (
@@ -968,7 +975,7 @@ export function Costs({
           {budgetLoading ? (
             <PageSkeleton variant="costs" />
           ) : budgetError ? (
-            <ErrorState error={budgetError} title="We could not load spending limits" />
+            <ErrorState error={budgetError} title="We could not load spending limits" onRetry={() => void refetchBudget()} />
           ) : (
             <>
               <Card className="border-border/70 bg-(image:--gradient-extract-2)">
@@ -1195,7 +1202,7 @@ export function Costs({
           ) : financeLoading ? (
             <PageSkeleton variant="costs" />
           ) : financeError ? (
-            <ErrorState error={financeError} title="We could not load other charges" />
+            <ErrorState error={financeError} title="We could not load other charges" onRetry={() => void refetchFinance()} />
           ) : (
             <>
               <FinanceSummaryCard

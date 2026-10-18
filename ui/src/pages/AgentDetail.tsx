@@ -934,7 +934,7 @@ export function AgentDetail() {
     enabled: Boolean(resolvedAgentId) && needsOverviewData,
   });
 
-  const { data: heartbeats } = useQuery({
+  const { data: heartbeats, error: heartbeatsError, refetch: refetchHeartbeats } = useQuery({
     queryKey: queryKeys.heartbeats(resolvedCompanyId!, agent?.id ?? undefined),
     queryFn: () => heartbeatsApi.list(resolvedCompanyId!, agent?.id ?? undefined),
     enabled: !!resolvedCompanyId && !!agent?.id && shouldLoadHeartbeats,
@@ -1548,6 +1548,8 @@ export function AgentDetail() {
       {activeView === "run-detail" && (
         <RunsTab
           runs={heartbeats ?? []}
+          error={heartbeats ? null : heartbeatsError}
+          onRetry={() => void refetchHeartbeats()}
           companyId={resolvedCompanyId!}
           agentId={agent.id}
           agentRouteId={canonicalAgentRef}
@@ -3259,8 +3261,12 @@ function RunsTab({
   selectedRunId,
   adapterType,
   adapterConfig,
+  error,
+  onRetry,
 }: {
   runs: HeartbeatRun[];
+  error?: Error | null;
+  onRetry?: () => void;
   companyId: string;
   agentId: string;
   agentRouteId: string;
@@ -3269,6 +3275,10 @@ function RunsTab({
   adapterConfig: Record<string, unknown>;
 }) {
   const { isMobile } = useSidebar();
+
+  if (error) {
+    return <ErrorState error={error} title="Runs did not load" onRetry={onRetry} compact />;
+  }
 
   if (runs.length === 0) {
     return <p className="text-sm text-muted-foreground">This agent has not done any work yet. Give it a task to get started.</p>;

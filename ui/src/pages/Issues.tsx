@@ -159,6 +159,7 @@ export function Issues() {
     isLoading,
     isFetchingNextPage,
     error,
+    refetch,
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
@@ -238,6 +239,7 @@ export function Issues() {
       isLoading={isLoading}
       isLoadingMoreIssues={isFetchingNextPage}
       error={error as Error | null}
+      onRetry={() => void refetch()}
       agents={agents}
       projects={projects}
       liveIssueIds={liveIssueIds}

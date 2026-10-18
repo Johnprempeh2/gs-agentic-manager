@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { ErrorState } from "@/components/ErrorState";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
@@ -34,7 +35,7 @@ export function ApprovalDetail() {
   const [showRawPayload, setShowRawPayload] = useState(false);
   const [noteAction, setNoteAction] = useState<"reject" | "revision" | null>(null);
 
-  const { data: approval, isLoading } = useQuery({
+  const { data: approval, isLoading, error: approvalError, refetch: refetchApproval, isFetching: isApprovalFetching } = useQuery({
     queryKey: queryKeys.approvals.detail(approvalId!),
     queryFn: () => approvalsApi.get(approvalId!),
     enabled: !!approvalId,
@@ -157,6 +158,16 @@ export function ApprovalDetail() {
   });
 
   if (isLoading) return <PageSkeleton variant="detail" />;
+  if (!approval && approvalError) {
+    return (
+      <ErrorState
+        error={approvalError}
+        title="This request did not load"
+        onRetry={() => void refetchApproval()}
+        retrying={isApprovalFetching}
+      />
+    );
+  }
   if (!approval) return (
       <p className="text-sm text-muted-foreground">
         This request could not be found. It may have been withdrawn.{" "}

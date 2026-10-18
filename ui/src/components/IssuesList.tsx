@@ -484,6 +484,8 @@ interface IssuesListProps {
   issues: Issue[];
   isLoading?: boolean;
   error?: Error | null;
+  /** Shown as a Retry button when the task list fails to load. */
+  onRetry?: () => void;
   agents?: Agent[];
   projects?: ProjectOption[];
   liveIssueIds?: Set<string>;
@@ -773,6 +775,7 @@ export function IssuesList({
   issues,
   isLoading,
   error,
+  onRetry,
   agents,
   projects,
   liveIssueIds,
@@ -2162,7 +2165,7 @@ export function IssuesList({
       />
 
       {(isLoading || externalObjectFilterLoading) && <PageSkeleton variant="issues-list" />}
-      {error && <ErrorState error={error} title="Tasks did not load" compact />}
+      {error && <ErrorState error={error} title="Tasks did not load" onRetry={onRetry} compact />}
       {!searchWithinLoadedIssues && normalizedIssueSearch.length > 0 && searchedIssues.length === ISSUE_SEARCH_RESULT_LIMIT && (
         <p className="text-xs text-muted-foreground">
           Showing up to {ISSUE_SEARCH_RESULT_LIMIT} matches. Refine the search to narrow further.
@@ -2173,7 +2176,7 @@ export function IssuesList({
           Some board columns are showing up to {ISSUE_BOARD_COLUMN_RESULT_LIMIT} tasks. Refine filters or search to reveal the rest.
         </p>
       )}
-      {!isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
+      {!error && !isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
         issues.length === 0 && activeFilterCount === 0 && normalizedIssueSearch.length === 0 ? (
           <EmptyState
             icon={CircleDot}

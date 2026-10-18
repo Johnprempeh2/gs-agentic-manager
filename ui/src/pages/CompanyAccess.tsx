@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
@@ -246,9 +247,17 @@ export function CompanyAccess() {
     const message =
       membersQuery.error instanceof ApiError && membersQuery.error.status === 403
         ? "You do not have permission to manage organisation members."
-        : membersQuery.error instanceof Error
-          ? membersQuery.error.message
-          : "Failed to load organisation members.";
+        : null;
+    if (!message) {
+      return (
+        <ErrorState
+          error={membersQuery.error}
+          title="Team members did not load"
+          onRetry={() => void membersQuery.refetch()}
+          retrying={membersQuery.isFetching}
+        />
+      );
+    }
     return <div className="text-sm text-destructive">{message}</div>;
   }
 

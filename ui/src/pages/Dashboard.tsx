@@ -245,7 +245,7 @@ export function Dashboard() {
     queryKey: activityQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
+  const { data: activity, dataUpdatedAt: activityUpdatedAt, error: activityError, refetch: refetchActivity } = useQuery({
     queryKey: activityQueryKey,
     // Task updates are filtered to real status changes below, so fetch a margin.
     queryFn: () => activityApi.list(selectedCompanyId!, { action: OWNER_ACTIVITY_ACTIONS, limit: 80 }),
@@ -638,6 +638,14 @@ export function Dashboard() {
 
               <div>
                 {/* Recent Activity */}
+                {activityError && recentActivity.length === 0 && (
+                  <ErrorState
+                    error={activityError}
+                    title="Recent work did not load"
+                    onRetry={() => void refetchActivity()}
+                    compact
+                  />
+                )}
                 {recentActivity.length > 0 && (
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">

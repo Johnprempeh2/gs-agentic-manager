@@ -1,4 +1,5 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { ErrorState } from "@/components/ErrorState";
 import { BrandThinkingIcon } from "../components/BrandLoading";
 import {
   useEffect,
@@ -287,7 +288,7 @@ export function BoardChat() {
   }, [goals]);
 
   // Find or detect the board operations issue
-  const { data: issues } = useQuery({
+  const { data: issues, error: issuesError, refetch: refetchIssues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -305,7 +306,7 @@ export function BoardChat() {
   }, [issues]);
 
   // Fetch comments for the board issue
-  const { data: comments } = useQuery({
+  const { data: comments, error: commentsError, refetch: refetchComments } = useQuery({
     queryKey: queryKeys.issues.comments(boardIssueId ?? ""),
     queryFn: () => issuesApi.listComments(boardIssueId!),
     enabled: !!boardIssueId,
@@ -760,6 +761,17 @@ export function BoardChat() {
             {/* pb clears the floating glass dock (PAP-131) so the last bubble can
                  scroll fully above the composer. */}
             <div className="flex flex-col gap-4 px-6 pt-3 pb-32">
+              {(issuesError && !issues) || (commentsError && !comments) ? (
+                <ErrorState
+                  error={issuesError ?? commentsError}
+                  title="The chat history did not load"
+                  onRetry={() => {
+                    void refetchIssues();
+                    if (boardIssueId) void refetchComments();
+                  }}
+                  compact
+                />
+              ) : null}
               {/* Typing bubble — shown unconditionally until the reveal
                    timer fires, so the animation is guaranteed to be
                    visible even while agent/goal data is still loading. */}
