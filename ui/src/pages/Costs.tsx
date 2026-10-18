@@ -30,6 +30,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { SubscriptionsCard } from "../components/SubscriptionsCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { useDateRange, PRESET_KEYS, PRESET_LABELS } from "../hooks/useDateRange";
 import { queryKeys } from "../lib/queryKeys";
 import { billingTypeDisplayName, cn, formatCents, formatTokens, providerDisplayName } from "../lib/utils";
@@ -174,6 +175,7 @@ export function Costs({
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const toastActions = useOptionalToastActions();
 
   const [mainTab, setMainTab] = useState<CostsMainTab>(initialTab);
   const [activeProvider, setActiveProvider] = useState("all");
@@ -249,13 +251,28 @@ export function Costs({
         amount: input.amount,
         windowKind: input.windowKind,
       }),
-    onSuccess: invalidateBudgetViews,
+    onSuccess: () => {
+      invalidateBudgetViews();
+      toastActions?.pushToast({ title: "Spending limit saved", tone: "success" });
+    },
+    onError: (err) => {
+      toastActions?.pushToast({ title: "The spending limit was not saved", body: err instanceof Error ? err.message : "Try again.", tone: "error" });
+    },
   });
 
   const incidentMutation = useMutation({
     mutationFn: (input: { incidentId: string; action: "keep_paused" | "raise_budget_and_resume"; amount?: number }) =>
       budgetsApi.resolveIncident(companyId, input.incidentId, input),
-    onSuccess: invalidateBudgetViews,
+    onSuccess: (_result, input) => {
+      invalidateBudgetViews();
+      toastActions?.pushToast({
+        title: input.action === "raise_budget_and_resume" ? "Limit raised. Work is restarting" : "Work stays paused",
+        tone: "success",
+      });
+    },
+    onError: (err) => {
+      toastActions?.pushToast({ title: "The paused work was not changed", body: err instanceof Error ? err.message : "Try again.", tone: "error" });
+    },
   });
 
   const costsCopy = useCopyAction();
@@ -662,7 +679,7 @@ export function Costs({
 
           <div className="grid gap-3 lg:grid-cols-4">
             <MetricTile
-              label="Inference spend"
+              label="AI spend this period"
               value={formatCents(spendData?.summary.spendCents ?? 0)}
               subtitle={`${formatTokens(inferenceTokenTotal)} units of AI usage`}
               icon={DollarSign}
@@ -679,18 +696,18 @@ export function Costs({
                   ? `${budgetData?.pausedAgentCount ?? 0} agents paused · ${budgetData?.pausedProjectCount ?? 0} projects paused`
                   : spendData?.summary.budgetCents && spendData.summary.budgetCents > 0
                     ? `${formatCents(spendData.summary.spendCents)} of ${formatCents(spendData.summary.budgetCents)}`
-                    : "No monthly cap configured"
+                    : "No monthly limit set"
               }
               icon={Coins}
             />
             <MetricTile
-              label="Finance net"
+              label="Other charges (net)"
               value={formatCents(financeData?.summary.netCents ?? 0)}
               subtitle={`${formatCents(financeData?.summary.debitCents ?? 0)} debits · ${formatCents(financeData?.summary.creditCents ?? 0)} credits`}
               icon={ReceiptText}
             />
             <MetricTile
-              label="Finance events"
+              label="Other charge entries"
               value={String(financeData?.summary.eventCount ?? 0)}
               subtitle={`${formatCents(financeData?.summary.estimatedDebitCents ?? 0)} estimated in range`}
               icon={ArrowUpRight}
@@ -923,8 +940,8 @@ export function Costs({
                   {(spendData?.byBillingCode.length ?? 0) > 0 ? (
                     <Card data-testid="costs-by-billing-code">
                       <CardHeader className="px-5 pt-5 pb-2">
-                        <CardTitle className="text-base">By request</CardTitle>
-                        <CardDescription>Run costs grouped by billing code. Subtasks take their parent's code.</CardDescription>
+                        <CardTitle className="text-base">By billing code</CardTitle>
+                        <CardDescription>What agent work cost, grouped by billing code. Sub-tasks use their parent task's code.</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-2 px-5 pb-5 pt-2">
                         {spendData?.byBillingCode.map((row) => (
@@ -963,7 +980,7 @@ export function Costs({
                 </CardHeader>
                 <CardContent className="grid gap-3 px-5 pb-5 pt-0 md:grid-cols-4">
                   <MetricTile
-                    label="Active incidents"
+                    label="Limits reached"
                     value={String(activeBudgetIncidents.length)}
                     subtitle="Limits that are close to or over"
                     icon={ReceiptText}
@@ -992,7 +1009,7 @@ export function Costs({
               {activeBudgetIncidents.length > 0 ? (
                 <div className="space-y-3">
                   <div>
-                    <h2 className="text-lg font-semibold">Active incidents</h2>
+                    <h2 className="text-lg font-semibold">Limits reached</h2>
                     <p className="text-sm text-muted-foreground">
                       Resolve hard stops here by raising the budget or explicitly keeping the scope paused.
                     </p>
@@ -1194,7 +1211,7 @@ export function Costs({
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">
                       <CardTitle className="text-base">By biller</CardTitle>
-                      <CardDescription>Account-level financial events grouped by who charged or credited them.</CardDescription>
+                      <CardDescription>Other charges, grouped by who charged or refunded them.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-4 px-5 pb-5 pt-2 md:grid-cols-2">
                       {(financeData?.byBiller.length ?? 0) === 0 ? (

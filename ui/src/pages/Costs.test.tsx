@@ -85,7 +85,7 @@ describe("Costs embedded Audit surfaces", () => {
         expect(container.textContent).toContain("Spending limits");
       });
     });
-    expect(container.textContent).not.toContain("Inference spend");
+    expect(container.textContent).not.toContain("AI spend this period");
     expect(container.querySelector('[role="tab"]')).toBeFalsy();
     expect(setBreadcrumbsMock).not.toHaveBeenCalled();
     for (const mock of Object.values(costsApiMocks)) expect(mock).not.toHaveBeenCalled();

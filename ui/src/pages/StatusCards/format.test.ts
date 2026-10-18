@@ -117,7 +117,7 @@ describe("estimateStatusCardCost", () => {
     });
     // 10_000 / 2_000 est tokens = 5 updates before the cap bites
     expect(capped.primary).toContain("Up to ~5 updates/day");
-    expect(capped.note).toMatch(/daily token cap/i);
+    expect(capped.note).toMatch(/daily AI usage limit/i);
   });
 
   it("reactive mode reports the per-hour ceiling", () => {

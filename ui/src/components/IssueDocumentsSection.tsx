@@ -12,6 +12,7 @@ import type {
 } from "@greatstone/shared";
 import { isSystemIssueDocumentKey } from "@greatstone/shared";
 import { useLocation } from "@/lib/router";
+import { useConfirm } from "@/context/ConfirmContext";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
@@ -297,6 +298,7 @@ export function IssueDocumentsSection({
 }) {
   const queryClient = useQueryClient();
   const location = useLocation();
+  const confirmAction = useConfirm();
   const documentSubject = useMemo(() => {
     if (subject) return subject;
     if (!issue) throw new Error("IssueDocumentsSection requires either issue or subject");
@@ -562,7 +564,7 @@ export function IssueDocumentsSection({
 
     if (!normalizedKey || !normalizedBody) {
       if (currentDraft.isNew) {
-        setError("Document key and body are required");
+        setError("Add a short name and some text first");
       } else if (!normalizedBody) {
         setError("Document body cannot be empty");
       }
@@ -573,7 +575,7 @@ export function IssueDocumentsSection({
     }
 
     if (!DOCUMENT_KEY_PATTERN.test(normalizedKey)) {
-      setError("Document key must start with a letter or number and use only lowercase letters, numbers, -, or _.");
+      setError("The short name must start with a letter or number and use only lowercase letters, numbers, - or _.");
       if (options?.trackAutosave) {
         resetAutosaveState();
       }
@@ -658,7 +660,7 @@ export function IssueDocumentsSection({
           resetAutosaveState();
           return false;
         } catch {
-          setError("Document changed remotely and the latest version could not be loaded");
+          setError("Someone else changed this document and the latest version could not be loaded");
           return false;
         }
       }
@@ -954,7 +956,7 @@ export function IssueDocumentsSection({
             onChange={(event) =>
               setDraft((current) => current ? { ...current, key: event.target.value.toLowerCase() } : current)
             }
-            placeholder="Document key"
+            placeholder="Short name (lowercase, no spaces)"
           />
           {newDocumentKeyError && (
             <p className="text-xs text-destructive">{newDocumentKeyError}</p>
@@ -1288,7 +1290,7 @@ export function IssueDocumentsSection({
                               )
                             }
                           >
-                            {activeConflict.showRemote ? "Hide remote" : "Review remote"}
+                            {activeConflict.showRemote ? "Hide their version" : "See their version"}
                           </Button>
                           <Button
                             variant="outline"
@@ -1300,16 +1302,34 @@ export function IssueDocumentsSection({
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => reloadDocumentFromServer(doc.key)}
+                            onClick={async () => {
+                              if (await confirmAction({
+                                title: "Discard your draft?",
+                                description: "Your changes are thrown away and the latest saved version loads in their place.",
+                                confirmLabel: "Discard mine",
+                                tone: "destructive",
+                              })) {
+                                reloadDocumentFromServer(doc.key);
+                              }
+                            }}
                           >
-                            Reload remote
+                            Discard mine and load theirs
                           </Button>
                           <Button
                             size="sm"
-                            onClick={() => void overwriteDocumentFromDraft(doc.key)}
+                            onClick={async () => {
+                              if (await confirmAction({
+                                title: "Replace their version?",
+                                description: "The other changes are replaced by your draft. Earlier versions stay in the document history.",
+                                confirmLabel: "Replace",
+                                tone: "destructive",
+                              })) {
+                                void overwriteDocumentFromDraft(doc.key);
+                              }
+                            }}
                             disabled={upsertDocument.isPending}
                           >
-                            {upsertDocument.isPending ? "Saving..." : "Overwrite remote"}
+                            {upsertDocument.isPending ? "Saving..." : "Replace with my version"}
                           </Button>
                         </div>
                       </div>

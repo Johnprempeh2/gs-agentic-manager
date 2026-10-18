@@ -67,6 +67,7 @@ import {
   writeStoredImportJob,
 } from "../lib/import-job-watch";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/context/ConfirmContext";
 
 // ── Import-specific helpers ───────────────────────────────────────────
 
@@ -603,7 +604,7 @@ function AdapterPickerList({
     <div className="mx-5 mt-3">
       <div className="rounded-md border border-border">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <h3 className="text-sm font-medium">Adapters</h3>
+          <h3 className="text-sm font-medium">How each agent runs</h3>
           <span className="text-xs text-muted-foreground">
             {agents.length} agent{agents.length === 1 ? "" : "s"}
           </span>
@@ -700,7 +701,7 @@ async function readLocalPackageZip(file: File): Promise<{
   files: Record<string, CompanyPortabilityFileEntry>;
 }> {
   if (!/\.zip$/i.test(file.name)) {
-    throw new Error("Select a .zip organization package.");
+    throw new Error("Choose an organisation package (.zip file).");
   }
   const archive = await readZipArchive(await file.arrayBuffer());
   if (Object.keys(archive.files).length === 0) {
@@ -845,6 +846,7 @@ async function watchImportJob(
 // ── Main page ─────────────────────────────────────────────────────────
 
 export function CompanyImport() {
+  const confirmAction = useConfirm();
   const {
     selectedCompanyId,
     selectedCompany,
@@ -1288,7 +1290,7 @@ export function CompanyImport() {
         pushToast({
           tone: "success",
           title: "Import completed",
-          body: "Open the organization to view it.",
+          body: "Open the organisation to see it.",
         });
         return;
       }
@@ -1689,7 +1691,7 @@ export function CompanyImport() {
               // immediately visible (same reason as the full-outcome CTA).
               onClick={() => window.location.assign(importOutcome.dashboardPath!)}
             >
-              Open organization dashboard
+              Open organisation dashboard
             </Button>
           </div>
         ) : null}
@@ -1944,7 +1946,7 @@ export function CompanyImport() {
               resetImportFlowState();
             }}
           >
-            <option value="new">Create new organization</option>
+            <option value="new">Create a new organisation</option>
             <option value="existing">
               Existing company: {selectedCompany?.name}
             </option>
@@ -1953,7 +1955,7 @@ export function CompanyImport() {
 
         {targetMode === "new" && (
           <Field
-            label="New organization name"
+            label="New organisation name"
             hint="Optional override. Leave blank to use the package name."
           >
             <input
@@ -1964,14 +1966,14 @@ export function CompanyImport() {
                 setNewCompanyName(e.target.value);
                 resetMutationState();
               }}
-              placeholder="Imported Organization"
+              placeholder="Imported Organisation"
             />
           </Field>
         )}
 
         <Field
-          label="Collision strategy"
-          hint="Board imports can rename, skip, or replace matching organization content."
+          label="If something already exists"
+          hint="Choose what happens when the import has an agent, project or task with the same name as one you already have."
         >
           <select
             className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
@@ -1982,9 +1984,9 @@ export function CompanyImport() {
               resetImportFlowState();
             }}
           >
-            <option value="rename">Rename on conflict</option>
-            <option value="skip">Skip on conflict</option>
-            <option value="replace">Replace existing</option>
+            <option value="rename">Keep both (rename the new one)</option>
+            <option value="skip">Skip the new one</option>
+            <option value="replace">Replace what is there</option>
           </select>
         </Field>
 
@@ -2101,7 +2103,18 @@ export function CompanyImport() {
             </label>
             <Button
               size="sm"
-              onClick={() => importMutation.mutate({ previewForImport: importPreview, pauseAutomations })}
+              onClick={async () => {
+                if (targetMode === "existing" && collisionStrategy === "replace") {
+                  const confirmed = await confirmAction({
+                    title: "Replace existing items?",
+                    description: "Anything in this import with the same name replaces what you have now. This cannot be undone.",
+                    confirmLabel: "Replace and import",
+                    tone: "destructive",
+                  });
+                  if (!confirmed) return;
+                }
+                importMutation.mutate({ previewForImport: importPreview, pauseAutomations });
+              }}
               disabled={importMutation.isPending || hasErrors || selectedCount === 0}
             >
               <Download className="mr-1.5 h-3.5 w-3.5" />
