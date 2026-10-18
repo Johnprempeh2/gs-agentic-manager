@@ -134,7 +134,7 @@ describe("Pipedrive organisation mapping (GRE-1479)", () => {
     expect(mapPipedriveOrganization(blank, industries)).toBeNull();
   });
 
-  it("maps address parts, website, LinkedIn, head count and revenue with its currency (GRE-1539)", () => {
+  it("maps address parts, LinkedIn, head count and revenue with its currency (GRE-1539)", () => {
     const mapped = mapPipedriveOrganization({
       id: 201,
       name: "Volta Foods",
@@ -150,8 +150,8 @@ describe("Pipedrive organisation mapping (GRE-1479)", () => {
       annual_revenue: 1250000.5,
       annual_revenue_currency: "ghs",
     });
+    // Website is not a CRM column here: the API import fills an empty website only.
     expect(mapped?.crm).toEqual({
-      website: "voltafoods.example",
       linkedinUrl: "https://linkedin.com/company/volta-foods",
       addressStreet: "12 Liberation Road",
       addressCity: "Accra",
