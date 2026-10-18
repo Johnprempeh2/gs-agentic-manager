@@ -1,4 +1,5 @@
 import { isBlockedDependentsHandoffCancelled } from "@/lib/blocked-dependents-handoff";
+import { openChildrenWarning } from "@/lib/open-children-warning";
 import { useMemo, useCallback } from "react";
 import { type InfiniteData, useMutation } from "@tanstack/react-query";
 import { issuesApi } from "../../api/issues";
@@ -386,11 +387,14 @@ export function useIssueMutations({
       comment: _comment,
       changes: _changes,
       blockedByIssueIds: _blockedByIssueIds,
+      openChildren,
       ...nextIssue
     }) => {
       const issueRefs = new Set<string>([issueId!, nextIssue.id]);
       if (nextIssue.identifier) issueRefs.add(nextIssue.identifier);
       mergeIssueResponseIntoCaches(issueRefs, nextIssue);
+      const openChildrenNotice = openChildrenWarning(openChildren);
+      if (openChildrenNotice) pushToast({ ...openChildrenNotice, tone: "warn" });
       if (sessionResolved) {
         recordRecentTask(nextIssue, currentUserId);
       }
