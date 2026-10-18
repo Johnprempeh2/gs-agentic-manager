@@ -222,6 +222,7 @@ describe("issue subresource commands", () => {
       await run(["issue", "attachment:delete", ATTACHMENT_ID]);
       await run(["issue", "label:list", "--company-id", COMPANY_ID]);
       await run(["issue", "label:create", "--company-id", COMPANY_ID, "--name", "bug", "--color", "#ff0000"]);
+      await run(["issue", "label:update", LABEL_ID, "--name", "defect"]);
       await run(["issue", "label:delete", LABEL_ID]);
       await run(["issue", "feedback:votes", ISSUE_ID]);
       await run([
@@ -253,6 +254,7 @@ describe("issue subresource commands", () => {
       ["DELETE", `http://localhost:3100/api/attachments/${ATTACHMENT_ID}`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
+      ["PATCH", `http://localhost:3100/api/labels/${LABEL_ID}`],
       ["DELETE", `http://localhost:3100/api/labels/${LABEL_ID}`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],

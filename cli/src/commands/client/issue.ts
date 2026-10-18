@@ -7,6 +7,7 @@ import {
   checkoutIssueSchema,
   createChildIssueSchema,
   createIssueLabelSchema,
+  updateIssueLabelSchema,
   createIssueSchema,
   createIssueThreadInteractionSchema,
   createIssueTreeHoldSchema,
@@ -134,6 +135,11 @@ interface IssueAttachmentUploadOptions extends BaseClientOptions {
 
 interface IssueAttachmentDownloadOptions extends BaseClientOptions {
   out?: string;
+}
+
+interface IssueLabelUpdateOptions extends BaseClientOptions {
+  name?: string;
+  color?: string;
 }
 
 interface IssueLabelCreateOptions extends BaseClientOptions {
@@ -1093,6 +1099,25 @@ export function registerIssueCommands(program: Command): void {
         }
       }),
     { includeCompany: false },
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("label:update")
+      .description("Rename or recolour an issue label")
+      .argument("<labelId>", "Label ID")
+      .option("--name <name>", "New label name")
+      .option("--color <hex>", "New label color, e.g. #4f46e5")
+      .action(async (labelId: string, opts: IssueLabelUpdateOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = updateIssueLabelSchema.parse({ name: opts.name, color: opts.color });
+          const label = await ctx.api.patch(apiPath`/api/labels/${labelId}`, payload);
+          printOutput(label, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
   );
 
   addCommonClientOptions(

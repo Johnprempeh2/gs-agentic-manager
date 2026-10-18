@@ -5361,6 +5361,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/api/labels/{labelId}",
+  tags: ["issues"],
+  summary: "Rename or recolour a label",
+  request: {
+    params: z.object({ labelId: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ name: z.string().optional(), color: z.string().optional() }) } } },
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "delete",
   path: "/api/labels/{labelId}",
   tags: ["issues"],
