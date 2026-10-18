@@ -577,6 +577,12 @@ describeEmbeddedPostgres("companySearchService", () => {
       { owner: "Ama", count: 1, valueByCurrency: [{ currency: "GBP", value: 100 }] },
       { owner: null, count: 1, valueByCurrency: [] },
     ]);
+    expect(summary.missing).toMatchObject({ closeDate: 3, value: 1, owner: 1, organisation: 4 });
+    expect(summary.missing.deals).toHaveLength(2);
+    expect(summary.missing.deals.every((deal) => deal.missing.includes("organisation"))).toBe(true);
+    const all = await quietClientsService(db).pipelineSummary(companyId, { limit: 10 });
+    expect(all.missing.deals.find((deal) => deal.title === "Unpriced lead")?.missing).toEqual(["closeDate", "value", "owner", "organisation"]);
+    expect(all.missing.deals.find((deal) => deal.title === "Big proposal")?.missing).toEqual(["organisation"]);
   });
 
   it("lists deals won and lost in the window with value and lost reasons", async () => {

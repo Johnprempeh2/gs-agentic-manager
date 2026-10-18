@@ -126,6 +126,10 @@ export function formatPipelineSummary(summary: CompanyPipelineSummaryResponse): 
   if (owners.length > 0) {
     lines.push(`Owners: ${owners.map((entry) => `${entry.owner} ${entry.count}`).join(", ")}`);
   }
+  const missing = summary.missing;
+  if (missing && (missing.closeDate || missing.value || missing.owner || missing.organisation)) {
+    lines.push(`Missing: ${missing.closeDate} no close date, ${missing.value} no value, ${missing.owner} no owner, ${missing.organisation} no organisation`);
+  }
   if (summary.topDeals.length > 0) {
     lines.push("Largest:");
     for (const deal of summary.topDeals) {
@@ -266,7 +270,7 @@ export function registerSearchCommands(program: Command): void {
             printOutput(response, { json: true });
             return;
           }
-          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] })) console.log(line);
+          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [], missing: { closeDate: 0, value: 0, owner: 0, organisation: 0, deals: [] } })) console.log(line);
         } catch (err) {
           handleCommandError(err);
         }

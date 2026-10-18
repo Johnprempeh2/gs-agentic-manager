@@ -202,6 +202,8 @@ describe("answers", () => {
     expect(classifyQuestion("How much is in the pipeline?", agents)).toEqual({ kind: "pipeline", view: "stages" });
     expect(classifyQuestion("Who has the most deals?", agents)).toEqual({ kind: "pipeline", view: "owners" });
     expect(classifyQuestion("Show me deals by owner", agents)).toEqual({ kind: "pipeline", view: "owners" });
+    expect(classifyQuestion("Which deals have no close date?", agents)).toEqual({ kind: "pipeline", view: "missing" });
+    expect(classifyQuestion("What's missing from the pipeline?", agents)).toEqual({ kind: "pipeline", view: "missing" });
   });
 
   it("sums up the pipeline by stage and names the largest deal", () => {
@@ -217,14 +219,21 @@ describe("answers", () => {
         { owner: "Kofi", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }] },
         { owner: null, count: 1, valueByCurrency: [] },
       ],
-    });
+    } as never);
     expect(answer.headline).toBe("4 open deals and leads worth GBP 9,100 and USD 3,000. Most are in Proposal (3); the largest is Big proposal at GBP 9,000.");
     expect(answer.lines[1]).toEqual({ text: "Proposal", detail: "3 open deals, GBP 9,000, USD 3,000", href: "/pipelines" });
     expect(answer.lines[2]).toEqual({ text: "Big proposal", detail: "GBP 9,000, Proposal in Sales, due 1 Nov", href: "/GRE/pipelines/p/items/c1" });
-    const byOwner = answerPipeline({ total: 4, valueByCurrency: [], stages: [], topDeals: [], owners: [{ owner: "Kofi", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }] }, { owner: null, count: 1, valueByCurrency: [] }] }, "owners");
+    const byOwner = answerPipeline({ total: 4, valueByCurrency: [], stages: [], topDeals: [], owners: [{ owner: "Kofi", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }] }, { owner: null, count: 1, valueByCurrency: [] }] } as never, "owners");
     expect(byOwner.headline).toBe("4 open deals and leads across 1 owner. Kofi has the most (3, GBP 9,000).");
     expect(byOwner.lines.map((line) => [line.text, line.detail])).toEqual([["Kofi", "3 open deals, GBP 9,000"], ["No owner", "1 open deal"]]);
-    expect(answerPipeline({ total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] }).headline).toBe("There are no open deals or leads in any pipeline.");
+    const gaps = answerPipeline({
+      total: 4, valueByCurrency: [], stages: [], topDeals: [], owners: [],
+      missing: { closeDate: 3, value: 1, owner: 0, organisation: 0, deals: [{ caseId: "c2", title: "Wren lead", pipelineName: "Sales", stageName: "Lead", missing: ["closeDate", "value"], href: "/GRE/pipelines/p/items/c2" }] },
+    }, "missing");
+    expect(gaps.headline).toBe("Of 4 open deals and leads: 3 no close date, 1 no value.");
+    expect(gaps.lines[0]!.detail).toBe("Missing close date, value; Lead in Sales");
+    expect(answerPipeline({ total: 1, valueByCurrency: [], stages: [], topDeals: [], owners: [], missing: { closeDate: 0, value: 0, owner: 0, organisation: 0, deals: [] } }, "missing").headline).toBe("All 1 open deal or lead have a close date, value, owner and organisation.");
+    expect(answerPipeline({ total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] } as never).headline).toBe("There are no open deals or leads in any pipeline.");
   });
 
   it("lists deals by close date with value per currency, or says none are due", () => {
