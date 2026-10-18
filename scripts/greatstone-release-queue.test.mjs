@@ -47,7 +47,8 @@ echo "preview $*" >>"$CALLS"
 [ "$1" != switch-tests ] || [ -z "\${SWITCH_FAIL:-}" ] || { echo "preview: switch test failed"; exit 1; }
 `,
   "greatstone-release.sh": `#!/usr/bin/env bash
-echo "release $1 draining=$(curl -s "$GSAM_LIVE_URL/api/instance/task-drain" | sed 's/.*"draining":\\([a-z]*\\).*/\\1/')" >>"$CALLS"
+owner="$(sed -n 's/^pid=//p' "$GSAM_ROOT/locks/release.lock/owner" 2>/dev/null)"
+echo "release $1 draining=$(curl -s "$GSAM_LIVE_URL/api/instance/task-drain" | sed 's/.*"draining":\\([a-z]*\\).*/\\1/') lock=$([ "$owner" = "$PPID" ] && echo parent || echo "\${owner:-none}") inherited=\${GSAM_RELEASE_LOCK_INHERITED:-0}" >>"$CALLS"
 if [ -n "\${RELEASE_FAIL:-}" ]; then echo "release: the live app did not report it"; exit 1; fi
 echo "Tagged $1 as live-2026-10-18.9: title"
 echo "Roll back with: scripts/greatstone-release.sh live-2026-10-18.8"
@@ -302,7 +303,10 @@ test("drain: new runs are held while running runs finish, the release runs drain
   const { code, out } = await box.worker({ RELEASE_FAIL: "1" }).done;
   assert.equal(code, 0, out);
   const release = box.callLines().find((c) => c.startsWith("release "));
-  assert.match(release, /draining=true$/, "the release ran with new runs held");
+  assert.match(release, /draining=true /, "the release ran with new runs held");
+  // The worker holds the release lock for the release script, which inherits it.
+  assert.match(release, / lock=parent inherited=1$/);
+  assert.equal(existsSync(join(box.root, "locks", "release.lock")), false, "the lock is freed after a failed release");
   assert.deepEqual(box.fake.events, ["drain", "lift"]);
   assert.equal(box.fake.draining, false, "agent runs are back on after the failed release");
   const item = box.state().items[0];
@@ -346,4 +350,22 @@ test("enqueue refuses a ref it cannot release and a placeholder title", async (t
   assert.match(box.cli(["enqueue", "some-branch"]).stderr, /not something the queue can release/);
   assert.match(box.cli(["enqueue", "main", "Release candidate rc-2026-10-18.1"]).stderr, /is not a title/);
   assert.equal(existsSync(join(box.root, "release-queue", "queue.json")), false);
+});
+
+test("a release by hand holding the release lock: the worker waits, without pausing runs, then releases", async (t) => {
+  const box = await sandbox(t);
+  box.merge("change");
+  enqueue(box, "main", "Change");
+  // A release by hand (a live process) holds the lock.
+  const lock = join(box.root, "locks", "release.lock");
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "owner"), `pid=${process.pid}\ncommand=greatstone-release.sh rc-2026-10-18.4\n`);
+  const w = box.worker();
+  await waitFor("the worker to wait for the lock", () => /waiting: another release runs \(pid=/.test(box.state().items[0].detail ?? ""));
+  assert.deepEqual(box.fake.events, [], "no run is held while it waits");
+  rmSync(lock, { recursive: true });
+  const { code, out } = await w.done;
+  assert.equal(code, 0, out);
+  assert.equal(box.state().items[0].status, "released");
+  assert.deepEqual(box.fake.events, ["drain", "lift"]);
 });

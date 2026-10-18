@@ -63,6 +63,28 @@ esac
 # with Fork CI green, so it need not be the one in the preview.
 FROM_APP="${GSAM_RELEASE_FROM_APP:-}"
 [ "$FULL_RESTART" = 0 ] || [ "$FROM_APP" != 1 ] || die "--full-restart stops the live server, so it cannot run from the app; run it from the dev checkout."
+
+# One release at a time (the "release" lock in $GS_ROOT/locks, like the preview
+# and candidate locks): held from the first check to healthy or failed, so a
+# release by hand and one from the release queue never overlap. On 18 Oct 2026
+# two releases ran at once and made live-2026-10-18.5 and .6 on one commit.
+# The queue worker takes the lock before it pauses new agent runs and starts
+# this script with GSAM_RELEASE_LOCK_INHERITED=1; then the lock is its
+# parent's and is left to it.
+RELEASE_LOCK_DIR="$GS_ROOT/locks/release.lock"
+OWN_RELEASE_LOCK=0
+DROP_LIVE_TAG=0
+on_exit() {
+  [ "$DROP_LIVE_TAG" = 0 ] || drop_unpushed_live_tag "$RELEASE_REPO" "$LIVE_DIR" "$LIVE_TAG"
+  [ "$OWN_RELEASE_LOCK" = 0 ] || rm -rf "$RELEASE_LOCK_DIR"
+}
+trap on_exit EXIT
+if [ "${GSAM_RELEASE_LOCK_INHERITED:-}" = 1 ] && [ "$(sed -n 's/^pid=//p' "$RELEASE_LOCK_DIR/owner" 2>/dev/null)" = "$PPID" ]; then
+  say "Release lock: held by the release queue (pid $PPID)."
+else
+  LOCK_PROBLEM="$(gs_lock release "$TAG")" || die "${LOCK_PROBLEM/another release step runs/another release runs}"
+  OWN_RELEASE_LOCK=1
+fi
 record_release_repo "$RELEASE_REPO"
 KEY_PROBLEM="$(live_board_key_check)" || die "$KEY_PROBLEM"
 
@@ -168,7 +190,7 @@ if [ "$MODE" = release ]; then
   tag_live_release "$RELEASE_REPO" "$TAG" "$LIVE_TAG" "$TARGET"
   # The live-* tag stays local until live is healthy on it (GRE-239): a failed
   # release deletes it, so History never offers a version that never ran.
-  trap 'drop_unpushed_live_tag "$RELEASE_REPO" "$LIVE_DIR" "$LIVE_TAG"' EXIT
+  DROP_LIVE_TAG=1
   say "Tagged $TAG as $LIVE_TAG: $TITLE"
 else
   LIVE_TAG="$TAG"
@@ -247,7 +269,7 @@ for _ in $(seq 1 90); do
   if [ -n "$STARTED_NOW" ] && { [ "$NEEDS_NEW_PROCESS" = 0 ] || [ "$STARTED_NOW" != "$STARTED_BEFORE" ]; } && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
     say "Live app at $LIVE_URL is running $LIVE_TAG ($TARGET), server started $STARTED_NOW."
     if [ "$MODE" = release ]; then
-      trap - EXIT
+      DROP_LIVE_TAG=0
       GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG" \
         || say "Could not push $TAG and $LIVE_TAG to origin; live runs $LIVE_TAG. Push them with: GSAM_RELEASE=1 git push origin $TAG $LIVE_TAG"
     fi

@@ -241,6 +241,41 @@ test("greatstone-release.sh removes a stale empty index.lock before the backup a
   assert.equal(git(repo, "tag", "-l", "live-*"), "");
 });
 
+test("greatstone-release.sh takes the release lock for the whole run, refuses while another release holds it, and frees it", (t) => {
+  // 18 Oct 2026: two releases ran at once and made two live tags on one commit.
+  const box = sandbox();
+  t.after(() => rmSync(box.root, { recursive: true, force: true }));
+  const repo = releaseRepo(box);
+  const releaseLock = join(box.root, "locks", "release.lock");
+  // Another release (a live process) holds it: refused before any check, backup or tag.
+  mkdirSync(releaseLock, { recursive: true });
+  writeFileSync(join(releaseLock, "owner"), `pid=${process.pid}\ncommand=greatstone-release-queue.mjs rq-abc123\n`);
+  const held = runRelease(box, repo);
+  assert.equal(held.status, 1);
+  assert.match(held.stderr, new RegExp(`^release: another release runs \\(pid=${process.pid} command=greatstone-release-queue\\.mjs rq-abc123\\); wait for it to end\\.`, "m"));
+  assert.doesNotMatch(held.stdout, /Backed up|Tagged/);
+  assert.ok(existsSync(releaseLock), "another holder's lock is left alone");
+
+  // The release queue holds it and starts the script itself (here this test
+  // process is both): the script goes on past the lock and leaves it to its parent.
+  const inherited = spawnSync("bash", [join(repo, "scripts", "greatstone-release.sh"), "rc-2026-09-27.2"], {
+    encoding: "utf8",
+    env: { ...process.env, GSAM_RELEASE_REPO: "", GSAM_ROOT: box.root, GSAM_LIVE_URL: "http://127.0.0.1:9", GSAM_LIVE_BOARD_KEY_FILE: join(box.root, "no-key"), GSAM_RELEASE_LOCK_INHERITED: "1" },
+  });
+  assert.match(inherited.stdout, new RegExp(`^Release lock: held by the release queue \\(pid ${process.pid}\\)\\.$`, "m"));
+  assert.doesNotMatch(inherited.stderr, /another release runs/);
+  assert.ok(existsSync(releaseLock), "the parent's lock is left to the parent");
+  rmSync(releaseLock, { recursive: true });
+
+  // A dead holder's lock is taken over; a release that stops later frees its own lock.
+  mkdirSync(releaseLock, { recursive: true });
+  writeFileSync(join(releaseLock, "owner"), "pid=999999\n");
+  const run = runRelease(box, repo);
+  assert.notEqual(run.status, 0); // no origin: it stops at the fetch
+  assert.match(run.stderr, /Took over the release lock from pid 999999/);
+  assert.equal(existsSync(releaseLock), false);
+});
+
 test("without the foreground flag it detaches and records its pid", async (t) => {
   const box = sandbox();
   t.after(() => rmSync(box.root, { recursive: true, force: true }));

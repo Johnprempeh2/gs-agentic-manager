@@ -11,6 +11,8 @@
 //   draining   new agent runs are held (the task drain); running runs finish,
 //              at most GSAM_RELEASE_DRAIN_CAP_SECONDS (10 min); nothing is killed
 //   releasing  scripts/greatstone-release.sh <rc-tag>: backup, tag, switch, restart.
+//              The worker holds the release lock (~/GSAM/locks/release.lock)
+//              from before the drain to the end, so a release by hand never overlaps.
 //              The drain is lifted afterwards, also when the release fails.
 //
 // Requests for main that wait next to each other become one release of the
@@ -414,7 +416,36 @@ function createWorker(cfg) {
     }
   };
 
+  /**
+   * The release lock (gs_lock "release", as greatstone-release.sh takes it), held
+   * from before the drain to the end of the release, so a release by hand never
+   * overlaps. Waits while someone else holds it (at most stepWaitMs).
+   */
+  const takeReleaseLock = async (item) => {
+    const deadline = Date.now() + cfg.stepWaitMs;
+    for (;;) {
+      try {
+        return takeLock(cfg.root, "release", `greatstone-release-queue.mjs ${item.id}`);
+      } catch (error) {
+        const held = oneLine(error.message).replace("another release step runs", "another release runs");
+        if (Date.now() > deadline) throw new Stop("failed", `the release lock: ${held}`);
+        patchItem(cfg, item.id, { step: "draining", detail: `waiting: ${held}` });
+        await sleep(cfg.pollMs);
+        checkCancel(item);
+      }
+    }
+  };
+
   const drainAndRelease = async (item, tag) => {
+    const freeLock = await takeReleaseLock(item);
+    try {
+      return await drainAndReleaseLocked(item, tag);
+    } finally {
+      freeLock();
+    }
+  };
+
+  const drainAndReleaseLocked = async (item, tag) => {
     for (let attempt = 1; attempt <= cfg.drainAttempts; attempt += 1) {
       checkCancel(item);
       const held = await liveApi(cfg, "POST", "/api/instance/task-drain", { ttlMs: cfg.drainCapMs + 30 * 60_000 }).catch((e) => ({ ok: false, status: 0, text: e.message }));
@@ -438,7 +469,7 @@ function createWorker(cfg) {
         }
         if (n === 0) {
           step(item, "releasing", `Releasing ${tag}: new agent runs paused`);
-          return await run(cfg, "bash", [join(cfg.scripts, "greatstone-release.sh"), tag], { log: item.log });
+          return await run(cfg, "bash", [join(cfg.scripts, "greatstone-release.sh"), tag], { log: item.log, extraEnv: { GSAM_RELEASE_LOCK_INHERITED: "1" } });
         }
         logLine(item.log, `${n ?? "some"} run(s) still running after ${Math.round(cfg.drainCapMs / 60000)} min; nothing was stopped`);
       } finally {
