@@ -1022,6 +1022,8 @@ npx gsam client-brief <name...> --company-id <company-id> [--json]
 npx gsam client-activity --company-id <company-id> [--days 7] [--limit 20] [--json]
 # Open deals and leads by expected close date, overdue first, with value per currency (--days 0 for only overdue).
 npx gsam closing-deals --company-id <company-id> [--days 30] [--limit 10] [--json]
+# Open deals and leads per stage with their value, and the largest deals.
+npx gsam pipeline-summary --company-id <company-id> [--limit 5] [--json]
 ```
 
 ```sh

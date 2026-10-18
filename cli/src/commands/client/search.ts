@@ -6,6 +6,7 @@ import {
   type CompanyClientActivity,
   type CompanyClosingDeal,
   type CompanyClosingDealsResponse,
+  type CompanyPipelineSummaryResponse,
   type CompanyQuietClient,
   type CompanyQuietClientsResponse,
   type CompanyRecentClientActivityResponse,
@@ -108,6 +109,27 @@ export function closingSummary(response: CompanyClosingDealsResponse): string {
   return `${count} ${period}${worth ? ` (worth ${worth})` : ""}${late}:`;
 }
 
+function amount(value: number, currency: string | null): string {
+  return `${currency ? `${currency} ` : ""}${value}`;
+}
+
+/** The pipeline as short lines: totals, each stage, then the largest deals. */
+export function formatPipelineSummary(summary: CompanyPipelineSummaryResponse): string[] {
+  if (summary.total === 0) return ["No open deals or leads in any pipeline."];
+  const worth = summary.valueByCurrency.filter((entry) => entry.value > 0).map((entry) => amount(entry.value, entry.currency)).join(", ");
+  const lines = [`${summary.total} open ${summary.total === 1 ? "deal or lead" : "deals and leads"}${worth ? ` (worth ${worth})` : ""}:`];
+  for (const stage of summary.stages) {
+    lines.push(`${stage.pipelineName} / ${stage.stageName}: ${[`${stage.count}`, ...stage.valueByCurrency.map((entry) => amount(entry.value, entry.currency))].join(", ")}`);
+  }
+  if (summary.topDeals.length > 0) {
+    lines.push("Largest:");
+    for (const deal of summary.topDeals) {
+      lines.push(`${[amount(deal.value, deal.currency), deal.title, `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${deal.expectedCloseDate}` : null].filter(Boolean).join(" | ")}  ${deal.href}`);
+    }
+  }
+  return lines;
+}
+
 export function registerSearchCommands(program: Command): void {
   addCommonClientOptions(
     program
@@ -199,6 +221,31 @@ export function registerSearchCommands(program: Command): void {
           }
           console.log(closingSummary(response));
           for (const deal of response.deals) console.log(formatClosingDeal(deal));
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
+  addCommonClientOptions(
+    program
+      .command("pipeline-summary")
+      .description("Open deals and leads per stage with their value, and the largest deals")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--limit <n>", "Largest deals to list (1 to 50)", "5")
+      .action(async (opts: QuietClientsOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "5", 10) || 5, 1), 50);
+          const response = await ctx.api.get<CompanyPipelineSummaryResponse>(
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/pipeline-summary?limit=${limit}`,
+          );
+          if (ctx.json) {
+            printOutput(response, { json: true });
+            return;
+          }
+          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [] })) console.log(line);
         } catch (err) {
           handleCommandError(err);
         }

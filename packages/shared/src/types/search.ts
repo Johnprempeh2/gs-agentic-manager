@@ -278,3 +278,34 @@ export interface CompanyClosingDealsResponse {
   /** Value of the deals in the window, per currency (null currency when none was set). */
   valueByCurrency: Array<{ currency: string | null; value: number; count: number }>;
 }
+
+export interface CompanyPipelineStageSummary {
+  pipelineId: string;
+  pipelineName: string;
+  stageName: string;
+  count: number;
+  valueByCurrency: Array<{ currency: string | null; value: number }>;
+}
+
+export interface CompanyPipelineDeal {
+  caseId: string;
+  title: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  value: number;
+  currency: string | null;
+  /** Expected close date, YYYY-MM-DD, when one was imported. */
+  expectedCloseDate: string | null;
+  href: string;
+}
+
+export interface CompanyPipelineSummaryResponse {
+  /** Open deals and leads across all pipelines. */
+  total: number;
+  valueByCurrency: Array<{ currency: string | null; value: number; count: number }>;
+  /** Open deals per stage, in pipeline and stage order; empty stages left out. */
+  stages: CompanyPipelineStageSummary[];
+  /** The largest open deals by value (values are not converted between currencies). */
+  topDeals: CompanyPipelineDeal[];
+}

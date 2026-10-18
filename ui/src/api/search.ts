@@ -1,4 +1,4 @@
-import type { CompanyClientBriefResponse, CompanyClosingDealsResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
+import type { CompanyClientBriefResponse, CompanyClosingDealsResponse, CompanyPipelineSummaryResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -71,4 +71,7 @@ export const searchApi = {
     const qs = search.toString();
     return api.get<CompanyClosingDealsResponse>(`/companies/${companyId}/search/closing-deals${qs ? `?${qs}` : ""}`);
   },
+  /** Open deals per stage, value per currency and the largest deals. */
+  pipelineSummary: (companyId: string, params: { limit?: number } = {}) =>
+    api.get<CompanyPipelineSummaryResponse>(`/companies/${companyId}/search/pipeline-summary${params.limit !== undefined ? `?limit=${params.limit}` : ""}`),
 };

@@ -8473,6 +8473,27 @@ export function issueRoutes(
     res.json(await quietClientsService(db).closing(companyId, { days, limit }));
   });
 
+  // Open deals per stage, value per currency and the largest deals (Ask Everest: "How is the pipeline looking?").
+  router.get("/companies/:companyId/search/pipeline-summary", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const limit = req.query.limit === undefined ? 5 : Number(req.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).pipelineSummary(companyId, { limit }));
+  });
+
   router.get("/companies/:companyId/search", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

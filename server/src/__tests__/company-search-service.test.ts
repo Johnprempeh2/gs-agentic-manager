@@ -540,6 +540,40 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect((await quietClientsService(db).closing(companyId, { days: 0, limit: 10, now })).deals.map((deal) => deal.title)).toEqual(["Late renewal"]);
   });
 
+  it("summarises open deals per stage with value per currency and the largest deals", async () => {
+    const companyId = await createCompany();
+    const pipelineId = randomUUID();
+    const [lead, proposal, done] = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values([
+      { id: proposal, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 1 },
+      { id: lead, companyId, pipelineId, key: "lead", name: "Lead", kind: "working", position: 0 },
+      { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 2 },
+    ]);
+    await db.insert(pipelineCases).values([
+      { companyId, pipelineId, stageId: lead, caseKey: "p1", title: "Small lead", fields: { leadValue: 100, leadCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: lead, caseKey: "p2", title: "Unpriced lead", fields: {} },
+      { companyId, pipelineId, stageId: proposal, caseKey: "p3", title: "Big proposal", fields: { dealValue: 9000, dealCurrency: "GBP", expectedCloseDate: "2026-11-01" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "p4", title: "Dollar proposal", fields: { dealValue: 3000, dealCurrency: "USD" } },
+      { companyId, pipelineId, stageId: done, caseKey: "p5", title: "Already won", fields: { dealValue: 99999, dealCurrency: "GBP" } },
+    ]);
+
+    const summary = await quietClientsService(db).pipelineSummary(companyId, { limit: 2 });
+
+    expect(summary.total).toBe(4);
+    expect(summary.stages).toEqual([
+      { pipelineId, pipelineName: "Sales", stageName: "Lead", count: 2, valueByCurrency: [{ currency: "GBP", value: 100 }] },
+      expect.objectContaining({ stageName: "Proposal", count: 2 }),
+    ]);
+    expect(summary.valueByCurrency).toEqual([
+      { currency: "GBP", value: 9100, count: 2 },
+      { currency: "USD", value: 3000, count: 1 },
+      { currency: null, value: 0, count: 1 },
+    ]);
+    expect(summary.topDeals.map((deal) => deal.title)).toEqual(["Big proposal", "Dollar proposal"]);
+    expect(summary.topDeals[0]).toMatchObject({ value: 9000, currency: "GBP", stageName: "Proposal", expectedCloseDate: "2026-11-01" });
+  });
+
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
     const companyId = await createCompany();
     const agentId = await createAgent(companyId, { name: "Mibile" });

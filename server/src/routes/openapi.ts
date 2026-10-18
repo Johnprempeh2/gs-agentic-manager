@@ -12279,6 +12279,11 @@ for (const route of [
   ],
   [
     "get",
+    "/api/companies/{companyId}/search/pipeline-summary",
+    "Summarise open deals per stage with value and the largest deals",
+  ],
+  [
+    "get",
     "/api/companies/{companyId}/issues/count",
     "Count issues in a company",
   ],

@@ -5,6 +5,9 @@ import type {
   CompanyClientBriefResponse,
   CompanyClosingDeal,
   CompanyClosingDealsResponse,
+  CompanyPipelineDeal,
+  CompanyPipelineStageSummary,
+  CompanyPipelineSummaryResponse,
   CompanyQuietClient,
   CompanyQuietClientsResponse,
   CompanyRecentClientActivityResponse,
@@ -360,6 +363,84 @@ export function quietClientsService(db: Db) {
         valueByCurrency: currencyRows
           .map((row) => ({ currency: row.currency, value: Number(row.value ?? 0), count: Number(row.count ?? 0) }))
           .sort((a, b) => b.value - a.value),
+      };
+    },
+
+    /**
+     * Open deals and leads across pipelines: count and value per stage, the
+     * overall value per currency, and the largest deals by value.
+     */
+    pipelineSummary: async (companyId: string, options: { limit: number }): Promise<CompanyPipelineSummaryResponse> => {
+      const open = sql`
+        SELECT pc.id, pc.title, pc.pipeline_id, p.name AS pipeline_name, st.name AS stage_name, st.position AS stage_position,
+          o.name AS organisation_name,
+          CASE WHEN pc.fields->>'expectedCloseDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN pc.fields->>'expectedCloseDate' END AS close_date,
+          CASE
+            WHEN jsonb_typeof(pc.fields->'dealValue') = 'number' THEN (pc.fields->>'dealValue')::numeric
+            WHEN jsonb_typeof(pc.fields->'leadValue') = 'number' THEN (pc.fields->>'leadValue')::numeric
+          END AS value,
+          nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency
+        FROM pipeline_cases pc
+        JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
+        JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('working', 'review')
+        LEFT JOIN organisations o ON o.id = pc.organisation_id AND o.archived_at IS NULL
+        WHERE pc.company_id = ${companyId}
+          AND pc.retired_at IS NULL
+          AND pc.terminal_at IS NULL
+          AND pc.hidden_from_board_at IS NULL
+      `;
+      const stageRows = await db.execute(sql`
+        WITH open_cases AS (${open})
+        SELECT pipeline_id AS "pipelineId", pipeline_name AS "pipelineName", stage_name AS "stageName",
+          min(stage_position) AS position, currency, count(*)::int AS count, coalesce(sum(value), 0)::float8 AS value
+        FROM open_cases
+        GROUP BY pipeline_id, pipeline_name, stage_name, currency
+        ORDER BY pipeline_name, pipeline_id, min(stage_position), stage_name
+      `) as unknown as Array<{ pipelineId: string; pipelineName: string; stageName: string; position: number; currency: string | null; count: number; value: number }>;
+      const topRows = await db.execute(sql`
+        WITH open_cases AS (${open})
+        SELECT id AS "caseId", title, pipeline_id AS "pipelineId", pipeline_name AS "pipelineName", stage_name AS "stageName",
+          organisation_name AS "organisationName", value::float8 AS value, currency, close_date AS "closeDate"
+        FROM open_cases
+        WHERE value > 0
+        ORDER BY value DESC, id
+        LIMIT ${options.limit}
+      `) as unknown as Array<{ caseId: string; title: string; pipelineId: string; pipelineName: string; stageName: string; organisationName: string | null; value: number; currency: string | null; closeDate: string | null }>;
+
+      const stages: CompanyPipelineStageSummary[] = [];
+      const totals = new Map<string | null, { value: number; count: number }>();
+      for (const row of stageRows) {
+        let stage = stages.find((entry) => entry.pipelineId === row.pipelineId && entry.stageName === row.stageName);
+        if (!stage) {
+          stage = { pipelineId: row.pipelineId, pipelineName: row.pipelineName, stageName: row.stageName, count: 0, valueByCurrency: [] };
+          stages.push(stage);
+        }
+        stage.count += Number(row.count);
+        if (Number(row.value) > 0) stage.valueByCurrency.push({ currency: row.currency, value: Number(row.value) });
+        const total = totals.get(row.currency) ?? { value: 0, count: 0 };
+        total.value += Number(row.value);
+        total.count += Number(row.count);
+        totals.set(row.currency, total);
+      }
+      const prefix = await routePrefix(db, companyId);
+      const topDeals: CompanyPipelineDeal[] = topRows.map((row) => ({
+        caseId: row.caseId,
+        title: row.title,
+        pipelineName: row.pipelineName,
+        stageName: row.stageName,
+        organisationName: row.organisationName,
+        value: Number(row.value),
+        currency: row.currency,
+        expectedCloseDate: row.closeDate,
+        href: `/${prefix}/pipelines/${row.pipelineId}/items/${row.caseId}`,
+      }));
+      return {
+        total: stages.reduce((sum, stage) => sum + stage.count, 0),
+        valueByCurrency: [...totals.entries()]
+          .map(([currency, total]) => ({ currency, value: total.value, count: total.count }))
+          .sort((a, b) => b.value - a.value),
+        stages,
+        topDeals,
       };
     },
   };

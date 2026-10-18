@@ -8,6 +8,7 @@ import {
   answerPeople,
   answerQuiet,
   answerClosing,
+  answerPipeline,
   closingDays,
   answerActivity,
   answerBrief,
@@ -168,6 +169,28 @@ describe("answers", () => {
     expect(classifyQuestion("Which leads are past their close date?", agents)).toEqual({ kind: "closing", days: 0 });
     expect(closingDays("expected to close in 2 weeks")).toBe(14);
     expect(classifyQuestion("What is Mason closing today?", agents).kind).toBe("agent");
+  });
+
+  it("spots questions about the pipeline as a whole", () => {
+    expect(classifyQuestion("How is the pipeline looking?", agents)).toEqual({ kind: "pipeline" });
+    expect(classifyQuestion("What are our biggest deals?", agents)).toEqual({ kind: "pipeline" });
+    expect(classifyQuestion("How much is in the pipeline?", agents)).toEqual({ kind: "pipeline" });
+  });
+
+  it("sums up the pipeline by stage and names the largest deal", () => {
+    const answer = answerPipeline({
+      total: 4,
+      valueByCurrency: [{ currency: "GBP", value: 9100, count: 2 }, { currency: "USD", value: 3000, count: 1 }, { currency: null, value: 0, count: 1 }],
+      stages: [
+        { pipelineId: "p", pipelineName: "Sales", stageName: "Lead", count: 1, valueByCurrency: [{ currency: "GBP", value: 100 }] },
+        { pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }, { currency: "USD", value: 3000 }] },
+      ],
+      topDeals: [{ caseId: "c1", title: "Big proposal", pipelineName: "Sales", stageName: "Proposal", organisationName: null, value: 9000, currency: "GBP", expectedCloseDate: "2026-11-01", href: "/GRE/pipelines/p/items/c1" }],
+    });
+    expect(answer.headline).toBe("4 open deals and leads worth GBP 9,100 and USD 3,000. Most are in Proposal (3); the largest is Big proposal at GBP 9,000.");
+    expect(answer.lines[1]).toEqual({ text: "Proposal", detail: "3 open deals, GBP 9,000, USD 3,000", href: "/pipelines" });
+    expect(answer.lines[2]).toEqual({ text: "Big proposal", detail: "GBP 9,000, Proposal in Sales, due 1 Nov", href: "/GRE/pipelines/p/items/c1" });
+    expect(answerPipeline({ total: 0, valueByCurrency: [], stages: [], topDeals: [] }).headline).toBe("There are no open deals or leads in any pipeline.");
   });
 
   it("lists deals by close date with value per currency, or says none are due", () => {

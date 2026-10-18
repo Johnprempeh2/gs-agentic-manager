@@ -180,6 +180,14 @@ answers "Which deals are closing this month?", "What is closing this week?",
 "How much is in the pipeline this quarter?" and "Which deals have slipped?" from
 it; agents use `gsam closing-deals`.
 
+`GET /api/companies/:companyId/search/pipeline-summary?limit=5` sums up every
+open deal and lead: the count and value per stage (in pipeline and stage order,
+empty stages left out), the overall value per currency, and the largest deals by
+value. Values are summed per currency, never converted. Ask Everest answers "How
+is the pipeline looking?" and "What are our biggest deals?" from it; a pipeline
+question with a time ("this quarter") goes to deals closing instead. Agents use
+`gsam pipeline-summary`.
+
 ## Reproduce the evaluation
 
 ```sh
