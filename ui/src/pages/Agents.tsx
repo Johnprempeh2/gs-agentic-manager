@@ -478,6 +478,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
               {liveRunByAgent.has(agent.id) && (
                 <LiveRunIndicator
                   agentRef={agentRouteRef(agent)}
+                  agentName={agent.name}
                   runId={liveRunByAgent.get(agent.id)!.runId}
                   liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                 />
@@ -831,6 +832,7 @@ function OrgTreeNode({
             {liveRunByAgent.has(node.id) ? (
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
+                agentName={node.name}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
@@ -842,6 +844,7 @@ function OrgTreeNode({
             {liveRunByAgent.has(node.id) && (
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
+                agentName={node.name}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
@@ -998,20 +1001,30 @@ function AgentMetaColumns({
   );
 }
 
+// Rendered inside the agent row link, so it is a button that navigates rather
+// than a nested <a> (invalid markup and a hydration error, GRE-1664).
 function LiveRunIndicator({
   agentRef,
+  agentName,
   runId,
   liveCount,
 }: {
   agentRef: string;
+  agentName: string;
   runId: string;
   liveCount: number;
 }) {
+  const navigate = useNavigate();
   return (
-    <Link
-      to={`/agents/${agentRef}/runs/${runId}`}
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
-      onClick={(e) => e.stopPropagation()}
+    <button
+      type="button"
+      aria-label={`Open live run for ${agentName}`}
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigate(`/agents/${agentRef}/runs/${runId}`);
+      }}
     >
       <span className="relative flex h-2 w-2">
         <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
@@ -1020,6 +1033,6 @@ function LiveRunIndicator({
       <span className="text-(length:--text-micro) font-medium text-blue-700 dark:text-blue-400">
         Live{liveCount > 1 ? ` (${liveCount})` : ""}
       </span>
-    </Link>
+    </button>
   );
 }
