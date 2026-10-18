@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, heartbeatRuns, issues, pipelineCases, pipelineStages, pushSubscriptions } from "@greatstone/db";
-import type { MorningSummary, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
+import { companies, heartbeatRuns, issues, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
+import type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
@@ -58,8 +58,47 @@ export function morningSummaryMessage(summary: MorningSummary, prefix: string): 
       : []),
     summary.finished.count === 0 ? "No tasks finished since yesterday." : `${plural(summary.finished.count, "task", "tasks")} finished since yesterday.`,
     summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
+    ...(summary.deals && summary.deals.won > 0 ? [`${plural(summary.deals.won, "deal", "deals")} won.`] : []),
   ];
   return { title, body: parts.join(" "), url: `/${prefix}/morning`, tag: "morning-summary", badge: summary.needsYou.count };
+}
+
+/** The evening wrap-up: the headline is what still needs you; the body is what got done today. */
+export function eveningSummaryMessage(summary: MorningSummary, prefix: string): DecisionPushMessage {
+  const needs = summary.needsYou.count;
+  const title = needs === 0 ? "Today's wrap-up. Nothing needs you" : `Today's wrap-up. ${plural(needs, "thing still needs", "things still need")} you`;
+  const won = summary.deals?.won ?? 0;
+  const lost = summary.deals?.lost ?? 0;
+  const parts = [
+    summary.finished.count === 0 ? "No tasks finished today." : `${plural(summary.finished.count, "task", "tasks")} finished today.`,
+    ...(won > 0 ? [`${plural(won, "deal", "deals")} won.`] : []),
+    ...(lost > 0 ? [`${plural(lost, "deal", "deals")} lost.`] : []),
+    summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
+    ...((summary.workingNow?.count ?? 0) > 0 ? [`${plural(summary.workingNow!.count, "task is", "tasks are")} still being worked on.`] : []),
+  ];
+  return { title, body: parts.join(" "), url: `/${prefix}/morning`, tag: "evening-summary", badge: needs };
+}
+
+/** True when this round should send today's evening wrap-up to this person. */
+export function eveningSummaryDue(
+  prefs: NotificationPreferences,
+  lastSentOn: string | null,
+  now: Date,
+): { due: boolean; localDate: string } {
+  const { hour, date } = localClock(prefs.timeZone, now);
+  if (!prefs.eveningSummary || lastSentOn === date) return { due: false, localDate: date };
+  const sinceChosen = hour - prefs.eveningSummaryHour;
+  if (sinceChosen < 0 || sinceChosen > CATCH_UP_HOURS) return { due: false, localDate: date };
+  return { due: !isHeld(prefs, now), localDate: date };
+}
+
+/**
+ * About the start of the person's day: their local hour and the minutes past
+ * it. Minutes are read in UTC, which is exact for whole-hour time zones.
+ */
+export function startOfLocalDay(timeZone: string, now: Date): Date {
+  const { hour } = localClock(timeZone, now);
+  return new Date(now.getTime() - (hour * 60 + now.getUTCMinutes()) * 60 * 1000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds());
 }
 
 /** True when this round should send today's summary to this person. */
@@ -87,10 +126,12 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
   const buildNeedsMe = options.buildNeedsMe ?? ((companyId: string, userId: string) => needsMe.build(companyId, { userId }));
   const preferences = notificationPreferencesService(db);
 
-  async function build(companyId: string, userId: string, now = new Date()): Promise<MorningSummary> {
-    const since = new Date(now.getTime() - DAY_MS);
+  /** `window` "day" (the evening wrap-up) counts from the start of the person's day instead of the last 24 hours. */
+  async function build(companyId: string, userId: string, now = new Date(), window: "24h" | "day" = "24h"): Promise<MorningSummary> {
+    const { timeZone } = await preferences.get(companyId, userId);
+    const since = window === "day" ? startOfLocalDay(timeZone, now) : new Date(now.getTime() - DAY_MS);
     // "Today" is the person's own date, not the server's.
-    const { date: today } = localClock((await preferences.get(companyId, userId)).timeZone, now);
+    const { date: today } = localClock(timeZone, now);
     const due = and(
       eq(issues.companyId, companyId),
       isNotNull(issues.dueDate),
@@ -105,6 +146,13 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       inArray(heartbeatRuns.status, ["running", "queued"]),
       userWork(),
     );
+    // Client deals (cases on pipelines that name an organisation) closed since yesterday.
+    const closedDeals = and(
+      eq(pipelineCases.companyId, companyId),
+      eq(pipelines.requiresOrganisation, true),
+      isNotNull(pipelineCases.terminalKind),
+      gte(pipelineCases.terminalAt, since),
+    );
     // Open Pipedrive deals whose next step is due today or late (overnight
     // run, 17 Oct). Dates are stored as YYYY-MM-DD, so text order is date order.
     const nextStepDate = sql<string>`left(${pipelineCases.fields} ->> 'nextActivityDate', 10)`;
@@ -116,7 +164,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       sql`(${pipelineCases.fields} ->> 'nextActivityDate') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'`,
       sql`${nextStepDate} <= ${today}`,
     );
-    const [dealRows, dealCount] = await Promise.all([
+    const [nextStepRows, nextStepCount] = await Promise.all([
       db
         .select({
           id: pipelineCases.id,
@@ -136,7 +184,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
         .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
         .where(dealsDue),
     ]);
-    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount, workingRows, workingCount] = await Promise.all([
+    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount, workingRows, workingCount, dealRows, dealCounts] = await Promise.all([
       buildNeedsMe(companyId, userId),
       db
         .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
@@ -177,7 +225,27 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
         .from(issues)
         .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, issues.executionRunId))
         .where(working),
+      db
+        .select({ id: pipelineCases.id, pipelineId: pipelineCases.pipelineId, title: pipelineCases.title, terminalKind: pipelineCases.terminalKind })
+        .from(pipelineCases)
+        .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
+        .where(closedDeals)
+        .orderBy(desc(pipelineCases.terminalAt))
+        .limit(ITEM_LIMIT),
+      db
+        .select({ terminalKind: pipelineCases.terminalKind, count: sql<number>`count(*)::int` })
+        .from(pipelineCases)
+        .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
+        .where(closedDeals)
+        .groupBy(pipelineCases.terminalKind),
     ]);
+    const dealCount = (kind: string) => dealCounts.find((row) => row.terminalKind === kind)?.count ?? 0;
+    const dealItems: MorningSummaryDeal[] = dealRows.map((row) => ({
+      id: row.id,
+      pipelineId: row.pipelineId,
+      title: row.title,
+      outcome: row.terminalKind === "done" ? "won" : "lost",
+    }));
     const needs = needsYouItems(mine);
     return {
       companyId,
@@ -188,9 +256,10 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       finished: { count: finishedCount[0]?.count ?? 0, items: finishedRows },
       stuck: { count: stuckCount[0]?.count ?? 0, items: stuckRows },
       workingNow: { count: workingCount[0]?.count ?? 0, items: workingRows },
+      deals: { won: dealCount("done"), lost: dealCount("cancelled"), items: dealItems },
       dealNextSteps: {
-        count: dealCount[0]?.count ?? 0,
-        items: dealRows.map((row) => ({
+        count: nextStepCount[0]?.count ?? 0,
+        items: nextStepRows.map((row) => ({
           id: row.id,
           identifier: null,
           title: row.subject?.trim() ? `${row.title}: ${row.subject.trim()}` : row.title,
@@ -226,6 +295,33 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
           sent += delivered;
         } catch (error) {
           logger.warn({ err: error, companyId }, "morning summary failed for one user");
+        }
+      }
+      return sent;
+    },
+
+    /**
+     * One round: the evening wrap-up for each person with a phone registered
+     * who chose it, once their evening hour has come. Once a day per company.
+     */
+    async sendEveningDue(deliver: Deliver, now = new Date()): Promise<number> {
+      const audiences = await db
+        .selectDistinct({ companyId: pushSubscriptions.companyId, userId: pushSubscriptions.userId, prefix: companies.issuePrefix })
+        .from(pushSubscriptions)
+        .innerJoin(companies, eq(companies.id, pushSubscriptions.companyId));
+      let sent = 0;
+      for (const { companyId, userId, prefix } of audiences) {
+        try {
+          const prefs = await preferences.get(companyId, userId);
+          const { due, localDate } = eveningSummaryDue(prefs, await preferences.lastEveningSummaryOn(companyId, userId), now);
+          if (!due) continue;
+          // Mark first: a slow or failing push service never sends it twice.
+          await preferences.markEveningSummarySent(companyId, userId, localDate);
+          const summary = await build(companyId, userId, now, "day");
+          const { delivered } = await deliver(companyId, userId, eveningSummaryMessage(summary, prefix));
+          sent += delivered;
+        } catch (error) {
+          logger.warn({ err: error, companyId }, "evening wrap-up failed for one user");
         }
       }
       return sent;

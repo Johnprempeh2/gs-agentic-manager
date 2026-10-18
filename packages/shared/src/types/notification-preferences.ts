@@ -13,11 +13,17 @@ export interface NotificationPreferences {
   morningSummary: boolean;
   /** Local hour (0 to 23) the morning summary goes out. */
   morningSummaryHour: number;
+  /** One message each evening: what got done today and what still needs you. */
+  eveningSummary: boolean;
+  /** Local hour (0 to 23) the evening wrap-up goes out. */
+  eveningSummaryHour: number;
   /** "This week at ..." on Monday mornings, at the morning summary hour. */
   weeklyReport: boolean;
   /** Quiet hours, start inclusive and end exclusive. Both null means none. */
   quietHoursStart: number | null;
   quietHoursEnd: number | null;
+  /** Nothing goes out on Saturday or Sunday; what arrives is held until Monday. */
+  quietWeekends: boolean;
   /** IANA time zone the hours are read in. */
   timeZone: string;
   /**
@@ -35,9 +41,12 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   dealsClosed: true,
   morningSummary: true,
   morningSummaryHour: 8,
+  eveningSummary: false,
+  eveningSummaryHour: 18,
   weeklyReport: false,
   quietHoursStart: null,
   quietHoursEnd: null,
+  quietWeekends: false,
   timeZone: "Europe/London",
   pausedUntil: null,
 };
@@ -53,6 +62,14 @@ export interface MorningSummaryTask {
   href?: string | null;
 }
 
+/** One client deal won or lost, in the morning summary. */
+export interface MorningSummaryDeal {
+  id: string;
+  pipelineId: string;
+  title: string;
+  outcome: "won" | "lost";
+}
+
 /** What needs you, what the agents finished and what is stuck, for one person in one company. */
 export interface MorningSummary {
   companyId: string;
@@ -66,9 +83,21 @@ export interface MorningSummary {
   stuck: { count: number; items: MorningSummaryTask[] };
   /** Tasks an agent is working on right now. Optional: older servers do not send it. */
   workingNow?: { count: number; items: MorningSummaryTask[] };
+  /** Client deals won or lost since `since`, newest first. Optional: older servers do not send it. */
+  deals?: { won: number; lost: number; items: MorningSummaryDeal[] };
   /**
    * Open deals imported from Pipedrive whose next step is due today or late,
    * by the person's own date. Optional: older servers do not send it.
    */
   dealNextSteps?: { count: number; items: MorningSummaryTask[] };
+}
+
+/** One notification that reached the person's phones (the recent notifications list). */
+export interface RecentNotification {
+  id: string;
+  title: string;
+  body: string;
+  /** Where tapping it went. */
+  url: string;
+  sentAt: string;
 }

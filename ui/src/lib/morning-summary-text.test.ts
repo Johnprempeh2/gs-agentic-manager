@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { morningSummaryText } from "./morning-summary-text";
+import type { MorningSummary } from "@greatstone/shared";
+import { morningSummarySpeech, morningSummaryText } from "./morning-summary-text";
 
 describe("morningSummaryText", () => {
   it("writes each section with counts, late items and what is left over", () => {
@@ -25,6 +26,39 @@ describe("morningSummaryText", () => {
       "Finished since yesterday: nothing yet",
       "",
       "Stuck: nothing",
+    ]);
+  });
+});
+
+describe("morningSummarySpeech", () => {
+  const base: MorningSummary = {
+    companyId: "c",
+    generatedAt: "",
+    since: "",
+    needsYou: { count: 3, items: [{ id: "a", identifier: "GRE-1", title: "Approve the brief" }, { id: "b", identifier: "GRE-2", title: "Pick a date" }] },
+    dueToday: { count: 1, items: [{ id: "c", identifier: "GRE-3", title: "Send the invoice", dueDate: "2026-10-14" }] },
+    finished: { count: 1, items: [{ id: "d", identifier: "GRE-4", title: "Write the one-pager" }] },
+    stuck: { count: 0, items: [] },
+    deals: { won: 1, lost: 1, items: [{ id: "e", pipelineId: "p", title: "Indago rollout", outcome: "won" }, { id: "f", pipelineId: "p", title: "Acme", outcome: "lost" }] },
+  };
+
+  it("reads the day section by section, without task numbers", () => {
+    expect(morningSummarySpeech(base, "2026-10-16", "Good morning")).toEqual([
+      "Good morning. 3 things need you.",
+      "Needs you: Approve the brief, Pick a date and 1 more.",
+      "Due today: Send the invoice, which is late.",
+      "1 task finished since yesterday: Write the one-pager.",
+      "1 deal won and 1 deal lost since yesterday. Won: Indago rollout.",
+      "Nothing is stuck.",
+    ]);
+  });
+
+  it("keeps a quiet day short", () => {
+    const quiet = { ...base, needsYou: { count: 0, items: [] }, dueToday: { count: 0, items: [] }, finished: { count: 0, items: [] }, deals: undefined };
+    expect(morningSummarySpeech(quiet, "2026-10-16", "Good evening")).toEqual([
+      "Good evening. Nothing needs you right now.",
+      "No tasks finished since yesterday.",
+      "Nothing is stuck.",
     ]);
   });
 });

@@ -1,7 +1,7 @@
-import { and, eq, gte, inArray, isNotNull, ne, or, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, issues, pipelineCaseEvents, pipelineCases, pipelines, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
-import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences } from "@greatstone/shared";
+import { clientAcceptanceLinks, companies, issues, pipelineCaseEvents, pipelineCases, pipelines, pushNotificationLog, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences, RecentNotification } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { needsMeService } from "./needs-me.js";
 import { isHeld, mayNotify, notificationPreferencesService } from "./notification-preferences.js";
@@ -51,8 +51,22 @@ export interface ClosedDeal {
   terminalKind: string;
 }
 type ClosedDealReader = (companyId: string, userId: string, since: Date) => Promise<ClosedDeal[]>;
+/** A client who accepted the engagement on their acceptance page. */
+export interface ClientAcceptance {
+  id: string;
+  caseId: string;
+  pipelineId: string;
+  title: string;
+  acceptedName: string | null;
+}
+type AcceptanceReader = (companyId: string, since: Date) => Promise<ClientAcceptance[]>;
 type PreferencesReader = (companyId: string, userId: string) => Promise<NotificationPreferences>;
 type Sender = (target: PushTarget, message: DecisionPushMessage) => Promise<PushSendResult>;
+
+/** How long the recent notifications list keeps what was sent. */
+export const NOTIFICATION_LOG_DAYS = 14;
+/** The most the recent notifications list shows. */
+export const NOTIFICATION_LOG_LIMIT = 30;
 
 /** Remembered-card id for a task given to the user, kept apart from decision card ids (`task:...`). */
 export const assignedTaskCardId = (issueId: string) => `assigned:${issueId}`;
@@ -62,6 +76,30 @@ export const finishedTaskCardId = (issueId: string) => `finished:${issueId}`;
 
 /** Remembered-card id for a closed deal the user was told about. */
 export const closedDealCardId = (caseId: string) => `deal:${caseId}`;
+
+/** Remembered-card id for a client acceptance the user was told about. */
+export const acceptanceCardId = (linkId: string) => `accepted:${linkId}`;
+
+/** One notification per client who accepted the engagement. */
+export function acceptancePushMessage(fresh: ClientAcceptance[], count: number, prefix: string): DecisionPushMessage {
+  const first = fresh[0]!;
+  if (fresh.length === 1) {
+    return {
+      title: "A client accepted",
+      body: first.acceptedName ? `${first.title}, accepted by ${first.acceptedName}` : first.title,
+      url: `/${prefix}/pipelines/${first.pipelineId}/cases/${first.caseId}`,
+      tag: acceptanceCardId(first.id),
+      badge: count,
+    };
+  }
+  return {
+    title: `${fresh.length} clients accepted`,
+    body: `${first.title} and ${fresh.length - 1} more`,
+    url: `/${prefix}/pipelines/${first.pipelineId}`,
+    tag: "client-acceptances",
+    badge: count,
+  };
+}
 
 /**
  * Only tasks finished this recently are announced: turning this on, or a
@@ -156,6 +194,7 @@ export function pushNotificationService(
     buildFeed?: FeedBuilder;
     finished?: FinishedReader;
     closedDeals?: ClosedDealReader;
+    acceptances?: AcceptanceReader;
     send?: Sender;
     preferences?: PreferencesReader;
     now?: () => Date;
@@ -197,6 +236,24 @@ export function pushNotificationService(
         sql`not exists (select 1 from ${pipelineCaseEvents} where ${pipelineCaseEvents.caseId} = ${pipelineCases.id} and ${pipelineCaseEvents.actorUserId} = ${userId} and ${pipelineCaseEvents.createdAt} >= ${since.toISOString()})`,
       ))
       .limit(50) as Promise<ClosedDeal[]>);
+  // Clients who accepted the engagement on their acceptance page.
+  const readAcceptances: AcceptanceReader = options.acceptances ?? ((companyId, since) =>
+    db
+      .select({
+        id: clientAcceptanceLinks.id,
+        caseId: clientAcceptanceLinks.caseId,
+        pipelineId: pipelineCases.pipelineId,
+        title: pipelineCases.title,
+        acceptedName: clientAcceptanceLinks.acceptedName,
+      })
+      .from(clientAcceptanceLinks)
+      .innerJoin(pipelineCases, eq(pipelineCases.id, clientAcceptanceLinks.caseId))
+      .where(and(
+        eq(clientAcceptanceLinks.companyId, companyId),
+        isNotNull(clientAcceptanceLinks.acceptedAt),
+        gte(clientAcceptanceLinks.acceptedAt, since),
+      ))
+      .limit(50));
   const prefsService = notificationPreferencesService(db);
   const readPreferences: PreferencesReader = options.preferences ?? ((companyId, userId) => prefsService.get(companyId, userId));
   const now = options.now ?? (() => new Date());
@@ -238,6 +295,20 @@ export function pushNotificationService(
           .where(eq(pushSubscriptions.id, target.id));
       }
     }
+    // Keep what actually reached a phone (not the test message) for the
+    // recent notifications list, and drop what is older than two weeks.
+    if (delivered > 0 && message.tag !== "push-test") {
+      try {
+        await db.insert(pushNotificationLog).values({ companyId, userId, title: message.title, body: message.body, url: message.url, tag: message.tag, sentAt: now() });
+        await db.delete(pushNotificationLog).where(and(
+          eq(pushNotificationLog.companyId, companyId),
+          eq(pushNotificationLog.userId, userId),
+          lt(pushNotificationLog.sentAt, new Date(now().getTime() - NOTIFICATION_LOG_DAYS * 86_400_000)),
+        ));
+      } catch (error) {
+        logger.warn({ err: error, companyId }, "could not record a sent notification");
+      }
+    }
     return { targets: targets.length, delivered };
   }
 
@@ -263,13 +334,30 @@ export function pushNotificationService(
       const since = new Date(now.getTime() - FINISHED_WINDOW_MS);
       const finished = await readFinished(companyId, userId, since);
       const closed = await readClosedDeals(companyId, userId, since);
+      const accepted = await readAcceptances(companyId, since);
       await rememberCards(companyId, userId, [
         ...feed.cards.map((card) => card.id),
         ...(feed.assignedTasks ?? []).map((task) => assignedTaskCardId(task.id)),
         ...finished.map((task) => finishedTaskCardId(task.id)),
         ...closed.map((deal) => closedDealCardId(deal.id)),
+        ...accepted.map((item) => acceptanceCardId(item.id)),
       ]);
       return row!;
+    },
+
+    /** What reached this user's phones lately, newest first. */
+    async recent(companyId: string, userId: string): Promise<RecentNotification[]> {
+      const rows = await db
+        .select({ id: pushNotificationLog.id, title: pushNotificationLog.title, body: pushNotificationLog.body, url: pushNotificationLog.url, sentAt: pushNotificationLog.sentAt })
+        .from(pushNotificationLog)
+        .where(and(
+          eq(pushNotificationLog.companyId, companyId),
+          eq(pushNotificationLog.userId, userId),
+          gte(pushNotificationLog.sentAt, new Date(now().getTime() - NOTIFICATION_LOG_DAYS * 86_400_000)),
+        ))
+        .orderBy(desc(pushNotificationLog.sentAt))
+        .limit(NOTIFICATION_LOG_LIMIT);
+      return rows.map((row) => ({ ...row, sentAt: row.sentAt.toISOString() }));
     },
 
     async unsubscribe(companyId: string, userId: string, endpoint: string) {
@@ -343,11 +431,13 @@ export function pushNotificationService(
           const since = new Date(now().getTime() - FINISHED_WINDOW_MS);
           const finished = await readFinished(companyId, userId, since);
           const closed = await readClosedDeals(companyId, userId, since);
+          const accepted = await readAcceptances(companyId, since);
           const current = new Set([
             ...feed.cards.map((card) => card.id),
             ...assigned.map((task) => assignedTaskCardId(task.id)),
             ...finished.map((task) => finishedTaskCardId(task.id)),
             ...closed.map((deal) => closedDealCardId(deal.id)),
+            ...accepted.map((item) => acceptanceCardId(item.id)),
           ]);
           const gone = [...known].filter((cardId) => !current.has(cardId));
           if (gone.length > 0) {
@@ -375,7 +465,8 @@ export function pushNotificationService(
           const freshTasks = assigned.filter((task) => !known.has(assignedTaskCardId(task.id)));
           const freshFinished = finished.filter((task) => !known.has(finishedTaskCardId(task.id)));
           const freshClosed = closed.filter((deal) => !known.has(closedDealCardId(deal.id)));
-          if (fresh.length === 0 && freshTasks.length === 0 && freshFinished.length === 0 && freshClosed.length === 0) continue;
+          const freshAccepted = accepted.filter((item) => !known.has(acceptanceCardId(item.id)));
+          if (fresh.length === 0 && freshTasks.length === 0 && freshFinished.length === 0 && freshClosed.length === 0 && freshAccepted.length === 0) continue;
           // Remember first: a slow or failing push service never repeats a
           // card. A topic switched off is remembered too, so switching it back
           // on never floods the phone with the backlog.
@@ -384,6 +475,7 @@ export function pushNotificationService(
             ...freshTasks.map((task) => assignedTaskCardId(task.id)),
             ...freshFinished.map((task) => finishedTaskCardId(task.id)),
             ...freshClosed.map((deal) => closedDealCardId(deal.id)),
+            ...freshAccepted.map((item) => acceptanceCardId(item.id)),
           ]);
           // An outage notice is about GSAM itself, so it ignores the decisions switch.
           const sendCards = prefs.decisions ? fresh : fresh.filter((card) => card.kind === "outage");
@@ -401,6 +493,10 @@ export function pushNotificationService(
           }
           if (prefs.dealsClosed && freshClosed.length > 0) {
             const { delivered } = await deliver(companyId, userId, closedDealPushMessage(freshClosed, feed.count, prefix));
+            sent += delivered;
+          }
+          if (prefs.dealsClosed && freshAccepted.length > 0) {
+            const { delivered } = await deliver(companyId, userId, acceptancePushMessage(freshAccepted, feed.count, prefix));
             sent += delivered;
           }
         } catch (error) {

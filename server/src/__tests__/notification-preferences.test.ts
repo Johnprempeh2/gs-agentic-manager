@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_NOTIFICATION_PREFERENCES, updateNotificationPreferencesSchema } from "@greatstone/shared";
-import { isHeld, isPaused, isQuietHour, localClock, mayNotify } from "../services/notification-preferences.js";
+import { isHeld, isPaused, isQuietHour, isQuietWeekend, localClock, mayNotify } from "../services/notification-preferences.js";
 
 describe("notification preference clock", () => {
   it("reads the local hour and date in the person's time zone", () => {
@@ -22,6 +22,26 @@ describe("notification preference clock", () => {
     const now = new Date("2026-10-16T12:00:00Z");
     expect(mayNotify(DEFAULT_NOTIFICATION_PREFERENCES, "teamChat", now)).toBe(true);
     expect(mayNotify({ ...DEFAULT_NOTIFICATION_PREFERENCES, teamChat: false }, "teamChat", now)).toBe(false);
+  });
+});
+
+describe("quiet weekends", () => {
+  const prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, quietWeekends: true, timeZone: "Europe/London" };
+
+  it("holds Saturday and Sunday in the person's own time zone, then lets Monday through", () => {
+    // 17 Oct 2026 is a Saturday.
+    expect(isQuietWeekend(prefs, new Date("2026-10-17T09:00:00Z"))).toBe(true);
+    expect(isQuietWeekend(prefs, new Date("2026-10-18T22:30:00Z"))).toBe(true);
+    expect(isHeld(prefs, new Date("2026-10-18T12:00:00Z"))).toBe(true);
+    // Sunday 23:30 UTC is already Monday 00:30 in London (BST).
+    expect(isQuietWeekend(prefs, new Date("2026-10-18T23:30:00Z"))).toBe(false);
+    expect(isQuietWeekend(prefs, new Date("2026-10-16T22:00:00Z"))).toBe(false);
+    expect(mayNotify(prefs, "decisions", new Date("2026-10-19T09:00:00Z"))).toBe(true);
+  });
+
+  it("is off by default", () => {
+    expect(isQuietWeekend(DEFAULT_NOTIFICATION_PREFERENCES, new Date("2026-10-17T09:00:00Z"))).toBe(false);
+    expect(updateNotificationPreferencesSchema.safeParse({ quietWeekends: true }).success).toBe(true);
   });
 });
 

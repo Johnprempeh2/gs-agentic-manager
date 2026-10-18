@@ -71,6 +71,14 @@ export function pushRoutes(db: Db, service = pushNotificationService(db)) {
     res.json(saved);
   });
 
+  // What reached this person's phones in the last two weeks. Their own only.
+  router.get("/companies/:companyId/push/recent", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const userId = boardUserId(req, res, companyId);
+    if (!userId) return;
+    res.json(await service.recent(companyId, userId));
+  });
+
   router.get("/companies/:companyId/push/config", async (req, res) => {
     const companyId = req.params.companyId as string;
     const userId = boardUserId(req, res, companyId);

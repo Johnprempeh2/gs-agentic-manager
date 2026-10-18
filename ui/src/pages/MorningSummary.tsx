@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { MorningSummaryTask } from "@greatstone/shared";
-import { Activity, AlertTriangle, Briefcase, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import type { MorningSummary as MorningSummaryData, MorningSummaryTask } from "@greatstone/shared";
+import { Activity, AlertTriangle, Briefcase, CalendarClock, Check, CircleCheck, ClipboardList, Handshake, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -12,7 +12,8 @@ import { PauseNotifications } from "../components/PauseNotifications";
 import { queryKeys } from "../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
-import { morningSummaryText } from "@/lib/morning-summary-text";
+import { morningSummarySpeech, morningSummaryText } from "@/lib/morning-summary-text";
+import { ListenButton } from "../components/ListenButton";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
 
@@ -27,6 +28,34 @@ export function greeting(now: Date) {
 /** "Late, due 14 Oct" for a line due before today; nothing for one due today. */
 export function lateLabel(dueDate: string | null | undefined, today: string) {
   return dueDate && dueDate < today ? `Late, due ${formatCalendarDay(dueDate)}` : null;
+}
+
+/** Client deals won or lost since yesterday. Shown only when there were some. */
+function DealsSection({ deals }: { deals: NonNullable<MorningSummaryData["deals"]> }) {
+  const total = deals.won + deals.lost;
+  if (total === 0) return null;
+  const counts = [deals.won > 0 ? `${deals.won} won` : null, deals.lost > 0 ? `${deals.lost} lost` : null].filter(Boolean).join(", ");
+  return (
+    <section className="space-y-2 rounded-lg border border-border bg-card p-4" data-tour="morning-deals" data-testid="morning-deals">
+      <div className="flex items-center gap-2">
+        <Handshake className={cn("size-4 shrink-0 text-muted-foreground", deals.won > 0 && "text-status-success")} aria-hidden />
+        <h2 className="text-base font-semibold">Deals since yesterday</h2>
+        <span className="ml-auto text-sm font-medium text-muted-foreground">{counts}</span>
+      </div>
+      <ul className="divide-y divide-border">
+        {deals.items.map((deal) => (
+          <li key={deal.id}>
+            <Link to={`/pipelines/${deal.pipelineId}/cases/${deal.id}`} className="flex min-h-11 items-center gap-2 py-2 text-sm hover:underline">
+              <span className="min-w-0 flex-1 truncate">{deal.title}</span>
+              <span className={cn("shrink-0 text-xs font-medium", deal.outcome === "won" ? "text-status-success" : "text-muted-foreground")}>
+                {deal.outcome === "won" ? "Won" : "Lost"}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /** Today's date on this device as YYYY-MM-DD. */
@@ -132,15 +161,18 @@ export function MorningSummary() {
       <header className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">{greeting(now)}</h1>
-          <Button
-            variant="outline"
-            size="sm"
-            title="Copy today as text, ready to paste into a message"
-            onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
-          >
-            {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-            {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ListenButton getParts={() => morningSummarySpeech(data, localToday(now), greeting(now))} />
+            <Button
+              variant="outline"
+              size="sm"
+              title="Copy today as text, ready to paste into a message"
+              onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
+            >
+              {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           {data.needsYou.count === 0
@@ -202,6 +234,7 @@ export function MorningSummary() {
         more={{ label: "See the scorecard", to: "/scorecard" }}
         tone="success"
       />
+      {data.deals ? <DealsSection deals={data.deals} /> : null}
       <Section
         icon={AlertTriangle}
         title="Stuck"

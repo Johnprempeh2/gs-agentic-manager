@@ -77,6 +77,15 @@ describe("ListenButton", () => {
     act(() => button("Stop reading").click());
     expect(button("Listen to the Pulse")).toBeTruthy();
   });
+
+  it("reads given sentences instead of the page when the page supplies them", () => {
+    act(() => root.render(<ListenButton getParts={() => ["Good morning. Nothing needs you right now.", "Nothing is stuck."]} />));
+    act(() => button("Listen").click());
+    expect(synth.speak.mock.calls.map(([utterance]) => utterance.text)).toEqual([
+      "Good morning. Nothing needs you right now.",
+      "Nothing is stuck.",
+    ]);
+  });
 });
 
 describe("listen helpers", () => {

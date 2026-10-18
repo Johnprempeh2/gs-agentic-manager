@@ -9,6 +9,7 @@ import { usePushNotifications } from "../hooks/usePushNotifications";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { EmptyState } from "../components/EmptyState";
 import { PauseNotifications } from "../components/PauseNotifications";
+import { RecentNotifications } from "../components/RecentNotifications";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
@@ -224,8 +225,8 @@ export function NotificationSettings() {
             onChange={(finishedWork) => change({ finishedWork })}
           />
           <ChoiceRow
-            label="A deal is won or lost"
-            description="Someone else moves a client deal to won or lost. It opens that deal."
+            label="A deal is won or lost, or a client accepts"
+            description="Someone else moves a client deal to won or lost, or a client accepts the engagement on their acceptance page. It opens that deal."
             checked={prefs.dealsClosed}
             onChange={(dealsClosed) => change({ dealsClosed })}
           />
@@ -251,6 +252,20 @@ export function NotificationSettings() {
               <HourPicker label="At" value={prefs.morningSummaryHour} onChange={(morningSummaryHour) => change({ morningSummaryHour })} />
             </div>
             <Link to="/morning" className="inline-flex min-h-9 items-center text-sm font-medium text-primary hover:underline">See today's summary</Link>
+          </div>
+        ) : null}
+      </Section>
+
+      <Section title="Evening wrap-up" description="One message at the end of the day: what got done today and what still needs you.">
+        <ChoiceRow
+          label="Send me an evening wrap-up"
+          description={prefs.eveningSummary ? `Every day at ${hourLabel(prefs.eveningSummaryHour)}, your time.` : "Off."}
+          checked={prefs.eveningSummary}
+          onChange={(eveningSummary) => change({ eveningSummary })}
+        />
+        {prefs.eveningSummary ? (
+          <div className="w-32">
+            <HourPicker label="Evening at" value={prefs.eveningSummaryHour} onChange={(eveningSummaryHour) => change({ eveningSummaryHour })} />
           </div>
         ) : null}
       </Section>
@@ -286,7 +301,15 @@ export function NotificationSettings() {
             />
           </div>
         ) : null}
+        <ChoiceRow
+          label="Keep weekends quiet"
+          description={prefs.quietWeekends ? "Nothing is sent on Saturday or Sunday, including the morning summary. What came in goes out on Monday." : "Off. Notifications can arrive at weekends."}
+          checked={prefs.quietWeekends}
+          onChange={(quietWeekends) => change({ quietWeekends })}
+        />
       </Section>
+
+      <RecentNotifications companyId={selectedCompanyId} />
 
       {save.error ? <p className="text-sm text-destructive" role="alert">Could not save that change. Please try again.</p> : null}
       <p className="text-xs text-muted-foreground">Times are in your time zone ({prefs.timeZone}).</p>

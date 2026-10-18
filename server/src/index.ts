@@ -2262,6 +2262,9 @@ async function startServerWithDatabaseTeardown(
         // The morning summary rides the same round: each person's chosen hour, once a day.
         .then(() => morningSummaries.sendDue(decisionPushes.deliver))
         .catch((err) => logger.warn({ err }, "morning summary round failed"))
+        // The evening wrap-up, for people who chose it, at their evening hour.
+        .then(() => morningSummaries.sendEveningDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "evening wrap-up round failed"))
         // The weekly report goes on Monday at the same hour, for people who chose it.
         .then(() => weeklyReports.sendDue(decisionPushes.deliver))
         .catch((err) => logger.warn({ err }, "weekly report round failed"))

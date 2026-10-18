@@ -38,3 +38,20 @@ export const pushNotifiedDecisions = pgTable(
   },
   (table) => ({ pk: primaryKey({ columns: [table.companyId, table.userId, table.cardId] }) }),
 );
+
+// What reached a user's phones, so the Notifications page can show what they
+// may have swiped away. Kept for two weeks.
+export const pushNotificationLog = pgTable(
+  "push_notification_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    url: text("url").notNull(),
+    tag: text("tag").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({ companyUserSentIdx: index("push_notification_log_company_user_sent_idx").on(table.companyId, table.userId, table.sentAt) }),
+);

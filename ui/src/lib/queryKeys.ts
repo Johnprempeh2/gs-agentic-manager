@@ -803,6 +803,7 @@ export const queryKeys = {
   calendar: (companyId: string, from: string, to: string) => ["calendar", companyId, from, to] as const,
   teamScorecard: (companyId: string, days: number) => ["team-scorecard", companyId, days] as const,
   notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
+  recentNotifications: (companyId: string) => ["recent-notifications", companyId] as const,
   morningSummary: (companyId: string) => ["morning-summary", companyId] as const,
   weeklyReport: (companyId: string) => ["weekly-report", companyId] as const,
   agentDailyDigests: (companyId: string, from: string, to: string) => ["agent-daily-digests", companyId, from, to] as const,
