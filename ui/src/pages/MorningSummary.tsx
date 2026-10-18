@@ -10,7 +10,7 @@ import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PauseNotifications } from "../components/PauseNotifications";
 import { queryKeys } from "../lib/queryKeys";
-import { Link } from "@/lib/router";
+import { Link, useSearchParams } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
 import { morningSummarySpeech, morningSummaryText } from "@/lib/morning-summary-text";
 import { ListenButton } from "../components/ListenButton";
@@ -30,8 +30,8 @@ export function lateLabel(dueDate: string | null | undefined, today: string) {
   return dueDate && dueDate < today ? `Late, due ${formatCalendarDay(dueDate)}` : null;
 }
 
-/** Client deals won or lost since yesterday. Shown only when there were some. */
-function DealsSection({ deals }: { deals: NonNullable<MorningSummaryData["deals"]> }) {
+/** Client deals won or lost in the window. Shown only when there were some. */
+function DealsSection({ deals, since }: { deals: NonNullable<MorningSummaryData["deals"]>; since: string }) {
   const total = deals.won + deals.lost;
   if (total === 0) return null;
   const counts = [deals.won > 0 ? `${deals.won} won` : null, deals.lost > 0 ? `${deals.lost} lost` : null].filter(Boolean).join(", ");
@@ -39,7 +39,7 @@ function DealsSection({ deals }: { deals: NonNullable<MorningSummaryData["deals"
     <section className="space-y-2 rounded-lg border border-border bg-card p-4" data-tour="morning-deals" data-testid="morning-deals">
       <div className="flex items-center gap-2">
         <Handshake className={cn("size-4 shrink-0 text-muted-foreground", deals.won > 0 && "text-status-success")} aria-hidden />
-        <h2 className="text-base font-semibold">Deals since yesterday</h2>
+        <h2 className="text-base font-semibold">Deals {since}</h2>
         <span className="ml-auto text-sm font-medium text-muted-foreground">{counts}</span>
       </div>
       <ul className="divide-y divide-border">
@@ -137,14 +137,19 @@ export function MorningSummary() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const dayCopy = useCopyAction();
+  // The evening wrap-up opens "Today so far" (?window=day): counted from the
+  // start of the person's day instead of the last 24 hours.
+  const [searchParams] = useSearchParams();
+  const hours = searchParams.get("window") === "day" ? "day" : "24h";
+  const since = hours === "day" ? "today" : "since yesterday";
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Today" }]);
   }, [setBreadcrumbs]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: queryKeys.morningSummary(selectedCompanyId ?? ""),
-    queryFn: () => morningSummaryApi.get(selectedCompanyId!),
+    queryKey: queryKeys.morningSummary(selectedCompanyId ?? "", hours),
+    queryFn: () => morningSummaryApi.get(selectedCompanyId!, hours),
     enabled: !!selectedCompanyId,
   });
 
@@ -162,12 +167,12 @@ export function MorningSummary() {
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">{greeting(now)}</h1>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <ListenButton getParts={() => morningSummarySpeech(data, localToday(now), greeting(now))} />
+            <ListenButton getParts={() => morningSummarySpeech(data, localToday(now), greeting(now), since)} />
             <Button
               variant="outline"
               size="sm"
               title="Copy today as text, ready to paste into a message"
-              onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
+              onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now), since))}
             >
               {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
               {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
@@ -176,9 +181,22 @@ export function MorningSummary() {
         </div>
         <p className="text-sm text-muted-foreground">
           {data.needsYou.count === 0
-            ? "Nothing needs you right now. Here is what the team did since yesterday."
-            : "Start with what needs you. Then see what the team did since yesterday."}
+            ? `Nothing needs you right now. Here is what the team did ${since}.`
+            : `Start with what needs you. Then see what the team did ${since}.`}
         </p>
+        <nav className="flex gap-2 text-sm" aria-label="Which hours to show">
+          {hours === "day" ? (
+            <>
+              <span className="font-medium" aria-current="page">Today so far</span>
+              <Link to="/morning" className="text-muted-foreground underline underline-offset-2">Since yesterday</Link>
+            </>
+          ) : (
+            <>
+              <span className="font-medium" aria-current="page">Since yesterday</span>
+              <Link to="/morning?window=day" className="text-muted-foreground underline underline-offset-2">Today so far</Link>
+            </>
+          )}
+        </nav>
       </header>
 
       <PauseNotifications companyId={selectedCompanyId} compact />
@@ -227,14 +245,14 @@ export function MorningSummary() {
       ) : null}
       <Section
         icon={CircleCheck}
-        title="Finished since yesterday"
+        title={`Finished ${since}`}
         count={data.finished.count}
-        empty="No tasks finished in the last 24 hours."
+        empty={hours === "day" ? "No tasks finished today yet." : "No tasks finished in the last 24 hours."}
         items={data.finished.items}
         more={{ label: "See the scorecard", to: "/scorecard" }}
         tone="success"
       />
-      {data.deals ? <DealsSection deals={data.deals} /> : null}
+      {data.deals ? <DealsSection deals={data.deals} since={since} /> : null}
       <Section
         icon={AlertTriangle}
         title="Stuck"

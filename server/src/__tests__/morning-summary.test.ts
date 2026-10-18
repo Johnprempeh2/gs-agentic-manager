@@ -64,7 +64,7 @@ describe("evening wrap-up", () => {
     expect(eveningSummaryMessage({ ...summary(2, 4, 0), deals: { won: 1, lost: 1, items: [] }, workingNow: { count: 3, items: [] } }, "GRE")).toEqual({
       title: "Today's wrap-up. 2 things still need you",
       body: "4 tasks finished today. 1 deal won. 1 deal lost. Nothing is stuck. 3 tasks are still being worked on.",
-      url: "/GRE/morning",
+      url: "/GRE/morning?window=day",
       tag: "evening-summary",
       badge: 2,
     });

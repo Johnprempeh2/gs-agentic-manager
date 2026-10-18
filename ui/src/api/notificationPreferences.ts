@@ -10,5 +10,6 @@ export const notificationPreferencesApi = {
 
 /** The signed-in person's morning summary: what needs them, what got done, what is stuck. */
 export const morningSummaryApi = {
-  get: (companyId: string) => api.get<MorningSummary>(`/companies/${companyId}/morning-summary`),
+  get: (companyId: string, window: "24h" | "day" = "24h") =>
+    api.get<MorningSummary>(`/companies/${companyId}/morning-summary${window === "day" ? "?window=day" : ""}`),
 };

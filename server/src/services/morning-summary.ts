@@ -76,7 +76,7 @@ export function eveningSummaryMessage(summary: MorningSummary, prefix: string): 
     summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
     ...((summary.workingNow?.count ?? 0) > 0 ? [`${plural(summary.workingNow!.count, "task is", "tasks are")} still being worked on.`] : []),
   ];
-  return { title, body: parts.join(" "), url: `/${prefix}/morning`, tag: "evening-summary", badge: needs };
+  return { title, body: parts.join(" "), url: `/${prefix}/morning?window=day`, tag: "evening-summary", badge: needs };
 }
 
 /** True when this round should send today's evening wrap-up to this person. */

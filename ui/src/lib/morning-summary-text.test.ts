@@ -53,6 +53,13 @@ describe("morningSummarySpeech", () => {
     ]);
   });
 
+  it("says today instead of since yesterday for today so far", () => {
+    const parts = morningSummarySpeech(base, "2026-10-16", "Good evening", "today");
+    expect(parts).toContain("1 task finished today: Write the one-pager.");
+    expect(parts).toContain("1 deal won and 1 deal lost today. Won: Indago rollout.");
+    expect(morningSummaryText(base, "2026-10-16", "today")).toContain("Finished today (1)");
+  });
+
   it("keeps a quiet day short", () => {
     const quiet = { ...base, needsYou: { count: 0, items: [] }, dueToday: { count: 0, items: [] }, finished: { count: 0, items: [] }, deals: undefined };
     expect(morningSummarySpeech(quiet, "2026-10-16", "Good evening")).toEqual([
