@@ -220,6 +220,17 @@ export function MorningSummary() {
         tone="danger"
         today={localToday(now)}
       />
+      {data.dueTomorrow ? (
+        <Section
+          icon={CalendarClock}
+          title="Due tomorrow"
+          count={data.dueTomorrow.count}
+          empty="Nothing is due tomorrow."
+          items={data.dueTomorrow.items}
+          more={{ label: "Open the calendar", to: "/calendar" }}
+          tone="attention"
+        />
+      ) : null}
       {data.dealNextSteps && data.dealNextSteps.count > 0 ? (
         <Section
           icon={Briefcase}

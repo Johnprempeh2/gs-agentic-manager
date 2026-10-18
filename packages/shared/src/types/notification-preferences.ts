@@ -90,6 +90,8 @@ export interface MorningSummary {
    * by the person's own date. Optional: older servers do not send it.
    */
   dealNextSteps?: { count: number; items: MorningSummaryTask[] };
+  /** Open tasks due tomorrow by the person's own date. Sent only for "Today so far" (the evening wrap-up). */
+  dueTomorrow?: { count: number; items: MorningSummaryTask[] };
 }
 
 /** One notification that reached the person's phones (the recent notifications list). */

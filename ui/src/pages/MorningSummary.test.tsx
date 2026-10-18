@@ -57,11 +57,14 @@ describe("MorningSummary", () => {
       dueToday: { count: 0, items: [] },
       finished: { count: 1, items: [{ id: "i1", identifier: "GRE-1", title: "Send the brief" }] },
       stuck: { count: 0, items: [] },
+      dueTomorrow: { count: 1, items: [{ id: "i2", identifier: "GRE-2", title: "Board pack" }] },
     };
     server.windows = [];
     await render("/morning?window=day");
     expect(server.windows).toEqual(["day"]);
     expect(container.textContent).toContain("Finished today");
+    expect(container.textContent).toContain("Due tomorrow");
+    expect(container.textContent).toContain("Board pack");
     expect(container.textContent).toContain("what the team did today");
     expect(container.querySelector('a[href="/morning"]')?.textContent).toBe("Since yesterday");
     act(() => root?.unmount());

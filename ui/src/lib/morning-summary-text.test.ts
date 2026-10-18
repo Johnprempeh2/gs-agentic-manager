@@ -60,6 +60,13 @@ describe("morningSummarySpeech", () => {
     expect(morningSummaryText(base, "2026-10-16", "today")).toContain("Finished today (1)");
   });
 
+  it("looks ahead to tomorrow when the summary carries it", () => {
+    const evening = { ...base, dueTomorrow: { count: 1, items: [{ id: "g", identifier: "GRE-7", title: "Board pack" }] } };
+    expect(morningSummarySpeech(evening, "2026-10-16", "Good evening", "today").at(-1)).toBe("Due tomorrow: Board pack.");
+    expect(morningSummaryText(evening, "2026-10-16", "today")).toContain("Due tomorrow (1)\n• GRE-7 Board pack");
+    expect(morningSummaryText(base, "2026-10-16")).not.toContain("Due tomorrow");
+  });
+
   it("keeps a quiet day short", () => {
     const quiet = { ...base, needsYou: { count: 0, items: [] }, dueToday: { count: 0, items: [] }, finished: { count: 0, items: [] }, deals: undefined };
     expect(morningSummarySpeech(quiet, "2026-10-16", "Good evening")).toEqual([

@@ -75,6 +75,7 @@ export function eveningSummaryMessage(summary: MorningSummary, prefix: string): 
     ...(lost > 0 ? [`${plural(lost, "deal", "deals")} lost.`] : []),
     summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
     ...((summary.workingNow?.count ?? 0) > 0 ? [`${plural(summary.workingNow!.count, "task is", "tasks are")} still being worked on.`] : []),
+    ...((summary.dueTomorrow?.count ?? 0) > 0 ? [`${plural(summary.dueTomorrow!.count, "task is", "tasks are")} due tomorrow.`] : []),
   ];
   return { title, body: parts.join(" "), url: `/${prefix}/morning?window=day`, tag: "evening-summary", badge: needs };
 }
@@ -164,6 +165,25 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       sql`(${pipelineCases.fields} ->> 'nextActivityDate') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'`,
       sql`${nextStepDate} <= ${today}`,
     );
+    // The evening wrap-up looks ahead: open tasks due tomorrow.
+    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
+    const dueNext = and(
+      eq(issues.companyId, companyId),
+      eq(issues.dueDate, tomorrow),
+      notInArray(issues.status, ["done", "cancelled"]),
+      userWork(),
+    );
+    const [tomorrowRows, tomorrowCount] = window === "day"
+      ? await Promise.all([
+        db
+          .select({ id: issues.id, identifier: issues.identifier, title: issues.title, dueDate: issues.dueDate })
+          .from(issues)
+          .where(dueNext)
+          .orderBy(desc(issues.updatedAt))
+          .limit(ITEM_LIMIT),
+        db.select({ count: sql<number>`count(*)::int` }).from(issues).where(dueNext),
+      ])
+      : [[], []];
     const [nextStepRows, nextStepCount] = await Promise.all([
       db
         .select({
@@ -267,6 +287,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
           href: `/pipelines/${row.pipelineId}/cases/${row.id}`,
         })),
       },
+      ...(window === "day" ? { dueTomorrow: { count: tomorrowCount[0]?.count ?? 0, items: tomorrowRows } } : {}),
     };
   }
 

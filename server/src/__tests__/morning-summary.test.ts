@@ -249,6 +249,10 @@ describe("morning summary service", () => {
     expect(built.since).toBe("2026-10-15T23:00:00.000Z");
     expect(built.deals?.won).toBe(1);
     expect(built.deals?.lost).toBe(0);
+    expect(built.dueTomorrow).toEqual({ count: 1, items: [expect.objectContaining({ title: "Due tomorrow", dueDate: "2026-10-17" })] });
+    expect(eveningSummaryMessage(built, "GRE").body).toContain("1 task is due tomorrow.");
+    // The morning view does not look ahead.
+    expect((await service().build(companyId, "john", now)).dueTomorrow).toBeUndefined();
   });
 
   it("sends the evening wrap-up once a day to people who chose it", async () => {

@@ -11,7 +11,7 @@ import { formatCalendarDay } from "./utils";
  *   • GRE-12 Approve the hire
  */
 export function morningSummaryText(
-  summary: Pick<MorningSummary, "needsYou" | "finished" | "stuck"> & { dueToday?: MorningSummary["dueToday"] },
+  summary: Pick<MorningSummary, "needsYou" | "finished" | "stuck"> & { dueToday?: MorningSummary["dueToday"]; dueTomorrow?: MorningSummary["dueTomorrow"] },
   today: string,
   since = "since yesterday",
 ): string {
@@ -29,6 +29,7 @@ export function morningSummaryText(
   section("Due today", summary.dueToday, "nothing");
   section(`Finished ${since}`, summary.finished, "nothing yet");
   section("Stuck", summary.stuck, "nothing");
+  if (summary.dueTomorrow) section("Due tomorrow", summary.dueTomorrow, "nothing");
   return lines.join("\n");
 }
 
@@ -69,5 +70,6 @@ export function morningSummarySpeech(summary: MorningSummary, today: string, gre
     parts.push(`${tally} ${since}.${won.length > 0 ? ` Won: ${won.join(", ")}.` : ""}`);
   }
   parts.push(summary.stuck.count === 0 ? "Nothing is stuck." : `Stuck: ${spokenList(summary.stuck)}`);
+  if (summary.dueTomorrow?.count) parts.push(`Due tomorrow: ${spokenList(summary.dueTomorrow)}`);
   return parts;
 }
