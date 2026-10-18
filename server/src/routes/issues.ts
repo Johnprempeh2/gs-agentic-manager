@@ -8447,6 +8447,32 @@ export function issueRoutes(
     res.json(await quietClientsService(db).clientBrief(companyId, name));
   });
 
+  // Open deals and leads by expected close date (Ask Everest: "Which deals are closing this month?").
+  router.get("/companies/:companyId/search/closing-deals", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 30 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 10 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 0 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 0 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).closing(companyId, { days, limit }));
+  });
+
   router.get("/companies/:companyId/search", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

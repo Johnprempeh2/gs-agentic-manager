@@ -12274,6 +12274,11 @@ for (const route of [
   ],
   [
     "get",
+    "/api/companies/{companyId}/search/closing-deals",
+    "List open deals and leads by expected close date",
+  ],
+  [
+    "get",
     "/api/companies/{companyId}/issues/count",
     "Count issues in a company",
   ],

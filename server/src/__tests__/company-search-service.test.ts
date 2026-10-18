@@ -505,6 +505,41 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect((await quietClientsService(db).clientBrief(companyId, "%")).brief).toBeNull();
   });
 
+  it("lists open deals by expected close date with overdue ones and value per currency", async () => {
+    const companyId = await createCompany();
+    const now = new Date("2026-10-18T09:00:00Z");
+    const pipelineId = randomUUID();
+    const [working, done] = [randomUUID(), randomUUID()];
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values([
+      { id: working, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 },
+      { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 1 },
+    ]);
+    await db.insert(pipelineCases).values([
+      { companyId, pipelineId, stageId: working, caseKey: "c1", title: "Late renewal", fields: { expectedCloseDate: "2026-10-10", dealValue: 5000, dealCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: working, caseKey: "c2", title: "Next week", fields: { expectedCloseDate: "2026-10-25", dealValue: 2500, dealCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: working, caseKey: "c3", title: "Lead in dollars", fields: { expectedCloseDate: "2026-11-01", leadValue: 900, leadCurrency: "USD" } },
+      { companyId, pipelineId, stageId: working, caseKey: "c4", title: "Next year", fields: { expectedCloseDate: "2027-03-01", dealValue: 1, dealCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: working, caseKey: "c5", title: "No date", fields: { dealValue: 7 } },
+      { companyId, pipelineId, stageId: working, caseKey: "c6", title: "Bad date", fields: { expectedCloseDate: "soon" } },
+      { companyId, pipelineId, stageId: done, caseKey: "c7", title: "Already won", fields: { expectedCloseDate: "2026-10-20", dealValue: 99 } },
+    ]);
+
+    const result = await quietClientsService(db).closing(companyId, { days: 30, limit: 10, now });
+
+    expect(result.deals.map((deal) => deal.title)).toEqual(["Late renewal", "Next week", "Lead in dollars"]);
+    expect(result.deals[0]).toMatchObject({ overdue: true, value: 5000, currency: "GBP", stageName: "Proposal", pipelineName: "Sales", expectedCloseDate: "2026-10-10" });
+    expect(result.deals[2]).toMatchObject({ overdue: false, value: 900, currency: "USD" });
+    expect(result).toMatchObject({ days: 30, total: 3, overdueCount: 1 });
+    expect(result.valueByCurrency).toEqual([
+      { currency: "GBP", value: 7500, count: 2 },
+      { currency: "USD", value: 900, count: 1 },
+    ]);
+    const limited = await quietClientsService(db).closing(companyId, { days: 30, limit: 1, now });
+    expect(limited).toMatchObject({ total: 3, deals: [{ title: "Late renewal" }] });
+    expect((await quietClientsService(db).closing(companyId, { days: 0, limit: 10, now })).deals.map((deal) => deal.title)).toEqual(["Late renewal"]);
+  });
+
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
     const companyId = await createCompany();
     const agentId = await createAgent(companyId, { name: "Mibile" });

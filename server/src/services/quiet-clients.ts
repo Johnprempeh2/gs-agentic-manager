@@ -3,6 +3,8 @@ import type { Db } from "@greatstone/db";
 import type {
   CompanyClientActivity,
   CompanyClientBriefResponse,
+  CompanyClosingDeal,
+  CompanyClosingDealsResponse,
   CompanyQuietClient,
   CompanyQuietClientsResponse,
   CompanyRecentClientActivityResponse,
@@ -20,6 +22,20 @@ interface QuietClientRow {
   lastTouchSubject: string | null;
   addedAt: Date | string;
   total: number;
+}
+
+interface ClosingRow {
+  row_kind: "deal" | "currency" | "overdue";
+  caseId: string | null;
+  title: string | null;
+  pipelineId: string | null;
+  pipelineName: string | null;
+  stageName: string | null;
+  organisationName: string | null;
+  closeDate: string | null;
+  value: number | string | null;
+  currency: string | null;
+  count: number | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -268,6 +284,82 @@ export function quietClientsService(db: Db) {
           lastTouch: touch && lastTouchAt ? { at: lastTouchAt, label: touchLabel(touch.kind, touch.subject) ?? "Contact" } : null,
           quietDays: lastTouchAt ? Math.max(0, Math.floor((now.getTime() - new Date(lastTouchAt).getTime()) / DAY_MS)) : null,
         },
+      };
+    },
+
+    /**
+     * Open deals and leads whose expected close date falls within `days`
+     * (or has already passed), soonest first, with the window's value per
+     * currency. Reads the imported `expectedCloseDate`, `dealValue` or
+     * `leadValue` and currency fields.
+     */
+    closing: async (
+      companyId: string,
+      options: { days: number; limit: number; now?: Date },
+    ): Promise<CompanyClosingDealsResponse> => {
+      const now = options.now ?? new Date();
+      const today = now.toISOString().slice(0, 10);
+      const until = new Date(now.getTime() + options.days * DAY_MS).toISOString().slice(0, 10);
+      const rows = await db.execute(sql`
+        WITH dated AS (
+          SELECT pc.id, pc.title, pc.pipeline_id, p.name AS pipeline_name, st.name AS stage_name,
+            o.name AS organisation_name,
+            pc.fields->>'expectedCloseDate' AS close_date,
+            CASE
+              WHEN jsonb_typeof(pc.fields->'dealValue') = 'number' THEN (pc.fields->>'dealValue')::numeric
+              WHEN jsonb_typeof(pc.fields->'leadValue') = 'number' THEN (pc.fields->>'leadValue')::numeric
+            END AS value,
+            nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency
+          FROM pipeline_cases pc
+          JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
+          JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('working', 'review')
+          LEFT JOIN organisations o ON o.id = pc.organisation_id AND o.archived_at IS NULL
+          WHERE pc.company_id = ${companyId}
+            AND pc.retired_at IS NULL
+            AND pc.terminal_at IS NULL
+            AND pc.hidden_from_board_at IS NULL
+            AND pc.fields->>'expectedCloseDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        ),
+        windowed AS (
+          SELECT * FROM dated WHERE close_date <= ${until}
+        )
+        SELECT 'deal' AS row_kind, id AS "caseId", title, pipeline_id AS "pipelineId", pipeline_name AS "pipelineName",
+          stage_name AS "stageName", organisation_name AS "organisationName", close_date AS "closeDate",
+          value::float8 AS value, currency, NULL::int AS count
+        FROM (SELECT * FROM windowed ORDER BY close_date ASC, id LIMIT ${options.limit}) shown
+        UNION ALL
+        SELECT 'currency', NULL, NULL, NULL, NULL, NULL, NULL, NULL, coalesce(sum(value), 0)::float8, currency, count(*)::int
+        FROM windowed GROUP BY currency
+        UNION ALL
+        SELECT 'overdue', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, count(*)::int
+        FROM windowed WHERE close_date < ${today}
+      `) as unknown as ClosingRow[];
+
+      const prefix = await routePrefix(db, companyId);
+      const dealRows = rows.filter((row) => row.row_kind === "deal");
+      const currencyRows = rows.filter((row) => row.row_kind === "currency");
+      const deals: CompanyClosingDeal[] = dealRows
+        .sort((a, b) => (a.closeDate! < b.closeDate! ? -1 : a.closeDate! > b.closeDate! ? 1 : 0))
+        .map((row) => ({
+          caseId: row.caseId!,
+          title: row.title!,
+          pipelineName: row.pipelineName!,
+          stageName: row.stageName!,
+          organisationName: row.organisationName,
+          expectedCloseDate: row.closeDate!,
+          overdue: row.closeDate! < today,
+          value: row.value === null ? null : Number(row.value),
+          currency: row.currency,
+          href: `/${prefix}/pipelines/${row.pipelineId}/items/${row.caseId}`,
+        }));
+      return {
+        days: options.days,
+        deals,
+        total: currencyRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0),
+        overdueCount: Number(rows.find((row) => row.row_kind === "overdue")?.count ?? 0),
+        valueByCurrency: currencyRows
+          .map((row) => ({ currency: row.currency, value: Number(row.value ?? 0), count: Number(row.count ?? 0) }))
+          .sort((a, b) => b.value - a.value),
       };
     },
   };

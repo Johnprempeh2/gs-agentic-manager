@@ -7,6 +7,8 @@ import {
   answerHistory,
   answerPeople,
   answerQuiet,
+  answerClosing,
+  closingDays,
   answerActivity,
   answerBrief,
   quietDays,
@@ -156,6 +158,34 @@ describe("answers", () => {
     expect(answer.lines[0]).toEqual({ text: "Heron rollout", detail: "Proposal in Sales, last Call: Pricing call, 50 days ago", href: "/GRE/pipelines/p/items/c1" });
     expect(answer.lines[1]!.detail).toBe("Proposal in Sales, no notes or calls yet, added 47 days ago");
     expect(answerQuiet({ days: 30, total: 0, clients: [] }).headline).toBe("Every open deal and lead has had a note, call or meeting in the last 30 days.");
+  });
+
+  it("spots questions about deals closing soon or past their date", () => {
+    expect(classifyQuestion("Which deals are closing this month?", agents)).toEqual({ kind: "closing", days: 30 });
+    expect(classifyQuestion("What is closing this week?", agents)).toEqual({ kind: "closing", days: 7 });
+    expect(classifyQuestion("How much is in the pipeline this quarter?", agents)).toEqual({ kind: "closing", days: 90 });
+    expect(classifyQuestion("Which deals have slipped?", agents)).toEqual({ kind: "closing", days: 0 });
+    expect(classifyQuestion("Which leads are past their close date?", agents)).toEqual({ kind: "closing", days: 0 });
+    expect(closingDays("expected to close in 2 weeks")).toBe(14);
+    expect(classifyQuestion("What is Mason closing today?", agents).kind).toBe("agent");
+  });
+
+  it("lists deals by close date with value per currency, or says none are due", () => {
+    const answer = answerClosing({
+      days: 30,
+      total: 3,
+      overdueCount: 1,
+      valueByCurrency: [{ currency: "GBP", value: 7500, count: 2 }, { currency: null, value: 0, count: 1 }],
+      deals: [
+        { caseId: "c1", title: "Late renewal", pipelineName: "Sales", stageName: "Proposal", organisationName: null, expectedCloseDate: "2026-10-10", overdue: true, value: 5000, currency: "GBP", href: "/GRE/pipelines/p/items/c1" },
+        { caseId: "c2", title: "Wren lead", pipelineName: "Sales", stageName: "Qualified", organisationName: null, expectedCloseDate: "2026-10-25", overdue: false, value: null, currency: null, href: "/GRE/pipelines/p/items/c2" },
+      ],
+    });
+    expect(answer.headline).toBe("3 open deals and leads closing this month, worth GBP 7,500. 1 is already past the date.");
+    expect(answer.lines[0]).toEqual({ text: "Late renewal", detail: "Was due 10 Oct, GBP 5,000, Proposal in Sales", href: "/GRE/pipelines/p/items/c1" });
+    expect(answer.lines[1]!.detail).toBe("Due 25 Oct, Qualified in Sales");
+    expect(answerClosing({ days: 0, total: 0, overdueCount: 0, valueByCurrency: [], deals: [] }).headline).toBe("No open deals or leads are past their expected close date.");
+    expect(answerClosing({ days: 7, total: 0, overdueCount: 0, valueByCurrency: [], deals: [] }).headline).toBe("No open deals or leads have an expected close date in the next 7 days.");
   });
 
   it("names the one contact for a client, or lists several", () => {

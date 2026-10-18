@@ -4,6 +4,8 @@ import {
   COMPANY_SEARCH_SCOPES,
   type CompanyClientBriefResponse,
   type CompanyClientActivity,
+  type CompanyClosingDeal,
+  type CompanyClosingDealsResponse,
   type CompanyQuietClient,
   type CompanyQuietClientsResponse,
   type CompanyRecentClientActivityResponse,
@@ -86,6 +88,26 @@ export function formatClientActivity(entry: CompanyClientActivity): string {
   return `${head}  ${entry.href}`;
 }
 
+/** One deal by close date: when, what, value, stage and its link. */
+export function formatClosingDeal(deal: CompanyClosingDeal): string {
+  const when = `${deal.overdue ? "was due" : "due"} ${deal.expectedCloseDate}`;
+  const value = deal.value !== null ? `${deal.currency ? `${deal.currency} ` : ""}${deal.value}` : null;
+  const name = deal.organisationName && !deal.title.includes(deal.organisationName) ? `${deal.title} (${deal.organisationName})` : deal.title;
+  return `${[when, name, value, `${deal.stageName} in ${deal.pipelineName}`].filter(Boolean).join(" | ")}  ${deal.href}`;
+}
+
+/** The summary line above the deals: how many, overdue, and value per currency. */
+export function closingSummary(response: CompanyClosingDealsResponse): string {
+  const count = `${response.total} open ${response.total === 1 ? "deal or lead" : "deals and leads"}`;
+  const period = response.days === 0 ? "past their expected close date" : `expected to close within ${response.days} ${response.days === 1 ? "day" : "days"}`;
+  const worth = response.valueByCurrency
+    .filter((entry) => entry.value > 0)
+    .map((entry) => `${entry.currency ? `${entry.currency} ` : ""}${entry.value}`)
+    .join(", ");
+  const late = response.days > 0 && response.overdueCount > 0 ? `, ${response.overdueCount} already past the date` : "";
+  return `${count} ${period}${worth ? ` (worth ${worth})` : ""}${late}:`;
+}
+
 export function registerSearchCommands(program: Command): void {
   addCommonClientOptions(
     program
@@ -141,6 +163,42 @@ export function registerSearchCommands(program: Command): void {
             return;
           }
           for (const line of formatClientBrief(response ?? { brief: null }, name)) console.log(line);
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
+  addCommonClientOptions(
+    program
+      .command("closing-deals")
+      .description("Open deals and leads by expected close date, overdue first, with their value")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--days <n>", "Days ahead to look (0 lists only those past their date, up to 365)", "30")
+      .option("--limit <n>", "Most deals to list (1 to 50)", "10")
+      .action(async (opts: QuietClientsOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const parsed = Number.parseInt(opts.days ?? "30", 10);
+          const days = Math.min(Math.max(Number.isNaN(parsed) ? 30 : parsed, 0), 365);
+          const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "10", 10) || 10, 1), 50);
+          const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+          const response = await ctx.api.get<CompanyClosingDealsResponse>(
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/closing-deals?${params.toString()}`,
+          );
+          if (ctx.json) {
+            printOutput(response, { json: true });
+            return;
+          }
+          if (!response || response.total === 0) {
+            console.log(days === 0
+              ? "No open deals or leads are past their expected close date."
+              : `No open deals or leads have an expected close date in the next ${days} days.`);
+            return;
+          }
+          console.log(closingSummary(response));
+          for (const deal of response.deals) console.log(formatClosingDeal(deal));
         } catch (err) {
           handleCommandError(err);
         }

@@ -1,4 +1,4 @@
-import type { CompanyClientBriefResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
+import type { CompanyClientBriefResponse, CompanyClosingDealsResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -63,4 +63,12 @@ export const searchApi = {
   },  /** A brief on the organisation that best matches a name. */
   clientBrief: (companyId: string, name: string) =>
     api.get<CompanyClientBriefResponse>(`/companies/${companyId}/search/client-brief?${new URLSearchParams({ q: name }).toString()}`),
+  /** Open deals and leads expected to close within `days` (0: only those past their date), soonest first. */
+  closingDeals: (companyId: string, params: { days?: number; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.days !== undefined) search.set("days", String(params.days));
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api.get<CompanyClosingDealsResponse>(`/companies/${companyId}/search/closing-deals${qs ? `?${qs}` : ""}`);
+  },
 };

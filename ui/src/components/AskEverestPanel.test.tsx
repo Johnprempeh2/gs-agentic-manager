@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   uploadAttachment: vi.fn(),
   search: vi.fn(async () => ({ results: [] })),
   quietClients: vi.fn(),
+  closingDeals: vi.fn(),
   clientBrief: vi.fn(async () => ({ brief: null })),
   recentClientActivity: vi.fn(async () => ({ days: 1, total: 0, clientCount: 0, byKind: [], activity: [] })),
 }));
@@ -33,7 +34,7 @@ vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecar
 vi.mock("../api/issues", () => ({
   issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
-vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients, clientBrief: mocks.clientBrief, recentClientActivity: mocks.recentClientActivity } }));
+vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients, closingDeals: mocks.closingDeals, clientBrief: mocks.clientBrief, recentClientActivity: mocks.recentClientActivity } }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
 vi.mock("@/lib/router", () => ({
@@ -158,6 +159,19 @@ describe("AskEverestPanel", () => {
     act(() => openAskEverest("Which clients have gone quiet for 2 weeks?"));
     await waitFor(() => expect(container.textContent).toContain("1 open deal or lead had no note, call or meeting in 14 days."));
     expect(mocks.quietClients).toHaveBeenCalledWith("company-1", { days: 14, limit: 8 });
+  });
+
+  it("lists deals closing this week", async () => {
+    mocks.closingDeals.mockResolvedValueOnce({
+      days: 7,
+      total: 1,
+      overdueCount: 0,
+      valueByCurrency: [{ currency: "GBP", value: 2500, count: 1 }],
+      deals: [{ caseId: "c1", title: "Heron rollout", pipelineName: "Sales", stageName: "Proposal", organisationName: null, expectedCloseDate: "2026-10-22", overdue: false, value: 2500, currency: "GBP", href: "/GRE/pipelines/p/items/c1" }],
+    });
+    act(() => openAskEverest("Which deals are closing this week?"));
+    await waitFor(() => expect(container.textContent).toContain("1 open deal or lead closing this week, worth GBP 2,500."));
+    expect(mocks.closingDeals).toHaveBeenCalledWith("company-1", { days: 7, limit: 8 });
   });
 
   it("briefs on an organisation", async () => {

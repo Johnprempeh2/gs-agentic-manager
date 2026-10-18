@@ -168,6 +168,18 @@ three people (key contacts first) and the total, open deals, and the last note,
 call or meeting with days since. Ask Everest answers "Tell me about Acme" and
 "What do we know about Acme?" from it; agents use `gsam client-brief <name>`.
 
+## Deals closing soon
+
+`GET /api/companies/:companyId/search/closing-deals?days=30&limit=10` lists open
+deals and leads whose imported expected close date falls within the next `days`
+days (0 to 365; 0 lists only those already past their date), soonest first, so
+overdue ones lead. Each carries its stage, value and currency (`dealValue` or
+`leadValue`), and the response adds the total, how many are overdue and the
+value per currency. Deals with no valid close date are left out. Ask Everest
+answers "Which deals are closing this month?", "What is closing this week?",
+"How much is in the pipeline this quarter?" and "Which deals have slipped?" from
+it; agents use `gsam closing-deals`.
+
 ## Reproduce the evaluation
 
 ```sh

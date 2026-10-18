@@ -1160,6 +1160,8 @@ export type {
   CompanyRecentClientActivityResponse,
   CompanyClientBrief,
   CompanyClientBriefResponse,
+  CompanyClosingDeal,
+  CompanyClosingDealsResponse,
   CompanySearchResult,
   CompanySearchResultType,
   CompanySearchScope,

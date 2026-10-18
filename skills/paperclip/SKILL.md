@@ -719,7 +719,8 @@ Pipedrive notes and calls, and images (`--scope records` for clients and people 
 contents, `--json` for the full result). `gsam quiet-clients` lists open deals nobody has
 contacted for 30 days (`--days 14` to change it), so you know who to follow up. `gsam client-brief <name>`
 gives a client's status, open deals, people and last contact before you write to them.
-`gsam client-activity` lists this week's client notes and calls.
+`gsam client-activity` lists this week's client notes and calls. `gsam closing-deals` lists deals
+expected to close in the next 30 days, overdue first, with their value.
 
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your

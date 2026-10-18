@@ -253,3 +253,28 @@ export interface CompanyClientBrief {
 export interface CompanyClientBriefResponse {
   brief: CompanyClientBrief | null;
 }
+
+export interface CompanyClosingDeal {
+  caseId: string;
+  title: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  /** Expected close date, YYYY-MM-DD. */
+  expectedCloseDate: string;
+  /** True when the expected close date has passed and the deal is still open. */
+  overdue: boolean;
+  value: number | null;
+  currency: string | null;
+  href: string;
+}
+
+export interface CompanyClosingDealsResponse {
+  days: number;
+  /** Open deals and leads expected to close within `days` (or already past their date), soonest first. */
+  deals: CompanyClosingDeal[];
+  total: number;
+  overdueCount: number;
+  /** Value of the deals in the window, per currency (null currency when none was set). */
+  valueByCurrency: Array<{ currency: string | null; value: number; count: number }>;
+}
