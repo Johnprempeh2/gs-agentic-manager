@@ -521,7 +521,7 @@ function StudioNewSkillPanel({
           {draft.forkedFromSkillId ? "Fork skill" : "Create a new skill"}
         </h1>
         <p className="text-sm text-muted-foreground">
-          Create an editable organization skill and open it directly in Studio.
+          Create a skill for your organisation and edit it in Studio.
         </p>
       </div>
 

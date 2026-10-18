@@ -76,7 +76,7 @@ function resourceActionCopy(
   if (resource.stockStatus === "stock_update_available") {
     return {
       title: `Update ${label} to the newest default?`,
-      body: `You haven't edited this, so GS Agentic Manager will replace it with the newer shipped version. Nothing you customized is affected, and your adapter credentials and settings are not touched.`,
+      body: `You haven't edited this, so GS Agentic Manager will replace it with the newer shipped version. Nothing you customized is affected, and your AI engine sign-in and settings are not touched.`,
       confirmLabel: "Update",
       triggerLabel: "Update",
     };
@@ -84,7 +84,7 @@ function resourceActionCopy(
   if (resource.stockStatus === "operator_modified") {
     return {
       title: `Reset ${label} to the shipped default?`,
-      body: `This replaces your edited version with GS Agentic Manager's current default. Your edits can't be recovered. Adapter credentials and settings are not touched.`,
+      body: `This replaces your edited version with GS Agentic Manager's current default. Your edits can't be recovered. Your AI engine sign-in and settings are not touched.`,
       confirmLabel: `Reset ${label}`,
       triggerLabel: "Reset",
     };
@@ -92,7 +92,7 @@ function resourceActionCopy(
   if (resource.stockStatus === "missing") {
     return {
       title: `Recreate ${label}?`,
-      body: `This resource is missing. GS Agentic Manager will recreate it from the shipped default. Adapter credentials and settings are not touched.`,
+      body: `This resource is missing. GS Agentic Manager will recreate it from the shipped default. Your AI engine sign-in and settings are not touched.`,
       confirmLabel: "Recreate",
       triggerLabel: "Recreate",
     };
@@ -323,7 +323,7 @@ export function BuiltInBundlePanel({
       <div className="divide-y rounded-lg border px-4">
         {/* Adapter — no resource entry; readiness is the agent lifecycle. */}
         <BundleRow
-          label="Adapter"
+          label="AI engine"
           chips={<ResourceStatusChip variant={adapterChip} />}
           detail={adapterDetail}
           actions={

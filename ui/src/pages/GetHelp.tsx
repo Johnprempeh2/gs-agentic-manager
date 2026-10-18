@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LifeBuoy, PaperclipIcon, Pencil, Plus } from "lucide-react";
 import {
@@ -515,9 +516,13 @@ export function GetHelp() {
 
   if (tickets.error || !tickets.data) {
     return (
-      <p role="alert" className="mx-auto max-w-3xl text-sm text-destructive">
-        Your tickets could not be loaded. Try again in a moment.
-      </p>
+      <ErrorState
+        className="mx-auto max-w-3xl"
+        error={tickets.error}
+        title="Your tickets could not be loaded"
+        onRetry={() => void tickets.refetch()}
+        retrying={tickets.isFetching}
+      />
     );
   }
 

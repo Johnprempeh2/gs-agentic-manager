@@ -7,6 +7,8 @@ import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
 import { DecisionCard, type DecisionIssueRef } from "./DecisionCard";
+import { ErrorState } from "./ErrorState";
+import { ApiError } from "../api/client";
 
 interface DecisionResolverProps {
   companyId: string;
@@ -168,6 +170,19 @@ export function DecisionResolver({ companyId, decisionId, originIssue, agentMap,
       <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading decision…
       </div>
+    );
+  }
+
+  const decisionGone = detail.error instanceof ApiError && detail.error.status === 404;
+  if (detail.error && !decisionGone) {
+    return (
+      <ErrorState
+        compact
+        error={detail.error}
+        title="Could not load this decision"
+        onRetry={() => void detail.refetch()}
+        retrying={detail.isFetching}
+      />
     );
   }
 

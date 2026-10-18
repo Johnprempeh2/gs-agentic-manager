@@ -22,6 +22,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { PageTabBar } from "@/components/PageTabBar";
+import { ErrorState } from "@/components/ErrorState";
+import { ApiError } from "@/api/client";
 import {
   JsonSchemaForm,
   validateJsonSchemaForm,
@@ -67,7 +69,13 @@ export function PluginSettings() {
   const { hideHostPaths } = useManagedSandboxOnly();
   const [activeTab, setActiveTab] = useState<"configuration" | "status">("configuration");
 
-  const { data: plugin, isLoading: pluginLoading } = useQuery({
+  const {
+    data: plugin,
+    isLoading: pluginLoading,
+    error: pluginError,
+    refetch: refetchPlugin,
+    isFetching: pluginFetching,
+  } = useQuery({
     queryKey: queryKeys.plugins.detail(pluginId!),
     queryFn: () => pluginsApi.get(pluginId!),
     enabled: !!pluginId,
@@ -135,6 +143,17 @@ export function PluginSettings() {
 
   if (pluginLoading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading plugin details...</div>;
+  }
+
+  if (pluginError && !(pluginError instanceof ApiError && pluginError.status === 404)) {
+    return (
+      <ErrorState
+        error={pluginError}
+        title="Could not load this plugin"
+        onRetry={() => void refetchPlugin()}
+        retrying={pluginFetching}
+      />
+    );
   }
 
   if (!plugin) {
