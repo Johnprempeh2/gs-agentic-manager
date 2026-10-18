@@ -4,7 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineStage } from "../api/pipelines";
-import { DealsList, buildDealRows, sortDealRows } from "./DealsList";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { DealsList, buildDealRows, sortDealRows, withDealOwner } from "./DealsList";
+
+const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), pushToast: vi.fn() }));
+vi.mock("../api/pipelines", () => ({ pipelinesApi: { updateCase: mocks.updateCase } }));
+vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: mocks.pushToast }) }));
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => <a href={to} {...props}>{children}</a>,
@@ -41,12 +46,41 @@ describe("DealsList", () => {
   it("lists deals by next step first and re-sorts when a header is clicked", async () => {
     const container = document.createElement("div");
     const root = createRoot(container);
-    await act(async () => root.render(<DealsList cases={cases} stages={stages} />));
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><DealsList cases={cases} stages={stages} /></QueryClientProvider>));
     const titles = () => [...container.querySelectorAll("[data-testid='deal-row'] a")].map((link) => link.textContent);
     expect(titles()).toEqual(["Beta", "Acme", "Corp"]);
     const header = [...container.querySelectorAll("th button")].find((button) => button.textContent === "Deal")!;
     await act(async () => (header as HTMLButtonElement).click());
     expect(titles()).toEqual(["Acme", "Beta", "Corp"]);
+    root.unmount();
+  });
+
+  it("keeps a lead's owner key when the owner changes", () => {
+    expect(withDealOwner({ leadValue: 1, leadOwner: "Ann" }, " Ben ")).toEqual({ leadValue: 1, leadOwner: "Ben" });
+    expect(withDealOwner({ dealOwner: "Ann" }, "Ben")).toEqual({ dealOwner: "Ben" });
+    expect(withDealOwner({ dealOwner: "Ann" }, "")).toEqual({});
+  });
+
+  it("changes the owner of the selected deals", async () => {
+    mocks.updateCase.mockResolvedValue({});
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><DealsList cases={cases} stages={stages} /></QueryClientProvider>));
+    const box = (label: string) => container.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement;
+    await act(async () => box("Select Acme").click());
+    await act(async () => box("Select Beta").click());
+    const input = container.querySelector('input[aria-label="New owner"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(input, "Ben");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector('form[aria-label="Change owner"]') as HTMLFormElement).requestSubmit();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(mocks.updateCase.mock.calls.map((call) => [call[0], call[1].fields.dealOwner])).toEqual([["b", "Ben"], ["a", "Ben"]]);
+    expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Owner changed on 2 deals", tone: "success" });
     root.unmount();
   });
 });
