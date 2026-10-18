@@ -1145,6 +1145,43 @@ describe("Agents", () => {
     expect(container.textContent).toContain("Alpha");
     expect(container.querySelector('[aria-label="Invalid reporting chain"]')).not.toBeNull();
   });
+
+  it("opens the live run from an agent row without nesting a link in the row link (GRE-1664)", async () => {
+    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([
+      { id: "run-1", agentId: "agent-1", status: "running" },
+    ]);
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <Agents />
+          </ToastProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const expectLiveIndicatorInsideRow = async () => {
+      expect(container.querySelectorAll("a a")).toHaveLength(0);
+      const live = container.querySelector<HTMLElement>('[aria-label="Open live run for Alpha"]');
+      expect(live).not.toBeNull();
+      expect(live?.closest("a")?.getAttribute("href")).toMatch(/^\/agents\//);
+      mockRouterState.navigate.mockClear();
+      await act(async () => { live!.click(); });
+      expect(mockRouterState.navigate).toHaveBeenCalledWith("/agents/alpha/runs/run-1");
+    };
+
+    await expectLiveIndicatorInsideRow();
+
+    const listToggle = container.querySelector<HTMLButtonElement>('button[aria-label="List view"]');
+    await act(async () => { listToggle?.click(); });
+    await flushReact();
+
+    await expectLiveIndicatorInsideRow();
+  });
 });
 
 describe("agentWeekLine", () => {
