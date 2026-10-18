@@ -198,8 +198,8 @@ function connectionState(connection: ToolConnection, companyPaused = false): Con
       kind: "paused",
       label: "Turned off",
       message: companyPaused
-        ? "Turned off by company pause. Resume the organization before you re-enable it."
-        : "Turned off by company pause. Re-enable runs a health check first.",
+        ? "Turned off because the organisation was paused. Resume the organisation before you re-enable it."
+        : "Turned off because the organisation was paused. Re-enable checks it still works first.",
     };
   }
   if (connection.status === "draft") {
@@ -220,7 +220,7 @@ function connectionState(connection: ToolConnection, companyPaused = false): Con
     return {
       kind: "attention",
       label: "Needs attention",
-      message: "The token has expired. Reconnect to restore access.",
+      message: "The sign-in has expired. Reconnect to restore access.",
     };
   }
   if ((connection.connectionPurpose === "ai" && (connection.healthStatus !== "ok" || aiSubscriptionNeedsIsolatedLogin(connection.config))) || isToolConnectionAttentionHealth(connection.healthStatus)) {
@@ -232,7 +232,7 @@ function connectionState(connection: ToolConnection, companyPaused = false): Con
         connection.lastError ??
         (connection.authKind === "oauth"
           ? "Sign in again to restore access."
-          : "Replace the credential to restore access."),
+          : "Enter a new key to restore access."),
     };
   }
   return { kind: "connected", label: "Connected", message: null };
@@ -1415,7 +1415,7 @@ function ConnectionAccountRow({
             size="sm"
             variant="outline"
             disabled={resuming || (pauseSuspended && companyPaused)}
-            title={pauseSuspended && companyPaused ? "Resume the organization first" : undefined}
+            title={pauseSuspended && companyPaused ? "Resume the organisation first" : undefined}
             onClick={onResume}
           >
             {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}

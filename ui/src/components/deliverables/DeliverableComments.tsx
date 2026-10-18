@@ -500,7 +500,7 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
           {sentResult.woken
             ? "Sent. The task's agent will revise the deliverable."
-            : "Posted on the task. No agent was woken; assign one on the task."}
+            : "Posted on the task, but no agent is assigned to act on it. Open the task and assign one."}
         </p>
       ) : null}
     </section>

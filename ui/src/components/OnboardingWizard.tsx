@@ -3079,8 +3079,8 @@ function OnboardingWizardInner({
                       )}
 
                       {adapterEnvResult && adapterEnvResult.status === "fail" && (
-                        <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-(length:--text-micro) space-y-1.5">
-                          <p className="font-medium">Manual debug</p>
+                        <details className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-(length:--text-micro) space-y-1.5">
+                          <summary className="cursor-pointer font-medium">Details for whoever set up this computer</summary>
                           <p className="text-muted-foreground font-mono break-all">
                             {adapterType === "cursor"
                               ? `${effectiveAdapterCommand} -p --mode ask --output-format json \"Respond with hello.\"`
@@ -3135,7 +3135,7 @@ function OnboardingWizardInner({
                               and retry.
                             </p>
                           )}
-                        </div>
+                        </details>
                       )}
                     </div>
                   )}
@@ -3284,8 +3284,8 @@ function AdapterEnvironmentResult({
             key={`${check.code}-${idx}`}
             className="leading-relaxed break-words"
           >
-            <span className="font-medium uppercase tracking-wide">
-              {check.level}
+            <span className="font-medium">
+              {({ error: "Problem", warn: "Check", info: "Note" } as Record<string, string>)[check.level] ?? check.level}
             </span>
             <span className="mx-1 opacity-60">·</span>
             <span>{check.message}</span>

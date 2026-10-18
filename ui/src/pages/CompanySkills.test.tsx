@@ -816,7 +816,7 @@ describe("SkillDetailPage settings", () => {
 
     expect(node.textContent).not.toContain("Fork or import locally");
 
-    const forkButton = buttonsNamed(node, "Fork")[0] as HTMLButtonElement;
+    const forkButton = buttonsNamed(node, "Edit a copy")[0] as HTMLButtonElement;
     expect(forkButton).toBeTruthy();
 
     await click(forkButton);

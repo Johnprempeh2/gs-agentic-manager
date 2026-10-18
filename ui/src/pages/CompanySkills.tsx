@@ -1668,12 +1668,12 @@ function NewSkillWizard({
           <div className="grid grid-cols-(--gtc-26) gap-y-2">
             <span className="text-muted-foreground">Name</span>
             <span>{draft.name || "Untitled"}</span>
-            <span className="text-muted-foreground">Slug</span>
+            <span className="text-muted-foreground">Short name</span>
             <span className="font-mono">{effectiveSlug || "skill"}</span>
-            <span className="text-muted-foreground">Scope</span>
-            <span>{draft.sharingScope === "private" ? "Private" : "Organisation"}</span>
+            <span className="text-muted-foreground">Who can see it</span>
+            <span>{draft.sharingScope === "private" ? "Only you" : "Everyone in the organisation"}</span>
             <span className="text-muted-foreground">Categories</span>
-            <span>{draft.categories.length ? draft.categories.join(", ") : "none"}</span>
+            <span>{draft.categories.length ? draft.categories.join(", ") : "None"}</span>
           </div>
           <div className="space-y-2">
             <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Sharing</label>
@@ -1727,7 +1727,7 @@ function NewSkillWizard({
             </Button>
           ) : (
             <Button size="sm" onClick={submit} disabled={isPending || !nameValid}>
-              {isPending ? "Creating..." : draft.forkedFromSkillId ? "Create fork" : "Create skill"}
+              {isPending ? "Creating..." : draft.forkedFromSkillId ? "Create copy" : "Create skill"}
             </Button>
           )}
         </div>
@@ -3098,10 +3098,10 @@ export function SkillDetailPage({
                   variant="outline"
                   size="sm"
                   onClick={onFork}
-                  title={skill.editableReason ?? "Fork this skill to edit it."}
+                  title={skill.editableReason ?? "Make your own copy of this skill to edit it."}
                 >
                   <GitFork className="mr-1.5 h-3.5 w-3.5" />
-                  Fork
+                  Edit a copy
                 </Button>
               ) : null}
             </div>
@@ -3168,7 +3168,7 @@ export function SkillDetailPage({
                   <span>Read only</span>
                   <Button type="button" variant="outline" size="xs" onClick={onFork}>
                     <GitFork className="mr-1 h-3 w-3" />
-                    Fork
+                    Edit a copy
                   </Button>
                 </>
               )}
@@ -3406,10 +3406,10 @@ export function SkillDetailPage({
                 type="button"
                 onClick={onFork}
                 className="inline-flex items-center gap-1.5 border-l border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                title="Fork this skill"
+                title="Make your own copy of this skill to edit it"
               >
                 <GitFork className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Fork</span>
+                <span className="hidden sm:inline">Edit a copy</span>
                 <span className="font-medium text-foreground">{detail.forkCount}</span>
               </button>
             </div>
@@ -4325,7 +4325,7 @@ export function CompanySkills() {
     setBreadcrumbs([
       { label: "Skills", href: "/skills" },
       ...(isStudioNew
-        ? [{ label: studioForkFromId ? "Fork skill" : "New skill" }]
+        ? [{ label: studioForkFromId ? "Copy skill" : "New skill" }]
         : activeDetail
           ? skillDetailBreadcrumbs(activeDetail, skillFoldersQuery.data).slice(1)
           : routeSkillToken
@@ -4431,7 +4431,7 @@ export function CompanySkills() {
       setCreateError(null);
       pushToast({
         tone: "success",
-        title: skill.forkedFromSkillId ? "Skill fork created" : "Skill created",
+        title: skill.forkedFromSkillId ? "Copy of the skill created" : "Skill created",
         body: `${skill.name} is now editable in the GS Agentic Manager workspace.`,
       });
     },
@@ -5098,9 +5098,9 @@ export function CompanySkills() {
     ? (catalogListQuery.data ?? []).find((entry) => entry.key === activeDetail.key)?.source ?? null
     : null;
   const studioBackHref = studioForkDetailQuery.data ? routeForSkill(studioForkDetailQuery.data) : "/skills";
-  const studioTitle = studioForkFromId ? "Fork skill" : "Create a new skill";
+  const studioTitle = studioForkFromId ? "Copy skill" : "Create a new skill";
   const studioDescription = studioForkFromId
-    ? "Review the fork metadata and create an editable organisation copy."
+    ? "Check the details, then create a copy your organisation can edit."
     : "Create a skill your organisation can edit and share.";
   return (
     <>
@@ -5349,7 +5349,7 @@ export function CompanySkills() {
               {studioForkFromId && studioForkDetailQuery.isLoading ? (
                 <PageSkeleton variant="detail" />
               ) : studioForkFromId && !studioForkDetailQuery.data ? (
-                <EmptyState icon={Boxes} message="Fork source skill not found." />
+                <EmptyState icon={Boxes} message="The skill you wanted to copy could not be found." />
               ) : (
                 <NewSkillWizard
                   initialDraft={studioDraft}

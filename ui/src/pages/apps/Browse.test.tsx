@@ -395,7 +395,7 @@ describe("Connectors landing page", () => {
       },
     })] });
     await renderBrowse();
-    expect(container.textContent).toContain("The token has expired. Reconnect to restore access.");
+    expect(container.textContent).toContain("The sign-in has expired. Reconnect to restore access.");
     const reconnect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Reconnect");
     expect(reconnect).toBeTruthy();
     await act(() => reconnect!.click());
@@ -646,7 +646,7 @@ describe("Connectors landing page", () => {
       await renderBrowse();
 
       const connected = container.querySelector('[aria-label="Connected"]')!;
-      expect(connected.textContent).toContain("Turned off by company pause.");
+      expect(connected.textContent).toContain("Turned off because the organisation was paused.");
       expect(buttonByTextIn(connected as HTMLElement, "Resume")).toBeUndefined();
       const reenable = buttonByTextIn(connected as HTMLElement, "Re-enable")!;
       expect(reenable.disabled).toBe(false);
@@ -680,7 +680,7 @@ describe("Connectors landing page", () => {
       pauseSuspended();
       await renderBrowse();
 
-      expect(container.textContent).toContain("Resume the organization before you re-enable it.");
+      expect(container.textContent).toContain("Resume the organisation before you re-enable it.");
       expect(buttonByText("Re-enable")?.disabled).toBe(true);
     });
   });

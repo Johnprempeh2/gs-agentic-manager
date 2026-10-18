@@ -1,3 +1,4 @@
+import { formatActivityVerb } from "../lib/activity-format";
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, UserRound } from "lucide-react";
@@ -218,7 +219,7 @@ export function UserProfile() {
     () =>
       (data?.topAgents ?? []).map((row) => ({
         key: row.agentId ?? "unknown",
-        label: row.agentName ?? (row.agentId ? row.agentId.slice(0, 8) : "unknown"),
+        label: row.agentName ?? (row.agentId ? "Removed agent" : "Unknown agent"),
         sublabel: "Task-linked usage",
         costCents: row.costCents,
         inputTokens: row.inputTokens,
@@ -283,7 +284,7 @@ export function UserProfile() {
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <HeroStat label="All-time tokens" value={formatTokens(allTimeTokens)} hint={formatCents(allTime?.costCents ?? 0) + " spent"} />
+          <HeroStat label="All-time AI usage" value={formatTokens(allTimeTokens)} hint={formatCents(allTime?.costCents ?? 0) + " spent"} />
           <HeroStat label="Completed" value={formatNumber(allTime?.completedIssues ?? 0)} hint={allTime ? `${completionRate(allTime)} rate` : undefined} />
           <HeroStat label="Open assigned" value={formatNumber(allTime?.assignedOpenIssues ?? 0)} hint={`${formatNumber(allTime?.createdIssues ?? 0)} created`} />
           <HeroStat label="7-day actions" value={formatNumber(last7?.activityCount ?? 0)} hint={`${formatNumber(last7?.commentCount ?? 0)} comments`} />
@@ -337,9 +338,9 @@ export function UserProfile() {
               {data.recentActivity.map((event) => (
                 <li key={event.id} className="grid gap-2 py-2.5 sm:grid-cols-(--gtc-17) sm:items-center">
                   <div className="min-w-0">
-                    <div className="truncate text-sm">{event.action.replaceAll("_", " ")}</div>
+                    <div className="truncate text-sm first-letter:uppercase">{formatActivityVerb(event.action, null)}</div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {event.entityType} · {event.entityId.slice(0, 12)}
+                      {event.entityType === "issue" ? "Task" : event.entityType.charAt(0).toUpperCase() + event.entityType.slice(1).replaceAll("_", " ")}
                     </div>
                   </div>
                   <span className="text-xs tabular-nums text-muted-foreground sm:justify-self-end">{relativeTime(event.createdAt)}</span>
@@ -351,7 +352,7 @@ export function UserProfile() {
       </div>
 
       <div className="grid gap-10 xl:grid-cols-2">
-        <UsageList title="Agent attribution" empty="No issue-linked token usage yet." rows={agentUsageRows} />
+        <UsageList title="Usage by agent" empty="No task usage by agents yet." rows={agentUsageRows} />
         <UsageList title="Provider mix" empty="No provider usage attributed yet." rows={providerUsageRows} />
       </div>
     </div>

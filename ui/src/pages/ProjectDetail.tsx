@@ -190,6 +190,7 @@ function ProjectTilePicker({
 
 function ProjectIssuesList({ projectId, companyId }: { projectId: string; companyId: string }) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(companyId),
@@ -234,6 +235,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
     },
+    onError: () => pushToast({ title: "Your change to the task was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   return (
@@ -261,6 +263,7 @@ function ProjectPluginOperationsList({
   pluginKey: string;
 }) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const originKindPrefix = `plugin:${pluginKey}`;
 
   const { data: agents } = useQuery({
@@ -305,6 +308,7 @@ function ProjectPluginOperationsList({
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
     },
+    onError: () => pushToast({ title: "Your change to the task was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   return (
@@ -453,6 +457,7 @@ export function ProjectDetail() {
     mutationFn: (data: Record<string, unknown>) =>
       projectsApi.update(projectLookupRef, data, resolvedCompanyId ?? lookupCompanyId),
     onSuccess: invalidateProject,
+    onError: () => pushToast({ title: "Your change was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   const archiveProject = useMutation({
@@ -652,6 +657,7 @@ export function ProjectDetail() {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all(resolvedCompanyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(resolvedCompanyId) });
     },
+    onError: () => pushToast({ title: "The budget was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   if (pluginTabFromSearch && !activePluginTab && !error) {
@@ -793,7 +799,7 @@ export function ProjectDetail() {
           {project.pauseReason === "budget" ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-(length:--text-micro) font-medium uppercase tracking-(--tracking-caps) text-red-800 dark:text-red-200">
               <span className="h-2 w-2 rounded-full bg-red-400" />
-              Paused by budget hard stop
+              Paused: budget limit reached
             </div>
           ) : null}
           {project.managedByPlugin ? (
@@ -830,7 +836,7 @@ export function ProjectDetail() {
         scopeKind="project"
         scopeId={project.id}
         title="Project summary"
-        description="Summarizer keeps the latest project status, next step, and operator-needed items here."
+        description="Kept up to date for you: where the project stands, the next step, and anything that needs you."
       />
 
       <PluginSlotOutlet
