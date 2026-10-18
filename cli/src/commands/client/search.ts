@@ -3,8 +3,10 @@ import {
   COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SCOPES,
   type CompanyClientBriefResponse,
+  type CompanyClientActivity,
   type CompanyQuietClient,
   type CompanyQuietClientsResponse,
+  type CompanyRecentClientActivityResponse,
   type CompanySearchResponse,
   type CompanySearchResult,
 } from "@greatstone/shared";
@@ -78,7 +80,49 @@ export function formatClientBrief(response: CompanyClientBriefResponse, name: st
   ];
 }
 
+/** One client note or call: when, what, who with, and its link. */
+export function formatClientActivity(entry: CompanyClientActivity): string {
+  const head = [entry.occurredAt.slice(0, 10), entry.kindLabel, entry.title, entry.clientName, entry.ownerName].filter(Boolean).join(" | ");
+  return `${head}  ${entry.href}`;
+}
+
 export function registerSearchCommands(program: Command): void {
+  addCommonClientOptions(
+    program
+      .command("client-activity")
+      .description("Recent client notes, calls, meetings and emails, newest first")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--days <n>", "How many days back (1 to 365)", "7")
+      .option("--limit <n>", "Most entries to list (1 to 50)", "20")
+      .action(async (opts: BaseClientOptions & { companyId?: string; days?: string; limit?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const days = Math.min(Math.max(Number.parseInt(opts.days ?? "7", 10) || 7, 1), 365);
+          const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "20", 10) || 20, 1), 50);
+          const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+          const response = await ctx.api.get<CompanyRecentClientActivityResponse>(
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/recent-client-activity?${params.toString()}`,
+          );
+          if (ctx.json) {
+            printOutput(response, { json: true });
+            return;
+          }
+          if (!response || response.total === 0) {
+            console.log(`No client notes, calls or meetings in the last ${days} days.`);
+            return;
+          }
+          const kinds = response.byKind.map(([kind, count]) => `${count} ${kind.toLowerCase()}`).join(", ");
+          const entries = `${response.total} ${response.total === 1 ? "note or call" : "notes and calls"}`;
+          const clients = `${response.clientCount} ${response.clientCount === 1 ? "client" : "clients"}`;
+          console.log(`${entries} with ${clients} in the last ${days} days (${kinds}):`);
+          for (const entry of response.activity) console.log(formatClientActivity(entry));
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
   addCommonClientOptions(
     program
       .command("client-brief")
