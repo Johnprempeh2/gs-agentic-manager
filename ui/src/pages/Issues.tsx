@@ -13,7 +13,10 @@ import { queryKeys } from "../lib/queryKeys";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
-import { CircleDot } from "lucide-react";
+import { IssuesBulkBar } from "../components/IssuesBulkBar";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { CircleDot, ListChecks } from "lucide-react";
 import type { Issue, IssueWorkFilter } from "@greatstone/shared";
 import { issueQuickFilterPresets } from "../lib/issue-filters";
 
@@ -87,6 +90,8 @@ export function Issues() {
   }, []);
 
   const urlSearch = searchParams.get("q") ?? "";
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchOverride, setSearchOverride] = useState<{ search: string; locationSearch: string } | null>(null);
   const syncedSearch = useMemo(() => {
     if (typeof window !== "undefined" && searchOverride?.locationSearch === window.location.search) {
@@ -223,7 +228,26 @@ export function Issues() {
     );
   }
 
+  const toggleSelected = (issueId: string, checked: boolean) =>
+    setSelectedIds((current) =>
+      checked ? (current.includes(issueId) ? current : [...current, issueId]) : current.filter((id) => id !== issueId),
+    );
+  const leaveSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds([]);
+  };
+
   return (
+    <>
+    {selectMode ? (
+      <IssuesBulkBar
+        companyId={selectedCompanyId}
+        agents={agents}
+        selectedIds={selectedIds}
+        onClear={() => setSelectedIds([])}
+        onDone={leaveSelectMode}
+      />
+    ) : null}
     <IssuesList
       issues={issues ?? []}
       isLoading={isLoading}
@@ -249,6 +273,31 @@ export function Issues() {
       onLoadMoreIssues={loadMoreServerIssues}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
       searchFilters={participantAgentId || workspaceIdFilter ? { participantAgentId, workspaceId: workspaceIdFilter } : undefined}
+      renderRowLeading={selectMode ? (issue) => (
+        // A 16px box gets a 24px hit area without moving the row.
+        <span className="inline-flex size-6 shrink-0 items-center justify-center">
+          <Checkbox
+            data-issues-select={issue.id}
+            checked={selectedIds.includes(issue.id)}
+            onCheckedChange={(value) => toggleSelected(issue.id, value === true)}
+            aria-label={`Select ${issue.identifier ?? issue.title}`}
+          />
+        </span>
+      ) : undefined}
+      toolbarControls={(
+        <Button
+          variant={selectMode ? "secondary" : "outline"}
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          title={selectMode ? "Stop selecting tasks" : "Select tasks to change several at once"}
+          aria-label="Select tasks"
+          aria-pressed={selectMode}
+          onClick={() => (selectMode ? leaveSelectMode() : setSelectMode(true))}
+        >
+          <ListChecks className="h-3.5 w-3.5" />
+        </Button>
+      )}
     />
+    </>
   );
 }

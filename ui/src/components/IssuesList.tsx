@@ -534,6 +534,8 @@ interface IssuesListProps {
   renderRowActions?: (issue: Issue) => ReactNode;
   /** Page content under the row, for example an inline question box. */
   renderRowFooter?: (issue: Issue) => ReactNode;
+  /** Page controls after the built-in view controls, for example the Tasks page's Select button. */
+  toolbarControls?: ReactNode;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -807,6 +809,7 @@ export function IssuesList({
   renderRowLeading,
   renderRowActions,
   renderRowFooter,
+  toolbarControls,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -2157,6 +2160,7 @@ export function IssuesList({
           >
             {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
           </Button>
+          {toolbarControls}
           </>
         )}
       />
