@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, lostReasonBreakdown, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, lostReasonBreakdown, ownerScorecard, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -163,5 +163,28 @@ describe("lostReasonBreakdown", () => {
       { reason: "Price", count: 2, totals: [{ currency: "GBP", total: 1500 }] },
       { reason: "No reason given", count: 1, totals: [{ currency: "GBP", total: 1000 }] },
     ]);
+  });
+});
+
+describe("ownerScorecard", () => {
+  it("groups deals by owner with open value, late next steps and win rate", () => {
+    const now = new Date("2026-10-18T09:00:00Z");
+    const rows = ownerScorecard(
+      [
+        { fields: { dealOwner: "Ann", dealStatus: "open", dealValue: 1000, dealCurrency: "GBP", probability: 50, nextActivityDate: "2026-10-10" } },
+        { fields: { dealOwner: "Ann", dealStatus: "won", dealValue: 500, dealCurrency: "GBP", wonOn: "2026-10-01" } },
+        { fields: { dealOwner: "Ann", dealStatus: "lost", dealValue: 500, dealCurrency: "GBP", lostOn: "2026-09-20" } },
+        { fields: { dealOwner: "Ben", dealStatus: "open", dealValue: 3000, dealCurrency: "GBP", nextActivityDate: "2026-10-20" } },
+        { fields: { dealStatus: "open", dealValue: 200, dealCurrency: "GBP" } },
+        { fields: { dealOwner: "Cat", dealStatus: "lost", lostOn: "2025-01-01" } },
+      ],
+      now,
+    );
+    expect(rows.map((row) => [row.owner, row.open, row.openTotals[0]?.total, row.overdueNextSteps, row.winRate])).toEqual([
+      ["Ben", 1, 3000, 0, null],
+      ["Ann", 1, 1000, 1, 50],
+      ["No owner", 1, 200, 0, null],
+    ]);
+    expect(rows[1]!.weighted).toEqual([{ currency: "GBP", total: 500 }]);
   });
 });

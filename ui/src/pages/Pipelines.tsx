@@ -90,7 +90,7 @@ import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineExportButton } from "../components/DataExport";
-import { DealForecast, LostReasons } from "../components/DealForecast";
+import { DealForecast, LostReasons, OwnerScorecard } from "../components/DealForecast";
 import { DealsList } from "../components/DealsList";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
@@ -105,6 +105,7 @@ import {
   dealsClosedThisMonth,
   forecastByCloseMonth,
   lostReasonBreakdown,
+  ownerScorecard,
   weightedDealValues,
   formatDealTotals,
   isDevtoolsCaseType,
@@ -1798,6 +1799,10 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     () => (pipeline && isDevtoolsCaseType(pipeline.key) ? lostReasonBreakdown(visibleCases) : []),
     [pipeline, visibleCases],
   );
+  const ownerRows = useMemo(
+    () => (pipeline && isDevtoolsCaseType(pipeline.key) ? ownerScorecard(visibleCases) : []),
+    [pipeline, visibleCases],
+  );
   const closedThisMonth = useMemo(
     () => ({ won: dealsClosedThisMonth(visibleCases, "won"), lost: dealsClosedThisMonth(visibleCases, "lost") }),
     [visibleCases],
@@ -2215,6 +2220,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
 
       <DealForecast buckets={forecast} />
       <LostReasons rows={lostReasons} />
+      <OwnerScorecard rows={ownerRows} />
 
       <PipelineHealthBar
         warnings={healthQuery.data?.warnings ?? []}

@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
-import { DealForecast } from "./DealForecast";
+import { DealForecast, OwnerScorecard } from "./DealForecast";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -31,4 +31,19 @@ describe("DealForecast", () => {
     expect(container.textContent).toBe("");
     root.unmount();
   });
+
+  it("lists deals by owner only when more than one owner has deals", async () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const row = (owner: string, overdue: number) => ({
+      owner, open: 2, openTotals: [{ currency: "GBP", total: 2000 }], weighted: [], overdueNextSteps: overdue, won: 1, lost: 1, winRate: 50,
+    });
+    await act(async () => root.render(<OwnerScorecard rows={[row("Ann", 1)]} />));
+    expect(container.textContent).toBe("");
+    await act(async () => root.render(<OwnerScorecard rows={[row("Ann", 1), row("Ben", 0)]} />));
+    const rows = [...container.querySelectorAll("[data-testid='owner-scorecard-row']")].map((tr) => tr.textContent);
+    expect(rows).toEqual(["Ann22,000 GBP150% (1 of 2)", "Ben22,000 GBP050% (1 of 2)"]);
+    root.unmount();
+  });
 });
+

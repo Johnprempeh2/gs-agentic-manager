@@ -364,3 +364,53 @@ export function lostReasonBreakdown(cases: Array<{ fields?: Record<string, unkno
     .map(([reason, items]) => ({ reason, count: items.length, totals: sumDealValues(items) }))
     .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason));
 }
+
+export interface OwnerScorecardRow {
+  owner: string;
+  open: number;
+  openTotals: Array<{ currency: string; total: number }>;
+  weighted: Array<{ currency: string; total: number }>;
+  overdueNextSteps: number;
+  won: number;
+  lost: number;
+  winRate: number | null;
+}
+
+/**
+ * Pipedrive's deals by owner: open deals and value, weighted value, next steps
+ * gone past their date, and the win rate over the last `days` days. Deals with
+ * no owner are grouped under "No owner". Largest open pipeline first.
+ */
+export function ownerScorecard(cases: Array<{ fields?: Record<string, unknown> | null }>, now: Date = new Date(), days = 90): OwnerScorecardRow[] {
+  const today = now.toISOString().slice(0, 10);
+  const groups = new Map<string, Array<{ fields?: Record<string, unknown> | null }>>();
+  for (const item of cases) {
+    const owner = readDevtoolsDeal(item.fields).owner ?? "No owner";
+    groups.set(owner, [...(groups.get(owner) ?? []), item]);
+  }
+  return [...groups.entries()]
+    .map(([owner, items]) => {
+      const open = items.filter((item) => {
+        const status = readDevtoolsDeal(item.fields).status?.toLowerCase();
+        return !status || status === "open";
+      });
+      const overdueNextSteps = open.filter((item) => {
+        const next = readDevtoolsDeal(item.fields).nextActivity;
+        return next != null && /^\d{4}-\d{2}-\d{2}/.test(next) && next.slice(0, 10) < today;
+      }).length;
+      const rate = dealWinRate(items, now, days);
+      return {
+        owner,
+        open: open.length,
+        openTotals: sumDealValues(open),
+        weighted: weightedDealValues(open),
+        overdueNextSteps,
+        won: rate?.won ?? 0,
+        lost: rate?.lost ?? 0,
+        winRate: rate?.percent ?? null,
+      };
+    })
+    .filter((row) => row.open > 0 || row.won + row.lost > 0)
+    .sort((left, right) =>
+      (right.openTotals[0]?.total ?? 0) - (left.openTotals[0]?.total ?? 0) || right.open - left.open || left.owner.localeCompare(right.owner));
+}
