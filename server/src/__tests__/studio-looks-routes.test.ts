@@ -55,7 +55,7 @@ describeEmbeddedPostgres("studio looks routes", () => {
     return routeApp(ctx.db, actor, (db) => {
       const router = Router();
       router.use(studioLookRoutes(db));
-      router.use(generatedImageRoutes(db, storage, { resolveProvider: () => imageProvider }));
+      router.use(generatedImageRoutes(db, storage, { resolveProvider: () => imageProvider, localGpu: null }));
       return router;
     });
   }

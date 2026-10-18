@@ -1,27 +1,32 @@
 import { z } from "zod";
 import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from "./studio/camera.js";
+import { LOCAL_GPU_LABEL, type LocalGpuStatus } from "./image-generation.js";
 
 // Video generation: the image studio's moving-picture side. A clip is made
 // from a written description (text to video) or by animating a finished
 // studio image (image to video). The server picks the service from its
 // environment, as it does for images; nothing here names a key.
 
-export const VIDEO_GENERATION_PROVIDERS = ["higgsfield", "mock"] as const;
+export const VIDEO_GENERATION_PROVIDERS = ["higgsfield", "mock", "local"] as const;
 export type VideoGenerationProviderId = (typeof VIDEO_GENERATION_PROVIDERS)[number];
 
 export const VIDEO_GENERATION_PROVIDER_LABELS: Record<VideoGenerationProviderId, string> = {
   higgsfield: "Higgsfield",
   mock: "Practice mode",
+  local: LOCAL_GPU_LABEL,
 };
 
 /**
  * Video models GSAM can ask Higgsfield for. Paths and durations come from
  * Higgsfield's published OpenAPI document (docs.higgsfield.ai, checked
- * 17 Oct 2026). A model without a textPath only animates an image.
+ * 17 Oct 2026). A model without a textPath only animates an image. Models
+ * with provider "local" run on this PC through ComfyUI; their paths are not
+ * used.
  */
 export const VIDEO_MODELS = [
   {
     id: "kling-2.5-turbo-pro",
+    provider: "higgsfield",
     label: "Kling 2.5 Turbo Pro",
     hint: "Best motion and detail",
     textPath: "kling-video/v2.5-turbo/pro/text-to-video",
@@ -30,6 +35,7 @@ export const VIDEO_MODELS = [
   },
   {
     id: "kling-2.5-turbo-standard",
+    provider: "higgsfield",
     label: "Kling 2.5 Turbo",
     hint: "Cheaper, animates an image only",
     textPath: null,
@@ -38,14 +44,26 @@ export const VIDEO_MODELS = [
   },
   {
     id: "hailuo-2.3",
+    provider: "higgsfield",
     label: "Hailuo 2.3",
     hint: "Lively and expressive",
     textPath: "minimax/hailuo-2.3/standard/text-to-video",
     imagePath: "minimax/hailuo-2.3/standard/image-to-video",
     durations: [6, 10],
   },
+  {
+    // Wan 2.2 TI2V 5B, Apache 2.0: words or a picture to a 24 fps clip.
+    id: "wan-2.2-5b",
+    provider: "local",
+    label: "Wan 2.2 (this PC)",
+    hint: "Runs on this PC, no cost, a few minutes a clip",
+    textPath: "local",
+    imagePath: "local",
+    durations: [3, 5],
+  },
 ] as const satisfies ReadonlyArray<{
   id: string;
+  provider: "higgsfield" | "local";
   label: string;
   hint: string;
   textPath: string | null;
@@ -179,6 +197,8 @@ export interface GeneratedVideo {
   organisation: { id: string; name: string } | null;
   /** Starred as a keeper by the board or an agent. */
   favourite: boolean;
+  /** For a pending local clip: its place in the queue and how far along it is. */
+  progress: GeneratedVideoProgress | null;
   createdAt: string;
   completedAt: string | null;
 }
@@ -197,4 +217,13 @@ export interface VideoGenerationStatus {
   configured: boolean;
   provider: VideoGenerationProviderId | null;
   providerLabel: string | null;
+  /** The local GPU, when it is answering. */
+  local: LocalGpuStatus | null;
+}
+
+/** Where a local clip has got to: queuePosition 0 means the graphics card is on it. */
+export interface GeneratedVideoProgress {
+  queuePosition: number;
+  /** Share of the drawing steps done, 0 to 100; null before it starts. */
+  percent: number | null;
 }

@@ -27,10 +27,11 @@ export function generatedImageRoutes(
   const router = Router();
   const svc = generatedImageService(db, storage, options);
 
-  router.get("/companies/:companyId/image-generation", (req, res) => {
+  router.get("/companies/:companyId/image-generation", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    res.json(describeImageGeneration(svc.status()));
+    const { provider, local } = await svc.status();
+    res.json(describeImageGeneration(provider, local));
   });
 
   router.get("/companies/:companyId/generated-images", async (req, res) => {

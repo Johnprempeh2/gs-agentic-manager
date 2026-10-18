@@ -3,6 +3,7 @@ import { createHiggsfieldProvider, higgsfieldCredentialsFromEnv } from "../servi
 import { createOpenAiImageProvider } from "../services/image-generation/openai.js";
 import { describeImageGeneration, resolveImageGenerationProvider } from "../services/image-generation/registry.js";
 import { ImageGenerationError } from "../services/image-generation/types.js";
+import { describeVideoGeneration } from "../services/video-generation/registry.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
@@ -116,7 +117,19 @@ describe("openai image provider", () => {
 describe("provider selection", () => {
   it("is off with no key", () => {
     expect(resolveImageGenerationProvider({})).toBeNull();
-    expect(describeImageGeneration(null)).toEqual({ configured: false, provider: null, providerLabel: null, model: null });
+    expect(describeImageGeneration(null)).toEqual({ configured: false, provider: null, providerLabel: null, model: null, local: null });
+  });
+
+  it("falls back to this PC's first model when no other service is set up", () => {
+    const local = { label: "This PC (local GPU)", imageModels: ["flux-schnell"], videoModels: [], queued: 0 };
+    expect(describeImageGeneration(null, local)).toEqual({
+      configured: true,
+      provider: "local",
+      providerLabel: "This PC (local GPU)",
+      model: "flux-schnell",
+      local,
+    });
+    expect(describeVideoGeneration(null, local)).toMatchObject({ configured: false, local });
   });
 
   it("picks Higgsfield on its own when its key is set", () => {

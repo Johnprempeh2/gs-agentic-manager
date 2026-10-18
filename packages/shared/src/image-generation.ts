@@ -5,13 +5,46 @@ import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from
 // description and GSAM keeps the result as a company image. The provider is
 // chosen by the server from its environment; nothing here names a key.
 
-export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock"] as const;
+/** What people see for models that run on the GSAM machine's own graphics card. */
+export const LOCAL_GPU_LABEL = "This PC (local GPU)";
+
+/**
+ * Image models that run on this PC through ComfyUI. Both licences allow
+ * commercial use of the pictures: FLUX.1 schnell is Apache 2.0, SDXL base 1.0
+ * is CreativeML Open RAIL++-M.
+ */
+export const LOCAL_IMAGE_MODELS = [
+  { id: "flux-schnell", label: "FLUX.1 schnell", hint: "Fast and sharp", negativePrompt: false },
+  { id: "sdxl", label: "SDXL", hint: "Takes words to leave out", negativePrompt: true },
+] as const;
+export type LocalImageModelId = (typeof LOCAL_IMAGE_MODELS)[number]["id"];
+
+export function localImageModel(id: string | null | undefined) {
+  return LOCAL_IMAGE_MODELS.find((model) => model.id === id) ?? null;
+}
+
+/** What the local GPU can do right now; null on a status when it is not answering. */
+export interface LocalGpuStatus {
+  label: string;
+  /** Local image model ids that are installed and ready. */
+  imageModels: string[];
+  /** Local video model ids that are installed and ready. */
+  videoModels: string[];
+  /** Pictures and clips waiting for the graphics card, including the one it is on. */
+  queued: number;
+}
+
+/** Highest seed a request may name. */
+export const IMAGE_SEED_MAX = 4_294_967_295;
+
+export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock", "local"] as const;
 export type ImageGenerationProviderId = (typeof IMAGE_GENERATION_PROVIDERS)[number];
 
 export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId, string> = {
   higgsfield: "Higgsfield",
   openai: "OpenAI",
   mock: "Practice mode",
+  local: LOCAL_GPU_LABEL,
 };
 
 /**
@@ -203,6 +236,14 @@ export const createGeneratedImageSchema = z.object({
   issueId: z.string().uuid().nullable().optional(),
   /** The client the image is for. */
   organisationId: z.string().uuid().nullable().optional(),
+  /** Which service makes it; left out, the server's default. "local" runs it on this PC. */
+  provider: z.enum(IMAGE_GENERATION_PROVIDERS).optional(),
+  /** For provider "local": one of LOCAL_IMAGE_MODELS. */
+  model: z.string().trim().max(100).optional(),
+  /** Same seed and words give the same picture (local models only); versions count up from it. */
+  seed: z.number().int().min(0).max(IMAGE_SEED_MAX).optional(),
+  /** Things to keep out of the picture (local models that take them). */
+  negativePrompt: z.string().trim().max(1000).optional(),
 });
 export type CreateGeneratedImage = z.input<typeof createGeneratedImageSchema>;
 
@@ -333,4 +374,6 @@ export interface ImageGenerationStatus {
   provider: ImageGenerationProviderId | null;
   providerLabel: string | null;
   model: string | null;
+  /** The local GPU, when it is answering. */
+  local: LocalGpuStatus | null;
 }

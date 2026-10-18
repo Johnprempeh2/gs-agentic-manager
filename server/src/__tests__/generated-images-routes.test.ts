@@ -7,12 +7,14 @@ import {
   studioCameraWords,
   type GeneratedImage,
   type GeneratedImagesResponse,
+  type LocalGpuStatus,
   type StudioCameraSettings,
 } from "@greatstone/shared";
 import { generatedImageRoutes } from "../routes/generated-images.js";
 import { waitForGeneratedImageJobs } from "../services/generated-images.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "../services/image-generation/types.js";
 import type { StorageService } from "../storage/types.js";
+import type { LocalGpu } from "../services/local-gpu.js";
 import {
   describeEmbeddedPostgres,
   resetCompanyIssueFixtures,
@@ -65,9 +67,31 @@ describeEmbeddedPostgres("generated images routes", () => {
     },
   });
 
-  function app(actor: BoardActor, storage: StorageService, resolveProvider: () => ImageGenerationProvider | null) {
-    return routeApp(ctx.db, actor, (db) => generatedImageRoutes(db, storage, { resolveProvider }));
+  function app(
+    actor: BoardActor,
+    storage: StorageService,
+    resolveProvider: () => ImageGenerationProvider | null,
+    localGpu: LocalGpu | null = null,
+  ) {
+    return routeApp(ctx.db, actor, (db) => generatedImageRoutes(db, storage, { resolveProvider, localGpu }));
   }
+
+  /** A pretend local GPU: `status` null means ComfyUI is not answering. */
+  function fakeLocalGpu(status: LocalGpuStatus | null, generate: ImageGenerationProvider["generate"]): LocalGpu & { models: string[] } {
+    const models: string[] = [];
+    return {
+      models,
+      status: async () => status,
+      imageProvider: (model) => {
+        models.push(model);
+        return { id: "local", model, generate };
+      },
+      videoProvider: () => {
+        throw new Error("not used");
+      },
+    };
+  }
+  const LOCAL_READY: LocalGpuStatus = { label: "This PC (local GPU)", imageModels: ["flux-schnell", "sdxl"], videoModels: [], queued: 0 };
 
   it("says when no image service is set up, and refuses to start one", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images off");
@@ -75,7 +99,7 @@ describeEmbeddedPostgres("generated images routes", () => {
     const server = app(actor, storage, () => null);
 
     const status = await request(server).get(`/api/companies/${companyId}/image-generation`);
-    expect(status.body).toEqual({ configured: false, provider: null, providerLabel: null, model: null });
+    expect(status.body).toEqual({ configured: false, provider: null, providerLabel: null, model: null, local: null });
 
     const created = await request(server)
       .post(`/api/companies/${companyId}/generated-images`)
@@ -103,7 +127,7 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(pending).toMatchObject({ status: "pending", prompt: "A lighthouse at dawn, watercolour", aspectRatio: "16:9", createdByUserId: userId, contentPath: null, altText: "A lighthouse at dawn, watercolour" });
 
     await waitForGeneratedImageJobs();
-    expect(seen).toEqual([{ prompt: "A lighthouse at dawn, watercolour", aspectRatio: "16:9" }]);
+    expect(seen).toEqual([{ prompt: "A lighthouse at dawn, watercolour", aspectRatio: "16:9", jobId: pending.id }]);
 
     const fetched = await request(server).get(`/api/generated-images/${pending.id}`);
     expect(fetched.body.status).toBe("completed");
@@ -353,5 +377,71 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(seventh.status).toBe(429);
     release();
     await waitForGeneratedImageJobs();
+  });
+
+  it("offers this PC's models only while ComfyUI answers", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images local status");
+    const { storage } = memoryStorage();
+    const ok = async () => ({ image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null });
+    const up = await request(app(actor, storage, () => provider(ok), fakeLocalGpu(LOCAL_READY, ok))).get(
+      `/api/companies/${companyId}/image-generation`,
+    );
+    expect(up.body).toMatchObject({ configured: true, provider: "higgsfield", local: LOCAL_READY });
+    const down = await request(app(actor, storage, () => provider(ok), fakeLocalGpu(null, ok))).get(
+      `/api/companies/${companyId}/image-generation`,
+    );
+    expect(down.body).toMatchObject({ configured: true, provider: "higgsfield", local: null });
+    const onlyLocal = await request(app(actor, storage, () => null, fakeLocalGpu(LOCAL_READY, ok))).get(
+      `/api/companies/${companyId}/image-generation`,
+    );
+    expect(onlyLocal.body).toMatchObject({ configured: true, provider: "local", model: "flux-schnell" });
+  });
+
+  it("makes versions on this PC with counting seeds and the words to leave out, stored like any image", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images local");
+    const { storage } = memoryStorage();
+    const seen: Array<{ seed?: number; negativePrompt?: string | null }> = [];
+    const local = fakeLocalGpu(LOCAL_READY, async (input) => {
+      seen.push({ seed: input.seed, negativePrompt: input.negativePrompt });
+      return { image: { bytes: PNG, contentType: "image/png" }, providerRequestId: "comfy-1" };
+    });
+    const server = app(actor, storage, () => null, local);
+    const made = await request(server)
+      .post(`/api/companies/${companyId}/generated-images/variations`)
+      .send({ prompt: "A lighthouse at dawn", provider: "local", model: "sdxl", seed: 41, negativePrompt: "fog", count: 2 });
+    expect(made.status).toBe(202);
+    expect((made.body.images as GeneratedImage[]).map((image) => [image.provider, image.model])).toEqual([
+      ["local", "sdxl"],
+      ["local", "sdxl"],
+    ]);
+    await waitForGeneratedImageJobs();
+    expect(local.models).toEqual(["sdxl", "sdxl"]);
+    expect(seen.map((item) => item.seed).sort()).toEqual([41, 42]);
+    expect(seen.every((item) => item.negativePrompt === "fog")).toBe(true);
+    const list = await request(server).get(`/api/companies/${companyId}/generated-images`);
+    expect((list.body as GeneratedImagesResponse).images.every((image) => image.status === "completed" && image.contentPath)).toBe(true);
+  });
+
+  it("says plainly when this PC is not answering or the model is not there", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images local down");
+    const { storage } = memoryStorage();
+    const ok = async () => ({ image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null });
+    const down = await request(app(actor, storage, () => provider(ok), fakeLocalGpu(null, ok)))
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A lighthouse", provider: "local" });
+    expect(down.status).toBe(422);
+    expect(down.body.details.code).toBe("local_gpu_unavailable");
+    const missing = await request(
+      app(actor, storage, () => provider(ok), fakeLocalGpu({ ...LOCAL_READY, imageModels: ["flux-schnell"] }, ok)),
+    )
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A lighthouse", provider: "local", model: "sdxl" });
+    expect(missing.status).toBe(422);
+    expect(missing.body.details.code).toBe("local_image_model_missing");
+    const wrongCloud = await request(app(actor, storage, () => null, fakeLocalGpu(LOCAL_READY, ok)))
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A lighthouse", provider: "higgsfield" });
+    expect(wrongCloud.body.details.code).toBe("image_generation_not_configured");
+    expect(await ctx.db.select().from(generatedImages)).toHaveLength(0);
   });
 });
