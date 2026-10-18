@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerPipelineCommands, selectDealsDue } from "../commands/pipelines.js";
+import { completeDealNextStep, registerPipelineCommands, selectDealsDue } from "../commands/pipelines.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
@@ -187,6 +187,45 @@ describe("pipelines deals-due", () => {
       "http://localhost:3100/api/pipelines/pd/cases",
     ]);
     expect(String(log.mock.calls[0]?.[0])).toContain("2020-01-01  Acme: Call");
+  });
+});
+
+describe("completeDealNextStep", () => {
+  it("moves the next step to the last activity and books the follow-up", () => {
+    expect(completeDealNextStep(
+      { dealStatus: "open", nextActivityDate: "2026-10-15", nextActivitySubject: "Demo", lastActivityNote: "old" },
+      { note: " Went well ", nextDate: "2026-10-22", nextSubject: "Send proposal" },
+      "2026-10-18",
+    )).toEqual({
+      dealStatus: "open",
+      lastActivityDate: "2026-10-18",
+      lastActivitySubject: "Demo",
+      lastActivityNote: "Went well",
+      nextActivityDate: "2026-10-22",
+      nextActivitySubject: "Send proposal",
+    });
+    expect(completeDealNextStep({ dealStatus: "open", nextActivityDate: "2026-10-15" }, {}, "2026-10-18")).toEqual({
+      dealStatus: "open",
+      lastActivityDate: "2026-10-18",
+    });
+  });
+
+  it("sends the updated fields with the case version", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        case: { id: CASE_ID, title: "Acme", version: 7, fields: { dealStatus: "open", nextActivityDate: "2026-10-15", nextActivitySubject: "Call" } },
+        stage: { kind: "working" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ case: { id: CASE_ID } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await run(["pipelines", "case", "next-step-done", CASE_ID, "--note", "Spoke to Sam", "--next-date", "2026-10-25"]);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`http://localhost:3100/api/cases/${CASE_ID}`);
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("PATCH");
+    const body = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(body.expectedVersion).toBe(7);
+    expect(body.fields).toMatchObject({ lastActivitySubject: "Call", lastActivityNote: "Spoke to Sam", nextActivityDate: "2026-10-25" });
+    expect(body.fields.nextActivitySubject).toBeUndefined();
   });
 });
 
