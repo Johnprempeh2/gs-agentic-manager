@@ -50,6 +50,7 @@ import {
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useOptionalToastActions } from "../context/ToastContext";
+import { ErrorState } from "@/components/ErrorState";
 import { classifySkillDenial } from "@/lib/skill-policy-denial";
 import { agentsApi } from "@/api/agents";
 import { companySkillsApi } from "@/api/companySkills";
@@ -610,7 +611,7 @@ function StudioNewSkillPanel({
           </div>
         </div>
         <div className="space-y-2">
-          <Label>Color</Label>
+          <Label>Colour</Label>
           <div className="flex flex-wrap items-center gap-2">
             {SKILL_CREATE_ACCENTS.map((color) => (
               <button
@@ -2109,7 +2110,14 @@ function InputPane({
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               variant="destructive"
-                              onClick={() => deleteMutation.mutate(id)}
+                              onClick={async () => {
+                                const input = inputs.find((i) => i.id === id);
+                                const inputName = input?.name ?? node.name;
+                                if (!(await confirmAction({ title: `Delete input "${inputName}"?`, confirmLabel: "Delete input", tone: "destructive" }))) {
+                                  return;
+                                }
+                                deleteMutation.mutate(id);
+                              }}
                             >
                               <Trash2 className="mr-2 h-4 w-4" /> Delete
                             </DropdownMenuItem>
@@ -2204,6 +2212,7 @@ function SaveInputDialog({
   onSaved: (input: CompanySkillTestInput) => void;
 }) {
   const queryClient = useQueryClient();
+  const onError = useMutationErrorToast();
   const [name, setName] = useState("");
   const [content, setContent] = useState(initialContent);
 
@@ -2231,6 +2240,7 @@ function SaveInputDialog({
       });
       onSaved(input);
     },
+    onError: onError("Could not save input"),
   });
 
   return (
@@ -2569,6 +2579,14 @@ function RunsPane({
         <div className="min-h-0 flex-1 overflow-auto p-3">
           {runsQuery.isLoading ? (
             <div className="text-xs text-muted-foreground">Loading runs…</div>
+          ) : runsQuery.error && !runsQuery.data ? (
+            <ErrorState
+              compact
+              error={runsQuery.error}
+              title="Test runs did not load"
+              onRetry={() => void runsQuery.refetch()}
+              retrying={runsQuery.isFetching}
+            />
           ) : runs.length === 0 ? (
             <EmptyState icon={FlaskConical} message="No test runs yet. Pick an agent and Run." />
           ) : (
@@ -3029,6 +3047,7 @@ function RunDetailView({
   const skillId = skill.id;
   const queryClient = useQueryClient();
   const onError = useMutationErrorToast();
+  const confirmAction = useConfirm();
   const detailQuery = useQuery({
     queryKey: queryKeys.companySkills.testRunDetail(companyId, skillId, runId),
     queryFn: () => companySkillsApi.testRunDetail(companyId, skillId, runId),
@@ -3093,6 +3112,19 @@ function RunDetailView({
     return (
       <PaneScaffold title="Run" action={<BackButton onBack={onBack} />}>
         <div className="p-3 text-xs text-muted-foreground">Loading run…</div>
+      </PaneScaffold>
+    );
+  }
+  if (!detail && detailQuery.error) {
+    return (
+      <PaneScaffold title="Run" action={<BackButton onBack={onBack} />}>
+        <ErrorState
+          compact
+          error={detailQuery.error}
+          title="This run did not load"
+          onRetry={() => void detailQuery.refetch()}
+          retrying={detailQuery.isFetching}
+        />
       </PaneScaffold>
     );
   }
@@ -3236,7 +3268,12 @@ function RunDetailView({
               size="sm"
               className="text-destructive hover:text-destructive"
               disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate()}
+              onClick={async () => {
+                if (!(await confirmAction({ title: "Delete this test run?", confirmLabel: "Delete run", tone: "destructive" }))) {
+                  return;
+                }
+                deleteMutation.mutate();
+              }}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
             </Button>
@@ -3323,6 +3360,7 @@ function InteractionSection({
   onAnswered: () => void;
 }) {
   const harnessIssueId = detail.harnessIssue?.id ?? null;
+  const onError = useMutationErrorToast();
   const hasInlineAnswerable = detail.interactions.some((i) => isInteractionAnswerable(i));
 
   // Only fetch the full interaction objects (needed to render answerable cards)
@@ -3428,6 +3466,7 @@ function VersionHistorySheet({
 }) {
   const skillId = skill.id;
   const queryClient = useQueryClient();
+  const onError = useMutationErrorToast();
   const versionsQuery = useQuery({
     queryKey: queryKeys.companySkills.versions(companyId, skillId),
     queryFn: () => companySkillsApi.versions(companyId, skillId),
@@ -3452,6 +3491,7 @@ function VersionHistorySheet({
       queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.versions(companyId, skillId) });
       onRestored();
     },
+    onError: onError("Could not restore this version"),
   });
 
   const left = versions.find((v) => v.id === leftId) ?? null;
@@ -3470,6 +3510,14 @@ function VersionHistorySheet({
         <div className="mt-3 space-y-2 overflow-auto">
           {versionsQuery.isLoading ? (
             <div className="text-xs text-muted-foreground">Loading versions…</div>
+          ) : versionsQuery.error && !versionsQuery.data ? (
+            <ErrorState
+              compact
+              error={versionsQuery.error}
+              title="Version history did not load"
+              onRetry={() => void versionsQuery.refetch()}
+              retrying={versionsQuery.isFetching}
+            />
           ) : versions.length === 0 ? (
             <EmptyState icon={History} message="No versions yet. Save changes to create the first." />
           ) : (

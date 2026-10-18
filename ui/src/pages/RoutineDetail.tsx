@@ -423,7 +423,7 @@ export function RoutineDetail() {
     onError: (runError) => {
       pushToast({
         title: "Could not start the routine",
-        body: runError instanceof Error ? runError.message : "GS Agentic Manager could not start the routine run.",
+        body: runError instanceof Error ? runError.message : "The routine could not start. Try again.",
         tone: "error",
       });
     },
@@ -542,7 +542,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Could not make a new webhook secret",
+        title: "Could not make a new secret key",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not make a new secret key.",
         tone: "error",
       });

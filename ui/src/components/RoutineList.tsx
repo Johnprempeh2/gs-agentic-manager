@@ -15,6 +15,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { formatDateTime } from "@/lib/utils";
 import { lastRunLabel, nextRunLabel, nextScheduledRun, scheduleSummary, type ScheduleTriggerSummary } from "@/lib/routine-schedule";
 import { useConfirm } from "@/context/ConfirmContext";
+import { routineRunStatusLabel } from "@/lib/routine-run-status";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -49,7 +50,7 @@ export function formatLastRunTimestamp(value: Date | string | null | undefined) 
 
 export function formatRoutineRunStatus(value: string | null | undefined) {
   if (!value) return null;
-  return value.replaceAll("_", " ");
+  return routineRunStatusLabel(value);
 }
 
 export function nextRoutineStatus(currentStatus: string, enabled: boolean) {

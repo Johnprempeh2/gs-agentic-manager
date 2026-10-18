@@ -1474,7 +1474,7 @@ describe("inbox helpers", () => {
     expect(groupInboxWorkItems(items, "type")).toEqual([
       { key: "issue", label: "Tasks", items: [items[1], items[2]] },
       { key: "approval", label: "Approvals", items: [items[0]] },
-      { key: "failed_run", label: "Failed runs", items: [items[3]] },
+      { key: "failed_run", label: "Stopped with an error", items: [items[3]] },
       { key: "join_request", label: "Join requests", items: [items[4]] },
     ]);
   });

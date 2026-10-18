@@ -10,6 +10,7 @@ import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
 import { FeedCard } from "./FeedCard";
+import { ErrorState } from "@/components/ErrorState";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -352,7 +353,13 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
     refetchInterval: activityRefetchInterval,
     leaderOnly: true,
   });
-  const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
+  const {
+    data: activity,
+    dataUpdatedAt: activityUpdatedAt,
+    error: activityError,
+    refetch: refetchActivity,
+    isFetching: activityFetching,
+  } = useQuery({
     queryKey: activityQueryKey,
     queryFn: ({ signal }) => activityApi.list(selectedCompanyId!, undefined, { signal }),
     enabled: sharedActivity.enabled,
@@ -693,7 +700,15 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
         className="flex-1 min-h-0 overflow-y-auto"
         onScroll={handleScroll}
       >
-        {isEmpty ? (
+        {activityError && !activity ? (
+          <ErrorState
+            compact
+            error={activityError}
+            title="Agent activity did not load"
+            onRetry={() => void refetchActivity()}
+            retrying={activityFetching}
+          />
+        ) : isEmpty ? (
           <div className="flex min-h-0 flex-1 items-center justify-center p-6 h-full">
             <div className="flex flex-col items-center gap-2 max-w-(--sz-16rem)">
               {emptyMessage?.showPulse && (

@@ -920,7 +920,7 @@ const inboxWorkItemKindOrder: InboxWorkItem["kind"][] = [
 const inboxWorkItemKindLabels: Record<InboxWorkItem["kind"], string> = {
   issue: "Tasks",
   approval: "Approvals",
-  failed_run: "Failed runs",
+  failed_run: "Stopped with an error",
   join_request: "Join requests",
 };
 

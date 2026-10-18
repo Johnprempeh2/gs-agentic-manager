@@ -40,7 +40,7 @@ export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   approval: "Approval",
   connection: "Connection",
   recovery: "Stopped",
-  failed_run: "Failed run",
+  failed_run: "Stopped with an error",
   blocked: "Blocked",
   review: "Review",
   decision: "Decision",
