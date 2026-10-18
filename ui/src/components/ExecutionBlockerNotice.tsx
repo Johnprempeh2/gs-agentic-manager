@@ -38,7 +38,7 @@ export function ExecutionBlockerNotice({ companyId, issueId, blocker, onRetried 
         : `${requiresInspection ? "Recovery needed. " : ""}${blocker.nextAction}`}</span>
       {requiresInspection && blocker.agentId && blocker.runId && (
         <Button variant="outline" size="sm" asChild>
-          <Link to={`/agents/${blocker.agentId}/runs/${blocker.runId}`}>Inspect run</Link>
+          <Link to={`/agents/${blocker.agentId}/runs/${blocker.runId}`}>See what went wrong</Link>
         </Button>
       )}
       {!requiresInspection && failedRun && (

@@ -245,7 +245,7 @@ export function IssueDetailHeader({
           <Link
             to={`/routines/${issue.originId}`}
             className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-(length:--text-nano) font-medium text-violet-600 dark:text-violet-400 shrink-0 hover:bg-violet-500/20 transition-colors"
-            title={`Routine execution from routine ${issue.originId}`}
+            title="Started automatically by a routine"
           >
             <Repeat className="h-3 w-3" />
             Routine
@@ -293,7 +293,7 @@ export function IssueDetailHeader({
             variant="outline"
             data-testid="issue-detail-parked-blocker"
             className="border-amber-500/60 bg-amber-500/15 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
-            title="Blocked by parked work: at least one assigned blocker is in the backlog and will not wake its assignee."
+            title="Waiting on a task that is parked in the backlog, so nobody will start it until its status changes."
           >
             <Flag className="h-3 w-3" />
             Blocked by parked work

@@ -1859,7 +1859,7 @@ describe("TaskChatComposer", () => {
         queuedEdit={{ commentId: "queued", body: "Queued draft" }}
         takeover={{ id: "question", label: "Pending input", pendingCount: 1, content: <button>Answer question</button>, onDismiss: vi.fn(), onSkip }}
       />));
-      expect(container.textContent).toContain("Subtree is paused.");
+      expect(container.textContent).toContain("This task and its sub-tasks are paused.");
       expect(container.textContent).not.toContain("Answer question");
       expect(container.textContent).not.toContain("Skip");
       expect(container.querySelector('[contenteditable="true"]')).toBeNull();

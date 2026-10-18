@@ -331,9 +331,9 @@ for (const adapter of ["process", "paperclip_runner"] as const) {
       ).toBeNull();
       expect((await json(await request.get(`/api/heartbeat-runs/${childRun.id}`))).status).toBe("running");
       await expect(editor).toBeVisible();
-      await expect(page.getByText("Subtree is paused.", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("This task and its sub-tasks are paused.", { exact: true })).toHaveCount(0);
       // Pausing future work is a separate, explicit subtree action.
-      await menu(page, "Pause subtree");
+      await menu(page, "Pause task and sub-tasks");
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect.poll(async () => (await json(await request.get(`/api/heartbeat-runs/${childRun.id}`))).status,
         { timeout: 35_000 }).toBe("cancelled");
@@ -352,7 +352,7 @@ for (const adapter of ["process", "paperclip_runner"] as const) {
           .status,
       ).toBe("running");
       await expect(
-        page.getByText("Subtree is paused.", { exact: true }),
+        page.getByText("This task and its sub-tasks are paused.", { exact: true }),
       ).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Dismiss notification" }),
@@ -364,7 +364,7 @@ for (const adapter of ["process", "paperclip_runner"] as const) {
       }
       await page.reload();
       await expect(
-        page.getByText("Subtree is paused.", { exact: true }),
+        page.getByText("This task and its sub-tasks are paused.", { exact: true }),
       ).toBeVisible();
       // Cross the isolated server's ten-second scheduler interval repeatedly.
       for (let i = 0; i < 3; i++) {
@@ -376,11 +376,11 @@ for (const adapter of ["process", "paperclip_runner"] as const) {
           await json(await request.get(`/api/issues/${child.id}/live-runs`)),
         ).toEqual([]);
       }
-      await menu(page, "Resume subtree");
+      await menu(page, "Resume task and sub-tasks");
       await page.getByRole("dialog").getByRole("checkbox").check();
       await page
         .getByRole("dialog")
-        .getByRole("button", { name: "Resume subtree", exact: true })
+        .getByRole("button", { name: "Resume task and sub-tasks", exact: true })
         .click();
       await expect(page.getByRole("dialog")).toHaveCount(0);
       if (adapter === "process") {
@@ -404,15 +404,15 @@ for (const adapter of ["process", "paperclip_runner"] as const) {
         }, { timeout: 30_000 }).toBeGreaterThanOrEqual(5);
         await page.screenshot({ path: testInfo.outputPath("native-resumed.png"), fullPage: true });
       }
-      await menu(page, "Pause subtree");
+      await menu(page, "Pause task and sub-tasks");
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(
-        page.getByText("Subtree is paused.", { exact: true }),
+        page.getByText("This task and its sub-tasks are paused.", { exact: true }),
       ).toBeVisible();
-      await menu(page, "Cancel subtree...");
+      await menu(page, "Cancel task and sub-tasks...");
       const dialog = page.getByRole("dialog");
       await expect(
-        dialog.getByRole("heading", { name: "Cancel subtree?" }),
+        dialog.getByRole("heading", { name: "Cancel this task and its sub-tasks?" }),
       ).toBeVisible();
       await expect(
         dialog.locator('textarea, input[type="checkbox"]'),
@@ -421,7 +421,7 @@ for (const adapter of ["process", "paperclip_runner"] as const) {
       expect(
         (await json(await request.get(`/api/issues/${parent.id}`))).status,
       ).not.toBe("cancelled");
-      await menu(page, "Cancel subtree...");
+      await menu(page, "Cancel task and sub-tasks...");
       await dialog
         .getByRole("button", { name: "Cancel 2 tasks", exact: true })
         .click();

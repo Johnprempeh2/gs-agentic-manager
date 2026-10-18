@@ -29,8 +29,8 @@ import { Badge } from "@/components/ui/badge";
 
 const EXECUTION_WORKSPACE_OPTIONS = [
   { value: "shared_workspace", label: "Project default" },
-  { value: "isolated_workspace", label: "New isolated workspace" },
-  { value: "reuse_existing", label: "Reuse existing workspace" },
+  { value: "isolated_workspace", label: "A fresh separate copy" },
+  { value: "reuse_existing", label: "One already in use" },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -97,11 +97,11 @@ function configuredWorkspaceLabel(
 ) {
   switch (selection) {
     case "isolated_workspace":
-      return "New isolated workspace";
+      return "A fresh separate copy";
     case "reuse_existing":
       return reusableWorkspace?.mode === "isolated_workspace"
         ? "Existing isolated workspace"
-        : "Reuse existing workspace";
+        : "One already in use";
     default:
       return "Project default";
   }
