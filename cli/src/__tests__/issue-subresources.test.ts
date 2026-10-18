@@ -47,6 +47,22 @@ describe("issue subresource commands", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes the priority, creator and due date filters to the issue list", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "list", "-C", COMPANY_ID, "--priority", "critical,high", "--created-by", "me", "--due-before", "2026-10-31", "--overdue"]);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe(`/api/companies/${COMPANY_ID}/issues`);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      priority: "critical,high",
+      createdByAgentId: "me",
+      dueBefore: "2026-10-31",
+      overdue: "true",
+    });
+  });
+
   it("wraps diagnostics, execution, digests, agent questions and document links", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({})));
     vi.stubGlobal("fetch", fetchMock);

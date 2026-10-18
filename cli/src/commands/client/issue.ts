@@ -54,6 +54,10 @@ interface IssueBaseOptions extends BaseClientOptions {
   assigneeAgentId?: string;
   projectId?: string;
   match?: string;
+  priority?: string;
+  createdBy?: string;
+  dueBefore?: string;
+  overdue?: boolean;
 }
 
 interface IssueCreateOptions extends BaseClientOptions {
@@ -218,6 +222,10 @@ export function registerIssueCommands(program: Command): void {
       .option("--status <csv>", "Comma-separated statuses")
       .option("--assignee-agent-id <id>", "Filter by assignee agent ID")
       .option("--project-id <id>", "Filter by project ID")
+      .option("--priority <csv>", "Comma-separated priorities, e.g. critical,high")
+      .option("--created-by <id>", "Only issues this agent created; use me for the calling agent")
+      .option("--due-before <date>", "Only issues due on or before this date (YYYY-MM-DD)")
+      .option("--overdue", "Only open issues past their due date")
       .option("--match <text>", "Local text match on identifier/title/description")
       .action(async (opts: IssueBaseOptions) => {
         try {
@@ -226,6 +234,10 @@ export function registerIssueCommands(program: Command): void {
           if (opts.status) params.set("status", opts.status);
           if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
           if (opts.projectId) params.set("projectId", opts.projectId);
+          if (opts.priority) params.set("priority", opts.priority);
+          if (opts.createdBy) params.set("createdByAgentId", opts.createdBy);
+          if (opts.dueBefore) params.set("dueBefore", opts.dueBefore);
+          if (opts.overdue) params.set("overdue", "true");
 
           const query = params.toString();
           const path = `${apiPath`/api/companies/${ctx.companyId}/issues`}${query ? `?${query}` : ""}`;

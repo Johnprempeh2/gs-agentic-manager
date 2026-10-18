@@ -1977,6 +1977,39 @@ export interface IssueFilters {
   sortDir?: "asc" | "desc";
   /** ISO 8601 timestamp — only return issues with updatedAt strictly after this value. */
   updatedSince?: string;
+  /** One or more priorities, as a comma list or an array. */
+  priority?: string | readonly string[];
+  /** Only issues created by this agent. */
+  createdByAgentId?: string;
+  /** Only issues due on or before this date (YYYY-MM-DD). */
+  dueOnOrBefore?: string;
+  /** Only open issues whose due date is before today (UTC). */
+  overdue?: boolean;
+}
+
+const CLOSED_ISSUE_STATUSES = ["done", "cancelled"] as const;
+
+/** Conditions for the priority, creator and due date filters, shared by list and count. */
+export function issueDeadlineAndOwnerConditions(
+  filters: Pick<IssueFilters, "priority" | "createdByAgentId" | "dueOnOrBefore" | "overdue"> | undefined,
+  today: string = new Date().toISOString().slice(0, 10),
+): SQL[] {
+  const conditions: SQL[] = [];
+  const priorities = parseStatusFilter(filters?.priority);
+  if (priorities.length === 1) conditions.push(eq(issues.priority, priorities[0]!));
+  else if (priorities.length > 1) conditions.push(inArray(issues.priority, priorities));
+  if (filters?.createdByAgentId) conditions.push(eq(issues.createdByAgentId, filters.createdByAgentId));
+  if (filters?.dueOnOrBefore) {
+    conditions.push(isNotNull(issues.dueDate), lte(issues.dueDate, filters.dueOnOrBefore));
+  }
+  if (filters?.overdue) {
+    conditions.push(
+      isNotNull(issues.dueDate),
+      lt(issues.dueDate, today),
+      notInArray(issues.status, [...CLOSED_ISSUE_STATUSES]),
+    );
+  }
+  return conditions;
 }
 
 type IssueRow = typeof issues.$inferSelect & { externalConversationState?: "active" | "waiting" | null };
@@ -6560,6 +6593,7 @@ async function blockedInboxIssueConditions(
   if (filters?.projectId)
     conditions.push(eq(issues.projectId, filters.projectId));
   if (filters?.teamId) conditions.push(eq(issues.teamId, filters.teamId));
+  conditions.push(...issueDeadlineAndOwnerConditions(filters));
   if (filters?.workspaceId) {
     conditions.push(
       or(
@@ -8321,6 +8355,7 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.teamId)
         conditions.push(eq(issues.teamId, filters.teamId));
+      conditions.push(...issueDeadlineAndOwnerConditions(filters));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -8610,6 +8645,7 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.teamId)
         conditions.push(eq(issues.teamId, filters.teamId));
+      conditions.push(...issueDeadlineAndOwnerConditions(filters));
       if (filters?.workspaceId) {
         conditions.push(
           or(
