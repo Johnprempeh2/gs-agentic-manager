@@ -74,7 +74,7 @@ async function seedCompany(db: Db, label = "Diagnostics") {
   const nonce = randomUUID().slice(0, 8);
   const [company] = await db.insert(companies).values({
     name: `${label} ${nonce}`,
-    issuePrefix: `DG${nonce.slice(0, 4).toUpperCase()}`,
+    issuePrefix: `DG${nonce.toUpperCase()}`,
     defaultResponsibleUserId: "board-user",
   }).returning();
   return company!;
@@ -190,7 +190,7 @@ describeEmbeddedPostgres("issue blocker diagnostics route", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-blocker-diagnostics-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueRelations);

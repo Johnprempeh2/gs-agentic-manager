@@ -168,7 +168,7 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
       },
     });
     await ensureIssueRelationsTable(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     beforeContinuationDispatchCheck = null;
@@ -1039,7 +1039,9 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     });
 
     expect(run).not.toBeNull();
-    await waitForCondition(async () => countExecuteCallsForRun(run!.id) > 0);
+    // Await the dispatched execution itself: a 3s poll ran out under gate load
+    // before the run reached the adapter.
+    await heartbeat.drainActiveRunExecutions();
 
     expect(countExecuteCallsForRun(run!.id)).toBe(1);
   });
@@ -1057,7 +1059,9 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     });
 
     expect(run).not.toBeNull();
-    await waitForCondition(async () => countExecuteCallsForRun(run!.id) > 0);
+    // Await the dispatched execution itself: a 3s poll ran out under gate load
+    // before the run reached the adapter.
+    await heartbeat.drainActiveRunExecutions();
     expect(countExecuteCallsForRun(run!.id)).toBe(1);
   });
 
@@ -1075,7 +1079,9 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     });
 
     expect(run).not.toBeNull();
-    await waitForCondition(async () => countExecuteCallsForRun(run!.id) > 0);
+    // Await the dispatched execution itself: a 3s poll ran out under gate load
+    // before the run reached the adapter.
+    await heartbeat.drainActiveRunExecutions();
     expect(countExecuteCallsForRun(run!.id)).toBe(1);
   });
 

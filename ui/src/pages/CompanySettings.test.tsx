@@ -117,18 +117,20 @@ async function flushReact() {
   });
 }
 
-async function waitForAssertion(assertion: () => void) {
-  let lastError: unknown;
-  for (let i = 0; i < 20; i += 1) {
+// Bounded by time, not by a count of event-loop turns: React time-slices its
+// render work, so on a loaded host (the release gate runs 13 lanes at once) the
+// page needs more turns to settle and a fixed count ran out first.
+async function waitForAssertion(assertion: () => void, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     await flushReact();
     try {
       assertion();
       return;
     } catch (error) {
-      lastError = error;
+      if (Date.now() >= deadline) throw error;
     }
   }
-  throw lastError;
 }
 
 const ENVIRONMENTS_PATH = "/company/settings/instance/environments";

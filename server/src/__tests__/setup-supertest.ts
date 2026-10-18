@@ -4,7 +4,18 @@ import type { AddressInfo, Server as NetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { Server as TlsServer } from "node:tls";
-import { afterAll } from "vitest";
+import { afterAll, vi } from "vitest";
+
+// The release test gate (GSAM_VITEST_TIMEOUT_MS) stretches the default test and
+// hook timeouts for its 13 parallel lanes; stretch vi.waitFor's 1s default with
+// them. A wait still returns as soon as its condition holds, and a call that
+// passes its own timeout keeps it. Under gate load a background write the test
+// waits for took longer than 1s (chat-channels, 18 Oct 2026).
+if (Number(process.env.GSAM_VITEST_TIMEOUT_MS) > 0) {
+  const waitFor = vi.waitFor;
+  vi.waitFor = ((callback, options) =>
+    waitFor(callback, typeof options === "number" ? options : { timeout: 10_000, ...options })) as typeof vi.waitFor;
+}
 
 type SupertestServer = NetServer & {
   address(): ReturnType<NetServer["address"]>;

@@ -358,7 +358,9 @@ describe("sandbox callback bridge", () => {
       "utf8",
     );
 
-    await worker.stop({ drainTimeoutMs: 1_000 });
+    // Stop drains the queue and returns as soon as it is empty; the bound only
+    // matters when draining is slow (1s ran out under gate load: 503, not 403).
+    await worker.stop({ drainTimeoutMs: 5_000 });
 
     const response = JSON.parse(
       await readFile(path.posix.join(directories.responsesDir, "req-1.json"), "utf8"),
@@ -419,7 +421,9 @@ describe("sandbox callback bridge", () => {
       "utf8",
     );
 
-    await worker.stop({ drainTimeoutMs: 1_000 });
+    // Stop drains the queue and returns as soon as it is empty; the bound only
+    // matters when draining is slow (1s ran out under gate load: 503, not 403).
+    await worker.stop({ drainTimeoutMs: 5_000 });
 
     expect(processed).toEqual(["req-a", "req-b"]);
     await expect(readFile(path.posix.join(directories.responsesDir, "req-a.json"), "utf8")).resolves.toContain("\"req-a\"");

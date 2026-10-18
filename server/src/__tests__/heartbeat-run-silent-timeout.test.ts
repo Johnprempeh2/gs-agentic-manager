@@ -15,6 +15,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { drainHeartbeatRunsToQuiescence } from "./helpers/drain-heartbeat-runs.js";
 import {
   DEFAULT_RUN_SILENT_TIMEOUT_MS,
   RUN_SILENT_TIMEOUT_ERROR_CODE,
@@ -23,10 +24,23 @@ import {
   runRequiresFreshSession,
 } from "../services/run-silent-timeout.ts";
 
+// A run started here hangs like a silent agent, until afterEach releases it.
+// A hang that never settled kept the fresh-session retry's execution alive into
+// the next test, where its writes deadlocked the TRUNCATE in afterEach under
+// gate load and left its wake row behind for the next test to count.
+const hungExecutions = new Set<() => void>();
+let releaseExecutionsAtOnce = false;
+const releasedResult = { exitCode: 0, signal: null, timedOut: false, errorMessage: null };
+
 vi.doMock("../adapters/index.js", () => ({
   getServerAdapter: vi.fn(() => ({
     type: "process",
-    execute: vi.fn(() => new Promise(() => {})),
+    execute: vi.fn(() =>
+      releaseExecutionsAtOnce
+        ? Promise.resolve(releasedResult)
+        : new Promise((resolve) => {
+            hungExecutions.add(() => resolve(releasedResult));
+          })),
     testEnvironment: vi.fn(),
   })),
   runningProcesses: new Map(),
@@ -69,9 +83,14 @@ describeEmbeddedPostgres("heartbeat silent-run stop (GRE-34)", () => {
     process.env.GSAM_IN_WORKTREE = "false";
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-run-silent-timeout-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
+    releaseExecutionsAtOnce = true;
+    for (const release of hungExecutions) release();
+    hungExecutions.clear();
+    await drainHeartbeatRunsToQuiescence(db, heartbeatService(db));
+    releaseExecutionsAtOnce = false;
     await db.execute(sql.raw(`TRUNCATE TABLE "companies" CASCADE`));
   });
 

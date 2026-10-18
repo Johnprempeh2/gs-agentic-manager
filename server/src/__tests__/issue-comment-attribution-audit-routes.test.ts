@@ -60,7 +60,10 @@ describeEmbeddedPostgres("issue comment attribution and patch audit routes", () 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-comment-attribution-audit-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+    // Pay the cold import of the large issue routes here, under the hook
+    // timeout: the first test ran past its 30s under gate load.
+    await Promise.all([import("../routes/activity.js"), import("../routes/issues.js")]);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

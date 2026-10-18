@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 function createSelectChain(rows: unknown[]) {
   const query = {
@@ -75,6 +75,12 @@ async function createApp(
 }
 
 describe.sequential("GET /invites/:token/test-resolution", () => {
+  // Pay the cold import of the large access router here, under the hook
+  // timeout: the first test ran past its 20s under gate load.
+  beforeAll(async () => {
+    await Promise.all([import("../routes/access.js"), import("../middleware/index.js")]);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

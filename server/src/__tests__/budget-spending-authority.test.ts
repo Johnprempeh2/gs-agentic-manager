@@ -64,7 +64,7 @@ describeEmbeddedPostgres("spending authority (GRE-1363)", () => {
     app.use("/api", approvalRoutes(db));
     app.use("/api", instanceSettingsRoutes(db));
     app.use(errorHandler);
-  }, 30_000);
+  });
 
   afterEach(() => {
     vi.useRealTimers();
@@ -130,7 +130,10 @@ describeEmbeddedPostgres("spending authority (GRE-1363)", () => {
     return db
       .select()
       .from(activityLog)
-      .where(and(eq(activityLog.companyId, companyId), eq(activityLog.action, action)));
+      .where(and(eq(activityLog.companyId, companyId), eq(activityLog.action, action)))
+      // Callers read .at(-1) as the latest row; without an order Postgres may
+      // return rows in any order, and under load it returned the older first.
+      .orderBy(asc(activityLog.createdAt));
   }
 
   async function setAuthority(companyId: string, ceilingCents: number | null, approverUserIds: string[]) {

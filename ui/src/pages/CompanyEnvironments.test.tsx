@@ -250,18 +250,20 @@ async function flushReact() {
   }
 }
 
-async function waitForAssertion(assertion: () => void) {
-  let lastError: unknown;
-  for (let i = 0; i < 20; i += 1) {
+// Bounded by time, not by a count of event-loop turns: React time-slices its
+// render work, so on a loaded host (the release gate runs 13 lanes at once) the
+// page needs more turns to settle and a fixed count ran out first.
+async function waitForAssertion(assertion: () => void, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     await flushReact();
     try {
       assertion();
       return;
     } catch (error) {
-      lastError = error;
+      if (Date.now() >= deadline) throw error;
     }
   }
-  throw lastError;
 }
 
 function testProviderButtons(container: HTMLElement): HTMLButtonElement[] {
@@ -614,7 +616,7 @@ describe("CompanyEnvironments — test provider button", () => {
     await act(async () => {
       root!.render(renderCompanyEnvironments(queryClient));
     });
-    await flushReact();
+    await waitForAssertion(() => expect(testProviderButtons(container)).not.toHaveLength(0));
 
     await act(async () => {
       testProviderButtons(container)[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -653,7 +655,7 @@ describe("CompanyEnvironments — test provider button", () => {
     await act(async () => {
       root!.render(renderCompanyEnvironments(queryClient));
     });
-    await flushReact();
+    await waitForAssertion(() => expect(testProviderButtons(container)).not.toHaveLength(0));
 
     await act(async () => {
       testProviderButtons(container)[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -673,7 +675,7 @@ describe("CompanyEnvironments — test provider button", () => {
     await act(async () => {
       root!.render(renderCompanyEnvironments(queryClient));
     });
-    await flushReact();
+    await waitForAssertion(() => expect(testProviderButtons(container)).toHaveLength(2));
 
     // Click both rows in quick succession while both probes are still pending.
     await act(async () => {
