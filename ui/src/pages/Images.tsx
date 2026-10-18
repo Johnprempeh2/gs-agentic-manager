@@ -54,6 +54,7 @@ import {
 import { relativeTime } from "@/lib/utils";
 import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImagePromptFields } from "../components/ImagePromptFields";
 import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCameraFields";
+import { StudioLookCompare } from "../components/StudioLookCompare";
 import { StudioLookPicker } from "../components/StudioLookPicker";
 import { VideoStudio } from "../components/VideoStudio";
 
@@ -199,6 +200,7 @@ export function Images() {
   const [camera, setCamera] = useState<StudioCameraSettings>({});
   const [lookId, setLookId] = useState<string | null>(null);
   const [variations, setVariations] = useState<number>(1);
+  const [compareLookIds, setCompareLookIds] = useState<string[]>([]);
   const [organisationId, setOrganisationId] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -270,12 +272,15 @@ export function Images() {
       organisationId?: string | null;
       issueId?: string | null;
       count?: number;
+      lookIds?: string[];
     }) => {
-      const { count = 1, ...body } = input;
-      // Each version is its own request, so one failure does not lose the rest.
-      const made: GeneratedImage[] = [];
-      for (let index = 0; index < count; index += 1) made.push(await imagesApi.create(companyId, body));
-      return made;
+      const { count = 1, lookIds, ...body } = input;
+      // Several versions go in one request, so they all start or none do.
+      if (lookIds && lookIds.length >= 2) {
+        return (await imagesApi.createVariations(companyId, { ...body, lookId: null, lookIds })).images;
+      }
+      if (count > 1) return (await imagesApi.createVariations(companyId, { ...body, count })).images;
+      return [await imagesApi.create(companyId, body)];
     },
     onSuccess: (made) => {
       // Show the new images straight away in every gallery view; the refetch settles filters.
@@ -285,7 +290,6 @@ export function Images() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
     },
     onError: (error) => {
-      // Versions asked for before the failure are still being made; show them.
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
       pushToast({ title: errorMessage(error), tone: "error" });
     },
@@ -306,6 +310,7 @@ export function Images() {
   const trimmed = prompt.trim();
   const canSubmit = configured && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
 
+  const comparing = compareLookIds.length >= 2;
   const submit = () => {
     if (!canSubmit) return;
     create.mutate(
@@ -317,6 +322,7 @@ export function Images() {
         ...(lookId ? { lookId } : {}),
         organisationId: organisationId || null,
         count: variations,
+        ...(comparing ? { lookIds: compareLookIds } : {}),
       },
       { onSuccess: () => setPrompt("") },
     );
@@ -430,9 +436,10 @@ export function Images() {
           current={{ style, camera }}
           disabled={!configured}
         />
+        <StudioLookCompare companyId={companyId} selected={compareLookIds} onChange={setCompareLookIds} disabled={!configured} />
         <StudioCameraFields idPrefix="image" camera={camera} onCameraChange={setCamera} disabled={!configured} />
 
-        <fieldset className="space-y-2" disabled={!configured}>
+        <fieldset className="space-y-2" disabled={!configured || comparing}>
           <legend className="text-sm font-medium">How many versions?</legend>
           <div className="flex gap-2" role="radiogroup" aria-label="How many versions" data-testid="image-variations">
             {STUDIO_VARIATION_COUNTS.map((count) => (
@@ -490,7 +497,11 @@ export function Images() {
             ) : (
               <Wand2 className="h-4 w-4" aria-hidden="true" />
             )}
-            {variations > 1 ? `Make ${variations} images` : "Make image"}
+            {comparing
+              ? `Compare ${compareLookIds.length} looks`
+              : variations > 1
+                ? `Make ${variations} images`
+                : "Make image"}
           </Button>
         </div>
       </section>

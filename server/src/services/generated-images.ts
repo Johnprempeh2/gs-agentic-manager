@@ -1,14 +1,16 @@
 import { and, count, desc, eq, ilike, inArray, lt, or, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { assets, generatedImages, issues, organisations } from "@greatstone/db";
+import { assets, generatedImages, issues, organisations, studioLooks } from "@greatstone/db";
 import {
   composeImagePrompt,
   hasStudioCamera,
   imageAltText,
   createGeneratedImageSchema,
+  createGeneratedImageVariationsSchema,
   generatedImagesQuerySchema,
   GENERATED_IMAGES_MAX_PENDING_PER_COMPANY,
   type CreateGeneratedImage,
+  type CreateGeneratedImageVariations,
   type GeneratedImage,
   type GeneratedImageCovers,
   type GeneratedImagesQuery,
@@ -288,7 +290,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     }
   }
 
-  return {
+  const service = {
     status: () => resolveProvider(),
 
     create: async (companyId: string, input: CreateGeneratedImage, actor: GeneratedImageActor) => {
@@ -495,7 +497,46 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       }
       return row;
     },
+
+    /**
+     * Several takes on one brief at once: `count` copies, or one per house
+     * look. Every look and the pending cap are checked before any is made, so
+     * a request either starts all of its pictures or none.
+     */
+    createVariations: async (companyId: string, input: CreateGeneratedImageVariations, actor: GeneratedImageActor) => {
+      const { count: takes, lookIds, ...request } = createGeneratedImageVariationsSchema.parse(input);
+      const looks: Array<string | null> = lookIds ?? Array.from({ length: takes ?? 0 }, () => request.lookId ?? null);
+      if (lookIds) {
+        const found = await db
+          .select({ id: studioLooks.id })
+          .from(studioLooks)
+          .where(and(eq(studioLooks.companyId, companyId), inArray(studioLooks.id, lookIds)));
+        if (found.length !== lookIds.length) {
+          throw unprocessable("That look is not in this organisation", { code: "studio_look_not_found" });
+        }
+      }
+      await failLostJobs(companyId);
+      const [{ pending }] = await db
+        .select({ pending: count() })
+        .from(generatedImages)
+        .where(and(eq(generatedImages.companyId, companyId), eq(generatedImages.status, "pending")));
+      if (Number(pending) + looks.length > GENERATED_IMAGES_MAX_PENDING_PER_COMPANY) {
+        const free = Math.max(0, GENERATED_IMAGES_MAX_PENDING_PER_COMPANY - Number(pending));
+        throw tooManyRequests(
+          free === 0
+            ? `${GENERATED_IMAGES_MAX_PENDING_PER_COMPANY} images are already being made. Wait for one to finish, then try again.`
+            : `Only ${free} more ${free === 1 ? "image" : "images"} can start now. Ask for fewer, or wait for some to finish.`,
+          { code: "image_generation_busy" },
+        );
+      }
+      const images = [];
+      for (const lookId of looks) {
+        images.push(await service.create(companyId, { ...request, lookId }, actor));
+      }
+      return { images };
+    },
   };
+  return service;
 }
 
 /** Test hook: lets a test wait until every queued image job has settled. */

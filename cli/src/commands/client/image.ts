@@ -42,6 +42,7 @@ interface ImageGenerateOptions extends BaseClientOptions {
   focal?: string;
   aperture?: string;
   count?: string;
+  compare?: string;
 }
 
 interface ImageListOptions extends BaseClientOptions {
@@ -99,6 +100,7 @@ export function registerImageCommands(program: Command): void {
       .option("--aperture <f>", `Optional aperture: ${APERTURE_HELP}`)
       .option("--look <name>", "Use a saved house look (see gsam look list); your own flags win")
       .option("--count <n>", `How many versions to make, 1 to ${STUDIO_MAX_VARIATIONS}`, "1")
+      .option("--compare <looks>", "Make one version in each of these house looks, comma separated (2 to 4 names)")
       .option("--out <path>", "Also save the finished image to this file (with --count, a number is added)")
       .option("--no-wait", "Return as soon as the request is accepted")
       .option("--timeout <seconds>", "How long to wait for the image", "300")
@@ -115,25 +117,38 @@ export function registerImageCommands(program: Command): void {
           if (!Number.isInteger(count) || count < 1 || count > STUDIO_MAX_VARIATIONS) {
             throw new Error(`--count must be a whole number from 1 to ${STUDIO_MAX_VARIATIONS}`);
           }
-          const issueId = opts.issueId?.trim() || null;
-          const requests: GeneratedImage[] = [];
-          for (let index = 0; index < count; index += 1) {
-            const created = await ctx.api.post<GeneratedImage>(
-              apiPath`/api/companies/${ctx.companyId}/generated-images`,
-              {
-                prompt: opts.prompt,
-                aspectRatio,
-                ...(style ? { style } : {}),
-                ...(camera ? { camera } : {}),
-                ...(lookId ? { lookId } : {}),
-                ...(issueId ? { issueId } : {}),
-              },
-            );
-            if (!created) throw new Error("The server did not return the image request");
-            requests.push(created);
+          const compare = (opts.compare ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+          if (compare.length === 1 || compare.length > STUDIO_MAX_VARIATIONS) {
+            throw new Error(`--compare needs 2 to ${STUDIO_MAX_VARIATIONS} look names`);
           }
+          if (compare.length > 0 && (lookId || count > 1)) throw new Error("Use --compare on its own, without --look or --count");
+          const lookIds = await Promise.all(compare.map((name) => resolveLookId(ctx, name)));
+          const issueId = opts.issueId?.trim() || null;
+          const body = {
+            prompt: opts.prompt,
+            aspectRatio,
+            ...(style ? { style } : {}),
+            ...(camera ? { camera } : {}),
+            ...(lookId ? { lookId } : {}),
+            ...(issueId ? { issueId } : {}),
+          };
+          let requests: GeneratedImage[];
+          if (compare.length > 0 || count > 1) {
+            // One request for every version, so they all start or none do.
+            const made = await ctx.api.post<{ images: GeneratedImage[] }>(
+              apiPath`/api/companies/${ctx.companyId}/generated-images/variations`,
+              compare.length > 0 ? { ...body, lookIds } : { ...body, count },
+            );
+            if (!made) throw new Error("The server did not return the image requests");
+            requests = made.images;
+          } else {
+            const created = await ctx.api.post<GeneratedImage>(apiPath`/api/companies/${ctx.companyId}/generated-images`, body);
+            if (!created) throw new Error("The server did not return the image request");
+            requests = [created];
+          }
+          const several = requests.length > 1;
           if (opts.wait === false) {
-            printOutput(count === 1 ? requests[0] : { images: requests }, { json: ctx.json });
+            printOutput(!several ? requests[0] : { images: requests }, { json: ctx.json });
             return;
           }
           const timeoutSeconds = Number(opts.timeout);
@@ -142,12 +157,12 @@ export function registerImageCommands(program: Command): void {
           for (const [index, request] of requests.entries()) {
             const finished = await waitForImage(ctx, request.id, timeoutMs);
             if (finished.status === "failed") {
-              if (count === 1) throw new Error(finished.error ?? "The image could not be made");
+              if (!several) throw new Error(finished.error ?? "The image could not be made");
               results.push({ image: finished });
               continue;
             }
             if (finished.status !== "completed" || !finished.assetId) {
-              if (count === 1) {
+              if (!several) {
                 throw new Error(`The image is still being made. Check it later with: gsam image get ${finished.id}`);
               }
               results.push({ image: finished });
@@ -157,7 +172,7 @@ export function registerImageCommands(program: Command): void {
             if (opts.out?.trim() || issueId) {
               const bytes = await downloadAsset(ctx, finished.assetId);
               if (opts.out?.trim()) {
-                const out = count === 1 ? opts.out : numberedPath(opts.out, index + 1);
+                const out = !several ? opts.out : numberedPath(opts.out, index + 1);
                 await writeFile(out, bytes.body);
                 result.out = out;
               }
@@ -165,10 +180,10 @@ export function registerImageCommands(program: Command): void {
             }
             results.push(result);
           }
-          if (count > 1 && results.every((result) => (result.image as GeneratedImage).status !== "completed")) {
+          if (several && results.every((result) => (result.image as GeneratedImage).status !== "completed")) {
             throw new Error("None of the images could be made");
           }
-          printOutput(count === 1 ? results[0] : { images: results }, { json: ctx.json });
+          printOutput(!several ? results[0] : { images: results }, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }

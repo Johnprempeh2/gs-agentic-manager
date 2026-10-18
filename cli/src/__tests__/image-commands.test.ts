@@ -116,9 +116,9 @@ describe("gsam image", () => {
   it("makes several versions with camera settings and waits for each one", async () => {
     const created: unknown[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith(`/api/companies/${COMPANY_ID}/generated-images`)) {
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/generated-images/variations`)) {
         created.push(JSON.parse(String(init?.body)));
-        return json(image("pending", { id: `${IMAGE_ID.slice(0, -1)}${created.length}` }), 202);
+        return json({ images: [1, 2].map((n) => image("pending", { id: `${IMAGE_ID.slice(0, -1)}${n}` })) }, 202);
       }
       const match = url.match(/generated-images\/([^/]+)$/);
       if (match) return json(image("completed", { id: match[1] }));
@@ -127,21 +127,60 @@ describe("gsam image", () => {
       }
       throw new Error(`unexpected ${url}`);
     }));
+    const log = vi.mocked(console.log);
 
     const run = createProgram().parseAsync(
       ["image", "generate", "--prompt", "A chef at work", "--camera", "16mm-film", "--lens", "Vintage Prime", "--focal", "50mm",
-        "--aperture", "f/4", "--count", "2", "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+        "--aperture", "f/4", "--count", "2", "--json", "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
       { from: "user" },
     );
     await vi.runAllTimersAsync();
     await run;
 
-    expect(created).toHaveLength(2);
-    expect(created[0]).toEqual({
-      prompt: "A chef at work",
-      aspectRatio: "1:1",
-      camera: { camera: "16mm-film", lens: "vintage-prime", focalLength: 50, aperture: "f4" },
-    });
+    expect(created).toEqual([
+      {
+        prompt: "A chef at work",
+        aspectRatio: "1:1",
+        camera: { camera: "16mm-film", lens: "vintage-prime", focalLength: 50, aperture: "f4" },
+        count: 2,
+      },
+    ]);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0])).images).toHaveLength(2);
+  });
+
+  it("compares house looks by name in one request", async () => {
+    const created: unknown[] = [];
+    const looks = [
+      { id: "88888888-8888-4888-8888-888888888881", name: "Warm" },
+      { id: "88888888-8888-4888-8888-888888888882", name: "Cool" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/studio-looks`)) return json({ looks });
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/generated-images/variations`)) {
+        created.push(JSON.parse(String(init?.body)));
+        return json({ images: [image("pending")] }, 202);
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+
+    await createProgram().parseAsync(
+      ["image", "generate", "--prompt", "A lighthouse", "--compare", "warm, Cool", "--no-wait", "--company-id", COMPANY_ID,
+        "--api-base", "http://localhost:3100", "--api-key", "t"],
+      { from: "user" },
+    );
+    expect(created).toEqual([{ prompt: "A lighthouse", aspectRatio: "1:1", lookIds: looks.map((look) => look.id) }]);
+
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      createProgram().parseAsync(
+        ["image", "generate", "--prompt", "A lighthouse", "--compare", "Warm", "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+        { from: "user" },
+      ),
+    ).rejects.toThrow("exit");
+    expect(String(error.mock.calls[0]?.[0])).toContain("--compare needs 2 to 4 look names");
   });
 
   it("reads camera flags and numbers output files", () => {

@@ -206,6 +206,32 @@ export const createGeneratedImageSchema = z.object({
 });
 export type CreateGeneratedImage = z.input<typeof createGeneratedImageSchema>;
 
+/** Most pictures one variations request may make; it must also fit under the pending cap. */
+export const GENERATED_IMAGE_VARIATIONS_MAX = 4;
+
+/**
+ * Several takes on one brief, side by side: either `count` copies of the same
+ * request (with its `lookId`, if any), or one picture per house look in
+ * `lookIds` to compare looks.
+ */
+export const createGeneratedImageVariationsSchema = createGeneratedImageSchema
+  .extend({
+    count: z.coerce.number().int().min(2).max(GENERATED_IMAGE_VARIATIONS_MAX).optional(),
+    lookIds: z.array(z.string().uuid()).min(2).max(GENERATED_IMAGE_VARIATIONS_MAX).optional(),
+  })
+  .refine((value) => (value.count === undefined) !== (value.lookIds === undefined), {
+    message: "Say how many takes (count) or which looks to compare (lookIds), not both",
+  })
+  .refine((value) => !(value.lookIds && value.lookId), {
+    message: "Use lookIds to compare looks, or lookId with count, not both",
+    path: ["lookId"],
+  })
+  .refine((value) => !value.lookIds || new Set(value.lookIds).size === value.lookIds.length, {
+    message: "Pick each look once",
+    path: ["lookIds"],
+  });
+export type CreateGeneratedImageVariations = z.input<typeof createGeneratedImageVariationsSchema>;
+
 export const generatedImagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(GENERATED_IMAGES_MAX_LIMIT).default(GENERATED_IMAGES_DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
@@ -264,6 +290,10 @@ export interface GeneratedImage {
   organisationCover: boolean;
   createdAt: string;
   completedAt: string | null;
+}
+
+export interface GeneratedImageVariationsResponse {
+  images: GeneratedImage[];
 }
 
 export interface GeneratedImagesResponse {

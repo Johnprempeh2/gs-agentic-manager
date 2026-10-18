@@ -13,10 +13,13 @@ const imagesApiMock = vi.hoisted(() => ({
   status: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
+  createVariations: vi.fn(),
   get: vi.fn(),
   remove: vi.fn(),
 }));
 vi.mock("../api/images", () => ({ imagesApi: imagesApiMock }));
+const studioLooksApiMock = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() }));
+vi.mock("../api/studioLooks", () => ({ studioLooksApi: studioLooksApiMock }));
 vi.mock("../api/organisations", () => ({
   organisationsApi: { list: vi.fn(async () => [{ id: "org-1", name: "Ethical Quest" }]) },
 }));
@@ -89,6 +92,7 @@ describe("Images page", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     vi.clearAllMocks();
+    studioLooksApiMock.list.mockResolvedValue({ looks: [] });
   });
 
   afterEach(() => {
@@ -168,6 +172,7 @@ describe("Images page", () => {
     imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
     imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
     imagesApiMock.create.mockResolvedValue(image({ id: "image-4", status: "pending", contentPath: null, assetId: null }));
+    imagesApiMock.createVariations.mockResolvedValue({ images: [image({ id: "image-4", status: "pending", contentPath: null, assetId: null })] });
     await render();
 
     const textarea = container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement;
@@ -198,14 +203,54 @@ describe("Images page", () => {
       });
     }
 
-    expect(imagesApiMock.create).toHaveBeenCalledTimes(4);
-    expect(imagesApiMock.create).toHaveBeenCalledWith("company-1", {
+    expect(imagesApiMock.create).not.toHaveBeenCalled();
+    expect(imagesApiMock.createVariations).toHaveBeenCalledTimes(1);
+    expect(imagesApiMock.createVariations).toHaveBeenCalledWith("company-1", {
       prompt: "A chef plating dessert, golden hour",
       aspectRatio: "1:1",
       style: null,
       camera: { camera: "70mm-film", lens: "classic-anamorphic", focalLength: 35, aperture: "f1.4" },
       organisationId: null,
+      count: 4,
     });
+  });
+
+  it("makes the same image in two house looks to compare them", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.createVariations.mockResolvedValue({ images: [] });
+    const look = (id: string, name: string) => ({
+      id,
+      companyId: "company-1",
+      name,
+      description: null,
+      style: null,
+      camera: null,
+      words: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    studioLooksApiMock.list.mockResolvedValue({ looks: [look("look-warm", "Warm"), look("look-cool", "Cool")] });
+    await render();
+
+    await act(async () => setTextarea(container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement, "A lighthouse"));
+    const pick = (name: string) =>
+      [...container.querySelectorAll('[data-testid="image-compare-looks"] button')].find(
+        (button) => button.textContent === name,
+      ) as HTMLButtonElement;
+    await act(async () => pick("Warm").click());
+    await act(async () => pick("Cool").click());
+    expect(pick("Cool").getAttribute("aria-pressed")).toBe("true");
+    const make = container.querySelector('[data-testid="make-image"]') as HTMLButtonElement;
+    expect(make.textContent).toContain("Compare 2 looks");
+    await act(async () => make.click());
+
+    expect(imagesApiMock.createVariations).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({ prompt: "A lighthouse", lookId: null, lookIds: ["look-warm", "look-cool"] }),
+    );
   });
 
   it("searches the gallery and links each image to its task and client", async () => {

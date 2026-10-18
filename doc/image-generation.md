@@ -74,8 +74,11 @@ The Images page works as an image studio, built from the ideas in
   guidance. The row keeps the picks, and the gallery shows them.
 - **Finishing touches** (optional): one tap adds lighting, mood, look or finish
   words to the description itself.
-- **Versions**: make 1, 2 or 4 versions at once. Each is its own request and
-  costs the same as a single image, so the six-pending limit still applies.
+- **Versions**: make 1, 2 or 4 versions at once. They go in one request to
+  `POST /api/companies/{companyId}/generated-images/variations` with `count`,
+  so they all start or none do: when they would not all fit under the
+  six-pending limit, the server answers `429` and says how many can start.
+  Each costs the same as a single image.
 
 Agents get the same studio three ways: `gsam image generate` with `--camera`,
 `--lens`, `--focal`, `--aperture` and `--count`; the MCP tools `studio_status`,
@@ -136,4 +139,14 @@ names are unique regardless of case.
   and `--look <name>` on `gsam image generate` and `gsam video generate`; or
   the MCP tools `studio_list_looks`, `studio_save_look`, and `lookId` on
   `studio_make_image` and `studio_make_video`.
+
+### Comparing looks
+
+With two or more looks saved, **Compare looks?** on the Images tab makes the
+same description once in each of two to four looks, side by side, so the team
+can see which suits it. The request is the variations endpoint with `lookIds`
+in place of `count`; every look must belong to the company (`422`
+`studio_look_not_found` otherwise) and nothing starts unless all of them fit.
+Agents use `gsam image generate --compare "Warm, Cool"` or `lookIds` on the
+MCP tool `studio_make_image`.
 

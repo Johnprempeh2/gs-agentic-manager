@@ -1,6 +1,11 @@
 import { Router } from "express";
 import type { Db } from "@greatstone/db";
-import { createGeneratedImageSchema, generatedImagesQuerySchema, updateGeneratedImageCoverSchema } from "@greatstone/shared";
+import {
+  createGeneratedImageSchema,
+  createGeneratedImageVariationsSchema,
+  generatedImagesQuerySchema,
+  updateGeneratedImageCoverSchema,
+} from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
 import { generatedImageService, type GeneratedImageServiceOptions } from "../services/generated-images.js";
@@ -43,6 +48,17 @@ export function generatedImageRoutes(
       const actor = getActorInfo(req);
       const image = await svc.create(companyId, req.body, actor);
       res.status(202).json(image);
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/generated-images/variations",
+    validate(createGeneratedImageVariationsSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      res.status(202).json(await svc.createVariations(companyId, req.body, actor));
     },
   );
 
