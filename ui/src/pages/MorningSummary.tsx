@@ -12,7 +12,8 @@ import { PauseNotifications } from "../components/PauseNotifications";
 import { queryKeys } from "../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
-import { morningSummaryText } from "@/lib/morning-summary-text";
+import { morningSummarySpeech, morningSummaryText } from "@/lib/morning-summary-text";
+import { ListenButton } from "../components/ListenButton";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
 
@@ -160,15 +161,18 @@ export function MorningSummary() {
       <header className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">{greeting(now)}</h1>
-          <Button
-            variant="outline"
-            size="sm"
-            title="Copy today as text, ready to paste into a message"
-            onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
-          >
-            {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-            {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ListenButton getParts={() => morningSummarySpeech(data, localToday(now), greeting(now))} />
+            <Button
+              variant="outline"
+              size="sm"
+              title="Copy today as text, ready to paste into a message"
+              onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
+            >
+              {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           {data.needsYou.count === 0

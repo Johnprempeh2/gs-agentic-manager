@@ -33,7 +33,16 @@ export function preferredVoice(voices: readonly SpeechSynthesisVoice[]): SpeechS
  * briefing can be heard on the move. Nothing leaves the device and it costs
  * nothing. Hidden where the browser cannot speak.
  */
-export function ListenButton({ targetRef, label = "Listen" }: { targetRef: RefObject<HTMLElement | null>; label?: string }) {
+export function ListenButton({
+  targetRef,
+  getParts,
+  label = "Listen",
+}: {
+  targetRef?: RefObject<HTMLElement | null>;
+  /** Text to read instead of the section's own words, when the page has it as sentences. */
+  getParts?: () => string[];
+  label?: string;
+}) {
   const [parts, setParts] = useState<string[]>([]);
   const [startRequested, setStartRequested] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -56,9 +65,13 @@ export function ListenButton({ targetRef, label = "Listen" }: { targetRef: RefOb
   const started = reader.playing || reader.currentIndex != null;
 
   function start() {
-    const root = targetRef.current;
-    if (!root) return;
-    setParts(listenPartsFrom(root));
+    if (getParts) {
+      setParts(getParts());
+    } else {
+      const root = targetRef?.current;
+      if (!root) return;
+      setParts(listenPartsFrom(root));
+    }
     setStartRequested(true);
   }
 
