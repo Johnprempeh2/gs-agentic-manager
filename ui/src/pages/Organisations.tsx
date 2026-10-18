@@ -11,11 +11,14 @@ import {
 } from "@greatstone/shared";
 import { accessApi } from "@/api/access";
 import { organisationsApi } from "@/api/organisations";
+import { pipelinesApi } from "@/api/pipelines";
 import { EmptyState } from "@/components/EmptyState";
 import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
 import { CrmProductCatalogue } from "@/components/CrmProductCatalogue";
 import { ClientsExportButton } from "@/components/DataExport";
+import { accountOwnerValue, OrganisationCrmFieldsForm, useAccountOwnerOptions } from "@/components/OrganisationCrmFields";
+import { OrganisationPipelineStages } from "@/components/OrganisationPipelineStages";
 import { PeopleSearch } from "@/components/PeopleSearch";
 import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { useIsPhone } from "@/hooks/useIsPhone";
+import { crmFormFromOrganisation, crmPayloadFromForm, type CrmForm, type CrmPayload } from "@/lib/organisation-crm-form";
 import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 
@@ -68,7 +72,8 @@ function keyContactText(organisation: OrganisationListItem) {
 
 /**
  * Organisations (GRE-1477): every company the user works with, separate from
- * the pipeline board. Search, filter by status, add and edit. Each name opens
+ * the pipeline board. Search, filter by status, pipeline and stage, add and
+ * edit; each row shows where the organisation is in the pipelines. Each name opens
  * the company page (GRE-1480). The server
  * checks who may change records; a refusal shows in the dialog.
  */
@@ -78,20 +83,33 @@ export function Organisations() {
   const isPhone = useIsPhone();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<OrganisationStatus | "">("");
+  const [pipelineId, setPipelineId] = useState("");
+  const [stageId, setStageId] = useState("");
   const [editing, setEditing] = useState<OrganisationListItem | "new" | null>(null);
   const q = useDebounced(search, 250);
+  const owners = useAccountOwnerOptions(selectedCompanyId ?? "");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Organisations" }]);
   }, [setBreadcrumbs]);
 
+  const filters = { q, status, pipelineId, stageId };
   const query = useQuery({
-    queryKey: queryKeys.organisations.list(selectedCompanyId ?? "", { q, status }),
-    queryFn: () => organisationsApi.list(selectedCompanyId!, { q, status }),
+    queryKey: queryKeys.organisations.list(selectedCompanyId ?? "", filters),
+    queryFn: () => organisationsApi.list(selectedCompanyId!, filters),
     enabled: Boolean(selectedCompanyId),
   });
+  const pipelinesQuery = useQuery({
+    queryKey: queryKeys.pipelines.list(selectedCompanyId ?? ""),
+    queryFn: () => pipelinesApi.list(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId),
+  });
+  const pipelineOptions = (pipelinesQuery.data ?? []).filter((pipeline) => !pipeline.archivedAt);
+  const stageOptions = [...(pipelineOptions.find((pipeline) => pipeline.id === pipelineId)?.stages ?? [])].sort(
+    (a, b) => a.position - b.position,
+  );
   const rows = query.data ?? [];
-  const filtered = Boolean(q.trim() || status);
+  const filtered = Boolean(q.trim() || status || pipelineId);
 
   return (
     <div className="flex max-w-6xl flex-col gap-4">
@@ -120,7 +138,7 @@ export function Organisations() {
       <div className="flex flex-col gap-2 sm:flex-row" data-tour="organisations-search">
         <Input
           aria-label="Search organisations"
-          placeholder="Search name, industry, country or contact"
+          placeholder="Search name, industry, country, domain, tag or contact"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="sm:w-80"
@@ -134,6 +152,32 @@ export function Organisations() {
           <option value="">All statuses</option>
           {ORGANISATION_STATUSES.map((value) => (
             <option key={value} value={value}>{ORGANISATION_STATUS_LABELS[value]}</option>
+          ))}
+        </NativeSelect>
+        <NativeSelect
+          aria-label="Filter by pipeline"
+          value={pipelineId}
+          onChange={(event) => {
+            setPipelineId(event.target.value);
+            setStageId("");
+          }}
+          className="sm:w-48"
+        >
+          <option value="">All pipelines</option>
+          {pipelineOptions.map((pipeline) => (
+            <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
+          ))}
+        </NativeSelect>
+        <NativeSelect
+          aria-label="Filter by stage"
+          value={stageId}
+          onChange={(event) => setStageId(event.target.value)}
+          disabled={!pipelineId}
+          className="sm:w-48"
+        >
+          <option value="">{pipelineId ? "All stages" : "Choose a pipeline first"}</option>
+          {stageOptions.map((stage) => (
+            <option key={stage.id} value={stage.id}>{stage.name}</option>
           ))}
         </NativeSelect>
       </div>
@@ -170,9 +214,17 @@ export function Organisations() {
                   <Badge variant={ORGANISATION_STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {[organisation.industry, organisation.country, organisation.countryOwner].filter(Boolean).join(" · ") || "No details yet"}
+                  {[
+                    organisation.industry,
+                    organisation.country,
+                    organisation.segment,
+                    owners.labelFor(accountOwnerValue(organisation)) ?? organisation.countryOwner,
+                  ].filter(Boolean).join(" · ") || "No details yet"}
                 </div>
                 <div className="mt-1 truncate text-xs">{keyContactText(organisation)}</div>
+                <div className="mt-1 text-xs">
+                  <OrganisationPipelineStages stages={organisation.pipelines} />
+                </div>
               </Link>
             </li>
           ))}
@@ -186,7 +238,10 @@ export function Organisations() {
                 <th className="px-3 py-2 font-medium">Industry</th>
                 <th className="px-3 py-2 font-medium">Country</th>
                 <th className="px-3 py-2 font-medium">Country owner</th>
+                <th className="px-3 py-2 font-medium">Account owner</th>
+                <th className="px-3 py-2 font-medium">Segment</th>
                 <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Pipeline and stage</th>
                 <th className="px-3 py-2 font-medium">Key contacts</th>
                 <th className="px-3 py-2 font-medium"><span className="sr-only">Actions</span></th>
               </tr>
@@ -198,12 +253,23 @@ export function Organisations() {
                     <Link to={`/organisations/${organisation.id}`} className="font-medium hover:underline">
                       {organisation.name}
                     </Link>
+                    {organisation.domain ? <div className="text-xs text-muted-foreground">{organisation.domain}</div> : null}
+                    {organisation.tags.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {organisation.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">{organisation.industry ?? "Not set"}</td>
                   <td className="px-3 py-2">{organisation.country ?? "Not set"}</td>
                   <td className="px-3 py-2">{organisation.countryOwner ?? "Not set"}</td>
+                  <td className="px-3 py-2">{owners.labelFor(accountOwnerValue(organisation)) ?? "Not set"}</td>
+                  <td className="px-3 py-2">{organisation.segment ?? "Not set"}</td>
                   <td className="px-3 py-2">
                     <Badge variant={ORGANISATION_STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
+                  </td>
+                  <td className="px-3 py-2">
+                    <OrganisationPipelineStages stages={organisation.pipelines} />
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{keyContactText(organisation)}</td>
                   <td className="px-3 py-2 text-right">
@@ -317,6 +383,8 @@ export function OrganisationDialogContent({
     status: organisation?.status ?? ("target" as OrganisationStatus),
     notes: organisation?.notes ?? "",
   });
+  const [crm, setCrm] = useState<CrmForm>(() => crmFormFromOrganisation(organisation));
+  const [formError, setFormError] = useState<string | null>(null);
   const set = (key: keyof typeof form) => (value: string) => setForm((current) => ({ ...current, [key]: value }));
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.organisations.all(companyId) });
 
@@ -344,10 +412,10 @@ export function OrganisationDialogContent({
   };
 
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (crmFields: CrmPayload) =>
       organisation
-        ? organisationsApi.update(companyId, organisation.id, payload())
-        : organisationsApi.create(companyId, payload()),
+        ? organisationsApi.update(companyId, organisation.id, { ...payload(), ...crmFields })
+        : organisationsApi.create(companyId, { ...payload(), ...crmFields }),
     onSuccess: async () => {
       await invalidate();
       onDone();
@@ -364,7 +432,13 @@ export function OrganisationDialogContent({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!form.name.trim()) return;
-    save.mutate();
+    const parsed = crmPayloadFromForm(crm);
+    if ("error" in parsed) {
+      setFormError(parsed.error);
+      return;
+    }
+    setFormError(null);
+    save.mutate(parsed.payload);
   };
 
   const field = (key: "website" | "industry" | "country", label: string) => (
@@ -378,7 +452,7 @@ export function OrganisationDialogContent({
     <DialogContent className="max-h-(--sz-90vh) overflow-y-auto sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>{organisation ? "Edit organisation" : "Add organisation"}</DialogTitle>
-        <DialogDescription>Only the name is required.</DialogDescription>
+        <DialogDescription>Only the name is required. Fill in the rest when you know it.</DialogDescription>
       </DialogHeader>
       <form className="space-y-3" onSubmit={submit}>
         <div className="space-y-1">
@@ -441,6 +515,13 @@ export function OrganisationDialogContent({
           <Label htmlFor="organisation-notes">Notes</Label>
           <Textarea id="organisation-notes" rows={3} value={form.notes} onChange={(event) => set("notes")(event.target.value)} />
         </div>
+        <OrganisationCrmFieldsForm
+          companyId={companyId}
+          organisationId={organisation?.id ?? null}
+          form={crm}
+          onChange={(patch) => setCrm((current) => ({ ...current, ...patch }))}
+        />
+        {formError ? <p className="text-sm text-destructive" role="alert">{formError}</p> : null}
         {save.error ? <p className="text-sm text-destructive" role="alert">{errorText(save.error)}</p> : null}
         {archive.error ? <p className="text-sm text-destructive" role="alert">{errorText(archive.error)}</p> : null}
         <DialogFooter className="gap-2">

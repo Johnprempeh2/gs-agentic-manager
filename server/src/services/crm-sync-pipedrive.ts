@@ -80,6 +80,17 @@ export interface PipedriveOrganization {
   name?: string | null;
   owner_id?: PipedriveLink;
   address_country?: string | null;
+  // Address parts and the standard company fields (GRE-1539).
+  address_street_number?: string | null;
+  address_route?: string | null;
+  address_locality?: string | null;
+  address_admin_area_level_1?: string | null;
+  address_postal_code?: string | null;
+  website?: string | null;
+  linkedin?: string | null;
+  employee_count?: number | string | null;
+  annual_revenue?: number | string | null;
+  annual_revenue_currency?: string | null;
   industry?: string | number | null;
   open_deals_count?: number | null;
   won_deals_count?: number | null;

@@ -115,6 +115,7 @@ describe("Pipedrive organisation mapping (GRE-1479)", () => {
       country: "Ghana",
       countryOwner: "Ama Owusu",
       status: "client",
+      crm: {},
     });
     expect(mapPipedriveOrganization(blueHarbour, industries)).toMatchObject({ industry: "Energy", status: "prospect" });
   });
@@ -128,8 +129,42 @@ describe("Pipedrive organisation mapping (GRE-1479)", () => {
       country: null,
       countryOwner: null,
       status: "target",
+      crm: {},
     });
     expect(mapPipedriveOrganization(blank, industries)).toBeNull();
+  });
+
+  it("maps address parts, LinkedIn, head count and revenue with its currency (GRE-1539)", () => {
+    const mapped = mapPipedriveOrganization({
+      id: 201,
+      name: "Volta Foods",
+      address_street_number: "12",
+      address_route: "Liberation Road",
+      address_locality: "Accra",
+      address_admin_area_level_1: "Greater Accra",
+      address_postal_code: "GA-123",
+      address_country: "Ghana",
+      website: "voltafoods.example",
+      linkedin: "linkedin.com/company/volta-foods",
+      employee_count: "240",
+      annual_revenue: 1250000.5,
+      annual_revenue_currency: "ghs",
+    });
+    // Website is not a CRM column here: the API import fills an empty website only.
+    expect(mapped?.crm).toEqual({
+      linkedinUrl: "https://linkedin.com/company/volta-foods",
+      addressStreet: "12 Liberation Road",
+      addressCity: "Accra",
+      addressRegion: "Greater Accra",
+      addressPostalCode: "GA-123",
+      employeeCount: 240,
+      annualRevenue: 1250000.5,
+      annualRevenueCurrency: "GHS",
+    });
+    // Revenue with no currency cannot be read, so it is left out; a bad head count too.
+    expect(
+      mapPipedriveOrganization({ id: 202, name: "No Currency", annual_revenue: 5000, employee_count: "lots" })?.crm,
+    ).toEqual({});
   });
 
   it("maps a person's job title and primary email and phone", () => {
@@ -377,6 +412,43 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
     const third = await request(app(owner, fetch)).post(importPath(companyId)).send({ connectionId });
     expect(third.body.organisations).toEqual({ created: 0, updated: 1, skipped: 3, errors: 0 });
     expect((await ownersOf()).get("102")).toEqual(["New Starter", null]);
+  });
+
+  it("fills CRM fields from Pipedrive on a rerun but never blanks what was typed in GSAM (GRE-1539)", async () => {
+    const companyId = await seedCompany();
+    const owner = await seedMember(companyId, "owner");
+    const connectionId = await seedConnection(companyId);
+    let pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+    await request(app(owner, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId }).expect(200);
+
+    const where = and(eq(organisations.companyId, companyId), eq(organisations.externalId, "101"));
+    await db.update(organisations).set({ addressCity: "Kumasi", taxId: "GH-TAX-1" }).where(where);
+
+    const changed = structuredClone(recorded.organizationsPage1);
+    Object.assign(changed.data[0], {
+      address_postal_code: "AK-039",
+      employee_count: 80,
+      annual_revenue: 900000,
+      annual_revenue_currency: "USD",
+    });
+    pages = { ...recordedPages(), organizations: { ...recordedPages().organizations, 0: changed } };
+    const rerun = await request(app(owner, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.organisations).toEqual({ created: 0, updated: 1, skipped: 3, errors: 0 });
+
+    const northwind = await db.select().from(organisations).where(where).then((found) => found[0]!);
+    expect(northwind).toMatchObject({
+      addressCity: "Kumasi",
+      addressPostalCode: "AK-039",
+      employeeCount: 80,
+      annualRevenueCurrency: "USD",
+      taxId: "GH-TAX-1",
+    });
+    expect(Number(northwind.annualRevenue)).toBe(900000);
+
+    // Same pages again: the revenue compare is by value, so nothing changes.
+    const again = await request(app(owner, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(again.body.organisations).toEqual({ created: 0, updated: 0, skipped: 4, errors: 0 });
   });
 
   it("loads every organisation of a full export across pages", async () => {

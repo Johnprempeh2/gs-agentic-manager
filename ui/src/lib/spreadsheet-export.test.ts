@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OrganisationListItem, WeeklyReport } from "@greatstone/shared";
+import { emptyOrganisationCrmFields } from "@/fixtures/organisationCrmFields";
 import { readZipTextFiles } from "./zip-text";
 import {
   clientsSheet,
@@ -21,6 +22,7 @@ const kente: OrganisationListItem = {
   countryOwner: "Ben",
   status: "client",
   notes: "=SUM(A1) is not a formula here\nSecond line",
+  ...emptyOrganisationCrmFields,
   source: "notion",
   externalId: null,
   archivedAt: null,
@@ -28,6 +30,7 @@ const kente: OrganisationListItem = {
   updatedAt: "2026-10-15T09:00:00.000Z",
   keyContacts: [{ id: "c1", name: "Ama Mensah", role: "COO", email: "ama@kente.example.com", phone: null }],
   contactCount: 3,
+  pipelines: [],
 };
 
 const report: WeeklyReport = {

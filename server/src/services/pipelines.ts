@@ -1514,21 +1514,19 @@ async function getPipelineOrThrow(db: PipelineDb, companyId: string, pipelineId:
   return row;
 }
 
-// Ben's rule (GRE-1478): a case on a pipeline with requiresOrganisation must
-// name a live organisation record of the same company. Any organisation named
-// on another pipeline is checked the same way, but may be left empty.
+// John's rule (GRE-1538, widening GRE-1478): every case, in every pipeline,
+// names a live organisation record of the same company.
+function organisationRequired() {
+  return unprocessable("Every card needs an organisation: pick one from the organisation database or create it first", {
+    code: "organisation_required",
+  });
+}
+
 export async function assertCaseOrganisation(
   db: PipelineDb,
-  input: { companyId: string; pipeline: { requiresOrganisation: boolean }; organisationId: string | null },
+  input: { companyId: string; organisationId: string | null },
 ) {
-  if (!input.organisationId) {
-    if (input.pipeline.requiresOrganisation) {
-      throw unprocessable("This pipeline needs an organisation: pick one from the organisation database or create it first", {
-        code: "organisation_required",
-      });
-    }
-    return null;
-  }
+  if (!input.organisationId) throw organisationRequired();
   const row = await db
     .select({ id: organisations.id, archivedAt: organisations.archivedAt })
     .from(organisations)
@@ -3170,11 +3168,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     const parentCaseChanged = input.parentCaseId !== undefined && input.parentCaseId !== current.parentCaseId;
     const organisationChanged = input.organisationId !== undefined && input.organisationId !== current.organisationId;
     if (organisationChanged) {
-      await assertCaseOrganisation(tx, {
-        companyId: input.companyId,
-        pipeline: await getPipelineOrThrow(tx, input.companyId, current.pipelineId),
-        organisationId: input.organisationId ?? null,
-      });
+      await assertCaseOrganisation(tx, { companyId: input.companyId, organisationId: input.organisationId ?? null });
     }
     const workspaceRefChanged = input.workspaceRef !== undefined && !isDeepStrictEqual(input.workspaceRef, current.workspaceRef);
     const materialChanged = titleChanged || summaryChanged || fieldsChanged;
@@ -3190,6 +3184,9 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     if (!materialChanged && !visibleMetadataChanged && !parentCaseChanged && !organisationChanged && !workspaceRefChanged) {
       return { case: current, event: null };
     }
+    // A card saved before the rule (and before the backfill) must gain an
+    // organisation in the same save. An unchanged organisation is not re-checked.
+    if (!organisationChanged && !current.organisationId) throw organisationRequired();
 
     const patch: Partial<typeof pipelineCases.$inferInsert> = {
       updatedAt: nowDate(),
@@ -3526,7 +3523,6 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
       description?: string | null;
       projectId?: string | null;
       enforceTransitions?: boolean;
-      requiresOrganisation?: boolean;
       stages?: Array<{ key: string; name: string; kind: PipelineStageKind; position?: number; config?: PipelineStageConfig }>;
       actor: PipelineActor;
     }) {
@@ -3559,7 +3555,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
             description: input.description ?? null,
             projectId: input.projectId ?? null,
             enforceTransitions: input.enforceTransitions ?? false,
-            requiresOrganisation: input.requiresOrganisation ?? false,
+            requiresOrganisation: true,
             createdByUserId: input.actor.type === "user" ? input.actor.userId : null,
             createdByAgentId: input.actor.type === "agent" ? input.actor.agentId : null,
           })
@@ -3993,10 +3989,11 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
             .then((rows) => rows[0] ?? null);
           if (existingByRequestKey) return { case: existingByRequestKey, created: false };
         }
+        // A child case (breakdown, automation) is about its parent's organisation
+        // unless the caller names another one.
         const organisationId = await assertCaseOrganisation(tx, {
           companyId: input.companyId,
-          pipeline,
-          organisationId: input.organisationId ?? null,
+          organisationId: input.organisationId ?? parentCase?.organisationId ?? null,
         });
         const automationAttempt = input.actor.type === "agent"
           ? await resolveAutomationAttemptForActorRun(tx, input.companyId, input.actor.runId)

@@ -1,25 +1,33 @@
-// Backfill for GRE-1478: give every existing client case an organisation
-// record, copy its contacts across, and switch the rule on for the pipeline.
+// Backfill for GRE-1478, widened to every pipeline by GRE-1538: give every
+// existing case an organisation record and copy its contacts across.
 // Runs on live only in John's release (scripts/backfill-pipeline-case-organisations.ts).
 // Safe to run twice: linked cases are skipped, organisations are matched by
-// name and contacts by name and email, so nothing is duplicated.
+// normalised name and contacts by name and email, so nothing is duplicated.
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { organisationContacts, organisations, pipelineCaseContacts, pipelineCases, pipelines } from "@greatstone/db";
+import { organisationContacts, pipelineCaseContacts, pipelineCases, pipelines } from "@greatstone/db";
+import { findOrCreateOrganisation, loadOrganisationNameIndex, normaliseOrganisationName } from "./organisation-match.js";
 
-export const DEFAULT_ORGANISATION_PIPELINE_KEYS = ["client-journey"];
+/** A case whose title matched no record that existed before the run, so the backfill made one (or could not). */
+export type UnmatchedCase = {
+  caseId: string;
+  caseKey: string;
+  pipelineKey: string;
+  title: string;
+  /** The record made for it, or null when the title is blank and the case stays unlinked. */
+  createdOrganisationId: string | null;
+};
 
 export type CaseOrganisationBackfillResult = {
   pipelines: number;
   casesLinked: number;
   organisationsCreated: number;
   contactsCopied: number;
+  unmatched: UnmatchedCase[];
   dryRun: boolean;
 };
 
 class DryRunRollback extends Error {}
-
-const normalise = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
 
 function readCountry(fields: Record<string, unknown> | null) {
   const value = fields?.country;
@@ -30,61 +38,67 @@ export async function backfillCaseOrganisations(
   db: Db,
   input: { companyId: string; pipelineKeys?: string[]; dryRun?: boolean },
 ): Promise<CaseOrganisationBackfillResult> {
-  const pipelineKeys = input.pipelineKeys?.length ? input.pipelineKeys : DEFAULT_ORGANISATION_PIPELINE_KEYS;
   const result: CaseOrganisationBackfillResult = {
     pipelines: 0,
     casesLinked: 0,
     organisationsCreated: 0,
     contactsCopied: 0,
+    unmatched: [],
     dryRun: Boolean(input.dryRun),
   };
 
   try {
     await db.transaction(async (tx) => {
       const targets = await tx
-        .select({ id: pipelines.id })
+        .select({ id: pipelines.id, key: pipelines.key })
         .from(pipelines)
-        .where(and(eq(pipelines.companyId, input.companyId), inArray(pipelines.key, pipelineKeys)));
+        .where(and(
+          eq(pipelines.companyId, input.companyId),
+          input.pipelineKeys?.length ? inArray(pipelines.key, input.pipelineKeys) : undefined,
+        ));
       result.pipelines = targets.length;
       if (targets.length === 0) return;
+      const pipelineKeyById = new Map(targets.map((row) => [row.id, row.key]));
 
-      const orgByName = new Map<string, string>();
-      const existingOrgs = await tx
-        .select({ id: organisations.id, name: organisations.name })
-        .from(organisations)
-        .where(and(eq(organisations.companyId, input.companyId), isNull(organisations.archivedAt)));
-      for (const org of existingOrgs) {
-        if (!orgByName.has(normalise(org.name))) orgByName.set(normalise(org.name), org.id);
-      }
-
+      const nameIndex = await loadOrganisationNameIndex(tx, input.companyId);
       const cases = await tx
-        .select({ id: pipelineCases.id, title: pipelineCases.title, fields: pipelineCases.fields })
+        .select({
+          id: pipelineCases.id,
+          caseKey: pipelineCases.caseKey,
+          pipelineId: pipelineCases.pipelineId,
+          title: pipelineCases.title,
+          fields: pipelineCases.fields,
+        })
         .from(pipelineCases)
         .where(and(
           eq(pipelineCases.companyId, input.companyId),
           inArray(pipelineCases.pipelineId, targets.map((row) => row.id)),
           isNull(pipelineCases.organisationId),
           isNull(pipelineCases.retiredAt),
-        ));
+        ))
+        .orderBy(pipelineCases.createdAt);
 
+      // Cards linked to a record this run made did not match an existing one.
+      const createdIds = new Set<string>();
       for (const caseRow of cases) {
-        const key = normalise(caseRow.title);
-        let organisationId = orgByName.get(key) ?? null;
-        if (!organisationId) {
-          const [created] = await tx
-            .insert(organisations)
-            .values({
-              companyId: input.companyId,
-              name: caseRow.title.trim(),
-              country: readCountry(caseRow.fields),
-              status: "client",
-              source: "manual",
-            })
-            .returning({ id: organisations.id });
-          organisationId = created!.id;
-          orgByName.set(key, organisationId);
-          result.organisationsCreated += 1;
+        const organisation = await findOrCreateOrganisation(
+          tx,
+          { companyId: input.companyId, name: caseRow.title, country: readCountry(caseRow.fields), status: "prospect" },
+          nameIndex,
+        );
+        if (organisation?.created) createdIds.add(organisation.id);
+        if (!organisation || createdIds.has(organisation.id)) {
+          result.unmatched.push({
+            caseId: caseRow.id,
+            caseKey: caseRow.caseKey,
+            pipelineKey: pipelineKeyById.get(caseRow.pipelineId) ?? "",
+            title: caseRow.title,
+            createdOrganisationId: organisation?.id ?? null,
+          });
         }
+        if (!organisation) continue;
+        if (organisation.created) result.organisationsCreated += 1;
+        const organisationId = organisation.id;
         await tx
           .update(pipelineCases)
           .set({ organisationId })
@@ -100,11 +114,13 @@ export async function backfillCaseOrganisations(
           .select({ name: organisationContacts.name, email: organisationContacts.email })
           .from(organisationContacts)
           .where(eq(organisationContacts.organisationId, organisationId));
-        const seen = new Set(orgContacts.map((row) => `${normalise(row.name)}|${normalise(row.email)}`));
+        const contactKey = (name: string | null, email: string | null) =>
+          `${normaliseOrganisationName(name)}|${normaliseOrganisationName(email)}`;
+        const seen = new Set(orgContacts.map((row) => contactKey(row.name, row.email)));
         for (const contact of caseContacts) {
-          const contactKey = `${normalise(contact.name)}|${normalise(contact.email)}`;
-          if (seen.has(contactKey)) continue;
-          seen.add(contactKey);
+          const key = contactKey(contact.name, contact.email);
+          if (seen.has(key)) continue;
+          seen.add(key);
           await tx.insert(organisationContacts).values({
             companyId: input.companyId,
             organisationId,
@@ -119,12 +135,6 @@ export async function backfillCaseOrganisations(
           result.contactsCopied += 1;
         }
       }
-
-      // Every case is linked now, so the rule can go on without blocking edits.
-      await tx
-        .update(pipelines)
-        .set({ requiresOrganisation: true, updatedAt: new Date() })
-        .where(inArray(pipelines.id, targets.map((row) => row.id)));
 
       if (input.dryRun) throw new DryRunRollback();
     });

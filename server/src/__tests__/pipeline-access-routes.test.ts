@@ -21,6 +21,7 @@ import {
   principalPermissionGrants,
 } from "@greatstone/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
+import { fillTestCaseOrganisation } from "./helpers/case-organisation.js";
 import { errorHandler } from "../middleware/index.js";
 import { agentRoutes } from "../routes/agents.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
@@ -81,6 +82,7 @@ describeEmbeddedPostgres("pipeline access levels (GRE-1072)", () => {
       next();
     });
     instance.use("/api", agentRoutes(db));
+    instance.use("/api", fillTestCaseOrganisation(db));
     instance.use("/api", pipelineRoutes(db, { heartbeat: noopHeartbeat }));
     instance.use(errorHandler);
     return instance;

@@ -14,7 +14,8 @@ export const pipelines = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     enforceTransitions: boolean("enforce_transitions").notNull().default(false),
-    // CRM pipelines (GRE-1478): every case must name an organisation record.
+    // No longer read (GRE-1538): every case in every pipeline names an
+    // organisation record. Kept so the change needs no destructive migration.
     requiresOrganisation: boolean("requires_organisation").notNull().default(false),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
