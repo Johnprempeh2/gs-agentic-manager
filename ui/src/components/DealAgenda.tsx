@@ -1,8 +1,12 @@
-import { useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useMemo, useState, type FormEvent } from "react";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { pipelinesApi, type PipelineCaseChildRow, type PipelineListItem } from "../api/pipelines";
 import { queryKeys } from "../lib/queryKeys";
 import { formatDealTotals, isDevtoolsCaseType, readDevtoolsDeal, sumDealValues } from "../lib/client-case";
+import { useToastActions } from "../context/ToastContext";
+import { completeNextStep } from "./DevtoolsDealEditor";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
@@ -23,6 +27,7 @@ export interface AgendaItem {
   value: string;
   date: string | null;
   subject: string;
+  fields: Record<string, unknown>;
 }
 
 export interface AgendaBucket {
@@ -86,6 +91,7 @@ export function buildDealAgenda(
         value: formatDealTotals(sumDealValues([row.case])),
         date,
         subject: date ? subject : "",
+        fields,
       };
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
@@ -102,7 +108,42 @@ export function buildDealAgenda(
 
 const ALL = "__all";
 
+function AgendaDoneForm({ item, onClose }: { item: AgendaItem; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const [note, setNote] = useState("");
+  const [nextActivityDate, setNextActivityDate] = useState("");
+  const [nextActivitySubject, setNextActivitySubject] = useState("");
+  const save = useMutation({
+    mutationFn: () =>
+      pipelinesApi.updateCase(item.caseId, { fields: completeNextStep(item.fields, { note, nextActivityDate, nextActivitySubject }) }),
+    onSuccess: async () => {
+      onClose();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.cases(item.pipelineId) });
+      pushToast({ title: nextActivityDate ? `Done on ${item.title}, and the follow-up is booked` : `Next step done on ${item.title}`, tone: "success" });
+    },
+    onError: (error) => pushToast({ title: error instanceof Error ? error.message : "Could not save", tone: "error" }),
+  });
+  return (
+    <form
+      className="mt-1 flex w-full flex-wrap items-center gap-2"
+      aria-label={`Mark ${item.title} done`}
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="What happened?" aria-label="What happened?" className="h-9 min-w-0 flex-1" />
+      <Input type="date" value={nextActivityDate} onChange={(event) => setNextActivityDate(event.target.value)} aria-label="Follow-up on" className="h-9 w-auto" />
+      <Input value={nextActivitySubject} onChange={(event) => setNextActivitySubject(event.target.value)} placeholder="Follow-up" aria-label="Follow-up" className="h-9 w-(--sz-180px)" />
+      <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+      <Button type="submit" size="sm" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>
+    </form>
+  );
+}
+
 function AgendaRow({ item }: { item: AgendaItem }) {
+  const [marking, setMarking] = useState(false);
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="agenda-item">
       <span className="min-w-0 flex-1">
@@ -111,11 +152,17 @@ function AgendaRow({ item }: { item: AgendaItem }) {
         </Link>
         {item.subject ? <span className="text-muted-foreground"> · {item.subject}</span> : null}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+      <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground tabular-nums">
         {[item.date ? formatCalendarDay(item.date) : "", item.owner, item.value, `${item.pipelineName} / ${item.stageName}`]
           .filter(Boolean)
           .join(" · ")}
+        {item.date && !marking ? (
+          <Button type="button" variant="outline" size="sm" onClick={() => setMarking(true)} aria-label={`Mark ${item.title} done`}>
+            Done
+          </Button>
+        ) : null}
       </span>
+      {marking ? <AgendaDoneForm item={item} onClose={() => setMarking(false)} /> : null}
     </li>
   );
 }

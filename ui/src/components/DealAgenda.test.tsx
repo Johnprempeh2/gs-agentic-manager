@@ -7,8 +7,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { PipelineCaseChildRow, PipelineListItem } from "../api/pipelines";
 import { DealAgenda, buildDealAgenda } from "./DealAgenda";
 
-const mocks = vi.hoisted(() => ({ listCases: vi.fn() }));
-vi.mock("../api/pipelines", () => ({ pipelinesApi: { listCases: mocks.listCases } }));
+const mocks = vi.hoisted(() => ({ listCases: vi.fn(), updateCase: vi.fn(), pushToast: vi.fn() }));
+vi.mock("../api/pipelines", () => ({ pipelinesApi: { listCases: mocks.listCases, updateCase: mocks.updateCase } }));
+vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: mocks.pushToast }) }));
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => <a href={to} {...props}>{children}</a>,
 }));
@@ -69,6 +70,22 @@ describe("DealAgenda", () => {
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect([...container.querySelectorAll("[data-testid='agenda-item'] a")].map((link) => link.textContent)).toEqual(["Late"]);
+
+    mocks.updateCase.mockResolvedValue({});
+    await act(async () => (container.querySelector('button[aria-label="Mark Late done"]') as HTMLButtonElement).click());
+    const note = container.querySelector('input[aria-label="What happened?"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(note, "Spoke to Sam");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector('form[aria-label="Mark Late done"]') as HTMLFormElement).requestSubmit();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(mocks.updateCase).toHaveBeenCalledWith("Late", { fields: expect.objectContaining({ lastActivitySubject: "Call", lastActivityNote: "Spoke to Sam" }) });
+    expect(mocks.updateCase.mock.calls[0]![1].fields.nextActivityDate).toBeUndefined();
+    expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Next step done on Late", tone: "success" });
     root.unmount();
   });
 });
