@@ -119,6 +119,15 @@ export function withDealForecast(
   return next;
 }
 
+/** A deal's fields with a new next step; the subject is cleared when none is given. */
+export function withDealNextStep(fields: Record<string, unknown> | null | undefined, { date, subject }: { date: string; subject: string }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) throw new Error("Choose a date for the next step");
+  const next: Record<string, unknown> = { ...(fields ?? {}), nextActivityDate: date.trim() };
+  if (subject.trim()) next.nextActivitySubject = subject.trim();
+  else delete next.nextActivitySubject;
+  return next;
+}
+
 /** Stages several deals can be moved to at once: open stages only, because won and lost need an outcome each. */
 export function bulkMoveStages(stages: readonly PipelineStage[]) {
   return [...stages]
@@ -227,6 +236,39 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
     onError: async (error) => {
       await refreshBoards(selectedRows.map((row) => row.item.pipelineId));
       pushToast({ title: error instanceof Error ? error.message : "Could not update every deal", tone: "error" });
+    },
+  });
+
+  const [nextStep, setNextStep] = useState({ date: "", subject: "" });
+  const bookNextStep = useMutation({
+    mutationFn: async () => {
+      withDealNextStep({}, nextStep);
+      let booked = 0;
+      let closed = 0;
+      for (const row of selectedRows) {
+        // Won and lost deals have no next step to book.
+        if (row.days == null && !moveTargets.some((stage) => stage.id === row.item.stageId)) {
+          closed += 1;
+          continue;
+        }
+        await pipelinesApi.updateCase(row.item.id, { fields: withDealNextStep(row.item.fields, nextStep) });
+        booked += 1;
+      }
+      return { booked, closed };
+    },
+    onSuccess: async ({ booked, closed }) => {
+      const pipelineIds = selectedRows.map((row) => row.item.pipelineId);
+      setSelected(new Set());
+      setNextStep({ date: "", subject: "" });
+      await refreshBoards(pipelineIds);
+      const title = `Next step booked on ${booked} ${booked === 1 ? "deal" : "deals"}`;
+      pushToast(closed > 0
+        ? { title, body: `${closed} won or lost ${closed === 1 ? "deal was" : "deals were"} left as ${closed === 1 ? "it was" : "they were"}.`, tone: "info" }
+        : { title, tone: "success" });
+    },
+    onError: async (error) => {
+      await refreshBoards(selectedRows.map((row) => row.item.pipelineId));
+      pushToast({ title: error instanceof Error ? error.message : "Could not book every next step", tone: "error" });
     },
   });
 
@@ -345,6 +387,36 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
           {updateForecast.isPending ? "Saving…" : "Set"}
         </Button>
         <span className="text-xs text-muted-foreground">A blank box leaves that field as it is.</span>
+      </form>
+    ) : null}
+    {selectedRows.length > 0 ? (
+      <form
+        className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 text-sm"
+        aria-label="Book next step"
+        onSubmit={(event) => {
+          event.preventDefault();
+          bookNextStep.mutate();
+        }}
+      >
+        <span className="font-medium">Next step for {selectedRows.length}</span>
+        <Input
+          type="date"
+          value={nextStep.date}
+          onChange={(event) => setNextStep((current) => ({ ...current, date: event.target.value }))}
+          aria-label="Next step on"
+          className="h-9 w-auto"
+        />
+        <Input
+          value={nextStep.subject}
+          onChange={(event) => setNextStep((current) => ({ ...current, subject: event.target.value }))}
+          placeholder="Such as Call"
+          aria-label="Next step"
+          className="h-9 w-(--sz-180px)"
+        />
+        <Button type="submit" size="sm" disabled={bookNextStep.isPending || !nextStep.date}>
+          {bookNextStep.isPending ? "Booking…" : "Book"}
+        </Button>
+        <span className="text-xs text-muted-foreground">Replaces any next step already booked.</span>
       </form>
     ) : null}
     <div className="overflow-x-auto rounded-md border border-border">

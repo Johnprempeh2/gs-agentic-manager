@@ -709,7 +709,7 @@ export function NewIssueDialog() {
         const prefix = (companies.find((company) => company.id === companyId)?.issuePrefix ?? "").trim();
         const issueRef = issue.identifier ?? issue.id;
         pushToast({
-          title: `Created ${issueRef} with upload warnings`,
+          title: `Task ${issueRef} created, but some files did not attach`,
           body: `Could not add ${failures.map((failure) => `${failure.name} (${failure.reason})`).join(", ")}.`,
           tone: "warn",
           action: prefix

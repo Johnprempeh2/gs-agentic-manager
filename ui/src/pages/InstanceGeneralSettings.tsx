@@ -20,6 +20,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { cn } from "../lib/utils";
 import { useSignOut } from "@/hooks/useSignOut";
+import { ErrorState } from "@/components/ErrorState";
 
 const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || null;
 
@@ -100,11 +101,12 @@ export function InstanceGeneralSettings({
 
   if (generalQuery.error) {
     return (
-      <div className="text-sm text-destructive">
-        {generalQuery.error instanceof Error
-          ? generalQuery.error.message
-          : "Settings did not load. Refresh the page."}
-      </div>
+      <ErrorState
+        error={generalQuery.error}
+        title="Settings did not load"
+        onRetry={() => void generalQuery.refetch()}
+        retrying={generalQuery.isFetching}
+      />
     );
   }
 
