@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineStage } from "../api/pipelines";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DealsList, buildDealRows, bulkMoveStages, sortDealRows, withDealForecast, withDealOwner } from "./DealsList";
+import { DealsList, buildDealRows, bulkMoveStages, sortDealRows, withDealForecast, withDealNextStep, withDealOwner } from "./DealsList";
 
 const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), transitionCase: vi.fn(), pushToast: vi.fn() }));
 vi.mock("../api/pipelines", () => ({ pipelinesApi: { updateCase: mocks.updateCase, transitionCase: mocks.transitionCase } }));
@@ -110,6 +110,39 @@ describe("DealsList", () => {
     });
     expect(mocks.updateCase.mock.calls.map((call) => [call[0], call[1].fields.expectedCloseDate])).toEqual([["b", "2026-11-30"], ["a", "2026-11-30"]]);
     expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Updated 2 deals", body: "1 won or lost deal was left as it was.", tone: "info" });
+    root.unmount();
+  });
+
+  it("books a next step, clearing the old subject when none is given", () => {
+    expect(withDealNextStep({ nextActivityDate: "2026-10-01", nextActivitySubject: "Demo" }, { date: "2026-10-25", subject: " Call " }))
+      .toEqual({ nextActivityDate: "2026-10-25", nextActivitySubject: "Call" });
+    expect(withDealNextStep({ nextActivitySubject: "Demo" }, { date: "2026-10-25", subject: "" })).toEqual({ nextActivityDate: "2026-10-25" });
+    expect(() => withDealNextStep({}, { date: "", subject: "Call" })).toThrow("Choose a date for the next step");
+  });
+
+  it("books a next step on the selected open deals", async () => {
+    mocks.updateCase.mockReset();
+    mocks.updateCase.mockResolvedValue({});
+    mocks.pushToast.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><DealsList cases={cases} stages={stages} /></QueryClientProvider>));
+    await act(async () => (container.querySelector('[aria-label="Select every deal"]') as HTMLButtonElement).click());
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    for (const [label, value] of [["Next step on", "2026-10-25"], ["Next step", "Call"]]) {
+      const input = container.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+      await act(async () => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    await act(async () => {
+      (container.querySelector('form[aria-label="Book next step"]') as HTMLFormElement).requestSubmit();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(mocks.updateCase.mock.calls.map((call) => [call[0], call[1].fields.nextActivityDate, call[1].fields.nextActivitySubject]))
+      .toEqual([["b", "2026-10-25", "Call"], ["a", "2026-10-25", "Call"]]);
+    expect(mocks.pushToast).toHaveBeenCalledWith({ title: "Next step booked on 2 deals", body: "1 won or lost deal was left as it was.", tone: "info" });
     root.unmount();
   });
 
