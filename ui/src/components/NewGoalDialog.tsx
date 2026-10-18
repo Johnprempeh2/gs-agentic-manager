@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { GOAL_STATUSES, GOAL_LEVELS, GOAL_KINDS, GOAL_KIND_LABELS, type GoalKind } from "@greatstone/shared";
 import { useDialog } from "../context/DialogContext";
@@ -68,11 +69,18 @@ export function NewGoalDialog() {
     enabled: !!selectedCompanyId && newGoalOpen,
   });
 
+  const toastActions = useOptionalToastActions();
   const createGoal = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       goalsApi.create(selectedCompanyId!, data),
-    onSuccess: () => {
+    onSuccess: (goal) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId!) });
+      toastActions?.pushToast({
+        title: "Goal created",
+        body: goal.title,
+        tone: "success",
+        action: { label: "Open goal", href: `/goals/${goal.id}` },
+      });
       reset();
       closeNewGoal();
     },
@@ -186,7 +194,7 @@ export function NewGoalDialog() {
         <div className="px-4 pt-4 pb-2 shrink-0">
           <input
             className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-subtle-foreground"
-            placeholder="Goal title"
+            placeholder="What do you want to achieve? For example, win 10 new clients"
             aria-label="Goal title"
             {...noContactAutofill("goal")}
             value={title}
@@ -207,7 +215,7 @@ export function NewGoalDialog() {
             ref={descriptionEditorRef}
             value={description}
             onChange={setDescription}
-            placeholder="Add description..."
+            placeholder="Why it matters and how you will know it is done"
             bordered={false}
             contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
             imageUploadHandler={async (file) => {

@@ -484,8 +484,8 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
     },
     onError: (error) => {
       pushToast({
-        title: "Run retry failed",
-        body: error instanceof Error ? error.message : "Unable to retry run",
+        title: "Could not try again",
+        body: error instanceof Error ? error.message : "The work could not be restarted. Try again in a moment.",
         tone: "error",
       });
     },
@@ -975,7 +975,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
       const queueId = effectiveQueuedCommentQueue?.queueId;
       if (!queueId)
         throw new Error(
-          "The queued message is awaiting server acknowledgement.",
+          "This message is still being sent. Try again in a moment.",
         );
       try {
         storeQueuedCommentQueue(
@@ -1006,7 +1006,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
       const queueId = effectiveQueuedCommentQueue?.queueId;
       if (!queueId)
         throw new Error(
-          "The queued messages are awaiting server acknowledgement.",
+          "These messages are still being sent. Try again in a moment.",
         );
       try {
         storeQueuedCommentQueue(
@@ -1034,7 +1034,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
       const targetRunId = effectiveQueuedCommentQueue?.targetRunId;
       if (!queueId || !targetRunId)
         throw new Error(
-          "The queued message no longer has an active run target.",
+          "The work this message was waiting for has already finished.",
         );
       try {
         const nextQueue = await issuesApi.steerQueuedComment(
@@ -1100,7 +1100,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
       const queueId = effectiveQueuedCommentQueue?.queueId;
       if (!queueId)
         throw new Error(
-          "The queued message is awaiting server acknowledgement.",
+          "This message is still being sent. Try again in a moment.",
         );
       try {
         storeQueuedCommentQueue(
@@ -1150,7 +1150,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
         if (code === "queued_comment_already_dispatching") {
           pushToast({
             title: "Message is already being sent",
-            body: "The continuation started before the discard was confirmed, so GS Agentic Manager could not unsend it.",
+            body: "The agent had already picked up this message, so it could not be unsent.",
             tone: "error",
             ttlMs: 15_000,
             dedupeKey: `queued-comment-already-dispatching:${issueId}:${commentId}`,

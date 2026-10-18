@@ -218,14 +218,14 @@ export type FireDisposition = "queued" | "coalesced" | "skipped";
 export interface FirePreviewEntry {
   at: Date;
   disposition: FireDisposition;
-  /** Short human label for the disposition (e.g. "queued", "would be coalesced"). */
+  /** Short human label for the disposition (e.g. "queued", "would join the queued one"). */
   label: string;
   note: string | null;
 }
 
 const DISPOSITION_LABEL: Record<FireDisposition, string> = {
   queued: "queued",
-  coalesced: "would be coalesced",
+  coalesced: "would join the queued one",
   skipped: "would be skipped",
 };
 

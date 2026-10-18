@@ -302,13 +302,13 @@ function buildStatusOptions(): ReadonlyArray<{ value: string; label: string; col
       value: "backlog",
       label: "Backlog",
       color: palette.backlog ?? issueStatusTextDefault,
-      description: "Parked - assignee will not be woken",
+      description: "Parked. Nobody starts on it yet",
     },
     {
       value: "todo",
       label: "Todo",
       color: palette.todo ?? issueStatusTextDefault,
-      description: "Executable - assignee will be woken",
+      description: "Ready. The assignee starts work on it",
     },
     { value: "in_progress", label: "In Progress", color: palette.in_progress ?? issueStatusTextDefault },
     { value: "in_review", label: "In Review", color: palette.in_review ?? issueStatusTextDefault },
@@ -353,8 +353,8 @@ const priorities = [
 
 const EXECUTION_WORKSPACE_MODES = [
   { value: "shared_workspace", label: "Project default" },
-  { value: "isolated_workspace", label: "New isolated workspace" },
-  { value: "reuse_existing", label: "Reuse existing workspace" },
+  { value: "isolated_workspace", label: "A fresh separate copy" },
+  { value: "reuse_existing", label: "One already in use" },
 ] as const;
 
 function defaultExecutionWorkspaceModeForIssueDefaults(
@@ -716,6 +716,17 @@ export function NewIssueDialog() {
             ? { label: `Open ${issueRef}`, href: `/${prefix}/issues/${issueRef}` }
             : undefined,
         });
+      } else {
+        const prefix = (companies.find((company) => company.id === companyId)?.issuePrefix ?? "").trim();
+        const issueRef = issue.identifier ?? issue.id;
+        pushToast({
+          title: `Task ${issueRef} created`,
+          body: issue.title,
+          tone: "success",
+          action: prefix
+            ? { label: "Open task", href: `/${prefix}/issues/${issueRef}` }
+            : undefined,
+        });
       }
       clearDraft();
       reset();
@@ -725,7 +736,7 @@ export function NewIssueDialog() {
 
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!effectiveCompanyId) throw new Error("No organization selected");
+      if (!effectiveCompanyId) throw new Error("No organisation selected");
       return assetsApi.uploadImage(effectiveCompanyId, file, "issues/drafts");
     },
   });
@@ -2009,9 +2020,9 @@ export function NewIssueDialog() {
           {workspaceIsolationControlsVisible && currentProject && currentProjectSupportsExecutionWorkspace && (
             <div className="px-4 py-3 space-y-2">
             <div className="space-y-1.5">
-              <div className="text-xs font-medium">Execution workspace</div>
+              <div className="text-xs font-medium">Where the work happens</div>
               <div className="text-(length:--text-micro) text-muted-foreground">
-                Control whether this task runs in the shared workspace, a new isolated workspace, or an existing one.
+                Choose whether this task uses the project's usual setup, a fresh separate copy, or one already in use.
               </div>
               <select
                 className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
@@ -2046,7 +2057,7 @@ export function NewIssueDialog() {
               */}
               {executionWorkspaceMode === "reuse_existing" && selectedReusableExecutionWorkspace && (
                 <div className="text-(length:--text-micro) text-muted-foreground">
-                  Reusing {selectedReusableExecutionWorkspace.name} from {selectedReusableExecutionWorkspace.branchName ?? "existing execution workspace"}.
+                  Reusing {selectedReusableExecutionWorkspace.name} from {selectedReusableExecutionWorkspace.branchName ?? "an existing work area"}.
                 </div>
               )}
               {showParentWorkspaceWarning ? (
@@ -2070,11 +2081,11 @@ export function NewIssueDialog() {
             {assigneeOptionsOpen && (
               <div className="mt-2 rounded-md border border-border p-3 bg-muted/20 space-y-3">
                 <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">Model lane</div>
+                  <div className="text-xs text-muted-foreground">Which AI model</div>
                   <div
                     className="flex w-full overflow-hidden rounded-md border border-border"
                     role="radiogroup"
-                    aria-label="Model lane"
+                    aria-label="Which AI model"
                   >
                     {(["primary", "custom"] as const).map((lane) => (
                       <button
@@ -2088,7 +2099,7 @@ export function NewIssueDialog() {
                         )}
                         onClick={() => setAssigneeModelLane(lane)}
                       >
-                        {lane === "primary" ? "Primary" : "Custom"}
+                        {lane === "primary" ? "Agent's usual model" : "Pick one for this task"}
                       </button>
                     ))}
                   </div>
@@ -2135,7 +2146,7 @@ export function NewIssueDialog() {
                 )}
                 {assigneeAdapterType === "claude_local" && assigneeModelLane === "custom" && (
                   <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
-                    <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
+                    <div className="text-xs text-muted-foreground">Let the agent use a Chrome browser</div>
                     <ToggleSwitch
                       checked={assigneeChrome}
                       onCheckedChange={() => setAssigneeChrome((value) => !value)}
@@ -2450,7 +2461,7 @@ export function NewIssueDialog() {
           >
             <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
             <span className="leading-snug">
-              Assigning implies executable intent - leave status as <span className="font-medium">Backlog</span> only to deliberately park this. The assignee will not be woken until status moves to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
+              You have picked someone, but the status is <span className="font-medium">Backlog</span>, so they will not start yet. Change it to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span> when you want work to begin.
             </span>
           </div>
         ) : null}
@@ -2471,7 +2482,7 @@ export function NewIssueDialog() {
           >
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
             <span className="leading-snug">
-              Low-trust review agent. It can only act inside its assigned review boundary; task, project, or run policy defines the concrete scope.
+              This is a limited review agent. It can only work on the review it has been given.
             </span>
           </div>
         ) : null}

@@ -78,7 +78,7 @@ describe("previewFirePolicies", () => {
   it("coalesces subsequent fires under coalesce_if_active", () => {
     const preview = previewFirePolicies(fires, "coalesce_if_active");
     expect(preview.map((e) => e.disposition)).toEqual(["queued", "coalesced", "coalesced"]);
-    expect(preview[1]?.label).toBe("would be coalesced");
+    expect(preview[1]?.label).toBe("would join the queued one");
   });
 
   it("skips subsequent fires under skip_if_active", () => {

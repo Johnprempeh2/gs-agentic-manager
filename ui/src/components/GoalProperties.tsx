@@ -178,7 +178,7 @@ export function GoalProperties({ goal, onUpdate, showKind = true }: GoalProperti
         </PropertyRow>
 
         {goal.parentId && (
-          <PropertyRow label="Parent Goal">
+          <PropertyRow label="Parent goal">
             <Link
               to={`/goals/${goal.parentId}`}
               className="text-sm hover:underline"

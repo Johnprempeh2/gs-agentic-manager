@@ -112,7 +112,7 @@ export type IssueDetailChatPanelProps = {
   canShowSubtreeControls: boolean;
   setTreeControlOpen: Dispatch<SetStateAction<boolean>>;
   activePauseHoldRoot: Issue | NonNullable<Issue["ancestors"]>[number] | null;
-  composerHint: "This issue's isolated workspace was archived. Your next comment or resume reopens it and rebuilds the worktree." | null;
+  composerHint: "This task's work area was put away. Sending a message or resuming sets it up again." | null;
   queuedCommentReason: "hold" | "active_run";
   handleCommentVote: ReturnType<typeof useThreadHandlers>["handleCommentVote"];
   handleChatAdd: ReturnType<typeof useThreadHandlers>["handleChatAdd"];

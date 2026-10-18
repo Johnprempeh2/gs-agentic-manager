@@ -838,7 +838,7 @@ export function IssueChatThread({
   const resolvedEmptyMessage =
     emptyMessage ??
     (variant === "embedded"
-      ? "No run output yet."
+      ? "Nothing from the agent yet."
       : "This task conversation is empty. Start with a message below.");
   const previousErrorBoundaryMessagesRef = useRef<
     readonly ThreadMessage[] | null

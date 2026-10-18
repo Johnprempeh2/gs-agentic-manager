@@ -57,14 +57,14 @@ for (const classic of [false, true]) {
         title: "Child held by parent", parentId: task.id, status: "backlog", assigneeAgentId: agent.id,
       } }));
       await page.goto(`/${company.issuePrefix}/issues/${child.identifier}`);
-      await expect(takeover).toContainText("Subtree is paused.");
+      await expect(takeover).toContainText("This task and its sub-tasks are paused.");
       await expect(editor).toHaveCount(0);
       expect((await request.post(`/api/issues/${child.id}/comments`, { data: { body: "Still paused" } })).status()).toBe(409);
-      await takeover.getByRole("link", { name: "Resume subtree" }).click();
+      await takeover.getByRole("link", { name: "Resume task and sub-tasks" }).click();
       await expect(page).toHaveURL(new RegExp(task.identifier));
-      await takeover.getByRole("button", { name: "Resume subtree" }).click();
+      await takeover.getByRole("button", { name: "Resume task and sub-tasks" }).click();
       await page.getByRole("dialog").getByRole("checkbox").uncheck();
-      await page.getByRole("dialog").getByRole("button", { name: "Resume subtree", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Resume task and sub-tasks", exact: true }).click();
       await page.goto(`/${company.issuePrefix}/issues/${child.identifier}`);
       await expect(takeover).toHaveCount(0);
       await expect(editor).toBeVisible();

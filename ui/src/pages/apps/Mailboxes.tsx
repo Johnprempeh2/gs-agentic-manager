@@ -406,10 +406,10 @@ function MailboxRow({
           )}
           <Button size="sm" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-            Test
+            Check connection
           </Button>
           <Button size="sm" variant="outline" onClick={() => setEditing((value) => !value)}>
-            Agents
+            Choose agents
           </Button>
           <Button size="sm" variant="ghost" aria-label={`Remove ${mailbox.label}`} onClick={onRemove}>
             <Trash2 className="size-4" aria-hidden="true" />
@@ -534,6 +534,13 @@ export function Mailboxes() {
       void cache.invalidateQueries({ queryKey: queryKeys.mailboxes.list(companyId) });
       pushToast({ title: "Mailbox removed", tone: "success" });
     },
+    onError: (error) => {
+      pushToast({
+        title: "Could not remove the mailbox",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
 
   const canSubmit =
@@ -606,7 +613,7 @@ export function Mailboxes() {
             if (canSubmit) connect.mutate();
           }}
         >
-          <h2 className="text-sm font-semibold">Add an IMAP mailbox</h2>
+          <h2 className="text-sm font-semibold">Add a mailbox with a password (IMAP)</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="mailbox-address">Email address</Label>

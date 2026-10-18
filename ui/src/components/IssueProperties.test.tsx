@@ -3697,7 +3697,7 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => expect(findRowTrigger(container, "Execution")).toBeDefined());
     act(() => findRowTrigger(container, "Execution")!.click());
     const isolatedOption = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("New isolated workspace"));
+      .find((button) => button.textContent?.includes("A fresh separate copy"));
     act(() => isolatedOption!.click());
 
     expect(onUpdate).toHaveBeenCalledWith({
@@ -3742,7 +3742,7 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => expect(findRowTrigger(container, "Execution")).toBeDefined());
     act(() => findRowTrigger(container, "Execution")!.click());
     const reuseOption = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Reuse existing workspace"));
+      .find((button) => button.textContent?.includes("One already in use"));
     act(() => reuseOption!.click());
 
     await waitForAssertion(() => {

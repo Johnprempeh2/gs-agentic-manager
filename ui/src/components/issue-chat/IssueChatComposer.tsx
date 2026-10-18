@@ -1077,9 +1077,9 @@ export const IssueChatComposer = forwardRef<
             value={reassignTarget}
             options={reassignOptions}
             placeholder="Responsible"
-            noneLabel="No responsible"
-            searchPlaceholder="Search responsible..."
-            emptyMessage="No responsible found."
+            noneLabel="Nobody"
+            searchPlaceholder="Search people and agents..."
+            emptyMessage="Nobody found."
             onChange={setReassignTarget}
             className="h-8 text-xs"
             renderTriggerValue={(option) => {
@@ -1165,11 +1165,11 @@ export const IssueChatComposer = forwardRef<
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>No responsible selected</AlertDialogTitle>
+            <AlertDialogTitle>Nobody is responsible yet</AlertDialogTitle>
             <AlertDialogDescription>
-              This comment will be posted without an assignee, so no agent will
-              be woken to act on it. Go back to pick a responsible, or send
-              anyway.
+              This comment will be posted without anyone responsible, so no
+              agent will pick it up. Go back to choose who is responsible, or
+              send anyway.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
