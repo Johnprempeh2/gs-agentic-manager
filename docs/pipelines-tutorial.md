@@ -663,6 +663,17 @@ gsam pipelines deals-due --days 7 --unscheduled --json
 also lists open deals with no next step booked. Won, lost and closed-stage
 deals are left out. The command only reads; it changes nothing.
 
+For a quick picture of each deal pipeline, such as for a morning briefing:
+
+```sh
+gsam pipelines deals-summary
+gsam pipelines deals-summary --json
+```
+
+Each line gives the open deals with their value and weighted value, how many
+next steps are late or missing, and the win rate over the last 90 days. It
+only reads.
+
 Once the agent has done a deal's next step, it records it the same way
 "Mark next step done" does on the deal page:
 
