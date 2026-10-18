@@ -158,6 +158,28 @@ describe("issue subresource commands", () => {
     await expect(run(["issue", "block", ISSUE_ID, "--action", "x", "--waiting-on", "friend"])).rejects.toThrow();
   });
 
+  it("registers deliverables, names a document maker, marks an approved revision and runs a monitor check", async () => {
+    const REVISION_ID = "44444444-4444-4444-8444-444444444444";
+    const AGENT_ID = "55555555-5555-4555-8555-555555555555";
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "deliverable:create", ISSUE_ID, "--title", "Q3 pack", "--url", "https://example.com/pack", "--kind", "deck"]);
+    await run(["issue", "document:maker", ISSUE_ID, "plan", "--agent", AGENT_ID]);
+    await run(["issue", "document:approve", ISSUE_ID, "plan", "--revision", REVISION_ID]);
+    await run(["issue", "document:approve", ISSUE_ID, "plan", "--revision", "null"]);
+    await run(["issue", "monitor:check-now", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0], call[1]?.body ? JSON.parse(String(call[1].body)) : null])).toEqual([
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/deliverables`, { title: "Q3 pack", url: "https://example.com/pack", kind: "deck" }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/maker`, { makerAgentId: AGENT_ID }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/approved-revision`, { revisionId: REVISION_ID }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/approved-revision`, { revisionId: null }],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/monitor/check-now`, {}],
+    ]);
+    await expect(run(["issue", "deliverable:create", ISSUE_ID, "--title", "No file"])).rejects.toThrow();
+  });
+
   it("sets and clears a due date on create and update", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);

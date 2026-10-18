@@ -432,6 +432,31 @@ export function registerAgentCommands(program: Command): void {
 
   addCommonClientOptions(
     agent
+      .command("secrets")
+      .description("List the secrets the current agent run can use (names and delivery only, never values)")
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const result = await ctx.api.get<{ secrets: Array<{ key: string; name: string; delivery: string; description: string | null; resolvedVersion: number }> }>(
+            "/api/agents/me/secrets",
+          );
+          const rows = result?.secrets ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(formatInlineRecord({ key: row.key, name: row.name, delivery: row.delivery, version: row.resolvedVersion, description: row.description }));
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
       .command("failures")
       .description("Show the current agent's last failed runs and their errors")
       .option("--limit <n>", "How many to show (1 to 20)", "5")

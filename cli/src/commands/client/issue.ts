@@ -5,6 +5,9 @@ import {
   answerAgentQuestionSchema,
   createAgentQuestionSchema,
   createIssueDocumentLinkSchema,
+  createDeliverableSchema,
+  setIssueDocumentApprovedRevisionSchema,
+  setIssueDocumentMakerSchema,
   upsertIssueWatchdogSchema,
   acceptIssueThreadInteractionSchema,
   cancelIssueThreadInteractionSchema,
@@ -88,6 +91,17 @@ interface IssueUpdateOptions extends BaseClientOptions {
   comment?: string;
   hiddenAt?: string;
   dueDate?: string;
+}
+
+interface IssueDeliverableOptions extends BaseClientOptions {
+  title: string;
+  attachmentId?: string;
+  url?: string;
+  key?: string;
+  summary?: string;
+  kind?: string;
+  status?: string;
+  confidentiality?: string;
 }
 
 interface IssueBlockOptions extends BaseClientOptions {
@@ -348,6 +362,98 @@ export function registerIssueCommands(program: Command): void {
           });
           const updated = await ctx.api.patch<Issue>(apiPath`/api/issues/${issueId}`, payload);
           printOutput(updated, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("deliverable:create")
+      .description("Register a deliverable on an issue (a stored file or a live https link); the same key makes the next version")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--title <title>", "Deliverable title")
+      .option("--attachment-id <id>", "A file already uploaded to the issue (gsam issue attachment:upload)")
+      .option("--url <url>", "A live https link instead of a file")
+      .option("--key <key>", "Version key; reuse it to publish the next version")
+      .option("--summary <text>", "One line on what it is (280 characters at most)")
+      .option("--kind <kind>", "report, brief, plan, deck or other")
+      .option("--status <status>", "draft or final")
+      .option("--confidentiality <level>", "internal, client or public")
+      .action(async (issueId: string, opts: IssueDeliverableOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = createDeliverableSchema.parse({
+            title: opts.title,
+            attachmentId: opts.attachmentId,
+            url: opts.url,
+            key: opts.key,
+            summary: opts.summary,
+            kind: opts.kind,
+            status: opts.status,
+            confidentiality: opts.confidentiality,
+          });
+          const created = await ctx.api.post(apiPath`/api/issues/${issueId}/deliverables`, payload);
+          printOutput(created, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document:maker")
+      .description("Name the agent allowed to write an issue document, or 'null' to clear it")
+      .argument("<issueId>", "Issue ID")
+      .argument("<key>", "Document key")
+      .requiredOption("--agent <id|null>", "Maker agent ID, or literal 'null'")
+      .action(async (issueId: string, key: string, opts: BaseClientOptions & { agent: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = setIssueDocumentMakerSchema.parse({
+            makerAgentId: opts.agent.trim().toLowerCase() === "null" ? null : opts.agent.trim(),
+          });
+          const result = await ctx.api.put(apiPath`/api/issues/${issueId}/documents/${key}/maker`, payload);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document:approve")
+      .description("Mark a revision as the current approved one of an issue document, or 'null' to clear it")
+      .argument("<issueId>", "Issue ID")
+      .argument("<key>", "Document key")
+      .requiredOption("--revision <id|null>", "Revision ID (see gsam issue document:revisions), or literal 'null'")
+      .action(async (issueId: string, key: string, opts: BaseClientOptions & { revision: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = setIssueDocumentApprovedRevisionSchema.parse({
+            revisionId: opts.revision.trim().toLowerCase() === "null" ? null : opts.revision.trim(),
+          });
+          const result = await ctx.api.put(apiPath`/api/issues/${issueId}/documents/${key}/approved-revision`, payload);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("monitor:check-now")
+      .description("Run an issue's monitor check now instead of waiting for its next check")
+      .argument("<issueId>", "Issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const result = await ctx.api.post(apiPath`/api/issues/${issueId}/monitor/check-now`, {});
+          printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }

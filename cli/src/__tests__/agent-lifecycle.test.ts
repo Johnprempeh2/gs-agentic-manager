@@ -189,6 +189,17 @@ describe("agent lifecycle commands", () => {
     expect(empty.lines.at(-1)).toBe("Nothing is assigned to you right now.");
   });
 
+  it("agent secrets lists names without values", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ secrets: [{ key: "NETLIFY_TOKEN", name: "Netlify", delivery: "env", description: null, resolvedVersion: 2 }] })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["agent", "secrets"]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3100/api/agents/me/secrets");
+    const lines = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(lines.some((line) => line.includes("NETLIFY_TOKEN") && line.includes("env"))).toBe(true);
+  });
+
   it("agent today reads the agent's own endpoints", async () => {
     const fetchMock = vi.fn((url: string) => Promise.resolve(jsonResponse(url.endsWith("/api/agents/me") ? { id: "agent-1", budgetMonthlyCents: 0, spentMonthlyCents: 0 } : [])));
     vi.stubGlobal("fetch", fetchMock);
