@@ -41,6 +41,25 @@ interface AgentLocalCliOptions extends BaseClientOptions {
   installSkills?: boolean;
 }
 
+interface AgentDoneOptions extends BaseClientOptions {
+  limit?: string;
+}
+
+interface AgentFindOptions extends BaseClientOptions {
+  companyId?: string;
+  limit?: string;
+}
+
+interface DirectoryMatch {
+  id: string;
+  name: string;
+  title: string | null;
+  role: string | null;
+  status: string;
+  capabilities: string | null;
+  matched: string[];
+}
+
 interface AgentInboxMineOptions extends BaseClientOptions {
   userId: string;
   status?: string;
@@ -259,6 +278,62 @@ export function registerAgentCommands(program: Command): void {
               title: row.title,
               projectId: row.projectId,
             }));
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
+      .command("done")
+      .description("List the current agent's recently finished tasks, newest first")
+      .option("--limit <n>", "How many to show (1 to 50)", "10")
+      .action(async (opts: AgentDoneOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const params = new URLSearchParams({ limit: opts.limit ?? "10" });
+          const rows =
+            (await ctx.api.get<Array<{ id: string; identifier: string | null; title: string; completedAt: string | null }>>(
+              `/api/agents/me/recent-done?${params.toString()}`,
+            )) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(formatInlineRecord({ identifier: row.identifier, id: row.id, completedAt: row.completedAt, title: row.title }));
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
+      .command("find")
+      .description("Find colleagues who can help, ranked by their capabilities, title and role")
+      .argument("<query>", "What you need help with, such as \"seo audit\"")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--limit <n>", "How many to show (1 to 50)", "10")
+      .action(async (query: string, opts: AgentFindOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const params = new URLSearchParams({ q: query, limit: opts.limit ?? "10" });
+          const result = await ctx.api.get<{ query: string; agents: DirectoryMatch[] }>(
+            `${apiPath`/api/companies/${ctx.companyId}/agents/directory`}?${params.toString()}`,
+          );
+          const rows = result?.agents ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(formatInlineRecord({ name: row.name, id: row.id, title: row.title, status: row.status, matched: row.matched.join(" ") }));
           }
           if (rows.length === 0) printOutput([], { json: false });
         } catch (err) {

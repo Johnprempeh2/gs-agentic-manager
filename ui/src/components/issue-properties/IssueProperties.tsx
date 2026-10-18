@@ -114,6 +114,7 @@ import {
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
+import { taskTimeLine } from "../../lib/time-to-done";
 import { IssueDueDateRow } from "./IssueDueDateRow";
 import {
   buildWorkspaceSelectionUpdate,
@@ -2464,6 +2465,15 @@ export function IssueProperties({
             showLabel
           />
         </PropertyRow>
+
+        {(() => {
+          const timeLine = taskTimeLine(issue);
+          return timeLine ? (
+            <PropertyRow label={timeLine.label}>
+              <span className="text-sm tabular-nums" data-testid="task-time-line">{timeLine.value}</span>
+            </PropertyRow>
+          ) : null;
+        })()}
 
         {/* PAP-411: priority UI is hidden behind SHOW_TASK_PRIORITY_UI. Revive by flipping the flag. */}
         {SHOW_TASK_PRIORITY_UI && (

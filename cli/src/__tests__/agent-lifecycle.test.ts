@@ -118,6 +118,22 @@ describe("agent lifecycle commands", () => {
       ["DELETE", `http://localhost:3100/api/agents/${AGENT_ID}/instructions-bundle/file?path=AGENTS.md`],
     ]);
   });
+
+  it("lists recent finished tasks and finds colleagues who can help", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse([{ id: "i1", identifier: "GRE-1", title: "Launch", completedAt: "2026-10-01" }])))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({ query: "seo audit", agents: [{ id: AGENT_ID, name: "Ridge", title: null, role: "cmo", status: "idle", capabilities: "SEO audits", matched: ["seo", "audit"] }] })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["agent", "done", "--limit", "5"]);
+    await run(["agent", "find", "seo audit", "--company-id", COMPANY_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "http://localhost:3100/api/agents/me/recent-done?limit=5",
+      `http://localhost:3100/api/companies/${COMPANY_ID}/agents/directory?q=seo+audit&limit=10`,
+    ]);
+  });
 });
 
 function jsonResponse(body: unknown = { ok: true }, init: ResponseInit = { status: 200 }): Response {

@@ -48,6 +48,7 @@ import { TaskActivityLine } from "../components/TaskActivityLine";
 import { TaskStopReasonLine } from "../components/TaskStopReasonLine";
 import { WhyBlockedCallout } from "../components/WhyBlockedCallout";
 import { WaitingDateEditor } from "../components/WaitingDateEditor";
+import { SaveAsWorkflowDialog } from "../components/SaveAsWorkflowDialog";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -160,6 +161,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
   const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
+  const [saveAsWorkflowOpen, setSaveAsWorkflowOpen] = useState(false);
   const [artifactsOpenRequest, setArtifactsOpenRequest] = useState<{
     issueId: string;
     requestId: number;
@@ -1036,6 +1038,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       isMobile={isMobile}
       isFromInbox={isFromInbox}
       copyIssueToClipboard={copyIssueToClipboard}
+      onSaveAsWorkflow={childIssues.length > 0 ? () => setSaveAsWorkflowOpen(true) : null}
       copied={copied}
       setMobilePropsOpen={setMobilePropsOpen}
       canArchiveFromInbox={canArchiveFromInbox}
@@ -1597,6 +1600,15 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           ) : null}
           <ScrollToBottom />
           {reauthDialog}
+          {childIssues.length > 0 ? (
+            <SaveAsWorkflowDialog
+              open={saveAsWorkflowOpen}
+              onOpenChange={setSaveAsWorkflowOpen}
+              companyId={issue.companyId}
+              task={issue}
+              subtasks={childIssues}
+            />
+          ) : null}
           {attachmentPreviewPanel}
         </div>
       </AttachmentPreviewContext.Provider>

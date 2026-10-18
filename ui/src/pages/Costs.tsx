@@ -847,6 +847,13 @@ export function Costs({
                                       : "0 subscription"}
                                   </div>
                                 ) : null}
+                                {row.tasksDone ? (
+                                  <div className="text-xs text-muted-foreground" title="Spend in this period divided by the tasks this agent finished in it.">
+                                    {row.tasksDone === 1 ? "1 task done" : `${row.tasksDone} tasks done`}
+                                    {" · "}
+                                    {formatCents(Math.round(row.costCents / row.tasksDone))} each
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
 

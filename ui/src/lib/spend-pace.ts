@@ -31,3 +31,17 @@ export function monthPaceLine(pace: MonthPace | null): string | null {
   if (pace.overBudgetOn) return `On pace to pass the budget around ${formatShortDate(pace.overBudgetOn)}`;
   return `On pace for ${formatCents(pace.projectedCents)} by month end`;
 }
+
+/**
+ * The agent page's "This month" row: "$42.00 spent. On pace for $130.00 by
+ * month end". Null before the agent has spent anything this month.
+ */
+export function agentMonthLine(
+  agent: { spentMonthlyCents?: number | null; budgetMonthlyCents?: number | null },
+  now: Date = new Date(),
+): string | null {
+  const spent = agent.spentMonthlyCents ?? 0;
+  if (spent <= 0) return null;
+  const paceLine = monthPaceLine(monthPace(spent, agent.budgetMonthlyCents ?? 0, now));
+  return paceLine ? `${formatCents(spent)} spent. ${paceLine}` : `${formatCents(spent)} spent`;
+}

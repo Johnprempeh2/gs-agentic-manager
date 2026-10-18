@@ -675,7 +675,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(byAgentModelRow?.costCents).toBe(4_000_000_000);
   });
 
-  it("groups cost events by billing code, most expensive first", async () => {
+  it("groups cost events by billing code and counts tasks each agent finished", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();
 
@@ -715,6 +715,18 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
       { ...base, billingCode: null, costCents: 999 },
       { ...base, billingCode: "", costCents: 999 },
     ]);
+
+    await db.insert(issues).values([
+      { companyId, title: "Done in range", status: "done", assigneeAgentId: agentId, completedAt: new Date("2026-04-12T00:00:00.000Z") },
+      { companyId, title: "Done in range too", status: "done", assigneeAgentId: agentId, completedAt: new Date("2026-04-13T00:00:00.000Z") },
+      { companyId, title: "Done last month", status: "done", assigneeAgentId: agentId, completedAt: new Date("2026-03-12T00:00:00.000Z") },
+      { companyId, title: "Still open", status: "todo", assigneeAgentId: agentId },
+    ]);
+    const [agentRow] = await costs.byAgent(companyId, {
+      from: new Date("2026-04-01T00:00:00.000Z"),
+      to: new Date("2026-04-30T23:59:59.999Z"),
+    });
+    expect(agentRow?.tasksDone).toBe(2);
 
     const rows = await costs.byBillingCode(companyId, {
       from: new Date("2026-04-01T00:00:00.000Z"),
