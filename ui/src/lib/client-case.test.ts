@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, lostReasonBreakdown, ownerScorecard, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, averageDaysToWin, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, lostReasonBreakdown, ownerScorecard, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -186,5 +186,19 @@ describe("ownerScorecard", () => {
       ["No owner", 1, 200, 0, null],
     ]);
     expect(rows[1]!.weighted).toEqual([{ currency: "GBP", total: 500 }]);
+  });
+});
+
+describe("averageDaysToWin", () => {
+  const now = new Date("2026-10-17T12:00:00Z");
+  it("averages added-to-won days over deals won in the last 90 days", () => {
+    expect(averageDaysToWin([
+      { fields: { dealStatus: "Won", addedOn: "2026-09-01", wonOn: "2026-10-01" } },
+      { fields: { dealStatus: "Won", addedOn: "2026-09-21", wonOn: "2026-10-01" } },
+      { fields: { dealStatus: "Won", addedOn: "2026-01-01", wonOn: "2026-05-01" } },
+      { fields: { dealStatus: "Lost", addedOn: "2026-09-01", lostOn: "2026-10-01" } },
+      { fields: { dealStatus: "Won", wonOn: "2026-10-01" } },
+    ], now)).toEqual({ deals: 2, days: 20 });
+    expect(averageDaysToWin([{ fields: { dealStatus: "Open", addedOn: "2026-09-01" } }], now)).toBeNull();
   });
 });

@@ -334,6 +334,27 @@ export function dealWinRate(cases: Array<{ fields?: Record<string, unknown> | nu
   return won + lost === 0 ? null : { won, lost, percent: Math.round((won / (won + lost)) * 100) };
 }
 
+/**
+ * Pipedrive's sales cycle: average whole days from a deal being added to it
+ * being won, over deals won in the last `days` days. Null when none has both dates.
+ */
+export function averageDaysToWin(cases: Array<{ fields?: Record<string, unknown> | null }>, now: Date = new Date(), days = 90) {
+  const since = now.getTime() - days * DAY_MS;
+  const cycles: number[] = [];
+  for (const item of cases) {
+    const deal = readDevtoolsDeal(item.fields);
+    if (deal.status?.trim().toLowerCase() !== "won" || !deal.closedOn) continue;
+    const won = new Date(deal.closedOn).getTime();
+    const added = new Date(fieldText(item.fields?.addedOn) ?? "").getTime();
+    if (!Number.isFinite(won) || !Number.isFinite(added) || won < added) continue;
+    if (won < since || won > now.getTime() + DAY_MS) continue;
+    cycles.push((won - added) / DAY_MS);
+  }
+  return cycles.length === 0
+    ? null
+    : { deals: cycles.length, days: Math.round(cycles.reduce((sum, value) => sum + value, 0) / cycles.length) };
+}
+
 /** Average whole days the cases have been in their stage; null when none has a date. */
 export function averageDaysInStage(cases: Array<{ stageEnteredAt?: Date | string | null }>, now: Date = new Date()) {
   const days = cases.map((item) => daysInStage(item.stageEnteredAt, now)).filter((value): value is number => value != null);
