@@ -206,6 +206,22 @@ export interface NeedsMeOverdueWait extends NeedsMeTask {
 }
 
 /**
+ * A question an agent asked on an open task that expired before anyone
+ * answered it, in the last two days. The agent has been woken to ask again
+ * or carry on; the user may still want to answer it.
+ */
+export interface NeedsMeExpiredCard {
+  interactionId: string;
+  /** The task the card was on. */
+  id: string;
+  identifier: string | null;
+  title: string;
+  /** The card's own title, for example the question it asked. */
+  question: string | null;
+  expiredAt: string;
+}
+
+/**
  * What truly needs the board user: open decisions waiting on them, plus
  * tasks assigned to them that are not done. Tasks they only created or
  * commented on are not included.
@@ -225,6 +241,12 @@ export interface NeedsMe {
    * is not repeated in `assignedTasks`; it may also have a decision card.
    */
   overdueWaits: NeedsMeOverdueWait[];
+  /**
+   * Questions from agents that expired unanswered on open tasks in the last
+   * two days, newest first, one per task. A task here is not repeated as a
+   * decision, an assigned task or an overdue wait.
+   */
+  expiredCards?: NeedsMeExpiredCard[];
 }
 
 export interface DecisionClarityRequest {

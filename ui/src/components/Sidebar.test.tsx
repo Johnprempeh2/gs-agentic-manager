@@ -224,7 +224,7 @@ describe("Sidebar", () => {
   }
 
   function memorySettings(enabled: boolean) {
-    return { companyId: "company-1", enabled, retainMode: "extract", updatedAt: null };
+    return { companyId: "company-1", enabled, retainMode: "extract", appSignIn: false, updatedAt: null };
   }
 
   function memoryLinks() {
@@ -547,17 +547,29 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows Status with its beta tag last in the Team section", async () => {
+  it("shows Status, without a beta tag, last in the Team section (GRE-1622)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: true, enableConferenceRoomChat: true });
+    const root = await renderSidebar();
+
+    expect(container.querySelector('a[href="/status"]')?.textContent).toBe("Status");
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("hides Status and the agent Chats when a client plan turns them off (GRE-1633)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableStatusCards: true,
+      enableStatusCards: false,
+      enableAgentChat: false,
       enableConferenceRoomChat: true,
     });
     const root = await renderSidebar();
 
-    const statusLink = container.querySelector('a[href="/status"]');
-    expect(statusLink?.textContent).toContain("Status");
-    expect(statusLink?.textContent).toContain("beta");
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
+    expect(container.querySelector('a[href="/status"]')).toBeNull();
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room"]);
+    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -771,9 +783,9 @@ describe("Sidebar", () => {
       enableCases: true,
       enableDeepDive: true,
       enablePipelines: true,
-      enableStatusCards: true,
       enableConferenceRoomChat: true,
       enableAgentChat: true,
+      enableStatusCards: true,
     });
     mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
@@ -785,9 +797,9 @@ describe("Sidebar", () => {
     expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
     expect(sectionLabels("Admin")).toEqual([
-      "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta",
+      "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Cases",
       "Audit", "Releases", "Settings", "Design guide",
     ]);
     expect(
@@ -823,8 +835,9 @@ describe("Sidebar", () => {
 
     expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
     expect(button("Expand Admin")).not.toBeNull();
-    // Pipelines and Deep Dive are off, so Clients holds only Deliverables; chats are off, so no Chats section.
+    // Pipelines and Deep Dive are off, so Clients holds only Deliverables.
     expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
+    // Agent Chat reads off here (as in a client plan, GRE-1633), so Chats has nothing to show.
     expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
     flushSync(() => {
@@ -907,10 +920,10 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows the Conference Room nav item when conference room chat is enabled (PAP-137)", async () => {
+  it("shows the Conference Room nav item even when a stored flag is off (graduated, GRE-1624)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,
-      enableConferenceRoomChat: true,
+      enableConferenceRoomChat: false,
     });
     const root = await renderSidebar();
 
@@ -924,25 +937,11 @@ describe("Sidebar", () => {
     });
   });
 
-  it("hides the Conference Room nav item when conference room chat is off (PAP-137)", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIsolatedWorkspaces: false,
-      enableConferenceRoomChat: false,
-    });
-    const root = await renderSidebar();
-
-    expect(container.textContent).not.toContain("Conference Room");
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
-  it("does not flash the Conference Room item while experimental settings are loading (PAP-137)", async () => {
+  it("shows the Conference Room nav item while experimental settings are loading (GRE-1624)", async () => {
     mockInstanceSettingsApi.getExperimental.mockImplementation(() => new Promise(() => {}));
     const root = await renderSidebar();
 
-    expect(container.textContent).not.toContain("Conference Room");
+    expect(container.textContent).toContain("Conference Room");
 
     flushSync(() => {
       root.unmount();

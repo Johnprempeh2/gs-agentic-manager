@@ -8,6 +8,11 @@
 //     Copies the live database into a new embedded PostgreSQL cluster for the
 //     preview, then turns off everything that could act outside the preview.
 //
+//   greatstone-db.ts blocking-cycles --source-url <url> [--remove <relation id>]
+//     Lists tasks whose "blocked by" links form a loop, with the id of each
+//     link. With --remove, deletes that one link and logs it in the activity
+//     log. See scripts/greatstone-blocking-cycles.sh.
+//
 //   greatstone-db.ts restore-legacy-password --data-dir <live db dir>
 //     Rollback to a release from before GRE-930 only: puts the database role
 //     back on the old fixed password and moves the random password file aside,
@@ -32,6 +37,7 @@ import {
   runDatabaseRestore,
 } from "../packages/db/src/index.js";
 import { ensureEmbeddedPostgres } from "../cli/src/commands/worktree.js";
+import { findBlockingCycles } from "./blocking-cycles-lib.mjs";
 
 // Each statement stops one way the copied data could act outside the preview.
 // A table or column that an older schema does not have is reported and skipped.
@@ -201,6 +207,59 @@ async function restoreLegacyPassword(options: Record<string, string>): Promise<v
   }
 }
 
+async function blockingCycles(options: Record<string, string>): Promise<void> {
+  const db = createDb(required(options, "source-url"));
+  try {
+    const removeId = options.remove;
+    if (removeId) {
+      const removed = await db.$client.begin(async (tx) => {
+        const rows = await tx.unsafe(
+          `delete from issue_relations where id = $1 and type = 'blocks'
+           returning id, company_id, issue_id, related_issue_id`,
+          [removeId],
+        );
+        const row = rows[0];
+        if (!row) return null;
+        await tx.unsafe(
+          `insert into activity_log (company_id, actor_type, actor_id, action, entity_type, entity_id, details)
+           values ($1, 'system', 'blocking-cycle-repair', 'issue.blockers_updated', 'issue', $2, $3::jsonb)`,
+          [row.company_id, row.related_issue_id, JSON.stringify({ removedBlockerIssueId: row.issue_id, reason: "blocking cycle repair" })],
+        );
+        return row;
+      });
+      console.log(removed ? `Removed link ${removeId}.` : `No blocking link with id ${removeId}; nothing changed.`);
+    }
+
+    const edges = await db.$client.unsafe(
+      `select r.id, r.company_id as "companyId", r.issue_id as "blockerIssueId", r.related_issue_id as "blockedIssueId"
+       from issue_relations r where r.type = 'blocks'`,
+    );
+    const cycles = findBlockingCycles(edges as unknown as Parameters<typeof findBlockingCycles>[0]);
+    if (cycles.length === 0) {
+      console.log("No blocking cycles.");
+      return;
+    }
+    const issueIds = [...new Set(cycles.flatMap((cycle) => cycle.issueIds))];
+    const labels = new Map<string, string>();
+    for (const row of await db.$client.unsafe(
+      `select id, coalesce(identifier, id::text) as label, title, status from issues where id = any($1::uuid[])`,
+      [issueIds],
+    )) {
+      labels.set(row.id as string, `${row.label} "${row.title}" (${row.status})`);
+    }
+    console.log(`${cycles.length} blocking cycle(s). Remove one link per cycle with --remove <link id>.`);
+    for (const [n, cycle] of cycles.entries()) {
+      console.log(`\nCycle ${n + 1}, company ${cycle.companyId}:`);
+      for (const edge of cycle.edges) {
+        console.log(`  link ${edge.id}: ${labels.get(edge.blockerIssueId)} blocks ${labels.get(edge.blockedIssueId)}`);
+      }
+    }
+    process.exitCode = 3;
+  } finally {
+    await db.$client.end({ timeout: 5 });
+  }
+}
+
 async function main(): Promise<void> {
   const { command, options } = parseArgs(process.argv.slice(2));
   if (command === "backup") {
@@ -212,15 +271,17 @@ async function main(): Promise<void> {
     console.log(file);
   } else if (command === "seed-preview") {
     await seedPreview(options);
+  } else if (command === "blocking-cycles") {
+    await blockingCycles(options);
   } else if (command === "restore-legacy-password") {
     await restoreLegacyPassword(options);
   } else {
-    throw new Error("usage: greatstone-db.ts backup|seed-preview|restore-legacy-password --option value ...");
+    throw new Error("usage: greatstone-db.ts backup|seed-preview|blocking-cycles|restore-legacy-password --option value ...");
   }
 }
 
 main().then(
-  () => process.exit(0),
+  () => process.exit(process.exitCode ?? 0),
   (error) => {
     console.error(`greatstone-db: ${(error as Error).message}`);
     process.exit(1);

@@ -50,7 +50,7 @@ describe("recoveryChipLabel", () => {
       "Recovery escalated",
     );
     expect(recoveryChipLabel("observe_only", "workspace_validation")).toBe(
-      "Observing active run",
+      "Watching the agent's work",
     );
   });
 });

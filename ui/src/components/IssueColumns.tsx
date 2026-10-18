@@ -331,7 +331,7 @@ export function InboxIssueTrailingColumns({
             return (
               <span key={column} className="min-w-0 text-xs text-foreground">
                 <AgentIdentity
-                  agent={assigneeAgent ?? { id: issue.assigneeAgentId, name: assigneeName ?? issue.assigneeAgentId.slice(0, 8) }}
+                  agent={assigneeAgent ?? { id: issue.assigneeAgentId, name: assigneeName ?? "An agent" }}
                   size="sm"
                   className="min-w-0"
                 />
@@ -361,7 +361,7 @@ export function InboxIssueTrailingColumns({
 
         if (column === "kickedOffBy") {
           if (originatingActor?.kind === "agent") {
-            const name = creatorAgentName ?? originatingActor.id.slice(0, 8);
+            const name = creatorAgentName ?? "An agent";
             return (
               <Tooltip key={column}>
                 <TooltipTrigger asChild>

@@ -22,6 +22,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { PageTabBar } from "@/components/PageTabBar";
+import { ErrorState } from "@/components/ErrorState";
+import { ApiError } from "@/api/client";
 import {
   JsonSchemaForm,
   validateJsonSchemaForm,
@@ -67,7 +69,13 @@ export function PluginSettings() {
   const { hideHostPaths } = useManagedSandboxOnly();
   const [activeTab, setActiveTab] = useState<"configuration" | "status">("configuration");
 
-  const { data: plugin, isLoading: pluginLoading } = useQuery({
+  const {
+    data: plugin,
+    isLoading: pluginLoading,
+    error: pluginError,
+    refetch: refetchPlugin,
+    isFetching: pluginFetching,
+  } = useQuery({
     queryKey: queryKeys.plugins.detail(pluginId!),
     queryFn: () => pluginsApi.get(pluginId!),
     enabled: !!pluginId,
@@ -122,7 +130,7 @@ export function PluginSettings() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Plugins", href: "/company/settings/instance/plugins" },
       { label: plugin?.manifestJson?.displayName ?? plugin?.packageName ?? "Plugin Details" },
@@ -135,6 +143,17 @@ export function PluginSettings() {
 
   if (pluginLoading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading plugin details...</div>;
+  }
+
+  if (pluginError && !(pluginError instanceof ApiError && pluginError.status === 404)) {
+    return (
+      <ErrorState
+        error={pluginError}
+        title="Could not load this plugin"
+        onRetry={() => void refetchPlugin()}
+        retrying={pluginFetching}
+      />
+    );
   }
 
   if (!plugin) {
@@ -268,7 +287,7 @@ export function PluginSettings() {
                   <p className="font-medium text-foreground">Configure this plugin from Settings → Environments.</p>
                   <p className="mt-1 text-muted-foreground">
                     {driverLabel || "This plugin"} registers environment runtime settings there so the execution target
-                    stays instance-scoped while secret bindings still resolve through the selected organization context.
+                    stays instance-scoped while secret bindings still resolve through the selected organisation.
                   </p>
                   <div className="mt-3">
                     <Link to="/company/settings/instance/environments">
@@ -605,7 +624,7 @@ function PluginLocalFoldersSettings({ pluginId, companyId, declarations }: Plugi
   if (!companyId) {
     return (
       <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-        Select an organization to configure this plugin's local folders.
+        Choose an organisation to configure this plugin's local folders.
       </div>
     );
   }
@@ -989,7 +1008,7 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: (configJson: Record<string, unknown>) => {
-      if (!companyId) throw new Error("Select an organization before saving plugin configuration.");
+      if (!companyId) throw new Error("Choose an organisation before saving plugin configuration.");
       return pluginsApi.saveConfig(pluginId, companyId, configJson);
     },
     onSuccess: () => {
@@ -1009,7 +1028,7 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
   // Test configuration mutation
   const testMutation = useMutation({
     mutationFn: (configJson: Record<string, unknown>) => {
-      if (!companyId) throw new Error("Select an organization before testing plugin configuration.");
+      if (!companyId) throw new Error("Choose an organisation before testing plugin configuration.");
       return pluginsApi.testConfig(pluginId, companyId, configJson);
     },
     onSuccess: (result) => {

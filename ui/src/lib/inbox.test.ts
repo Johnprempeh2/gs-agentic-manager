@@ -32,6 +32,7 @@ import {
   groupInboxWorkItems,
   activeSnoozedInboxIssueIds,
   inboxSnoozeUntilTomorrow,
+  inboxSnoozeUntilNextWeek,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadInboxFilterPreferences,
@@ -1473,7 +1474,7 @@ describe("inbox helpers", () => {
     expect(groupInboxWorkItems(items, "type")).toEqual([
       { key: "issue", label: "Tasks", items: [items[1], items[2]] },
       { key: "approval", label: "Approvals", items: [items[0]] },
-      { key: "failed_run", label: "Failed runs", items: [items[3]] },
+      { key: "failed_run", label: "Stopped with an error", items: [items[3]] },
       { key: "join_request", label: "Join requests", items: [items[4]] },
     ]);
   });
@@ -1695,6 +1696,15 @@ describe("putting Inbox tasks away for later", () => {
     expect([until.getFullYear(), until.getMonth(), until.getDate(), until.getHours(), until.getMinutes()]).toEqual([
       2026, 9, 17, 8, 0,
     ]);
+  });
+
+  it("puts a task away until Monday at 08:00 for next week", () => {
+    const parts = (d: Date) => [d.getMonth(), d.getDate(), d.getDay(), d.getHours(), d.getMinutes()];
+    // Friday 16 Oct 2026 goes to Monday 19 Oct.
+    expect(parts(inboxSnoozeUntilNextWeek(new Date(2026, 9, 16, 18, 0)))).toEqual([9, 19, 1, 8, 0]);
+    // Sunday goes to the next day; Monday goes a whole week on.
+    expect(parts(inboxSnoozeUntilNextWeek(new Date(2026, 9, 18, 22, 0)))).toEqual([9, 19, 1, 8, 0]);
+    expect(parts(inboxSnoozeUntilNextWeek(new Date(2026, 9, 19, 7, 0)))).toEqual([9, 26, 1, 8, 0]);
   });
 
   it("hides only tasks whose snooze has not ended", () => {

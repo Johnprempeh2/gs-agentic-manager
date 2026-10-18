@@ -1,4 +1,4 @@
-import type { CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
+import type { CompanyClientBriefResponse, CompanyClosingDealsResponse, CompanyPipelineSummaryResponse, CompanyWonLostResponse, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchRecordKind, CompanySearchResponse, CompanySearchScope, CompanySearchSort, IssuePriority, IssueStatus } from "@greatstone/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -15,6 +15,8 @@ export interface CompanySearchParams {
   updatedWithin?: string;
   updatedAfter?: string;
   sort?: CompanySearchSort;
+  /** Narrow business records to these kinds. */
+  recordKind?: CompanySearchRecordKind[];
 }
 
 function appendMulti(search: URLSearchParams, key: string, values: readonly string[] | undefined) {
@@ -37,9 +39,52 @@ export const searchApi = {
     if (params.updatedWithin !== undefined) search.set("updatedWithin", params.updatedWithin);
     if (params.updatedAfter !== undefined) search.set("updatedAfter", params.updatedAfter);
     if (params.sort !== undefined) search.set("sort", params.sort);
+    if (params.recordKind?.length) search.set("recordKind", params.recordKind.join(","));
     const qs = search.toString();
     return api.get<CompanySearchResponse>(
       `/companies/${companyId}/search${qs ? `?${qs}` : ""}`,
     );
+  },
+  /** Open deals and leads with no note, call, meeting or email for `days` days. */
+  quietClients: (companyId: string, params: { days?: number; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.days !== undefined) search.set("days", String(params.days));
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api.get<CompanyQuietClientsResponse>(`/companies/${companyId}/search/quiet-clients${qs ? `?${qs}` : ""}`);
+  },  /** Imported notes, calls, meetings and emails from the last `days` days, newest first. */
+  recentClientActivity: (companyId: string, params: { days?: number; limit?: number; since?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.since !== undefined) search.set("since", params.since);
+    if (params.days !== undefined) search.set("days", String(params.days));
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api.get<CompanyRecentClientActivityResponse>(`/companies/${companyId}/search/recent-client-activity${qs ? `?${qs}` : ""}`);
+  },  /** A brief on the organisation that best matches a name. */
+  clientBrief: (companyId: string, name: string) =>
+    api.get<CompanyClientBriefResponse>(`/companies/${companyId}/search/client-brief?${new URLSearchParams({ q: name }).toString()}`),
+  /** Open deals and leads expected to close within `days` (0: only those past their date), soonest first. */
+  closingDeals: (companyId: string, params: { days?: number; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.days !== undefined) search.set("days", String(params.days));
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api.get<CompanyClosingDealsResponse>(`/companies/${companyId}/search/closing-deals${qs ? `?${qs}` : ""}`);
+  },
+  /** Open deals per stage, value per currency and the largest deals. */
+  pipelineSummary: (companyId: string, params: { limit?: number; owner?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    if (params.owner) search.set("owner", params.owner);
+    const query = search.toString();
+    return api.get<CompanyPipelineSummaryResponse>(`/companies/${companyId}/search/pipeline-summary${query ? `?${query}` : ""}`);
+  },
+  /** Deals won and lost in the last `days` days, with value and lost reasons. */
+  wonLost: (companyId: string, params: { days?: number; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.days !== undefined) search.set("days", String(params.days));
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api.get<CompanyWonLostResponse>(`/companies/${companyId}/search/won-lost${qs ? `?${qs}` : ""}`);
   },
 };

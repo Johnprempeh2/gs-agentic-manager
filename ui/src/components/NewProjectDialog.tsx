@@ -6,6 +6,8 @@ import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
+import { projectUrl } from "../lib/utils";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { ProjectRepositoryInput, repositoryOptionsKey } from "./ProjectRepositoryInput";
@@ -13,22 +15,28 @@ import { ConnectionSetupFlow } from "@/features/connections/ConnectionSetupFlow"
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export function NewProjectDialog() {
-  const { newProjectOpen, closeNewProject } = useDialog();
+  const { newProjectOpen, newProjectDefaults, closeNewProject } = useDialog();
   const { selectedCompanyId } = useCompany();
   return selectedCompanyId && newProjectOpen
-    ? <NewProjectForm key={selectedCompanyId} companyId={selectedCompanyId} onClose={closeNewProject} /> : null;
+    ? <NewProjectForm key={selectedCompanyId} companyId={selectedCompanyId} goalId={newProjectDefaults?.goalId} onClose={closeNewProject} /> : null;
 }
 
-export function NewProjectForm({ companyId, onClose }: { companyId: string; onClose: () => void }) {
+export function NewProjectForm({ companyId, goalId, onClose }: { companyId: string; goalId?: string; onClose: () => void }) {
   const client = useQueryClient();
   const [name, setName] = useState("");
   const [repos, setRepos] = useState<ProjectRepository[]>([]);
   const [connecting, setConnecting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const toastActions = useOptionalToastActions();
   const create = useMutation({
-    mutationFn: () => projectsApi.create(companyId, { name: name.trim(), status: "planned", repositoryIds: repos.map((repo) => repo.id) }),
-    onSuccess: () => {
+    mutationFn: () => projectsApi.create(companyId, { name: name.trim(), status: "planned", repositoryIds: repos.map((repo) => repo.id), ...(goalId ? { goalIds: [goalId] } : {}) }),
+    onSuccess: (project) => {
       void client.invalidateQueries({ queryKey: queryKeys.projects.all(companyId) });
+      toastActions?.pushToast({
+        title: `Project "${project.name}" created`,
+        tone: "success",
+        action: { label: "Open project", href: projectUrl(project) },
+      });
       onClose();
     },
   });

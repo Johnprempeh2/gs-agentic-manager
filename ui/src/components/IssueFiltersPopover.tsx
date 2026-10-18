@@ -71,7 +71,7 @@ const INBOX_CATEGORY_OPTIONS: ReadonlyArray<[InboxCategoryFilter, string]> = [
   ["issues_i_touched", "My recent tasks"],
   ["join_requests", "Join requests"],
   ["approvals", "Approvals"],
-  ["failed_runs", "Failed runs"],
+  ["failed_runs", "Stopped with an error"],
   ["alerts", "Alerts"],
 ];
 
@@ -624,7 +624,7 @@ export function IssueFiltersPopover({
                     checked={state.liveOnly}
                     onCheckedChange={(checked) => onChange({ liveOnly: checked === true })}
                   />
-                  <span className="text-sm">Live runs only</span>
+                  <span className="text-sm">Only tasks being worked on now</span>
                 </label>
                 {enableRoutineVisibilityFilter ? (
                   <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
@@ -632,7 +632,7 @@ export function IssueFiltersPopover({
                       checked={state.hideRoutineExecutions}
                       onCheckedChange={(checked) => onChange({ hideRoutineExecutions: checked === true })}
                     />
-                    <span className="text-sm">Hide routine runs</span>
+                    <span className="text-sm">Hide scheduled routine tasks</span>
                   </label>
                 ) : null}
               </div>

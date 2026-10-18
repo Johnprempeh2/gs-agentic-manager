@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, History, Pencil, Repeat, Sparkles, X } from "lucide-react";
 import { ApiError } from "../api/client";
@@ -23,6 +23,7 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { type InlineEntityOption } from "../components/InlineEntitySelector";
 import { type MarkdownEditorRef, type MentionOption } from "../components/MarkdownEditor";
@@ -164,7 +165,7 @@ export function RoutineDetail() {
     [navigate, routineId],
   );
 
-  const { data: routine, isLoading, error } = useQuery({
+  const { data: routine, isLoading, error, refetch: refetchRoutine } = useQuery({
     queryKey: queryKeys.routines.detail(routineId!),
     queryFn: () => routinesApi.get(routineId!),
     enabled: !!routineId,
@@ -190,7 +191,7 @@ export function RoutineDetail() {
     }),
     [routine?.triggers, routineRuns],
   );
-  const { data: activity, isLoading: activityLoading, error: activityError } = useQuery({
+  const { data: activity, isLoading: activityLoading, error: activityError, refetch: refetchActivity } = useQuery({
     queryKey: [
       ...queryKeys.routines.activity(selectedCompanyId!, routineId!),
       relatedActivityIds.triggerIds.join(","),
@@ -221,12 +222,19 @@ export function RoutineDetail() {
   });
   const createSecret = useMutation({
     mutationFn: (input: { name: string; value: string }) => {
-      if (!selectedCompanyId) throw new Error("Select an organization to create secrets");
+      if (!selectedCompanyId) throw new Error("Choose an organisation to create secrets");
       return secretsApi.create(selectedCompanyId, input);
     },
     onSuccess: () => {
       if (!selectedCompanyId) return;
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId) });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Secret not saved",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 
@@ -266,16 +274,16 @@ export function RoutineDetail() {
       result.push({ key: "priority", label: "the priority" });
     }
     if (editDraft.concurrencyPolicy !== routineDefaults.concurrencyPolicy) {
-      result.push({ key: "concurrencyPolicy", label: "the concurrency policy" });
+      result.push({ key: "concurrencyPolicy", label: "what happens if it is still running" });
     }
     if (editDraft.catchUpPolicy !== routineDefaults.catchUpPolicy) {
-      result.push({ key: "catchUpPolicy", label: "the catch-up policy" });
+      result.push({ key: "catchUpPolicy", label: "what happens if a time was missed" });
     }
     if (editDraft.activityGatePolicy !== routineDefaults.activityGatePolicy) {
       result.push({ key: "activityGatePolicy", label: "the advanced run policy" });
     }
     if (editDraft.activityGateScope !== routineDefaults.activityGateScope) {
-      result.push({ key: "activityGateScope", label: "the activity gate scope" });
+      result.push({ key: "activityGateScope", label: "when it skips quiet periods" });
     }
     if (JSON.stringify(editDraft.variables) !== JSON.stringify(routineDefaults.variables)) {
       result.push({ key: "variables", label: "the variables" });
@@ -341,7 +349,7 @@ export function RoutineDetail() {
         pushToast({ title: `${label} copied`, tone: "success" });
       } catch (copyError) {
         pushToast({
-          title: `Failed to copy ${label.toLowerCase()}`,
+          title: `Could not copy ${label.toLowerCase()}`,
           body: copyError instanceof Error ? copyError.message : "Clipboard access was denied.",
           tone: "error",
         });
@@ -379,7 +387,7 @@ export function RoutineDetail() {
         return;
       }
       pushToast({
-        title: "Failed to save routine",
+        title: "Your routine was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the routine.",
         tone: "error",
       });
@@ -401,7 +409,7 @@ export function RoutineDetail() {
           : {}),
       }),
     onSuccess: async () => {
-      pushToast({ title: "Routine run started", tone: "success" });
+      pushToast({ title: "Routine started", tone: "success" });
       setRunVariablesOpen(false);
       navigateToSection("runs");
       await Promise.all([
@@ -414,8 +422,8 @@ export function RoutineDetail() {
     },
     onError: (runError) => {
       pushToast({
-        title: "Routine run failed",
-        body: runError instanceof Error ? runError.message : "GS Agentic Manager could not start the routine run.",
+        title: "Could not start the routine",
+        body: runError instanceof Error ? runError.message : "The routine could not start. Try again.",
         tone: "error",
       });
     },
@@ -436,7 +444,7 @@ export function RoutineDetail() {
     },
     onError: (statusError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: statusError instanceof Error ? statusError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -475,7 +483,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to add trigger",
+        title: "Could not add the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not create the trigger.",
         tone: "error",
       });
@@ -485,7 +493,7 @@ export function RoutineDetail() {
   const updateTrigger = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) => routinesApi.updateTrigger(id, patch),
     onSuccess: async () => {
-      pushToast({ title: "Trigger saved", body: "The routine cadence update was saved.", tone: "success" });
+      pushToast({ title: "Trigger saved", body: "Your schedule change was saved.", tone: "success" });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.routines.detail(routineId!) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.routines.list(selectedCompanyId!) }),
@@ -494,7 +502,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to update trigger",
+        title: "Could not change the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not update the trigger.",
         tone: "error",
       });
@@ -513,7 +521,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to delete trigger",
+        title: "Could not delete the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not delete the trigger.",
         tone: "error",
       });
@@ -524,7 +532,7 @@ export function RoutineDetail() {
     mutationFn: (id: string): Promise<RotateRoutineTriggerResponse> => routinesApi.rotateTriggerSecret(id),
     onSuccess: async (result) => {
       setSecretMessage({
-        title: "Webhook secret rotated",
+        title: "New secret key made",
         entries: [{ webhookUrl: result.secretMaterial.webhookUrl, webhookSecret: result.secretMaterial.webhookSecret }],
       });
       await Promise.all([
@@ -534,8 +542,8 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to rotate webhook secret",
-        body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not rotate the webhook secret.",
+        title: "Could not make a new secret key",
+        body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not make a new secret key.",
         tone: "error",
       });
     },
@@ -643,7 +651,7 @@ export function RoutineDetail() {
   );
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Repeat} message="Select an organization to view routines." />;
+    return <EmptyState icon={Repeat} message="Choose an organisation to view routines." />;
   }
 
   const legacyTab = new URLSearchParams(window.location.search).get("tab");
@@ -662,10 +670,14 @@ export function RoutineDetail() {
 
   if (error || !routine || !routineDefaults) {
     return (
-      <EmptyState
-        icon={AlertCircle}
-        message={error instanceof Error ? error.message : "We couldn't load this routine."}
-      />
+      <div className="space-y-3">
+        {error ? (
+          <ErrorState error={error} title="This routine did not load" onRetry={() => void refetchRoutine()} />
+        ) : (
+          <EmptyState icon={AlertCircle} message="We couldn't find this routine." description="It may have been deleted." />
+        )}
+        <Link to="/routines" className="text-sm underline underline-offset-4">Back to routines</Link>
+      </div>
     );
   }
 
@@ -881,7 +893,7 @@ export function RoutineDetail() {
             {section === "secrets" && <SecretsSection />}
             {section === "delivery" && <DeliverySection />}
             {section === "runs" && <RunsSection />}
-            {section === "activity" && <ActivitySection isLoading={activityLoading} error={activityError} />}
+            {section === "activity" && <ActivitySection isLoading={activityLoading} error={activityError} onRetry={() => void refetchActivity()} />}
             {section === "history" && <HistorySection />}
 
             {isEditableSection && (section !== "overview" || overviewEditing) ? (

@@ -37,6 +37,8 @@ export interface DashboardSummary {
     inProgress: number;
     blocked: number;
     done: number;
+    /** Open tasks whose due date is before today (UTC). */
+    overdue?: number;
   };
   costs: {
     monthSpendCents: number;

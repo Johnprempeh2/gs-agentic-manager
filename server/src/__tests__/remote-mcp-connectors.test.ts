@@ -62,7 +62,8 @@ describe("remote connector lifecycle", () => {
     const gallery = await request(app).get(`/api/companies/${org.id}/tools/gallery`);
     expect(gallery.status).toBe(200);
     expect(gallery.body.apps.map((entry: { slug: string }) => entry.slug)).toEqual(expect.arrayContaining(["zapier", "arcade", "composio", "executor", "notion"]));
-    expect(gallery.body.apps.some((entry: { slug: string }) => entry.slug === "mem0")).toBe(false);
+    // Memory connectors graduated (GRE-1620): on by default unless a managed config pins them off.
+    expect(gallery.body.apps.some((entry: { slug: string }) => entry.slug === "mem0")).toBe(true);
     for (const [galleryKey, connectionMethodKey, link] of [
       ["zapier", "generated-url", "https://mcp.zapier.com/api/v1/connect?token=fixture-secret"],
       ["arcade", "mcp", "https://api.arcade.dev/mcp/fixture"],

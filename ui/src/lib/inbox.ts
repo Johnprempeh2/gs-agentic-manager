@@ -342,6 +342,15 @@ export function inboxSnoozeUntilTomorrow(now: Date = new Date()): Date {
   return until;
 }
 
+/** "Next week": Monday at 08:00 on this device's clock (a week on when today is Monday). */
+export function inboxSnoozeUntilNextWeek(now: Date = new Date()): Date {
+  const until = new Date(now);
+  const daysToMonday = ((8 - until.getDay()) % 7) || 7;
+  until.setDate(until.getDate() + daysToMonday);
+  until.setHours(8, 0, 0, 0);
+  return until;
+}
+
 /** Tasks put away for later that have not come back yet. */
 export function activeSnoozedInboxIssueIds(dismissals: InboxDismissal[], now: number = Date.now()): Set<string> {
   const ids = new Set<string>();
@@ -911,7 +920,7 @@ const inboxWorkItemKindOrder: InboxWorkItem["kind"][] = [
 const inboxWorkItemKindLabels: Record<InboxWorkItem["kind"], string> = {
   issue: "Tasks",
   approval: "Approvals",
-  failed_run: "Failed runs",
+  failed_run: "Stopped with an error",
   join_request: "Join requests",
 };
 

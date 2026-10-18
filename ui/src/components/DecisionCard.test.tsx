@@ -135,7 +135,7 @@ describe("DecisionCard", () => {
     expect(el.textContent).toContain("Gardener");
     expect(el.textContent).toContain("PAP-123");
     expect(el.textContent).toContain("Comment on PAP-456");
-    expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Not now"))).toBe(true);
+    expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Dismiss"))).toBe(true);
   });
 
   it("links the target issue the decision applies to, not just the origin", () => {
@@ -196,7 +196,7 @@ describe("DecisionCard", () => {
   it("fires onDismiss from the always-present zero-effect dismiss", () => {
     const onDismiss = vi.fn();
     const el = render({ onDismiss });
-    clickButtonWithText(el, "Not now");
+    clickButtonWithText(el, "Dismiss");
     expect(onDismiss).toHaveBeenCalled();
   });
 
@@ -210,8 +210,8 @@ describe("DecisionCard", () => {
         ],
       }),
     });
-    expect(el.textContent).toContain("changed since this was proposed");
-    expect(el.textContent).toContain("Blocked · stale");
+    expect(el.textContent).toContain("changed since this was asked");
+    expect(el.textContent).toContain("Out of date");
     const strict = [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Cancel it"));
     expect(strict?.disabled).toBe(true);
   });
@@ -240,7 +240,7 @@ describe("DecisionCard", () => {
     });
     const strict = [...el.querySelectorAll("button")].find((button) => button.textContent?.includes("Create the follow-up"));
     expect(strict?.disabled).toBe(true);
-    expect(strict?.textContent).toContain("Blocked · stale");
+    expect(strict?.textContent).toContain("Out of date");
   });
 
   it("gates a cancel_issue_tree option behind a type-to-confirm step", () => {
@@ -311,7 +311,7 @@ describe("DecisionCard", () => {
 
     const dismissed = render({ decision: mkDecision({ status: "decided", executionStatus: "succeeded", chosenOptionId: "dismissed", metadata: { dismissed: true } }), executions: [] });
     expect(dismissed.textContent).toContain("Dismissed");
-    expect(dismissed.textContent).toContain("No effects were run");
+    expect(dismissed.textContent).toContain("Nothing was changed");
   });
 
   it("explains when a decision expires because its targets completed", () => {

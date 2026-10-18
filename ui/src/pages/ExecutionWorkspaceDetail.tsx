@@ -49,6 +49,7 @@ import {
   sortWorkspaceRoutinesByName,
 } from "../lib/workspace-routines";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { ErrorState } from "@/components/ErrorState";
 import { rebrandRunLogText } from "../adapters";
 
 type WorkspaceFormState = {
@@ -656,7 +657,7 @@ function ExecutionWorkspaceRoutinesList({
   const [runDialogRoutine, setRunDialogRoutine] = useState<RoutineListItem | null>(null);
   const [runningRoutineId, setRunningRoutineId] = useState<string | null>(null);
 
-  const { data: routines, isLoading, error } = useQuery({
+  const { data: routines, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.routines.list(workspace.companyId, { projectId: workspace.projectId }),
     queryFn: () => routinesApi.list(workspace.companyId, { projectId: workspace.projectId }),
   });
@@ -726,9 +727,13 @@ function ExecutionWorkspaceRoutinesList({
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading routines...</p>
           ) : error ? (
-            <p className="text-sm text-destructive">
-              {error instanceof Error ? error.message : "Failed to load routines."}
-            </p>
+            <ErrorState
+              compact
+              error={error}
+              title="Could not load routines"
+              onRetry={() => void refetch()}
+              retrying={isFetching}
+            />
           ) : workspaceRoutines.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <Repeat className="h-5 w-5 text-muted-foreground" />
@@ -984,9 +989,12 @@ export function ExecutionWorkspaceDetail() {
   if (workspaceQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading workspace…</p>;
   if (workspaceQuery.error) {
     return (
-      <p className="text-sm text-destructive">
-        {workspaceQuery.error instanceof Error ? workspaceQuery.error.message : "Failed to load workspace"}
-      </p>
+      <ErrorState
+        error={workspaceQuery.error}
+        title="Could not load this work area"
+        onRetry={() => void workspaceQuery.refetch()}
+        retrying={workspaceQuery.isFetching}
+      />
     );
   }
   if (!workspace || !form || !initialState) return null;
@@ -1529,11 +1537,13 @@ export function ExecutionWorkspaceDetail() {
             {workspaceOperationsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading workspace operations…</p>
             ) : workspaceOperationsQuery.error ? (
-              <p className="text-sm text-destructive">
-                {workspaceOperationsQuery.error instanceof Error
-                  ? workspaceOperationsQuery.error.message
-                  : "Failed to load workspace operations."}
-              </p>
+              <ErrorState
+                compact
+                error={workspaceOperationsQuery.error}
+                title="Could not load the activity for this work area"
+                onRetry={() => void workspaceOperationsQuery.refetch()}
+                retrying={workspaceOperationsQuery.isFetching}
+              />
             ) : workspaceOperationsQuery.data && workspaceOperationsQuery.data.length > 0 ? (
               <div className="space-y-3">
                 {workspaceOperationsQuery.data.map((operation) => (

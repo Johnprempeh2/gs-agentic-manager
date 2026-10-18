@@ -375,7 +375,7 @@ describe("RoutineHistoryTab", () => {
       },
     ];
     await render({ secrets });
-    expect(container.textContent).toContain("Env");
+    expect(container.textContent).toContain("Secrets and settings");
     expect(container.textContent).toContain("2 keys (1 secret ref)");
 
     const oldRow = container.querySelector(

@@ -63,6 +63,7 @@ import {
 import { StatusIcon } from "./StatusIcon";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { EmptyState } from "./EmptyState";
+import { ErrorState } from "./ErrorState";
 import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
@@ -483,6 +484,8 @@ interface IssuesListProps {
   issues: Issue[];
   isLoading?: boolean;
   error?: Error | null;
+  /** Shown as a Retry button when the task list fails to load. */
+  onRetry?: () => void;
   agents?: Agent[];
   projects?: ProjectOption[];
   liveIssueIds?: Set<string>;
@@ -533,6 +536,8 @@ interface IssuesListProps {
   renderRowActions?: (issue: Issue) => ReactNode;
   /** Page content under the row, for example an inline question box. */
   renderRowFooter?: (issue: Issue) => ReactNode;
+  /** Page controls after the built-in view controls, for example the Tasks page's Select button. */
+  toolbarControls?: ReactNode;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -772,6 +777,7 @@ export function IssuesList({
   issues,
   isLoading,
   error,
+  onRetry,
   agents,
   projects,
   liveIssueIds,
@@ -806,6 +812,7 @@ export function IssuesList({
   renderRowLeading,
   renderRowActions,
   renderRowFooter,
+  toolbarControls,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -2156,12 +2163,13 @@ export function IssuesList({
           >
             {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
           </Button>
+          {toolbarControls}
           </>
         )}
       />
 
       {(isLoading || externalObjectFilterLoading) && <PageSkeleton variant="issues-list" />}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} title="Tasks did not load" onRetry={onRetry} compact />}
       {!searchWithinLoadedIssues && normalizedIssueSearch.length > 0 && searchedIssues.length === ISSUE_SEARCH_RESULT_LIMIT && (
         <p className="text-xs text-muted-foreground">
           Showing up to {ISSUE_SEARCH_RESULT_LIMIT} matches. Refine the search to narrow further.
@@ -2172,13 +2180,31 @@ export function IssuesList({
           Some board columns are showing up to {ISSUE_BOARD_COLUMN_RESULT_LIMIT} tasks. Refine filters or search to reveal the rest.
         </p>
       )}
-      {!isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
-        <EmptyState
-          icon={CircleDot}
-          message="No tasks match the current filters or search."
-          action={createActionLabel}
-          onAction={() => openCreateIssueDialog()}
-        />
+      {!error && !isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
+        issues.length === 0 && activeFilterCount === 0 && normalizedIssueSearch.length === 0 ? (
+          <EmptyState
+            icon={CircleDot}
+            message="No tasks yet."
+            description="A task is a piece of work for an agent or a person. Agents pick up the tasks assigned to them."
+            action={createActionLabel}
+            onAction={() => openCreateIssueDialog()}
+          />
+        ) : activeFilterCount > 0 ? (
+          <EmptyState
+            icon={CircleDot}
+            message="No tasks match the current filters or search."
+            action="Clear filters"
+            onAction={() => updateView(defaultIssueFilterState)}
+            hideActionIcon
+          />
+        ) : (
+          <EmptyState
+            icon={CircleDot}
+            message="No tasks match the current filters or search."
+            action={createActionLabel}
+            onAction={() => openCreateIssueDialog()}
+          />
+        )
       )}
 
       {viewState.viewMode === "board" ? (

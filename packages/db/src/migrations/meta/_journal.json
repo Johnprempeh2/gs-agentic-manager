@@ -2469,8 +2469,176 @@
     {
       "idx": 354,
       "version": "7",
-      "when": 1792130770790,
-      "tag": "0354_organisation_crm_fields",
+      "when": 1792131160100,
+      "tag": "0354_agent_daily_digests",
+      "breakpoints": true
+    },
+    {
+      "idx": 355,
+      "version": "7",
+      "when": 1792137642975,
+      "tag": "0355_client_acceptance_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1792143487005,
+      "tag": "0356_crm_record_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 357,
+      "version": "7",
+      "when": 1792144268387,
+      "tag": "0357_crm_timeline_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 358,
+      "version": "7",
+      "when": 1792145672583,
+      "tag": "0358_crm_timeline_email_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 359,
+      "version": "7",
+      "when": 1792147447226,
+      "tag": "0359_contacts_without_organisation",
+      "breakpoints": true
+    },
+    {
+      "idx": 360,
+      "version": "7",
+      "when": 1792151592806,
+      "tag": "0360_crm_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 361,
+      "version": "7",
+      "when": 1792154341275,
+      "tag": "0361_crm_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 362,
+      "version": "7",
+      "when": 1792156203240,
+      "tag": "0362_case_contact_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 363,
+      "version": "7",
+      "when": 1792169885298,
+      "tag": "0363_asset_texts",
+      "breakpoints": true
+    },
+    {
+      "idx": 364,
+      "version": "7",
+      "when": 1792171060969,
+      "tag": "0364_budget_spending_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 365,
+      "version": "7",
+      "when": 1792173157445,
+      "tag": "0365_notification_pause_and_done",
+      "breakpoints": true
+    },
+    {
+      "idx": 366,
+      "version": "7",
+      "when": 1792176290175,
+      "tag": "0366_budget_top_ups",
+      "breakpoints": true
+    },
+    {
+      "idx": 367,
+      "version": "7",
+      "when": 1792182774695,
+      "tag": "0367_crm_timeline_field_change",
+      "breakpoints": true
+    },
+    {
+      "idx": 368,
+      "version": "7",
+      "when": 1792239563528,
+      "tag": "0368_memory_app_sign_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 369,
+      "version": "7",
+      "when": 1792245197695,
+      "tag": "0369_two_step_sign_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 370,
+      "version": "7",
+      "when": 1792273818079,
+      "tag": "0370_deal_alerts_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 371,
+      "version": "7",
+      "when": 1792277850310,
+      "tag": "0371_image_studio_camera",
+      "breakpoints": true
+    },
+    {
+      "idx": 372,
+      "version": "7",
+      "when": 1792277995928,
+      "tag": "0372_studio_videos_and_looks",
+      "breakpoints": true
+    },
+    {
+      "idx": 373,
+      "version": "7",
+      "when": 1792284278311,
+      "tag": "0373_phone_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 374,
+      "version": "7",
+      "when": 1792289995975,
+      "tag": "0374_sign_in_lockouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 375,
+      "version": "7",
+      "when": 1792290106610,
+      "tag": "0375_sign_in_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 376,
+      "version": "7",
+      "when": 1792297503147,
+      "tag": "0376_studio_image_favourites",
+      "breakpoints": true
+    },
+    {
+      "idx": 377,
+      "version": "7",
+      "when": 1792299459953,
+      "tag": "0377_studio_video_favourites",
+      "breakpoints": true
+    },
+    {
+      "idx": 378,
+      "version": "7",
+      "when": 1792343194908,
+      "tag": "0378_organisation_crm_fields",
       "breakpoints": true
     }
   ]

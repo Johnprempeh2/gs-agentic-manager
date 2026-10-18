@@ -19,6 +19,9 @@ const mockApi = vi.hoisted(() => ({
   createContact: vi.fn(),
   updateContact: vi.fn(),
   archiveContact: vi.fn(),
+  unassignedContacts: vi.fn(),
+  products: vi.fn(),
+  searchPeople: vi.fn(),
 }));
 
 const accessMock = vi.hoisted(() => ({ listMembers: vi.fn() }));
@@ -100,6 +103,8 @@ describe("Organisations page", () => {
       },
       { id: "pipe-old", name: "Old", archivedAt: "2026-01-01T00:00:00Z", stages: [] },
     ]);
+    mockApi.unassignedContacts.mockResolvedValue([]);
+    mockApi.products.mockResolvedValue([]);
     accessMock.listMembers.mockReset();
     accessMock.listMembers.mockResolvedValue({
       members: [
@@ -238,6 +243,84 @@ describe("Organisations page", () => {
     mockApi.list.mockRejectedValueOnce(new Error("Feature not enabled"));
     await render();
     expect(container.textContent).toContain("Could not load organisations. Feature not enabled");
+  });
+
+  it("lists people with no organisation, and hides the list when there are none", async () => {
+    mockApi.list.mockResolvedValue([]);
+    await render();
+    expect(container.querySelector('section[aria-label="People with no organisation"]')).toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    mockApi.unassignedContacts.mockResolvedValue([{
+      id: "p1", companyId: "company-1", organisationId: null, name: "Lone Freelancer", role: "Consultant",
+      email: "lone@example.test", phone: null, isKeyContact: false, source: "pipedrive", externalId: "503",
+      crmFields: [{ key: "label", label: "Labels", value: ["DevTools"] }],
+      archivedAt: null, createdAt: "2026-10-16T09:00:00Z", updatedAt: "2026-10-16T09:00:00Z",
+    }]);
+    await render();
+    const section = container.querySelector('section[aria-label="People with no organisation"]')!;
+    expect(section.querySelector("summary")?.textContent).toBe("People with no organisation (1)");
+    expect(section.textContent).toContain("Lone Freelancer");
+    expect(section.textContent).toContain("lone@example.test");
+    expect(section.textContent).toContain("Labels: DevTools");
+  });
+
+  it("lists the product catalogue with prices, fields and deals, and searches it", async () => {
+    mockApi.list.mockResolvedValue([]);
+    mockApi.products.mockResolvedValue([
+      {
+        id: "pr1", source: "pipedrive", name: "DevTools audit", code: "DT-01", unit: "day", description: "Two week audit",
+        tax: 20, active: true, ownerName: "Ama Owusu",
+        prices: [{ currency: "GBP", price: 1200, cost: 400, overheadCost: null }],
+        fields: [{ key: "category", label: "Category", value: "Services" }],
+        deals: [{ caseId: "c1", pipelineId: "pl1", title: "Acme platform deal", quantity: 3, sum: 3600, currency: "GBP" }],
+      },
+      {
+        id: "pr2", source: "pipedrive", name: "Old licence", code: null, unit: null, description: null,
+        tax: null, active: false, ownerName: null, prices: [], fields: [], deals: [],
+      },
+    ]);
+    await render();
+    const section = container.querySelector('section[aria-label="Products"]')!;
+    expect(section.querySelector("summary")?.textContent).toBe("Products (2)");
+    expect(section.textContent).toContain("GBP 1,200 per day");
+    expect(section.textContent).toContain("On 1 deal");
+    expect(section.textContent).toContain("Category");
+    expect(section.textContent).toContain("Services");
+    expect(section.textContent).toContain("Inactive");
+    const deal = section.querySelector('a[href="/pipelines/pl1/items/c1"]');
+    expect(deal?.textContent).toBe("Acme platform deal");
+
+    const search = section.querySelector('input[aria-label="Search products"]') as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(search, "services");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(section.textContent).toContain("DevTools audit");
+    expect(section.textContent).not.toContain("Old licence");
+  });
+
+  it("finds a person across every organisation once two characters are typed", async () => {
+    mockApi.list.mockResolvedValue([]);
+    mockApi.searchPeople.mockResolvedValue([{
+      id: "p9", companyId: "company-1", organisationId: "org-7", organisationName: "Northwind", name: "Esi Boateng",
+      role: "CFO", email: "esi@example.test", phone: null, isKeyContact: false, source: "pipedrive", externalId: "501",
+      archivedAt: null, createdAt: "2026-10-16T09:00:00Z", updatedAt: "2026-10-16T09:00:00Z",
+    }]);
+    await render();
+    const input = container.querySelector('input[aria-label="Search people"]') as HTMLInputElement;
+    await act(async () => setValue(input, "e"));
+    await settle();
+    expect(mockApi.searchPeople).not.toHaveBeenCalled();
+    await act(async () => setValue(input, "esi"));
+    await settle();
+    expect(mockApi.searchPeople).toHaveBeenCalledWith("company-1", "esi");
+    const found = container.querySelector('ul[aria-label="People found"]')!;
+    expect(found.textContent).toContain("Esi Boateng");
+    expect(found.textContent).toContain("(CFO)");
+    expect(found.querySelector('a[href="/organisations/org-7"]')?.textContent).toBe("Northwind");
   });
 
   it("shows one card per organisation on a phone", async () => {

@@ -92,6 +92,18 @@ export const ADAPTER_AGNOSTIC_KEYS = [
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
 
+// Top-level `access.<ALIAS>` adapterConfig keys are the agent's API-only secret
+// grants. They belong to the agent, not one adapter, so they survive adapter swaps.
+export const AGENT_ACCESS_CONFIG_PATH_PREFIX = "access.";
+
+export function pickAgentAccessGrants(adapterConfig: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(adapterConfig).filter(
+      ([key, value]) => key.startsWith(AGENT_ACCESS_CONFIG_PATH_PREFIX) && value !== undefined,
+    ),
+  );
+}
+
 export const AGENT_ICON_NAMES = [
   "bot",
   "cpu",
@@ -269,8 +281,12 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_item_verdicts",
   "connection_intent",
   "request_draft_review",
+  "ask_agent",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
+
+/** Most questions one task may have waiting on other agents at once. */
+export const AGENT_QUESTION_MAX_OPEN_PER_ISSUE = 3;
 
 export const ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES = [
   "anyone",
@@ -380,6 +396,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "strategy_board_question",
   // A direct message or group chat of people and agents (enableTeamChat).
   "team_chat",
+  // The lead agent's standing "Daily digest" task. originId: the company id.
+  "agent_daily_digest",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -780,6 +798,10 @@ export const APPROVAL_TYPES = [
   "request_board_approval",
   // Opened by the server when an agent is refused for a missing grant (GRE-601).
   "permission_grant",
+  // Opened by a client board user to change the AI route; the operator decides (GRE-1363).
+  "ai_route_change",
+  // A top-up the requester could not approve alone and no pre-authorised ceiling covered (GRE-1371).
+  "budget_top_up",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
@@ -940,6 +962,8 @@ export const FINANCE_EVENT_KINDS = [
   "custom_model_import_charge",
   "custom_model_storage_charge",
   "manual_adjustment",
+  // Extra AI allowance for one month, bought by the client and approved (GRE-1371).
+  "allowance_top_up",
 ] as const;
 export type FinanceEventKind = (typeof FINANCE_EVENT_KINDS)[number];
 
@@ -970,6 +994,16 @@ export type BudgetMetric = (typeof BUDGET_METRICS)[number];
 export const BUDGET_WINDOW_KINDS = ["calendar_month_utc", "lifetime"] as const;
 export type BudgetWindowKind = (typeof BUDGET_WINDOW_KINDS)[number];
 
+/**
+ * Who must accept a budget top-up (GRE-1371). John sets one rule per AI route
+ * as a setting on the company's spending authority; it is never chosen here.
+ * - `operator`: the hosting operator or a named budget approver.
+ * - `client`: a company owner or admin.
+ * - `operator_and_client`: one of each. The requester counts for their side.
+ */
+export const TOP_UP_APPROVAL_RULES = ["operator", "client", "operator_and_client"] as const;
+export type TopUpApprovalRule = (typeof TOP_UP_APPROVAL_RULES)[number];
+
 /** Warn level of a budget policy that sets none, in percent of the amount. The policy's own value wins. */
 export const DEFAULT_BUDGET_WARN_PERCENT = 80;
 
@@ -999,6 +1033,9 @@ export type WakeupTriggerDetail = (typeof WAKEUP_TRIGGER_DETAILS)[number];
 export const WAKEUP_REQUEST_STATUSES = [
   "queued",
   "deferred_issue_execution",
+  // Kept at a budget hard stop in hold mode (GRE-1365); released once per task.
+  "budget_held",
+  "budget_releasing",
   "claimed",
   "coalesced",
   "skipped",

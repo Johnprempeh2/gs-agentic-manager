@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { membershipStatusLabel } from "@/lib/membership-labels";
+import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
   hidesCompanyPage,
 } from "@greatstone/shared";
-import { Shield, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
+import { KeyRound, Shield, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { ApiError } from "@/api/client";
@@ -82,12 +84,13 @@ export function CompanyAccess() {
   // Kept as a snapshot: once handed over, the person leaves the list but the
   // dialog still shows the result.
   const [handingOverMember, setHandingOverMember] = useState<CompanyMember | null>(null);
+  const [resettingTwoStepMember, setResettingTwoStepMember] = useState<CompanyMember | null>(null);
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Members" },
     ]);
@@ -144,8 +147,8 @@ export function CompanyAccess() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to update member",
-        body: error instanceof Error ? error.message : "Unknown error",
+        title: "Your change to this person was not saved",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },
@@ -162,8 +165,8 @@ export function CompanyAccess() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to approve join request",
-        body: error instanceof Error ? error.message : "Unknown error",
+        title: "Could not let them in",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },
@@ -180,8 +183,8 @@ export function CompanyAccess() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to reject join request",
-        body: error instanceof Error ? error.message : "Unknown error",
+        title: "Could not turn down the request",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },
@@ -201,6 +204,26 @@ export function CompanyAccess() {
     onError: (error) => {
       pushToast({
         title: "Could not restore access",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+    },
+  });
+
+  const resetTwoStepMutation = useMutation({
+    mutationFn: (memberId: string) => accessApi.resetMemberTwoStep(selectedCompanyId!, memberId),
+    onSuccess: async () => {
+      setResettingTwoStepMember(null);
+      await refreshAccessData();
+      pushToast({
+        title: "Two-step sign-in reset",
+        body: "They are signed out. They sign in with their password and set it up again.",
+        tone: "success",
+      });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Could not reset two-step sign-in",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -214,20 +237,28 @@ export function CompanyAccess() {
   }, [editingMember]);
 
   if (!selectedCompanyId) {
-    return <div className="text-sm text-muted-foreground">Select an organization to manage access.</div>;
+    return <div className="text-sm text-muted-foreground">Choose an organisation to manage access.</div>;
   }
 
   if (membersQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading organization access…</div>;
+    return <div className="text-sm text-muted-foreground">Loading organisation access…</div>;
   }
 
   if (membersQuery.error) {
     const message =
       membersQuery.error instanceof ApiError && membersQuery.error.status === 403
-        ? "You do not have permission to manage organization members."
-        : membersQuery.error instanceof Error
-          ? membersQuery.error.message
-          : "Failed to load organization members.";
+        ? "You do not have permission to manage organisation members."
+        : null;
+    if (!message) {
+      return (
+        <ErrorState
+          error={membersQuery.error}
+          title="Team members did not load"
+          onRetry={() => void membersQuery.refetch()}
+          retrying={membersQuery.isFetching}
+        />
+      );
+    }
     return <div className="text-sm text-destructive">{message}</div>;
   }
 
@@ -251,7 +282,7 @@ export function CompanyAccess() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Organization Members</h1>
+          <h1 className="text-lg font-semibold">Organisation members</h1>
         </div>
         {cloudInviteUrl && (
           <Button asChild>
@@ -276,7 +307,7 @@ export function CompanyAccess() {
 
       {access && !access.currentUserRole && (
         <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-          This account can manage access here through instance-admin privileges, but it does not currently hold an active organization membership.
+          This account can manage access here through instance-admin privileges, but it does not currently hold an active organisation membership.
         </div>
       )}
 
@@ -287,7 +318,7 @@ export function CompanyAccess() {
               <div>
                 <h3 className="text-sm font-semibold">Pending human joins</h3>
                 <p className="text-sm text-muted-foreground">
-                  Review pending join requests before they become active organization members.
+                  Review pending join requests before they become active organisation members.
                 </p>
               </div>
               <Badge variant="outline">{pendingHumanJoinRequests.length} pending</Badge>
@@ -340,7 +371,7 @@ export function CompanyAccess() {
               {members.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-3 py-8 text-muted-foreground">
-                    No user memberships found for this organization yet.
+                    No user memberships found for this organisation yet.
                   </td>
                 </tr>
               ) : members.map((member) => {
@@ -367,7 +398,7 @@ export function CompanyAccess() {
                     </td>
                     <td className="px-3 py-3">
                       <Badge variant={member.status === "active" ? "secondary" : member.status === "suspended" ? "destructive" : "outline"}>
-                        {member.status.replace("_", " ")}
+                        {membershipStatusLabel(member.status)}
                       </Badge>
                     </td>
                     <td className="px-3 py-3 text-right">
@@ -385,6 +416,12 @@ export function CompanyAccess() {
                         <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
                           Edit
                         </Button>
+                        {member.twoStep?.canReset ? (
+                          <Button size="sm" variant="outline" onClick={() => setResettingTwoStepMember(member)}>
+                            <KeyRound className="mr-1 h-3.5 w-3.5" />
+                            Reset two-step
+                          </Button>
+                        ) : null}
                         {member.status === "active" || member.status === "pending" ? (
                           <span
                             className="inline-flex"
@@ -444,14 +481,14 @@ export function CompanyAccess() {
           <DialogHeader>
             <DialogTitle>Edit member</DialogTitle>
             <DialogDescription>
-              Update organization role and membership status for {editingMember?.user?.name || editingMember?.user?.email || editingMember?.principalId}.
+              Change the role and access for {editingMember?.user?.name || editingMember?.user?.email || editingMember?.principalId}.
             </DialogDescription>
           </DialogHeader>
           {editingMember && (
             <div className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
-                  <span className="font-medium">Organization role</span>
+                  <span className="font-medium">Role</span>
                   <select
                     className="w-full rounded-md border border-border bg-background px-3 py-2"
                     value={draftRole ?? ""}
@@ -500,6 +537,32 @@ export function CompanyAccess() {
               disabled={updateMemberMutation.isPending}
             >
               {updateMemberMutation.isPending ? "Saving…" : "Save member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!resettingTwoStepMember} onOpenChange={(open) => !open && setResettingTwoStepMember(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset two-step sign-in?</DialogTitle>
+            <DialogDescription>
+              For when {resettingTwoStepMember ? memberDisplayName(resettingTwoStepMember) : "this person"} has lost
+              their phone and their backup codes. They are signed out everywhere and can then sign in with their
+              password alone, so check it is really them asking. If two-step sign-in is required, they set it up again
+              straight away.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResettingTwoStepMember(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => resettingTwoStepMember && resetTwoStepMutation.mutate(resettingTwoStepMember.id)}
+              disabled={resetTwoStepMutation.isPending}
+            >
+              {resetTwoStepMutation.isPending ? "Resetting…" : "Reset two-step sign-in"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -559,7 +622,7 @@ export function CompanyAccessLegacyRoute() {
           <h1 className="text-lg font-semibold">Advanced Permissions</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Advanced access, scoped assignment, and explicit grant controls are provided by installed organization settings extensions.
+          Advanced access, scoped assignment, and explicit grant controls are provided by installed organisation settings extensions.
         </p>
       </div>
 
@@ -567,7 +630,7 @@ export function CompanyAccessLegacyRoute() {
         <div className="space-y-2">
           <h2 className="text-sm font-semibold">Advanced permissions unavailable</h2>
           <p className="text-sm text-muted-foreground">
-            Core GS Agentic Manager keeps enforcing organization boundaries and any existing restrictive policy data, but editing advanced permissions requires an installed extension.
+            Core GS Agentic Manager keeps enforcing organisation boundaries and any existing restrictive policy data, but editing advanced permissions requires an installed extension.
           </p>
           {errorMessage ? (
             <p className="text-sm text-destructive">Plugin extensions unavailable: {errorMessage}</p>

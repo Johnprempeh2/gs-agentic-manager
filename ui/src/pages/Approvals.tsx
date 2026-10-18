@@ -1,21 +1,30 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "@/lib/router";
+import { useActiveCompanyPrefix, useNavigate, useLocation } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
+import { useToastActions } from "../context/ToastContext";
+import { useConfirm } from "@/context/ConfirmContext";
+import { ApprovalNoteDialog } from "../components/ApprovalNoteDialog";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
-import { ShieldCheck } from "lucide-react";
+import { Check, ClipboardList, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import { HelpTerm } from "../components/HelpTerm";
+import { pendingListText, pendingSummary } from "../lib/approval-wait";
+import { useCopyAction } from "../lib/use-copy-action";
+import { applyCompanyPrefix } from "../lib/company-routes";
+import { approvalLabel } from "../components/ApprovalPayload";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type StatusFilter = "pending" | "all";
 
@@ -23,11 +32,13 @@ export function Approvals() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
   const pathSegment = location.pathname.split("/").pop() ?? "pending";
   const statusFilter: StatusFilter = pathSegment === "all" ? "all" : "pending";
   const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Approvals" }]);
@@ -45,41 +56,118 @@ export function Approvals() {
     enabled: !!selectedCompanyId,
   });
 
+  const { pushToast } = useToastActions();
+  const [rejecting, setRejecting] = useState<{ id: string; subject: string } | null>(null);
+  const subjectFor = (id: string) => {
+    const approval = (data ?? []).find((item) => item.id === id);
+    return approval ? approvalLabel(approval.type, approval.payload as Record<string, unknown> | null) : undefined;
+  };
   const approveMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.approve(id),
     onSuccess: (_approval, id) => {
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
-      navigate(`/approvals/${id}?resolved=approved`);
+      pushToast({
+        title: "Approved",
+        body: subjectFor(id) ? `${subjectFor(id)}. The agent has been told and can go ahead.` : "The agent has been told and can go ahead.",
+        tone: "success",
+        action: { label: "View", href: `/approvals/${id}` },
+      });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to approve");
+      setActionError(`We could not approve this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => approvalsApi.reject(id),
-    onSuccess: () => {
+    mutationFn: ({ id, note }: { id: string; note?: string }) => approvalsApi.reject(id, note),
+    onSuccess: (_approval, { id }) => {
       setActionError(null);
+      setRejecting(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+      pushToast({
+        title: "Rejected",
+        body: subjectFor(id) ? `${subjectFor(id)}. The agent has been told no.` : "The agent has been told no.",
+        tone: "info",
+      });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to reject");
+      setRejecting(null);
+      setActionError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
     },
   });
+
+  // Approve several pending sign-offs in one go. Each goes through the same
+  // approve call as its card, one at a time, so a refusal on one does not stop the rest.
+  const approveSelectedMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      let approved = 0;
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await approvalsApi.approve(id);
+          approved += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      return { approved, failed };
+    },
+    onSuccess: ({ approved, failed }) => {
+      setActionError(null);
+      setSelectedIds([]);
+      pushToast({
+        tone: failed > 0 ? "warn" : "success",
+        title: `${approved} ${approved === 1 ? "request" : "requests"} approved`,
+        body: failed > 0 ? `${failed} could not be approved. Open them to see why.` : undefined,
+      });
+    },
+    onError: (err) => {
+      setActionError(`We could not approve these. Please try again. (${err instanceof Error ? err.message : "no details"})`);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+    },
+  });
+
+  const listCopy = useCopyAction();
+  const companyPrefix = useActiveCompanyPrefix();
 
   const filtered = (data ?? [])
     .filter(
       (a) => statusFilter === "all" || a.status === "pending" || a.status === "revision_requested",
     )
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Pending: the request that has waited longest comes first. All: newest first.
+    .sort((a, b) =>
+      statusFilter === "pending"
+        ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  const waitingSummary = statusFilter === "pending" ? pendingSummary(data ?? []) : null;
+
+  const selectable = statusFilter === "pending"
+    ? filtered.filter((approval) => approval.status === "pending")
+    : [];
+  const selectedApprovals = selectable.filter((approval) => selectedIds.includes(approval.id));
+  const requestLabel = (approval: (typeof filtered)[number]) =>
+    approvalLabel(approval.type, approval.payload as Record<string, unknown> | null);
+  const approveSelected = async () => {
+    const count = selectedApprovals.length;
+    if (count === 0) return;
+    const confirmed = await confirm({
+      title: `Approve ${count} ${count === 1 ? "request" : "requests"}?`,
+      description: `${selectedApprovals.map(requestLabel).join(", ")}. Each agent is told yes and goes ahead.`,
+      confirmLabel: "Approve",
+    });
+    if (confirmed) approveSelectedMutation.mutate(selectedApprovals.map((approval) => approval.id));
+  };
 
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
   ).length;
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   }
 
   if (isLoading) {
@@ -111,6 +199,35 @@ export function Approvals() {
         Each card is a <HelpTerm term="approval">sign-off</HelpTerm> an <HelpTerm term="agent" /> needs before it can go
         ahead, such as hiring another agent or spending more.
       </p>
+      {waitingSummary ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="text-sm font-medium text-foreground" data-testid="approvals-waiting-summary">
+            {waitingSummary}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Copy every sign-off waiting for you, with links, ready to paste"
+            onClick={() =>
+              void listCopy.copy(
+                pendingListText(
+                  filtered.map((approval) => ({
+                    ...approval,
+                    label: approvalLabel(approval.type, approval.payload as Record<string, unknown> | null),
+                    requester: approval.requestedByAgentId
+                      ? (agents ?? []).find((agent) => agent.id === approval.requestedByAgentId)?.name ?? null
+                      : null,
+                  })),
+                  (id) => `${window.location.origin}${applyCompanyPrefix(`/approvals/${id}`, companyPrefix)}`,
+                ),
+              )
+            }
+          >
+            {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+            {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+          </Button>
+        </div>
+      ) : null}
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
@@ -126,24 +243,85 @@ export function Approvals() {
         />
       )}
 
+      {selectable.length > 1 && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2"
+          data-testid="approvals-select-bar"
+        >
+          <span className="inline-flex size-6 shrink-0 items-center justify-center">
+            <Checkbox
+              checked={selectedApprovals.length === selectable.length ? true : selectedApprovals.length > 0 ? "indeterminate" : false}
+              onCheckedChange={(value) => setSelectedIds(value === true ? selectable.map((approval) => approval.id) : [])}
+              aria-label="Select every pending request"
+            />
+          </span>
+          <span className="mr-auto text-sm text-muted-foreground">
+            {selectedApprovals.length === 0
+              ? "Tick the requests you are happy with to approve them together"
+              : `${selectedApprovals.length} selected`}
+          </span>
+          <Button
+            size="sm"
+            disabled={selectedApprovals.length === 0 || approveSelectedMutation.isPending}
+            onClick={() => void approveSelected()}
+          >
+            {approveSelectedMutation.isPending ? "Approving" : "Approve selected"}
+          </Button>
+        </div>
+      )}
+
       {filtered.length > 0 && (
         <div className="grid gap-3">
-          {filtered.map((approval) => (
+          {filtered.map((approval) => {
+            const card = (
             <ApprovalCard
               key={approval.id}
               approval={approval}
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
-              onReject={() => rejectMutation.mutate(approval.id)}
+              onReject={() => setRejecting({ id: approval.id, subject: approvalLabel(approval.type, approval.payload as Record<string, unknown> | null) })}
               detailLink={`/approvals/${approval.id}`}
               isPending={approveMutation.isPending || rejectMutation.isPending}
               pendingAction={
                 approveMutation.isPending ? "approve" : rejectMutation.isPending ? "reject" : null
               }
             />
-          ))}
+            );
+            if (selectable.length < 2 || approval.status !== "pending") return card;
+            return (
+              <div key={approval.id} className="flex items-start gap-2">
+                <span className="mt-4 inline-flex size-6 shrink-0 items-center justify-center">
+                  <Checkbox
+                    data-approval-select={approval.id}
+                    checked={selectedIds.includes(approval.id)}
+                    onCheckedChange={(value) =>
+                      setSelectedIds((current) =>
+                        value === true ? [...current.filter((id) => id !== approval.id), approval.id] : current.filter((id) => id !== approval.id),
+                      )
+                    }
+                    aria-label={`Select ${requestLabel(approval)}`}
+                  />
+                </span>
+                <div className="min-w-0 flex-1">{card}</div>
+              </div>
+            );
+          })}
         </div>
       )}
+
+      <ApprovalNoteDialog
+        request={rejecting ? {
+          title: "Reject this request?",
+          description: `${rejecting.subject}. The agent is told no and will not go ahead.`,
+          label: "Tell the agent why (optional)",
+          placeholder: "For example: not this month, or try a cheaper option",
+          confirmLabel: "Reject",
+          destructive: true,
+        } : null}
+        pending={rejectMutation.isPending}
+        onCancel={() => setRejecting(null)}
+        onSubmit={(note) => { if (rejecting) rejectMutation.mutate({ id: rejecting.id, note }); }}
+      />
     </div>
   );
 }

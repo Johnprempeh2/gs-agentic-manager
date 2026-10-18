@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, X } from "lucide-react";
+import { Check, Copy, ExternalLink, KeyRound, X } from "lucide-react";
 import type { IntegrationKeyItem, IntegrationKeyState } from "@greatstone/shared";
 import { integrationKeysApi } from "@/api/integrationKeys";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -49,7 +49,7 @@ export function IntegrationKeysPanel({ companyId }: { companyId: string }) {
           {keys.data
             ? waiting === 0
               ? "Everything here has what it needs."
-              : `${waiting} ${waiting === 1 ? "integration is" : "integrations are"} waiting on you. Keys go in the server's env file, then restart GSAM.`
+              : `${waiting} ${waiting === 1 ? "integration is" : "integrations are"} waiting on a key. Keys are added on the computer that runs GSAM, so copy the lines below and send them to whoever looks after it.`
             : "Integrations waiting on an outside key or sign-in."}
         </p>
       </div>
@@ -81,6 +81,18 @@ export function IntegrationKeysPanel({ companyId }: { companyId: string }) {
                   </ul>
                 ) : null}
                 <p className="text-xs text-muted-foreground">{item.howToGet}</p>
+                {item.getKey && item.state !== "ready" ? (
+                  <a
+                    href={item.getKey.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                    data-testid={`integration-key-link-${item.id}`}
+                  >
+                    {item.getKey.label}
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
+                ) : null}
                 {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
               </li>
             ))}
@@ -89,7 +101,7 @@ export function IntegrationKeysPanel({ companyId }: { companyId: string }) {
             <div className="space-y-2 rounded-lg border border-border bg-card p-4">
               <p className="text-sm">
                 Paste these into <code className="font-mono text-xs">{keys.data.envFile}</code>, put each key after its
-                equals sign, then restart GSAM.
+                equals sign, then restart GSAM. If that is not you, copy the lines and send them to whoever looks after the computer that runs GSAM.
               </p>
               <pre className="overflow-x-auto rounded-md border border-border bg-muted p-2 text-xs">{snippet}</pre>
               <Button type="button" size="sm" variant="outline" onClick={() => void copyToast(snippet, "Lines copied")}>

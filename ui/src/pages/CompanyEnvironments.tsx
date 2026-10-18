@@ -930,7 +930,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to start setup",
+        title: "Could not start setup",
         body: error instanceof Error ? error.message : "Setup session could not be started.",
         tone: "error",
       });
@@ -955,7 +955,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to capture template",
+        title: "Could not capture template",
         body: error instanceof Error ? error.message : "Template capture failed.",
         tone: "error",
       });
@@ -981,7 +981,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to cancel setup",
+        title: "Could not cancel setup",
         body: error instanceof Error ? error.message : "Setup session could not be cancelled.",
         tone: "error",
       });
@@ -1005,7 +1005,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to roll back template",
+        title: "Could not roll back template",
         body: error instanceof Error ? error.message : "Rollback failed.",
         tone: "error",
       });
@@ -1049,7 +1049,7 @@ function EnvironmentImageTemplatePanel({
     onError: (error) => {
       if (error instanceof RelinkConfirmationDeclined) return;
       pushToast({
-        title: "Failed to relink template",
+        title: "Could not relink template",
         body: error instanceof Error ? error.message : "Relink failed.",
         tone: "error",
       });
@@ -1073,7 +1073,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to disable template",
+        title: "Could not disable template",
         body: error instanceof Error ? error.message : "Disable failed.",
         tone: "error",
       });
@@ -1253,7 +1253,16 @@ function EnvironmentImageTemplatePanel({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => rollbackTemplateMutation.mutate()}
+              onClick={async () => {
+                if (await confirmAction({
+                  title: "Go back to the previous setup?",
+                  description: "Future runs in this environment use the previous setup.",
+                  confirmLabel: "Go back",
+                  tone: "destructive",
+                })) {
+                  rollbackTemplateMutation.mutate();
+                }
+              }}
               disabled={isMutating}
             >
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -1262,7 +1271,16 @@ function EnvironmentImageTemplatePanel({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => disableTemplateMutation.mutate()}
+              onClick={async () => {
+                if (await confirmAction({
+                  title: "Stop using this custom setup?",
+                  description: "Future runs go back to the standard setup.",
+                  confirmLabel: "Stop using",
+                  tone: "destructive",
+                })) {
+                  disableTemplateMutation.mutate();
+                }
+              }}
               disabled={isMutating}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -1423,7 +1441,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
   });
   const createSecret = useMutation({
     mutationFn: (input: { name: string; value: string }) => {
-      if (!selectedCompanyId) throw new Error("Select an organization to create secrets");
+      if (!selectedCompanyId) throw new Error("Choose an organisation to create secrets");
       return secretsApi.create(selectedCompanyId, input);
     },
     onSuccess: async () => {
@@ -1460,7 +1478,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to save environment variables",
+        title: "Could not save environment variables",
         body: error instanceof Error ? error.message : "Environment variables save failed.",
         tone: "error",
       });
@@ -1517,7 +1535,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to save environment",
+        title: "Could not save environment",
         body: error instanceof Error ? error.message : "Environment save failed.",
         tone: "error",
       });
@@ -1537,7 +1555,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to update default environment",
+        title: "Could not update default environment",
         body: error instanceof Error ? error.message : "Default environment update failed.",
         tone: "error",
       });
@@ -1599,7 +1617,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
         queryKey: ["environment-delete-blast-radius", input.environment.id],
       });
       pushToast({
-        title: "Failed to delete environment",
+        title: "Could not delete environment",
         body: error instanceof Error ? error.message : "Environment delete failed.",
         tone: "error",
       });
@@ -1909,7 +1927,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
   if (deleteBlastRadius && !deleteBlockMessage) {
     if (deleteBlastRadius.staticReferences.agentDefaultCount > agentsUsingEnvironment.length) {
       deleteImpactNotes.push(
-        "Other references to this environment (agents in other organizations or terminated agents) fall back to the instance default.",
+        "Other references to this environment (agents in other organisations or removed agents) use the default instead.",
       );
     }
     const selectionCount =
@@ -1961,7 +1979,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
   })();
 
   if (!selectedCompanyId) {
-    return <div className="text-sm text-muted-foreground">Select an organization context to manage environment secrets and bindings.</div>;
+    return <div className="text-sm text-muted-foreground">Choose an organisation context to manage environment secrets and bindings.</div>;
   }
 
   if (!environmentsEnabled) {
@@ -2123,7 +2141,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
       {isEnvironmentFormPage && mode === "edit" && environments !== undefined && !editingEnvironment ? (
         <div className="space-y-3 text-sm">
           <div className="font-medium">Environment not found</div>
-          <div className="text-muted-foreground">The environment may have been removed or is not available in this organization.</div>
+          <div className="text-muted-foreground">The environment may have been removed or is not available in this organisation.</div>
           <Button size="sm" variant="outline" asChild>
             <Link to={ENVIRONMENTS_PATH}>Back to environments</Link>
           </Button>
@@ -2160,7 +2178,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <div className="py-4">
             <Field
               label="Environment variables"
-              hint="Injected into runs that resolve through this environment. Use plain values or organization secrets."
+              hint="Added to agent work that uses this environment. Use plain values or organisation secrets."
             >
               <EnvironmentVariablesEditor
                 ref={environmentVariablesEditorRef}
@@ -2455,7 +2473,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
 
               <Field
                 label="Environment variables"
-                hint="Injected into runs that resolve through this environment. Use plain values or organization secrets."
+                hint="Added to agent work that uses this environment. Use plain values or organisation secrets."
               >
                 <EnvironmentVariablesEditor
                   ref={environmentVariablesEditorRef}

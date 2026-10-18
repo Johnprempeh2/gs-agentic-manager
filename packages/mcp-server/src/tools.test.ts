@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PaperclipApiClient } from "./client.js";
+import { studioTools } from "./studio-tools.js";
 import { createToolDefinitions } from "./tools.js";
 
 function makeClient() {
@@ -13,7 +14,8 @@ function makeClient() {
 }
 
 function getTool(name: string) {
-  const tool = createToolDefinitions(makeClient()).find((candidate) => candidate.name === name);
+  const client = makeClient();
+  const tool = [...createToolDefinitions(client), ...studioTools(client)].find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool ${name}`);
   return tool;
 }
@@ -450,5 +452,159 @@ describe("paperclip MCP tools", () => {
     });
 
     expect(response.content[0]?.text).toContain("must not contain '..'");
+  });
+
+  it("makes several studio images with camera picks for the default company", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ images: [{ id: "a" }, { id: "b" }] }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getTool("studio_make_image").execute({
+      prompt: "A rooftop garden at dusk",
+      aspectRatio: "16:9",
+      camera: { lens: "classic-anamorphic", focalLength: 35 },
+      count: 2,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/generated-images/variations");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      prompt: "A rooftop garden at dusk",
+      aspectRatio: "16:9",
+      camera: { lens: "classic-anamorphic", focalLength: 35 },
+      count: 2,
+    });
+    expect(JSON.parse(response.content[0]!.text).images).toHaveLength(2);
+  });
+
+  it("compares house looks in one studio request", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ images: [{ id: "a" }, { id: "b" }] }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+    const lookIds = ["33333333-3333-4333-8333-333333333331", "33333333-3333-4333-8333-333333333332"];
+    await getTool("studio_make_image").execute({ prompt: "A lighthouse", lookIds });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toMatch(/\/generated-images\/variations$/);
+    expect(JSON.parse(String(init.body))).toEqual({ prompt: "A lighthouse", aspectRatio: "1:1", lookIds });
+
+    await getTool("studio_make_image").execute({ prompt: "Acme coffee", shots: ["A barista pours", "A commuter sips"] });
+    const [, shotsInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(shotsInit.body))).toEqual({ prompt: "Acme coffee", aspectRatio: "1:1", shots: ["A barista pours", "A commuter sips"] });
+  });
+
+  it("refuses an unknown studio lens before calling the server", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await getTool("studio_make_image").execute({ prompt: "A cat", camera: { lens: "fisheye" } });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.content[0]?.text).toMatch(/lens/i);
+  });
+
+  it("animates a studio image as a video clip", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "vid", status: "pending" }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getTool("studio_make_video").execute({
+      prompt: "The boat drifts across the harbour",
+      model: "kling-2.5-turbo-standard",
+      duration: 10,
+      motion: "orbit",
+      sourceImageId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/generated-videos");
+    expect(JSON.parse(String(init.body))).toEqual({
+      prompt: "The boat drifts across the harbour",
+      model: "kling-2.5-turbo-standard",
+      duration: 10,
+      motion: "orbit",
+      sourceImageId: "33333333-3333-4333-8333-333333333333",
+    });
+  });
+
+  it("refuses a video length the model does not offer before calling the server", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await getTool("studio_make_video").execute({ prompt: "A city at night", model: "hailuo-2.3", duration: 5 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.content[0]?.text).toMatch(/6 or 10 second/);
+  });
+
+  it("saves a house look and passes its id when making an image", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "look-1" }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    await getTool("studio_save_look").execute({ name: "Acme", style: "photo", words: "navy and gold" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/studio-looks");
+    expect(JSON.parse(String(init.body))).toEqual({ name: "Acme", style: "photo", words: "navy and gold" });
+
+    await getTool("studio_make_image").execute({ prompt: "A bottle of oil", lookId: "77777777-7777-4777-8777-777777777777" });
+    const [, imageInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(imageInit.body))).toMatchObject({ lookId: "77777777-7777-4777-8777-777777777777" });
+  });
+
+  it("attaches a finished studio image to the task it was made for", async () => {
+    const issueId = "44444444-4444-4444-8444-444444444444";
+    const fetchMock = vi.fn().mockImplementation(async (url: URL) => {
+      const path = String(url);
+      if (path.endsWith("/generated-images/55555555-5555-4555-8555-555555555555")) {
+        return mockJsonResponse({
+          companyId: "11111111-1111-1111-1111-111111111111",
+          prompt: "A lighthouse at dawn!",
+          status: "completed",
+          assetId: "asset-1",
+          issue: { id: issueId },
+        });
+      }
+      if (path.endsWith("/assets/asset-1/content")) {
+        return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { headers: { "content-type": "image/png" } });
+      }
+      return mockJsonResponse({ id: "attachment-1" }, 201);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getTool("studio_attach_to_task").execute({ imageId: "55555555-5555-4555-8555-555555555555" });
+
+    const [url, init] = fetchMock.mock.calls[2] as [URL, RequestInit];
+    expect(String(url)).toBe(`http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/issues/${issueId}/attachments`);
+    expect(init.method).toBe("POST");
+    const file = (init.body as FormData).get("file") as File;
+    expect(file.name).toBe("a-lighthouse-at-dawn.png");
+    expect(file.type).toBe("image/png");
+    expect(JSON.parse(response.content[0]!.text)).toMatchObject({ issueId, attachment: { id: "attachment-1" } });
+  });
+
+  it("will not attach a studio image that is still being made", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      mockJsonResponse({ companyId: "c", prompt: "x", status: "pending", assetId: null, issue: null }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await getTool("studio_attach_to_task").execute({ imageId: "55555555-5555-4555-8555-555555555555" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.content[0]?.text).toContain("not finished yet");
+    const both = await getTool("studio_attach_to_task").execute({});
+    expect(both.content[0]?.text).toContain("Give imageId or videoId");
+  });
+
+  it("stars a studio image and lists the favourites", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "55555555-5555-4555-8555-555555555555", favourite: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getTool("studio_favourite_image").execute({ imageId: "55555555-5555-4555-8555-555555555555", favourite: true });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/generated-images/55555555-5555-4555-8555-555555555555/favourite");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ favourite: true });
+
+    await getTool("studio_list_images").execute({ favourite: true });
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("favourite=true");
+
+    await getTool("studio_favourite_video").execute({ videoId: "66666666-6666-4666-8666-666666666666", favourite: false });
+    const [videoUrl, videoInit] = fetchMock.mock.calls[2] as [URL, RequestInit];
+    expect(String(videoUrl)).toBe("http://localhost:3100/api/generated-videos/66666666-6666-4666-8666-666666666666/favourite");
+    expect(JSON.parse(String(videoInit.body))).toEqual({ favourite: false });
+    await getTool("studio_list_videos").execute({ favourite: true });
+    expect(String(fetchMock.mock.calls[3]![0])).toContain("favourite=true");
   });
 });

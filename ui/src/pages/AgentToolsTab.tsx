@@ -210,12 +210,12 @@ function InstalledAppsSection({
 
       <div className="space-y-3 p-3">
         <InlineBanner tone="info" compact>
-          Has access means the app is permitted. Installed means its tools are added to this agent's runtime context.
+          Has access means the agent is allowed to use the app. Installed means the agent has it ready on every piece of work.
         </InlineBanner>
 
         {connections.length === 0 ? (
           <p className="rounded-md border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
-            No permitted apps yet. Bind an access profile to make apps available here.
+            No apps are allowed for this agent yet. Give it access on the Access tab, or connect apps on the Apps page.
           </p>
         ) : (
           <div className="divide-y divide-border rounded-md border border-border">
@@ -244,7 +244,7 @@ function InstalledAppsSection({
                         {installedForAll
                           ? "Installed from the app page for every agent. Remove the all-agents install there."
                           : checked
-                            ? "Loaded into this agent's runtime context."
+                            ? "Ready on every piece of work."
                             : INSTALLED_HINT}
                       </span>
                     </span>

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerImageCommands } from "../commands/client/image.js";
+import { cameraFromOptions, numberedPath, registerImageCommands } from "../commands/client/image.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const ISSUE_ID = "55555555-5555-4555-8555-555555555555";
@@ -111,5 +111,108 @@ describe("gsam image", () => {
     ).rejects.toThrow("exit");
     expect(fetchMock).not.toHaveBeenCalled();
     exit.mockRestore();
+  });
+
+  it("makes several versions with camera settings and waits for each one", async () => {
+    const created: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/generated-images/variations`)) {
+        created.push(JSON.parse(String(init?.body)));
+        return json({ images: [1, 2].map((n) => image("pending", { id: `${IMAGE_ID.slice(0, -1)}${n}` })) }, 202);
+      }
+      const match = url.match(/generated-images\/([^/]+)$/);
+      if (match) return json(image("completed", { id: match[1] }));
+      if (url.endsWith(`/api/assets/${ASSET_ID}/content`)) {
+        return new Response(new Uint8Array([0x89, 0x50, 1]), { headers: { "content-type": "image/png" } });
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+    const log = vi.mocked(console.log);
+
+    const run = createProgram().parseAsync(
+      ["image", "generate", "--prompt", "A chef at work", "--camera", "16mm-film", "--lens", "Vintage Prime", "--focal", "50mm",
+        "--aperture", "f/4", "--count", "2", "--json", "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+      { from: "user" },
+    );
+    await vi.runAllTimersAsync();
+    await run;
+
+    expect(created).toEqual([
+      {
+        prompt: "A chef at work",
+        aspectRatio: "1:1",
+        camera: { camera: "16mm-film", lens: "vintage-prime", focalLength: 50, aperture: "f4" },
+        count: 2,
+      },
+    ]);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0])).images).toHaveLength(2);
+  });
+
+  it("compares house looks by name in one request", async () => {
+    const created: unknown[] = [];
+    const looks = [
+      { id: "88888888-8888-4888-8888-888888888881", name: "Warm" },
+      { id: "88888888-8888-4888-8888-888888888882", name: "Cool" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/studio-looks`)) return json({ looks });
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/generated-images/variations`)) {
+        created.push(JSON.parse(String(init?.body)));
+        return json({ images: [image("pending")] }, 202);
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+
+    await createProgram().parseAsync(
+      ["image", "generate", "--prompt", "A lighthouse", "--compare", "warm, Cool", "--no-wait", "--company-id", COMPANY_ID,
+        "--api-base", "http://localhost:3100", "--api-key", "t"],
+      { from: "user" },
+    );
+    expect(created).toEqual([{ prompt: "A lighthouse", aspectRatio: "1:1", lookIds: looks.map((look) => look.id) }]);
+
+    await createProgram().parseAsync(
+      ["image", "generate", "--prompt", "Acme coffee", "--shot", "A barista pours", "--shot", "A commuter sips", "--no-wait",
+        "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+      { from: "user" },
+    );
+    expect(created[1]).toEqual({ prompt: "Acme coffee", aspectRatio: "1:1", shots: ["A barista pours", "A commuter sips"] });
+
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      createProgram().parseAsync(
+        ["image", "generate", "--prompt", "A lighthouse", "--compare", "Warm", "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+        { from: "user" },
+      ),
+    ).rejects.toThrow("exit");
+    expect(String(error.mock.calls[0]?.[0])).toContain("--compare needs 2 to 4 look names");
+  });
+
+  it("stars a favourite and lists only favourites", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.includes("/generated-images?")) return json({ images: [image("completed", { favourite: true })], total: 1, nextOffset: null });
+      return json(image("completed", { favourite: true }));
+    }));
+    const base = ["--api-base", "http://localhost:3100", "--api-key", "t"];
+
+    await createProgram().parseAsync(["image", "favourite", IMAGE_ID, ...base], { from: "user" });
+    await createProgram().parseAsync(["image", "favourite", IMAGE_ID, "--off", ...base], { from: "user" });
+    await createProgram().parseAsync(["image", "list", "--favourites", "--company-id", COMPANY_ID, ...base], { from: "user" });
+
+    expect(calls[0]).toMatchObject({ url: `http://localhost:3100/api/generated-images/${IMAGE_ID}/favourite`, method: "PATCH", body: { favourite: true } });
+    expect(calls[1]).toMatchObject({ method: "PATCH", body: { favourite: false } });
+    expect(calls[2]!.url).toBe(`http://localhost:3100/api/companies/${COMPANY_ID}/generated-images?limit=20&favourite=true`);
+  });
+
+  it("reads camera flags and numbers output files", () => {
+    expect(cameraFromOptions({})).toBeNull();
+    expect(cameraFromOptions({ aperture: "f1.4", focal: "85" })).toEqual({ aperture: "f1.4", focalLength: 85 });
+    expect(() => cameraFromOptions({ lens: "fisheye" })).toThrow(/Unknown lens/);
+    expect(numberedPath("./out/image.png", 2)).toBe("./out/image-2.png");
+    expect(numberedPath("image", 3)).toBe("image-3");
   });
 });

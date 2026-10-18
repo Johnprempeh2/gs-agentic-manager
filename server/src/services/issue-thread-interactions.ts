@@ -36,6 +36,7 @@ import {
 } from "@greatstone/shared/telemetry";
 import type {
   AcceptIssueThreadInteraction,
+  AskAgentInteraction,
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
   CancelIssueThreadInteraction,
@@ -65,7 +66,10 @@ import type {
   WithdrawIssueThreadInteraction,
 } from "@greatstone/shared";
 import {
+  AGENT_QUESTION_MAX_OPEN_PER_ISSUE,
   acceptIssueThreadInteractionSchema,
+  askAgentPayloadSchema,
+  askAgentResultSchema,
   askUserQuestionsPayloadSchema,
   askUserQuestionsResultSchema,
   cancelIssueThreadInteractionSchema,
@@ -383,6 +387,8 @@ export const DEFAULT_RESOLVER_POLICY_BY_KIND: Record<
   connection_intent: "human_only",
   // A person edits or approves a draft; the drafting agent never signs off its own.
   request_draft_review: "human_only",
+  // Only the agent the question was asked of answers it, through its own route.
+  ask_agent: "not_creator",
 };
 
 const RESOLVER_POLICY_RESTRICTION_RANK: Record<
@@ -549,6 +555,10 @@ type TargetBoundInteractionKind =
 type TargetBoundInteraction =
   RequestConfirmationLikeInteraction | RequestItemVerdictsInteraction;
 
+// The board assistant stores its replies under this sentinel user id
+// (routes/board-chat.ts). Its replies are not a person answering a card.
+const BOARD_CONCIERGE_USER_ID = "board-concierge";
+
 const USER_COMMENT_SUPERSEDABLE_INTERACTION_KINDS = [
   ...TARGET_BOUND_INTERACTION_KINDS,
   "ask_user_questions",
@@ -693,6 +703,17 @@ function hydrateInteraction(
   };
 
   switch (row.kind) {
+    case "ask_agent":
+      return {
+        ...base,
+        kind: "ask_agent",
+        payload: askAgentPayloadSchema.parse(row.payload),
+        result: parseStoredInteractionResult(
+          askAgentResultSchema,
+          row.result,
+          row,
+        ),
+      } satisfies AskAgentInteraction;
     case "suggest_tasks":
       return {
         ...base,
@@ -1435,7 +1456,9 @@ async function emitInteractionResolvedTelemetry(
 
     trackInteractionResolved(telemetryClient, {
       interactionKind:
-        interaction.kind === "connection_intent" || interaction.kind === "request_draft_review"
+        interaction.kind === "connection_intent" ||
+        interaction.kind === "request_draft_review" ||
+        interaction.kind === "ask_agent"
           ? "other"
           : interaction.kind,
       status: interaction.status,
@@ -1471,7 +1494,8 @@ function emitInteractionCreatedTelemetry(args: {
       ...args,
       interactionKind:
         args.interactionKind === "connection_intent" ||
-        args.interactionKind === "request_draft_review"
+        args.interactionKind === "request_draft_review" ||
+        args.interactionKind === "ask_agent"
           ? "other"
           : args.interactionKind,
     });
@@ -3381,6 +3405,162 @@ export function issueThreadInteractionService(
       return { expired: expired.length };
     },
 
+    /**
+     * An agent asks another agent in the same company a question on its own
+     * task. The answer lands on this interaction; callers wake both agents.
+     */
+    askAgent: async (
+      issue: { id: string; companyId: string },
+      input: { targetAgentId: string; question: string },
+      actor: InteractionActor,
+    ) => {
+      if (!actor.agentId) {
+        throw forbidden("Only agents can ask another agent a question");
+      }
+      if (input.targetAgentId === actor.agentId) {
+        throw unprocessable("An agent cannot ask itself a question", {
+          code: "agent_question_self",
+        });
+      }
+      const target = await db
+        .select({ id: agents.id, name: agents.name, status: agents.status })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, input.targetAgentId),
+            eq(agents.companyId, issue.companyId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!target) throw notFound("Agent not found");
+      if (target.status === "terminated") {
+        throw unprocessable(
+          "This agent has been removed and cannot answer questions",
+          { code: "agent_question_target_terminated" },
+        );
+      }
+      const question = input.question.trim();
+      const row = await db.transaction(async (tx) => {
+        await assertInteractionRunWriteAllowed(tx as unknown as Db, issue, actor);
+        const [issueRow] = await tx
+          .select({ status: issues.status })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.id, issue.id),
+              eq(issues.companyId, issue.companyId),
+            ),
+          )
+          .for("update");
+        if (!issueRow || isTerminalIssueStatus(issueRow.status)) {
+          throw conflict("Cannot ask a question on a closed task");
+        }
+        const openQuestions = await tx
+          .select({ id: issueThreadInteractions.id })
+          .from(issueThreadInteractions)
+          .where(
+            and(
+              eq(issueThreadInteractions.companyId, issue.companyId),
+              eq(issueThreadInteractions.issueId, issue.id),
+              eq(issueThreadInteractions.kind, "ask_agent"),
+              eq(issueThreadInteractions.status, "pending"),
+            ),
+          );
+        if (openQuestions.length >= AGENT_QUESTION_MAX_OPEN_PER_ISSUE) {
+          throw conflict(
+            `This task already has ${AGENT_QUESTION_MAX_OPEN_PER_ISSUE} questions waiting for an answer. Wait for one to be answered first.`,
+            { code: "agent_question_limit_reached" },
+          );
+        }
+        const [inserted] = await tx
+          .insert(issueThreadInteractions)
+          .values({
+            companyId: issue.companyId,
+            issueId: issue.id,
+            kind: "ask_agent",
+            status: "pending",
+            continuationPolicy: "none",
+            requestedResolverPolicy: "not_creator",
+            effectiveResolverPolicy: "not_creator",
+            resolverPolicyProvenance: "inherited",
+            effectiveResolverPolicySource: "requested",
+            sourceRunId: actor.runId ?? null,
+            createdByAgentId: actor.agentId,
+            addresseeAgentId: target.id,
+            payload: { version: 1, question },
+          })
+          .returning();
+        return inserted;
+      });
+      await touchIssue(db, issue.id);
+      emitInteractionCreatedTelemetry({
+        interactionKind: "ask_agent",
+        usedDeprecatedResolverPolicyAlias: false,
+      });
+      return {
+        interaction: hydrateInteraction(row) as AskAgentInteraction,
+        targetAgent: { id: target.id, name: target.name },
+      };
+    },
+
+    /** The agent a question was asked of answers it, once. */
+    answerAgentQuestion: async (
+      issue: { id: string; companyId: string; status?: string },
+      interactionId: string,
+      input: { answer: string },
+      actor: InteractionActor,
+    ) => {
+      const current = await db
+        .select()
+        .from(issueThreadInteractions)
+        .where(eq(issueThreadInteractions.id, interactionId))
+        .then((rows) => rows[0] ?? null);
+      if (
+        !current ||
+        current.companyId !== issue.companyId ||
+        current.issueId !== issue.id ||
+        current.kind !== "ask_agent"
+      ) {
+        throw interactionNotFoundError();
+      }
+      if (!actor.agentId || current.addresseeAgentId !== actor.agentId) {
+        throw forbidden(
+          "Only the agent this question was asked of can answer it",
+          { code: "agent_question_not_addressee" },
+        );
+      }
+      if (current.status !== "pending") throw interactionTerminalError(current);
+      assertIssueOpenForInteractionResolution(issue);
+      const answer = input.answer.trim();
+      const updated = await db.transaction(async (tx) => {
+        await assertInteractionRunWriteAllowed(tx as unknown as Db, issue, actor);
+        const resolvedAt = new Date();
+        const [row] = await tx
+          .update(issueThreadInteractions)
+          .set({
+            status: "answered",
+            result: { version: 1, outcome: "answered", answer },
+            resolvedByAgentId: actor.agentId ?? null,
+            resolvedByRunId: actor.runId ?? null,
+            resolvedAt,
+            updatedAt: resolvedAt,
+          })
+          .where(
+            and(
+              eq(issueThreadInteractions.id, interactionId),
+              eq(issueThreadInteractions.status, "pending"),
+            ),
+          )
+          .returning();
+        if (!row) throw interactionAlreadyResolvedError();
+        return row;
+      });
+      await touchIssue(db, issue.id);
+      const answered = hydrateInteraction(updated) as AskAgentInteraction;
+      await emitInteractionResolvedTelemetry(db, answered);
+      return answered;
+    },
+
     create: async (
       issue: { id: string; companyId: string },
       input: CreateIssueThreadInteraction,
@@ -4244,6 +4424,8 @@ export function issueThreadInteractionService(
       // Local-CLI adapters post under user auth, so authorUserId can't tell a human from a
       // machine; createdByRunId can. Only genuine human comments (no run context) supersede.
       if (comment.createdByRunId) return [];
+      // The board assistant replies under a sentinel user; it is not a person.
+      if (comment.authorUserId === BOARD_CONCIERGE_USER_ID) return [];
 
       const rows = await db
         .select()
@@ -4347,6 +4529,8 @@ export function issueThreadInteractionService(
               isNotNull(issueComments.authorUserId),
               // Only genuine human comments supersede; machine-originated ones carry createdByRunId.
               isNull(issueComments.createdByRunId),
+              // The board assistant replies under a sentinel user; it is not a person.
+              ne(issueComments.authorUserId, BOARD_CONCIERGE_USER_ID),
             ),
           )
           .orderBy(asc(issueComments.createdAt)),

@@ -15,7 +15,7 @@ export function documentFor(overrides: Partial<EntitlementDocument> = {}): Entit
     validUntil: "2026-11-01T00:00:00.000Z",
     issuedBy: "hub-admin@greatstone",
     reason: "CRM bundle",
-    features: { enablePipelines: true, enableCases: true },
+    features: { enablePipelines: true, enableWebsiteView: true },
     limits: { maxAgents: 10 },
     ...overrides,
   };

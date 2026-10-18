@@ -1,4 +1,4 @@
-import type { WeeklyReport, WeeklyReportPipelineMove, WeeklyReportTask } from "@greatstone/shared";
+import type { AgentDailyDigestAgent, WeeklyReport, WeeklyReportDay, WeeklyReportPipelineMove, WeeklyReportTask } from "@greatstone/shared";
 import { buildPdf, type PdfLine } from "./simple-pdf";
 import { formatCents, formatShortDate } from "./utils";
 
@@ -69,6 +69,24 @@ export function weeklyHeadline(report: WeeklyReport): string {
   return sentences.join(" ");
 }
 
+/** "15 Oct: 4 finished, 2 moved, 7 comments, 12 runs (1 failed), $3.20. Busiest: Ada." */
+export function dailyDigestLine(day: WeeklyReportDay): string {
+  const runs = day.failures > 0
+    ? `${plural(day.runs, "run", "runs")} (${day.failures} failed)`
+    : plural(day.runs, "run", "runs");
+  const busiest = day.busiestAgent ? ` Busiest: ${day.busiestAgent}.` : "";
+  return `${formatShortDate(`${day.date}T12:00:00Z`)}: ${day.tasksCompleted} finished, ${day.tasksMoved} moved, ${plural(day.comments, "comment", "comments")}, ${runs}, ${formatCents(day.spendCents)}.${busiest}`;
+}
+
+/** "Ada: 2 finished, 1 moved, 3 comments, 5 runs (1 failed), $2.50." */
+export function dailyDigestAgentLine(agent: AgentDailyDigestAgent): string {
+  const { counts } = agent;
+  const runs = counts.failures > 0
+    ? `${plural(counts.runs, "run", "runs")} (${counts.failures} failed)`
+    : plural(counts.runs, "run", "runs");
+  return `${agent.name}: ${counts.tasksCompleted} finished, ${counts.tasksMoved} moved, ${plural(counts.comments, "comment", "comments")}, ${runs}, ${formatCents(counts.spendCents)}.`;
+}
+
 export interface WeeklyReportSection {
   title: string;
   lines: string[];
@@ -77,6 +95,9 @@ export interface WeeklyReportSection {
 /** The report as titled sections of plain lines: the PDF and the copied text use this. */
 export function weeklyReportSections(report: WeeklyReport): WeeklyReportSection[] {
   const more = (shown: number, total: number) => (total > shown ? [`and ${total - shown} more`] : []);
+  const days: WeeklyReportSection[] = (report.daily ?? []).length > 0
+    ? [{ title: "Day by day", lines: report.daily.map(dailyDigestLine) }]
+    : [];
   return [
     {
       title: "Needs you",
@@ -117,6 +138,7 @@ export function weeklyReportSections(report: WeeklyReport): WeeklyReportSection[
             `Total: ${formatCents(report.costs.totalCents)}`,
           ],
     },
+    ...days,
   ];
 }
 
@@ -143,4 +165,32 @@ export function weeklyReportPdf(report: WeeklyReport): string {
   }
   lines.push({ text: `Made by GS Agentic Manager on ${formatShortDate(report.generatedAt)}.`, size: 8.5, muted: true, gapBefore: 18 });
   return buildPdf(lines, title);
+}
+
+/** "A, B and 2 more." from titles, for reading aloud. */
+function spokenTitles(titles: string[], total: number): string {
+  const parts = [...titles];
+  if (total > titles.length) parts.push(`${total - titles.length} more`);
+  return parts.length <= 1 ? `${parts[0] ?? ""}.` : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}.`;
+}
+
+/**
+ * "Listen" on This week: the report as a few spoken parts. The headline
+ * carries the numbers; then what needs you, who finished what and what is
+ * stuck, by name. Task numbers are left out because they sound like noise.
+ */
+export function weeklyReportSpeech(report: WeeklyReport): string[] {
+  const parts = [`This week at ${report.companyName || "the company"}.`, weeklyHeadline(report)];
+  if (report.needsYou.count > 0) {
+    parts.push(`Needs you: ${spokenTitles(report.needsYou.items.map((task) => task.title), report.needsYou.count)}`);
+  }
+  if (report.finished.agents.length > 0) {
+    const top = report.finished.agents.slice(0, 3).map((agent) => `${agent.name} finished ${plural(agent.finished, "task", "tasks")}`);
+    const rest = report.finished.agents.length - top.length;
+    parts.push(`${top.join(", ")}${rest > 0 ? `, and ${plural(rest, "other agent", "other agents")} finished work too` : ""}.`);
+  }
+  if (report.stuck.count > 0) {
+    parts.push(`Stuck: ${spokenTitles(report.stuck.items.slice(0, 3).map((task) => task.title), report.stuck.count)}`);
+  }
+  return parts;
 }

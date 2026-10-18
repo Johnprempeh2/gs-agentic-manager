@@ -13,6 +13,7 @@ import { StatusGlyph } from "./StatusGlyph";
 import { RunChatSurface } from "./RunChatSurface";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { taskStatusLabel } from "../lib/task-status-labels";
 
 const MIN_DASHBOARD_RUNS = 4;
 const DASHBOARD_RUN_CARD_LIMIT = 4;
@@ -149,8 +150,8 @@ export function ActiveAgentsPanel({
         <div className="mt-3 flex justify-end text-xs text-muted-foreground">
           <Link to="/dashboard/live" className="hover:text-foreground hover:underline">
             {hiddenRunCount > 0
-              ? `${hiddenRunCount} more active/recent run${hiddenRunCount === 1 ? "" : "s"}`
-              : "View all runs"}
+              ? `${hiddenRunCount} more piece${hiddenRunCount === 1 ? "" : "s"} of recent work`
+              : "See all recent work"}
           </Link>
         </div>
       )}
@@ -198,7 +199,7 @@ export const AgentRunCard = memo(function AgentRunCard({
         <Link
           to={runUrl}
           title={`${run.agentName}: ${statusLabel} · ${timestamp}`}
-          aria-label={`${run.agentName}: ${statusLabel}. View run`}
+          aria-label={`${run.agentName}: ${statusLabel}. View work`}
           className="flex min-w-0 items-center gap-2 rounded-md text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <AgentIdentity agent={{ id: run.agentId, name: run.agentName, appearance: run.agentAppearance }} size="sm" className="gap-2 font-medium" />
@@ -216,17 +217,17 @@ export const AgentRunCard = memo(function AgentRunCard({
                   status={taskStatus}
                   size="md"
                   className="self-center"
-                  title={issue ? `Task ${taskStatus.replace(/_/g, " ")}` : undefined}
+                  title={issue ? `Task: ${taskStatusLabel(taskStatus)}` : undefined}
                 />
                 <span className="truncate">{taskTitle}</span>
               </span>
-              <span className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground">{issue?.identifier ?? run.issueId.slice(0, 8)}</span>
+              <span className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground">{issue?.identifier ?? ""}</span>
             </span>
           </Link>
         ) : (
           <Link to={runUrl} className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <Clock3 className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">{run.invocationSource === "timer" ? "Scheduled heartbeat" : "No linked task"}</span>
+            <span className="truncate">{run.invocationSource === "timer" ? "Scheduled check-in" : "No linked task"}</span>
           </Link>
         )}
         <time

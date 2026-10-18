@@ -1145,12 +1145,49 @@ describe("Agents", () => {
     expect(container.textContent).toContain("Alpha");
     expect(container.querySelector('[aria-label="Invalid reporting chain"]')).not.toBeNull();
   });
+
+  it("opens the live run from an agent row without nesting a link in the row link (GRE-1664)", async () => {
+    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([
+      { id: "run-1", agentId: "agent-1", status: "running" },
+    ]);
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <Agents />
+          </ToastProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const expectLiveIndicatorInsideRow = async () => {
+      expect(container.querySelectorAll("a a")).toHaveLength(0);
+      const live = container.querySelector<HTMLElement>('[aria-label="Open live run for Alpha"]');
+      expect(live).not.toBeNull();
+      expect(live?.closest("a")?.getAttribute("href")).toMatch(/^\/agents\//);
+      mockRouterState.navigate.mockClear();
+      await act(async () => { live!.click(); });
+      expect(mockRouterState.navigate).toHaveBeenCalledWith("/agents/alpha/runs/run-1");
+    };
+
+    await expectLiveIndicatorInsideRow();
+
+    const listToggle = container.querySelector<HTMLButtonElement>('button[aria-label="List view"]');
+    await act(async () => { listToggle?.click(); });
+    await flushReact();
+
+    await expectLiveIndicatorInsideRow();
+  });
 });
 
 describe("agentWeekLine", () => {
   it("says what the week's work is worth and how many runs did it", () => {
-    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 12_345, runCount: 41 })).toBe("$123 of work · 41 runs this week");
-    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 0, runCount: 1 })).toBe("1 run this week");
-    expect(agentWeekLine(undefined)).toBe("No runs this week");
+    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 12_345, runCount: 41 })).toBe("$123 of work · Worked 41 times this week");
+    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 0, runCount: 1 })).toBe("Worked 1 time this week");
+    expect(agentWeekLine(undefined)).toBe("No work this week");
   });
 });

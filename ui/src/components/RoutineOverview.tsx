@@ -13,6 +13,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { createIssueDetailLocationState } from "@/lib/issueDetailBreadcrumb";
 import { Link } from "@/lib/router";
+import { describeCron } from "@/lib/cron-readable";
+import { routineRunStatusLabel } from "@/lib/routine-run-status";
 import {
   routineDetailHref,
 } from "./RoutineContextualSidebar";
@@ -42,19 +44,19 @@ export function summarizeRoutineSchedule(triggers: RoutineTrigger[]): RoutineSch
     const webhooks = triggers.filter((trigger) => trigger.kind === "webhook" && trigger.enabled);
     if (webhooks.length > 0) {
       return {
-        label: `${webhooks.length} active webhook${webhooks.length === 1 ? "" : "s"}`,
-        detail: "Runs on incoming requests",
+        label: webhooks.length === 1 ? "1 app connected" : `${webhooks.length} apps connected`,
+        detail: "Starts when another app sends an update",
         nextRunAt: null,
       };
     }
-    return { label: "No active schedule", detail: "Manual runs only", nextRunAt: null };
+    return { label: "No active schedule", detail: "Only when you start it", nextRunAt: null };
   }
 
   const first = schedules[0]!;
   return {
     label: schedules.length === 1 ? "1 active schedule" : `${schedules.length} active schedules`,
     detail: first.cronExpression
-      ? `${first.cronExpression}${first.timezone ? ` · ${first.timezone}` : ""}`
+      ? `${describeCron(first.cronExpression) ?? first.cronExpression}${first.timezone ? ` · ${first.timezone}` : ""}`
       : first.label ?? "Scheduled trigger",
     nextRunAt,
   };
@@ -174,14 +176,14 @@ export function RoutineOverview() {
         />
         <OverviewFact
           icon={Clock3}
-          label="Next run"
-          value={schedule.nextRunAt ? formatRoutineTimestamp(schedule.nextRunAt) : hasWebhook ? "On webhook delivery" : "Not scheduled"}
+          label="Next time"
+          value={schedule.nextRunAt ? formatRoutineTimestamp(schedule.nextRunAt) : hasWebhook ? "When another app sends an update" : "Not scheduled"}
           detail={schedule.nextRunAt ? "Scheduled" : hasWebhook ? "Waiting for an incoming request" : "Add or enable a schedule"}
         />
         <OverviewFact
           icon={Play}
-          label="Last run"
-          value={lastRun ? <StatusBadge status={lastRun.status} /> : "No runs yet"}
+          label="Last time"
+          value={lastRun ? <StatusBadge status={lastRun.status} label={routineRunStatusLabel(lastRun.status)} /> : "No runs yet"}
           detail={lastRun ? formatRoutineTimestamp(lastRun.triggeredAt) : "Run manually or wait for a trigger"}
         />
       </div>
@@ -214,9 +216,9 @@ export function RoutineOverview() {
 
       <section className="flex flex-col gap-2" aria-labelledby="routine-recent-runs-heading">
         <div className="flex items-center justify-between gap-3">
-          <h2 id="routine-recent-runs-heading" className="text-sm font-semibold">Recent runs</h2>
+          <h2 id="routine-recent-runs-heading" className="text-sm font-semibold">Recent activity</h2>
           <Button variant="ghost" size="sm" asChild>
-            <Link to={routineDetailHref(routine.id, "runs")}>View all runs</Link>
+            <Link to={routineDetailHref(routine.id, "runs")}>See all activity</Link>
           </Button>
         </div>
         {recentRuns.length === 0 ? (

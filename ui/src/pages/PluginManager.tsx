@@ -5,6 +5,7 @@
  * @see PLUGIN_SPEC.md §9 — Plugin Marketplace / Manager
  */
 import { useEffect, useMemo, useState } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PluginRecord } from "@greatstone/shared";
 import { Link } from "@/lib/router";
@@ -99,13 +100,13 @@ export function PluginManager() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Plugins" },
     ]);
   }, [selectedCompany?.name, setBreadcrumbs]);
 
-  const { data: plugins, isLoading, error } = useQuery({
+  const { data: plugins, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.plugins.all,
     queryFn: () => pluginsApi.list(),
   });
@@ -131,7 +132,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin installed successfully", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to install plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not install the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -142,7 +143,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin uninstalled successfully", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to uninstall plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not remove the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -153,7 +154,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin enabled", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to enable plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not switch on the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -164,7 +165,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin disabled", tone: "info" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to disable plugin", body: err.message, tone: "error" });
+      pushToast({ title: "Could not switch off the plugin", body: err.message, tone: "error" });
     },
   });
 
@@ -186,7 +187,16 @@ export function PluginManager() {
   );
 
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading plugins...</div>;
-  if (error) return <div className="p-4 text-sm text-destructive">Failed to load plugins.</div>;
+  if (error) {
+    return (
+      <ErrorState
+        error={error}
+        title="Could not load your plugins"
+        onRetry={() => void refetch()}
+        retrying={isFetching}
+      />
+    );
+  }
 
   return (
     <div className="max-w-6xl space-y-6">

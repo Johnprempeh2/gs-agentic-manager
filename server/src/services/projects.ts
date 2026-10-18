@@ -321,7 +321,7 @@ async function attachWorkspaces(db: Db, rows: ProjectWithGoals[]): Promise<Proje
   });
 }
 
-type TaskCountRow = { projectId: string | null; count: number };
+type TaskCountRow = { projectId: string | null; count: number; doneCount?: number | null };
 type ProjectBudgetRow = { scopeId: string; amount: number; windowKind: string };
 
 /**
@@ -331,8 +331,11 @@ type ProjectBudgetRow = { scopeId: string; amount: number; windowKind: string };
  */
 export function buildProjectListMetricMaps(taskCountRows: TaskCountRow[], budgetRows: ProjectBudgetRow[]) {
   const taskCountByProjectId = new Map<string, number>();
+  const doneTaskCountByProjectId = new Map<string, number>();
   for (const row of taskCountRows) {
-    if (row.projectId) taskCountByProjectId.set(row.projectId, Number(row.count) || 0);
+    if (!row.projectId) continue;
+    taskCountByProjectId.set(row.projectId, Number(row.count) || 0);
+    doneTaskCountByProjectId.set(row.projectId, Number(row.doneCount) || 0);
   }
 
   const budgetByProjectId = new Map<string, ProjectBudgetSummary>();
@@ -345,7 +348,7 @@ export function buildProjectListMetricMaps(taskCountRows: TaskCountRow[], budget
     }
   }
 
-  return { taskCountByProjectId, budgetByProjectId };
+  return { taskCountByProjectId, doneTaskCountByProjectId, budgetByProjectId };
 }
 
 /**
@@ -367,6 +370,7 @@ async function attachListMetrics(
       .select({
         projectId: issues.projectId,
         count: sql<number>`count(*)::int`,
+        doneCount: sql<number>`count(*) filter (where ${issues.status} = 'done')::int`,
       })
       .from(issues)
       .where(and(eq(issues.companyId, companyId), inArray(issues.projectId, projectIds), isNull(issues.conversationAgentId)))
@@ -389,7 +393,7 @@ async function attachListMetrics(
       ),
   ]);
 
-  const { taskCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
+  const { taskCountByProjectId, doneTaskCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
     taskCountRows,
     budgetRows,
   );
@@ -397,6 +401,7 @@ async function attachListMetrics(
   return rows.map((row) => ({
     ...row,
     taskCount: taskCountByProjectId.get(row.id) ?? 0,
+    doneTaskCount: doneTaskCountByProjectId.get(row.id) ?? 0,
     budget: budgetByProjectId.get(row.id) ?? null,
   }));
 }

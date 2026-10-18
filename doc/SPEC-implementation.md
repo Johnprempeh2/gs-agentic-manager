@@ -1172,6 +1172,20 @@ The current app also exposes V1-supporting surfaces for:
   `GET /companies/:companyId/search/extract`; extraction accepts a server-escaped literal `contains`, optional
   server-owned URL expansion, issue/comment/document scopes, status/date filters, issue-level pagination, a
   bounded `matchesPerIssue` override for machine consumers, and explicit issue/match truncation flags
+- `GET /companies/:companyId/search/quiet-clients?days=30&limit=10` lists open deals and leads (working or
+  review stages) with no imported note, call, meeting or email on the deal or its organisation for `days` days,
+  quietest first; stage changes do not count as contact. Ask Everest uses it for "Which clients have gone quiet?"
+- `GET /companies/:companyId/search/recent-client-activity?days=7&limit=10` lists recent imported notes, calls,
+  meetings and emails with their client, plus totals by kind; Ask Everest uses it for "What calls did we have this week?"
+- `GET /companies/:companyId/search/client-brief?q=<name>` returns a brief on the best-matching organisation (people,
+  open deals, last contact); Ask Everest uses it for "Tell me about Acme" and agents use `gsam client-brief`
+- `GET /companies/:companyId/search/closing-deals?days=30&limit=10` lists open deals and leads by imported expected
+  close date (overdue first) with value per currency; Ask Everest uses it for "Which deals are closing this month?"
+- `GET /companies/:companyId/search/pipeline-summary?limit=5` returns open deals per stage with value per currency and
+  the largest deals (`owner=<name>` narrows it to one owner by full, first or last name); Ask Everest uses it for
+  "How is the pipeline looking?" and "Show me Sarah's deals", and agents use `gsam pipeline-summary`
+- `GET /companies/:companyId/search/won-lost?days=30&limit=5` lists deals won and lost in the window with value per
+  currency and top lost reasons; Ask Everest uses it for "What did we win this month?" and agents use `gsam won-lost`
 - execution workspaces, project workspaces, workspace runtime services, and workspace operations. Workspace reads
   derive `deliveryState` as `merged_via_pr | merged_by_ancestry | unmerged | unknown`; terminal issue trees with a
   merged delivery and no active checkout run become cleanup-eligible with reason `issue_terminal` and are archived
@@ -1607,7 +1621,7 @@ placements may use a lazy live character. See [agent-personas.md](agent-personas
 for persistence, migration, rendering, and integration contracts.
 ### Experimental task-backed agent chat (2026-09-10)
 
-`enableAgentChat` is an instance experimental flag, default false. Conversation containers remain issues, unique by `(company_id, conversation_agent_id, conversation_user_id)`. The authenticated board actor supplies ownership; local trusted mode uses `local-board`. Ordinary company task access applies. A conversation's agent assignment and identity are immutable through ordinary updates; terminal status mutations are rejected.
+`enableAgentChat` is a compatibility key: Agent Chat graduated from Experimental (GRE-1621) and the key always reads true. Conversation containers remain issues, unique by `(company_id, conversation_agent_id, conversation_user_id)`. The authenticated board actor supplies ownership; local trusted mode uses `local-board`. Ordinary company task access applies. A conversation's agent assignment and identity are immutable through ordinary updates; terminal status mutations are rejected.
 
 `GET /api/companies/:companyId/chats/:agentRef` reads an existing conversation or null. `POST` atomically resolves its issue on first send/upload. Existing issue comment, attachment, document, interaction, and run APIs apply thereafter. User chat comments require an idempotent UUID `clientRequestId`. Conversation delivery preserves comment order through the existing issue execution queue; the durable comment outbox repairs the commit-to-enqueue crash window.
 

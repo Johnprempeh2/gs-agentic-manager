@@ -99,7 +99,7 @@ scripts/client-instance.sh create --root /path/to/instances/c001 --edition manag
 
 # Managed plus: list ONLY features whose Beacon verdict on GRE-81 has passed
 scripts/client-instance.sh create --root /path/to/instances/c002 \
-  --edition managed-plus --passed-features enablePipelines,enableCases
+  --edition managed-plus --passed-features enablePipelines,enableWebsiteView
 
 # Greatstone's own install (no edition values; never for a client)
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
@@ -107,7 +107,19 @@ scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition in
 
 Managed and Managed plus pin `enableManagedSandboxOnly` off (GRE-160: with it
 on and no sandbox provider, every run is refused). `internal` sets no
-edition values. `verify` then checks only health,
+edition values.
+
+Graduated switches keep their client gate (Everest on GRE-1632, GRE-1633).
+Greatstone's own install and self-hosted read them on, and a stored "off" is
+ignored. Managed and Managed plus pin these off: Agent Chat, Built-in Agents,
+Task Plan Decomposition, Summaries, Status Cards, Cases, External Objects,
+Environments, Chat connectors and Memory connectors. Packaging v2 (GRE-1086)
+marks them "Needs configuration" (Memory connectors: "Parked"), so a client gets
+one only through `--passed-features` on Managed plus and, when the instance
+has an entitlement document, that document. Beta skills and Simplified English
+are preference switches a managed config cannot carry; a client install reads
+them off by the Cloud default (released skills only; Simplified English is a
+Greatstone house style). `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
@@ -134,6 +146,21 @@ in a comment on each task it holds (`todo` or `in_progress`). The task keeps
 its assignee. The board raises the budget on the Costs page (the agent then
 starts again) or gives the task to another agent.
 
+**Stop or hold (GRE-1365).** The instance setting `budgetHardStopMode` says
+what happens to queued task work at the hard stop. `stop` (the default, when
+the setting is absent) cancels it. `hold` keeps it: each task with queued work
+or a stopped run is held, and so is a wake that comes in for it while the
+scope is stopped. After an approved raise, each held task gets exactly one
+wake. That wake goes through the normal run admission, so the RAM, disk and
+run-cap guards still apply. After "keep paused" the work stays held. The Costs
+overview shows how many tasks are held (`heldTaskCount`). A wake with no task
+is cancelled in both modes. Only an instance admin can change the setting:
+
+```sh
+curl -X PATCH "$GSAM_API_URL/api/instance/settings/general" \
+  -H "Content-Type: application/json" -d '{"budgetHardStopMode":"hold"}'
+```
+
 The budget and daily cap go on agents made after the start that uses them.
 An agent's own budget, set by the board, stays. `verify` checks that every
 agent has a monthly budget.
@@ -152,6 +179,41 @@ The memory and disk floors are not set by the script: new runs wait while free
 memory is below 2048 MB or free disk (data dir and home volume) is below
 20 GB (GRE-207). The OS memory-pressure level does not hold runs (GRE-198).
 Change them in Instance → General → Run limits; 0 turns a floor off.
+
+### Spending authority (GRE-1363)
+
+The operator log-in sets, for the client's company, a **ceiling** and the
+**named approvers**. They are settings of the instance, set in the app, not in
+code. No value is built in: with no ceiling, budgets work as before.
+
+```sh
+# as the operator log-in (instance admin); ceilingCents null removes the ceiling
+curl -X PUT <base>/api/companies/<companyId>/budgets/authority \
+  -H 'Content-Type: application/json' \
+  -d '{"ceilingCents": N, "approverUserIds": ["<operator user id>"], "reason": "<why>"}'
+```
+
+- **Ceiling.** The client (and every log-in that is not the operator) cannot
+  set or raise any budget above it (403 `budget_above_operator_ceiling`), and
+  cannot remove the company's monthly cap or turn off its hard stop
+  (403 `budget_cap_operator_managed`). Lowering the ceiling cancels a dated
+  raise above it.
+- **Named approvers.** When the list is not empty, only those users and the
+  operator can decide a budget override, or change the budget of a scope that
+  is stopped at its cap (403 `budget_approver_required`). An empty list keeps
+  the old rule: any board user.
+- **Dated changes.** A budget change can carry `effectiveFrom` (and `reason`).
+  The old cap stays until that time; the server applies the new one within
+  15 seconds of it, with no restart.
+- **Audit.** Each ceiling, policy, dated, override and AI route change writes
+  one activity row with the actor, old value, new value, effective date and
+  reason (`budget.authority_updated`, `budget.policy_upserted`,
+  `budget.policy_change_scheduled`, `budget.policy_change_applied`,
+  `budget.incident_resolved`, `ai_route.changed`).
+- **AI route.** A client owner or admin asks with
+  `POST /api/companies/<companyId>/ai-route-change-requests`
+  (`{"route": "...", "reason": "..."}`). Only the operator can approve it; the
+  route in `client-instance.json` still wins at the next start, so change both.
 
 ### AI access route and board approval (GRE-667)
 
@@ -956,5 +1018,5 @@ A client install from the Stable image (GRE-138, see "Stable image" in
 
 ```sh
 scripts/client-instance.sh edition-env --edition managed
-scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableCases
+scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableWebsiteView
 ```

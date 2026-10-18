@@ -212,7 +212,8 @@ vi.mock("../api/decisions", () => ({
 }));
 
 const mockEmailApi = vi.hoisted(() => ({
-  thread: vi.fn(),
+  // Chat connectors are on by default (GRE-1620), so every task asks for its email thread.
+  thread: vi.fn(async (_companyId: string, _issueId: string) => null),
 }));
 
 vi.mock("@/api/email", () => ({
@@ -4208,48 +4209,62 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("hides the plan decomposition panel by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).not.toContain("Plan decomposition");
-    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
-  });
-
-  it("hides file viewer entry points by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(
-      container.querySelector('[aria-label="Open file in this issue"]'),
-    ).toBeNull();
-  });
-
-  it("shows file viewer entry points when the experimental flag is enabled", async () => {
+  // GRE-1633: the server ignores a stored off, so this reads off only when a
+  // managed config or the entitlement document turns it off.
+  it("does not load plan decompositions when Task Plan Decomposition reads off", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIssuePlanDecompositions: false,
-      enableExperimentalFileViewer: true,
+      enableClassicTaskInterface: true,
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+
+    await flushReact();
+    await flushReact();
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
+  });
+
+  it("loads plan decompositions when Task Plan Decomposition reads on (GRE-1621)", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    // The classic page shows the section in the centre column; the chat shell
+    // shows it in the (mocked) properties pane.
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: true,
+      enableClassicTaskInterface: true,
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+
+    await flushReact();
+    await flushReact();
+    // The query waits for the settings read first (GRE-1633).
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("shows file viewer entry points even with the old flag stored off (GRE-1623)", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: false,
+      enableExperimentalFileViewer: false,
     });
 
     await act(async () => {
@@ -4264,7 +4279,7 @@ describe("IssueDetail", () => {
     await flushReact();
 
     expect(
-      container.querySelector('[aria-label="Open file in this issue"]'),
+      container.querySelector('[aria-label="Open file in this task"]'),
     ).not.toBeNull();
   });
 
@@ -4578,7 +4593,7 @@ describe("IssueDetail", () => {
       await flushReact();
 
       await waitForAssertion(() => {
-        expect(container.textContent).toContain("Subtree is paused.");
+        expect(container.textContent).toContain("This task and its sub-tasks are paused.");
       });
 
       expect(container.querySelector('[data-testid="paused-composer-takeover"]')).toBeTruthy();
@@ -4591,7 +4606,7 @@ describe("IssueDetail", () => {
 
       const resumeButton = Array.from(
         container.querySelectorAll("button"),
-      ).find((button) => button.textContent?.trim() === "Resume subtree");
+      ).find((button) => button.textContent?.trim() === "Resume task and sub-tasks");
       expect(resumeButton).toBeTruthy();
 
       await act(async () => {
@@ -4600,7 +4615,7 @@ describe("IssueDetail", () => {
       await flushReact();
 
       const applyResumeButton = Array.from(container.querySelectorAll("button"))
-        .filter((button) => button.textContent?.trim() === "Resume subtree")
+        .filter((button) => button.textContent?.trim() === "Resume task and sub-tasks")
         .at(-1);
       expect(applyResumeButton).toBeTruthy();
       expect(container.textContent).toContain("Wake affected agents (1)");
@@ -4628,7 +4643,7 @@ describe("IssueDetail", () => {
         }),
       );
       await waitForAssertion(() => {
-        expect(container.textContent).not.toContain("Subtree is paused.");
+        expect(container.textContent).not.toContain("This task and its sub-tasks are paused.");
       });
       if (wakeFailed)
         expect(
@@ -4697,7 +4712,7 @@ describe("IssueDetail", () => {
 
     const pauseMenuButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Pause subtree");
+    ).find((button) => button.textContent?.trim() === "Pause task and sub-tasks");
     expect(pauseMenuButton).toBeTruthy();
 
     await act(async () => {
@@ -4886,7 +4901,7 @@ describe("IssueDetail", () => {
 
     const stopAndDoneButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Stop and done");
+    ).find((button) => button.textContent?.trim() === "Stop work and mark done");
     expect(stopAndDoneButton).toBeTruthy();
 
     await act(async () => {
@@ -4904,8 +4919,9 @@ describe("IssueDetail", () => {
 
     const stopAndCancelButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Stop and cancel");
+    ).find((button) => button.textContent?.trim() === "Stop work and cancel task");
     expect(stopAndCancelButton).toBeTruthy();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     await act(async () => {
       stopAndCancelButton!.click();
@@ -4948,7 +4964,7 @@ describe("IssueDetail", () => {
 
     const stopAndDoneButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Stop and done");
+    ).find((button) => button.textContent?.trim() === "Stop work and mark done");
     expect(stopAndDoneButton).toBeTruthy();
 
     await act(async () => {
@@ -4959,8 +4975,8 @@ describe("IssueDetail", () => {
     expect(mockHeartbeatsApi.cancel).toHaveBeenCalledWith("run-active-1");
     expect(mockPushToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Run stopped; task update failed",
-        body: "Run was stopped, but updating the task failed: Status write failed",
+        title: "The agent stopped, but the task status did not change",
+        body: "The agent was stopped, but the task status could not be updated: Status write failed",
         tone: "error",
       }),
     );
@@ -5476,7 +5492,7 @@ describe("IssueDetail", () => {
     await waitForAssertion(() => {
       expect(container.textContent).toContain("Task is paused.");
       expect(container.textContent).toContain("in_review");
-      expect(container.textContent).not.toContain("Subtree is paused.");
+      expect(container.textContent).not.toContain("This task and its sub-tasks are paused.");
     });
 
     const resumeButton = Array.from(container.querySelectorAll("button")).find(
@@ -5587,7 +5603,7 @@ describe("IssueDetail", () => {
 
     const restoreMenuButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Restore subtree...");
+    ).find((button) => button.textContent?.trim() === "Restore task and sub-tasks...");
     expect(restoreMenuButton).toBeTruthy();
 
     await act(async () => {
@@ -5664,7 +5680,7 @@ describe("IssueDetail", () => {
     await flushReact();
     const cancelMenuButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Cancel subtree...");
+    ).find((button) => button.textContent?.trim() === "Cancel task and sub-tasks...");
     expect(cancelMenuButton).toBeTruthy();
 
     await act(async () => {
@@ -5682,7 +5698,7 @@ describe("IssueDetail", () => {
       '[data-slot="dialog-content"]',
     ) as HTMLDivElement | null;
     expect(dialogContent).toBeTruthy();
-    expect(dialogContent!.textContent).toContain("Cancel subtree?");
+    expect(dialogContent!.textContent).toContain("Cancel this task and its sub-tasks?");
     expect(dialogContent!.textContent).toContain("24 tasks will be cancelled.");
     expect(dialogContent!.textContent).toContain("Keep tasks");
     expect(
@@ -5799,8 +5815,8 @@ describe("IssueDetail", () => {
       };
       expect(props.queuedCommentQueue).toBeNull();
       expect(props.runFinalizationActions).toEqual([
-        expect.objectContaining({ id: "cancel", label: "Stop and cancel" }),
-        expect.objectContaining({ id: "done", label: "Stop and done" }),
+        expect.objectContaining({ id: "cancel", label: "Stop work and cancel task" }),
+        expect.objectContaining({ id: "done", label: "Stop work and mark done" }),
       ]);
     },
   );

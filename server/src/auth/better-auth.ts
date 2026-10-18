@@ -2,17 +2,29 @@ import type { Request, RequestHandler } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { betterAuth, type Auth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { twoFactor } from "better-auth/plugins";
 import { toNodeHandler } from "better-auth/node";
 import type { Db } from "@greatstone/db";
 import {
   authAccounts,
   authSessions,
+  authTwoFactors,
   authUsers,
   authVerifications,
 } from "@greatstone/db";
+import { PASSWORD_MIN_LENGTH } from "@greatstone/shared";
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { inviteSignUpGatePlugin } from "./invite-sign-up-gate.js";
+import { passwordPolicyPlugin } from "./password-policy-plugin.js";
+import {
+  DEFAULT_SIGN_IN_LOCKOUT,
+  createSignInLockout,
+  databaseSignInLockoutStore,
+  signInLockoutPlugin,
+} from "./sign-in-lockout.js";
+import { signInHistoryPlugin } from "./sign-in-history.js";
+import { twoStepRequiredPlugin } from "./two-step-requirement.js";
 import {
   workspaceLoginHandoffPlugin,
   type WorkspaceHandoffExpectedIdentity,
@@ -28,6 +40,7 @@ export type BetterAuthSessionUser = {
   id: string;
   email?: string | null;
   name?: string | null;
+  twoFactorEnabled?: boolean;
 };
 
 export type BetterAuthSessionResult = {
@@ -58,9 +71,22 @@ export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()
   return `paperclip-${scopedInstanceId}`;
 }
 
+/**
+ * Header Better Auth reads the client address from. `createBetterAuthHandler`
+ * overwrites it on every request with Express's `req.ip`, which follows the
+ * operator's `TRUST_PROXY` setting, so a client cannot pick a fresh address
+ * per attempt (as it could with a raw `X-Forwarded-For`) to dodge the sign-in
+ * rate limit.
+ */
+export const AUTH_CLIENT_IP_HEADER = "x-gsam-client-ip";
+
+/** The name an authenticator app shows next to the code. */
+export const TWO_FACTOR_ISSUER = "GSAM";
+
 export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {
   return {
     cookiePrefix: deriveAuthCookiePrefix(),
+    ipAddress: { ipAddressHeaders: [AUTH_CLIENT_IP_HEADER] },
     ...(input.disableSecureCookies ? { useSecureCookies: false } : {}),
   };
 }
@@ -260,11 +286,34 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
 
   const workspaceHandoffEnabled = Boolean(resolveWorkspaceHandoffIdentity(config));
   const plugins = [
+    // Wrong-password lockout per account, on top of Better Auth's per-address
+    // rate limit. Authenticated mode only: local_trusted has no sign-in.
+    ...(config.deploymentMode === "authenticated"
+      ? [signInLockoutPlugin(createSignInLockout(DEFAULT_SIGN_IN_LOCKOUT, databaseSignInLockoutStore(db)))]
+      : []),
+    // Two-step sign-in with an authenticator app, on top of the password. Off
+    // for each person until they turn it on in Profile; once on, sign-in asks
+    // for a 6-digit code (or a backup code). Better Auth locks the code step
+    // after repeated wrong codes.
+    ...(config.deploymentMode === "authenticated"
+      ? [
+          twoFactor({ issuer: TWO_FACTOR_ISSUER, backupCodeOptions: { amount: 10 } }),
+          // While an admin requires two-step sign-in, nobody can turn it off.
+          twoStepRequiredPlugin(db),
+          // Each person's recent sign-in attempts, for Profile. After
+          // twoFactor, so it sees a password step held for its code.
+          signInHistoryPlugin(db, AUTH_CLIENT_IP_HEADER),
+        ]
+      : []),
     // Closed sign-up is enforced here rather than by Better Auth's own
     // `disableSignUp`, so a person holding a valid human invite can still
     // create the account the invite landing page then accepts it with. Every
     // other sign-up gets Better Auth's usual "sign up is not enabled" refusal.
     ...(config.authDisableSignUp ? [inviteSignUpGatePlugin({ db })] : []),
+    // Every new password: 12 characters or more, not well known, not made
+    // from the email. After the invite gate, so a sign-up without an invite
+    // still gets the usual refusal.
+    ...(config.deploymentMode === "authenticated" ? [passwordPolicyPlugin()] : []),
     // Registered only for a managed workspace instance: the plugin is what makes
     // `Open workspace` password-independent, and a control-plane instance that
     // was never handed a workspace key must not expose the exchange at all.
@@ -298,11 +347,15 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
         session: authSessions,
         account: authAccounts,
         verification: authVerifications,
+        twoFactor: authTwoFactors,
       },
     }),
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
+      // `passwordPolicyPlugin` holds new passwords to the full rule; this is
+      // Better Auth's own floor behind it.
+      ...(config.deploymentMode === "authenticated" ? { minPasswordLength: PASSWORD_MIN_LENGTH } : {}),
       // Always false at the library level: when GSAM's `authDisableSignUp` is
       // set, `inviteSignUpGatePlugin` (above) is the gate and refuses every
       // sign-up that does not carry a valid human invite.
@@ -368,6 +421,10 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
 export function createBetterAuthHandler(auth: BetterAuthHandlerTarget): RequestHandler {
   const handler = toNodeHandler(auth);
   return (req, res, next) => {
+    // Never trust a client-sent value; see AUTH_CLIENT_IP_HEADER.
+    delete req.headers[AUTH_CLIENT_IP_HEADER];
+    const clientIp = req.ip ?? req.socket?.remoteAddress;
+    if (clientIp) req.headers[AUTH_CLIENT_IP_HEADER] = clientIp.replace(/^::ffff:/, "");
     void Promise.resolve(handler(req, res)).catch(next);
   };
 }
@@ -386,7 +443,7 @@ export async function resolveBetterAuthSessionFromHeaders(
 
   const value = sessionValue as {
     session?: { id?: string; userId?: string } | null;
-    user?: { id?: string; email?: string | null; name?: string | null } | null;
+    user?: { id?: string; email?: string | null; name?: string | null; twoFactorEnabled?: boolean | null } | null;
   };
   const session = value.session?.id && value.session.userId
     ? { id: value.session.id, userId: value.session.userId }
@@ -396,6 +453,7 @@ export async function resolveBetterAuthSessionFromHeaders(
         id: value.user.id,
         email: value.user.email ?? null,
         name: value.user.name ?? null,
+        twoFactorEnabled: value.user.twoFactorEnabled === true,
       }
     : null;
 

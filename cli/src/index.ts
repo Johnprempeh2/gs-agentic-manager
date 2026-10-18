@@ -14,6 +14,7 @@ import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
 import { setAuthMode } from "./commands/auth-mode.js";
 import { resetBoardPassword } from "./commands/auth-reset-password.js";
+import { resetBoardTwoStep } from "./commands/auth-reset-two-step.js";
 import { dbBackupCommand } from "./commands/db-backup.js";
 import { registerEnvLabCommands } from "./commands/env-lab.js";
 import { registerContextCommands } from "./commands/client/context.js";
@@ -22,6 +23,7 @@ import { registerIssueCommands } from "./commands/client/issue.js";
 import { registerAgentCommands } from "./commands/client/agent.js";
 import { registerProjectCommands } from "./commands/client/project.js";
 import { registerGoalCommands } from "./commands/client/goal.js";
+import { registerWorkflowCommands } from "./commands/client/workflow.js";
 import { registerApprovalCommands } from "./commands/client/approval.js";
 import { registerActivityCommands } from "./commands/client/activity.js";
 import { registerDashboardCommands } from "./commands/client/dashboard.js";
@@ -49,6 +51,9 @@ import { registerAdapterCommands } from "./commands/client/adapter.js";
 import { registerManagedAgentCommands } from "./commands/managed-agent.js";
 import { registerAssetCommands } from "./commands/client/asset.js";
 import { registerImageCommands } from "./commands/client/image.js";
+import { registerSearchCommands } from "./commands/client/search.js";
+import { registerVideoCommands } from "./commands/client/video.js";
+import { registerLookCommands } from "./commands/client/look.js";
 import { registerSkillCommands } from "./commands/client/skill.js";
 import { cliVersion } from "./version.js";
 import { installCommand } from "./commands/install.js";
@@ -245,6 +250,7 @@ registerIssueCommands(program);
 registerAgentCommands(program);
 registerProjectCommands(program);
 registerGoalCommands(program);
+registerWorkflowCommands(program);
 registerTokenCommands(program);
 registerPromptCommands(program);
 registerApprovalCommands(program);
@@ -258,6 +264,9 @@ registerAdapterCommands(program);
 registerManagedAgentCommands(program);
 registerAssetCommands(program);
 registerImageCommands(program);
+registerSearchCommands(program);
+registerVideoCommands(program);
+registerLookCommands(program);
 registerSkillCommands(program);
 registerRoutineCommands(program);
 registerPipelineCommands(program);
@@ -308,6 +317,15 @@ auth
   .option("--password-stdin", "Read the new password from stdin", false)
   .option("--generate", "Generate a password and print it", false)
   .action(resetBoardPassword);
+
+auth
+  .command("reset-two-step")
+  .description("Turn off two-step sign-in for a user who lost their phone, and sign them out everywhere")
+  .requiredOption("--email <email>", "Email of the user")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--db-url <url>", "Database connection string (default: found from the install)")
+  .action(resetBoardTwoStep);
 
 registerClientAuthCommands(auth);
 

@@ -8,6 +8,7 @@ import {
   companies,
   documents,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueWorkProducts,
   issues,
@@ -24,6 +25,8 @@ import {
   SYSTEM_ISSUE_DOCUMENT_KEYS,
   type CompanyArtifact,
   type CompanySearchArtifactSummary,
+  type CompanySearchFileSummary,
+  type CompanySearchRecordKind,
   type CompanySearchCountType,
   type CompanySearchFilterOptionCounts,
   type CompanySearchIssueFilterKey,
@@ -38,7 +41,7 @@ import {
 } from "@greatstone/shared";
 import { companyArtifactsService } from "./company-artifacts.js";
 import { companySearchExtractService } from "./company-search-extract.js";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { visibleIssueCondition, visibleIssueSql } from "./issue-visibility.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore, taskSearchFieldMatch, taskSearchTermMatch } from "./task-search.js";
 
 const SNIPPET_MAX_CHARS = 240;
@@ -187,7 +190,7 @@ function matchTerms(normalizedQuery: string, tokens: string[]) {
 }
 
 function emptySearchCounts(): Record<CompanySearchCountType, number> {
-  return { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 };
+  return { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 };
 }
 
 function emptyFilterOptionCounts(): CompanySearchFilterOptionCounts {
@@ -385,6 +388,148 @@ function scopeIncludesIssues(scope: CompanySearchScope) {
 
 function scopeIncludesAgents(scope: CompanySearchScope) {
   return scope === "all" || scope === "agents";
+}
+
+function scopeIncludesFiles(scope: CompanySearchScope) {
+  return scope === "all" || scope === "files";
+}
+
+type FileSearchRow = {
+  assetId: string;
+  filename: string | null;
+  contentType: string;
+  createdAt: Date;
+  /** Text around the first match, enough to find the matching line. */
+  excerpt: string | null;
+  attachmentId: string | null;
+  issueId: string | null;
+  issueIdentifier: string | null;
+  issueTitle: string | null;
+  caseId: string | null;
+  casePipelineId: string | null;
+  caseTitle: string | null;
+  organisationId?: string | null;
+  organisationName?: string | null;
+  altText?: string | null;
+};
+
+/** The line of a file that best matches: the one holding the most search words. */
+export function matchingFileLine(excerpt: string | null, terms: string[]): string | null {
+  if (!excerpt) return null;
+  const lines = excerpt.split("\n").map((line) => line.trim()).filter(Boolean);
+  let best: string | null = null;
+  let bestHits = 0;
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    const hits = terms.filter((term) => lower.includes(term.toLowerCase())).length;
+    if (hits > bestHits) {
+      best = line;
+      bestHits = hits;
+    }
+  }
+  return best;
+}
+
+function fileResult(row: FileSearchRow, prefix: string, normalizedQuery: string, tokens: string[]): CompanySearchResult | null {
+  const owner: CompanySearchFileSummary["owner"] | null = row.caseId && row.casePipelineId
+    ? { kind: "client", label: row.caseTitle ?? "Client", href: `/${prefix}/pipelines/${encodeURIComponent(row.casePipelineId)}/items/${encodeURIComponent(row.caseId)}` }
+    : row.issueId
+      ? { kind: "task", label: [row.issueIdentifier, row.issueTitle].filter(Boolean).join(" "), href: issueHref(prefix, { id: row.issueId, identifier: row.issueIdentifier }) }
+      : row.organisationId
+        ? { kind: "organisation", label: row.organisationName ?? "Organisation", href: `/${prefix}/organisations/${encodeURIComponent(row.organisationId)}` }
+        : null;
+  if (!owner) return null;
+  const terms = matchTerms(normalizedQuery, tokens);
+  const title = row.filename?.trim() || "File";
+  const matchedAltText = Boolean(row.altText);
+  const line = matchedAltText ? row.altText! : matchingFileLine(row.excerpt, terms);
+  const snippet = createSnippet("file", matchedAltText ? "Image description" : title, line, terms);
+  const mediaKind = row.contentType.startsWith("image/") ? "image" : "document";
+  const contentPath = row.attachmentId ? `/api/attachments/${row.attachmentId}/content` : null;
+  return {
+    id: `file:${row.assetId}`,
+    type: "file",
+    score: scoreSimpleRow({ id: row.assetId, title, description: line, createdAt: row.createdAt, updatedAt: row.createdAt }, normalizedQuery, tokens),
+    title,
+    href: owner.href,
+    matchedFields: ["file"],
+    sourceLabel: snippet?.label ?? title,
+    snippet: snippet?.text ?? null,
+    snippets: snippet ? [snippet] : [],
+    file: {
+      assetId: row.assetId,
+      filename: row.filename,
+      contentType: row.contentType,
+      mediaKind,
+      owner,
+      contentPath,
+      matchedAltText,
+    },
+    updatedAt: iso(row.createdAt),
+    previewImageUrl: mediaKind === "image" ? contentPath : null,
+  };
+}
+
+const ATTACHMENT_IMAGE_PATTERN = /!\[([^\]]+)\]\(\s*\/api\/attachments\/([0-9a-f-]{36})\/content/gi;
+
+/** Images written into a comment or description whose alt text holds every search word. */
+export function imagesMatchingAltText(body: string, tokens: string[]): Array<{ attachmentId: string; altText: string }> {
+  const found: Array<{ attachmentId: string; altText: string }> = [];
+  for (const match of body.matchAll(ATTACHMENT_IMAGE_PATTERN)) {
+    const altText = match[1]!.trim();
+    const lower = altText.toLowerCase();
+    if (altText && tokens.every((token) => lower.includes(token.toLowerCase()))) {
+      found.push({ attachmentId: match[2]!.toLowerCase(), altText });
+    }
+  }
+  return found;
+}
+
+function scopeIncludesRecords(scope: CompanySearchScope) {
+  return scope === "all" || scope === "records";
+}
+
+type RecordSearchRow = {
+  kind: CompanySearchRecordKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  body: string | null;
+  /** Path under the company prefix, such as "organisations/<id>". */
+  path: string;
+  previewImageUrl: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+const RECORD_LABELS: Record<CompanySearchRecordKind, string> = {
+  organisation: "Organisation",
+  person: "Person",
+  client: "Client",
+  product: "Product",
+  image: "Image",
+  activity: "Note or activity",
+};
+
+function recordResult(row: RecordSearchRow, prefix: string, normalizedQuery: string, tokens: string[]): CompanySearchResult {
+  const terms = matchTerms(normalizedQuery, tokens);
+  const label = RECORD_LABELS[row.kind];
+  const snippet = createSnippet("record", label, [row.subtitle, row.body].filter(Boolean).join(". ") || row.title, terms);
+  const updatedAt = new Date(row.updatedAt);
+  return {
+    id: `${row.kind}:${row.id}`,
+    type: "record",
+    score: scoreSimpleRow({ id: row.id, title: row.title, description: [row.subtitle, row.body].filter(Boolean).join(" "), createdAt: new Date(row.createdAt), updatedAt }, normalizedQuery, tokens),
+    title: row.title,
+    href: `/${prefix}/${row.path}`,
+    matchedFields: ["record"],
+    sourceLabel: label,
+    snippet: snippet?.text ?? row.subtitle,
+    snippets: snippet ? [snippet] : [],
+    record: { kind: row.kind, subtitle: row.subtitle },
+    updatedAt: iso(updatedAt),
+    previewImageUrl: row.previewImageUrl,
+  };
 }
 
 function scopeIncludesArtifacts(scope: CompanySearchScope) {
@@ -997,6 +1142,199 @@ export function companySearchService(db: Db) {
         return result.artifacts;
       }
 
+      // --- files: words inside uploaded documents, and images by alt text ---
+      const fileTextMatch = sql<boolean>`t.text ILIKE ALL(${tokenPatternArray})`;
+      const fileFrom = sql`
+        FROM asset_texts t
+        JOIN assets a ON a.id = t.asset_id AND a.company_id = t.company_id
+        LEFT JOIN issue_attachments ia ON ia.asset_id = a.id AND ia.company_id = a.company_id
+        LEFT JOIN issues i ON i.id = ia.issue_id AND i.company_id = a.company_id AND ${sql.raw(visibleIssueSql("i"))}
+        LEFT JOIN pipeline_case_evidence e ON e.company_id = a.company_id
+          AND (e.asset_id = a.id OR (ia.id IS NOT NULL AND e.attachment_id = ia.id))
+        LEFT JOIN crm_files cf ON cf.asset_id = a.id AND cf.company_id = a.company_id
+        LEFT JOIN pipeline_cases pc ON pc.id = coalesce(e.case_id, cf.case_id) AND pc.retired_at IS NULL
+        LEFT JOIN organisations org ON org.id = cf.organisation_id AND org.archived_at IS NULL
+        WHERE t.company_id = ${companyId} AND t.status = 'indexed' AND ${fileTextMatch}
+          AND (i.id IS NOT NULL OR pc.id IS NOT NULL OR org.id IS NOT NULL)`;
+
+      async function fetchFileTextRows(): Promise<FileSearchRow[]> {
+        const firstToken = (tokens[0] ?? normalizedQuery).toLowerCase();
+        const result = await db.execute(sql`
+          SELECT * FROM (
+            SELECT DISTINCT ON (a.id)
+              a.id AS "assetId", coalesce(a.original_filename, cf.name) AS "filename", a.content_type AS "contentType",
+              a.created_at AS "createdAt",
+              substring(t.text FROM greatest(1, strpos(lower(t.text), ${firstToken}) - 300) FOR 700) AS "excerpt",
+              ia.id AS "attachmentId", i.id AS "issueId", i.identifier AS "issueIdentifier", i.title AS "issueTitle",
+              pc.id AS "caseId", pc.pipeline_id AS "casePipelineId", pc.title AS "caseTitle",
+              org.id AS "organisationId", org.name AS "organisationName"
+            ${fileFrom}
+            ORDER BY a.id, (pc.id IS NULL), (i.id IS NULL), (org.id IS NULL)
+          ) files
+          ORDER BY "createdAt" DESC
+          LIMIT ${fetchLimit}`) as unknown as FileSearchRow[];
+        return result;
+      }
+
+      async function fetchAltTextRows(): Promise<FileSearchRow[]> {
+        const altCondition = (field: SQL) => sql<boolean>`${field} ILIKE ALL(${tokenPatternArray}) AND ${field} LIKE '%](/api/attachments/%'`;
+        const [commentBodies, descriptionBodies] = await Promise.all([
+          db
+            .select({ body: issueComments.body })
+            .from(issueComments)
+            .innerJoin(issues, and(eq(issues.id, issueComments.issueId), eq(issues.companyId, issueComments.companyId)))
+            .where(and(eq(issueComments.companyId, companyId), visibleIssueCondition(), altCondition(sql`${issueComments.body}`)))
+            .orderBy(desc(issueComments.createdAt))
+            .limit(50),
+          db
+            .select({ body: issues.description })
+            .from(issues)
+            .where(and(eq(issues.companyId, companyId), visibleIssueCondition(), altCondition(sql`coalesce(${issues.description}, '')`)))
+            .orderBy(desc(issues.updatedAt))
+            .limit(50),
+        ]);
+        const altById = new Map<string, string>();
+        for (const row of [...commentBodies, ...descriptionBodies]) {
+          for (const image of imagesMatchingAltText(row.body ?? "", tokens)) {
+            if (!altById.has(image.attachmentId)) altById.set(image.attachmentId, image.altText);
+          }
+        }
+        if (altById.size === 0) return [];
+        const rows = await db
+          .select({
+            assetId: assets.id,
+            filename: assets.originalFilename,
+            contentType: assets.contentType,
+            createdAt: assets.createdAt,
+            attachmentId: issueAttachments.id,
+            issueId: issues.id,
+            issueIdentifier: issues.identifier,
+            issueTitle: issues.title,
+          })
+          .from(issueAttachments)
+          .innerJoin(assets, and(eq(assets.id, issueAttachments.assetId), eq(assets.companyId, issueAttachments.companyId)))
+          .innerJoin(issues, and(eq(issues.id, issueAttachments.issueId), eq(issues.companyId, issueAttachments.companyId)))
+          .where(and(eq(issueAttachments.companyId, companyId), inArray(issueAttachments.id, [...altById.keys()]), visibleIssueCondition()));
+        return rows.map((row) => ({
+          ...row,
+          excerpt: null,
+          caseId: null,
+          casePipelineId: null,
+          caseTitle: null,
+          altText: altById.get(row.attachmentId) ?? null,
+        }));
+      }
+
+      async function fetchFileRows(filters: CompanySearchQuery = query): Promise<FileSearchRow[]> {
+        if (!hasSearchText || tokens.length === 0 || !scopeIncludesFiles(scope) || issueOnlyFiltersActive(filters)) return [];
+        const [textRows, altRows] = await Promise.all([fetchFileTextRows(), fetchAltTextRows()]);
+        const seen = new Set(textRows.map((row) => row.assetId));
+        return [...textRows, ...altRows.filter((row) => !seen.has(row.assetId) && seen.add(row.assetId))];
+      }
+
+      async function countFiles(filters: CompanySearchQuery = query, fetched?: FileSearchRow[]) {
+        if (!hasSearchText || tokens.length === 0 || !scopeIncludesFiles(scope) || issueOnlyFiltersActive(filters)) return 0;
+        const rows = await db.execute(sql`SELECT count(DISTINCT a.id)::int AS count ${fileFrom}`) as unknown as Array<{ count: number }>;
+        const textCount = Number(rows[0]?.count ?? 0);
+        const altCount = fetched ? fetched.filter((row) => row.altText).length : 0;
+        return textCount + altCount;
+      }
+
+      // --- records: organisations, people, clients (deals and leads), products, images,
+      // and imported CRM notes, calls, meetings and emails ---
+      // Imported CRM fields (Pipedrive custom fields such as sector or source) as plain text; numbers and yes/no values are left out.
+      function crmFieldText(column: string) {
+        return `(SELECT string_agg(f->>'value', ' ') FROM jsonb_array_elements(coalesce(${column}, '[]'::jsonb)) f WHERE jsonb_typeof(f->'value') IN ('string', 'array'))`;
+      }
+      function recordMatch(fields: string) {
+        return sql`concat_ws(' ', ${sql.raw(fields)}) ILIKE ALL(${tokenPatternArray})`;
+      }
+      function recordBranches(perBranchLimit: number | null, kinds: readonly CompanySearchRecordKind[] = query.recordKind) {
+        const cap = perBranchLimit === null ? sql`` : sql`LIMIT ${perBranchLimit}`;
+        const branches: Array<[CompanySearchRecordKind, ReturnType<typeof sql>]> = [
+          ["organisation", sql`(SELECT 'organisation' AS kind, o.id, o.name AS title,
+              nullif(concat_ws(', ', o.industry, o.country), '') AS subtitle, o.notes AS body,
+              'organisations/' || o.id AS path, NULL::text AS "previewImageUrl",
+              o.created_at AS "createdAt", o.updated_at AS "updatedAt"
+            FROM organisations o
+            WHERE o.company_id = ${companyId} AND o.archived_at IS NULL
+              AND ${recordMatch(`o.name, o.industry, o.country, o.website, o.notes, ${crmFieldText("o.crm_fields")}`)}
+            ORDER BY o.updated_at DESC ${cap})`],
+          ["person", sql`(SELECT 'person' AS kind, c.id, c.name AS title,
+              nullif(concat_ws(' at ', c.role, org.name), '') AS subtitle,
+              nullif(concat_ws(', ', c.email, c.phone), '') AS body,
+              CASE WHEN org.id IS NULL THEN 'organisations' ELSE 'organisations/' || org.id END AS path,
+              NULL::text AS "previewImageUrl", c.created_at AS "createdAt", c.updated_at AS "updatedAt"
+            FROM organisation_contacts c
+            LEFT JOIN organisations org ON org.id = c.organisation_id AND org.archived_at IS NULL
+            WHERE c.company_id = ${companyId} AND c.archived_at IS NULL
+              AND ${recordMatch(`c.name, c.email, c.role, c.phone, org.name, ${crmFieldText("c.crm_fields")}`)}
+            ORDER BY c.updated_at DESC ${cap})`],
+          ["client", sql`(SELECT 'client' AS kind, pc.id, pc.title,
+              concat_ws(' in ', st.name, p.name) AS subtitle, pc.summary AS body,
+              'pipelines/' || pc.pipeline_id || '/items/' || pc.id AS path,
+              NULL::text AS "previewImageUrl", pc.created_at AS "createdAt", pc.updated_at AS "updatedAt"
+            FROM pipeline_cases pc
+            JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
+            LEFT JOIN pipeline_stages st ON st.id = pc.stage_id
+            WHERE pc.company_id = ${companyId} AND pc.retired_at IS NULL AND pc.hidden_from_board_at IS NULL
+              AND ${recordMatch("pc.title, pc.summary, pc.case_key")}
+            ORDER BY pc.updated_at DESC ${cap})`],
+          ["product", sql`(SELECT 'product' AS kind, pr.id, pr.name AS title,
+              nullif(concat_ws(', ', pr.code, CASE WHEN deal.case_id IS NULL THEN NULL ELSE 'on ' || deal.title END), '') AS subtitle,
+              pr.description AS body,
+              CASE WHEN deal.case_id IS NULL THEN 'pipelines' ELSE 'pipelines/' || deal.pipeline_id || '/items/' || deal.case_id END AS path,
+              NULL::text AS "previewImageUrl", pr.created_at AS "createdAt", pr.updated_at AS "updatedAt"
+            FROM crm_products pr
+            LEFT JOIN LATERAL (
+              SELECT dp.case_id, dc.pipeline_id, dc.title
+              FROM crm_deal_products dp
+              JOIN pipeline_cases dc ON dc.id = dp.case_id AND dc.retired_at IS NULL
+              WHERE dp.company_id = pr.company_id AND dp.product_id = pr.id
+              ORDER BY dc.updated_at DESC
+              LIMIT 1
+            ) deal ON true
+            WHERE pr.company_id = ${companyId} AND pr.active
+              AND ${recordMatch("pr.name, pr.code, pr.description")}
+            ORDER BY pr.updated_at DESC ${cap})`],
+          ["image", sql`(SELECT 'image' AS kind, gi.id,
+              CASE WHEN length(gi.prompt) > 80 THEN left(gi.prompt, 79) || '…' ELSE gi.prompt END AS title,
+              gi.style AS subtitle, gi.prompt AS body, 'images' AS path,
+              '/api/assets/' || gi.asset_id || '/content' AS "previewImageUrl",
+              gi.created_at AS "createdAt", gi.updated_at AS "updatedAt"
+            FROM generated_images gi
+            WHERE gi.company_id = ${companyId} AND gi.status = 'completed' AND gi.asset_id IS NOT NULL
+              AND ${recordMatch("gi.prompt, gi.style")}
+            ORDER BY gi.created_at DESC ${cap})`],
+          ["activity", sql`(SELECT 'activity' AS kind, te.id,
+              coalesce(nullif(te.subject, ''), CASE WHEN length(te.body) > 80 THEN left(te.body, 79) || '…' ELSE te.body END, initcap(te.kind)) AS title,
+              nullif(concat_ws(', ', initcap(replace(coalesce(te.activity_type, te.kind), '_', ' ')), coalesce(tc.title, torg.name), to_char(te.occurred_at, 'FMDD Mon YYYY')), '') AS subtitle,
+              te.body AS body,
+              CASE WHEN tc.id IS NOT NULL THEN 'pipelines/' || tc.pipeline_id || '/items/' || tc.id
+                WHEN torg.id IS NOT NULL THEN 'organisations/' || torg.id
+                ELSE 'organisations' END AS path,
+              NULL::text AS "previewImageUrl", te.created_at AS "createdAt", coalesce(te.occurred_at, te.updated_at) AS "updatedAt"
+            FROM crm_timeline_entries te
+            LEFT JOIN pipeline_cases tc ON tc.id = te.case_id AND tc.retired_at IS NULL
+            LEFT JOIN organisations torg ON torg.id = te.organisation_id AND torg.archived_at IS NULL
+            WHERE te.company_id = ${companyId} AND te.kind <> 'stage_change'
+              AND ${recordMatch("te.subject, te.body, te.activity_type, te.owner_name, tc.title, torg.name")}
+            ORDER BY coalesce(te.occurred_at, te.updated_at) DESC ${cap})`],
+        ];
+        return branches.filter(([kind]) => kinds.length === 0 || kinds.includes(kind)).map(([, branch]) => branch);
+      }
+
+      async function fetchRecordRows(): Promise<RecordSearchRow[]> {
+        if (!hasSearchText || tokens.length === 0 || !scopeIncludesRecords(scope) || issueOnlyFiltersActive(query)) return [];
+        return await db.execute(sql.join(recordBranches(fetchLimit), sql` UNION ALL `)) as unknown as RecordSearchRow[];
+      }
+
+      async function countRecords(filters: CompanySearchQuery = query) {
+        if (!hasSearchText || tokens.length === 0 || !scopeIncludesRecords(scope) || issueOnlyFiltersActive(filters)) return 0;
+        const rows = await db.execute(sql`SELECT count(*)::int AS count FROM (${sql.join(recordBranches(null), sql` UNION ALL `)}) records`) as unknown as Array<{ count: number }>;
+        return Number(rows[0]?.count ?? 0);
+      }
+
       const [company, issueSearchData, artifactRows, agentRows, projectRows, artifactCount, agentCount, projectCount] = await Promise.all([
         db
           .select({ issuePrefix: companies.issuePrefix })
@@ -1011,6 +1349,10 @@ export function companySearchService(db: Db) {
         scopeIncludesAgents(scope) ? countAgents(query) : Promise.resolve(0),
         scopeIncludesProjects(scope) ? countProjects(query) : Promise.resolve(0),
       ]);
+      const fileRows = await fetchFileRows();
+      const fileCount = fileRows.length > 0 ? await countFiles(query, fileRows) : 0;
+      const recordRows = await fetchRecordRows();
+      const recordCount = recordRows.length > 0 ? await countRecords(query) : 0;
       const prefix = routePrefix(company?.issuePrefix);
       const { rows: issueRows, aggregates } = issueSearchData;
 
@@ -1021,11 +1363,15 @@ export function companySearchService(db: Db) {
       countsByType.artifact = artifactCount;
       countsByType.agent = agentCount;
       countsByType.project = projectCount;
+      countsByType.file = fileCount;
+      countsByType.record = recordCount;
 
       const currentTotalCount = (scopeIncludesIssues(scope) ? aggregates.totals.current : 0)
         + artifactCount
         + agentCount
-        + projectCount;
+        + projectCount
+        + fileCount
+        + recordCount;
 
       const results: SearchResultWithSort[] = [
         ...issueRows.map((row) => {
@@ -1039,6 +1385,17 @@ export function companySearchService(db: Db) {
         ...artifactRows.map((artifact) => ({
           ...artifactResult(artifact, normalizedQuery, tokens),
           sortCreatedAt: artifact.updatedAt,
+          sortPriorityRank: ISSUE_PRIORITIES.length,
+        })),
+        ...fileRows.flatMap((row) => {
+          const result = fileResult(row, prefix, normalizedQuery, tokens);
+          return result
+            ? [{ ...result, sortCreatedAt: iso(row.createdAt), sortPriorityRank: ISSUE_PRIORITIES.length }]
+            : [];
+        }),
+        ...recordRows.map((row) => ({
+          ...recordResult(row, prefix, normalizedQuery, tokens),
+          sortCreatedAt: iso(new Date(row.createdAt)),
           sortPriorityRank: ISSUE_PRIORITIES.length,
         })),
         ...(agentRows as SimpleSearchRow[]).map((row) => {
@@ -1082,12 +1439,14 @@ export function companySearchService(db: Db) {
       ].sort(compareSearchResults(sort));
 
       async function countTotalNonIssue(filters: CompanySearchQuery) {
-        const [artifactTotal, agentTotal, projectTotal] = await Promise.all([
+        const [artifactTotal, agentTotal, projectTotal, fileTotal, recordTotal] = await Promise.all([
           scopeIncludesArtifacts(scope) ? countArtifacts(filters) : Promise.resolve(0),
           scopeIncludesAgents(scope) ? countAgents(filters) : Promise.resolve(0),
           scopeIncludesProjects(scope) ? countProjects(filters) : Promise.resolve(0),
+          countFiles(filters),
+          countRecords(filters),
         ]);
-        return artifactTotal + agentTotal + projectTotal;
+        return artifactTotal + agentTotal + projectTotal + fileTotal + recordTotal;
       }
 
       const filtersActive = activeIssueFilters(query);

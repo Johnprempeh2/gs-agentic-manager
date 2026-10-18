@@ -83,7 +83,7 @@ export function Goals() {
       pushToast({ title: `${STRATEGIC_PLAN_TEMPLATE_NAME} added`, body: "Rename each layer and set its owner.", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Could not add the strategic plan", body: err.message, tone: "error" });
+      pushToast({ title: "Could not add the strategic plan", body: `Something went wrong. Please try again. (${err.message})`, tone: "error" });
     },
   });
 
@@ -125,7 +125,7 @@ export function Goals() {
   };
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Target} message="Select an organization to view goals." />;
+    return <EmptyState icon={Target} message="Choose an organisation to view goals." />;
   }
 
   if (isLoading) {
@@ -159,7 +159,7 @@ export function Goals() {
                 onClick={() => createStrategicPlan.mutate()}
               >
                 <Network className="size-3.5" />
-                {createStrategicPlan.isPending ? "Adding…" : STRATEGIC_PLAN_TEMPLATE_NAME}
+                {createStrategicPlan.isPending ? "Adding…" : `Add a ${STRATEGIC_PLAN_TEMPLATE_NAME.charAt(0).toLowerCase()}${STRATEGIC_PLAN_TEMPLATE_NAME.slice(1)}`}
               </Button>
             ) : null}
             {canFilterAttention ? (

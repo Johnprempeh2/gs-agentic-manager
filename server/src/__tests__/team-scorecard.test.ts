@@ -84,6 +84,21 @@ describeEmbeddedPostgres("team scorecard", () => {
     expect(month.agents.find((agent) => agent.name === "Everest")!.finished).toBe(2);
   });
 
+  it("gives each agent the median time from start to finish", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "Pace", issuePrefix: `P${companyId.slice(0, 6).toUpperCase()}` });
+    await db.insert(agents).values({ id: agentId, companyId, name: "Mason", role: "engineer", status: "idle", adapterType: "codex_local" });
+    const hour = 3_600_000;
+    await db.insert(issues).values([
+      { companyId, title: "Quick", status: "done", assigneeAgentId: agentId, startedAt: new Date(YESTERDAY.getTime() - 2 * hour), completedAt: YESTERDAY },
+      { companyId, title: "Medium", status: "done", assigneeAgentId: agentId, startedAt: new Date(YESTERDAY.getTime() - 4 * hour), completedAt: YESTERDAY },
+      { companyId, title: "Long", status: "done", assigneeAgentId: agentId, startedAt: new Date(YESTERDAY.getTime() - 30 * hour), completedAt: YESTERDAY },
+    ]);
+    const week = await teamScorecardService(db).build(companyId, { days: 7, now: NOW });
+    expect(week.agents[0]!.medianFinishMs).toBe(4 * hour);
+  });
+
   it("serves the scorecard over HTTP and checks the window", async () => {
     const { companyId } = await seedCompany();
     const app = express();

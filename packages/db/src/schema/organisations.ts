@@ -1,6 +1,17 @@
 // CRM organisations (GRE-1477). The organisation is the primary CRM record:
 // one row per company the user works with, and the people there. Imports set
 // source + external_id so a second import updates instead of duplicating.
+
+/**
+ * A field a CRM holds that GSAM has no column for (custom fields, labels,
+ * full address, every email and phone), kept in the CRM's order under the
+ * CRM's own name so the record shows it as a named field.
+ */
+export type CrmRecordField = {
+  key: string;
+  label: string;
+  value: string | number | boolean | string[];
+};
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -8,6 +19,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -58,6 +70,8 @@ export const organisations = pgTable(
     description: text("description"),
     registrationNumber: text("registration_number"),
     taxId: text("tax_id"),
+    // Imported fields with no column of their own (0356).
+    crmFields: jsonb("crm_fields").$type<CrmRecordField[]>().notNull().default([]),
     source: text("source").notNull().default("manual"),
     externalId: text("external_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -97,12 +111,14 @@ export const organisationContacts = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id, { onDelete: "cascade" }),
+    // Null for a person imported from a CRM with no organisation, so nobody is dropped.
+    organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     role: text("role"),
     email: text("email"),
     phone: text("phone"),
     isKeyContact: boolean("is_key_contact").notNull().default(false),
+    crmFields: jsonb("crm_fields").$type<CrmRecordField[]>().notNull().default([]),
     source: text("source").notNull().default("manual"),
     externalId: text("external_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),

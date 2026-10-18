@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardPaste,
   Clock3,
+  KeyRound,
   Link2,
   Loader2,
   Mail,
@@ -197,8 +198,8 @@ function connectionState(connection: ToolConnection, companyPaused = false): Con
       kind: "paused",
       label: "Turned off",
       message: companyPaused
-        ? "Turned off by company pause. Resume the organization before you re-enable it."
-        : "Turned off by company pause. Re-enable runs a health check first.",
+        ? "Turned off because the organisation was paused. Resume the organisation before you re-enable it."
+        : "Turned off because the organisation was paused. Re-enable checks it still works first.",
     };
   }
   if (connection.status === "draft") {
@@ -219,7 +220,7 @@ function connectionState(connection: ToolConnection, companyPaused = false): Con
     return {
       kind: "attention",
       label: "Needs attention",
-      message: "The token has expired. Reconnect to restore access.",
+      message: "The sign-in has expired. Reconnect to restore access.",
     };
   }
   if ((connection.connectionPurpose === "ai" && (connection.healthStatus !== "ok" || aiSubscriptionNeedsIsolatedLogin(connection.config))) || isToolConnectionAttentionHealth(connection.healthStatus)) {
@@ -231,7 +232,7 @@ function connectionState(connection: ToolConnection, companyPaused = false): Con
         connection.lastError ??
         (connection.authKind === "oauth"
           ? "Sign in again to restore access."
-          : "Replace the credential to restore access."),
+          : "Enter a new key to restore access."),
     };
   }
   return { kind: "connected", label: "Connected", message: null };
@@ -361,6 +362,23 @@ function MailboxesCard({
       <Button type="button" size="sm" variant="outline" onClick={onOpen}>
         {count === 0 ? <Plus /> : null}
         {count === 0 ? "Add mailbox" : "Manage"}
+      </Button>
+    </section>
+  );
+}
+
+function AgentAccessLinkCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+      <KeyRound className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-foreground">Agent access</h2>
+        <p className="text-xs text-muted-foreground">
+          See what every agent can reach, and what is missing or expiring.
+        </p>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+        Check access
       </Button>
     </section>
   );
@@ -718,7 +736,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         name: application.name,
         description:
           application.description ??
-          "A custom connector configured for this organization.",
+          "A custom connector configured for this organisation.",
         brandKey: applicationSlug ?? application.name,
         entry: null,
         applications: [application],
@@ -820,7 +838,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   if (!selectedCompanyId) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
-        Select an organization to manage connectors.
+        Choose an organisation to manage connectors.
       </div>
     );
   }
@@ -861,6 +879,8 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         needsAttention={(mailboxesQuery.data ?? []).filter((m) => m.healthStatus !== "ok").length}
         onOpen={() => navigate("/apps/mailboxes")}
       />
+
+      <AgentAccessLinkCard onOpen={() => navigate("/apps/access")} />
 
       {loadFailed ? (
         <div
@@ -1395,7 +1415,7 @@ function ConnectionAccountRow({
             size="sm"
             variant="outline"
             disabled={resuming || (pauseSuspended && companyPaused)}
-            title={pauseSuspended && companyPaused ? "Resume the organization first" : undefined}
+            title={pauseSuspended && companyPaused ? "Resume the organisation first" : undefined}
             onClick={onResume}
           >
             {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}

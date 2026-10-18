@@ -571,7 +571,7 @@ export function Website() {
   });
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Globe} message="Select an organization to view its website." />;
+    return <EmptyState icon={Globe} message="Choose an organisation to view its website." />;
   }
   if (settingsQuery.isLoading) return <PageSkeleton variant="dashboard" />;
   if (!switchedOn || isWebsiteNotEntitled(overviewQuery.error)) return <NotEntitled />;

@@ -12,6 +12,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { formatDateTime } from "@/lib/utils";
+import { lastRunLabel, nextRunLabel, nextScheduledRun, scheduleSummary, type ScheduleTriggerSummary } from "@/lib/routine-schedule";
+import { useConfirm } from "@/context/ConfirmContext";
+import { routineRunStatusLabel } from "@/lib/routine-run-status";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -35,16 +39,18 @@ export type RoutineListRowItem = {
     triggeredAt?: Date | string | null;
     status?: string | null;
   } | null;
+  /** Schedules, so the row can say when the routine runs next. */
+  triggers?: readonly (ScheduleTriggerSummary & { cronExpression?: string | null })[] | null;
 };
 
 export function formatLastRunTimestamp(value: Date | string | null | undefined) {
   if (!value) return "Never";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 export function formatRoutineRunStatus(value: string | null | undefined) {
   if (!value) return null;
-  return value.replaceAll("_", " ");
+  return routineRunStatusLabel(value);
 }
 
 export function nextRoutineStatus(currentStatus: string, enabled: boolean) {
@@ -98,6 +104,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   onToggleEnabled: (routine: TRoutine, enabled: boolean) => void;
   onToggleArchived?: (routine: TRoutine) => void;
 }) {
+  const confirm = useConfirm();
   const enabled = routine.status === "active";
   const isArchived = routine.status === "archived";
   const isStatusPending = statusMutationRoutineId === routine.id;
@@ -105,6 +112,10 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   const agent = routine.assigneeAgentId ? agentById.get(routine.assigneeAgentId) ?? null : null;
   const isDraft = !isArchived && !routine.assigneeAgentId;
   const runDisabled = runningRoutineId === routine.id || isArchived || disableRunNow;
+  const lastRunAt = routine.lastRun?.triggeredAt ?? null;
+  const nextRunAt = enabled ? nextScheduledRun(routine.triggers) : null;
+  // Before the scheduler has worked out the next run, say when it repeats.
+  const repeats = enabled && !nextRunAt ? scheduleSummary(routine.triggers) : null;
 
   return (
     <Link
@@ -154,10 +165,16 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             {routine.assigneeAgentId ? <AgentAvatar agent={{ ...agent, id: routine.assigneeAgentId }} size={16} className="h-3.5 w-3.5 shrink-0"/> : null}
             <span>{routine.assigneeAgentId ? (agent?.name ?? "Unknown agent") : "No default agent"}</span>
           </span>
-          <span>
-            {formatLastRunTimestamp(routine.lastRun?.triggeredAt)}
-            {routine.lastRun ? ` · ${formatRoutineRunStatus(routine.lastRun.status)}` : ""}
+          <span title={lastRunAt ? formatLastRunTimestamp(lastRunAt) : undefined}>
+            {lastRunLabel(lastRunAt)}
+            {routine.lastRun?.status ? ` · ${formatRoutineRunStatus(routine.lastRun.status)}` : ""}
           </span>
+          {nextRunAt ? (
+            <span className="text-foreground" title={formatDateTime(nextRunAt)}>
+              {nextRunLabel(nextRunAt)}
+            </span>
+          ) : null}
+          {repeats ? <span className="text-foreground">{repeats}</span> : null}
         </div>
         {secondaryDetails ? (
           <div className="text-xs text-muted-foreground">{secondaryDetails}</div>
@@ -221,7 +238,17 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             </DropdownMenuItem>
             {!hideArchiveAction && onToggleArchived ? (
               <DropdownMenuItem
-                onClick={() => onToggleArchived(routine)}
+                onClick={async () => {
+                  if (routine.status !== "archived") {
+                    const ok = await confirm({
+                      title: "Archive this routine?",
+                      description: "It stops running on its schedule. You can restore it from the archived list.",
+                      confirmLabel: "Archive routine",
+                    });
+                    if (!ok) return;
+                  }
+                  onToggleArchived(routine);
+                }}
                 disabled={isStatusPending}
               >
                 {routine.status === "archived" ? "Restore" : "Archive"}

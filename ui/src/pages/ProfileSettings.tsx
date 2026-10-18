@@ -8,6 +8,11 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { InboxAgentPolicyControl } from "@/components/InboxAgentPolicyControl";
+import { TwoStepSignInSection } from "@/components/TwoStepSignInSection";
+import { SignedInDevicesSection } from "@/components/SignedInDevicesSection";
+import { SignInHistorySection } from "@/components/SignInHistorySection";
+import { ErrorState } from "@/components/ErrorState";
+import { useConfirm } from "@/context/ConfirmContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +31,7 @@ export function ProfileSettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const preferencesQuery = useUserPreferences();
   const avatarInputId = useId();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -79,7 +85,7 @@ export function ProfileSettings() {
   }
 
   function resolveProfileName() {
-    return name.trim() || sessionQuery.data?.user.name || "Board";
+    return name.trim() || sessionQuery.data?.user.name || "You";
   }
 
   const updateMutation = useMutation({
@@ -90,14 +96,14 @@ export function ProfileSettings() {
       setImage(profile.image ?? "");
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to update profile.");
+      setActionError(`We could not save your profile. Please try again.${error instanceof Error ? ` (${error.message})` : ""}`);
     },
   });
 
   const uploadAvatarMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!selectedCompanyId) {
-        throw new Error("Select an organization before uploading a profile avatar.");
+        throw new Error("Choose an organisation before uploading a profile avatar.");
       }
 
       const asset = await assetsApi.uploadImage(
@@ -113,7 +119,7 @@ export function ProfileSettings() {
       setImage(profile.image ?? "");
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to upload avatar.");
+      setActionError(`We could not upload that photo. Please try again with a JPG or PNG.${error instanceof Error ? ` (${error.message})` : ""}`);
     },
   });
 
@@ -125,7 +131,7 @@ export function ProfileSettings() {
       setImage(profile.image ?? "");
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to remove avatar.");
+      setActionError(`We could not remove your photo. Please try again.${error instanceof Error ? ` (${error.message})` : ""}`);
     },
   });
 
@@ -135,19 +141,21 @@ export function ProfileSettings() {
 
   if (sessionQuery.error || !sessionQuery.data) {
     return (
-      <div className="text-sm text-destructive">
-        {sessionQuery.error instanceof Error ? sessionQuery.error.message : "Failed to load profile."}
-      </div>
+      <ErrorState
+        error={sessionQuery.error ?? new Error("Your profile did not load.")}
+        title="We could not load your profile"
+        onRetry={() => void sessionQuery.refetch()}
+      />
     );
   }
 
-  const currentName = name.trim() || sessionQuery.data.user.name || "Board";
+  const currentName = name.trim() || sessionQuery.data.user.name || "You";
   const currentImage = image.trim() || null;
   const initials = deriveInitials(currentName);
   const isSavingProfile = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
   const uploadHint = selectedCompany
-    ? `Stored in GS Agentic Manager file storage for ${selectedCompany.name}.`
-    : "Select an organization to upload an avatar into GS Agentic Manager storage.";
+    ? `Your photo is saved with ${selectedCompany.name}.`
+    : "Choose an organisation before adding a photo.";
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -215,11 +223,18 @@ export function ProfileSettings() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => removeAvatarMutation.mutate()}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Remove your photo?",
+                          description: "Your initials will show instead.",
+                          confirmLabel: "Remove photo",
+                        });
+                        if (ok) removeAvatarMutation.mutate();
+                      }}
                       disabled={isSavingProfile}
                     >
                       {removeAvatarMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                      Remove
+                      Remove photo
                     </Button>
                   ) : null}
                 </div>
@@ -252,7 +267,7 @@ export function ProfileSettings() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={120}
-              placeholder="Board"
+              placeholder="Your name"
             />
             <p className="text-xs text-muted-foreground">
               Shown in the sidebar account footer and comment author surfaces.
@@ -286,7 +301,7 @@ export function ProfileSettings() {
               <h2 className="text-sm font-semibold">Keyboard shortcuts</h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Enable app keyboard shortcuts, including inbox navigation and global shortcuts like creating tasks or
-                toggling panels. This applies only to your account, across all organizations and devices. Off by default.
+                toggling panels. This applies only to your account, across all organisations and devices. Off by default.
               </p>
             </div>
             <ToggleSwitch
@@ -304,6 +319,12 @@ export function ProfileSettings() {
             </p>
           ) : null}
         </section>
+
+        <TwoStepSignInSection />
+
+        <SignedInDevicesSection />
+
+        <SignInHistorySection />
 
         <InboxAgentPolicyControl companyId={selectedCompanyId} />
       </section>

@@ -73,7 +73,7 @@ describe("TaskChatMarker", () => {
     expect(
       container.querySelector('a[href="/agents/codex/runs/run-1"]')
         ?.textContent,
-    ).toBe("View run");
+    ).toBe("See what the agent did");
   });
 
   it("keeps expected cancellation neutral when collapsed and expanded", () => {

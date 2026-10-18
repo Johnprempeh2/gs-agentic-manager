@@ -714,7 +714,7 @@ describe("CompanyImport", () => {
     // Config edits while the import is in flight must not detach it from
     // the UI: the progress panel keeps reporting it until it settles.
     const midFlightNameInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="Imported Organization"]',
+      'input[placeholder="Imported Organisation"]',
     );
     expect(midFlightNameInput).toBeTruthy();
     await act(async () => {
@@ -738,7 +738,7 @@ describe("CompanyImport", () => {
 
     // The new-company name feeds the request payload too: editing it clears
     // the stale error panel without discarding the rendered preview.
-    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Imported Organization"]');
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Imported Organisation"]');
     expect(nameInput).toBeTruthy();
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -930,7 +930,7 @@ describe("CompanyImport", () => {
       expect(container.textContent).toContain("Imported agents arrived paused");
       const openCompany = container.querySelector('[data-testid="import-expired-open-company"]');
       expect(openCompany).not.toBeNull();
-      expect(container.textContent).not.toContain("Import failed");
+      expect(container.textContent).not.toContain("Could not import");
       expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
       // The company list is refreshed so the new company appears in the switcher.
       expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["companies"] }));

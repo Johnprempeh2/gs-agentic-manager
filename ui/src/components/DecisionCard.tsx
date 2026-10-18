@@ -24,6 +24,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { MarkdownBody } from "./MarkdownBody";
 import { useFileIntake } from "../hooks/useFileIntake";
+import { taskStatusLabel } from "../lib/task-status-labels";
 
 /**
  * Presentational card for a single Decisions-v1 decision (PAP-14966 / PAP-14939
@@ -73,13 +74,14 @@ export interface DecisionCardProps {
 
 function humanStatus(status: string | null | undefined): string {
   if (!status) return "unknown";
-  return status.replaceAll("_", " ");
+  return taskStatusLabel(status);
 }
 
 function issueLabel(ref: DecisionIssueRef | null, fallbackId: string): string {
   if (ref?.identifier) return ref.identifier;
   if (ref?.title) return ref.title;
-  return `issue ${fallbackId.slice(0, 8)}`;
+  void fallbackId;
+  return "a task";
 }
 
 function pluralize(count: number, singular: string): string {
@@ -113,7 +115,7 @@ function effectSummary(
       return `Create issue “${effect.draft.title}” under ${parent}`;
     }
     case "update_issue_status":
-      return `Set ${target} to ${humanStatus(effect.status)}`;
+      return `Set ${target} to ${humanStatus(effect.status).toLowerCase()}`;
     case "assign_issue":
       return `Reassign ${target}`;
     case "resolve_blocker":
@@ -169,12 +171,12 @@ function executionRow(
       return {
         key: execution.id,
         status: "executed",
-        summary: `Created ${created ? issueLabel(created, createdId!) : "a new issue"}`,
+        summary: `Created ${created ? issueLabel(created, createdId!) : "a new task"}`,
         link: created ?? targetRef,
       };
     }
     case "update_issue_status":
-      return { key: execution.id, status: "executed", summary: `Set ${target} to ${humanStatus(typeof result.status === "string" ? result.status : null)}`, link: targetRef };
+      return { key: execution.id, status: "executed", summary: `Set ${target} to ${humanStatus(typeof result.status === "string" ? result.status : null).toLowerCase()}`, link: targetRef };
     case "assign_issue":
       return { key: execution.id, status: "executed", summary: `Reassigned ${target}`, link: targetRef };
     case "resolve_blocker": {
@@ -493,7 +495,7 @@ export function DecisionCard({
         {runHref && (
           <>
             {" · "}
-            <a href={runHref} className="hover:underline">view run</a>
+            <a href={runHref} className="hover:underline">see what the agent did</a>
           </>
         )}
       </p>
@@ -510,7 +512,7 @@ export function DecisionCard({
         <div className="mt-3 rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2">
           <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-200">
             <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-            {pluralize(staleTargetIds.length, "target")} changed since this was proposed
+            {pluralize(staleTargetIds.length, "task")} changed since this was asked
           </div>
           <ul className="mt-1.5 space-y-1 text-xs text-amber-900/90 dark:text-amber-100/90">
             {staleTargetIds.map((id) => {
@@ -584,7 +586,7 @@ export function DecisionCard({
                     </span>
                     {blockedStale && (
                       <span className="shrink-0 rounded-full border border-amber-500/60 bg-amber-500/10 px-2 py-0.5 text-(length:--text-micro) font-medium text-amber-800 dark:text-amber-200">
-                        Blocked · stale
+                        Out of date
                       </span>
                     )}
                   </div>
@@ -613,12 +615,12 @@ export function DecisionCard({
                 {confirming && cancelTree && (
                   <div className="rounded-lg border border-rose-500/50 bg-rose-500/5 p-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300">
-                      <Ban className="h-4 w-4" aria-hidden /> This cancels an entire issue tree
+                      <Ban className="h-4 w-4" aria-hidden /> This cancels this task and every task under it
                     </div>
                     {previewRows && previewRows.length > 0 ? (
                       <>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {pluralize(previewRows.length, "issue")} will be cancelled:
+                          {pluralize(previewRows.length, "task")} will be cancelled:
                         </p>
                         <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto text-xs">
                           {previewRows.map((row) => (
@@ -634,7 +636,7 @@ export function DecisionCard({
                       </>
                     ) : (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        This issue and every sub-issue beneath it will be cancelled.
+                        This task and every task under it will be cancelled.
                       </p>
                     )}
                     <p className="mt-2 text-xs text-muted-foreground">
@@ -678,9 +680,9 @@ export function DecisionCard({
           {/* Always-present zero-effect Dismiss (telemetered "no", distinct from expiry) */}
           {!decision.options.some((option) => option.effects.length === 0) && (
             <div className="flex items-center justify-between gap-2 pt-1">
-              <span className="text-xs text-muted-foreground">Not now?</span>
+              <span className="text-xs text-muted-foreground">None of these? Close it and nothing happens.</span>
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDismiss?.()}>
-                Not now
+                Dismiss
               </Button>
             </div>
           )}
@@ -708,12 +710,12 @@ export function DecisionCard({
           )}
           {decision.status === "cancelled" && (
             <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              This decision was withdrawn by the proposer before a response.
+              The agent withdrew this before anyone answered.
             </p>
           )}
           {decision.status === "decided" && dismissed && (
             <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Dismissed. No effects were run.
+              Dismissed. Nothing was changed.
             </p>
           )}
           {decision.status === "decided" && !dismissed && (executions ?? []).length > 0 && (

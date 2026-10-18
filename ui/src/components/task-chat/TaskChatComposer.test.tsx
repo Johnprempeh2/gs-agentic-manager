@@ -1859,7 +1859,7 @@ describe("TaskChatComposer", () => {
         queuedEdit={{ commentId: "queued", body: "Queued draft" }}
         takeover={{ id: "question", label: "Pending input", pendingCount: 1, content: <button>Answer question</button>, onDismiss: vi.fn(), onSkip }}
       />));
-      expect(container.textContent).toContain("Subtree is paused.");
+      expect(container.textContent).toContain("This task and its sub-tasks are paused.");
       expect(container.textContent).not.toContain("Answer question");
       expect(container.textContent).not.toContain("Skip");
       expect(container.querySelector('[contenteditable="true"]')).toBeNull();
@@ -2806,11 +2806,11 @@ describe("composer Stop", () => {
   });
 
   it("reports failure without discarding the draft and permits retry", async () => {
-    const onStop = vi.fn().mockRejectedValueOnce(new Error("Unable to stop. Try again.")).mockResolvedValue(undefined);
+    const onStop = vi.fn().mockRejectedValueOnce(new Error("Could not stop. Try again.")).mockResolvedValue(undefined);
     render(<TaskChatComposer workMode="standard" onAdd={vi.fn()} onStop={onStop} />);
     flushSync(() => stopButton()!.click());
     await flushAsync();
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Unable to stop. Try again.");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not stop. Try again.");
     flushSync(() => stopButton()!.click());
     await flushAsync();
     expect(onStop).toHaveBeenCalledTimes(2);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { groupDeliverableDocuments, type DeliverableAudience, type Project } from "@greatstone/shared";
-import { ArrowUpDown, Briefcase, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
+import { ArrowUpDown, Briefcase, Check, ChevronDown, ClipboardList, FileCheck2, Layers, Search, X } from "lucide-react";
 import {
   deliverablesApi,
   type Deliverable,
@@ -37,6 +37,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { deliverablesListText } from "@/lib/deliverables-text";
+import { useCopyAction } from "@/lib/use-copy-action";
 
 const PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 150;
@@ -383,6 +385,7 @@ export function Deliverables() {
 
   const filtered = !!(query || kind || projectId || agentId || brand || confidentiality || audience || linkHealth || dateRange !== "all");
 
+  const listCopy = useCopyAction();
   const copyLink = useCallback(async (id: string) => {
     try {
       await copyTextToClipboard(deliverableShareUrl(id));
@@ -413,7 +416,7 @@ export function Deliverables() {
   const previewProjects = projectsWithPreview(projects, projectId);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={FileCheck2} message="Select an organization to view deliverables." />;
+    return <EmptyState icon={FileCheck2} message="Choose an organisation to view deliverables." />;
   }
 
   return (
@@ -424,7 +427,7 @@ export function Deliverables() {
       </header>
 
       <div className="space-y-3">
-        <div className="relative w-full max-w-2xl">
+        <div className="relative w-full max-w-2xl" data-tour="deliverables-search">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
             ref={searchRef}
@@ -483,7 +486,7 @@ export function Deliverables() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by kind">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by kind" data-tour="deliverables-kind">
             {[{ value: null, label: "All" }, ...KIND_OPTIONS].map((option) => {
               const active = kind === option.value;
               return (
@@ -619,6 +622,16 @@ export function Deliverables() {
             icon={Search}
             message="No deliverables match."
             description="Try fewer words or clear a filter."
+            action="Clear search and filters"
+            hideActionIcon
+            onAction={() => {
+              setDraftQuery("");
+              updateParams((next) => {
+                for (const key of ["q", "kind", "projectId", "agentId", "brand", "label", "audience", "links", "date"]) {
+                  next.delete(key);
+                }
+              });
+            }}
           />
         ) : (
           <div className="flex flex-col items-center pb-16 text-center" data-testid="deliverables-empty">
@@ -635,12 +648,23 @@ export function Deliverables() {
         )
       ) : (
         <div className="space-y-8">
-          <p className="text-xs text-muted-foreground" aria-live="polite">
-            {total} {total === 1 ? "deliverable" : "deliverables"}
-            {foldedCount > 0
-              ? ` · ${foldedCount} older ${foldedCount === 1 ? "version" : "versions"} grouped under the latest`
-              : null}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {total} {total === 1 ? "deliverable" : "deliverables"}
+              {foldedCount > 0
+                ? ` · ${foldedCount} older ${foldedCount === 1 ? "version" : "versions"} grouped under the latest`
+                : null}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              title="Copy the deliverables on screen as a list with links, ready to paste into an email"
+              onClick={() => void listCopy.copy(deliverablesListText(groups, (item) => deliverableShareUrl(item.id)))}
+            >
+              {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+            </Button>
+          </div>
           {groups.map((group) => (
             <section key={group.key} className="space-y-3" aria-label={group.label ?? "Deliverables"}>
               {group.label ? (

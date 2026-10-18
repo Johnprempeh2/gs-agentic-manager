@@ -647,3 +647,65 @@ The smoke asserts:
 - the Assembly child-terminal gate auto-advances the parent into Final Review
 - Final Review approve, request-changes, and drop outcomes all work
 - the release rollup is complete with the expected done/cancelled split
+
+## Pipedrive Deals Due
+
+Deals imported from Pipedrive live in pipelines keyed `pipedrive-<id>`. An
+agent that follows up on deals can list the open ones whose next step is due
+today or late:
+
+```sh
+gsam pipelines deals-due
+gsam pipelines deals-due --days 7 --unscheduled --json
+```
+
+`--days` also includes next steps due in the next N days. `--unscheduled`
+also lists open deals with no next step booked. Won, lost and closed-stage
+deals are left out. The command only reads; it changes nothing.
+
+For a quick picture of each deal pipeline, such as for a morning briefing:
+
+```sh
+gsam pipelines deals-summary
+gsam pipelines deals-summary --json
+```
+
+Each line gives the open deals with their value and weighted value, how many
+next steps are late or missing, and the win rate over the last 90 days. It
+only reads.
+
+Once the agent has done a deal's next step, it records it the same way
+"Mark next step done" does on the deal page:
+
+```sh
+gsam pipelines case next-step-done <caseId> --note "Spoke to Sam, wants a proposal" \
+  --next-date 2026-10-25 --next-subject "Send proposal"
+```
+
+The step becomes the deal's last activity, dated today with the note, and the
+follow-up becomes its next step. Leave out `--next-date` to close the step with
+no follow-up. The change is saved in GSAM only; nothing is written to Pipedrive.
+
+To change a deal's details, use `case set-deal` with only the options you want
+to change:
+
+```sh
+gsam pipelines case set-deal <caseId> --owner "Ben" --value 5000 --currency GBP \
+  --expected-close 2026-11-30 --probability 60 \
+  --next-date 2026-10-25 --next-subject "Send proposal"
+```
+
+An empty string removes a field, for example `--probability ""`, and
+`--next-date ""` removes the next step. A Pipedrive lead keeps its lead fields.
+Like "Edit deal" on the deal page, this saves in GSAM only.
+
+To record the outcome of a deal, use `case close-deal`:
+
+```sh
+gsam pipelines case close-deal <caseId> --won
+gsam pipelines case close-deal <caseId> --lost --reason "Went with a rival"
+```
+
+Like "Mark won" and "Mark lost" on the deal page, it moves the deal to the
+pipeline's Won or Lost stage and records the date and, for a loss, the reason.
+It refuses a deal that is already won or lost, and saves in GSAM only.

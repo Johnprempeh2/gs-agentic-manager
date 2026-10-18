@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, index, boolean, jsonb } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { assets } from "./assets.js";
@@ -17,6 +17,8 @@ export const generatedImages = pgTable(
     aspectRatio: text("aspect_ratio").notNull(),
     /** A style preset id; its guidance was added to the prompt sent to the provider. */
     style: text("style"),
+    /** Cinema camera picks from the image studio; their wording was added to the prompt sent. */
+    camera: jsonb("camera").$type<{ camera?: string; lens?: string; focalLength?: number; aperture?: string }>(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     status: text("status").notNull().default("pending"),
@@ -31,6 +33,8 @@ export const generatedImages = pgTable(
     issueCover: boolean("issue_cover").notNull().default(false),
     /** Shown on the linked client's card; at most one per client. */
     organisationCover: boolean("organisation_cover").notNull().default(false),
+    /** Starred by the board or an agent as a keeper, so the best takes are easy to find. */
+    favourite: boolean("favourite").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -40,5 +44,6 @@ export const generatedImages = pgTable(
     companyStatusIdx: index("generated_images_company_status_idx").on(table.companyId, table.status),
     companyIssueIdx: index("generated_images_company_issue_idx").on(table.companyId, table.issueId),
     companyOrganisationIdx: index("generated_images_company_organisation_idx").on(table.companyId, table.organisationId),
+    companyFavouriteIdx: index("generated_images_company_favourite_idx").on(table.companyId, table.favourite),
   }),
 );

@@ -209,14 +209,14 @@ export function DecisionQueuePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.decisionQueues.list(selectedCompanyId!) }),
     onError: (err) =>
       pushToast({
-        title: "Could not update seeding",
+        title: "Could not change automatic adding",
         body: err instanceof Error ? err.message : "Please try again.",
         tone: "error",
       }),
   });
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   }
   if (isLoading) {
     return <PageSkeleton variant="approvals" />;
@@ -456,7 +456,7 @@ function QueueItemRow({
     },
     onError: (err) =>
       pushToast({
-        title: "Could not exclude",
+        title: "Could not remove it from the queue",
         body: err instanceof Error ? err.message : "Please try again.",
         tone: "error",
       }),

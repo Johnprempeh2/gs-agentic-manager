@@ -9,6 +9,12 @@ import {
   updateBudgetSchema,
   updateCompanySubscriptionSchema,
   upsertBudgetPolicySchema,
+  updateBudgetAuthoritySchema,
+  attachBudgetTopUpInvoiceSchema,
+  recordBudgetPreAuthorisationSchema,
+  requestBudgetTopUpSchema,
+  type BudgetScopeType,
+  type BudgetWindowKind,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import {
@@ -25,7 +31,25 @@ import {
   accessService,
   logActivity,
 } from "../services/index.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  assertInstanceAdmin,
+  getAccessibleResource,
+  getActorInfo,
+  hasCompanyOwnerOrAdminRole,
+  isHostingOperator,
+} from "./authz.js";
+import {
+  assertBudgetWithinAuthority,
+  assertCanResolveBudgetOverride,
+  budgetAuthorityService,
+  canResolveBudgetOverride,
+  type BudgetChange,
+  type SpendingActor,
+} from "../services/budget-authority.js";
+import { budgetTopUpService, type TopUpActor } from "../services/budget-top-ups.js";
+import type { BudgetServiceHooks } from "../services/budgets.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
 import { badRequest } from "../errors.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
@@ -52,15 +76,21 @@ export function parseCostLimit(query: Record<string, unknown>) {
 
 export function costRoutes(
   db: Db,
-  options: { pluginWorkerManager?: PluginWorkerManager } = {},
+  options: {
+    pluginWorkerManager?: PluginWorkerManager;
+    /** Tests replace the heartbeat's budget hooks to watch them. */
+    budgetHooks?: BudgetServiceHooks;
+  } = {},
 ) {
   const router = Router();
   const heartbeat = heartbeatService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
   });
-  const budgetHooks = {
+  const budgetHooks: BudgetServiceHooks = options.budgetHooks ?? {
     cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
     noticeHardStop: heartbeat.noticeBudgetHardStop,
+    releaseHeldWorkForScope: (scope: { companyId: string }) =>
+      heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
   };
   const costs = costService(db, budgetHooks);
   const ledger = costLedgerService(db);
@@ -70,6 +100,38 @@ export function costRoutes(
   const agents = agentService(db);
   const issues = issueService(db);
   const access = accessService(db);
+  const authority = budgetAuthorityService(db);
+  const topUps = budgetTopUpService(db, budgetHooks);
+
+  function topUpActor(req: Parameters<typeof assertCompanyAccess>[0], companyId: string): TopUpActor {
+    return { ...spendingActor(req), clientAdmin: hasCompanyOwnerOrAdminRole(req, companyId) };
+  }
+
+  function spendingActor(req: Parameters<typeof assertCompanyAccess>[0]): SpendingActor {
+    return { userId: req.actor.userId ?? null, operator: isHostingOperator(req) };
+  }
+
+  /**
+   * GRE-1363: a budget write stays inside the operator ceiling, and a scope
+   * stopped at its cap waits for a named approver, whatever route lifts it.
+   */
+  async function assertBudgetChangeAllowed(
+    req: Parameters<typeof assertCompanyAccess>[0],
+    companyId: string,
+    change: BudgetChange & { scopeId: string },
+  ) {
+    const actor = spendingActor(req);
+    const current = await authority.get(companyId);
+    assertBudgetWithinAuthority(current, change, actor);
+    if (!canResolveBudgetOverride(current, actor)
+      && await authority.hasOpenHardStop(companyId, change.scopeType, change.scopeId)) {
+      assertCanResolveBudgetOverride(current, actor);
+    }
+  }
+
+  function isDated(effectiveFrom: string | null | undefined) {
+    return Boolean(effectiveFrom) && new Date(effectiveFrom!).getTime() > Date.now();
+  }
 
   async function resolveIssueByRef(rawId: string) {
     const identifier = normalizeIssueIdentifier(rawId);
@@ -410,6 +472,76 @@ export function costRoutes(
     res.json(overview);
   });
 
+  router.get("/companies/:companyId/budgets/authority", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    res.json(await authority.get(companyId));
+  });
+
+  router.put(
+    "/companies/:companyId/budgets/authority",
+    validate(updateBudgetAuthoritySchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertInstanceAdmin(req);
+      res.json(await authority.update(companyId, req.body, req.actor.userId ?? "board"));
+    },
+  );
+
+  // GRE-1371: top-ups and pre-authorised extra ceilings, one ledger per company.
+  router.get("/companies/:companyId/budgets/top-ups", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const windowStart = typeof req.query.windowStart === "string" ? req.query.windowStart : undefined;
+    if (windowStart !== undefined && !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(windowStart)) {
+      throw badRequest("windowStart must be the first day of a month, YYYY-MM-01");
+    }
+    res.json(await topUps.window(companyId, new Date(), windowStart));
+  });
+
+  router.post(
+    "/companies/:companyId/budgets/top-ups",
+    validate(requestBudgetTopUpSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const result = await topUps.request(companyId, req.body, topUpActor(req, companyId), new Date());
+      res.status(result.status === "applied" ? 200 : 202).json(result);
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/budgets/pre-authorisations",
+    validate(recordBudgetPreAuthorisationSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      res.json(await topUps.preAuthorise(companyId, req.body, topUpActor(req, companyId), new Date()));
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/budgets/top-ups/:topUpId/invoice-line",
+    validate(attachBudgetTopUpInvoiceSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertInstanceAdmin(req);
+      res.json(await topUps.attachInvoice(
+        companyId,
+        req.params.topUpId as string,
+        req.body.invoiceReference,
+        req.actor.userId ?? "board",
+        new Date(),
+      ));
+    },
+  );
+
   router.post(
     "/companies/:companyId/budgets/policies",
     validate(upsertBudgetPolicySchema),
@@ -417,6 +549,7 @@ export function costRoutes(
       assertBoard(req);
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
+      await assertBudgetChangeAllowed(req, companyId, req.body);
       const summary = await budgets.upsertPolicy(companyId, req.body, req.actor.userId ?? "board");
       res.json(summary);
     },
@@ -430,10 +563,32 @@ export function costRoutes(
       const companyId = req.params.companyId as string;
       const incidentId = req.params.incidentId as string;
       assertCompanyAccess(req, companyId);
-      const incident = await budgets.resolveIncident(companyId, incidentId, req.body, req.actor.userId ?? "board");
+      const actor = spendingActor(req);
+      const current = await authority.get(companyId);
+      assertCanResolveBudgetOverride(current, actor);
+      const incident = await budgets.resolveIncident(
+        companyId,
+        incidentId,
+        req.body,
+        req.actor.userId ?? "board",
+        (policy, amount) => assertBudgetWithinAuthority(current, {
+          scopeType: policy.scopeType as BudgetScopeType,
+          windowKind: policy.windowKind as BudgetWindowKind,
+          amount,
+        }, actor),
+      );
       res.json(incident);
     },
   );
+
+  router.get("/companies/:companyId/costs/by-billing-code", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const range = parseCostDateRange(req.query);
+    const rows = await costs.byBillingCode(companyId, range);
+    res.json(rows);
+  });
 
   router.get("/companies/:companyId/costs/by-project", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -448,6 +603,31 @@ export function costRoutes(
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    await assertBudgetChangeAllowed(req, companyId, {
+      scopeType: "company",
+      scopeId: companyId,
+      windowKind: "calendar_month_utc",
+      amount: req.body.budgetMonthlyCents,
+    });
+    const datedChange = {
+      ...(req.body.effectiveFrom ? { effectiveFrom: req.body.effectiveFrom } : {}),
+      ...(req.body.reason ? { reason: req.body.reason } : {}),
+    };
+    if (isDated(req.body.effectiveFrom)) {
+      // GRE-1363: the old cap stays until the date; the budget sweep applies it.
+      await budgets.upsertPolicy(
+        companyId,
+        { scopeType: "company", scopeId: companyId, amount: req.body.budgetMonthlyCents, windowKind: "calendar_month_utc", ...datedChange },
+        req.actor.userId ?? "board",
+      );
+      const unchanged = await companies.getById(companyId);
+      if (!unchanged) {
+        res.status(404).json({ error: "Company not found" });
+        return;
+      }
+      res.json(unchanged);
+      return;
+    }
     const company = await companies.update(companyId, { budgetMonthlyCents: req.body.budgetMonthlyCents });
     if (!company) {
       res.status(404).json({ error: "Company not found" });
@@ -471,6 +651,7 @@ export function costRoutes(
         scopeId: companyId,
         amount: req.body.budgetMonthlyCents,
         windowKind: "calendar_month_utc",
+        ...datedChange,
       },
       req.actor.userId ?? "board",
     );
@@ -484,6 +665,25 @@ export function costRoutes(
     if (!agent) return;
 
     assertBoard(req);
+    await assertBudgetChangeAllowed(req, agent.companyId, {
+      scopeType: "agent",
+      scopeId: agent.id,
+      windowKind: "calendar_month_utc",
+      amount: req.body.budgetMonthlyCents,
+    });
+    const datedChange = {
+      ...(req.body.effectiveFrom ? { effectiveFrom: req.body.effectiveFrom } : {}),
+      ...(req.body.reason ? { reason: req.body.reason } : {}),
+    };
+    if (isDated(req.body.effectiveFrom)) {
+      await budgets.upsertPolicy(
+        agent.companyId,
+        { scopeType: "agent", scopeId: agent.id, amount: req.body.budgetMonthlyCents, windowKind: "calendar_month_utc", ...datedChange },
+        req.actor.userId ?? "board",
+      );
+      res.json(agent);
+      return;
+    }
 
     const updated = await agents.update(agentId, { budgetMonthlyCents: req.body.budgetMonthlyCents });
     if (!updated) {
@@ -510,6 +710,7 @@ export function costRoutes(
         scopeId: updated.id,
         amount: updated.budgetMonthlyCents,
         windowKind: "calendar_month_utc",
+        ...datedChange,
       },
       req.actor.type === "board" ? req.actor.userId ?? "board" : null,
     );

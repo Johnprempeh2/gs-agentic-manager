@@ -11,12 +11,14 @@ import { AuthPage } from "./Auth";
 const getSessionMock = vi.hoisted(() => vi.fn());
 const signInEmailMock = vi.hoisted(() => vi.fn());
 const signUpEmailMock = vi.hoisted(() => vi.fn());
+const verifyTwoStepCodeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/auth", () => ({
   authApi: {
     getSession: () => getSessionMock(),
     signInEmail: (input: unknown) => signInEmailMock(input),
     signUpEmail: (input: unknown) => signUpEmailMock(input),
+    verifyTwoStepCode: (input: unknown) => verifyTwoStepCodeMock(input),
   },
 }));
 
@@ -147,6 +149,47 @@ describe("AuthPage", () => {
     });
   });
 
+  it("asks for the authenticator code when two-step sign-in is on", async () => {
+    signInEmailMock.mockResolvedValueOnce({ twoFactorRequired: true });
+    verifyTwoStepCodeMock.mockResolvedValueOnce(undefined);
+    const { root } = await mount();
+
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+    await act(async () => {
+      setValue!.call(emailInput, "jane@example.com");
+      emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setValue!.call(passwordInput, "right-password");
+      passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector("form") as HTMLFormElement).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    const codeInput = container.querySelector('input[name="code"]') as HTMLInputElement;
+    expect(codeInput).not.toBeNull();
+    expect(codeInput.getAttribute("autocomplete")).toBe("one-time-code");
+    expect(container.querySelector('input[name="password"]')).toBeNull();
+
+    await act(async () => {
+      setValue!.call(codeInput, "123 456");
+      codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector("form") as HTMLFormElement).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+
+    expect(verifyTwoStepCodeMock).toHaveBeenCalledWith({ code: "123 456", trustDevice: false, backup: false });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("uses new-password autocomplete in sign-up mode", async () => {
     const { root } = await mount();
 
@@ -166,6 +209,44 @@ describe("AuthPage", () => {
     expect(nameInput.getAttribute("autocomplete")).toBe("name");
     expect(nameInput.required).toBe(true);
     expect(passwordInput.getAttribute("autocomplete")).toBe("new-password");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("shows the password rule on sign-up and refuses a short password before sending it", async () => {
+    const { root } = await mount();
+    const createOne = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Create one",
+    );
+    await act(async () => {
+      createOne?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("At least 12 characters");
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+    expect(passwordInput.getAttribute("aria-describedby")).toBe("password-rule");
+    await act(async () => {
+      setValue!.call(nameInput, "Jane");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setValue!.call(emailInput, "jane@example.com");
+      emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setValue!.call(passwordInput, "supersecret");
+      passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const form = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Use at least 12 characters");
+    expect(signUpEmailMock).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

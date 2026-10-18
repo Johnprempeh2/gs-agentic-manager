@@ -25,11 +25,11 @@ export const help: Record<string, string> = {
   role: "Organizational role. Determines position and capabilities.",
   reportsTo: "The agent this one reports to in the org hierarchy.",
   capabilities: "Describes what this agent can do. Shown in the org chart and used for task routing.",
-  adapterType: "How this agent runs: local CLI (Claude/Codex/OpenCode), OpenClaw Gateway, spawned process, or generic HTTP webhook.",
+  adapterType: "Where this agent does its work, such as Claude Code, Codex or OpenCode on your machine, or an outside service it connects to.",
   cwd: "Deprecated legacy working directory fallback for local adapters. Existing agents may still carry this value, but new configurations should use project workspaces instead.",
-  promptTemplate: "Sent on every heartbeat. Keep this small and dynamic. Use it for current-task framing, not large static instructions. Supports {{ agent.id }}, {{ agent.name }}, {{ agent.role }} and other template variables.",
-  model: "Override the default model used by the adapter.",
-  thinkingEffort: "Control model reasoning depth. Supported values vary by adapter/model.",
+  promptTemplate: "Sent on every scheduled check-in. Keep this small and dynamic. Use it for current-task framing, not large static instructions. Supports {{ agent.id }}, {{ agent.name }}, {{ agent.role }} and other template variables.",
+  model: "Choose a different AI model instead of the default one.",
+  thinkingEffort: "How hard the AI thinks before it answers. Deeper thinking is slower and costs more. The choices depend on the model.",
   chrome: "Enable Claude's Chrome integration by passing --chrome.",
   dangerouslySkipPermissions: "Run unattended by auto-approving adapter permission prompts when supported.",
   dangerouslyBypassSandbox: "Run Codex without sandbox restrictions. Required for filesystem/network access.",
@@ -40,27 +40,27 @@ export const help: Record<string, string> = {
   workspaceBranchTemplate: "Template for naming derived branches. Supports {{issue.identifier}}, {{issue.title}}, {{agent.name}}, {{project.id}}, {{workspace.repoRef}}, and {{slug}}.",
   worktreeParentDir: "Directory where derived worktrees should be created. Absolute, ~-prefixed, and repo-relative paths are supported.",
   runtimeServicesJson: "Optional workspace runtime service definitions. Use this for shared app servers, workers, or other long-lived companion processes attached to the workspace.",
-  maxTurnsPerRun: "Maximum number of agentic turns (tool calls) per heartbeat run.",
+  maxTurnsPerRun: "Maximum number of agentic turns (tool calls) per scheduled check-in.",
   command: "The command to execute (e.g. node, python).",
   localCommand: "Override the path to the CLI command you want the adapter to call (e.g. /usr/local/bin/claude, codex, opencode).",
   args: "Command-line arguments, comma-separated.",
   extraArgs: "Extra CLI arguments for local adapters, comma-separated.",
-  envVars: "Environment variables injected into the adapter process. Use plain values or secret references.",
+  envVars: "Settings passed to the agent each time it runs. Use plain values or pick a saved secret.",
   secretAccess:
     "Secrets this agent can reach. Env-var bindings are injected at run start; API-access bindings are fetched on demand via the run-bound agent API and never written to the environment.",
-  bootstrapPrompt: "Only sent when GS Agentic Manager starts a fresh session. Use this for stable setup guidance that should not be repeated on every heartbeat.",
+  bootstrapPrompt: "Only sent when GS Agentic Manager starts a fresh session. Use this for stable setup guidance that should not be repeated on every scheduled check-in.",
   payloadTemplateJson: "Optional JSON merged into remote adapter request payloads before GS Agentic Manager adds its standard wake and workspace fields.",
   webhookUrl: "The URL that receives POST requests when the agent is invoked.",
   heartbeatInterval: "Run this agent automatically on a timer. Useful for periodic tasks like checking for new work.",
-  intervalSec: "Seconds between automatic heartbeat invocations.",
+  intervalSec: "Seconds between scheduled check-ins.",
   skipTimerWhenNothingChanged: "Saves money. The timer only runs this agent when one of its tasks changed or someone commented on it since its last run. It still checks in once a day, and new tasks, comments and answers wake it straight away.",
-  timeoutSec: "Maximum seconds a run can take before being terminated. 0 means no timeout.",
-  graceSec: "Seconds to wait after sending interrupt before force-killing the process.",
+  timeoutSec: "Longest a run can take, in seconds, before it is stopped. 0 means no limit.",
+  graceSec: "Seconds to let a run finish tidily after you ask it to stop, before it is stopped outright.",
   requiredCapabilities: "Tools this agent needs on the machine that runs it. Each run on this machine checks them first and stops early, with a plain reason, if one is missing. Leave all off to skip the check.",
-  wakeOnDemand: "Allow this agent to be woken by assignments, API calls, UI actions, or automated systems.",
-  cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
-  maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",
-  maxTurnContinuationEnabled: "Automatically queue bounded continuation runs when an adapter stops because its per-run turn cap was exhausted.",
+  wakeOnDemand: "Let this agent start work straight away when it is given a task, someone asks it something, or another tool asks it to.",
+  cooldownSec: "Minimum seconds between consecutive scheduled check-ins.",
+  maxConcurrentRuns: "Maximum number of scheduled check-ins that can run at the same time for this agent.",
+  maxTurnContinuationEnabled: "If a run stops because it reached its step limit, start a follow-up run automatically so the work can carry on.",
   maxTurnContinuationMaxAttempts: "Maximum automatic continuations after one max-turn stop. This is separate from max turns per run.",
   maxTurnContinuationDelaySec: "Seconds to wait before starting each max-turn continuation.",
   budgetMonthlyCents: "Monthly spending limit in cents. 0 means no limit.",
@@ -452,7 +452,7 @@ export function ChoosePathButton() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              OK
+              Got it
             </Button>
           </DialogFooter>
         </DialogContent>

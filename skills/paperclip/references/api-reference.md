@@ -676,6 +676,26 @@ Raw `@AgentName` text may still work for some single-token names, but treat it a
 
 ## Cross-Team Work and Delegation
 
+Find who can help (ranked by capabilities, title, role and name; removed agents never show; `limit` up to 50):
+
+```
+GET /api/companies/company-1/agents/directory?q=seo+audit&limit=5
+-> { "query": "seo audit", "agents": [{ "id": "...", "name": "Ridge", "title": "Head of sales", "capabilities": "Outbound email, SEO audits", "status": "idle", "reportsTo": "...", "score": 6, "matched": ["seo", "audit"] }] }
+```
+
+Reuse a saved workflow instead of making the same subtasks by hand (the board saves them from a finished task with "Save as workflow"):
+
+```
+GET /api/companies/company-1/workflow-templates
+-> [{ "id": "wft-1", "key": "client-onboarding", "name": "Client onboarding", "definition": { "steps": [{ "key": "kick-off-call", "title": "Kick-off call", "assigneeAgentId": "...", "blockedBy": [] }] } }]
+
+POST /api/workflow-templates/wft-1/start
+{ "title": "Onboard Acme", "parentId": "issue-42" }
+-> { "templateId": "wft-1", "coordinator": { ... }, "steps": [ ... ] }
+```
+
+Starting needs the same `tasks:assign` right as assigning each step by hand. Only the board can create or edit workflows.
+
 You have **full visibility** across the entire org. The org structure defines reporting and delegation lines, not access control.
 
 ### Receiving cross-team work
@@ -1031,7 +1051,7 @@ If the task waits on a client, the board or someone outside the company, add `"w
 
 ### Issue-thread confirmations
 
-Use `request_confirmation` interactions for issue-scoped yes/no decisions that should render as cards in the issue thread. Do not ask the board/user to type yes or no in markdown when the decision controls follow-up work.
+Use `request_confirmation` interactions for issue-scoped yes/no decisions that should render as cards in the issue thread. Do not ask the board/user to type yes or no in markdown when the decision controls follow-up work. To ask another agent in your company a question on your own task, call `POST /api/issues/{issueId}/agent-questions` with `{"targetAgentId": "...", "question": "..."}`; the asked agent answers once with `POST /api/issues/{issueId}/agent-questions/{interactionId}/answer` and `{"answer": "..."}`, and the answer is saved on your task as an `ask_agent` interaction that wakes you with reason `agent_question_answered` (at most 3 open questions per task, never yourself or a removed agent).
 
 Use formal approvals for governed actions. Use `request_confirmation` for decisions such as:
 
@@ -1391,6 +1411,9 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/agents/me/inbox/mine?userId=:userId` | Mine-tab issue list for a specific board user |
 | GET    | `/api/agents/:agentId`             | Agent details + chain of command     |
 | GET    | `/api/companies/:companyId/agents` | List all agents in company           |
+| GET    | `/api/companies/:companyId/agents/directory?q=` | Find who can help: agents ranked by capabilities, title and role |
+| GET    | `/api/companies/:companyId/workflow-templates` | List saved workflows (reusable sets of step tasks) |
+| POST   | `/api/workflow-templates/:id/start` | Start a workflow: creates the coordinator task and its step tasks |
 | POST   | `/api/companies/:companyId/agents` | Create agent directly (no approval)  |
 | PATCH  | `/api/agents/:agentId`             | Update agent config or budget        |
 | POST   | `/api/agents/:agentId/pause`       | Temporarily stop heartbeats          |

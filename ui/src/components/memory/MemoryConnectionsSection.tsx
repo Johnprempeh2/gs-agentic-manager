@@ -10,18 +10,23 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioCardGroup } from "@/components/ui/radio-card";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { buildCompanyUserLabelMap } from "@/lib/company-members";
 import { formatDate } from "@/lib/utils";
+import { accessApi } from "../../api/access";
 import { ApiError } from "../../api/client";
 import { memoryGraphApi } from "../../api/memoryGraph";
 import { queryKeys } from "../../lib/queryKeys";
 import { MemoryConnectionCheck, MemoryConnectionHistory } from "./MemoryConnectionActivity";
-import { memoryConnectionSetup, memoryMcpUrl } from "./memoryConnectionSetup";
+import { MemoryAppSignInPanel } from "./MemoryAppSignInPanel";
+import { isMemorySignInApp, memoryConnectionSetup, memoryMcpUrl } from "./memoryConnectionSetup";
+import { useConfirm } from "@/context/ConfirmContext";
 
 const APP_OPTIONS: Array<{ value: MemoryConnectionApp; description: string }> = [
   { value: "claude", description: "The Claude app on a Mac or PC" },
+  { value: "claude_ai", description: "Claude on the web and phone, by signing in" },
   { value: "claude_code", description: "Claude in a terminal" },
   { value: "codex", description: "OpenAI's coding agent" },
-  { value: "chatgpt", description: "Not possible yet, see below" },
+  { value: "chatgpt", description: "Chats and voice mode, by signing in" },
   { value: "other", description: "Any app that speaks MCP" },
 ];
 
@@ -47,9 +52,11 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 /**
  * Live links so Claude, Claude Code or Codex can search and add to memory in
- * the middle of a chat. Owners and admins only; the server says who may.
+ * the middle of a chat. Each person connects their own apps; owners and admins
+ * also see everyone's. The server says who may.
  */
 export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [app, setApp] = useState<MemoryConnectionApp>("claude");
   const [canContribute, setCanContribute] = useState(true);
@@ -61,6 +68,13 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
     queryFn: () => memoryGraphApi.connections(companyId),
     retry: (count, error) => !(error instanceof ApiError && error.status === 403) && count < 2,
   });
+  // An owner or admin sees everyone's connections, so each row names who made it.
+  const userDirectory = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(companyId),
+    queryFn: () => accessApi.listUserDirectory(companyId),
+    enabled: (connections.data ?? []).length > 0,
+  });
+  const ownerLabels = buildCompanyUserLabelMap(userDirectory.data?.users);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.memoryGraph.connections(companyId) });
 
   const create = useMutation({
@@ -84,11 +98,11 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
   const chosenSetup = memoryConnectionSetup(app, url, "YOUR-KEY");
 
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-card p-4" aria-label="Use memory from inside Claude">
+    <section className="space-y-4 rounded-lg border border-border bg-card p-4" aria-label="Use memory from inside Claude and ChatGPT">
       <div className="space-y-1">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Link2 className="size-4" />
-          Use memory from inside Claude
+          Use memory from inside Claude and ChatGPT
         </h2>
         <p className="text-sm text-muted-foreground">
           Connect an app once and it can look things up in shared memory while you chat, and suggest new entries. What it adds
@@ -97,7 +111,7 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
       </div>
 
       {forbidden ? (
-        <p className="text-sm text-muted-foreground">Only an owner or admin can connect an app. Ask one to set it up for you.</p>
+        <p className="text-sm text-muted-foreground">Only a person signed in to GSAM can connect an app.</p>
       ) : (
         <>
           <RadioCardGroup
@@ -115,7 +129,9 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
             className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
           />
 
-          {chosenSetup.snippet === null ? (
+          {isMemorySignInApp(app) ? (
+            <MemoryAppSignInPanel companyId={companyId} app={app} />
+          ) : chosenSetup.snippet === null ? (
             <div className="space-y-1 rounded-md border border-border bg-muted/40 p-3 text-sm">
               {chosenSetup.steps.map((step) => (
                 <p key={step}>{step}</p>
@@ -172,10 +188,12 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
                     .filter((value): value is string => typeof value === "string")
                     .sort()
                     .at(-1);
+                  const owner = connection.createdByUserId ? ownerLabels.get(connection.createdByUserId) : undefined;
                   return (
                     <li key={connection.agentId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                       <div className="min-w-0">
                         <p className="font-medium">{MEMORY_CONNECTION_APP_LABEL[connection.app]}</p>
+                        <p className="text-xs text-muted-foreground">{owner ? `Connected by ${owner}` : "Owner unknown"}</p>
                         <p className="text-xs text-muted-foreground">
                           {connection.canContribute ? "Reads and suggests entries" : "Reads only"}
                           {", "}
@@ -198,7 +216,15 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
                           size="sm"
                           variant="outline"
                           disabled={revoke.isPending}
-                          onClick={() => revoke.mutate(connection.agentId)}
+                          onClick={async () => {
+                            const confirmed = await confirm({
+                              title: `Disconnect ${MEMORY_CONNECTION_APP_LABEL[connection.app]} from memory?`,
+                              description: "It can no longer read or add to memory until you connect it again.",
+                              confirmLabel: "Disconnect",
+                              tone: "destructive",
+                            });
+                            if (confirmed) revoke.mutate(connection.agentId);
+                          }}
                         >
                           Disconnect
                         </Button>

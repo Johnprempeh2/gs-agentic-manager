@@ -415,9 +415,39 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .where(and(...conditions))
         .groupBy(costEvents.agentId, agents.name, agents.appearance, agents.status)
         .orderBy(desc(sumAsNumber(costEvents.costCents)));
+
+      // Tasks each agent finished in the same period, so the board can see the
+      // cost per finished task beside the spend.
+      const agentIds = rows.map((row) => row.agentId).filter((id): id is string => Boolean(id));
+      const doneByAgent = new Map<string, number>();
+      if (agentIds.length > 0) {
+        const doneConditions = [
+          eq(issues.companyId, companyId),
+          eq(issues.status, "done"),
+          inArray(issues.assigneeAgentId, agentIds),
+          isNotNull(issues.completedAt),
+          isNull(issues.hiddenAt),
+        ];
+        if (range?.from) doneConditions.push(gte(issues.completedAt, range.from));
+        if (range?.to) doneConditions.push(lte(issues.completedAt, range.to));
+        const doneRows = await db
+          .select({ agentId: issues.assigneeAgentId, count: sql<number>`count(*)::int` })
+          .from(issues)
+          .where(and(...doneConditions))
+          .groupBy(issues.assigneeAgentId);
+        for (const doneRow of doneRows) {
+          if (doneRow.agentId) doneByAgent.set(doneRow.agentId, Number(doneRow.count));
+        }
+      }
+
       return rows.map(row => {
         const appearance = resolveAgentAppearance(row.agentAppearance, row.agentId);
-        return { ...row, agentAppearance: appearance, avatarUrl: agentAvatarUrl(appearance, 512) };
+        return {
+          ...row,
+          agentAppearance: appearance,
+          avatarUrl: agentAvatarUrl(appearance, 512),
+          tasksDone: doneByAgent.get(row.agentId) ?? 0,
+        };
       });
     },
 
@@ -821,6 +851,28 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         minimumWageHourlyCents,
         minimumWageEquivalentCents: minimumWageEquivalentCents(agentWorkMs, minimumWageHourlyCents),
       };
+    },
+
+    /** Spend per billing code: what each cross-team request cost, newest codes included. */
+    byBillingCode: async (companyId: string, range?: CostDateRange) => {
+      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+      const costCentsExpr = sumAsNumber(costEvents.costCents);
+      return db
+        .select({
+          billingCode: sql<string>`${costEvents.billingCode}`,
+          costCents: costCentsExpr,
+          inputTokens: sumAsNumber(costEvents.inputTokens),
+          cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+          outputTokens: sumAsNumber(costEvents.outputTokens),
+          eventCount: sql<number>`count(*)::int`,
+          lastOccurredAt: sql<Date>`max(${costEvents.occurredAt})`,
+        })
+        .from(costEvents)
+        .where(and(...conditions, isNotNull(costEvents.billingCode), sql`${costEvents.billingCode} <> ''`))
+        .groupBy(costEvents.billingCode)
+        .orderBy(desc(costCentsExpr));
     },
 
     byProject: async (companyId: string, range?: CostDateRange) => {

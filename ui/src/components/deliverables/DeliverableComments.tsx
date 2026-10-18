@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import { DELIVERABLE_IFRAME_SANDBOX } from "./DeliverableDocument";
+import { useConfirm } from "@/context/ConfirmContext";
 
 /**
  * Comments on a deliverable version (GRE-982). The document shows in review
@@ -292,6 +293,7 @@ function CommentItem({
   active: boolean;
   review: DeliverableReviewState;
 }) {
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
   const isDraft = comment.status === "draft";
@@ -360,7 +362,14 @@ function CommentItem({
               size="icon-sm"
               variant="ghost"
               aria-label={`Delete comment ${number}`}
-              onClick={() => review.remove.mutate(comment.id)}
+              onClick={async () => {
+                const confirmed = await confirm({
+                  title: "Delete this comment?",
+                  confirmLabel: "Delete comment",
+                  tone: "destructive",
+                });
+                if (confirmed) review.remove.mutate(comment.id);
+              }}
               disabled={busy}
             >
               <Trash2 />
@@ -491,7 +500,7 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
           {sentResult.woken
             ? "Sent. The task's agent will revise the deliverable."
-            : "Posted on the task. No agent was woken; assign one on the task."}
+            : "Posted on the task, but no agent is assigned to act on it. Open the task and assign one."}
         </p>
       ) : null}
     </section>

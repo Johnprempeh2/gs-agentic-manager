@@ -49,6 +49,7 @@ import { TaskChatComposerTakeoverHeader } from "./TaskChatComposerTakeoverContex
 import { RichWorkProductCard } from "./RichWorkProductCard";
 import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
 import { isPlainPrimaryClick } from "@/lib/attachment-preview";
+import { taskStatusLabel } from "../../lib/task-status-labels";
 
 export interface TaskChatProtocolCardProps {
   item: TaskChatProtocolItem;
@@ -157,12 +158,12 @@ function CardShell({
       {status && status !== "pending" ? (
         <span
           className={cn(
-            "inline-flex shrink-0 items-center gap-1 text-xs capitalize",
+            "inline-flex shrink-0 items-center gap-1 text-xs",
             statusTone(status),
           )}
         >
           <StatusIcon status={status} className="h-3.5 w-3.5" />
-          {status.replaceAll("_", " ")}
+          {taskStatusLabel(status)}
         </span>
       ) : null}
     </div>
@@ -211,12 +212,12 @@ function CardShell({
             {status ? (
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 text-xs capitalize",
+                  "inline-flex items-center gap-1 text-xs",
                   statusTone(status),
                 )}
               >
                 <StatusIcon status={status} className="h-3.5 w-3.5" />
-                {status.replaceAll("_", " ")}
+                {taskStatusLabel(status)}
               </span>
             ) : null}
           </div>
@@ -628,7 +629,7 @@ function RuntimeQuestionHistory({
           ))}
           <p className="text-xs text-muted-foreground">
             {item.status === "resolved"
-              ? "Answer details were not recorded by this older runtime."
+              ? "The details of this answer were not saved."
               : `No answers were submitted; this request was ${item.status}.`}
           </p>
         </div>
@@ -673,7 +674,7 @@ function RuntimeQuestionReceipt({
       <div className="pb-3 pl-7 pr-1">
         <div className="mb-3">
           <p className="text-sm font-medium text-foreground">
-            {item.questionSet?.title ?? "Runtime input"}
+            {item.questionSet?.title ?? "The agent needs your answer"}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">{item.prompt}</p>
         </div>
@@ -701,8 +702,8 @@ function RuntimeRequestCard({
   const title =
     item.questionSet?.title ??
     (item.requestType === "permission"
-      ? "Runtime permission"
-      : "Runtime input");
+      ? "The agent needs your permission"
+      : "The agent needs your answer");
   const fields =
     item.fields.length > 0
       ? item.fields
@@ -742,7 +743,7 @@ function RuntimeRequestCard({
       setError(
         cause instanceof Error
           ? cause.message
-          : "The runtime request could not be resolved.",
+          : "We could not send your answer. Try again.",
       );
     }
   };

@@ -51,7 +51,7 @@ test.describe("offline execution recovery stories", () => {
           );
           await expect(page.locator("#storybook-root")).not.toBeEmpty();
           await expect(page.getByRole("dialog")).toHaveCount(0);
-          await expect(page.getByRole("button", { name: /Inspect run|Reconcile and continue/ })).toHaveCount(0);
+          await expect(page.getByRole("button", { name: /Inspect run|See details|See what went wrong|Reconcile and continue/ })).toHaveCount(0);
           await expect(page.locator("[data-execution-phase]")).toHaveCount(0);
           if (state === "composer-during-recovery") {
             await expect(page.getByRole("textbox", { name: "Message draft" })).toHaveValue("Continue with the launch notes.");

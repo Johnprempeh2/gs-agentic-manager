@@ -124,7 +124,7 @@ export function grantAccountLabel(
  */
 export function audienceSummary(grant: Pick<ConnectionGrant, "members"> | null): string {
   const count = grant?.members?.length ?? 0;
-  if (count === 0) return "All organization members";
+  if (count === 0) return "All organisation members";
   return `${count} selected ${count === 1 ? "member" : "members"}`;
 }
 

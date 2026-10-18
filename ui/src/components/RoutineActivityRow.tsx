@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { ActivityEvent } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
+import { routineRunStatusLabel } from "@/lib/routine-run-status";
 
 export type RoutineActivityEvent = Pick<ActivityEvent, "id" | "action" | "details" | "createdAt">;
 
@@ -15,13 +16,13 @@ function formatTime(value: string | Date): string {
 
 function summarizeEvent(event: RoutineActivityEvent): string {
   const details = event.details;
-  if (event.action === "routine.webhook_test_received") return "Connection working · No run or task created";
+  if (event.action === "routine.webhook_test_received") return "Connection working · Nothing was started";
   if (event.action === "routine.webhook_test_rejected") return "Update the key in your app and resend";
   if (event.action === "routine.webhook_received") return "Authentication passed";
   if (event.action === "routine.webhook_rejected") return "Check the key in your sending app";
   if (!details) return "";
   if (typeof details.changeSummary === "string") return details.changeSummary;
-  if (event.action === "routine.run_triggered") return `${details.source === "webhook" ? "Webhook" : details.source === "schedule" ? "Schedule" : "Manual"} · ${details.status === "issue_created" ? "Task created" : details.status === "issue_reopened" ? "Standing task reopened" : String(details.status ?? "").replaceAll("_", " ")}`;
+  if (event.action === "routine.run_triggered") return `${details.source === "webhook" ? "Webhook" : details.source === "schedule" ? "Schedule" : "Manual"} · ${details.status === "issue_created" ? "Task created" : details.status === "issue_reopened" ? "Standing task reopened" : routineRunStatusLabel(String(details.status ?? ""))}`;
   return Object.entries(details).filter(([key]) => !/id$/i.test(key)).slice(0, 3)
     .map(([key, value]) => `${key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").toLowerCase()}: ${formatDetailValue(value)}`)
     .join(" · ");
@@ -47,7 +48,7 @@ const actionLabels: Record<string, string> = {
   "routine.created": "Routine created", "routine.updated": "Routine updated",
   "routine.trigger_created": "Trigger added", "routine.trigger_updated": "Trigger updated",
   "routine.trigger_deleted": "Trigger removed", "routine.trigger_removed": "Trigger removed", "routine.trigger_restored": "Trigger restored", "routine.trigger_setup_finished": "Webhook setup finished", "routine.trigger_secret_rotated": "Webhook key replaced",
-  "routine.run_triggered": "Routine started", "routine.run_created": "Run created",
+  "routine.run_triggered": "Routine started", "routine.run_created": "Routine started",
 };
 function actionLabel(action: string) {
   return actionLabels[action] ?? action.replace(/^routine[._]/, "").replaceAll("_", " ").replaceAll(".", " ").replace(/^./, (char) => char.toUpperCase());

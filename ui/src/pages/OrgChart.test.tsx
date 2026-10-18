@@ -521,16 +521,16 @@ describe("OrgChart", () => {
     it("shows both portability buttons on self-hosted instances", async () => {
       await renderOrgChart();
 
-      expect(container.textContent).toContain("Import organization");
-      expect(container.textContent).toContain("Export organization");
+      expect(container.textContent).toContain("Import organisation");
+      expect(container.textContent).toContain("Export organisation");
     });
 
     it("hides the Import button but keeps Export on a Cloud-managed instance", async () => {
       queryClient.setQueryData(queryKeys.health, { status: "ok", cloud: { managed: true } });
       await renderOrgChart();
 
-      expect(container.textContent).not.toContain("Import organization");
-      expect(container.textContent).toContain("Export organization");
+      expect(container.textContent).not.toContain("Import organisation");
+      expect(container.textContent).toContain("Export organisation");
     });
   });
 

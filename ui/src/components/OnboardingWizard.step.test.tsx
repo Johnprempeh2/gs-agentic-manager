@@ -445,7 +445,7 @@ describe("OnboardingWizard — which step it lands on", () => {
     expect(currentStep()).toBe("agent");
     expect(companyState.setSelectedCompanyId).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain(
-      "Organization created, but onboarding switched to another organization.",
+      "Your organisation was created, but setup switched to a different organisation. Choose it from the organisation menu to carry on.",
     );
   });
 
@@ -628,7 +628,7 @@ describe("OnboardingWizard — which step it lands on", () => {
       expect(segments.every((segment) => segment.disabled)).toBe(true);
 
       // And company creation is genuinely unreachable, not merely unlinked.
-      expect(document.body.textContent).not.toContain("Name your organization");
+      expect(document.body.textContent).not.toContain("Name your organisation");
     });
   });
 });

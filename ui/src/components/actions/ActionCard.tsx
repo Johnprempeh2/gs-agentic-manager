@@ -157,7 +157,7 @@ function bindingRows(binding: ActionCardBinding, isStale: boolean): BindingRow[]
     { label: "Connection", value: binding.connection, mono: true },
     { label: "Catalog", value: catalogValue, mono: !isStale },
     {
-      label: "Payload",
+      label: "Signed request",
       value: (
         <span className="inline-flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />

@@ -1009,6 +1009,26 @@ npx gsam image list --company-id <company-id> [--limit 20]
 ```
 
 ```sh
+# Search everything the company holds: tasks, comments, docs, words inside uploaded
+# files, organisations, people, deals and leads, products, imported Pipedrive notes
+# and calls, and generated images. Each result prints what it is, its link and the matching text.
+npx gsam search <words...> --company-id <company-id> [--scope all|issues|comments|documents|artifacts|files|records|agents|projects] [--kind organisation,person,client,product,image,activity] [--limit 10] [--json]
+
+# Open deals and leads with no note, call, meeting or email for a while, quietest first.
+npx gsam quiet-clients --company-id <company-id> [--days 30] [--limit 10] [--json]
+# One-glance brief on an organisation: status, open deals, people and last contact.
+npx gsam client-brief <name...> --company-id <company-id> [--json]
+# Recent client notes, calls, meetings and emails, newest first.
+npx gsam client-activity --company-id <company-id> [--days 7] [--limit 20] [--json]
+# Open deals and leads by expected close date, overdue first, with value per currency (--days 0 for only overdue).
+npx gsam closing-deals --company-id <company-id> [--days 30] [--limit 10] [--json]
+# Open deals and leads per stage with their value, and the largest deals (--owner for one person's deals).
+npx gsam pipeline-summary --company-id <company-id> [--limit 5] [--owner <name>] [--json]
+# Deals and leads won and lost lately, with value and lost reasons.
+npx gsam won-lost --company-id <company-id> [--days 30] [--limit 5] [--json]
+```
+
+```sh
 npx gsam skill list --company-id <company-id>
 npx gsam skill get <skill-id> --company-id <company-id>
 npx gsam skill file <skill-id> --company-id <company-id> [--path SKILL.md]

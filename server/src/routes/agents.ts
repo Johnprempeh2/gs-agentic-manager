@@ -18,13 +18,16 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "@greatstone/db";
 import type { ChatChannelService } from "../services/chat-channels.js";
-import { activityLog, agents as agentsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@greatstone/db";
+import { activityLog, agents as agentsTable, approvals as approvalsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@greatstone/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { sha256Digest } from "../services/feedback-redaction.js";
+import { rankDirectory } from "../services/agent-directory.js";
+import { blockedWorkService } from "../services/blocked-work.js";
 import {
   agentSkillSyncSchema,
   agentMineInboxQuerySchema,
   ADAPTER_AGNOSTIC_KEYS,
+  pickAgentAccessGrants,
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   createAgentKeySchema,
   createAgentHireSchema,
@@ -253,6 +256,7 @@ import {
 import { managedAgentProfileService } from "../services/managed-agent-profiles.js";
 import { remoteAgentProfileService } from "../services/remote-agent-profiles.js";
 import { ensureGoalCheckInRoutine } from "../services/goal-check-in-routine.js";
+import { memoryLinkPerson } from "../services/memory-gateway/service.js";
 
 const AGENT_SKILL_ASSIGNMENT_MODES = ["add", "remove", "replace"] as const;
 
@@ -3087,7 +3091,7 @@ export function agentRoutes(
     if (requestedDesiredSkills.some((entry) => entry.versionId !== null)) {
       const betaSkillsEnabled = (await instanceSettings.getExperimental()).enableBetaSkills === true;
       if (!betaSkillsEnabled) {
-        throw badRequest("Beta skill version pins require the Beta skills experimental setting to be enabled.");
+        throw badRequest("Beta skill version pins are off on this instance; client installs run released skills only.");
       }
     }
 
@@ -4061,6 +4065,37 @@ export function agentRoutes(
     },
   );
 
+  // "Who can help": agents (and the board) find colleagues by what they do.
+  router.get("/companies/:companyId/agents/directory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const unsupported = Object.keys(req.query).filter((key) => key !== "q" && key !== "limit").sort();
+    if (unsupported.length > 0) {
+      res.status(400).json({ error: `Unsupported query parameter${unsupported.length === 1 ? "" : "s"}: ${unsupported.join(", ")}` });
+      return;
+    }
+    const q = typeof req.query.q === "string" ? req.query.q.slice(0, 200) : "";
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 20;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 20;
+    const visible = await filterAgentsForActor(req, await svc.list(companyId));
+    res.json({
+      query: q,
+      agents: rankDirectory(
+        visible.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          role: agent.role,
+          title: agent.title ?? null,
+          capabilities: agent.capabilities ?? null,
+          status: agent.status,
+          reportsTo: agent.reportsTo ?? null,
+        })),
+        q,
+        limit,
+      ),
+    });
+  });
+
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -4259,6 +4294,7 @@ export function agentRoutes(
         projectId: issue.projectId,
         goalId: issue.goalId,
         parentId: issue.parentId,
+        dueDate: issue.dueDate ?? null,
         updatedAt: issue.updatedAt,
         activeRun: issue.activeRun,
         activeRecoveryAction: recoveryActionByIssue.get(issue.id) ?? null,
@@ -4267,6 +4303,123 @@ export function agentRoutes(
         unresolvedBlockerIssueIds: dependencyReadiness.get(issue.id)?.unresolvedBlockerIssueIds ?? [],
       })),
     );
+  });
+
+  // An agent's own recently finished tasks, newest first, so it can pick up
+  // where it left off and avoid redoing work it already finished.
+  router.get("/agents/me/recent-done", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const rawLimit = Number(req.query.limit ?? 10);
+    const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, Math.trunc(rawLimit))) : 10;
+    const rows = await db
+      .select({
+        id: issuesTable.id,
+        identifier: issuesTable.identifier,
+        title: issuesTable.title,
+        projectId: issuesTable.projectId,
+        goalId: issuesTable.goalId,
+        parentId: issuesTable.parentId,
+        billingCode: issuesTable.billingCode,
+        completedAt: issuesTable.completedAt,
+      })
+      .from(issuesTable)
+      .where(
+        and(
+          eq(issuesTable.companyId, req.actor.companyId),
+          eq(issuesTable.assigneeAgentId, req.actor.agentId),
+          eq(issuesTable.status, "done"),
+          sql`${issuesTable.hiddenAt} is null`,
+          sql`${issuesTable.completedAt} is not null`,
+        ),
+      )
+      .orderBy(desc(issuesTable.completedAt))
+      .limit(limit);
+    res.json(rows);
+  });
+
+  // An agent's own last failed runs with their errors, so it can read what
+  // went wrong before it tries the same thing again.
+  router.get("/agents/me/failed-runs", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const companyId = req.actor.companyId;
+    const rawLimit = Number(req.query.limit ?? 5);
+    const limit = Number.isFinite(rawLimit) ? Math.min(20, Math.max(1, Math.trunc(rawLimit))) : 5;
+    const runs = await heartbeat.list(companyId, req.actor.agentId, limit, {
+      summary: true,
+      statuses: ["failed", "timed_out"],
+    });
+    const redacted = await runRedactions.redactForRuns(companyId, runs);
+    res.json(redacted.map((run) => ({
+      id: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      finishedAt: run.finishedAt,
+      errorCode: run.errorCode ?? null,
+      error: typeof run.error === "string" ? run.error.slice(0, 1000) : null,
+      issueId: typeof run.contextSnapshot?.issueId === "string" ? run.contextSnapshot.issueId : null,
+      wakeReason: typeof run.contextSnapshot?.wakeReason === "string" ? run.contextSnapshot.wakeReason : null,
+    })));
+  });
+
+  // Tasks of this agent that other open tasks are waiting on, biggest chain
+  // first, so it can clear what holds up the most work before anything else.
+  router.get("/agents/me/waiting-on-me", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const agentId = req.actor.agentId;
+    const overview = await blockedWorkService(db).overview(req.actor.companyId);
+    res.json(
+      overview.rootCauses
+        .filter((cause) => cause.owner.type === "agent" && cause.owner.agentId === agentId)
+        .map((cause) => ({
+          issue: cause.issue,
+          action: cause.action,
+          waitingCount: cause.heldIssueIds.length,
+          heldIssueIds: cause.heldIssueIds,
+          oldestWaitingSince: cause.oldestWaitingSince,
+        })),
+    );
+  });
+
+  // Approval requests this agent filed that are still open, oldest first, so it
+  // does not file the same request twice and sees which ones need a resubmit.
+  router.get("/agents/me/approvals", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const includeClosed = req.query.all === "true" || req.query.all === "1";
+    const conditions = [
+      eq(approvalsTable.companyId, req.actor.companyId),
+      eq(approvalsTable.requestedByAgentId, req.actor.agentId),
+    ];
+    if (!includeClosed) conditions.push(inArray(approvalsTable.status, ["pending", "revision_requested"]));
+    const rows = await db
+      .select({
+        id: approvalsTable.id,
+        type: approvalsTable.type,
+        status: approvalsTable.status,
+        decisionNote: approvalsTable.decisionNote,
+        createdAt: approvalsTable.createdAt,
+        updatedAt: approvalsTable.updatedAt,
+      })
+      .from(approvalsTable)
+      .where(and(...conditions))
+      .orderBy(approvalsTable.createdAt)
+      .limit(100);
+    const now = Date.now();
+    res.json(rows.map((row) => ({
+      ...row,
+      ageDays: Math.max(0, Math.floor((now - row.createdAt.getTime()) / 86_400_000)),
+    })));
   });
 
   router.get("/agents/me/inbox/mine", async (req, res) => {
@@ -5429,6 +5582,12 @@ export function agentRoutes(
             rawEffectiveAdapterConfig = { ...rawEffectiveAdapterConfig, [key]: existingAdapterConfig[key] };
           }
         }
+        // `access.<ALIAS>` secret grants are agent-level too (GRE-1609); dropping
+        // them here deleted the agent's binding rows on every adapter switch.
+        rawEffectiveAdapterConfig = {
+          ...pickAgentAccessGrants(existingAdapterConfig),
+          ...rawEffectiveAdapterConfig,
+        };
         rawEffectiveAdapterConfig = preserveInstructionsBundleConfig(
           existingAdapterConfig,
           rawEffectiveAdapterConfig,
@@ -5812,6 +5971,10 @@ export function agentRoutes(
       assertCompanyOwnerOrAdmin(req, agent.companyId);
       if (agent.status !== "paused") {
         throw conflict("Pause the agent before creating a memory-only key");
+      }
+      // GRE-1081: a memory key belongs to one person's app link, never to a shared agent.
+      if (!memoryLinkPerson(agent.metadata)) {
+        throw conflict("A memory key belongs to one person's app. Connect it from Memory > Claude and ChatGPT.");
       }
     }
     const key = await svc.createApiKey(id, req.body.name, req.body.scope, {

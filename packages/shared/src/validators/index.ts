@@ -57,8 +57,10 @@ export {
 export {
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
+  updateBudgetAuthoritySchema,
   type UpsertBudgetPolicy,
   type ResolveBudgetIncident,
+  type UpdateBudgetAuthority,
 } from "./budget.js";
 
 export {
@@ -435,6 +437,7 @@ export {
   createAcceptedPlanDecompositionSchema,
   resolveCreateIssueStatusDefault,
   createIssueLabelSchema,
+  updateIssueLabelSchema,
   issueBlockedInboxAttentionSchema,
   issueBlockedInboxIssueRefSchema,
   issueBlockedInboxReasonSchema,
@@ -463,6 +466,10 @@ export {
   issueThreadInteractionResolverPolicyProvenanceSchema,
   issueThreadInteractionEffectiveResolverPolicySourceSchema,
   issueThreadInteractionContinuationPolicySchema,
+  askAgentPayloadSchema,
+  askAgentResultSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   connectionIntentPhaseSchema,
   connectionIntentPayloadSchema,
   connectionIntentResultSchema,
@@ -517,6 +524,7 @@ export {
   type CreateChildIssue,
   type CreateAcceptedPlanDecomposition,
   type CreateIssueLabel,
+  type UpdateIssueLabel,
   type UpdateIssue,
   type BlockedDependentsHandoff,
   type StalledReviewDecision,
@@ -526,6 +534,8 @@ export {
   type CheckoutIssue,
   type AddIssueComment,
   type CreateIssueThreadInteraction,
+  type CreateAgentQuestion,
+  type AnswerAgentQuestion,
   type AcceptIssueThreadInteraction,
   type RejectIssueThreadInteraction,
   type CancelIssueThreadInteraction,

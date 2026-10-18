@@ -89,6 +89,7 @@ const {
       heldRetries: { released: 0, escalated: 0, superseded: 0, held: 0 },
     })),
     sweepStaleIssueLocks: vi.fn(async () => ({ cleared: 0 })),
+    releaseBudgetHeldWork: vi.fn(async () => ({ released: 0, dropped: 0, failed: 0 })),
     sweepPendingCleanupLeases: vi.fn(async () => ({ swept: 0, destroyed: 0, capped: 0 })),
     sweepExpiredRuntimeStatuses: vi.fn(() => 0),
     sweepStaleRunOutputFiles: vi.fn(async () => undefined),
@@ -290,6 +291,9 @@ vi.mock("../services/index.js", () => ({
   attentionService: vi.fn(() => ({
     list: vi.fn(async () => ({ items: [], nextCursor: null })),
   })),
+  budgetService: vi.fn(() => ({
+    applyDueChanges: vi.fn(async () => undefined),
+  })),
   decisionService: vi.fn(() => ({
     sweepExpired: vi.fn(async () => ({ expired: 0 })),
   })),
@@ -304,6 +308,7 @@ vi.mock("../services/index.js", () => ({
   executionWorkspaceService: executionWorkspaceServiceFactoryMock,
   externalObjectService: externalObjectsServiceFactoryMock,
   heartbeatService: heartbeatServiceFactoryMock,
+  budgetService: vi.fn(() => ({ applyDueChanges: vi.fn(async () => undefined) })),
   githubConnectionEventService: vi.fn(() => ({
     pollOnce: vi.fn(async () => ({
       leased: 0,
@@ -738,6 +743,23 @@ describe("startServer feedback export wiring", () => {
 
     expect(heartbeatServiceMock.reconcileHotRestartAdoption).toHaveBeenCalledTimes(1);
     expect(heartbeatServiceMock.reapOrphanedRuns).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps starting when a startup recovery step fails, and still runs the later steps (16 Oct 2026)", async () => {
+    loadConfigMock.mockReturnValue(buildTestConfig({
+      heartbeatSchedulerEnabled: true,
+      heartbeatSchedulerIntervalMs: 30000,
+    }));
+    heartbeatServiceMock.reconcileStrandedAssignedIssues.mockRejectedValueOnce(
+      Object.assign(new Error("Blocking relations cannot contain cycles"), { status: 422 }),
+    );
+
+    await expect(startServer()).resolves.toBeDefined();
+
+    expect(heartbeatServiceMock.reconcileStrandedAssignedIssues).toHaveBeenCalled();
+    expect(heartbeatServiceMock.reconcileResolvedDependencyWakes).toHaveBeenCalled();
+    expect(heartbeatServiceMock.sweepStaleIssueLocks).toHaveBeenCalled();
+    expect(fakeServer.close).not.toHaveBeenCalled();
   });
 
   it("closes the bound listener when native startup recovery fails", async () => {

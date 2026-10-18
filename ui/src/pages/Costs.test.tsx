@@ -13,6 +13,7 @@ const costsApiMocks = vi.hoisted(() => ({
   byAgent: vi.fn(),
   byProject: vi.fn(),
   byAgentModel: vi.fn(),
+  byBillingCode: vi.fn(),
   financeSummary: vi.fn(),
   financeByBiller: vi.fn(),
   financeByKind: vi.fn(),
@@ -81,10 +82,10 @@ describe("Costs embedded Audit surfaces", () => {
     await act(async () => {
       await vi.waitFor(() => {
         expect(budgetOverviewMock).toHaveBeenCalledWith("company-1");
-        expect(container.textContent).toContain("Budget control plane");
+        expect(container.textContent).toContain("Spending limits");
       });
     });
-    expect(container.textContent).not.toContain("Inference spend");
+    expect(container.textContent).not.toContain("AI spend this period");
     expect(container.querySelector('[role="tab"]')).toBeFalsy();
     expect(setBreadcrumbsMock).not.toHaveBeenCalled();
     for (const mock of Object.values(costsApiMocks)) expect(mock).not.toHaveBeenCalled();

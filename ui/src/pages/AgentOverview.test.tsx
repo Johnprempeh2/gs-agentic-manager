@@ -44,6 +44,7 @@ describe("AgentOverview", () => {
       identifier: "PAP-42",
       title: "Simplify agent information architecture",
       status: "in_progress",
+      assigneeAgentId: "agent-1",
       priority: "high",
       updatedAt: new Date("2026-08-31T12:00:00Z"),
     } as unknown as Issue;
@@ -71,8 +72,9 @@ describe("AgentOverview", () => {
     expect(markup).toContain("Design Guide");
     expect(markup).toContain("Simplify agent information architecture");
     expect(markup).toContain("PAP-42");
+    expect(markup).toContain("1 in progress");
     expect(markup).toContain('href="/activity/costs?agentId=agent-1"');
-    expect(markup).not.toContain("Run Activity");
+    expect(markup).not.toContain("Work activity");
     expect(markup).not.toContain("Tasks by Status");
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
 import {
   activityLog,
@@ -912,6 +912,63 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
       interactionKind: "ask_user_questions",
       interactionStatus: "expired",
     });
+  });
+
+  it("wakes the maker once when a person's comment expires another agent's card", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const makerId = randomUUID();
+    await db.insert(agents).values(agentRow(companyId, { id: makerId, name: "Ridge" }));
+    const issue = await svc.create(companyId, {
+      title: "Answer Ridge with a comment",
+      description: null,
+      status: "in_review",
+      priority: "medium",
+    });
+    const interactionId = randomUUID();
+    await db.insert(issueThreadInteractions).values({
+      id: interactionId,
+      companyId,
+      issueId: issue.id,
+      kind: "ask_user_questions",
+      status: "pending",
+      continuationPolicy: "wake_assignee",
+      createdByAgentId: makerId,
+      payload: {
+        version: 1,
+        supersedeOnUserComment: true,
+        questions: [{
+          id: "scope",
+          prompt: "Which tone?",
+          selectionMode: "single",
+          options: [{ id: "a", label: "A" }],
+        }],
+      } as never,
+    });
+
+    // Record the wake instead of starting a real run of the maker.
+    const wakeup = vi.fn(async () => ({ id: randomUUID() }));
+    vi.doMock("../services/heartbeat.js", () => ({ heartbeatService: () => ({ wakeup }) }));
+    try {
+      await svc.addComment(issue.id, "Use a calm tone", { userId: "local-board" });
+      await svc.addComment(issue.id, "And keep it short", { userId: "local-board" });
+    } finally {
+      vi.doUnmock("../services/heartbeat.js");
+    }
+
+    // The second comment finds no pending card, so the maker is woken once.
+    expect(wakeup).toHaveBeenCalledTimes(1);
+    expect(wakeup).toHaveBeenCalledWith(
+      makerId,
+      expect.objectContaining({
+        reason: "interaction_expired",
+        idempotencyKey: `interaction:${interactionId}:expired`,
+      }),
+    );
+    const input = (wakeup.mock.calls[0] as unknown[])[1] as {
+      payload: { paperclipAgentMessage: { text: string } };
+    };
+    expect(input.payload.paperclipAgentMessage.text).toContain('Your card "Which tone?"');
+    expect(input.payload.paperclipAgentMessage.text).toContain("replied with a comment");
   });
 
   it("keeps interactions pending when the board concierge adds a comment", async () => {
@@ -4473,6 +4530,42 @@ describeEmbeddedPostgres("issueService blockers and dependency wake readiness", 
     expect(priorityUpdate?.changes).toEqual({
       priority: { from: "medium", to: "high" },
     });
+  });
+
+  it("re-saves blockers that already form a cycle, but refuses a new blocker that makes one", async () => {
+    const companyId = randomUUID();
+    const firstId = randomUUID();
+    const secondId = randomUUID();
+    const thirdId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `C${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(issues).values([
+      { id: firstId, companyId, title: "First", status: "blocked", priority: "medium" },
+      { id: secondId, companyId, title: "Second", status: "blocked", priority: "medium" },
+      { id: thirdId, companyId, title: "Third", status: "todo", priority: "medium" },
+    ]);
+    // A cycle already in the data, as live had on 16 Oct 2026: each blocks the other.
+    await db.insert(issueRelations).values([
+      { companyId, issueId: secondId, relatedIssueId: firstId, type: "blocks" },
+      { companyId, issueId: firstId, relatedIssueId: secondId, type: "blocks" },
+    ]);
+
+    // Startup recovery re-saves a task's existing blockers; that must not fail.
+    const resaved = await svc.update(firstId, { status: "blocked", blockedByIssueIds: [secondId] });
+    expect(resaved?.blockedByIssueIds).toEqual([secondId]);
+
+    // A new blocker that closes a loop is still refused.
+    await svc.update(thirdId, { blockedByIssueIds: [firstId] });
+    await expect(svc.update(secondId, { blockedByIssueIds: [firstId, thirdId] })).rejects.toThrow(
+      "Blocking relations cannot contain cycles",
+    );
+    await expect(svc.update(firstId, { blockedByIssueIds: [secondId, thirdId] })).rejects.toThrow(
+      "Blocking relations cannot contain cycles",
+    );
   });
 
   it("persists blocked-by relations and exposes both blockedBy and blocks summaries", async () => {

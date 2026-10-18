@@ -167,7 +167,9 @@ export const pipelineCaseProjectLinks = pgTable(
 );
 
 // People at a client (or any other case): name, role, phone, email. The
-// client page lists them in position order (GRE-1048).
+// client page lists them in position order (GRE-1048). A person imported from
+// a CRM deal's participants carries its source and CRM person id, so a rerun
+// updates the same row; people added by hand have neither.
 export const pipelineCaseContacts = pgTable(
   "pipeline_case_contacts",
   {
@@ -179,6 +181,8 @@ export const pipelineCaseContacts = pgTable(
     phone: text("phone"),
     email: text("email"),
     position: integer("position").notNull().default(0),
+    source: text("source"),
+    externalId: text("external_id"),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -186,6 +190,9 @@ export const pipelineCaseContacts = pgTable(
   },
   (table) => ({
     companyCaseIdx: index("pipeline_case_contacts_company_case_idx").on(table.companyId, table.caseId),
+    caseSourceExternalUq: uniqueIndex("pipeline_case_contacts_case_source_external_uq")
+      .on(table.caseId, table.source, table.externalId)
+      .where(sql`${table.externalId} is not null`),
   }),
 );
 

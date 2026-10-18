@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   Ban,
+  Check,
   CheckCircle2,
+  ClipboardList,
   Clock,
   Handshake,
   MessageCircleQuestion,
@@ -30,10 +32,11 @@ import { useCompany } from "@/context/CompanyContext";
 import { useToastActions } from "@/context/ToastContext";
 import { useDecisionsFeed, useNeedsMe } from "@/hooks/useDecisionsFeed";
 import { useInboxDismissals } from "@/hooks/useInboxBadge";
-import { inboxSnoozeUntilTomorrow } from "@/lib/inbox";
+import { inboxSnoozeUntilNextWeek, inboxSnoozeUntilTomorrow } from "@/lib/inbox";
 import {
   buildNeededFromYou,
   neededLaterKey,
+  neededListText,
   neededSummary,
   waitedFor,
   withoutPutAway,
@@ -42,7 +45,9 @@ import {
   type NeededItem,
 } from "@/lib/needed-from-you";
 import { queryKeys } from "@/lib/queryKeys";
-import { Link } from "@/lib/router";
+import { Link, useActiveCompanyPrefix } from "@/lib/router";
+import { applyCompanyPrefix } from "@/lib/company-routes";
+import { useCopyAction } from "@/lib/use-copy-action";
 
 /** Rows shown per group before "and N more". */
 export const NEEDED_ROWS_PER_GROUP = 3;
@@ -129,6 +134,29 @@ export function NeededFromYou() {
         title: "Back tomorrow at 08:00",
         body: item.title,
         tone: "info",
+        secondaryAction: {
+          label: "Next week",
+          onClick: () => {
+            snooze(itemKey, inboxSnoozeUntilNextWeek().toISOString());
+            pushToast({
+              id: `needed-later-week-${item.id}`,
+              title: "Back Monday at 08:00",
+              body: item.title,
+              tone: "info",
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  setLaterIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(item.id);
+                    return next;
+                  });
+                  restore(itemKey);
+                },
+              },
+            });
+          },
+        },
         action: {
           label: "Undo",
           onClick: () => {
@@ -145,6 +173,9 @@ export function NeededFromYou() {
     [pushToast, restore, snooze],
   );
 
+  const listCopy = useCopyAction();
+  const companyPrefix = useActiveCompanyPrefix();
+
   if (!selectedCompanyId) {
     return <p className="text-sm text-muted-foreground">Select an organisation first.</p>;
   }
@@ -156,7 +187,20 @@ export function NeededFromYou() {
       <header className="space-y-1" data-tour="needed-summary">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needed from you</p>
         <h1 className="text-xl font-bold">What we need from you</h1>
-        <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups)}</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups)}</p>
+          {groups.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              title="Copy everything here as a list with links, ready to paste"
+              onClick={() => void listCopy.copy(neededListText(groups, (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`))}
+            >
+              {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+            </Button>
+          ) : null}
+        </div>
         {groups.length > 1 ? (
           <nav aria-label="Jump to" className="flex flex-wrap gap-2 pt-2" data-tour="needed-groups">
             {groups.map((group) => {

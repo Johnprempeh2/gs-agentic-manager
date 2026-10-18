@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { NotFoundPage } from "./NotFound";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "@/components/ErrorState";
 
 /**
  * Company-context plugin page. Renders a plugin's `page` slot at
@@ -52,7 +53,12 @@ export function PluginPage() {
     [companies, resolvedCompanyId],
   );
 
-  const { data: contributions } = useQuery({
+  const {
+    data: contributions,
+    error: contributionsError,
+    refetch: refetchContributions,
+    isFetching: contributionsFetching,
+  } = useQuery({
     queryKey: queryKeys.plugins.uiContributions,
     queryFn: () => pluginsApi.listUiContributions(),
     enabled: !!resolvedCompanyId && (!!pluginId || !!pluginRoutePath),
@@ -131,8 +137,19 @@ export function PluginPage() {
     }
     return (
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">Select an organization to view this page.</p>
+        <p className="text-sm text-muted-foreground">Choose an organisation to view this page.</p>
       </div>
+    );
+  }
+
+  if (!contributions && contributionsError) {
+    return (
+      <ErrorState
+        error={contributionsError}
+        title="This plugin page did not load"
+        onRetry={() => void refetchContributions()}
+        retrying={contributionsFetching}
+      />
     );
   }
 

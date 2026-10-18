@@ -1,0 +1,1 @@
+ALTER TABLE "memory_settings" ADD COLUMN "app_sign_in" boolean DEFAULT false NOT NULL;

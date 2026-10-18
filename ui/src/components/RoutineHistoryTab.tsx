@@ -20,6 +20,8 @@ import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { buildLineDiff, type DiffRow } from "../lib/line-diff";
 import { relativeTime } from "../lib/utils";
+import { describeCron } from "../lib/cron-readable";
+import { catchUpPolicyLabel, concurrencyPolicyLabel } from "../lib/routine-run-status";
 import { useToastActions } from "../context/ToastContext";
 import { Button } from "@/components/ui/button";
 import {
@@ -126,8 +128,8 @@ export function RoutineHistoryTab({
       pushToast({
         title: `Restored revision ${restoredFromNumber} as revision ${newNumber}`,
         body: data.secretMaterials.length > 0
-          ? "Trigger enabled state was restored from the snapshot. New webhook secrets are available in the banner above."
-          : "Trigger enabled state was restored from the snapshot.",
+          ? "Each trigger is back on or off as it was in that revision. New trigger secrets are shown above. Save them now."
+          : "Each trigger is back on or off as it was in that revision.",
         tone: "success",
       });
       onRestoreSecretMaterials(data);
@@ -153,7 +155,7 @@ export function RoutineHistoryTab({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to restore revision",
+        title: "Could not restore this version",
         body: error instanceof Error ? error.message : "GS Agentic Manager could not restore the revision.",
         tone: "error",
       });
@@ -553,19 +555,19 @@ function RevisionPreview({
     },
     {
       key: "concurrencyPolicy",
-      label: "Concurrency",
-      value: snapshot.concurrencyPolicy.replaceAll("_", " "),
+      label: "If still running",
+      value: concurrencyPolicyLabel(snapshot.concurrencyPolicy),
       differs: !!currentSnapshot && currentSnapshot.concurrencyPolicy !== snapshot.concurrencyPolicy,
     },
     {
       key: "catchUpPolicy",
-      label: "Catch-up",
-      value: snapshot.catchUpPolicy.replaceAll("_", " "),
+      label: "If a time was missed",
+      value: catchUpPolicyLabel(snapshot.catchUpPolicy),
       differs: !!currentSnapshot && currentSnapshot.catchUpPolicy !== snapshot.catchUpPolicy,
     },
     {
       key: "env",
-      label: "Env",
+      label: "Secrets and settings",
       value: envSummary,
       differs: envDiffers,
     },
@@ -646,7 +648,7 @@ function RevisionPreview({
             {triggers.map((trigger) => (
               <li key={trigger.id} className="py-2 flex flex-wrap items-center gap-2 text-sm">
                 <Badge variant="outline" className="border-border text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-                  {trigger.kind}
+                  {trigger.kind === "schedule" ? "Schedule" : trigger.kind === "webhook" ? "App update" : "API"}
                 </Badge>
                 <span className="font-medium">{trigger.label ?? trigger.kind}</span>
                 <span className="text-xs text-muted-foreground">
@@ -845,7 +847,7 @@ function RoutineRevisionDiffModal({
               Field changes
             </p>
             {fieldChanges.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No structural field changes.</p>
+              <p className="text-sm text-muted-foreground">No settings changed.</p>
             ) : (
               <table className="w-full text-sm border border-border rounded-md overflow-hidden">
                 <thead>
@@ -999,11 +1001,10 @@ function resolveProjectName(projectId: string | null, lookup: ProjectLookup) {
 
 function summarizeTriggerSnapshot(trigger: RoutineRevisionSnapshotTriggerV1): string {
   if (trigger.kind === "schedule") {
-    return [trigger.cronExpression, trigger.timezone].filter(Boolean).join(" · ");
+    return [describeCron(trigger.cronExpression) ?? trigger.cronExpression, trigger.timezone].filter(Boolean).join(" · ");
   }
   if (trigger.kind === "webhook") {
-    const replay = trigger.replayWindowSec != null ? `replay ${trigger.replayWindowSec}s` : "";
-    return [trigger.signingMode, replay].filter(Boolean).join(" · ");
+    return trigger.signingMode ? "Signed requests" : "Another app sends an update";
   }
   return "API";
 }
@@ -1071,8 +1072,8 @@ function computeFieldChanges(
     resolveProjectName(oldRoutine.projectId, projects),
     resolveProjectName(newRoutine.projectId, projects),
   );
-  compareScalar("concurrencyPolicy", "Concurrency", oldRoutine.concurrencyPolicy, newRoutine.concurrencyPolicy);
-  compareScalar("catchUpPolicy", "Catch-up", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
+  compareScalar("concurrencyPolicy", "If still running", oldRoutine.concurrencyPolicy, newRoutine.concurrencyPolicy);
+  compareScalar("catchUpPolicy", "If a time was missed", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
   compareScalar("status", "Status", oldRoutine.status, newRoutine.status);
   if (JSON.stringify(oldRoutine.variables) !== JSON.stringify(newRoutine.variables)) {
     changes.push({

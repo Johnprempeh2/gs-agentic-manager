@@ -111,6 +111,7 @@ vi.mock("../api/instanceSettings", () => ({
 
 vi.mock("../context/ToastContext", () => ({
   useToastActions: () => ({ pushToast: vi.fn() }),
+  useOptionalToastActions: () => ({ pushToast: vi.fn() }),
 }));
 
 vi.mock("../hooks/useProjectOrder", () => ({
@@ -1000,7 +1001,7 @@ describe("IssueProperties", () => {
 
     // Live-run banner + grouped section headers are present.
     expect(container.querySelector("[data-testid='assignee-running-banner']")?.textContent).toContain(
-      "ClaudeCoder is running",
+      "ClaudeCoder is working on this",
     );
     expect(container.textContent).toContain("Agents");
     expect(container.textContent).toContain("Board users");
@@ -2388,7 +2389,7 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("Model lane");
+    expect(container.textContent).not.toContain("Which AI model");
     expect(container.textContent).not.toContain("Codex options");
 
     act(() => root.unmount());
@@ -2428,8 +2429,8 @@ describe("IssueProperties", () => {
     await flush();
     await flush();
 
-    expect(container.textContent).toContain("Override · gpt-5.4 · high");
-    expect(container.textContent).toContain("Model lane");
+    expect(container.textContent).toContain("Custom settings · gpt-5.4 · high");
+    expect(container.textContent).toContain("Which AI model");
 
     // Wait for the adapter-models query to resolve so the model options render.
     let modelButton: HTMLButtonElement | undefined;
@@ -2554,7 +2555,7 @@ describe("IssueProperties", () => {
     await flush();
 
     const primaryLane = Array.from(container.querySelectorAll('button[role="radio"]'))
-      .find((button) => button.textContent?.trim() === "Primary");
+      .find((button) => button.textContent?.trim() === "Agent's usual");
     expect(primaryLane).not.toBeUndefined();
 
     await act(async () => {
@@ -3246,11 +3247,14 @@ describe("IssueProperties", () => {
     const removeButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Remove"));
     expect(removeButton).toBeTruthy();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => {
       removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
+    expect(confirmSpy).toHaveBeenCalled();
+    confirmSpy.mockRestore();
     expect(mockIssuesApi.deleteWatchdog).toHaveBeenCalledWith("issue-1");
     expect(queryClient.getQueryData<Issue>(queryKeys.issues.detail(issue.id))?.watchdog)
       .toBeNull();
@@ -3696,7 +3700,7 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => expect(findRowTrigger(container, "Execution")).toBeDefined());
     act(() => findRowTrigger(container, "Execution")!.click());
     const isolatedOption = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("New isolated workspace"));
+      .find((button) => button.textContent?.includes("A fresh separate copy"));
     act(() => isolatedOption!.click());
 
     expect(onUpdate).toHaveBeenCalledWith({
@@ -3741,7 +3745,7 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => expect(findRowTrigger(container, "Execution")).toBeDefined());
     act(() => findRowTrigger(container, "Execution")!.click());
     const reuseOption = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Reuse existing workspace"));
+      .find((button) => button.textContent?.includes("One already in use"));
     act(() => reuseOption!.click());
 
     await waitForAssertion(() => {

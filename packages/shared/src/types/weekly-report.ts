@@ -41,6 +41,20 @@ export interface WeeklyReportAgentCost {
   cents: number;
 }
 
+/** One stored nightly digest in the week: what all the agents did that day. */
+export interface WeeklyReportDay {
+  /** The UTC day, YYYY-MM-DD. */
+  date: string;
+  tasksCompleted: number;
+  tasksMoved: number;
+  comments: number;
+  runs: number;
+  failures: number;
+  spendCents: number;
+  /** The agent that did the most that day, when any did. */
+  busiestAgent: string | null;
+}
+
 export interface WeeklyReport {
   companyId: string;
   companyName: string;
@@ -66,4 +80,6 @@ export interface WeeklyReport {
   needsYou: { count: number; items: WeeklyReportTask[] };
   /** Spend recorded against each agent in the week, highest first. */
   costs: { totalCents: number; agents: WeeklyReportAgentCost[] };
+  /** The nightly digests stored for the week, oldest day first. Empty until the first night has run. */
+  daily: WeeklyReportDay[];
 }

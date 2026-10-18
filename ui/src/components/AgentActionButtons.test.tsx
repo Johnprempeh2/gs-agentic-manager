@@ -97,6 +97,7 @@ describe("AgentActionButtons", () => {
   let invalidateQueries: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = null;
@@ -147,7 +148,7 @@ describe("AgentActionButtons", () => {
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain("Reset Sessions");
+    expect(document.body.textContent).toContain("Reset sessions");
   });
 
   it("calls clearError and refreshes agent-related queries", async () => {

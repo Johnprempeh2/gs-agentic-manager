@@ -89,7 +89,7 @@ const RUN_ERROR_WORDING: Record<string, RunErrorWording> = {
     next: "Waiting for {owner} to try again",
   },
   workspace_validation_failed: {
-    stopped: "The task's code folder failed its safety check",
+    stopped: "The task's files did not pass a safety check",
     actor: "owner",
     next: "Waiting for the code folder to be repaired",
   },

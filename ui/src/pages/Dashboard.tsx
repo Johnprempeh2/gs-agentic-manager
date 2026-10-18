@@ -21,6 +21,7 @@ import { DashboardHero } from "../components/DashboardHero";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
@@ -34,17 +35,21 @@ import { useLiveAgents } from "../hooks/useLiveAgents";
 import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
-import { Bot, ChevronDown, CircleDot, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
+import { Bot, Check, ChevronDown, CircleDot, ClipboardList, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
+import { useCopyAction } from "@/lib/use-copy-action";
+import { dashboardNumbersText } from "../lib/dashboard-text";
+import { monthPace, monthPaceLine } from "../lib/spend-pace";
 import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 import { DashboardCostCard } from "../components/DashboardCostCard";
+import { DashboardDealsCards } from "../components/DashboardDealsCards";
 import { ErrorState } from "../components/ErrorState";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
@@ -153,17 +158,29 @@ export function Dashboard() {
   // tolerated so one bad agent never blocks the rest, and the refetch below
   // re-renders the banner with whatever remains paused.
   const queryClient = useQueryClient();
+  const toastActions = useOptionalToastActions();
   const resumeImportedAgents = useMutation({
     mutationFn: async () => {
       const targets = derivePausedAgentBanner(agents);
-      if (!targets || targets.kind !== "imported") return;
+      if (!targets || targets.kind !== "imported") return 0;
+      let failed = 0;
       for (const agentId of targets.pausedImportedAgentIds) {
         try {
           await agentsApi.resume(agentId, selectedCompanyId ?? undefined);
         } catch {
           // Leave the agent paused; the banner re-renders with the remainder.
+          failed += 1;
         }
       }
+      return failed;
+    },
+    onSuccess: (failed) => {
+      if (!failed) return;
+      toastActions?.pushToast({
+        title: failed === 1 ? "Could not resume 1 agent" : `Could not resume ${failed} agents`,
+        body: "They are still paused. Open each one from Agents to see why.",
+        tone: "error",
+      });
     },
     onSettled: async () => {
       await Promise.all([
@@ -217,6 +234,7 @@ export function Dashboard() {
     setBreadcrumbs([{ label: "Dashboard" }]);
   }, [setBreadcrumbs]);
 
+  const numbersCopy = useCopyAction();
   const dashboardQueryKey = queryKeys.dashboard(selectedCompanyId!);
   const sharedDashboard = useSharedPollingQuery({
     companyId: selectedCompanyId,
@@ -230,6 +248,8 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(sharedDashboard, data, dashboardUpdatedAt);
+  const spendPace = data ? monthPace(data.costs.monthSpendCents, data.costs.monthBudgetCents) : null;
+  const spendPaceLine = monthPaceLine(spendPace);
 
   const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { owner: true, limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
   const sharedActivity = useSharedPollingQuery({
@@ -238,7 +258,7 @@ export function Dashboard() {
     queryKey: activityQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
+  const { data: activity, dataUpdatedAt: activityUpdatedAt, error: activityError, refetch: refetchActivity } = useQuery({
     queryKey: activityQueryKey,
     // Task updates are filtered to real status changes below, so fetch a margin.
     queryFn: () => activityApi.list(selectedCompanyId!, { action: OWNER_ACTIVITY_ACTIONS, limit: 80 }),
@@ -360,7 +380,7 @@ export function Dashboard() {
 
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.id.slice(0, 8));
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.title);
     for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
     for (const p of projects ?? []) map.set(`project:${p.id}`, p.name);
     return map;
@@ -380,14 +400,14 @@ export function Dashboard() {
       return (
         <EmptyState
           icon={BrandStoneIcon}
-          message="Welcome to GS Agentic Manager. Set up your first organization and agent to get started."
+          message="Welcome to GS Agentic Manager. Set up your first organisation and agent to get started."
           action="Get Started"
           onAction={openOnboarding}
         />
       );
     }
     return (
-      <EmptyState icon={LayoutDashboard} message="Create or select an organization to view the dashboard." />
+      <EmptyState icon={LayoutDashboard} message="Choose an organisation to see its dashboard." />
     );
   }
 
@@ -489,15 +509,15 @@ export function Dashboard() {
             <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
             <div>
               <p className="text-sm font-medium text-red-950 dark:text-red-50">
-                {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
+                {data.budgets.activeIncidents === 1 ? "A spending limit has been reached" : `${data.budgets.activeIncidents} spending limits have been reached`}
               </p>
-              <p className="text-xs text-red-900/70 dark:text-red-100/70">
-                {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
-              </p>
+              {budgetBannerDetail(data.budgets) ? (
+                <p className="text-xs text-red-900/85 dark:text-red-100/70">{budgetBannerDetail(data.budgets)}</p>
+              ) : null}
             </div>
           </div>
           <Link to="/costs" className="text-sm underline underline-offset-2 text-red-900 dark:text-red-100">
-            Open budgets
+            Review spending
           </Link>
         </div>
       ) : null}
@@ -511,66 +531,90 @@ export function Dashboard() {
           onClick={() => setPhoneDetailsOpen((open) => !open)}
           data-testid="dashboard-phone-details-toggle"
         >
-          {phoneDetailsOpen ? "Show less" : "Show runs, numbers and activity"}
+          {phoneDetailsOpen ? "Show less" : "Show recent work, numbers and activity"}
           <ChevronDown className={cn("transition-transform", phoneDetailsOpen && "rotate-180")} />
         </Button>
       ) : null}
 
       {showDetails ? (
         <div id="dashboard-details" className="space-y-6">
-          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
+          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent work" />
 
           {data && (
             <>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy the agents, tasks, spend and approvals numbers, ready to paste into a message"
+                  onClick={() => void numbersCopy.copy(dashboardNumbersText(data))}
+                >
+                  {numbersCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                  {numbersCopy.copied ? "Copied" : numbersCopy.failed ? "Could not copy" : "Copy the numbers"}
+                </Button>
+              </div>
               <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
                 <MetricCard
                   icon={Bot}
                   value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
-                  label="Agents Enabled"
+                  label="Agents switched on"
                   to="/agents"
                   description={
                     <span>
                       {data.agents.running} running{", "}
                       {data.agents.paused} paused{", "}
-                      {data.agents.error} errors
+                      {data.agents.error} {data.agents.error === 1 ? "needs" : "need"} attention
                     </span>
                   }
                 />
                 <MetricCard
                   icon={CircleDot}
                   value={data.tasks.inProgress}
-                  label="Tasks In Progress"
+                  label="Tasks in progress"
                   to="/issues"
                   description={
                     <span>
                       {data.tasks.open} open{", "}
                       {data.tasks.blocked} blocked
+                      {data.tasks.overdue ? (
+                        <span className="text-status-danger" data-testid="dashboard-overdue">
+                          {", "}{data.tasks.overdue} overdue
+                        </span>
+                      ) : null}
                     </span>
                   }
                 />
                 <MetricCard
                   icon={DollarSign}
                   value={formatCents(data.costs.monthSpendCents)}
-                  label="Month Spend"
+                  label="Spent this month"
                   to="/costs"
                   description={
                     <span>
                       {data.costs.monthBudgetCents > 0
                         ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
                         : "Unlimited budget"}
+                      {spendPaceLine ? (
+                        <span
+                          className={cn("block", spendPace?.overBudgetOn ? "text-status-warning-foreground" : undefined)}
+                          data-testid="dashboard-spend-pace"
+                        >
+                          {spendPaceLine}
+                        </span>
+                      ) : null}
                     </span>
                   }
                 />
                 <MetricCard
                   icon={ShieldCheck}
                   value={data.pendingApprovals + data.budgets.pendingApprovals}
-                  label="Pending Approvals"
-                  to="/approvals"
+                  label="Waiting for your approval"
+                  to={data.pendingApprovals === 0 && data.budgets.pendingApprovals > 0 ? "/costs" : "/approvals"}
                   description={
                     <span>
                       {data.budgets.pendingApprovals > 0
-                        ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
-                        : "Awaiting board review"}
+                        ? `Includes ${data.budgets.pendingApprovals} ${data.budgets.pendingApprovals === 1 ? "request" : "requests"} to raise a spending limit, handled on Costs`
+                        : "Waiting for your sign-off"}
                     </span>
                   }
                 />
@@ -580,22 +624,24 @@ export function Dashboard() {
                 <DashboardCostCard companyId={selectedCompanyId!} />
               </div>
 
+              <DashboardDealsCards companyId={selectedCompanyId!} />
+
               <SmokeLabDashboardCard companyId={selectedCompanyId!} />
 
               <div className={cn("gs-stagger grid grid-cols-1 gap-4 sm:grid-cols-2", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-                <ChartCard title="Run Activity" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Work activity" subtitle={chartWindowLabel(companyStart)}>
                   <RunActivityChart activity={data.runActivity} start={companyStart} />
                 </ChartCard>
                 {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
                 {SHOW_TASK_PRIORITY_UI && (
-                  <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(companyStart)}>
+                  <ChartCard title="Tasks by priority" subtitle={chartWindowLabel(companyStart)}>
                     <PriorityChart issues={issues ?? []} start={companyStart} />
                   </ChartCard>
                 )}
-                <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Tasks by status" subtitle={chartWindowLabel(companyStart)}>
                   <IssueStatusChart issues={issues ?? []} start={companyStart} />
                 </ChartCard>
-                <ChartCard title="Success Rate" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Work finished cleanly" subtitle={chartWindowLabel(companyStart)}>
                   <SuccessRateChart activity={data.runActivity} start={companyStart} />
                 </ChartCard>
               </div>
@@ -610,6 +656,14 @@ export function Dashboard() {
 
               <div>
                 {/* Recent Activity */}
+                {activityError && recentActivity.length === 0 && (
+                  <ErrorState
+                    error={activityError}
+                    title="Recent work did not load"
+                    onRetry={() => void refetchActivity()}
+                    compact
+                  />
+                )}
                 {recentActivity.length > 0 && (
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
@@ -639,4 +693,17 @@ export function Dashboard() {
       ) : null}
     </div>
   );
+}
+
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** Plain summary of what a spending limit stopped, leaving out the parts that are zero. */
+function budgetBannerDetail(budgets: { pausedAgents: number; pausedProjects: number; pendingApprovals: number }) {
+  const parts: string[] = [];
+  if (budgets.pausedAgents > 0) parts.push(`${plural(budgets.pausedAgents, "agent", "agents")} paused`);
+  if (budgets.pausedProjects > 0) parts.push(`${plural(budgets.pausedProjects, "project", "projects")} paused`);
+  if (budgets.pendingApprovals > 0) parts.push(`${plural(budgets.pendingApprovals, "request", "requests")} to raise a limit`);
+  return parts.join(" · ");
 }

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { buildAgentMentionHref, type Agent, type AttentionItem, type Issue, type IssueStatus } from "@greatstone/shared";
-import { CheckCircle2, CircleDot } from "lucide-react";
-import { Link, useLocation } from "@/lib/router";
+import { Check, CheckCircle2, CircleDot, ClipboardList } from "lucide-react";
+import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
+import { applyCompanyPrefix } from "@/lib/company-routes";
+import { useCopyAction } from "@/lib/use-copy-action";
+import { Button } from "@/components/ui/button";
+import { myTasksListText } from "../lib/my-tasks-text";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
@@ -89,6 +93,8 @@ export function MyTasks() {
   const [askOpenId, setAskOpenId] = useState<string | null>(null);
   const [discussId, setDiscussId] = useState<string | null>(null);
   const discussOverlay = useMyTasksDiscussOverlay();
+  const companyPrefix = useActiveCompanyPrefix();
+  const listCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "My tasks" }]);
@@ -154,7 +160,13 @@ export function MyTasks() {
   });
 
   // Same query as the sidebar Decisions badge, so the two share one cache entry.
-  const { data: attentionFeed, isLoading: attentionLoading } = useQuery({
+  const {
+    data: attentionFeed,
+    isLoading: attentionLoading,
+    error: attentionError,
+    refetch: refetchAttention,
+    isFetching: attentionFetching,
+  } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
     queryFn: () => attentionApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -294,6 +306,13 @@ export function MyTasks() {
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
     onSuccess: (_issue, { id }) => refreshMyTasks(id),
+    onError: (error) => {
+      pushToast({
+        title: "Could not update the task",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
 
   const setStatus = useMutation({
@@ -509,7 +528,7 @@ export function MyTasks() {
   };
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={CircleDot} message="Select an organization to view your tasks." />;
+    return <EmptyState icon={CircleDot} message="Choose an organisation to view your tasks." />;
   }
   if (isLoading || attentionLoading) {
     return <PageSkeleton variant="list" />;
@@ -538,8 +557,17 @@ export function MyTasks() {
   const page = (
     <div className="min-w-0 flex-1 space-y-6">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
+      {attentionError && (
+        <ErrorState
+          compact
+          error={attentionError}
+          title="Questions and approvals did not load"
+          onRetry={() => void refetchAttention()}
+          retrying={attentionFetching}
+        />
+      )}
 
-      {nothingNeedsYou ? (
+      {nothingNeedsYou && !attentionError ? (
         <EmptyState
           icon={CheckCircle2}
           message="Nothing needs you right now."
@@ -549,6 +577,27 @@ export function MyTasks() {
         />
       ) : (
         <>
+          {listedIssues.length > 0 && (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                title="Copy your tasks as a list with links, grouped by who acts next, ready to paste into a message"
+                onClick={() =>
+                  void listCopy.copy(
+                    myTasksListText(
+                      listedIssues,
+                      (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
+                      (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
+                    ),
+                  )
+                }
+              >
+                {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+              </Button>
+            </div>
+          )}
           {listedIssues.length > 0 && (
             <IssuesList
               issues={listedIssues}

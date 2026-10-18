@@ -13,6 +13,7 @@ import {
   buildBlockedInboxRows,
   formatStoppedAge,
   groupBlockedInboxRows,
+  groupBlockedInboxRowsByRoot,
   sortBlockedInboxRows,
   type BlockedInboxGroupBy,
   type BlockedInboxIssueRow,
@@ -127,8 +128,11 @@ export function BlockedInboxView({
   }, [currentUserId, filteredRows, issueFilters, liveIssueIds, workspaceFilterContext]);
   const sortedRows = useMemo(() => sortBlockedInboxRows(issueFilteredRows, sortBy), [issueFilteredRows, sortBy]);
   const groups = useMemo(
-    () => groupBlockedInboxRows(issueFilteredRows, sortBy),
-    [issueFilteredRows, sortBy],
+    () =>
+      groupBy === "root_blocker"
+        ? groupBlockedInboxRowsByRoot(issueFilteredRows, sortBy)
+        : groupBlockedInboxRows(issueFilteredRows, sortBy),
+    [groupBy, issueFilteredRows, sortBy],
   );
 
   const toggleVariant = (variant: string) => {
@@ -181,7 +185,7 @@ export function BlockedInboxView({
           <div className="flex-1 space-y-1">
             <p className="text-sm font-medium">Couldn't load the Blocked tab.</p>
             <p className="text-xs">
-              Other Inbox tabs still work. {message}
+              Your other Inbox tabs still work. Try again in a moment. ({message})
             </p>
           </div>
           <Button
@@ -225,7 +229,7 @@ export function BlockedInboxView({
           data-testid="blocked-inbox-no-search-results"
           className="block border-border/70 bg-card/40 px-4 py-6 text-center text-sm text-muted-foreground"
         >
-          No stopped items match your search.
+          No blocked tasks match your search. Clear the search to see them all.
         </Card>
       </div>
     );
@@ -254,15 +258,15 @@ export function BlockedInboxView({
           ))
         ) : (
           groups.map((group) => {
-            const isCollapsed = collapsedVariants.has(group.variant);
+            const isCollapsed = collapsedVariants.has(group.key);
             return (
-              <div key={group.variant} data-testid={`blocked-inbox-group-${group.variant}`}>
+              <div key={group.key} data-testid={`blocked-inbox-group-${group.key}`}>
                 <div className={presentation === "task" ? "rounded-lg px-3 sm:pl-0 sm:pr-4" : "px-3 sm:px-4"}>
                   <IssueGroupHeader
                     label={`${group.label} · ${group.rows.length}`}
                     collapsible
                     collapsed={isCollapsed}
-                    onToggle={() => toggleVariant(group.variant)}
+                    onToggle={() => toggleVariant(group.key)}
                   />
                 </div>
                 {!isCollapsed && (
@@ -451,7 +455,7 @@ function BlockedRowDesktopMeta({
   showStatusColumn: boolean;
   showIdentifierColumn: boolean;
 }) {
-  const identifier = row.issue.identifier ?? row.issue.id.slice(0, 8);
+  const identifier = row.issue.identifier ?? "";
   return (
     <span className="hidden shrink-0 items-center gap-2 sm:inline-flex">
       {showStatusColumn ? <StatusIcon status={row.issue.status} blockerAttention={blockerAttention} /> : null}

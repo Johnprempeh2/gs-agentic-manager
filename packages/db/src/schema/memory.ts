@@ -27,6 +27,8 @@ export const memorySettings = pgTable("memory_settings", {
   enabled: boolean("enabled").notNull().default(false),
   /** `extract`: engine pulls facts and entities with a model. `chunks`: stored as-is, no model. */
   retainMode: text("retain_mode").notNull().default("extract"),
+  /** Lets ChatGPT and Claude.ai connect through the memory sign-in page. Off until an owner turns it on. */
+  appSignIn: boolean("app_sign_in").notNull().default(false),
   updatedByUserId: text("updated_by_user_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

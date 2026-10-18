@@ -13,11 +13,14 @@ import {
   EyeOff,
   CopyPlus,
   MessageSquareText,
+  Workflow,
 } from "lucide-react";
 import { useDialogActions } from "../../context/DialogContext";
 import { repeatTaskDefaults } from "../../lib/repeat-task";
 import { issueToUpdate } from "../../lib/issues-text";
 import { useCopyToast } from "../../lib/use-copy-action";
+import { useConfirm } from "@/context/ConfirmContext";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
 import { cn } from "../../lib/utils";
@@ -66,6 +69,8 @@ export type IssueDetailHeaderProps = {
   isMobile: boolean;
   isFromInbox: boolean;
   copyIssueToClipboard: () => Promise<void>;
+  /** Shown in the more menu when the task has subtasks worth reusing. */
+  onSaveAsWorkflow?: (() => void) | null;
   copied: boolean;
   setMobilePropsOpen: Dispatch<SetStateAction<boolean>>;
   canArchiveFromInbox: boolean;
@@ -117,6 +122,7 @@ export function IssueDetailHeader({
   isMobile,
   isFromInbox,
   copyIssueToClipboard,
+  onSaveAsWorkflow,
   copied,
   setMobilePropsOpen,
   canArchiveFromInbox,
@@ -153,6 +159,8 @@ export function IssueDetailHeader({
 }: IssueDetailHeaderProps) {
   const { openNewIssue } = useDialogActions();
   const copyText = useCopyToast();
+  const confirm = useConfirm();
+  const toastActions = useOptionalToastActions();
   const copyAsUpdate = () => {
     const responsible = issue.assigneeAgentId
       ? agentMap.get(issue.assigneeAgentId)?.name
@@ -241,7 +249,7 @@ export function IssueDetailHeader({
           <Link
             to={`/routines/${issue.originId}`}
             className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-(length:--text-nano) font-medium text-violet-600 dark:text-violet-400 shrink-0 hover:bg-violet-500/20 transition-colors"
-            title={`Routine execution from routine ${issue.originId}`}
+            title="Started automatically by a routine"
           >
             <Repeat className="h-3 w-3" />
             Routine
@@ -289,7 +297,7 @@ export function IssueDetailHeader({
             variant="outline"
             data-testid="issue-detail-parked-blocker"
             className="border-amber-500/60 bg-amber-500/15 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
-            title="Blocked by parked work: at least one assigned blocker is in the backlog and will not wake its assignee."
+            title="Waiting on a task that is parked in the backlog, so nobody will start it until its status changes."
           >
             <Flag className="h-3 w-3" />
             Blocked by parked work
@@ -410,7 +418,7 @@ export function IssueDetailHeader({
               size="icon-xs"
               onClick={() => setFileViewerPromptOpen(true)}
               title="Open file... (g f)"
-              aria-label="Open file in this issue"
+              aria-label="Open file in this task"
             >
               <FileCode2 className="h-4 w-4" />
             </Button>
@@ -509,6 +517,18 @@ export function IssueDetailHeader({
                     ) : null}
                   </>
                 ) : null}
+                {onSaveAsWorkflow ? (
+                  <button
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50"
+                    onClick={() => {
+                      onSaveAsWorkflow();
+                      setMoreOpen(false);
+                    }}
+                  >
+                    <Workflow className="h-3 w-3" />
+                    Save as workflow
+                  </button>
+                ) : null}
                 <TaskTreeControlMenuItems
                   scope={treeControlScope}
                   canPause={
@@ -575,12 +595,31 @@ export function IssueDetailHeader({
                 </button>
                 <button
                   className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
-                  onClick={() => {
+                  onClick={async () => {
+                    setMoreOpen(false);
+                    const ok = await confirm({
+                      title: "Hide this task?",
+                      description: "It will no longer show in task lists.",
+                      confirmLabel: "Hide task",
+                      tone: "destructive",
+                    });
+                    if (!ok) return;
                     updateIssue.mutate(
                       { hiddenAt: new Date().toISOString() },
-                      { onSuccess: () => navigate("/issues/all") },
+                      {
+                        onSuccess: () => {
+                          toastActions?.pushToast({
+                            title: "Task hidden",
+                            tone: "success",
+                            action: {
+                              label: "Undo",
+                              onClick: () => updateIssue.mutate({ hiddenAt: null }),
+                            },
+                          });
+                          navigate("/issues/all");
+                        },
+                      },
                     );
-                    setMoreOpen(false);
                   }}
                 >
                   <EyeOff className="h-3 w-3" />

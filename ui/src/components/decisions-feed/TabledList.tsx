@@ -47,12 +47,12 @@ function TabledRow({ companyId, issue }: { companyId: string; issue: Issue }) {
       queryClient.invalidateQueries({ queryKey: ["issues", "detail"] });
     },
   });
-  const label = issue.identifier ?? issue.id.slice(0, 8);
+  const label = issue.identifier ?? issue.title;
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
       <div className="min-w-0">
         <Link to={`/issues/${issue.identifier ?? issue.id}`} className="text-sm font-medium hover:underline">
-          <span className="font-mono text-xs text-muted-foreground">{label}</span> {issue.title}
+          {issue.identifier ? <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span> : null} {issue.title}
         </Link>
         <p className="text-xs text-muted-foreground">{tabledReturnLabel(issue)}</p>
         {bringBack.error ? (

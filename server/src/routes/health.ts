@@ -12,6 +12,11 @@ import {
   writeDevServerRestartRequest,
 } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
+import {
+  describeAgentSecretShieldWarning,
+  resolveAgentSecretShield,
+  type AgentSecretShieldStatus,
+} from "@greatstone/adapter-utils/local-process-sandbox";
 import { getServerInfoSnapshot, type ServerInfoSnapshot } from "../server-info.js";
 import {
   getCloudStackContext,
@@ -100,6 +105,22 @@ function redactedDatabaseBackupHealth(databaseBackup: DatabaseBackupHealthStatus
   };
 }
 
+// GRE-1094: local agent runs fall back to unwrapped when bwrap is missing or
+// broken, so the instance health check is where an operator sees it.
+async function inspectAgentSandboxHealth(): Promise<{
+  status: AgentSecretShieldStatus | { state: "unknown"; reason: string };
+  warnings: { code: "agent_sandbox_unavailable"; message: string }[];
+}> {
+  try {
+    const status = await resolveAgentSecretShield();
+    const message = describeAgentSecretShieldWarning(status);
+    return { status, warnings: message ? [{ code: "agent_sandbox_unavailable", message }] : [] };
+  } catch (error) {
+    logger.warn({ err: error }, "agent sandbox health probe failed");
+    return { status: { state: "unknown", reason: "probe failed" }, warnings: [] };
+  }
+}
+
 function getCloudHealthStatus(env: CloudInstanceEnv) {
   const context = getCloudStackContext(env);
   if (!context) return undefined;
@@ -117,6 +138,28 @@ function getCloudHealthStatus(env: CloudInstanceEnv) {
       },
     } : {}),
   };
+}
+
+
+// PostgreSQL reports a removed shared memory segment as `could not open shared
+// memory segment "/PostgreSQL.N": No such file or directory`. On Linux,
+// systemd-logind removes a user's IPC objects when their last login session
+// ends (RemoveIPC=yes), which took live down on 16 Oct 2026 while the
+// postmaster itself kept accepting connections. Name it, because a restart
+// alone does not stop it happening again.
+export const SHARED_MEMORY_LOST_HINT =
+  "PostgreSQL lost its shared memory, most likely because systemd-logind removed the user's IPC objects "
+  + "when their last session ended (RemoveIPC). Restart GS Agentic Manager, and run "
+  + "`sudo loginctl enable-linger <user>` (or set RemoveIPC=no in /etc/systemd/logind.conf) so it does not recur.";
+
+export function isLostSharedMemoryError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current; depth += 1) {
+    const message = current instanceof Error ? current.message : typeof current === "string" ? current : "";
+    if (/shared memory segment/i.test(message)) return true;
+    current = current instanceof Error ? (current as Error & { cause?: unknown }).cause : undefined;
+  }
+  return false;
 }
 
 export function healthRoutes(
@@ -274,8 +317,7 @@ export function healthRoutes(
     // serverInfo (git SHA + process start) rides on the full-details responses
     // only, so it reaches board/agent actors in authenticated mode or any caller
     // in local_trusted dev — never anonymous authenticated callers. The
-    // enableServerInfoDebugView experimental flag gates the UI surface, not this
-    // already access-controlled field.
+    // account drawer Server section (graduated, GRE-1623) reads it.
     const serverInfo = opts.serverInfo ?? getServerInfoSnapshot();
     // The build commit is a plain git SHA of a public repository — not a
     // secret — so it is surfaced on every response, including the redacted
@@ -324,7 +366,12 @@ export function healthRoutes(
     try {
       await db.execute(sql`SELECT 1`);
     } catch (error) {
-      logger.warn({ err: error }, "Health check database probe failed");
+      const sharedMemoryLost = isLostSharedMemoryError(error);
+      if (sharedMemoryLost) {
+        logger.error({ err: error }, SHARED_MEMORY_LOST_HINT);
+      } else {
+        logger.warn({ err: error }, "Health check database probe failed");
+      }
       // Carry readiness on the unhealthy response too: the seed phase recorded on
       // disk is exactly what tells an operator whether this is a half-finished
       // restore or a database that died after being verified.
@@ -337,6 +384,7 @@ export function healthRoutes(
         serverVersion,
         commit,
         error: "database_unreachable",
+        ...(sharedMemoryLost ? { reason: "shared_memory_lost", hint: SHARED_MEMORY_LOST_HINT } : {}),
         ...(exposeFullDetails ? { serverInfo } : {}),
         ...(workspace ? { workspace } : {}),
         ...(cloud ? { cloud } : {}),
@@ -405,7 +453,9 @@ export function healthRoutes(
     const databaseBackup = opts.databaseBackupHealth
       ? inspectDatabaseBackupHealth(opts.databaseBackupHealth)
       : undefined;
-    const warnings = databaseBackup?.warnings.length ? databaseBackup.warnings : undefined;
+    const agentSandbox = exposeFullDetails ? await inspectAgentSandboxHealth() : null;
+    const allWarnings = [...(databaseBackup?.warnings ?? []), ...(agentSandbox?.warnings ?? [])];
+    const warnings = allWarnings.length ? allWarnings : undefined;
     const nativeRecovery = exposeFullDetails
       ? await nativeRestartRecoverySummary(db).catch((error) => {
           logger.warn({ err: error }, "native recovery health summary failed");
@@ -460,6 +510,7 @@ export function healthRoutes(
       startupRecovery,
       nativeRecovery,
       ...(databaseBackup ? { databaseBackup } : {}),
+      ...(agentSandbox ? { agentSandbox: agentSandbox.status } : {}),
       ...(warnings ? { warnings } : {}),
       ...(devServer ? { devServer } : {}),
       ...(workspaceReadiness ? { workspace: workspaceReadiness } : {}),

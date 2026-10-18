@@ -28,6 +28,7 @@ import type { InspectDatabaseBackupHealthOptions } from "./services/database-bac
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
+import { twoStepRequiredGuard } from "./auth/two-step-requirement.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { boardQuestionRunGuard } from "./middleware/board-question-run-guard.js";
 import {
@@ -35,6 +36,7 @@ import {
   resolvePrivateHostnameAllowSet,
 } from "./middleware/private-hostname-guard.js";
 import { precompressedAssets } from "./middleware/precompressed-assets.js";
+import { securityHeaders } from "./middleware/security-headers.js";
 import {
   applyTrustProxy,
   parseTrustProxyEnv,
@@ -92,6 +94,7 @@ import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
+import { clientAcceptancePublicRoutes } from "./routes/client-acceptance-public.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
 import { organisationRoutes } from "./routes/organisations.js";
 import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
@@ -104,6 +107,7 @@ import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
 import { memoryConnectionRoutes } from "./routes/memory-connections.js";
+import { memoryMcpAuthChallenge, memoryOAuthConsentRoutes, memoryOAuthRoutes } from "./routes/memory-oauth.js";
 import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
@@ -126,6 +130,7 @@ import { blockedWorkRoutes } from "./routes/blocked-work.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { teamScorecardRoutes } from "./routes/team-scorecard.js";
 import { weeklyReportRoutes } from "./routes/weekly-report.js";
+import { agentDailyDigestRoutes } from "./routes/agent-daily-digests.js";
 import { recoveryHoldRoutes } from "./routes/recovery-holds.js";
 import { supportRoutes } from "./routes/support.js";
 import { clientSupportRoutes } from "./routes/client-support.js";
@@ -155,6 +160,8 @@ import { authRoutes } from "./routes/auth.js";
 import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { generatedImageRoutes } from "./routes/generated-images.js";
+import { generatedVideoRoutes } from "./routes/generated-videos.js";
+import { studioLookRoutes } from "./routes/studio-looks.js";
 import { accessRoutes } from "./routes/access.js";
 import { legacyBoardRoutes } from "./routes/legacy-board.js";
 import { memberHandoverRoutes } from "./routes/member-handover.js";
@@ -556,6 +563,7 @@ export async function createApp(
   },
 ) {
   const app = express();
+  app.disable("x-powered-by");
   app.locals.paperclipDb = db;
   const captureRawBody = (
     req: express.Request,
@@ -569,6 +577,7 @@ export async function createApp(
   // Default is unset → Express trusts nothing, which is the only safe choice
   // when the server may be reachable without a known reverse proxy in front.
   applyTrustProxy(app, parseTrustProxyEnv(process.env.TRUST_PROXY));
+  app.use(securityHeaders({ publicBaseUrl: opts.authPublicBaseUrl }));
 
   app.use(
     COMPANY_IMPORT_API_PATH,
@@ -623,8 +632,12 @@ export async function createApp(
   // REPLACES whatever actor the request otherwise resolved to, and only on
   // the one endpoint it authorizes (see the middleware for the contract).
   app.use(cloudControlMiddleware());
-  // A memory_only key reaches organization memory and nothing else (GRE-958).
-  app.use(memoryOnlyKeyGuard());
+  // A memory_only key reaches organization memory and nothing else (GRE-958),
+  // and only while it belongs to an active person's app link (GRE-1081).
+  app.use(memoryOnlyKeyGuard(db));
+  // While an admin requires two-step sign-in, a password-only session reaches
+  // sign-in and two-step setup only (see two-step-requirement.ts).
+  app.use(twoStepRequiredGuard(db));
   app.use("/api/auth", authRoutes(db));
   if (opts.betterAuthHandler) {
     app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
@@ -828,6 +841,8 @@ export async function createApp(
   );
   api.use(assetRoutes(db, opts.storageService));
   api.use(generatedImageRoutes(db, opts.storageService));
+  api.use(generatedVideoRoutes(db, opts.storageService));
+  api.use(studioLookRoutes(db));
   api.use(deliverableRoutes(db, opts.storageService, { publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
@@ -837,9 +852,10 @@ export async function createApp(
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
   const memoryEngine = memoryEngineFromGatewayConfig();
-  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine }));
+  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(clientAcceptancePublicRoutes(db, opts.storageService));
   api.use(crmSyncRoutes(db));
-  api.use(organisationRoutes(db));
+  api.use(organisationRoutes(db, { storage: opts.storageService }));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,
@@ -863,8 +879,26 @@ export async function createApp(
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
   api.use(memoryRoutes(db, { engine: memoryEngine }));
-  api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  // Memory sign-in for ChatGPT and Claude.ai: only with real sign-in, and still
+  // off for each company until an owner turns on app sign-in.
+  const memoryOAuth =
+    opts.deploymentMode === "authenticated"
+      ? {
+          engine: memoryEngine,
+          publicBaseUrl: process.env.GSAM_MEMORY_PUBLIC_URL ?? opts.authPublicBaseUrl ?? null,
+          consentBaseUrl: process.env.GSAM_MEMORY_CONSENT_URL ?? null,
+        }
+      : null;
+  api.use(
+    memoryToolRoutes(db, {
+      engine: memoryEngine,
+      signInChallenge: memoryOAuth?.publicBaseUrl
+        ? (req, res) => memoryMcpAuthChallenge(req, res, memoryOAuth.publicBaseUrl!)
+        : undefined,
+    }),
+  );
   api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
+  if (memoryOAuth) api.use(memoryOAuthConsentRoutes(db, memoryOAuth));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode, storage: opts.storageService }));
@@ -894,6 +928,7 @@ export async function createApp(
   api.use(calendarRoutes(db));
   api.use(teamScorecardRoutes(db));
   api.use(weeklyReportRoutes(db));
+  api.use(agentDailyDigestRoutes(db));
   api.use(recoveryHoldRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(clientSupportRoutes(db, { storage: opts.storageService }));
@@ -1061,6 +1096,7 @@ export async function createApp(
   );
   api.use(legacyBoardRoutes(db, { deploymentMode: opts.deploymentMode }));
   api.use(memberHandoverRoutes(db, { deploymentMode: opts.deploymentMode }));
+  if (memoryOAuth) app.use(memoryOAuthRoutes(db, memoryOAuth));
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

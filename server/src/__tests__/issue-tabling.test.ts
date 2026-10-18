@@ -31,7 +31,6 @@ import {
 } from "../services/issue-tabling.ts";
 import { issueTablingRoutes } from "../routes/issue-tabling.ts";
 import { issueRoutes } from "../routes/issues.ts";
-import { instanceSettingsService } from "../services/instance-settings.ts";
 
 // GRE-262 "Not now": a tabled task gets no wakes of any kind, its cards leave
 // the Decisions feed, and it returns to its previous status on its return date
@@ -439,7 +438,6 @@ describeEmbeddedPostgres("issue tabling (Not now)", () => {
   // GRE-1475: John tabled his Everest chat, and every later message saved but
   // never woke Everest. An owner's chat message now brings the chat back first.
   it("an owner's chat message brings a tabled chat back and queues a run for the agent", async () => {
-    await instanceSettingsService(db).updateExperimental({ enableAgentChat: true });
     const { companyId, agentId, issueId } = await seed({ status: "in_review" });
     await db.update(issues).set({
       conversationAgentId: agentId,

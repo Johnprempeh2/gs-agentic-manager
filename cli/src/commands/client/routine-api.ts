@@ -11,6 +11,7 @@ import {
 interface CompanyOptions extends BaseClientOptions {
   companyId?: string;
   projectId?: string;
+  agent?: string;
 }
 
 interface JsonOptions extends CompanyOptions {
@@ -26,10 +27,14 @@ export function registerRoutineApiCommands(program: Command): void {
       .description("List routines")
       .option("-C, --company-id <id>", "Company ID")
       .option("--project-id <id>", "Filter by project ID")
+      .option("--agent <id>", "Only routines this agent runs; use me for the calling agent")
       .action(async (opts: CompanyOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const query = opts.projectId ? `?${new URLSearchParams({ projectId: opts.projectId }).toString()}` : "";
+          const params = new URLSearchParams();
+          if (opts.projectId) params.set("projectId", opts.projectId);
+          if (opts.agent) params.set("assigneeAgentId", opts.agent);
+          const query = params.size > 0 ? `?${params.toString()}` : "";
           printOutput(await ctx.api.get(`${apiPath`/api/companies/${ctx.companyId}/routines`}${query}`), { json: ctx.json });
         } catch (err) {
           handleCommandError(err);

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { GOAL_STATUSES, GOAL_LEVELS, GOAL_KINDS, GOAL_KIND_LABELS, type GoalKind } from "@greatstone/shared";
 import { useDialog } from "../context/DialogContext";
@@ -29,15 +30,11 @@ import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
-
-const levelLabels: Record<string, string> = {
-  company: "Organization",
-  team: "Team",
-  agent: "Agent",
-  task: "Task",
-};
+import { useConfirm } from "@/context/ConfirmContext";
+import { goalLevelLabel } from "@/lib/goal-level-labels";
 
 export function NewGoalDialog() {
+  const confirm = useConfirm();
   const { newGoalOpen, newGoalDefaults, closeNewGoal } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
@@ -66,11 +63,18 @@ export function NewGoalDialog() {
     enabled: !!selectedCompanyId && newGoalOpen,
   });
 
+  const toastActions = useOptionalToastActions();
   const createGoal = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       goalsApi.create(selectedCompanyId!, data),
-    onSuccess: () => {
+    onSuccess: (goal) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId!) });
+      toastActions?.pushToast({
+        title: "Goal created",
+        body: goal.title,
+        tone: "success",
+        action: { label: "Open goal", href: `/goals/${goal.id}` },
+      });
       reset();
       closeNewGoal();
     },
@@ -78,7 +82,7 @@ export function NewGoalDialog() {
 
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No organization selected");
+      if (!selectedCompanyId) throw new Error("No organisation selected");
       return assetsApi.uploadImage(selectedCompanyId, file, "goals/drafts");
     },
   });
@@ -115,14 +119,26 @@ export function NewGoalDialog() {
 
   const currentParent = (goals ?? []).find((g) => g.id === appliedParentId);
 
+  async function requestClose() {
+    if (title.trim() || description.trim()) {
+      const confirmed = await confirm({
+        title: "Discard this goal?",
+        description: "What you have typed will be lost.",
+        confirmLabel: "Discard goal",
+        cancelLabel: "Keep editing",
+        tone: "destructive",
+      });
+      if (!confirmed) return;
+    }
+    reset();
+    closeNewGoal();
+  }
+
   return (
     <Dialog
       open={newGoalOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          reset();
-          closeNewGoal();
-        }
+        if (!open) void requestClose();
       }}
     >
       <DialogContent
@@ -161,7 +177,7 @@ export function NewGoalDialog() {
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
-              onClick={() => { reset(); closeNewGoal(); }}
+              onClick={() => void requestClose()}
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
@@ -172,7 +188,8 @@ export function NewGoalDialog() {
         <div className="px-4 pt-4 pb-2 shrink-0">
           <input
             className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-subtle-foreground"
-            placeholder="Goal title"
+            placeholder="What do you want to achieve? For example, win 10 new clients"
+            aria-label="Goal title"
             {...noContactAutofill("goal")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -192,7 +209,7 @@ export function NewGoalDialog() {
             ref={descriptionEditorRef}
             value={description}
             onChange={setDescription}
-            placeholder="Add description..."
+            placeholder="Why it matters and how you will know it is done"
             bordered={false}
             contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
             imageUploadHandler={async (file) => {
@@ -232,7 +249,7 @@ export function NewGoalDialog() {
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
                 <Layers className="h-3 w-3 text-muted-foreground" />
-                {levelLabels[level] ?? level}
+                {goalLevelLabel(level)}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-40 p-1" align="start">
@@ -245,7 +262,7 @@ export function NewGoalDialog() {
                   )}
                   onClick={() => { setLevel(l); setLevelOpen(false); }}
                 >
-                  {levelLabels[l] ?? l}
+                  {goalLevelLabel(l)}
                 </button>
               ))}
             </PopoverContent>

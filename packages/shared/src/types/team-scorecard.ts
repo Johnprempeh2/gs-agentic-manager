@@ -20,6 +20,12 @@ export interface TeamScorecardAgent {
   inReview: number;
   stuck: number;
   overdue: number;
+  /**
+   * Median time from start (or creation when work never formally started) to
+   * finish for the tasks finished in the window, in milliseconds. Null when
+   * nothing was finished.
+   */
+  medianFinishMs?: number | null;
   /** Most recent finished tasks, newest first, at most five. */
   recentlyFinished: TeamScorecardTask[];
   /** Stuck tasks, oldest first, at most three. */

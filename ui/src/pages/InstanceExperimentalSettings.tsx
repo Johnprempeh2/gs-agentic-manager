@@ -19,6 +19,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ErrorState } from "@/components/ErrorState";
 import { BoardSecretarySetting } from "@/components/strategy-board/BoardSecretarySetting";
 
 type WorktreeRunExecutionDisplayState =
@@ -224,7 +225,7 @@ export function InstanceExperimentalSettings() {
       if (context?.previousSettings) {
         queryClient.setQueryData(queryKeys.instance.experimentalSettings, context.previousSettings);
       }
-      setActionError(error instanceof Error ? error.message : "Failed to update experimental settings.");
+      setActionError(error instanceof Error ? error.message : "Could not save experimental settings.");
     },
   });
 
@@ -234,11 +235,12 @@ export function InstanceExperimentalSettings() {
 
   if (experimentalQuery.error) {
     return (
-      <div className="text-sm text-destructive">
-        {experimentalQuery.error instanceof Error
-          ? experimentalQuery.error.message
-          : "Failed to load experimental settings."}
-      </div>
+      <ErrorState
+        error={experimentalQuery.error}
+        title="Experimental settings did not load"
+        onRetry={() => void experimentalQuery.refetch()}
+        retrying={experimentalQuery.isFetching}
+      />
     );
   }
 
@@ -253,47 +255,23 @@ export function InstanceExperimentalSettings() {
     experimentalQuery.data,
     getWorktreeInstanceId(),
   );
-  const enableEnvironments = experimentalQuery.data?.enableEnvironments === true;
-  const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
   const enableIsolatedWorkspacesByDefault =
     experimentalQuery.data?.enableIsolatedWorkspacesByDefault === true;
   // Streamlined left navigation is now the standard sidebar (PAP-12472); the
   // experimental opt-out was retired, so it no longer surfaces a toggle here.
-  const enableConferenceRoomChat = experimentalQuery.data?.enableConferenceRoomChat === true;
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
-  const enableIssuePlanDecompositions =
-    experimentalQuery.data?.enableIssuePlanDecompositions === true;
-  const enableExperimentalFileViewer =
-    experimentalQuery.data?.enableExperimentalFileViewer === true;
-  const enableExternalObjects = experimentalQuery.data?.enableExternalObjects === true;
-  const enableBuiltInAgents = experimentalQuery.data?.enableBuiltInAgents === true;
-  const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
-  const enableSummaries = experimentalQuery.data?.enableSummaries === true;
-  const enableStatusCards = experimentalQuery.data?.enableStatusCards === true;
   const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
   const enableIntelligence = experimentalQuery.data?.enableIntelligence === true;
-  const summariesManaged = managedKeys.enableSummaries?.managed === true;
-  const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
-  const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
-  const summariesRequiredByManagedStatusCards = statusCardsManaged && enableStatusCards;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
-  const enableCases = experimentalQuery.data?.enableCases === true;
   const enableDeepDive = experimentalQuery.data?.enableDeepDive === true;
-  const casesManaged = managedKeys.enableCases?.managed === true;
-  const deepDiveManaged = managedKeys.enableDeepDive?.managed === true;
-  const deepDiveBlockedByManagedCases = casesManaged && !enableCases;
-  const casesRequiredByManagedDeepDive = deepDiveManaged && enableDeepDive;
   // GRE-1382: the Board add-on needs the Strategy module.
   const enableStrategy = experimentalQuery.data?.enableStrategy === true;
   const enableStrategyBoard = experimentalQuery.data?.enableStrategyBoard === true;
   const boardBlockedByManagedStrategy = managedKeys.enableStrategy?.managed === true && !enableStrategy;
   const strategyRequiredByManagedBoard = managedKeys.enableStrategyBoard?.managed === true && enableStrategyBoard;
-  const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
   const enablePaperclipDeveloperMode =
     experimentalQuery.data?.enablePaperclipDeveloperMode === true;
-  const enableSimplifiedEnglishInteractions =
-    experimentalQuery.data?.enableSimplifiedEnglishInteractions === true;
   const enableFirstTaskPlanProposal =
     experimentalQuery.data?.enableFirstTaskPlanProposal === true;
   const enableSmokeLab = experimentalQuery.data?.enableSmokeLab === true;
@@ -305,9 +283,7 @@ export function InstanceExperimentalSettings() {
     "autoRestartDevServerWhenIdle",
     "enableManagedSandboxOnly",
     "enablePaperclipDeveloperMode",
-    "enableServerInfoDebugView",
     "enableSmokeLab",
-    "enableIssuePlanDecompositions",
   ] satisfies InstanceFeatureKey[]).some(isVisible);
   const showLegacySection = isVisible("enableClassicTaskInterface") || isVisible("enableGoalsSidebarLink");
   return (
@@ -356,28 +332,7 @@ export function InstanceExperimentalSettings() {
           </p>
         </div>
 
-        <ExperimentalToggleCard
-          title="Agent Chat"
-          description="Talk to each agent in one ongoing conversation. Clarify goals and create tasks for execution."
-          footnote="Turning this off preserves conversations and lets active runs finish, but prevents new messages."
-          checked={experimentalQuery.data?.enableAgentChat ?? false}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableAgentChat: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableAgentChat"
-          managed={managedKeys.enableAgentChat}
-          ariaLabel="Toggle agent chat experimental setting"
-        />
 
-        <ExperimentalToggleCard
-          title="Beta skills"
-          description="Allow agents to pin beta releases of the GS Agentic Manager core skill. Disabling this returns every agent to the default live skill without removing saved pins."
-          checked={enableBetaSkills}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableBetaSkills: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableBetaSkills"
-          managed={managedKeys.enableBetaSkills}
-          ariaLabel="Toggle beta skills experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Board control panel"
@@ -403,113 +358,23 @@ export function InstanceExperimentalSettings() {
           />
         ) : null}
 
-        <ExperimentalToggleCard
-          title="Built-in Agents"
-          description="Show GS Agentic Manager-managed built-in agent surfaces, including built-in roster badges, the Built-in agents tab, and built-in agent setup controls."
-          checked={enableBuiltInAgents}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableBuiltInAgents: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableBuiltInAgents"
-          managed={managedKeys.enableBuiltInAgents}
-          ariaLabel="Toggle built-in agents experimental setting"
-        />
 
-        <ExperimentalToggleCard
-          title="Cases"
-          description="Durable work products (blog posts, tweet storms…) that tasks create and iterate on. Adds the Cases tab and the agent case API."
-          footnote="Turning Cases off hides the tab and blocks the case API; existing case data is kept. Deep Dive requires Cases, so turning Cases off also turns Deep Dive off."
-          checked={enableCases}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked || !enableDeepDive
-                ? { enableCases: checked }
-                : { enableCases: false, enableDeepDive: false },
-            )
-          }
-          disabled={toggleMutation.isPending || casesRequiredByManagedDeepDive}
-          settingKey="enableCases"
-          managed={managedKeys.enableCases}
-          ariaLabel="Toggle cases experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="Chat connectors"
-          description="Connect agents to Slack, GitHub, Discord, Microsoft Teams, and Telegram conversations."
-          footnote="Turning this off hides chat setup, channels, and connected-task controls. Existing chat connections keep running. GitHub and other tool connectors stay available."
-          checked={enableChatConnectors}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableChatConnectors: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableChatConnectors"
-          managed={managedKeys.enableChatConnectors}
-          ariaLabel="Toggle chat connectors experimental setting"
-        />
-
-        {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
-        <ExperimentalToggleCard
-          title="Conference Room Chat"
-          description="Adds a Conference Room (one chat where you and your whole team work together) plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
-          checked={enableConferenceRoomChat}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableConferenceRoomChat: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableConferenceRoomChat"
-          managed={managedKeys.enableConferenceRoomChat}
-          ariaLabel="Toggle conference room chat experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Deep Dive"
           description="Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with status, depth and visibility for each stream. Adds the Deep Dive page."
-          footnote="Turning Deep Dive on also turns Cases on. Turning it off hides the page; the deep dive cases are kept."
+          footnote="Turning it off hides the page; the deep dive cases are kept."
           checked={enableDeepDive}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked
-                ? { enableCases: true, enableDeepDive: true }
-                : { enableDeepDive: false },
-            )
-          }
-          disabled={toggleMutation.isPending || deepDiveBlockedByManagedCases}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableDeepDive: checked })}
+          disabled={toggleMutation.isPending}
           settingKey="enableDeepDive"
           managed={managedKeys.enableDeepDive}
           ariaLabel="Toggle deep dive experimental setting"
         />
 
         <ExperimentalToggleCard
-          title="Enable Environments"
-          description="Show environment management in company settings and allow project and agent environment assignment controls."
-          checked={enableEnvironments}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableEnvironments: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableEnvironments"
-          managed={managedKeys.enableEnvironments}
-          ariaLabel="Toggle environments experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="Enable External Objects"
-          description="Detect external URLs in issues and show resolved status for pull requests, tickets, and other referenced work objects."
-          checked={enableExternalObjects}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableExternalObjects: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableExternalObjects"
-          managed={managedKeys.enableExternalObjects}
-          ariaLabel="Toggle external objects experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="Experimental File Viewer"
-          description="Show task detail controls for browsing and previewing workspace files relative to a task."
-          checked={enableExperimentalFileViewer}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableExperimentalFileViewer: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableExperimentalFileViewer"
-          managed={managedKeys.enableExperimentalFileViewer}
-          ariaLabel="Toggle experimental file viewer setting"
-        />
-
-        <ExperimentalToggleCard
           title="First task: propose with a plan document"
-          description="When the user's first request is a single task, the chief of staff writes a short plan document and a checkbox card instead of a one-card confirmation. Applies to organizations created after the toggle is flipped."
+          description="When the user's first request is a single task, the chief of staff writes a short plan document and a checkbox card instead of a one-card confirmation. Applies to organisations created after this is switched on."
           checked={enableFirstTaskPlanProposal}
           onCheckedChange={(checked) =>
             toggleMutation.mutate({ enableFirstTaskPlanProposal: checked })
@@ -532,48 +397,7 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle intelligence experimental setting"
         />
 
-        <ExperimentalToggleCard
-          title="Memory connectors"
-          description="Connect Mem0, Zep, Supermemory, Cognee, and Honcho for long-term memory and context."
-          footnote="Turning this off hides setup for these connectors. Existing connections keep running."
-          checked={experimentalQuery.data?.enableMemoryConnectors === true}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableMemoryConnectors: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableMemoryConnectors"
-          managed={managedKeys.enableMemoryConnectors}
-          ariaLabel="Toggle memory connectors experimental setting"
-        />
 
-        <ExperimentalToggleCard
-          title="Simplified English Interactions"
-          description="Instruct agents to write user interactions (plan confirmations, questions, suggested tasks, checkbox prompts) in ASD-STE100 Simplified Technical English, with brief context on what information the decision needs and what happens for each choice."
-          checked={enableSimplifiedEnglishInteractions}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate({ enableSimplifiedEnglishInteractions: checked })
-          }
-          disabled={toggleMutation.isPending}
-          settingKey="enableSimplifiedEnglishInteractions"
-          managed={managedKeys.enableSimplifiedEnglishInteractions}
-          ariaLabel="Toggle simplified english interactions experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="Status Cards"
-          description="Enable the experimental shared status-card board and its gated API. Existing card data is kept when this is disabled."
-          footnote="Enabling Status Cards also enables Summaries."
-          checked={enableStatusCards}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked
-                ? { enableSummaries: true, enableStatusCards: true }
-                : { enableStatusCards: false },
-            )
-          }
-          disabled={toggleMutation.isPending || statusCardsBlockedByManagedSummaries}
-          settingKey="enableStatusCards"
-          managed={managedKeys.enableStatusCards}
-          ariaLabel="Toggle status cards experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Strategy"
@@ -593,24 +417,6 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle strategy setting"
         />
 
-
-        <ExperimentalToggleCard
-          title="Summaries"
-          description="Show Summarizer-generated status slots on project and workspace pages, with on-demand refresh and revision history. Existing summary data is kept when this is disabled."
-          footnote="Status Cards requires Summaries. Disabling Summaries also disables Status Cards."
-          checked={enableSummaries}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked || !enableStatusCards
-                ? { enableSummaries: checked }
-                : { enableSummaries: false, enableStatusCards: false },
-            )
-          }
-          disabled={toggleMutation.isPending || summariesRequiredByManagedStatusCards}
-          settingKey="enableSummaries"
-          managed={managedKeys.enableSummaries}
-          ariaLabel="Toggle summaries experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Team Chat"
@@ -758,19 +564,6 @@ export function InstanceExperimentalSettings() {
           ) : null}
 
           <ExperimentalToggleCard
-            title="Server Info Debug View"
-            description='Show a "Server" section in the account drawer with the current server restart time and running commit.'
-            checked={enableServerInfoDebugView}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableServerInfoDebugView: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableServerInfoDebugView"
-            managed={managedKeys.enableServerInfoDebugView}
-            ariaLabel="Toggle server info debug view experimental setting"
-          />
-
-          <ExperimentalToggleCard
             title="Smoke Lab"
             description='Add a "Smoke Lab" tab under Apps → Developer and an "Integration smoke" card on the dashboard for exercising every integration path against deterministic local fixtures (fake OAuth provider + loopback MCP servers). Private (non-public) deployments only.'
             checked={enableSmokeLab}
@@ -781,18 +574,6 @@ export function InstanceExperimentalSettings() {
             ariaLabel="Toggle smoke lab experimental setting"
           />
 
-          <ExperimentalToggleCard
-            title="Task Plan Decomposition"
-            description="Show accepted-plan decomposition history on task detail pages. Intended for debugging and validating subtask creation behavior while the presentation is still being refined."
-            checked={enableIssuePlanDecompositions}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableIssuePlanDecompositions: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableIssuePlanDecompositions"
-            managed={managedKeys.enableIssuePlanDecompositions}
-            ariaLabel="Toggle task plan decomposition panel experimental setting"
-          />
         </section>
       ) : null}
 

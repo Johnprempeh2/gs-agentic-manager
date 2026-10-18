@@ -12,6 +12,8 @@ import {
   typeLabel,
 } from "./ApprovalPayload";
 import { timeAgo } from "../lib/timeAgo";
+import { waitingLabel } from "../lib/approval-wait";
+import { approvalStatusLabel } from "../lib/approval-status";
 import type { Approval, Agent } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -84,6 +86,9 @@ export function ApprovalCard({
                 </h3>
                 <p className="text-xs leading-5 text-muted-foreground">
                   Approval request created {timeAgo(approval.createdAt)}
+                  {waitingLabel(approval) ? (
+                    <span className="font-medium text-foreground"> · {waitingLabel(approval)}</span>
+                  ) : null}
                 </p>
               </div>
             </div>
@@ -92,7 +97,7 @@ export function ApprovalCard({
         <div className="shrink-0">
           <div className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/80 px-2.5 py-1 text-xs text-muted-foreground">
             {statusIcon(approval.status)}
-            <span className="capitalize">{approval.status.replace(/_/g, " ")}</span>
+            <span>{approvalStatusLabel(approval.status)}</span>
           </div>
         </div>
       </div>

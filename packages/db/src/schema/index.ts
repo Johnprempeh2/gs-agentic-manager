@@ -2,7 +2,7 @@ export { companies } from "./companies.js";
 export { companyLogos } from "./company_logos.js";
 export { companyTransferRuns } from "./company_transfer_runs.js";
 export { companyOnboardingSeeds } from "./company_onboarding_seeds.js";
-export { authUsers, authSessions, authAccounts, authVerifications } from "./auth.js";
+export { authUsers, authSessions, authAccounts, authVerifications, authTwoFactors, authSignInLockouts, authSignInEvents } from "./auth.js";
 export { instanceSettings } from "./instance_settings.js";
 export { instanceUserRoles } from "./instance_user_roles.js";
 export { userSidebarPreferences } from "./user_sidebar_preferences.js";
@@ -21,6 +21,8 @@ export { invites } from "./invites.js";
 export { joinRequests } from "./join_requests.js";
 export { budgetPolicies } from "./budget_policies.js";
 export { budgetIncidents } from "./budget_incidents.js";
+export { budgetAuthorities } from "./budget_authorities.js";
+export { budgetTopUps } from "./budget_top_ups.js";
 export { agentConfigRevisions } from "./agent_config_revisions.js";
 export { agentApiKeys } from "./agent_api_keys.js";
 export { agentRuntimeState } from "./agent_runtime_state.js";
@@ -94,6 +96,7 @@ export {
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export { clientAcceptanceLinks } from "./client_acceptance_links.js";
 export {
   crmSyncBindings,
   crmSyncFieldMaps,
@@ -102,7 +105,10 @@ export {
   crmSyncEvents,
   type CrmSyncStoredValue,
 } from "./crm_sync.js";
-export { organisations, organisationContacts } from "./organisations.js";
+export { organisations, organisationContacts, type CrmRecordField } from "./organisations.js";
+export { crmTimelineEntries } from "./crm_timeline.js";
+export { crmProducts, crmDealProducts, type CrmProductPrice, type CrmProductField } from "./crm_products.js";
+export { crmFiles } from "./crm_files.js";
 export { inboundTaskHooks } from "./inbound_task_hooks.js";
 export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks.js";
 export { calendarFeeds } from "./calendar_feeds.js";
@@ -142,7 +148,10 @@ export {
 export { feedbackExports } from "./feedback_exports.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
+export { assetTexts } from "./asset_texts.js";
 export { generatedImages } from "./generated_images.js";
+export { generatedVideos } from "./generated_videos.js";
+export { studioLooks } from "./studio_looks.js";
 export { issueAttachments } from "./issue_attachments.js";
 export { documents } from "./documents.js";
 export { documentRevisions } from "./document_revisions.js";
@@ -241,7 +250,7 @@ export { aiProviderDefaults } from "./ai_provider_defaults.js";
 export * from "./email.js";
 export { announcementDismissals, announcementPublications } from "./announcement_dismissals.js";
 export { userTourDismissals } from "./user_tour_dismissals.js";
-export { pushSubscriptions, pushNotifiedDecisions } from "./push_subscriptions.js";
+export { pushSubscriptions, pushNotifiedDecisions, pushNotificationLog } from "./push_subscriptions.js";
 export { notificationPreferences } from "./notification_preferences.js";
 export * from "./support.js";
 export {
@@ -263,3 +272,4 @@ export { clientSupportTickets, clientSupportReplies, clientSupportAttachments } 
 export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";
 export { billingAccounts, billingInvoices } from "./billing_accounts.js";
+export { agentDailyDigests } from "./agent_daily_digests.js";

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { boolean, index, integer, pgTable, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 
@@ -15,6 +16,13 @@ export const budgetPolicies = pgTable(
     hardStopEnabled: boolean("hard_stop_enabled").notNull().default(true),
     notifyEnabled: boolean("notify_enabled").notNull().default(true),
     isActive: boolean("is_active").notNull().default(true),
+    // A dated change (GRE-1363): `pendingAmount` replaces `amount` from
+    // `pendingEffectiveFrom`. Enforcement reads it as soon as it is due; the
+    // budget sweep then writes it into `amount` and resumes or stops the scope.
+    pendingAmount: integer("pending_amount"),
+    pendingEffectiveFrom: timestamp("pending_effective_from", { withTimezone: true }),
+    pendingReason: text("pending_reason"),
+    pendingRequestedByUserId: text("pending_requested_by_user_id"),
     createdByUserId: text("created_by_user_id"),
     updatedByUserId: text("updated_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -32,6 +40,9 @@ export const budgetPolicies = pgTable(
       table.windowKind,
       table.metric,
     ),
+    pendingEffectiveFromIdx: index("budget_policies_pending_effective_from_idx")
+      .on(table.pendingEffectiveFrom)
+      .where(sql`${table.pendingEffectiveFrom} is not null`),
     companyScopeMetricUniqueIdx: uniqueIndex("budget_policies_company_scope_metric_unique_idx").on(
       table.companyId,
       table.scopeType,

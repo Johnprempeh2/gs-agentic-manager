@@ -163,7 +163,7 @@ export function TokensPanel({
       pushToast({ title: "Copied", body: "Access token", tone: "success" });
     } catch (error) {
       pushToast({
-        title: "Copy failed",
+        title: "Could not copy",
         body: error instanceof Error ? error.message : "Clipboard access is unavailable.",
         tone: "error",
       });

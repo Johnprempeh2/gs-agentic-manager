@@ -25,6 +25,7 @@ import type {
   WorkspaceFileListMode,
   WorkspaceFileSelector,
 } from "@greatstone/shared";
+import { ErrorState } from "@/components/ErrorState";
 
 type BrowserSource = "current" | "other";
 
@@ -88,14 +89,14 @@ export function describeUnavailable(reason: string): { title: string; body: stri
     return {
       icon: <FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />,
       title: "No workspace yet",
-      body: "This issue does not have a workspace to browse. Files appear here once a run creates one.",
+      body: "This task has no files yet. They appear once an agent starts work on it.",
     };
   }
   if (lower.includes("archiv") || lower.includes("cleaned") || lower.includes("unavailable")) {
     return {
       icon: <FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />,
       title: "Workspace is no longer available",
-      body: "The isolated worktree for this issue has been cleaned up, so files cannot be previewed.",
+      body: "This task's work area has been cleared, so its files can no longer be opened.",
     };
   }
   return {
@@ -836,7 +837,7 @@ export function WorkspaceFileBrowser({
 
   const announcement = useMemo(() => {
     if (listQuery.isFetching) return "Loading workspace files…";
-    if (listQuery.isError) return "Unable to load workspace files.";
+    if (listQuery.isError) return "Could not load the files.";
     if (data?.state === "unavailable") return describeUnavailable(data.unavailableReason ?? "").title;
     if (items.length === 0) return "No matching files.";
     return `${items.length} item${items.length === 1 ? "" : "s"} found.`;
@@ -987,8 +988,8 @@ export function WorkspaceFileBrowser({
     body = (
       <StateMessage
         icon={<FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />}
-        title="No organization selected"
-        body="Choose an organization before browsing another project workspace."
+        title="No organisation selected"
+        body="Choose an organisation to browse another project's files."
       />
     );
   } else if (source === "other" && projectsQuery.isFetching && projectsWithWorkspaces.length === 0) {
@@ -999,12 +1000,22 @@ export function WorkspaceFileBrowser({
         body="Registered workspaces will appear here."
       />
     );
+  } else if (source === "other" && projectsQuery.isError && projectsWithWorkspaces.length === 0) {
+    body = (
+      <ErrorState
+        compact
+        error={projectsQuery.error}
+        title="Could not load projects"
+        onRetry={() => void projectsQuery.refetch()}
+        retrying={projectsQuery.isFetching}
+      />
+    );
   } else if (source === "other" && !canListFiles) {
     body = (
       <StateMessage
         icon={<FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />}
         title="No project workspaces"
-        body="No same-organization project has a registered workspace to browse."
+        body="No other project here has files to browse."
       />
     );
   } else if (listQuery.isFetching && !data) {
@@ -1037,8 +1048,8 @@ export function WorkspaceFileBrowser({
           changedFilesTemporarilyUnavailable
             ? "GS Agentic Manager is limiting workspace scans to keep the server responsive. Try again in a moment."
             : status === 404
-            ? "Workspace browsing isn't available for this issue."
-            : "Something went wrong loading workspace files."
+            ? "Files can't be browsed for this task."
+            : "We could not load the files."
         }
         actions={changedFilesTemporarilyUnavailable ? (
           <Button

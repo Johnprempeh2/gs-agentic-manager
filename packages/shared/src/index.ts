@@ -298,6 +298,7 @@ export type {
   NeedsMe,
   NeedsMeTask,
   NeedsMeOverdueWait,
+  NeedsMeExpiredCard,
 } from "./types/decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./types/decisions-feed.js";
 export type {
@@ -529,6 +530,8 @@ export {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   WORKSPACE_BRANCH_ROUTINE_VARIABLE,
   ADAPTER_AGNOSTIC_KEYS,
+  AGENT_ACCESS_CONFIG_PATH_PREFIX,
+  pickAgentAccessGrants,
   AGENT_ICON_NAMES,
   PROJECT_ICON_NAMES,
   ISSUE_STATUSES,
@@ -550,6 +553,7 @@ export {
   ISSUE_COMMENT_PRESENTATION_DENSITIES,
   clampIssueRequestDepth,
   ISSUE_THREAD_INTERACTION_KINDS,
+  AGENT_QUESTION_MAX_OPEN_PER_ISSUE,
   ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES,
   ISSUE_THREAD_INTERACTION_LEGACY_RESOLVER_POLICY_ALIASES,
   ISSUE_THREAD_INTERACTION_RESOLVER_POLICIES,
@@ -652,6 +656,7 @@ export {
   BUDGET_METRICS,
   BUDGET_WINDOW_KINDS,
   DEFAULT_BUDGET_WARN_PERCENT,
+  TOP_UP_APPROVAL_RULES,
   BUDGET_THRESHOLD_TYPES,
   BUDGET_INCIDENT_STATUSES,
   BUDGET_INCIDENT_RESOLUTION_ACTIONS,
@@ -847,6 +852,7 @@ export {
   type BudgetScopeType,
   type BudgetMetric,
   type BudgetWindowKind,
+  type TopUpApprovalRule,
   type BudgetThresholdType,
   type BudgetIncidentStatus,
   type BudgetIncidentResolutionAction,
@@ -1142,9 +1148,26 @@ export type {
   CompanySearchFilterOptionCounts,
   CompanySearchHighlight,
   CompanySearchArtifactSummary,
+  CompanySearchFileSummary,
+  CompanySearchRecordKind,
+  CompanySearchRecordSummary,
   CompanySearchIssueFilterKey,
   CompanySearchIssueSummary,
   CompanySearchResponse,
+  CompanyQuietClient,
+  CompanyQuietClientsResponse,
+  CompanyClientActivity,
+  CompanyRecentClientActivityResponse,
+  CompanyClientBrief,
+  CompanyClientBriefResponse,
+  CompanyClosingDeal,
+  CompanyClosingDealsResponse,
+  CompanyPipelineDeal,
+  CompanyPipelineStageSummary,
+  CompanyPipelineSummaryResponse,
+  CompanyClosedDeal,
+  CompanyClosedDealsGroup,
+  CompanyWonLostResponse,
   CompanySearchResult,
   CompanySearchResultType,
   CompanySearchScope,
@@ -1361,6 +1384,8 @@ export type {
   RequestConfirmationConnectionAuthorizationPayload,
   ConnectionIntentPhase,
   ConnectionIntentPayload,
+  AskAgentPayload,
+  AskAgentResult,
   ConnectionIntentResult,
   RequestConfirmationSecretProposalPayload,
   RequestConfirmationSecretProposalResult,
@@ -1389,6 +1414,7 @@ export type {
   RequestItemVerdictsInteraction,
   RequestDraftReviewInteraction,
   ConnectionIntentInteraction,
+  AskAgentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
   IssueThreadInteractionResult,
@@ -1451,6 +1477,7 @@ export type {
   BudgetOverview,
   BudgetPolicyUpsertInput,
   BudgetIncidentResolutionInput,
+  BudgetAuthority,
   CostEvent,
   CostSummary,
   IssueCostSummary,
@@ -1461,6 +1488,7 @@ export type {
   CostByAgentModel,
   CostWindowSpendRow,
   CostByProject,
+  CostByBillingCode,
   CompanySubscription,
   DetectedSubscriptionProvider,
   CompanySubscriptionsResult,
@@ -1855,6 +1883,7 @@ export {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
   COMPANY_SEARCH_SCOPES,
+  COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SORTS,
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
 } from "./types/index.js";
@@ -2010,6 +2039,8 @@ export {
   TEAM_CATALOG_FILTERS,
   type TeamCatalogAddMode,
   type TeamCatalogFilter,
+  BUDGET_HARD_STOP_MODES,
+  type BudgetHardStopMode,
 } from "./types/instance.js";
 
 export type {
@@ -2208,6 +2239,7 @@ export {
   createAcceptedPlanDecompositionSchema,
   resolveCreateIssueStatusDefault,
   createIssueLabelSchema,
+  updateIssueLabelSchema,
   upsertIssueWatchdogSchema,
   issueBlockedInboxAttentionSchema,
   issueBlockedInboxIssueRefSchema,
@@ -2232,6 +2264,10 @@ export {
   issueThreadInteractionStatusSchema,
   issueThreadInteractionKindSchema,
   issueThreadInteractionContinuationPolicySchema,
+  askAgentPayloadSchema,
+  askAgentResultSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   connectionIntentPhaseSchema,
   connectionIntentPayloadSchema,
   connectionIntentResultSchema,
@@ -2328,6 +2364,7 @@ export {
   type CreateChildIssue,
   type CreateAcceptedPlanDecomposition,
   type CreateIssueLabel,
+  type UpdateIssueLabel,
   type UpdateIssue,
   type BlockedDependentsHandoff,
   type StalledReviewDecision,
@@ -2335,6 +2372,8 @@ export {
   type CheckoutIssue,
   type AddIssueComment,
   type CreateIssueThreadInteraction,
+  type CreateAgentQuestion,
+  type AnswerAgentQuestion,
   type AcceptIssueThreadInteraction,
   type RejectIssueThreadInteraction,
   type CancelIssueThreadInteraction,
@@ -2396,6 +2435,8 @@ export {
   createApprovalSchema,
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
+  updateBudgetAuthoritySchema,
+  type UpdateBudgetAuthority,
   resolveApprovalSchema,
   requestApprovalRevisionSchema,
   resubmitApprovalSchema,
@@ -3092,6 +3133,7 @@ export { EXECUTION_RECONCILIATION_CAUSES, requiresExecutionReconciliation } from
 
 export * from "./agent-appearance.js";
 export * from "./ai-connections.js";
+export * from "./spending-authority.js";
 export * from "./member-handover.js";
 export * from "./types/email.js";
 export * from "./validators/email.js";
@@ -3116,6 +3158,9 @@ export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorksp
 
 export * from "./deep-dive.js";
 export * from "./image-generation.js";
+export * from "./studio/camera.js";
+export * from "./studio/looks.js";
+export * from "./video-generation.js";
 export {
   AGENT_TEAM_COLORS,
   addAgentTeamMemberSchema,
@@ -3138,9 +3183,10 @@ export * from "./pipeline-fields.js";
 export * from "./types/pipeline-fields.js";
 export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
+export * from "./password-policy.js";
 export * from "./partner-branding.js";
 export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
-export type { MorningSummary, MorningSummaryTask, NotificationPreferences } from "./types/notification-preferences.js";
+export type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
 export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
 export {
   updateNotificationPreferencesSchema,
@@ -3150,7 +3196,16 @@ export type {
   WeeklyReport,
   WeeklyReportAgentCost,
   WeeklyReportAgentWork,
+  WeeklyReportDay,
   WeeklyReportPipelineMove,
   WeeklyReportStuckTask,
   WeeklyReportTask,
 } from "./types/weekly-report.js";
+export type {
+  AgentDailyDigest,
+  AgentDailyDigestAgent,
+  AgentDailyDigestCounts,
+  AgentDailyDigestItem,
+  AgentDailyDigestMove,
+  AgentDailyDigestPayload,
+} from "./types/agent-daily-digest.js";

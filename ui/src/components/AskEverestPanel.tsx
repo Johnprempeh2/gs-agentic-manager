@@ -8,6 +8,7 @@ import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 import { useCompany } from "../context/CompanyContext";
 import { agentsApi } from "../api/agents";
+import { searchApi } from "../api/search";
 import { issuesApi } from "../api/issues";
 import { decisionsFeedApi } from "../api/decisionsFeed";
 import { teamScorecardApi } from "../api/teamScorecard";
@@ -18,12 +19,21 @@ import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useDictation } from "../hooks/useDictation";
 import { useFileIntake } from "../hooks/useFileIntake";
 import {
+  SALES_QUESTIONS,
   SUGGESTED_QUESTIONS,
   answerAgent,
   answerAway,
   answerDecide,
   answerOverview,
   answerStuck,
+  answerHistory,
+  answerPeople,
+  answerClosing,
+  answerPipeline,
+  answerResults,
+  answerQuiet,
+  answerActivity,
+  answerBrief,
   answerSubject,
   answerFollowUp,
   classifyQuestion,
@@ -194,6 +204,7 @@ function AskEverestBody({
   const suggestions = context?.suggestions?.length
     ? context.suggestions
     : [...SUGGESTED_QUESTIONS, ...(exampleAgent ? [`What did ${exampleAgent.name} do today?`] : [])];
+  const salesSuggestions: readonly string[] = context?.suggestions?.length ? [] : SALES_QUESTIONS;
   const lastTurn = turns[turns.length - 1] ?? null;
 
   // A question like "and which of those are overdue?" narrows the last answer's tasks.
@@ -277,6 +288,23 @@ function AskEverestBody({
                 </button>
               ))}
             </div>
+            {salesSuggestions.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">About clients and deals:</p>
+                <div className="flex flex-wrap gap-2" data-testid="ask-everest-sales-suggestions">
+                  {salesSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => ask(suggestion)}
+                      className="rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         )}
       </div>
@@ -557,6 +585,65 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     },
     enabled: active && (intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away"),
   });
+  // Clients, organisations, people and products named in the question.
+  // Or, for "when did we last speak to them?", the imported notes, calls and meetings.
+  const recordQuery = intent.kind === "subject"
+    ? { q: intent.subject, limit: 4 }
+    : intent.kind === "history" && intent.subject
+      ? { q: intent.subject, limit: 10, recordKind: ["activity" as const] }
+      : intent.kind === "people" && intent.subject
+        ? { q: intent.subject, limit: 6, recordKind: ["person" as const] }
+        : null;
+  const records = useQuery({
+    queryKey: ["ask-everest", companyId, "records", intent.kind, recordQuery?.q ?? null],
+    queryFn: () => searchApi.search(companyId, { ...recordQuery!, scope: "records" }),
+    enabled: active && recordQuery !== null,
+    retry: false,
+  });
+  const quiet = useQuery({
+    queryKey: ["ask-everest", companyId, "quiet-clients", intent.kind === "quiet" ? intent.days : null],
+    queryFn: () => searchApi.quietClients(companyId, { days: intent.kind === "quiet" ? intent.days : 30, limit: 8 }),
+    enabled: active && intent.kind === "quiet",
+    retry: false,
+  });
+  // Client notes and calls since the last visit, for "What happened since I was last here?".
+  const awaySince = intent.kind === "away" ? digest.data?.since ?? null : null;
+  const awayContact = useQuery({
+    queryKey: ["ask-everest", companyId, "client-activity-since", awaySince],
+    queryFn: () => searchApi.recentClientActivity(companyId, { since: awaySince!, limit: 2 }),
+    enabled: active && awaySince !== null,
+    retry: false,
+  });
+  const brief = useQuery({
+    queryKey: ["ask-everest", companyId, "client-brief", intent.kind === "brief" ? intent.subject : null],
+    queryFn: () => searchApi.clientBrief(companyId, intent.kind === "brief" ? intent.subject ?? "" : ""),
+    enabled: active && intent.kind === "brief" && !!intent.subject,
+    retry: false,
+  });
+  const recentActivity = useQuery({
+    queryKey: ["ask-everest", companyId, "recent-client-activity", intent.kind === "activity" ? intent.days : null],
+    queryFn: () => searchApi.recentClientActivity(companyId, { days: intent.kind === "activity" ? intent.days : 7, limit: 8 }),
+    enabled: active && intent.kind === "activity",
+    retry: false,
+  });
+  const closing = useQuery({
+    queryKey: ["ask-everest", companyId, "closing-deals", intent.kind === "closing" ? intent.days : null],
+    queryFn: () => searchApi.closingDeals(companyId, { days: intent.kind === "closing" ? intent.days : 30, limit: 8 }),
+    enabled: active && intent.kind === "closing",
+    retry: false,
+  });
+  const pipeline = useQuery({
+    queryKey: ["ask-everest", companyId, "pipeline-summary", intent.kind === "pipeline" ? intent.owner ?? null : null],
+    queryFn: () => searchApi.pipelineSummary(companyId, intent.kind === "pipeline" && intent.owner ? { limit: 8, owner: intent.owner } : { limit: 3 }),
+    enabled: active && intent.kind === "pipeline",
+    retry: false,
+  });
+  const results = useQuery({
+    queryKey: ["ask-everest", companyId, "won-lost", intent.kind === "results" ? intent.days : null],
+    queryFn: () => searchApi.wonLost(companyId, { days: intent.kind === "results" ? intent.days : 30, limit: 4 }),
+    enabled: active && intent.kind === "results",
+    retry: false,
+  });
   const setLabel = taskSetLabel(intent);
   const set = useMemo(
     () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
@@ -567,15 +654,32 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
   const pending = (needsNeedsMe && needsMe.isPending)
     || (intent.kind === "agent" && scorecard.isPending && !scorecard.isError)
     || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
-    || (intent.kind === "away" && digest.isPending);
-  const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error) || (intent.kind === "away" && digest.error) || issues.error;
+    || (recordQuery !== null && records.isPending && !records.isError)
+    || (intent.kind === "quiet" && quiet.isPending)
+    || (intent.kind === "activity" && recentActivity.isPending)
+    || (intent.kind === "brief" && brief.isPending)
+    || (intent.kind === "closing" && closing.isPending)
+    || (intent.kind === "pipeline" && pipeline.isPending)
+    || (intent.kind === "results" && results.isPending)
+    || (intent.kind === "away" && digest.isPending)
+    || (awaySince !== null && awayContact.isPending);
+  const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
+    || (intent.kind === "away" && digest.error)
+    || ((intent.kind === "history" || intent.kind === "people") && records.error)
+    || (intent.kind === "quiet" && quiet.error)
+    || (intent.kind === "activity" && recentActivity.error)
+    || (intent.kind === "brief" && brief.error)
+    || (intent.kind === "closing" && closing.error)
+    || (intent.kind === "pipeline" && pipeline.error)
+    || (intent.kind === "results" && results.error)
+    || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
   if (error) return { error: error instanceof Error ? error.message : "Unknown error" };
 
   switch (intent.kind) {
     case "away":
-      return { value: answerAway(digest.data!, issues.data ?? [], needsMe.data ?? null), set };
+      return { value: answerAway(digest.data!, issues.data ?? [], needsMe.data ?? null, awayContact.data ?? null), set };
     case "decide":
       return { value: answerDecide(needsMe.data!) };
     case "stuck":
@@ -591,7 +695,23 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
         set,
       };
     case "subject":
-      return { value: answerSubject(intent.subject, issues.data ?? []), set };
+      return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
+    case "history":
+      return { value: answerHistory(intent.subject ?? "", records.data?.results ?? []) };
+    case "brief":
+      return { value: answerBrief(intent.subject ?? "", brief.data?.brief ?? null) };
+    case "activity":
+      return { value: answerActivity(recentActivity.data!) };
+    case "quiet":
+      return { value: answerQuiet(quiet.data!) };
+    case "closing":
+      return { value: answerClosing(closing.data!) };
+    case "pipeline":
+      return { value: answerPipeline(pipeline.data!, intent.view) };
+    case "results":
+      return { value: answerResults(results.data!) };
+    case "people":
+      return { value: answerPeople(intent.subject ?? "", records.data?.results ?? []) };
     default:
       return { value: answerOverview(scorecard.data ?? null, needsMe.data ?? null) };
   }

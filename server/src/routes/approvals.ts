@@ -2,6 +2,9 @@ import { Router, type Request } from "express";
 import { eq } from "drizzle-orm";
 import { heartbeatRuns, type Db } from "@greatstone/db";
 import {
+  AI_ROUTE_CHANGE_APPROVAL_TYPE,
+  BUDGET_TOP_UP_APPROVAL_TYPE,
+  OPERATOR_APPROVAL_REQUIRED_ERROR_CODE,
   addApprovalCommentSchema,
   createApprovalSchema,
   requestApprovalRevisionSchema,
@@ -18,7 +21,18 @@ import {
   logActivity,
   secretService,
 } from "../services/index.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  getAccessibleResource,
+  getActorInfo,
+  hasCompanyAccess,
+  hasCompanyOwnerOrAdminRole,
+  isHostingOperator,
+} from "./authz.js";
+import { assertCanResolveBudgetOverride, budgetAuthorityService } from "../services/budget-authority.js";
+import { requestedAiRoute } from "../services/ai-route-change.js";
+import { budgetTopUpService } from "../services/budget-top-ups.js";
 import { redactEventPayload } from "../redaction.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { issueService } from "../services/issues.js";
@@ -60,6 +74,12 @@ export function approvalRoutes(
   const issuesSvc = issueService(db);
   const permissionGrants = permissionGrantRequestService(db);
   const secretsSvc = secretService(db);
+  const topUps = budgetTopUpService(db, {
+    cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
+    noticeHardStop: heartbeat.noticeBudgetHardStop,
+    releaseHeldWorkForScope: (scope: { companyId: string }) =>
+      heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
+  });
   const strictSecretsMode = process.env.GSAM_SECRETS_STRICT_MODE === "true";
 
   async function lostReviewPathIssueIds(
@@ -171,6 +191,35 @@ export function approvalRoutes(
     if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
   }
 
+  // GRE-1363: a budget override is decided by a named approver (or the
+  // operator); an AI route change only by the operator. Same rule for
+  // approve, reject and request-revision.
+  async function assertCanDecideSpendingApproval(req: Request, approval: { type: string; companyId: string; payload: unknown }) {
+    if (approval.type === "budget_override_required") {
+      const authority = await budgetAuthorityService(db).get(approval.companyId);
+      assertCanResolveBudgetOverride(authority, { userId: req.actor.userId ?? null, operator: isHostingOperator(req) });
+      return;
+    }
+    // GRE-1371: a top-up card is decided only by the side it waits on.
+    if (approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) {
+      await topUps.assertCanDecide(approval, {
+        userId: req.actor.userId ?? null,
+        operator: isHostingOperator(req),
+        clientAdmin: hasCompanyOwnerOrAdminRole(req, approval.companyId),
+      });
+      return;
+    }
+    if (approval.type !== AI_ROUTE_CHANGE_APPROVAL_TYPE) return;
+    if (!isHostingOperator(req)) {
+      throw forbidden("Only the hosting operator can decide an AI route change.", {
+        code: OPERATOR_APPROVAL_REQUIRED_ERROR_CODE,
+      });
+    }
+    if (requestedAiRoute((approval.payload ?? {}) as Record<string, unknown>) === undefined) {
+      throw unprocessable("This AI route change names no valid route");
+    }
+  }
+
   async function requireApprovalAccess(req: Request, id: string) {
     const approval = await svc.getById(id);
     if (!approval || !hasCompanyAccess(req, approval.companyId)) {
@@ -249,6 +298,12 @@ export function approvalRoutes(
       : [];
     const uniqueIssueIds = Array.from(new Set(issueIds));
     const { issueIds: _issueIds, ...approvalInput } = req.body;
+    if (approvalInput.type === AI_ROUTE_CHANGE_APPROVAL_TYPE) {
+      throw unprocessable("Ask for an AI route change with POST /api/companies/:companyId/ai-route-change-requests");
+    }
+    if (approvalInput.type === BUDGET_TOP_UP_APPROVAL_TYPE) {
+      throw unprocessable("Ask for a top-up with POST /api/companies/:companyId/budgets/top-ups");
+    }
     const normalizedPayload =
       approvalInput.type === "hire_agent"
         ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
@@ -311,8 +366,11 @@ export function approvalRoutes(
       return;
     }
     await assertCanDecidePermissionGrant(req, existing);
+    await assertCanDecideSpendingApproval(req, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.approve(id, decidedByUserId, req.body.decisionNote);
+    // Applied after the card: the budget sweep settles it if the server stops in between.
+    if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
     if (applied) {
       const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
@@ -429,8 +487,10 @@ export function approvalRoutes(
       return;
     }
     await assertCanDecidePermissionGrant(req, existing);
+    await assertCanDecideSpendingApproval(req, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.reject(id, decidedByUserId, req.body.decisionNote);
+    if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
     if (applied) {
       const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
@@ -474,6 +534,7 @@ export function approvalRoutes(
       if (existing.type === PERMISSION_GRANT_APPROVAL_TYPE) {
         throw unprocessable("A permission request can only be granted or denied");
       }
+      await assertCanDecideSpendingApproval(req, existing);
       const decidedByUserId = req.actor.userId ?? "board";
       const approval = await svc.requestRevision(id, decidedByUserId, req.body.decisionNote);
 

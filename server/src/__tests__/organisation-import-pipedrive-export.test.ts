@@ -267,7 +267,7 @@ describeEmbeddedPostgres("Pipedrive export import route", () => {
     const first = await request(app(owner)).post(importPath(companyId)).send(body);
     expect(first.status).toBe(200);
     expect(first.body.organisations).toEqual({ created: 2, updated: 0, skipped: 1, errors: 0 });
-    expect(first.body.contacts).toEqual({ created: 2, updated: 0, skipped: 1, errors: 0 });
+    expect(first.body.contacts).toEqual({ created: 3, updated: 0, skipped: 0, errors: 0 });
     expect(first.body.deals).toEqual({ created: 1, updated: 0, skipped: 2, errors: 0 });
     expect(first.body.activities).toEqual({ created: 2, updated: 0, skipped: 1, errors: 0 });
 
@@ -293,7 +293,7 @@ describeEmbeddedPostgres("Pipedrive export import route", () => {
     expect(second.body.organisations).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
     expect(second.body.deals).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
     expect(await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId))).toHaveLength(1);
-    expect(await db.select().from(organisationContacts).where(eq(organisationContacts.companyId, companyId))).toHaveLength(2);
+    expect(await db.select().from(organisationContacts).where(eq(organisationContacts.companyId, companyId))).toHaveLength(3);
 
     const log = await db.select().from(activityLog).where(eq(activityLog.companyId, companyId));
     expect(log.filter((row) => row.action === "organisation.import_completed")).toHaveLength(2);

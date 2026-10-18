@@ -6,12 +6,26 @@ import {
 } from "../lib/pipeline-stage-presentation";
 import {
   groupCasesByBuiltFor,
+  listCardOwners,
+  matchesBoardSearch,
   normalizePipelineConversationComments,
   pipelineBoardGroupByStorageKey,
   readStoredPipelineBoardGroupBy,
   readPipelineStageAutomationAssigneeAgentId,
   writeStoredPipelineBoardGroupBy,
 } from "./Pipelines";
+
+describe("listCardOwners", () => {
+  it("lists each card owner once, sorted, from client and Pipedrive fields", () => {
+    expect(listCardOwners([
+      { fields: { dealOwner: "Ben" } },
+      { fields: { ownerPerson: "Amara" } },
+      { fields: { dealOwner: "Ben" } },
+      { fields: { title: "No owner" } },
+      { fields: null },
+    ])).toEqual(["Amara", "Ben"]);
+  });
+});
 
 describe("groupCasesByBuiltFor", () => {
   it("groups items by the parent case shown as Built for", () => {
@@ -152,5 +166,15 @@ describe("pipeline conversation comments", () => {
         pageParams: [null],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("matchesBoardSearch", () => {
+  it("matches every word against the title, summary and text fields", () => {
+    const item = { title: "Acme rollout", summary: null, fields: { dealOwner: "Ben Asante", organisation: "Acme Ltd", dealValue: 12000 } };
+    expect(matchesBoardSearch(item, "")).toBe(true);
+    expect(matchesBoardSearch(item, "acme ben")).toBe(true);
+    expect(matchesBoardSearch(item, "12000")).toBe(true);
+    expect(matchesBoardSearch(item, "acme john")).toBe(false);
   });
 });

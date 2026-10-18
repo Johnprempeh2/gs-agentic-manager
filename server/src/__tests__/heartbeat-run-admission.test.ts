@@ -292,6 +292,44 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
     expect(adapterGate.state.maxActive).toBe(2);
   });
 
+  it("reserves no more instance slots than the agent may use, so a concurrent start is not held (GRE-1605)", async () => {
+    await setAdmission({ maxConcurrentRuns: 2 });
+    const companyId = await seedCompany();
+    const first = await seedAgent(companyId, 1);
+    const second = await seedAgent(companyId, 1);
+    const t0 = Date.now() - 60_000;
+    const firstRun = await queueRun(companyId, first, new Date(t0));
+    const secondRun = await queueRun(companyId, second, new Date(t0 + 1_000));
+
+    // Let one gate reserve its slots and wait on its per-agent count, then
+    // let the other gate read the instance count while that reservation holds.
+    let arrived = 0;
+    let firstReadDone!: () => void;
+    const firstRead = new Promise<void>((resolve) => {
+      firstReadDone = resolve;
+    });
+    beforeMemoryRead = async () => {
+      arrived += 1;
+      if (arrived === 1) {
+        firstReadDone();
+        return;
+      }
+      await firstRead;
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    const [firstStarted, secondStarted] = await Promise.all([
+      heartbeat.startNextQueuedRunForAgent(first),
+      heartbeat.startNextQueuedRunForAgent(second),
+    ]);
+    beforeMemoryRead = null;
+
+    // Before the fix the first gate reserved both free slots, so the second
+    // gate saw "2/2 running" with nothing running and held its run.
+    expect(firstStarted.length + secondStarted.length).toBe(2);
+    const current = await statuses([firstRun, secondRun]);
+    expect([...current.values()]).toEqual(["running", "running"]);
+  });
+
   it("keeps runs queued while RAM is below the floor and starts them once it recovers", async () => {
     await setAdmission({ maxConcurrentRuns: 6, minAvailableMemoryMb: 2048 });
     const companyId = await seedCompany();

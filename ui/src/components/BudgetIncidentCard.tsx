@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/context/ConfirmContext";
 
 function centsInputValue(value: number) {
   return (value / 100).toFixed(2);
@@ -36,6 +37,7 @@ export function BudgetIncidentCard({
   onKeepPaused: () => void;
   isMutating?: boolean;
 }) {
+  const confirm = useConfirm();
   const [draftAmount, setDraftAmount] = useState(
     centsInputValue(Math.max(incident.amountObserved + 1000, incident.amountLimit)),
   );
@@ -49,7 +51,7 @@ export function BudgetIncidentCard({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-red-700/90 dark:text-red-200/80">
-                {incident.scopeType} hard stop
+                {incident.scopeType === "company" ? "Organisation" : incident.scopeType === "agent" ? "Agent" : "Project"} limit reached
               </div>
               <Badge variant={incident.status === "resolved" ? "outline" : "secondary"}>
                 {stateLabel}
@@ -70,8 +72,10 @@ export function BudgetIncidentCard({
           <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             {incident.scopeType === "project"
-              ? "Project execution is paused. New work in this project will not start until you resolve the budget incident."
-              : "This scope is paused. New heartbeats will not start until you resolve the budget incident."}
+              ? "This project is paused. New work in it will not start until you raise its limit or choose to keep it paused."
+              : incident.scopeType === "agent"
+                ? "This agent is paused. It will not start new work until you raise its limit or choose to keep it paused."
+                : "Agents in this organisation are paused. They will not start new work until you raise the limit or choose to keep it paused."}
           </div>
         </div>
 
@@ -94,19 +98,27 @@ export function BudgetIncidentCard({
               }}
             >
               <ArrowUpRight className="h-4 w-4" />
-              {isMutating ? "Applying..." : "Raise budget & resume"}
+              {isMutating ? "Applying..." : "Raise limit and restart work"}
             </Button>
           </div>
           {parsed !== null && parsed <= incident.amountObserved ? (
             <p className="mt-2 text-xs text-red-700 dark:text-red-200/80">
-              The new budget must exceed current observed spend.
+              The new limit must be higher than what has already been spent.
             </p>
           ) : null}
         </div>
 
         <div className="flex justify-end">
-          <Button variant="ghost" className="text-muted-foreground" disabled={isMutating} onClick={onKeepPaused}>
-            Keep paused
+          <Button variant="ghost" className="text-muted-foreground" disabled={isMutating} onClick={async () => {
+              const ok = await confirm({
+                title: "Keep this paused?",
+                description: "Work stays stopped until someone raises the limit.",
+                confirmLabel: "Keep work paused",
+              });
+              if (ok) onKeepPaused();
+            }}
+          >
+            Keep work paused
           </Button>
         </div>
       </CardContent>

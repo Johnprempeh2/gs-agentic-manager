@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { getAdapterLabel } from "@/adapters/adapter-display-registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
@@ -330,7 +331,7 @@ type SourceFilter = "all" | "company" | "bundled" | "optional" | "external";
 
 const SOURCE_FILTER_LABELS: Record<SourceFilter, string> = {
   all: "All",
-  company: "Organization",
+  company: "Organisation",
   bundled: "Bundled",
   optional: "Optional",
   external: "External",
@@ -662,7 +663,7 @@ function categorySetKey(categories: string[]) {
 }
 
 function skillSettingsToastBody(skill: Pick<CompanySkillDetail, "categories" | "sharingScope">) {
-  const sharing = skill.sharingScope === "private" ? "Sharing: private" : "Sharing: organization";
+  const sharing = skill.sharingScope === "private" ? "Sharing: private" : "Sharing: organisation";
   const categories = skill.categories.length ? `Categories: ${skill.categories.join(", ")}` : "Categories: none";
   return `${sharing} | ${categories}`;
 }
@@ -1142,7 +1143,7 @@ export function DiscoveryGrid({
   const installedView = tab === "installed";
   const viewTitle = installedView ? "Installed skills" : "Discover skills";
   const viewDescription = installedView
-    ? "Skills available to this organization."
+    ? "Skills available to this organisation."
     : "Browse skills from every available source.";
   const searchLabel = installedView ? "Search installed skills" : "Search discoverable skills";
   // Source filter (github / skills.sh / local / …) lives in the grid so it
@@ -1668,12 +1669,12 @@ function NewSkillWizard({
           <div className="grid grid-cols-(--gtc-26) gap-y-2">
             <span className="text-muted-foreground">Name</span>
             <span>{draft.name || "Untitled"}</span>
-            <span className="text-muted-foreground">Slug</span>
+            <span className="text-muted-foreground">Short name</span>
             <span className="font-mono">{effectiveSlug || "skill"}</span>
-            <span className="text-muted-foreground">Scope</span>
-            <span>{draft.sharingScope === "private" ? "Private" : "Organization"}</span>
+            <span className="text-muted-foreground">Who can see it</span>
+            <span>{draft.sharingScope === "private" ? "Only you" : "Everyone in the organisation"}</span>
             <span className="text-muted-foreground">Categories</span>
-            <span>{draft.categories.length ? draft.categories.join(", ") : "none"}</span>
+            <span>{draft.categories.length ? draft.categories.join(", ") : "None"}</span>
           </div>
           <div className="space-y-2">
             <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Sharing</label>
@@ -1688,9 +1689,9 @@ function NewSkillWizard({
                     draft.sharingScope === scope ? "border-foreground bg-accent/50" : "border-border",
                   )}
                 >
-                  <span className="block font-medium">{scope === "company" ? "Organization" : "Private"}</span>
+                  <span className="block font-medium">{scope === "company" ? "Organisation" : "Private"}</span>
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    {scope === "company" ? "Visible inside this organization." : "Only visible in your library."}
+                    {scope === "company" ? "Visible inside this organisation." : "Only visible in your library."}
                   </span>
                 </button>
               ))}
@@ -1727,7 +1728,7 @@ function NewSkillWizard({
             </Button>
           ) : (
             <Button size="sm" onClick={submit} disabled={isPending || !nameValid}>
-              {isPending ? "Creating..." : draft.forkedFromSkillId ? "Create fork" : "Create skill"}
+              {isPending ? "Creating..." : draft.forkedFromSkillId ? "Create copy" : "Create skill"}
             </Button>
           )}
         </div>
@@ -1931,7 +1932,7 @@ function CatalogDetailPane({
     cta = (
       <Button onClick={onInstall} disabled={loadingPrimaryAction}>
         {skill.trustLevel === "scripts_executables" ? <AlertTriangle className="mr-1.5 h-3.5 w-3.5" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-        {loadingPrimaryAction ? "Preparing..." : "Install skill in this organization"}
+        {loadingPrimaryAction ? "Preparing..." : "Install skill in this organisation"}
       </Button>
     );
   } else if (hashOutOfSync) {
@@ -2202,7 +2203,7 @@ export function InstallPreviewDialog({
             <div className="rounded-md border border-border p-3">
               <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Enable for agents</div>
               <p className="mb-2 text-xs text-muted-foreground">
-                Installing adds the skill to the organization library. Agents can only use it once it is enabled for them.
+                Installing adds the skill to the organisation library. Agents can only use it once it is enabled for them.
               </p>
               <AgentMultiSelect
                 agents={agents}
@@ -2212,14 +2213,14 @@ export function InstallPreviewDialog({
                   setSelectedAgentIds(next);
                 }}
                 showSelectionPreview={false}
-                emptyMessage="No agents in this organization support skills yet."
+                emptyMessage="No agents in this organisation support skills yet."
                 isAgentDisabled={(agent) => {
                   const option = agent as AttachAgentOption;
                   return option.required || !option.supportsSkills;
                 }}
                 getDescription={(agent) => {
                   const option = agent as AttachAgentOption;
-                  return `${option.adapterType}${option.required ? " · required" : ""}${!option.supportsSkills ? " · skills not supported" : ""}`;
+                  return `${getAdapterLabel(option.adapterType)}${option.required ? " · always on" : ""}${!option.supportsSkills ? " · cannot use skills" : ""}`;
                 }}
               />
             </div>
@@ -2342,14 +2343,14 @@ function AttachAgentsPopover({
           </select>
         </div>
       ) : null}
-      emptyMessage={eligible.length === 0 ? "No agents in this organization support skills yet." : "No agents yet."}
+      emptyMessage={eligible.length === 0 ? "No agents in this organisation support skills yet." : "No agents yet."}
       isAgentDisabled={(agent) => {
         const option = agent as AttachAgentOption;
         return option.required || !option.supportsSkills;
       }}
       getDescription={(agent) => {
         const option = agent as AttachAgentOption;
-        return `${option.adapterType}${option.required ? " · required" : ""}${!option.supportsSkills ? " · skills not supported" : ""}`;
+        return `${getAdapterLabel(option.adapterType)}${option.required ? " · always on" : ""}${!option.supportsSkills ? " · cannot use skills" : ""}`;
       }}
       renderNameSuffix={(agent) => (agent as AttachAgentOption).paused ? (
         <Badge variant="outline" className="[&>svg]:size-2.5 border-amber-500/30 bg-amber-500/10 px-1.5 text-(length:--text-nano) uppercase tracking-wide text-amber-500">
@@ -3098,10 +3099,10 @@ export function SkillDetailPage({
                   variant="outline"
                   size="sm"
                   onClick={onFork}
-                  title={skill.editableReason ?? "Fork this skill to edit it."}
+                  title={skill.editableReason ?? "Make your own copy of this skill to edit it."}
                 >
                   <GitFork className="mr-1.5 h-3.5 w-3.5" />
-                  Fork
+                  Edit a copy
                 </Button>
               ) : null}
             </div>
@@ -3168,7 +3169,7 @@ export function SkillDetailPage({
                   <span>Read only</span>
                   <Button type="button" variant="outline" size="xs" onClick={onFork}>
                     <GitFork className="mr-1 h-3 w-3" />
-                    Fork
+                    Edit a copy
                   </Button>
                 </>
               )}
@@ -3389,7 +3390,7 @@ export function SkillDetailPage({
                     <span className="hidden sm:inline">{detail.attachedAgentCount === 1 ? "install" : "installs"}</span>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>Agents in this organization that currently have this skill installed.</TooltipContent>
+                <TooltipContent>Agents in this organisation that currently have this skill installed.</TooltipContent>
               </Tooltip>
               <button
                 type="button"
@@ -3406,10 +3407,10 @@ export function SkillDetailPage({
                 type="button"
                 onClick={onFork}
                 className="inline-flex items-center gap-1.5 border-l border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                title="Fork this skill"
+                title="Make your own copy of this skill to edit it"
               >
                 <GitFork className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Fork</span>
+                <span className="hidden sm:inline">Edit a copy</span>
                 <span className="font-medium text-foreground">{detail.forkCount}</span>
               </button>
             </div>
@@ -3461,7 +3462,7 @@ export function SkillDetailPage({
                 fullWidth
               />
               {detail.usedByAgents.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No agents attached yet.</p>
+                <p className="text-xs text-muted-foreground">No agents use this skill yet. Use Add to agent above to give it to one.</p>
               ) : (
                 <div className="space-y-0.5">
                   {/* Preview up to three attached agents, then summarise the rest. */}
@@ -3678,7 +3679,7 @@ export function SkillDetailPage({
               <div className="rounded-md border border-destructive/40 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-destructive">Danger zone</div>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="min-w-0 text-xs text-muted-foreground">Remove this skill from the organization library.</p>
+                  <p className="min-w-0 text-xs text-muted-foreground">Remove this skill from the organisation library.</p>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -4325,7 +4326,7 @@ export function CompanySkills() {
     setBreadcrumbs([
       { label: "Skills", href: "/skills" },
       ...(isStudioNew
-        ? [{ label: studioForkFromId ? "Fork skill" : "New skill" }]
+        ? [{ label: studioForkFromId ? "Copy skill" : "New skill" }]
         : activeDetail
           ? skillDetailBreadcrumbs(activeDetail, skillFoldersQuery.data).slice(1)
           : routeSkillToken
@@ -4375,7 +4376,7 @@ export function CompanySkills() {
       setSource("");
     },
     onError: (error) => {
-      reportSkillError(error, "Skill import failed", "Failed to import skill source.", "Importing skills");
+      reportSkillError(error, "Skill import failed", "Could not import skill source.", "Importing skills");
     },
   });
 
@@ -4418,7 +4419,7 @@ export function CompanySkills() {
     },
     onError: (error) => {
       setScanStatusMessage(null);
-      reportSkillError(error, "Project skill scan failed", "Failed to scan project workspaces.", "Scanning projects for skills");
+      reportSkillError(error, "Project skill scan failed", "Could not scan project workspaces.", "Scanning projects for skills");
     },
   });
 
@@ -4431,14 +4432,14 @@ export function CompanySkills() {
       setCreateError(null);
       pushToast({
         tone: "success",
-        title: skill.forkedFromSkillId ? "Skill fork created" : "Skill created",
+        title: skill.forkedFromSkillId ? "Copy of the skill created" : "Skill created",
         body: `${skill.name} is now editable in the GS Agentic Manager workspace.`,
       });
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : "Failed to create skill.";
+      const message = error instanceof Error ? error.message : "Could not create skill.";
       setCreateError(message);
-      reportSkillError(error, "Skill creation failed", "Failed to create skill.", "Creating a skill");
+      reportSkillError(error, "Skill creation failed", "Could not create skill.", "Creating a skill");
     },
   });
 
@@ -4466,8 +4467,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Save failed",
-        body: error instanceof Error ? error.message : "Failed to save skill file.",
+        title: "Your change was not saved",
+        body: error instanceof Error ? error.message : "Could not save skill file.",
       });
     },
   });
@@ -4489,8 +4490,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Star failed",
-        body: error instanceof Error ? error.message : "Failed to update star.",
+        title: "Could not star it",
+        body: error instanceof Error ? error.message : "Could not update star.",
       });
     },
   });
@@ -4516,8 +4517,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Skill settings update failed",
-        body: error instanceof Error ? error.message : "Failed to update skill settings.",
+        title: "Your skill settings were not saved",
+        body: error instanceof Error ? error.message : "Could not update skill settings.",
       });
     },
   });
@@ -4539,7 +4540,7 @@ export function CompanySkills() {
       });
     },
     onError: (error) => {
-      reportSkillError(error, "Update failed", "Failed to install skill update.", "Updating this skill");
+      reportSkillError(error, "Update failed", "Could not install skill update.", "Updating this skill");
     },
   });
 
@@ -4679,7 +4680,7 @@ export function CompanySkills() {
       if (enableFailures > 0) {
         pushToast({
           tone: "warn",
-          title: "Skill installed, but enabling failed",
+          title: "Skill added, but not switched on",
           body: `Could not enable ${result.skill.name} for ${enableFailures} agent${enableFailures === 1 ? "" : "s"}. Use "Add to agent" on the skill page.`,
         });
       }
@@ -4691,7 +4692,7 @@ export function CompanySkills() {
       }
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : "Failed to install catalog skill.";
+      const message = error instanceof Error ? error.message : "Could not install catalog skill.";
       setInstallDialogState((current) => ({ ...current, error: message }));
       // Also surface explicit-policy / platform denials in the persistent banner
       // so the reason stays visible after the dialog closes.
@@ -4720,8 +4721,8 @@ export function CompanySkills() {
         } catch (moveError) {
           pushToast({
             tone: "error",
-            title: "Folder created, move failed",
-            body: moveError instanceof Error ? moveError.message : "Failed to move the selected skills.",
+            title: "Folder made, but nothing moved into it",
+            body: moveError instanceof Error ? moveError.message : "Could not move the selected skills.",
           });
           return;
         }
@@ -4733,8 +4734,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder save failed",
-        body: error instanceof Error ? error.message : "Failed to save folder.",
+        title: "Your folder was not saved",
+        body: error instanceof Error ? error.message : "Could not save folder.",
       });
     },
   });
@@ -4749,8 +4750,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder save failed",
-        body: error instanceof Error ? error.message : "Failed to update folder.",
+        title: "Your folder was not saved",
+        body: error instanceof Error ? error.message : "Could not update folder.",
       });
     },
   });
@@ -4769,8 +4770,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder move failed",
-        body: error instanceof Error ? error.message : "Failed to move folder.",
+        title: "Could not move the folder",
+        body: error instanceof Error ? error.message : "Could not move folder.",
       });
     },
   });
@@ -4788,8 +4789,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder delete failed",
-        body: error instanceof Error ? error.message : "Failed to delete folder.",
+        title: "Could not delete the folder",
+        body: error instanceof Error ? error.message : "Could not delete folder.",
       });
     },
   });
@@ -4805,8 +4806,8 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Move failed",
-        body: error instanceof Error ? error.message : "Failed to move skill.",
+        title: "Could not move it",
+        body: error instanceof Error ? error.message : "Could not move skill.",
       });
     },
   });
@@ -4822,7 +4823,7 @@ export function CompanySkills() {
       pushToast({
         tone: "error",
         title: "Couldn't open My Skills",
-        body: error instanceof Error ? error.message : "Failed to create your personal folder.",
+        body: error instanceof Error ? error.message : "Could not create your personal folder.",
       });
     },
   });
@@ -4867,8 +4868,8 @@ export function CompanySkills() {
     } catch (error) {
       pushToast({
         tone: "error",
-        title: "Folder create failed",
-        body: error instanceof Error ? error.message : "Failed to create folder.",
+        title: "Could not make the folder",
+        body: error instanceof Error ? error.message : "Could not create folder.",
       });
       return null;
     }
@@ -4898,8 +4899,8 @@ export function CompanySkills() {
     } catch (moveError) {
       pushToast({
         tone: "error",
-        title: "Move failed",
-        body: moveError instanceof Error ? moveError.message : "Failed to move.",
+        title: "Could not move it",
+        body: moveError instanceof Error ? moveError.message : "Could not move.",
       });
     }
   }
@@ -4968,7 +4969,7 @@ export function CompanySkills() {
       }
       pushToast({ tone: "success", title: "Agents updated", body: `${nextAgentIds.length} agent(s) attached.` });
     } catch (error) {
-      pushToast({ tone: "error", title: "Update failed", body: error instanceof Error ? error.message : "Failed to update agent skills." });
+      pushToast({ tone: "error", title: "Your change was not saved", body: error instanceof Error ? error.message : "Could not update agent skills." });
     }
   }
 
@@ -5019,11 +5020,11 @@ export function CompanySkills() {
       pushToast({
         tone: "success",
         title: "Skill removed",
-        body: `${skill.name} was removed from the organization skill library.`,
+        body: `${skill.name} was removed from the organisation skill library.`,
       });
     },
     onError: (error) => {
-      reportSkillError(error, "Remove failed", "Failed to remove skill.", "Removing this skill");
+      reportSkillError(error, "Remove failed", "Could not remove skill.", "Removing this skill");
     },
   });
 
@@ -5060,7 +5061,7 @@ export function CompanySkills() {
   );
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Boxes} message="Select an organization to manage skills." />;
+    return <EmptyState icon={Boxes} message="Choose an organisation to manage skills." />;
   }
 
   function handleAddSkillSource() {
@@ -5098,10 +5099,10 @@ export function CompanySkills() {
     ? (catalogListQuery.data ?? []).find((entry) => entry.key === activeDetail.key)?.source ?? null
     : null;
   const studioBackHref = studioForkDetailQuery.data ? routeForSkill(studioForkDetailQuery.data) : "/skills";
-  const studioTitle = studioForkFromId ? "Fork skill" : "Create a new skill";
+  const studioTitle = studioForkFromId ? "Copy skill" : "Create a new skill";
   const studioDescription = studioForkFromId
-    ? "Review the fork metadata and create an editable organization copy."
-    : "Create an editable organization skill in the GS Agentic Manager workspace.";
+    ? "Check the details, then create a copy your organisation can edit."
+    : "Create a skill your organisation can edit and share.";
   return (
     <>
       {policyDenial.denial ? (
@@ -5114,7 +5115,7 @@ export function CompanySkills() {
           <DialogHeader>
             <DialogTitle>Remove skill</DialogTitle>
             <DialogDescription>
-              Remove this skill from the organization library. If any agents still use it, removal will be blocked until it is detached.
+              Remove this skill from the organisation library. If any agents still use it, removal will be blocked until it is detached.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
@@ -5228,7 +5229,7 @@ export function CompanySkills() {
           <DialogHeader>
             <DialogTitle>Import a skill</DialogTitle>
             <DialogDescription>
-              Paste a local path, GitHub URL, or `skills.sh` command to import a skill into this organization.
+              Paste a local path, GitHub URL, or `skills.sh` command to import a skill into this organisation.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -5349,7 +5350,7 @@ export function CompanySkills() {
               {studioForkFromId && studioForkDetailQuery.isLoading ? (
                 <PageSkeleton variant="detail" />
               ) : studioForkFromId && !studioForkDetailQuery.data ? (
-                <EmptyState icon={Boxes} message="Fork source skill not found." />
+                <EmptyState icon={Boxes} message="The skill you wanted to copy could not be found." />
               ) : (
                 <NewSkillWizard
                   initialDraft={studioDraft}

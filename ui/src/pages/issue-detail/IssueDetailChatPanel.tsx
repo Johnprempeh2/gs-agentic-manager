@@ -2,6 +2,7 @@ import type { issuesApi } from "../../api/issues";
 import { DispositionRecoveryProvider } from "../../components/DispositionRecoveryNotice";
 import { ExecutionBlockerNotice } from "../../components/ExecutionBlockerNotice";
 import { EmailTaskActivity } from "../../components/EmailTaskActivity";
+import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import { TabledBanner } from "../../components/decisions-feed/TabledBanner";
 import { queryKeys } from "../../lib/queryKeys";
 import { createIssueDetailPath } from "../../lib/issueDetailBreadcrumb";
@@ -111,7 +112,7 @@ export type IssueDetailChatPanelProps = {
   canShowSubtreeControls: boolean;
   setTreeControlOpen: Dispatch<SetStateAction<boolean>>;
   activePauseHoldRoot: Issue | NonNullable<Issue["ancestors"]>[number] | null;
-  composerHint: "This issue's isolated workspace was archived. Your next comment or resume reopens it and rebuilds the worktree." | null;
+  composerHint: "This task's work area was put away. Sending a message or resuming sets it up again." | null;
   queuedCommentReason: "hold" | "active_run";
   handleCommentVote: ReturnType<typeof useThreadHandlers>["handleCommentVote"];
   handleChatAdd: ReturnType<typeof useThreadHandlers>["handleChatAdd"];
@@ -252,6 +253,7 @@ export function IssueDetailChatPanel({
   resolveRecoveryAction,
   casesChipsEnabled,
 }: IssueDetailChatPanelProps) {
+  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
   // A board question chat (GRE-1186) stays in Ask mode and runs under the Strategy Board switch.
   const questionsOnly = Boolean(conversation?.questionsOnly || issue.originKind === "strategy_board_question");
   return (
@@ -293,7 +295,7 @@ export function IssueDetailChatPanel({
         }}>
         <IssueDetailChatTab
           onOpenSkill={handleOpenSkill}
-          threadHeader={<>{taskChatThreadHeader}{instanceExperimentalSettings?.enableChatConnectors && <EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} />}</>}
+          threadHeader={<>{taskChatThreadHeader}{chatConnectorsEnabled && <EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} />}</>}
           issueBrief={
             // Suppress the seeded-description bubble for the onboarding first
             // task: its description is agent instructions, not something the
@@ -438,7 +440,7 @@ export function IssueDetailChatPanel({
             } : undefined,
             resumeHref: !activePauseHold.isRoot ? createIssueDetailPath(activePauseHoldRoot?.identifier ?? activePauseHold.rootIssueId) : undefined,
           } : null}
-          composerDisabledReason={issue.conversationAgentId && !questionsOnly && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is disabled in Experimental settings." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
+          composerDisabledReason={issue.conversationAgentId && !questionsOnly && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is not part of this plan." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
           composerHint={composerHint}
           queuedCommentReason={queuedCommentReason}
           onVote={handleCommentVote}

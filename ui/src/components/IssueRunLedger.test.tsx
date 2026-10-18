@@ -456,12 +456,12 @@ describe("IssueRunLedger", () => {
       onWatchdogDecision,
     });
 
-    expect(container.textContent).toContain("Critical output silence");
+    expect(container.textContent).toContain("The agent has gone quiet");
     expect(container.textContent).toContain("PAP-404");
     expect(container.textContent).toContain("Critical silence");
     expect(container.textContent).toContain("GS Agentic Manager did not create new delegated recovery work");
     const watchdogBanner = Array.from(container.querySelectorAll("p"))
-      .find((node) => node.textContent?.includes("Critical output silence"))
+      .find((node) => node.textContent?.includes("The agent has gone quiet"))
       ?.closest("div");
     expect(watchdogBanner?.className).toContain("border-red-500/30");
     expect(watchdogBanner?.className).toContain("bg-red-500/10");
@@ -483,12 +483,12 @@ describe("IssueRunLedger", () => {
   it.each([
     {
       level: "suspicious" as const,
-      heading: "Output silence watchdog warning",
+      heading: "The agent has been quiet for a while",
       badge: "Output silence",
     },
     {
       level: "critical" as const,
-      heading: "Critical output silence",
+      heading: "The agent has gone quiet",
       badge: "Critical silence",
     },
   ])("renders a $level UI-only signal without an evaluation-task link", ({ level, heading, badge }) => {
@@ -539,7 +539,7 @@ describe("IssueRunLedger", () => {
       onWatchdogDecision,
     });
 
-    expect(container.textContent).toContain("Critical output silence");
+    expect(container.textContent).toContain("The agent has gone quiet");
     expect(container.textContent).toContain("PAP-404");
     expect(container.textContent).not.toContain("Continue monitoring");
     expect(container.textContent).not.toContain("Snooze 1h");

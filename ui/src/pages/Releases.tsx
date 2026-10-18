@@ -760,7 +760,7 @@ export function ReleasesView({
         </CardHeader>
         {history.length === 0 ? (
           <CardContent className="px-5 pb-5">
-            <p className="text-sm text-muted-foreground">No releases yet.</p>
+            <p className="text-sm text-muted-foreground">No releases yet. Each new version shows here once it goes live.</p>
           </CardContent>
         ) : (
           <ul className="divide-y divide-border border-t border-border">

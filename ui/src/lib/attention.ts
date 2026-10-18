@@ -58,7 +58,7 @@ const SOURCE_META: Record<AttentionSourceKind, SourceMeta> = {
   productivity_review: { label: "Task" },
   blocker_attention: { label: "Blocked dependency" },
   review: { label: "Review" },
-  failed_run: { label: "Failed run" },
+  failed_run: { label: "Stopped with an error" },
   budget_alert: { label: "Budget" },
   agent_error_alert: { label: "Agent error" },
   ai_connection_alert: { label: "AI connection" },

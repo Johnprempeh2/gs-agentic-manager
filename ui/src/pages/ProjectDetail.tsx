@@ -112,7 +112,7 @@ function ProjectTilePicker({
         <button
           type="button"
           className="shrink-0 rounded-lg cursor-pointer hover:ring-2 hover:ring-foreground/20 transition-(--tp-box-shadow)"
-          aria-label="Change project icon and color"
+          aria-label="Change project icon and colour"
         >
           <ProjectTile color={color} icon={icon} size="md" />
         </button>
@@ -160,7 +160,7 @@ function ProjectTilePicker({
                   ? "ring-2 ring-foreground ring-offset-1 ring-offset-background rounded-md"
                   : ""
               }`}
-              aria-label="Reset to neutral gray"
+              aria-label="Reset to neutral grey"
               title="Neutral (default)"
             >
               <ProjectTile color={null} size="sm" />
@@ -176,7 +176,7 @@ function ProjectTilePicker({
                     : "hover:ring-2 hover:ring-foreground/30"
                 }`}
                 style={{ backgroundColor: swatch }}
-                aria-label={`Select color ${swatch}`}
+                aria-label={`Select colour ${swatch}`}
               />
             ))}
           </div>
@@ -190,6 +190,7 @@ function ProjectTilePicker({
 
 function ProjectIssuesList({ projectId, companyId }: { projectId: string; companyId: string }) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(companyId),
@@ -220,7 +221,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     enabled: !!companyId,
   });
 
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.issues.listByProject(companyId, projectId),
     queryFn: () => issuesApi.list(companyId, { projectId }),
     enabled: !!companyId,
@@ -234,6 +235,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
     },
+    onError: () => pushToast({ title: "Your change to the task was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   return (
@@ -241,6 +243,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       issues={issues ?? []}
       isLoading={isLoading}
       error={error as Error | null}
+      onRetry={() => void refetch()}
       agents={agents}
       projects={projects}
       liveIssueIds={liveIssueIds}
@@ -261,6 +264,7 @@ function ProjectPluginOperationsList({
   pluginKey: string;
 }) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const originKindPrefix = `plugin:${pluginKey}`;
 
   const { data: agents } = useQuery({
@@ -290,7 +294,7 @@ function ProjectPluginOperationsList({
     refetchInterval: sharedLiveRuns.refetchInterval,
   });
   usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, projectId, originKindPrefix),
     queryFn: () => issuesApi.list(companyId, { projectId, originKindPrefix }),
     enabled: !!companyId && !!projectId,
@@ -305,6 +309,7 @@ function ProjectPluginOperationsList({
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
     },
+    onError: () => pushToast({ title: "Your change to the task was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   return (
@@ -312,6 +317,7 @@ function ProjectPluginOperationsList({
       issues={issues ?? []}
       isLoading={isLoading}
       error={error as Error | null}
+      onRetry={() => void refetch()}
       agents={agents}
       projects={projects}
       liveIssueIds={liveIssueIds}
@@ -404,7 +410,7 @@ export function ProjectDetail() {
   const pluginTabDecisionLoaded = Boolean(resolvedCompanyId) && !pluginDetailSlotsLoading;
   const isolatedWorkspacesEnabled = experimentalSettingsQuery.data?.enableIsolatedWorkspaces === true;
   const workspaceTabProjectId = project?.id ?? null;
-  const { data: workspaceTabIssues = [], isLoading: isWorkspaceTabIssuesLoading, error: workspaceTabIssuesError } = useQuery({
+  const { data: workspaceTabIssues = [], isLoading: isWorkspaceTabIssuesLoading, error: workspaceTabIssuesError, refetch: refetchWorkspaceTabIssues } = useQuery({
     queryKey: workspaceTabProjectId && resolvedCompanyId
       ? queryKeys.issues.listByProject(resolvedCompanyId, workspaceTabProjectId)
       : ["issues", "__workspace-tab__", "disabled"],
@@ -415,6 +421,7 @@ export function ProjectDetail() {
     data: workspaceTabExecutionWorkspaces = [],
     isLoading: isWorkspaceTabExecutionWorkspacesLoading,
     error: workspaceTabExecutionWorkspacesError,
+    refetch: refetchWorkspaceTabExecutionWorkspaces,
   } = useQuery({
     queryKey: workspaceTabProjectId && resolvedCompanyId
       ? queryKeys.executionWorkspaces.list(resolvedCompanyId, { projectId: workspaceTabProjectId })
@@ -453,6 +460,7 @@ export function ProjectDetail() {
     mutationFn: (data: Record<string, unknown>) =>
       projectsApi.update(projectLookupRef, data, resolvedCompanyId ?? lookupCompanyId),
     onSuccess: invalidateProject,
+    onError: () => pushToast({ title: "Your change was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   const archiveProject = useMutation({
@@ -495,12 +503,17 @@ export function ProjectDetail() {
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!resolvedCompanyId) throw new Error("No organization selected");
+      if (!resolvedCompanyId) throw new Error("Choose an organisation first");
       return assetsApi.uploadImage(resolvedCompanyId, file, `projects/${projectLookupRef || "draft"}`);
     },
   });
 
-  const { data: budgetOverview } = useQuery({
+  const {
+    data: budgetOverview,
+    error: budgetOverviewError,
+    refetch: refetchBudgetOverview,
+    isFetching: budgetOverviewFetching,
+  } = useQuery({
     queryKey: queryKeys.budgets.overview(resolvedCompanyId ?? "__none__"),
     queryFn: () => budgetsApi.overview(resolvedCompanyId!),
     enabled: !!resolvedCompanyId,
@@ -652,6 +665,7 @@ export function ProjectDetail() {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all(resolvedCompanyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(resolvedCompanyId) });
     },
+    onError: () => pushToast({ title: "The budget was not saved", body: "Try again in a moment.", tone: "error" }),
   });
 
   if (pluginTabFromSearch && !activePluginTab && !error) {
@@ -696,7 +710,15 @@ export function ProjectDetail() {
   }
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/projects" className="underline underline-offset-2">Back to projects</Link>
+        </p>
+      </div>
+    );
   if (!project) return null;
   const showLeftProjectNotice =
     projectMembershipState === "left" && !dismissedLeftProjectIds.has(project.id);
@@ -785,7 +807,7 @@ export function ProjectDetail() {
           {project.pauseReason === "budget" ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-(length:--text-micro) font-medium uppercase tracking-(--tracking-caps) text-red-800 dark:text-red-200">
               <span className="h-2 w-2 rounded-full bg-red-400" />
-              Paused by budget hard stop
+              Paused: budget limit reached
             </div>
           ) : null}
           {project.managedByPlugin ? (
@@ -822,7 +844,7 @@ export function ProjectDetail() {
         scopeKind="project"
         scopeId={project.id}
         title="Project summary"
-        description="Summarizer keeps the latest project status, next step, and operator-needed items here."
+        description="Kept up to date for you: where the project stands, the next step, and anything that needs you."
       />
 
       <PluginSlotOutlet
@@ -893,7 +915,15 @@ export function ProjectDetail() {
       {activeTab === "workspaces" ? (
         workspaceTabDecisionLoaded ? (
           workspaceTabError ? (
-            <p className="text-sm text-destructive">{workspaceTabError.message}</p>
+            <ErrorState
+              error={workspaceTabError}
+              title="This tab did not load"
+              onRetry={() => {
+                void refetchWorkspaceTabIssues();
+                void refetchWorkspaceTabExecutionWorkspaces();
+              }}
+              compact
+            />
           ) : (
             <ProjectWorkspacesContent
               companyId={resolvedCompanyId!}
@@ -922,12 +952,22 @@ export function ProjectDetail() {
 
       {activeTab === "budget" && resolvedCompanyId ? (
         <div className="max-w-3xl">
-          <BudgetPolicyCard
-            summary={projectBudgetSummary}
-            variant="plain"
-            isSaving={budgetMutation.isPending}
-            onSave={(amount) => budgetMutation.mutate(amount)}
-          />
+          {budgetOverviewError && !budgetOverview ? (
+            <ErrorState
+              compact
+              error={budgetOverviewError}
+              title="The budget did not load"
+              onRetry={() => void refetchBudgetOverview()}
+              retrying={budgetOverviewFetching}
+            />
+          ) : (
+            <BudgetPolicyCard
+              summary={projectBudgetSummary}
+              variant="plain"
+              isSaving={budgetMutation.isPending}
+              onSave={(amount) => budgetMutation.mutate(amount)}
+            />
+          )}
         </div>
       ) : null}
 

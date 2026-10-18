@@ -186,7 +186,7 @@ describe("IssueChatThread system notice routing", () => {
 
     renderThread([comment]);
 
-    expect(container.textContent).not.toContain("Chat renderer hit an internal state error.");
+    expect(container.textContent).not.toContain("Part of this conversation could not be shown.");
     expect(container.textContent).toContain("Workspace ready");
   });
 
@@ -684,7 +684,7 @@ describe("IssueChatThread system notice routing", () => {
     expect(detailsId).toBeTruthy();
     const details = detailsId ? container.ownerDocument.getElementById(detailsId) : null;
     expect(details).not.toBeNull();
-    expect(details?.textContent).toContain("run-stale");
+    expect(details?.textContent).toContain("View details");
     expect(details).toHaveProperty("hidden", true);
     act(() => {
       toggle.click();
@@ -692,7 +692,7 @@ describe("IssueChatThread system notice routing", () => {
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(details).toHaveProperty("hidden", false);
-    expect(container.textContent).toContain("run-stale");
+    expect(container.textContent).toContain("View details");
   });
 
   it("folds a required disposition warning while a live continuation is running the issue", () => {

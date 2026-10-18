@@ -34,6 +34,7 @@ import { isUniqueViolation } from "../db-errors.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { deliverableService } from "./deliverables.js";
 import { pipelineCaseFilesService } from "./pipeline-case-files.js";
+import { clientAcceptanceService } from "./client-acceptance.js";
 import { pipelineCaseDocumentRequestsService, readRequestedDocuments } from "./pipeline-case-document-requests.js";
 
 // Client journey by stage (GRE-1473). Each stage of a client's journey lists
@@ -118,6 +119,7 @@ function fileRef(
 
 export function pipelineCaseJourneyService(db: Db) {
   const files = pipelineCaseFilesService(db);
+  const acceptance = clientAcceptanceService(db);
 
   async function loadCase(companyId: string, caseId: string) {
     const row = await db
@@ -194,6 +196,7 @@ export function pipelineCaseJourneyService(db: Db) {
       changedAt: row.changedAt?.toISOString() ?? null,
       pack: fileRef(caseId, { id: row.packId, title: row.packTitle, createdAt: row.packCreatedAt }),
       acceptance: fileRef(caseId, { id: row.acceptanceId, title: row.acceptanceTitle, createdAt: row.acceptanceCreatedAt }),
+      onlineLink: await acceptance.current(companyId, caseId),
     };
   }
 
@@ -422,6 +425,8 @@ export function pipelineCaseJourneyService(db: Db) {
           updatedAt: now,
         })
         .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)));
+      // Starting over withdraws the pack, so the client's online link stops working too.
+      if (input.status === "not_sent") await acceptance.revokeAll(companyId, caseId);
       return { engagement: await loadEngagement(companyId, caseId) };
     },
 

@@ -55,11 +55,19 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   createGeneratedImageSchema,
+  createGeneratedImageVariationsSchema,
   updateGeneratedImageCoverSchema,
+  updateGeneratedImageFavouriteSchema,
+  updateGeneratedVideoFavouriteSchema,
   generatedImagesQuerySchema,
+  generatedVideosQuerySchema,
+  createGeneratedVideoSchema,
+  createStudioLookSchema,
+  updateStudioLookSchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
   setCaseEngagementSchema,
+  acceptClientEngagementSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -119,6 +127,8 @@ import {
   dismissMemoryLinkLeadSchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
+  reviseMemoryRecordSchema,
+  retireMemoryRecordSchema,
   runMemoryRetentionSchema,
   supersedeMemoryRecordSchema,
   createMemoryScopeSchema,
@@ -159,6 +169,11 @@ import {
   createFinanceEventSchema,
   updateBudgetSchema,
   upsertBudgetPolicySchema,
+  updateBudgetAuthoritySchema,
+  attachBudgetTopUpInvoiceSchema,
+  recordBudgetPreAuthorisationSchema,
+  requestBudgetTopUpSchema,
+  requestAiRouteChangeSchema,
   createCompanySubscriptionSchema,
   updateCompanySubscriptionSchema,
   resolveBudgetIncidentSchema,
@@ -262,6 +277,8 @@ import {
   createAcceptedPlanDecompositionSchema,
   resolveIssueRecoveryActionSchema,
   cancelIssueThreadInteractionSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   // Secret provider configs and remote import
   createSecretProviderConfigSchema,
   updateSecretProviderConfigSchema,
@@ -1457,6 +1474,15 @@ const PUBLIC_OPERATIONS = new Set([
   "GET /api/mcp/memory-tools",
   "GET /mcp/gateways/{gatewayPublicId}",
   "POST /mcp/gateways/{gatewayPublicId}",
+  // Memory sign-in for ChatGPT and Claude.ai: the OAuth handshake itself.
+  "GET /.well-known/oauth-protected-resource",
+  "GET /.well-known/oauth-protected-resource/api/mcp/memory-tools",
+  "GET /.well-known/oauth-authorization-server",
+  "GET /.well-known/oauth-authorization-server/api/mcp/memory-tools",
+  "GET /.well-known/openid-configuration",
+  "POST /oauth/memory/register",
+  "GET /oauth/memory/authorize",
+  "POST /oauth/memory/token",
   "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
   "POST /api/tool-gateway/gateways/{gatewayId}/mcp",
 ]);
@@ -1472,6 +1498,7 @@ const BOARD_ONLY_PREFIXES = [
 
 const BOARD_ONLY_OPERATIONS = new Set([
   "DELETE /api/generated-images/{id}",
+  "DELETE /api/generated-videos/{id}",
   "POST /api/companies/{companyId}/pause",
   "POST /api/companies/{companyId}/resume",
   "PUT /api/companies/{companyId}/memory/stewards/{scopeId}",
@@ -1570,6 +1597,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/members/{memberId}",
   "PATCH /api/companies/{companyId}/members/{memberId}/role-and-grants",
   "POST /api/companies/{companyId}/members/{memberId}/archive",
+  "POST /api/companies/{companyId}/members/{memberId}/two-step/reset",
   "POST /api/companies/{companyId}/legacy-board/retire",
   "POST /api/companies/{companyId}/legacy-board/restore",
   "POST /api/companies/{companyId}/members/{memberId}/handover",
@@ -1787,6 +1815,7 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
 ]);
 
 const CREATED_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/studio-looks",
   "POST /api/fleet/instances",
   "POST /api/fleet/instances/{id}/registration-code",
   "POST /api/fleet/spoke/register",
@@ -1831,6 +1860,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/issues",
   "POST /api/issues/{id}/children",
   "POST /api/issues/{id}/interactions",
+  "POST /api/issues/{id}/agent-questions",
   "POST /api/issues/{id}/comments",
   "POST /api/companies/{companyId}/issues/{issueId}/attachments",
   "POST /api/companies/{companyId}/projects",
@@ -1858,6 +1888,8 @@ const CREATED_OPERATIONS = new Set([
 
 const ACCEPTED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/generated-images",
+  "POST /api/companies/{companyId}/generated-images/variations",
+  "POST /api/companies/{companyId}/generated-videos",
   "POST /api/companies/{companyId}/releases/release",
   "POST /api/companies/{companyId}/releases/rollback",
   "POST /api/companies/{companyId}/email/send",
@@ -2140,6 +2172,8 @@ registry.registerPath({
             serverVersion: z.string(),
             commit: z.string().nullable(),
             error: z.literal("database_unreachable"),
+            reason: z.literal("shared_memory_lost").optional(),
+            hint: z.string().optional(),
             serverInfo: healthServerInfoSchema.optional(),
           }),
         },
@@ -3661,6 +3695,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/agents/directory",
+  tags: ["agents"],
+  summary: "Find who can help: agents ranked by capabilities, title and role for a query",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({ q: z.string().optional(), limit: z.string().optional() }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/agents",
   tags: ["agents"],
@@ -3715,6 +3761,41 @@ registry.registerPath({
   path: "/api/agents/me/inbox-lite",
   tags: ["agents"],
   summary: "Get current agent inbox (lite)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/recent-done",
+  tags: ["agents"],
+  summary: "List the current agent's recently finished tasks, newest first",
+  request: { query: z.object({ limit: z.coerce.number().int().min(1).max(50).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/failed-runs",
+  tags: ["agents"],
+  summary: "List the current agent's last failed or timed out runs with their errors",
+  request: { query: z.object({ limit: z.coerce.number().int().min(1).max(20).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/waiting-on-me",
+  tags: ["agents"],
+  summary: "List the current agent's tasks that other open tasks are waiting on",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/approvals",
+  tags: ["agents"],
+  summary: "List approval requests the current agent filed that are still open, oldest first",
+  request: { query: z.object({ all: z.enum(["true", "1"]).optional() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -4573,6 +4654,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/generated-images/variations",
+  tags: ["assets"],
+  summary: "Make 2 to 4 takes on one description at once: count for copies of the same request, lookIds to make one per house look and compare them, or shots for a storyboard (each shot line is joined to the shared description, with the same look). Answers 202 with { images } (all pending); poll each like a single image. 422 code studio_look_not_found when a look is not in this company; 429 when they would not all fit under the limit of 6 images being made",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageVariationsSchema) },
+  responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/generated-images/covers",
   tags: ["assets"],
@@ -4591,6 +4681,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/api/generated-images/{id}/favourite",
+  tags: ["assets"],
+  summary: "Star (favourite true) or unstar a generated image as a keeper. List starred ones with ?favourite=true. 422 when starring an image that is not finished",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedImageFavouriteSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/generated-images/{id}",
   tags: ["assets"],
@@ -4604,6 +4703,105 @@ registry.registerPath({
   path: "/api/generated-images/{id}",
   tags: ["assets"],
   summary: "Delete a generated image and its stored file (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/video-generation",
+  tags: ["assets"],
+  summary: "Say whether studio clips are switched on (configured) and which service makes them (Higgsfield or practice mode)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/generated-videos",
+  tags: ["assets"],
+  summary: "List studio clips, newest first, with prompt, model, source image, status and contentPath once ready",
+  request: { params: z.object({ companyId: z.string() }), query: generatedVideosQuerySchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/generated-videos",
+  tags: ["assets"],
+  summary: "Make a short clip from a description, or animate a finished studio image (sourceImageId). Answers 202 with a pending clip; poll GET /api/generated-videos/{id}. 422 code video_generation_not_configured when no service is set; 429 when 3 clips are already being made",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedVideoSchema) },
+  responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/generated-videos/{id}/favourite",
+  tags: ["assets"],
+  summary: "Star (favourite true) or unstar a studio clip as a keeper. List starred ones with ?favourite=true. 422 when starring a clip that is not finished",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedVideoFavouriteSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/generated-videos/{id}",
+  tags: ["assets"],
+  summary: "Get one studio clip and its status",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/generated-videos/{id}",
+  tags: ["assets"],
+  summary: "Delete a studio clip and its stored file (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/studio-looks",
+  tags: ["assets"],
+  summary: "List the company's house looks: saved studio style, camera picks and words, by name",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/studio-looks",
+  tags: ["assets"],
+  summary: "Save a house look. Pass its id as lookId when making an image or clip; the request's own picks win and the look's words are added. 409 code studio_look_name_taken when the name is in use",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createStudioLookSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/studio-looks/{id}",
+  tags: ["assets"],
+  summary: "Get one house look",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/studio-looks/{id}",
+  tags: ["assets"],
+  summary: "Change a house look's name, description, style, camera or words",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateStudioLookSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/studio-looks/{id}",
+  tags: ["assets"],
+  summary: "Delete a house look. Images and clips already made with it keep their settings",
   request: { params: z.object({ id: z.string() }) },
   responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
@@ -4684,6 +4882,57 @@ registry.registerPath({
     body: jsonBody(setCaseEngagementSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/online-link",
+  tags: ["issues"],
+  summary:
+    "Make the client's online acceptance link (board only). Returns the link once; a new link revokes the older " +
+    "one. Needs a cleared NDA and an uploaded pack (409)",
+  request: { params: z.object({ caseId: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/cases/{caseId}/engagement/online-link",
+  tags: ["issues"],
+  summary: "Stop the client's online acceptance link (board only). 404 when there is no open link",
+  request: { params: z.object({ caseId: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-acceptance/{token}",
+  tags: ["issues"],
+  summary:
+    "Public, no sign-in: what a client sees on their acceptance page (company and client names, the pack, the " +
+    "acceptance). 404 when the link is unknown, revoked or expired",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-acceptance/{token}/pack",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the engagement pack file behind an acceptance link",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-acceptance/{token}/accept",
+  tags: ["issues"],
+  summary:
+    "Public, no sign-in: the client accepts the engagement pack with their name, optional role and email. The " +
+    "client's engagement moves to accepted. 409 when already accepted",
+  request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({
@@ -5132,6 +5381,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/api/labels/{labelId}",
+  tags: ["issues"],
+  summary: "Rename or recolour a label",
+  request: {
+    params: z.object({ labelId: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ name: z.string().optional(), color: z.string().optional() }) } } },
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "delete",
   path: "/api/labels/{labelId}",
   tags: ["issues"],
@@ -5339,7 +5600,13 @@ registry.registerPath({
   path: "/api/companies/{companyId}/routines",
   tags: ["routines"],
   summary: "List routines in a company",
-  request: { params: z.object({ companyId: z.string() }) },
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      projectId: z.string().optional(),
+      assigneeAgentId: z.string().optional().describe("Agent id, or me for the calling agent"),
+    }),
+  },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -5667,6 +5934,63 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
+const memoryOAuthMetadata = (path: string, summary: string) =>
+  registry.registerPath({ method: "get", path, tags: ["memory"], summary, responses: { 200: r.ok(), 404: r.notFound } });
+memoryOAuthMetadata("/.well-known/oauth-protected-resource", "OAuth protected resource metadata for the memory MCP endpoint");
+memoryOAuthMetadata("/.well-known/oauth-protected-resource/api/mcp/memory-tools", "OAuth protected resource metadata for the memory MCP endpoint");
+memoryOAuthMetadata("/.well-known/oauth-authorization-server", "OAuth authorization server metadata for the memory sign-in");
+memoryOAuthMetadata("/.well-known/oauth-authorization-server/api/mcp/memory-tools", "OAuth authorization server metadata for the memory sign-in");
+memoryOAuthMetadata("/.well-known/openid-configuration", "OAuth authorization server metadata for the memory sign-in");
+
+registry.registerPath({
+  method: "post",
+  path: "/oauth/memory/register",
+  tags: ["memory"],
+  summary: "Dynamic client registration for ChatGPT, Claude.ai and other MCP apps; public clients with https or localhost redirects",
+  responses: { 201: r.ok(), 400: r.badRequest, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/oauth/memory/authorize",
+  tags: ["memory"],
+  summary: "Check an app's sign-in request and send the browser to the Allow screen",
+  responses: { 302: { description: "Redirect to the Allow screen or back to the app" }, 400: r.badRequest, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/oauth/memory/token",
+  tags: ["memory"],
+  summary: "Swap a single-use code (PKCE S256) for a memory-only key; refused while the company's app sign-in is off",
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/memory-oauth/status",
+  tags: ["memory"],
+  summary: "The memory address to paste into ChatGPT or Claude.ai; 404 where this server does not offer app sign-in",
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/memory-oauth/client",
+  tags: ["memory"],
+  summary: "The app asking to connect, for the Allow screen",
+  request: { query: z.object({ client_id: z.string(), redirect_uri: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/memory-oauth/approve",
+  tags: ["memory"],
+  summary: "A signed-in person allows an app: makes or reuses their link agent and returns the app's redirect with a short-lived code",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
 registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/memory/records/{recordId}",
@@ -5702,6 +6026,24 @@ registry.registerPath({
   tags: ["memory"],
   summary: "Supersede a record with a newer one in the same scope; the replacement becomes approved and the old record stays as history",
   request: { params: memoryRecordParams, body: jsonBody(supersedeMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/revise",
+  tags: ["memory"],
+  summary: "Propose a new version of a card at the version the caller saw; it waits for review and a changed card refuses the call (GRE-1081)",
+  request: { params: memoryRecordParams, body: jsonBody(reviseMemoryRecordSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/retire",
+  tags: ["memory"],
+  summary: "Mark a confirmed or disputed card as no longer true at the version the caller saw; it stays as history (GRE-1081)",
+  request: { params: memoryRecordParams, body: jsonBody(retireMemoryRecordSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
@@ -6734,6 +7076,7 @@ const costSummaryPaths = [
   "by-provider",
   "by-biller",
   "by-project",
+  "by-billing-code",
   "finance-summary",
   "finance-by-biller",
   "finance-by-kind",
@@ -6857,6 +7200,87 @@ registry.registerPath({
     401: r.unauthorized,
     404: r.notFound,
   },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/budgets/authority",
+  tags: ["costs"],
+  summary: "Read the operator budget ceiling and named override approvers",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/budgets/authority",
+  tags: ["costs"],
+  summary: "Set the budget ceiling and named override approvers (hosting operator only)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(updateBudgetAuthoritySchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/budgets/top-ups",
+  tags: ["costs"],
+  summary: "List one month's top-ups and pre-authorised ceilings, with the headroom left",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({ windowStart: z.string().optional() }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/budgets/top-ups",
+  tags: ["costs"],
+  summary: "Ask for a top-up of this month (applies at once when approved or pre-authorised, else 202)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(requestBudgetTopUpSchema),
+  },
+  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/budgets/pre-authorisations",
+  tags: ["costs"],
+  summary: "Pre-authorise top-ups for one month up to an amount (operator or named approver)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(recordBudgetPreAuthorisationSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/budgets/top-ups/{topUpId}/invoice-line",
+  tags: ["costs"],
+  summary: "Name the invoice line that bills a top-up or ceiling (hosting operator only)",
+  request: {
+    params: z.object({ companyId: z.string(), topUpId: z.string() }),
+    body: jsonBody(attachBudgetTopUpInvoiceSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/ai-route-change-requests",
+  tags: ["instance"],
+  summary: "Ask the hosting operator to change the AI route (applies at once for the operator)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(requestAiRouteChangeSchema),
+  },
+  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -7139,10 +7563,19 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/push/recent",
+  tags: ["inbox"],
+  summary: "The caller's notifications that reached a phone in the last two weeks, newest first",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/morning-summary",
   tags: ["inbox"],
-  summary: "The caller's morning summary: what needs them, what finished in the last 24 hours, what is stuck",
-  request: { params: z.object({ companyId: z.string() }) },
+  summary: "The caller's morning summary: what needs them, what finished in the last 24 hours (or since the start of their day with window=day), what is stuck",
+  request: { params: z.object({ companyId: z.string() }), query: z.object({ window: z.enum(["24h", "day"]).optional() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
@@ -7153,6 +7586,21 @@ registry.registerPath({
   summary: "This week at the company: finished work by agent, stuck tasks, pipeline moves, what needs the caller and spend by agent",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/agent-daily-digests",
+  tags: ["inbox"],
+  summary: "The nightly digests of what each agent did, with spend, for a range of UTC days (default: the last seven)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -7264,7 +7712,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/needs-me",
   tags: ["inbox"],
-  summary: "List what needs the board user: open decisions, tasks assigned to them that are not done, and waits on them or the board older than 24h with their age",
+  summary: "List what needs the board user: open decisions, tasks assigned to them that are not done, waits on them or the board older than 24h with their age, and agents' questions that expired unanswered in the last two days",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -8150,6 +8598,14 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/instance/sign-in-activity",
+  tags: ["instance"],
+  summary: "Wrong passwords and passwords held at the two-step code across the instance, with counts for the last day (instance admins)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/instance/system-memory",
   tags: ["instance"],
   summary: "Get read-only host memory for the run-cap suggestion",
@@ -8254,7 +8710,7 @@ registry.registerPath({
   path: "/api/board/chat/stream",
   tags: ["instance"],
   summary:
-    "Stream a board-level chat response (requires enableConferenceRoomChat)",
+    "Stream a board-level chat response",
   request: {
     body: jsonBody(
       z.object({
@@ -8279,7 +8735,7 @@ registry.registerPath({
   path: "/api/board/chat/issue",
   tags: ["instance"],
   summary:
-    "Find or create the board conversation's issue, so files can be attached before the first message (requires enableConferenceRoomChat)",
+    "Find or create the board conversation's issue, so files can be attached before the first message",
   request: { body: jsonBody(z.object({ companyId: z.string() })) },
   responses: {
     200: r.ok(z.object({ issueId: z.string() })),
@@ -8436,6 +8892,17 @@ registry.registerPath({
     401: r.unauthorized,
     404: r.notFound,
   },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/members/{memberId}/two-step/reset",
+  tags: ["access"],
+  summary: "Reset a member's two-step sign-in after a lost phone",
+  description:
+    "Removes the person's authenticator key and backup codes and signs them out everywhere. An instance admin may reset anyone but themselves; a company owner or admin may reset someone below their role who belongs to no other organisation.",
+  request: { params: z.object({ companyId: z.string(), memberId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -8708,6 +9175,47 @@ registry.registerPath({
   path: "/api/auth/profile",
   tags: ["auth"],
   summary: "Get current user profile",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/sessions",
+  tags: ["auth"],
+  summary: "Where the current user is signed in (live sessions, no tokens)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/sign-in-history",
+  tags: ["auth"],
+  summary: "The current user's recent sign-in attempts (signed in, wrong password, waiting for a two-step code)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/sessions/revoke-others",
+  tags: ["auth"],
+  summary: "Sign the current user out everywhere except this device",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/sessions/{sessionId}/revoke",
+  tags: ["auth"],
+  summary: "Sign the current user out on one other device",
+  request: { params: z.object({ sessionId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/two-step-status",
+  tags: ["auth"],
+  summary: "Whether two-step sign-in is on for the current user",
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -11831,6 +12339,36 @@ for (const route of [
   ],
   [
     "get",
+    "/api/companies/{companyId}/search/quiet-clients",
+    "List open deals and leads with no recent contact",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/recent-client-activity",
+    "List recent client notes, calls, meetings and emails",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/client-brief",
+    "Brief on the organisation that best matches a name",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/closing-deals",
+    "List open deals and leads by expected close date",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/pipeline-summary",
+    "Summarise open deals per stage with value and the largest deals, optionally for one owner",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/won-lost",
+    "List deals won and lost lately with value and lost reasons",
+  ],
+  [
+    "get",
     "/api/companies/{companyId}/issues/count",
     "Count issues in a company",
   ],
@@ -12441,6 +12979,22 @@ registerCurrentRoute({
   tags: ["issues"],
   summary: "Withdraw a pending issue thread interaction",
   body: withdrawIssueThreadInteractionSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/agent-questions",
+  tags: ["issues"],
+  summary: "Ask another agent in the same company a question on this task",
+  body: createAgentQuestionSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/agent-questions/{interactionId}/answer",
+  tags: ["issues"],
+  summary: "Answer a question another agent asked you on its task",
+  body: answerAgentQuestionSchema,
 });
 
 for (const route of [
@@ -14093,6 +14647,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/cases/{caseId}/crm-history",
+  tags: ["pipelines"],
+  summary: "Get the CRM history filed on a client case: activities, notes, calls, emails, stage changes and files",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/cases/{caseId}/journey",
   tags: ["pipelines"],
   summary: "Get a client's journey by stage: each stage's templates and the deliverables filed under it",
@@ -14184,7 +14746,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/organisations/import/pipedrive",
   tags: ["organisations"],
-  summary: "Import organisations from a Pipedrive connection (company owners); 409 while an import runs",
+  summary: "Import organisations, people, pipelines and every deal from a Pipedrive connection, read only (company owners); 409 while an import runs",
   body: importOrganisationsFromPipedriveSchema,
   responses: {
     200: r.ok(),
@@ -14259,6 +14821,38 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/organisations/{organisationId}/history",
   tags: ["organisations"],
   summary: "Get an organisation's change history",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts",
+  tags: ["organisations"],
+  summary: "Search people across every organisation (q, two characters or more)",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts/unassigned",
+  tags: ["organisations"],
+  summary: "List people with no organisation (CRM imports)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-products",
+  tags: ["organisations"],
+  summary: "List the CRM product catalogue with the deals each product is on",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-files/{fileId}/content",
+  tags: ["organisations"],
+  summary: "Download a file copied from a CRM import",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 

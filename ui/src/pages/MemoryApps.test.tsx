@@ -18,9 +18,15 @@ const graphApiMock = vi.hoisted(() => ({
   createConnection: vi.fn(),
   revokeConnection: vi.fn(),
   connectionActivity: vi.fn(),
+  settings: vi.fn(),
+  updateSettings: vi.fn(),
+  appSignInStatus: vi.fn(),
 }));
 
+const accessApiMock = vi.hoisted(() => ({ listUserDirectory: vi.fn() }));
+
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: graphApiMock }));
+vi.mock("../api/access", () => ({ accessApi: accessApiMock }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-kestrel" }) }));
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
@@ -82,6 +88,7 @@ beforeEach(() => {
   root = createRoot(container);
   graphApiMock.scopes.mockResolvedValue(scopes);
   graphApiMock.connections.mockResolvedValue([]);
+  accessApiMock.listUserDirectory.mockResolvedValue({ users: [] });
   graphApiMock.connectionActivity.mockResolvedValue({ lastUsedAt: null, operations: [], contributions: [] });
   graphApiMock.checkImport.mockImplementation(async (_companyId: string, body: { entries: Array<{ sourceId: string }> }) => ({
     entries: body.entries.map((entry) => ({ sourceId: entry.sourceId, match: null, existing: null })),
@@ -179,11 +186,62 @@ describe("MemoryApps", () => {
     expect(body()).toContain("searched memory");
   });
 
-  it("tells the person ChatGPT cannot connect yet", async () => {
+  it("names the owner of each connected app, with a fallback when the owner is not known", async () => {
+    const connection = (agentId: string, app: string, createdByUserId: string | null) => ({
+      agentId, app, name: `${app} memory link`, createdByUserId, canContribute: true, keys: [],
+    });
+    graphApiMock.connections.mockResolvedValue([
+      connection("a-ada", "claude", "u-ada"),
+      connection("a-ben", "codex", "u-ben"),
+      connection("a-gone", "claude_code", "u-gone"),
+      connection("a-none", "other", null),
+    ]);
+    accessApiMock.listUserDirectory.mockResolvedValue({
+      users: [
+        { principalId: "u-ada", status: "active", user: { id: "u-ada", email: "ada@example.com", name: "Ada Lovelace", image: null } },
+        { principalId: "u-ben", status: "active", user: { id: "u-ben", email: "ben@example.com", name: null, image: null } },
+      ],
+    });
     await render();
-    const chatgpt = [...document.querySelectorAll('[aria-label="App to connect"] button')].find((el) => el.textContent?.includes("ChatGPT")) as HTMLButtonElement;
-    await act(async () => chatgpt.click());
-    expect(body()).toContain("GSAM does not offer one yet");
+    for (let i = 0; i < 10 && !body().includes("Connected by"); i += 1) await flush();
+    const rows = [...document.querySelectorAll("li")]
+      .map((row) => row.textContent ?? "")
+      .filter((text) => text.includes("Disconnect"));
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toContain("Connected by Ada Lovelace");
+    expect(rows[1]).toContain("Connected by ben@example.com");
+    expect(rows[2]).toContain("Owner unknown");
+    expect(rows[3]).toContain("Owner unknown");
+    expect(accessApiMock.listUserDirectory).toHaveBeenCalledWith("co-kestrel");
+  });
+
+  async function pickApp(name: string) {
+    const option = [...document.querySelectorAll('[aria-label="App to connect"] button')].find((el) => el.textContent?.includes(name)) as HTMLButtonElement;
+    await act(async () => option.click());
+    await flush();
+  }
+
+  it("says when this GSAM does not offer sign-in for ChatGPT", async () => {
+    graphApiMock.appSignInStatus.mockRejectedValue(new Error("not found"));
+    graphApiMock.settings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: false, updatedAt: null });
+    await render();
+    await pickApp("ChatGPT");
+    expect(body()).toContain("this GSAM does not offer that sign-in");
+    expect(button("Connect ChatGPT")).toBeUndefined();
+  });
+
+  it("lets an owner turn on app sign-in, then shows the ChatGPT steps with the address", async () => {
+    graphApiMock.appSignInStatus.mockResolvedValue({ mcpUrl: "https://memory.example.com/api/mcp/memory-tools" });
+    graphApiMock.settings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: false, updatedAt: null });
+    graphApiMock.updateSettings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: true, updatedAt: null });
+    await render();
+    await pickApp("ChatGPT");
+    expect(body()).toContain("App sign-in is off");
+    await act(async () => button("Turn on app sign-in")!.click());
+    await flush();
+    expect(graphApiMock.updateSettings).toHaveBeenCalledWith("co-kestrel", { appSignIn: true });
+    expect(body()).toContain("https://memory.example.com/api/mcp/memory-tools");
+    expect(body()).toContain("voice mode");
     expect(button("Connect ChatGPT")).toBeUndefined();
   });
 });

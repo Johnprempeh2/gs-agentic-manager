@@ -139,7 +139,7 @@ export function StatusCardDetailDrawer({
     },
     onSuccess: async () => {
       await invalidateCard();
-      setActionNote("Run queued. The Summarizer is updating this card.");
+      setActionNote("Update requested. The Summarizer is updating this card.");
     },
     onError: (err) => setActionError(err instanceof Error ? err.message : "Could not run the card."),
   });
@@ -250,7 +250,7 @@ export function StatusCardDetailDrawer({
           <TabsList variant="line" className="w-full justify-start gap-4 border-b border-border px-4">
             <TabsTrigger value="summary">Summary</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
-            <TabsTrigger value="watched">Watched issues</TabsTrigger>
+            <TabsTrigger value="watched">Watched tasks</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
@@ -419,14 +419,14 @@ export function StatusCardDetailDrawer({
             <TabsContent value="watched" className="mt-0 space-y-3">
               {card.queries.length === 0 && (card.mentionedIssueIds?.length ?? 0) === 0 ? (
                 <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-                  This card is still setting up. The issues it watches appear here once it's ready.
+                  This card is still setting up. The tasks it watches appear here once it's ready.
                 </div>
               ) : dryRunQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Matching issues…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Matching tasks…
                 </div>
               ) : dryRunQuery.isError ? (
-                <InlineBanner tone="danger" title="Could not load matched issues">
+                <InlineBanner tone="danger" title="Could not load matched tasks">
                   {dryRunQuery.error instanceof Error ? dryRunQuery.error.message : "Try again."}
                 </InlineBanner>
               ) : (
@@ -515,7 +515,7 @@ function QueryDebugSection({ card }: { card: StatusCardView }) {
         </pre>
         <p className="text-xs text-muted-foreground">
           {card.queryCompiledAt
-            ? `Compiled by Summarizer ${relativeTime(card.queryCompiledAt)} · version ${card.queryVersion}. Edit “What this card watches” above to rebuild it.`
+            ? `Set up by the Summarizer ${relativeTime(card.queryCompiledAt)} · version ${card.queryVersion}. Edit “What this card watches” above to rebuild it.`
             : "Not compiled yet. The query builds automatically once the card finishes setting up."}
         </p>
       </CollapsibleContent>
@@ -543,7 +543,7 @@ function MatchedIssueList({ queries, mentioned }: { queries: StatusCardDryRun["q
   if (matched.length === 0 && mentionedOnly.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-        The compiled query matches no issues right now.
+        The compiled query matches no tasks right now.
       </div>
     );
   }

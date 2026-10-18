@@ -11,6 +11,7 @@ import {
   pipelines,
 } from "@greatstone/db";
 import type {
+  OrganisationPerson,
   ListOrganisationsQuery,
   Organisation,
   OrganisationContact,
@@ -123,6 +124,7 @@ function toOrganisation(row: OrganisationRow): Organisation {
     description: row.description,
     registrationNumber: row.registrationNumber,
     taxId: row.taxId,
+    crmFields: row.crmFields ?? [],
     source: row.source as OrganisationSource,
     externalId: row.externalId,
     archivedAt: iso(row.archivedAt),
@@ -147,6 +149,7 @@ function toContact(row: ContactRow): OrganisationContact {
     email: row.email,
     phone: row.phone,
     isKeyContact: row.isKeyContact,
+    crmFields: row.crmFields ?? [],
     source: row.source as OrganisationSource,
     externalId: row.externalId,
     archivedAt: iso(row.archivedAt),
@@ -378,6 +381,7 @@ export function organisationService(db: Db) {
       const stages = await pipelineStagesFor(companyId, rows.map((row) => row.id));
       const byOrganisation = new Map<string, ContactRow[]>();
       for (const contact of contacts) {
+        if (!contact.organisationId) continue;
         const list = byOrganisation.get(contact.organisationId) ?? [];
         list.push(contact);
         byOrganisation.set(contact.organisationId, list);
@@ -394,6 +398,46 @@ export function organisationService(db: Db) {
           pipelines: stages.get(row.id) ?? [],
         };
       });
+    },
+
+    /** Live people across every organisation matching a search on name, role, email, phone or organisation, by name. */
+    async searchContacts(companyId: string, q: string, limit = 100): Promise<OrganisationPerson[]> {
+      const pattern = likePattern(q);
+      const rows = await db
+        .select({ contact: organisationContacts, organisationName: organisations.name })
+        .from(organisationContacts)
+        .leftJoin(organisations, and(
+          eq(organisations.id, organisationContacts.organisationId),
+          eq(organisations.companyId, organisationContacts.companyId),
+        ))
+        .where(and(
+          eq(organisationContacts.companyId, companyId),
+          isNull(organisationContacts.archivedAt),
+          or(
+            ilike(organisationContacts.name, pattern),
+            ilike(organisationContacts.role, pattern),
+            ilike(organisationContacts.email, pattern),
+            ilike(organisationContacts.phone, pattern),
+            ilike(organisations.name, pattern),
+          )!,
+        ))
+        .orderBy(asc(organisationContacts.name))
+        .limit(limit);
+      return rows.map(({ contact, organisationName }) => ({ ...toContact(contact), organisationName }));
+    },
+
+    /** People with no organisation (imported from a CRM that held them on their own), by name. */
+    async listUnassignedContacts(companyId: string): Promise<OrganisationContact[]> {
+      const rows = await db
+        .select()
+        .from(organisationContacts)
+        .where(and(
+          eq(organisationContacts.companyId, companyId),
+          isNull(organisationContacts.organisationId),
+          isNull(organisationContacts.archivedAt),
+        ))
+        .orderBy(asc(organisationContacts.name));
+      return rows.map(toContact);
     },
 
     async getDetail(companyId: string, id: string): Promise<OrganisationDetail | null> {

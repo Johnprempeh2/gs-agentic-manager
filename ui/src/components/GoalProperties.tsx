@@ -9,6 +9,7 @@ import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
+import { goalLevelLabel } from "../lib/goal-level-labels";
 import { StatusBadge } from "./StatusBadge";
 import { formatDate, cn, agentUrl } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -137,11 +138,12 @@ export function GoalProperties({ goal, onUpdate, showKind = true }: GoalProperti
               current={goal.level}
               options={GOAL_LEVELS}
               onChange={(level) => onUpdate({ level })}
+              labelFor={goalLevelLabel}
             >
-              <span className="text-sm capitalize">{goal.level}</span>
+              <span className="text-sm">{goalLevelLabel(goal.level)}</span>
             </PickerButton>
           ) : (
-            <span className="text-sm capitalize">{goal.level}</span>
+            <span className="text-sm">{goalLevelLabel(goal.level)}</span>
           )}
         </PropertyRow>
 
@@ -178,7 +180,7 @@ export function GoalProperties({ goal, onUpdate, showKind = true }: GoalProperti
         </PropertyRow>
 
         {goal.parentId && (
-          <PropertyRow label="Parent Goal">
+          <PropertyRow label="Parent goal">
             <Link
               to={`/goals/${goal.parentId}`}
               className="text-sm hover:underline"

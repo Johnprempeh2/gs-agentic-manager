@@ -47,6 +47,83 @@ describe("issue subresource commands", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes the priority, creator and due date filters to the issue list", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "list", "-C", COMPANY_ID, "--priority", "critical,high", "--created-by", "me", "--due-before", "2026-10-31", "--overdue"]);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe(`/api/companies/${COMPANY_ID}/issues`);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      priority: "critical,high",
+      createdByAgentId: "me",
+      dueBefore: "2026-10-31",
+      overdue: "true",
+    });
+  });
+
+  it("wraps diagnostics, execution, digests, agent questions and document links", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({})));
+    vi.stubGlobal("fetch", fetchMock);
+    const AGENT = "12121212-1212-4212-8212-121212121212";
+    const SOURCE = "34343434-3434-4434-8434-343434343434";
+    const LINK = "56565656-5656-4656-8656-565656565656";
+
+    await run(["issue", "diagnose", ISSUE_ID]);
+    await run(["issue", "diagnose", ISSUE_ID, "--wakes"]);
+    await run(["issue", "diagnose", ISSUE_ID, "--subtree"]);
+    await run(["issue", "execution", ISSUE_ID]);
+    await run(["issue", "transcript-digests", ISSUE_ID, "--runs", `${AGENT}, ${SOURCE}`]);
+    await run(["issue", "ask-agent", ISSUE_ID, "--agent", AGENT, "--question", "Which client is this for?"]);
+    await run(["issue", "answer-question", ISSUE_ID, INTERACTION_ID, "--answer", "Acme"]);
+    await run(["issue", "document-links", ISSUE_ID]);
+    await run(["issue", "document-link:create", ISSUE_ID, "--source-issue", SOURCE, "--key", "plan"]);
+    await run(["issue", "document-link:delete", ISSUE_ID, LINK]);
+    await run(["issue", "watchdog", ISSUE_ID]);
+    await run(["issue", "watchdog:set", ISSUE_ID, "--agent", AGENT, "--instructions", "Nudge if idle for a day"]);
+    await run(["issue", "watchdog:clear", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/blockers`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/wakes`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/diagnostics/subtree`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/execution`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/run-transcript-digests?runIds=${AGENT}%2C${SOURCE}`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/agent-questions`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/agent-questions/${INTERACTION_ID}/answer`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links`],
+      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/document-links/${LINK}`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/watchdog`],
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[5]?.[1]?.body))).toEqual({ targetAgentId: AGENT, question: "Which client is this for?" });
+    expect(JSON.parse(String(fetchMock.mock.calls[8]?.[1]?.body))).toEqual({ sourceIssueId: SOURCE, key: "plan" });
+  });
+
+  it("lists blocked tasks and what holds them up", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
+      generatedAt: "2026-10-18T00:00:00Z",
+      totalBlocked: 1,
+      oldestWaitingSince: "2026-10-17T00:00:00Z",
+      rootCauses: [{ issue: { id: "r1", identifier: "GRE-2", title: "Brief", status: "todo" }, owner: { type: "agent", agentId: "a1", userId: null }, action: null, heldIssueIds: ["b1"], oldestWaitingSince: null }],
+      items: [{ issue: { id: "b1", identifier: "GRE-1", title: "Design", status: "blocked" }, waitingSince: "2026-10-17T00:00:00Z", owner: { type: "board", agentId: null, userId: null }, rootIssueIds: ["r1"], tidyReason: null }],
+      truncated: false,
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "blocked", "--company-id", COMPANY_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      `http://localhost:3100/api/companies/${COMPANY_ID}/blocked-work`,
+    ]);
+    const lines = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(lines.some((line) => line.includes("GRE-1") && line.includes("board"))).toBe(true);
+    expect(lines.some((line) => line.includes("GRE-2") && line.includes("holdsUp"))).toBe(true);
+  });
+
   it("wraps core issue get, update, and delete endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
@@ -60,6 +137,76 @@ describe("issue subresource commands", () => {
       ["PATCH", `http://localhost:3100/api/issues/${ISSUE_ID}`],
       ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}`],
     ]);
+  });
+
+  it("blocks an issue with the calling agent as owner, and unblocks it", async () => {
+    const AGENT_ID = "33333333-3333-4333-8333-333333333333";
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => Promise.resolve(jsonResponse(url.endsWith("/api/agents/me") ? { id: AGENT_ID } : { ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "block", ISSUE_ID, "--action", "Client sends the signed NDA", "--waiting-on", "client", "--expected-by", "2026-10-24"]);
+    await run(["issue", "block", ISSUE_ID, "--action", "Approve the budget", "--owner", "board"]);
+    await run(["issue", "unblock", ISSUE_ID]);
+
+    const patches = fetchMock.mock.calls.filter((call) => call[1]?.method === "PATCH").map((call) => JSON.parse(String(call[1]?.body)));
+    expect(patches[0]).toEqual({
+      status: "blocked",
+      unblockDescriptor: { owner: { agentId: AGENT_ID }, action: "Client sends the signed NDA", waitingOn: "client", expectedBy: "2026-10-24" },
+    });
+    expect(patches[1].unblockDescriptor.owner).toBe("board");
+    expect(patches[2]).toEqual({ status: "todo", unblockDescriptor: null });
+    await expect(run(["issue", "block", ISSUE_ID, "--action", "x", "--waiting-on", "friend"])).rejects.toThrow();
+  });
+
+  it("registers deliverables, names a document maker, marks an approved revision and runs a monitor check", async () => {
+    const REVISION_ID = "44444444-4444-4444-8444-444444444444";
+    const AGENT_ID = "55555555-5555-4555-8555-555555555555";
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "deliverable:create", ISSUE_ID, "--title", "Q3 pack", "--url", "https://example.com/pack", "--kind", "deck"]);
+    await run(["issue", "document:maker", ISSUE_ID, "plan", "--agent", AGENT_ID]);
+    await run(["issue", "document:approve", ISSUE_ID, "plan", "--revision", REVISION_ID]);
+    await run(["issue", "document:approve", ISSUE_ID, "plan", "--revision", "null"]);
+    await run(["issue", "monitor:check-now", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0], call[1]?.body ? JSON.parse(String(call[1].body)) : null])).toEqual([
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/deliverables`, { title: "Q3 pack", url: "https://example.com/pack", kind: "deck" }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/maker`, { makerAgentId: AGENT_ID }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/approved-revision`, { revisionId: REVISION_ID }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/approved-revision`, { revisionId: null }],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/monitor/check-now`, {}],
+    ]);
+    await expect(run(["issue", "deliverable:create", ISSUE_ID, "--title", "No file"])).rejects.toThrow();
+  });
+
+  it("decomposes an accepted plan into child issues", async () => {
+    const REVISION_ID = "66666666-6666-4666-8666-666666666666";
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "plan:decompose", ISSUE_ID, "--revision", REVISION_ID, "--children-json", JSON.stringify([{ title: "Draft brief" }, { title: "Book interviews" }])]);
+    await run(["issue", "plan:decompositions", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/issues/${ISSUE_ID}/accepted-plan-decompositions`);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.acceptedPlanRevisionId).toBe(REVISION_ID);
+    expect(body.children.map((child: { title: string }) => child.title)).toEqual(["Draft brief", "Book interviews"]);
+    expect(fetchMock.mock.calls[1]?.[1]?.method ?? "GET").toBe("GET");
+    await expect(run(["issue", "plan:decompose", ISSUE_ID, "--revision", REVISION_ID])).rejects.toThrow();
+  });
+
+  it("sets and clears a due date on create and update", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "create", "-C", COMPANY_ID, "--title", "Send proposal", "--due-date", "2026-10-24"]);
+    await run(["issue", "update", ISSUE_ID, "--due-date", "null"]);
+
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    expect(bodies[0]).toMatchObject({ title: "Send proposal", dueDate: "2026-10-24" });
+    expect(bodies[1]).toMatchObject({ dueDate: null });
+    await expect(run(["issue", "update", ISSUE_ID, "--due-date", "next week"])).rejects.toThrow();
   });
 
   it("binds explicit uploaded attachments when adding a comment", async () => {
@@ -201,6 +348,7 @@ describe("issue subresource commands", () => {
       await run(["issue", "attachment:delete", ATTACHMENT_ID]);
       await run(["issue", "label:list", "--company-id", COMPANY_ID]);
       await run(["issue", "label:create", "--company-id", COMPANY_ID, "--name", "bug", "--color", "#ff0000"]);
+      await run(["issue", "label:update", LABEL_ID, "--name", "defect"]);
       await run(["issue", "label:delete", LABEL_ID]);
       await run(["issue", "feedback:votes", ISSUE_ID]);
       await run([
@@ -232,6 +380,7 @@ describe("issue subresource commands", () => {
       ["DELETE", `http://localhost:3100/api/attachments/${ATTACHMENT_ID}`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/labels`],
+      ["PATCH", `http://localhost:3100/api/labels/${LABEL_ID}`],
       ["DELETE", `http://localhost:3100/api/labels/${LABEL_ID}`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],

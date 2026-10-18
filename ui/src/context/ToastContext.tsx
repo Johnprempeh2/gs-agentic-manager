@@ -27,6 +27,8 @@ export interface ToastInput {
   tone?: ToastTone;
   ttlMs?: number;
   action?: ToastAction;
+  /** A second choice shown before `action`, e.g. "Next week" beside "Undo". */
+  secondaryAction?: ToastAction;
 }
 
 export interface ToastItem {
@@ -36,6 +38,7 @@ export interface ToastItem {
   tone: ToastTone;
   ttlMs: number;
   action?: ToastAction;
+  secondaryAction?: ToastAction;
   createdAt: number;
 }
 
@@ -134,6 +137,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           tone,
           ttlMs,
           action: input.action,
+          secondaryAction: input.secondaryAction,
           createdAt: now,
         };
 

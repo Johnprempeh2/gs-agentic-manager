@@ -34,7 +34,7 @@ export const RECOVERY_CHIP_DEFAULT_TONE: Record<
   observe_only: {
     className: "border-border bg-muted text-muted-foreground",
     icon: Eye,
-    label: "Observing active run",
+    label: "Watching the agent's work",
   },
   escalated: {
     className: "border-red-500/60 bg-red-500/15 text-red-700 dark:text-red-300",

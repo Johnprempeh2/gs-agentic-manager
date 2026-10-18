@@ -173,4 +173,20 @@ describe("buildAgentUpdatePatch", () => {
       desiredSkills: ["research", "code-review"],
     });
   });
+
+  it("preserves access.* secret grants when changing adapter types (GRE-1609)", () => {
+    const agent = makeAgent();
+    const grant = { type: "secret_ref", secretId: "secret-1", version: "latest" };
+    agent.adapterConfig = { ...agent.adapterConfig, "access.NETLIFY_PAT": grant };
+
+    const patch = buildAgentUpdatePatch(
+      agent,
+      makeOverlay({
+        adapterType: "codex_local",
+        adapterConfig: { model: "gpt-5.4" },
+      }),
+    );
+
+    expect((patch.adapterConfig as Record<string, unknown>)["access.NETLIFY_PAT"]).toEqual(grant);
+  });
 });

@@ -136,7 +136,7 @@ describe("BuiltInBundlePanel (PAP-13099)", () => {
     render(makeState("ready", READY_RESOURCES));
     const text = container.textContent ?? "";
     expect(text).toContain("Bundle status");
-    expect(text).toContain("Adapter");
+    expect(text).toContain("AI engine");
     expect(text).toContain("Skill");
     expect(text).toContain("Instructions");
     expect(text).toContain("Routine");
@@ -180,7 +180,7 @@ describe("BuiltInBundlePanel (PAP-13099)", () => {
     render(makeState("needs_setup", READY_RESOURCES));
     const text = container.textContent ?? "";
     expect(text).toContain("Needs setup");
-    expect(text).toContain("Pick an adapter this coach can run on");
+    expect(text).toContain("Choose which AI this coach runs on");
   });
 
   it("surfaces an update-available chip and Update action for unedited stock drift", () => {

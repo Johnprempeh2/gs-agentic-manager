@@ -309,6 +309,22 @@ Merging does not change the live app. A version goes live in these steps.
    <rc-tag>` says whether a tag has passed. The release task names the gate
    result ("Test gate: passed <time>").
 
+   **From an agent run, start the gate detached** (GRE-1643). The gate takes
+   longer than most runs, and when a run ends the server stops its processes
+   and deletes its scratch folder. So an agent cuts the tag with
+   `--no-test-gate`, then runs `scripts/greatstone-test-gate.sh --detach
+   <rc-tag>`. It returns at once; the gate runs in its own session, with its
+   output in `~/GSAM/test-gate/<rc-tag>.out`, and writes its pass marker after
+   the run has ended. Do not use `setsid`/`nohup` by hand. In a later
+   heartbeat, `--check <rc-tag>` gives the result (exit 0 = passed); the last
+   line of the `.out` file says PASSED or FAILED. While the lock
+   `~/GSAM/test-gate/lock` exists the gate still runs (its `owner` file names
+   the pid); do not start a second one. The gate always drops the run's id
+   from its own environment, gives its lanes `TMPDIR=/tmp/gsam-test-gate-tmp`
+   (`GSAM_TEST_GATE_TMPDIR`), never a run scratch folder, and runs its lanes in
+   their own process group: if the gate is stopped, it stops its lanes too, so
+   none goes on as an orphan.
+
    John releases the `rc-*` tag that Flint checked, by hand (step 6).
 
    The release note starts with the change list. Do not write it by hand:
@@ -583,6 +599,16 @@ not moved and the copy from step 2 is untouched: put it back with
 start live with `~/GSAM/start-live.sh` and tell Keystone. After a restore, tell
 Keystone too, so Flint checks live and the migration is fixed before the next
 candidate.
+
+**Tasks that block each other in a loop.** On 16 Oct 2026 live would not
+start, on the new release or on the rollback, because two tasks were each
+"blocked by" the other and startup recovery stopped on "Blocking relations
+cannot contain cycles". Since that fix a loop no longer stops startup: the log
+says "task keeps blockers that already form a cycle" with the task ids. To see
+and break loops on live, run `scripts/greatstone-blocking-cycles.sh` (it lists
+each loop and the id of each link), then
+`scripts/greatstone-blocking-cycles.sh --remove <link id>` for one link per
+loop. The removal is written to the activity log.
 
 ### Promote to Stable (John)
 

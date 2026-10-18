@@ -650,7 +650,7 @@ describe("NewIssueDialog", () => {
     });
 
     const customLane = Array.from(container.querySelectorAll('button[role="radio"]'))
-      .find((button) => button.textContent?.trim() === "Custom");
+      .find((button) => button.textContent?.trim() === "Pick one for this task");
     expect(customLane).not.toBeUndefined();
     await act(async () => {
       customLane!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -800,7 +800,7 @@ describe("NewIssueDialog", () => {
     );
     expect(toastState.pushToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Created PAP-2 with upload warnings",
+        title: "Task PAP-2 created, but some files did not attach",
         body: "Could not add screenshot.png (Attachment is larger than the 10 MB limit).",
         tone: "warn",
       }),
@@ -1744,7 +1744,7 @@ describe("NewIssueDialog", () => {
       expect(workModeOption("ask")?.textContent).toContain("Ask mode");
       expect(workModeOption("planning")?.textContent).toContain("Plan mode");
 
-      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-status-warning");
+      expect(statusOptionIconClass("Todo", "Ready. The assignee starts work on it")).toContain("text-status-warning");
       expect(statusOptionIconClass("In Progress")).toContain("text-status-running");
 
       act(() => root.unmount());

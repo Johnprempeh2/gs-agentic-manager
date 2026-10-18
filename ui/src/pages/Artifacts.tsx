@@ -253,7 +253,7 @@ export function Artifacts() {
   }, [setBreadcrumbs, viewingSelectedStack, selectedGroup]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Package} message="Select an organization to view artifacts." />;
+    return <EmptyState icon={Package} message="Choose an organisation to view artifacts." />;
   }
 
   const showGroupCards = viewingStackList;
@@ -261,15 +261,15 @@ export function Artifacts() {
 
   const emptyMessage = showGroupCards
     ? searching
-      ? "No artifact stacks match this search."
-      : "No artifact stacks yet."
+      ? "Nothing matches this search."
+      : "Nothing made yet. Files your agents attach to tasks show here."
     : searching
-      ? "No artifacts match this search."
+      ? "Nothing matches this search."
       : viewingSelectedStack
-        ? "No artifacts in this stack match the current filters."
+        ? "Nothing in this group matches these filters."
         : kind === "all"
-          ? "No artifacts yet. Outputs attached to issues will appear here."
-          : "No artifacts of this type yet.";
+          ? "Nothing made yet. Files your agents attach to tasks show here."
+          : "Nothing of this type yet.";
 
   return (
     <div className="w-full max-w-6xl space-y-5">

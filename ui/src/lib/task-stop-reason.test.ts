@@ -130,7 +130,7 @@ describe("describeTaskStopReason", () => {
       },
       input: { lastRun: { status: "failed", errorCode: "workspace_validation_failed" } },
     });
-    expect(text).toBe("The task's code folder failed its safety check · Ridge to act · Ridge is repairing it");
+    expect(text).toBe("The task's files did not pass a safety check · Ridge to act · Ridge is repairing it");
   });
 
   it("names the blocking task and its owner", () => {

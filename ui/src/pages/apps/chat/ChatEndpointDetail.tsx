@@ -52,6 +52,7 @@ import { formatDateTime } from "@/lib/utils";
 import { queryKeys } from "@/lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { Link, Navigate, useNavigate, useParams } from "@/lib/router";
+import { useConfirm } from "@/context/ConfirmContext";
 import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const tabs = ["settings", "access", "reviews", "conversations", "activity"] as const;
@@ -606,6 +607,7 @@ function Access({
         tone: "error",
       }),
   });
+  const confirm = useConfirm();
   const revoke = useMutation({
     mutationFn: (principalId: string) =>
       chatEndpointsApi.revokeLink(endpointId, principalId),
@@ -635,7 +637,7 @@ function Access({
               </div>
             </li>
             <li>Open the private link from the bot, sign into {CLIENT_BRAND_NAME}, and confirm their Slack account. The link expires in 15 minutes and works once.</li>
-            <li>If they aren’t a member of this organization, choose <strong>Request access</strong>. An admin must approve their request before they can link their account.</li>
+            <li>If they aren’t a member of this organisation, choose <strong>Request access</strong>. An admin must approve their request before they can link their account.</li>
           </ol>
           <p className="text-sm text-muted-foreground">Each person links their own account and uses their own {CLIENT_BRAND_NAME} permissions. They don’t need to create another Slack app or share credentials.</p>
         </div>
@@ -703,10 +705,18 @@ function Access({
                     size="sm"
                     variant="ghost"
                     disabled={revoke.isPending}
-                    onClick={() => revoke.mutate(link.principalId)}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Unlink ${link.externalLabel}?`,
+                        description: "They will need to link their account again before they can message agents.",
+                        confirmLabel: "Unlink",
+                        tone: "destructive",
+                      });
+                      if (ok) revoke.mutate(link.principalId);
+                    }}
                   >
                     <Unlink />
-                    Revoke
+                    Unlink
                   </Button>
                 ) : (
                   <Button

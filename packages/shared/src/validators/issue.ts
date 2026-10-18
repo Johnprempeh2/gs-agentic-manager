@@ -864,6 +864,15 @@ export const createIssueLabelSchema = z.object({
 
 export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
+/** Rename or recolour a label without removing it from its tasks. */
+export const updateIssueLabelSchema = createIssueLabelSchema
+  .partial()
+  .refine((value) => value.name !== undefined || value.color !== undefined, {
+    message: "Give a new name or colour",
+  });
+
+export type UpdateIssueLabel = z.infer<typeof updateIssueLabelSchema>;
+
 const issueCommentAttachmentIdsSchema = z
   .array(z.string().uuid())
   .max(20)
@@ -1100,6 +1109,37 @@ export const issueThreadInteractionEffectiveResolverPolicySourceSchema = z.enum(
 export const issueThreadInteractionContinuationPolicySchema = z.enum(
   ISSUE_THREAD_INTERACTION_CONTINUATION_POLICIES,
 );
+
+export const askAgentPayloadSchema = z
+  .object({
+    version: z.literal(1),
+    question: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+
+export const askAgentResultSchema = z
+  .object({
+    version: z.literal(1),
+    outcome: z.enum(["answered", "withdrawn", "issue_closed", "addressee_deleted", "skipped"]),
+    answer: z.string().max(10000).nullable().optional(),
+    reason: z.string().max(4000).nullable().optional(),
+  })
+  .passthrough();
+
+export const createAgentQuestionSchema = z
+  .object({
+    targetAgentId: z.string().guid(),
+    question: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+export type CreateAgentQuestion = z.infer<typeof createAgentQuestionSchema>;
+
+export const answerAgentQuestionSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(10000),
+  })
+  .strict();
+export type AnswerAgentQuestion = z.infer<typeof answerAgentQuestionSchema>;
 
 export const connectionIntentPhaseSchema = z.enum([
   "requested",

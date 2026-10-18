@@ -73,6 +73,10 @@ afterEach(async () => {
 });
 
 describe("session goal dialogs", () => {
+  beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
   it("hides the widget after an expanded goal is cleared", async () => {
     await click("Focus goal");
     vi.mocked(issuesApi.actOnRunnerGoal).mockResolvedValue({
@@ -114,7 +118,7 @@ describe("session goal dialogs", () => {
 
   it("opens a prefilled in-app editor and saves with the reviewed revision", async () => {
     await click("Edit goal");
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Edit session goal");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Edit the goal");
     expect(document.querySelector("textarea")?.value).toBe("Original objective");
     await objective("Revised objective");
     await click("Save goal");
@@ -126,7 +130,7 @@ describe("session goal dialogs", () => {
 
   it("requires explicit replacement confirmation and lets cancellation preserve the goal", async () => {
     await click("Request replacement");
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Replace session goal?");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Replace the goal?");
     expect(document.querySelector("textarea")?.value).toBe("Replacement objective");
     expect(issuesApi.actOnRunnerGoal).not.toHaveBeenCalled();
     await click("Cancel");

@@ -57,7 +57,7 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
         <p className="min-w-0 flex-1 text-muted-foreground">
           Add GS Agentic Manager to your Home Screen to get a notification when a decision needs you.
         </p>
-        <Button type="button" size="sm" variant="ghost" onClick={dismiss}>OK</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={dismiss}>Dismiss</Button>
       </div>
     );
   }
@@ -84,7 +84,7 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
             ? "Notifications are blocked. Turn them on in your phone's Settings, under Notifications."
             : "Notifications are blocked. Allow them for this site in your browser's site settings."}
         </span>
-        <Button type="button" size="xs" variant="ghost" onClick={dismiss} aria-label="Dismiss notifications notice">OK</Button>
+        <Button type="button" size="xs" variant="ghost" onClick={dismiss} aria-label="Dismiss notifications notice">Dismiss</Button>
       </div>
     );
   }

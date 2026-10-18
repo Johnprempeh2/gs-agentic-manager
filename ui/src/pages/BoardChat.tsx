@@ -1,4 +1,5 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { ErrorState } from "@/components/ErrorState";
 import { BrandThinkingIcon } from "../components/BrandLoading";
 import {
   useEffect,
@@ -19,12 +20,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Activity, ArrowDown, History, MessageSquarePlus, X } from "lucide-react";
+import { Activity, ArrowDown, X } from "lucide-react";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { MakeImageButton } from "../components/MakeImageDialog";
 import { ChatComposer, type ChatComposerAttachment, type ChatComposerHandle } from "../components/ChatComposer";
@@ -292,7 +288,7 @@ export function BoardChat() {
   }, [goals]);
 
   // Find or detect the board operations issue
-  const { data: issues } = useQuery({
+  const { data: issues, error: issuesError, refetch: refetchIssues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -310,7 +306,7 @@ export function BoardChat() {
   }, [issues]);
 
   // Fetch comments for the board issue
-  const { data: comments } = useQuery({
+  const { data: comments, error: commentsError, refetch: refetchComments } = useQuery({
     queryKey: queryKeys.issues.comments(boardIssueId ?? ""),
     queryFn: () => issuesApi.listComments(boardIssueId!),
     enabled: !!boardIssueId,
@@ -701,9 +697,9 @@ export function BoardChat() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-sm">
-          <h2 className="text-lg font-semibold">No organization selected</h2>
+          <h2 className="text-lg font-semibold">No organisation selected</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            Select an organization to start chatting with your board concierge.
+            Choose an organisation to start chatting with your board concierge.
           </p>
         </div>
       </div>
@@ -738,38 +734,10 @@ export function BoardChat() {
                 {ceoAgent?.name ?? "Conference Room"}
               </h3>
               <p className="text-xs text-muted-foreground">
-                {selectedCompany?.name ?? "Your organization"}
+                {selectedCompany?.name ?? "Your organisation"}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="chat history"
-                  >
-                    <History className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">chat history</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="new chat"
-                  >
-                    <MessageSquarePlus className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">new chat</TooltipContent>
-              </Tooltip>
               {/* Phone: the agent feed opens from the header, not a floating
                   button that covered the send button. */}
               <Button
@@ -793,6 +761,17 @@ export function BoardChat() {
             {/* pb clears the floating glass dock (PAP-131) so the last bubble can
                  scroll fully above the composer. */}
             <div className="flex flex-col gap-4 px-6 pt-3 pb-32">
+              {(issuesError && !issues) || (commentsError && !comments) ? (
+                <ErrorState
+                  error={issuesError ?? commentsError}
+                  title="The chat history did not load"
+                  onRetry={() => {
+                    void refetchIssues();
+                    if (boardIssueId) void refetchComments();
+                  }}
+                  compact
+                />
+              ) : null}
               {/* Typing bubble — shown unconditionally until the reveal
                    timer fires, so the animation is guaranteed to be
                    visible even while agent/goal data is still loading. */}
@@ -805,7 +784,7 @@ export function BoardChat() {
                   ? `: your mission is "${missionText}".`
                   : ".";
                 const welcomeBody =
-                  `Welcome to **${companyName}**! I'm ${ceoName}, your team lead. I've read through what you shared in the wizard${missionLine}\n\n` +
+                  `Welcome to **${companyName}**! I'm ${ceoName}, your team lead. I've read through what you shared during setup${missionLine}\n\n` +
                   `Here are a few things I can help you put on paper right now. Pick one below and I'll draft it for you using everything you told us.`;
 
                 const userHasReplied = sortedComments.some(
@@ -814,8 +793,8 @@ export function BoardChat() {
 
                 const chips: Array<{ label: string; prompt: string }> = [
                   {
-                    label: "Draft an Organization Brief",
-                    prompt: `Draft a one-page Organization Brief for ${companyName}, with our mission, team roster and first priorities.`,
+                    label: "Draft an organisation brief",
+                    prompt: `Draft a one-page organisation brief for ${companyName}, with our mission, team roster and first priorities.`,
                   },
                   {
                     label: "Create a hiring plan",
@@ -1025,7 +1004,7 @@ export function BoardChat() {
               value={input}
               onChange={setInput}
               onSubmit={handleSend}
-              placeholder="Ask anything about your organization..."
+              placeholder="Ask anything about your organisation..."
               submitKey="enter"
               surface="translucent"
               submitting={sending}

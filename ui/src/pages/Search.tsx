@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Search as SearchIcon, AlertTriangle, FileQuestion, Plus, X } from "lucide-react";
 import {
   COMPANY_SEARCH_DEFAULT_LIMIT,
+  COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SCOPES,
+  type CompanySearchRecordKind,
   type CompanySearchCountType,
   type CompanySearchResponse,
   type CompanySearchResult,
@@ -38,7 +40,7 @@ import {
   type ParsedSearchQuery,
   type SearchQueryParserContext,
 } from "../lib/search-query-parser";
-import { SearchResultRow } from "../components/search/SearchResultRow";
+import { RECORD_ICONS, SearchResultRow } from "../components/search/SearchResultRow";
 import { SearchFilterBar, type SearchFilterDataProps } from "../components/search/SearchFilterBar";
 import { SearchFilterChips } from "../components/search/SearchFilterChips";
 import { SearchFilterSheet, SearchFilterSheetTrigger } from "../components/search/SearchFilterSheet";
@@ -63,12 +65,28 @@ const SCOPE_LABELS: Record<CompanySearchScope, string> = {
   comments: "Comments",
   documents: "Documents",
   artifacts: "Artifacts",
+  files: "Inside files",
+  records: "Clients and records",
   agents: "Agents",
   projects: "Projects",
 };
 
 function isCompanySearchScope(value: string | null): value is CompanySearchScope {
   return Boolean(value) && (COMPANY_SEARCH_SCOPES as readonly string[]).includes(value as string);
+}
+
+/** Plural chip labels for narrowing "Clients and records" to one kind. */
+export const RECORD_KIND_CHIPS: Record<CompanySearchRecordKind, string> = {
+  organisation: "Organisations",
+  person: "People",
+  client: "Deals and leads",
+  activity: "Notes and calls",
+  product: "Products",
+  image: "Images",
+};
+
+function parseRecordKind(value: string | null): CompanySearchRecordKind | null {
+  return value && (COMPANY_SEARCH_RECORD_KINDS as readonly string[]).includes(value) ? value as CompanySearchRecordKind : null;
 }
 
 function describeScope(scope: CompanySearchScope) {
@@ -82,6 +100,8 @@ function totalMatchCount(counts: Partial<Record<CompanySearchCountType, number>>
     + (counts.comment ?? 0)
     + (counts.document ?? 0)
     + (counts.artifact ?? 0)
+    + (counts.file ?? 0)
+    + (counts.record ?? 0)
     + (counts.agent ?? 0)
     + (counts.project ?? 0)
   );
@@ -142,11 +162,13 @@ export function Search() {
   const urlScopeRaw = searchParams.get("scope");
   const urlScope: CompanySearchScope = isCompanySearchScope(urlScopeRaw) ? urlScopeRaw : "all";
   const urlSort = useMemo(() => parseSearchSort(searchParams), [searchParams]);
+  const urlRecordKind = parseRecordKind(searchParams.get("kind"));
 
   const [draftQuery, setDraftQuery] = useState(urlQuery);
   const [committedQuery, setCommittedQuery] = useState(urlQuery);
   const [scope, setScope] = useState<CompanySearchScope>(urlScope);
   const [sort, setSort] = useState<CompanySearchSort>(urlSort);
+  const [recordKind, setRecordKind] = useState<CompanySearchRecordKind | null>(urlRecordKind);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [draftSheetFilters, setDraftSheetFilters] = useState<ParsedSearchQuery["filters"]>({});
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -177,6 +199,20 @@ export function Search() {
   useEffect(() => {
     setSort(urlSort);
   }, [urlSort]);
+
+  useEffect(() => {
+    setRecordKind(urlRecordKind);
+  }, [urlRecordKind]);
+
+  const handleRecordKindChange = useCallback((next: CompanySearchRecordKind | null) => {
+    setRecordKind(next);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("kind", next);
+    else url.searchParams.delete("kind");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+  const activeRecordKind = scope === "records" ? recordKind : null;
 
   const { data: agents = [] } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -315,6 +351,7 @@ export function Search() {
       ),
       activeFilters,
       sort,
+      activeRecordKind,
     ] as const,
     queryFn: () =>
       searchApi.search(selectedCompanyId!, {
@@ -323,6 +360,7 @@ export function Search() {
         limit: COMPANY_SEARCH_DEFAULT_LIMIT,
         ...activeFilters,
         ...(sort !== "relevance" ? { sort } : {}),
+        ...(activeRecordKind ? { recordKind: [activeRecordKind] } : {}),
       }),
     enabled: queryEnabled,
     placeholderData: (previousData) => previousData,
@@ -444,7 +482,7 @@ export function Search() {
     return () => window.removeEventListener("keydown", handler);
   }, [focusInput]);
 
-  const counts = data?.countsByType ?? { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 };
+  const counts = data?.countsByType ?? { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 };
   const totalResults = data?.results.length ?? 0;
   const allMatchTotal = data ? totalMatchCount(counts) : 0;
   const previewTotal = previewData ? totalMatchCount(previewData.countsByType) : null;
@@ -466,17 +504,21 @@ export function Search() {
           + (counts.comment ?? 0)
           + (counts.document ?? 0)
           + (counts.artifact ?? 0)
+          + (counts.file ?? 0)
+          + (counts.record ?? 0)
           + (counts.agent ?? 0)
           + (counts.project ?? 0);
       } else if (value === "issues") count = issuesTotal;
       else if (value === "comments") count = counts.comment ?? 0;
       else if (value === "documents") count = counts.document ?? 0;
       else if (value === "artifacts") count = counts.artifact ?? 0;
+      else if (value === "files") count = counts.file ?? 0;
+      else if (value === "records") count = counts.record ?? 0;
       else if (value === "agents") count = counts.agent ?? 0;
       else if (value === "projects") count = counts.project ?? 0;
       // Issue-only filters don't constrain agents/projects, so show a dash there
       // rather than an unfiltered count that would misrepresent the result set.
-      const dashOut = filtersActive && (value === "agents" || value === "projects");
+      const dashOut = filtersActive && (value === "agents" || value === "projects" || value === "files" || value === "records");
       return {
         value,
         label: (
@@ -567,6 +609,7 @@ export function Search() {
             }}
             placeholder="Search tasks, comments, documents, artifacts, agents, projects…"
             aria-label="Search query"
+            data-tour="search-page-input"
             className="h-10 pl-9 pr-20 text-sm"
           />
           {draftQuery.length > 0 ? (
@@ -654,6 +697,9 @@ export function Search() {
               onChange={handleFiltersChange}
               onClearAll={handleClearAllFilters}
             />
+            {scope === "records" ? (
+              <RecordKindChips value={recordKind} onChange={handleRecordKindChange} />
+            ) : null}
           </div>
         ) : null}
 
@@ -706,6 +752,34 @@ export function Search() {
           onSortChange={handleSortChange}
         />
       ) : null}
+    </div>
+  );
+}
+
+/** Narrow "Clients and records" to one kind: organisations, people, deals, notes, products or images. */
+function RecordKindChips({ value, onChange }: { value: CompanySearchRecordKind | null; onChange: (next: CompanySearchRecordKind | null) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Show only" data-testid="search-record-kinds">
+      <Button type="button" size="sm" variant={value === null ? "secondary" : "ghost"} aria-pressed={value === null} onClick={() => onChange(null)}>
+        Everything
+      </Button>
+      {COMPANY_SEARCH_RECORD_KINDS.map((kind) => {
+        const Icon = RECORD_ICONS[kind];
+        return (
+          <Button
+            key={kind}
+            type="button"
+            size="sm"
+            variant={value === kind ? "secondary" : "ghost"}
+            aria-pressed={value === kind}
+            data-record-kind={kind}
+            onClick={() => onChange(value === kind ? null : kind)}
+          >
+            <Icon aria-hidden="true" />
+            {RECORD_KIND_CHIPS[kind]}
+          </Button>
+        );
+      })}
     </div>
   );
 }

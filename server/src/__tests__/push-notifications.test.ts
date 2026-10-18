@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { eq } from "drizzle-orm";
-import { createDb, companies, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import { eq, inArray } from "drizzle-orm";
+import { clientAcceptanceLinks, createDb, companies, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines, pushNotificationLog, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type DecisionCard, type NotificationPreferences } from "@greatstone/shared";
-import { assignedTaskPushMessage, decisionPushMessage, pushNotificationService, type DecisionPushMessage } from "../services/push-notifications.js";
+import { acceptancePushMessage, assignedTaskPushMessage, closedDealPushMessage, type ClientAcceptance, decisionPushMessage, finishedTaskPushMessage, type ClosedDeal, pushNotificationService, type DecisionPushMessage, type FinishedTask } from "../services/push-notifications.js";
 import { loadOrCreateVapidKeys } from "../services/push-keys.js";
 import { generateVapidKeys, type PushSendResult, type PushTarget } from "../services/web-push.js";
 
@@ -22,18 +22,26 @@ const phone = (n: number) => ({ endpoint: `https://web.push.apple.com/device-${n
 
 let feedCards: DecisionCard[] = [];
 let assignedTasks: Array<{ id: string; title: string }> = [];
+let finishedTasks: FinishedTask[] = [];
+let closedDeals: ClosedDeal[] = [];
+let acceptances: ClientAcceptance[] = [];
 let prefs: NotificationPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES };
 let clock = new Date("2026-10-16T12:00:00Z");
 let sent: Array<{ target: PushTarget; message: DecisionPushMessage }> = [];
+let sentCompanyIds: Array<string | undefined> = [];
 let sendResult: PushSendResult = { ok: true, status: 201 };
 
 function service() {
   return pushNotificationService(db, {
     keys: () => keys,
     buildFeed: async () => ({ cards: feedCards, count: feedCards.length, assignedTasks }),
+    finished: async () => finishedTasks,
+    closedDeals: async () => closedDeals,
+    acceptances: async () => acceptances,
     preferences: async () => prefs,
     now: () => clock,
-    send: async (target, message) => {
+    send: async (target, { companyId: sentCompanyId, ...message }) => {
+      sentCompanyIds.push(sentCompanyId);
       sent.push({ target, message });
       return sendResult;
     },
@@ -52,12 +60,17 @@ afterAll(async () => { await database?.cleanup(); vi.unstubAllEnvs(); if (home) 
 
 beforeEach(async () => {
   await db.delete(pushNotifiedDecisions);
+  await db.delete(pushNotificationLog);
   await db.delete(pushSubscriptions);
   feedCards = [];
   assignedTasks = [];
+  finishedTasks = [];
+  closedDeals = [];
+  acceptances = [];
   prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
   clock = new Date("2026-10-16T12:00:00Z");
   sent = [];
+  sentCompanyIds = [];
   sendResult = { ok: true, status: 201 };
 });
 
@@ -151,6 +164,159 @@ describe("notification choices", () => {
     expect(await service().notifyNewDecisions()).toBe(0);
   });
 
+  it("tells the user once when a task they asked for is done, opening that task", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    finishedTasks = [{ id: "i9", identifier: "PSH-9", title: "Draft the Indago one-pager" }];
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(sent[0]!.message).toEqual({
+      title: "Done: a task you asked for",
+      body: "Draft the Indago one-pager",
+      url: "/PSH/issues/PSH-9",
+      tag: "finished:i9",
+      badge: 0,
+    });
+    expect(await service().notifyNewDecisions()).toBe(0);
+  });
+
+  it("tells the user once when a deal is won, opening that deal", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    closedDeals = [{ id: "c1", pipelineId: "p1", title: "Indago rollout", terminalKind: "done" }];
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(sent[0]!.message).toEqual({ title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p1/cases/c1", tag: "deal:c1", badge: 0 });
+    expect(await service().notifyNewDecisions()).toBe(0);
+  });
+
+  it("stays quiet about closed deals when deal alerts are switched off", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, dealsClosed: false };
+    closedDeals = [{ id: "c2", pipelineId: "p1", title: "Acme renewal", terminalKind: "cancelled" }];
+    expect(await service().notifyNewDecisions()).toBe(0);
+    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+    expect(await service().notifyNewDecisions()).toBe(0);
+  });
+
+  it("finds client deals closed in the last half hour, except ones the user closed", async () => {
+    const pipelineId = randomUUID();
+    const stageId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "deals", name: "Deals", requiresOrganisation: true });
+    await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 0 });
+    const recent = new Date(clock.getTime() - 5 * 60 * 1000);
+    const [theirs, mine, old] = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(pipelineCases).values([
+      { id: theirs, companyId, pipelineId, stageId, caseKey: "theirs", title: "Closed by Ben", terminalKind: "done", terminalAt: recent },
+      { id: mine, companyId, pipelineId, stageId, caseKey: "mine", title: "Closed by John", terminalKind: "done", terminalAt: recent },
+      { id: old, companyId, pipelineId, stageId, caseKey: "old", title: "Closed yesterday", terminalKind: "cancelled", terminalAt: new Date(clock.getTime() - 86_400_000) },
+    ]);
+    // A case closed on a pipeline that is not a client pipeline is not a deal.
+    const otherPipelineId = randomUUID();
+    const otherStageId = randomUUID();
+    await db.insert(pipelines).values({ id: otherPipelineId, companyId, key: "hiring", name: "Hiring" });
+    await db.insert(pipelineStages).values({ id: otherStageId, companyId, pipelineId: otherPipelineId, key: "hired", name: "Hired", kind: "done", position: 0 });
+    await db.insert(pipelineCases).values({ companyId, pipelineId: otherPipelineId, stageId: otherStageId, caseKey: "cand", title: "Candidate hired", terminalKind: "done", terminalAt: recent });
+    await db.insert(pipelineCaseEvents).values({ companyId, caseId: mine, type: "transitioned", actorType: "user", actorUserId: "john", toStageId: stageId, createdAt: recent });
+    const spy = pushNotificationService(db, {
+      keys: () => keys,
+      buildFeed: async () => ({ cards: [], count: 0, assignedTasks: [] }),
+      finished: async () => [],
+      preferences: async () => prefs,
+      now: () => clock,
+      send: async (target, { companyId: _companyId, ...message }) => { sent.push({ target, message }); return sendResult; },
+    });
+    await spy.subscribe(companyId, "john", phone(8));
+    await db.delete(pushNotifiedDecisions);
+    await spy.notifyNewDecisions();
+    const johns = sent.filter((entry) => entry.target.endpoint === phone(8).endpoint).map((entry) => entry.message.body);
+    expect(johns).toEqual(["Closed by Ben"]);
+    await db.delete(pipelines).where(inArray(pipelines.id, [pipelineId, otherPipelineId]));
+  });
+
+  it("tells the user once when a client accepts, naming who accepted", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    acceptances = [{ id: "l1", caseId: "c1", pipelineId: "p1", title: "Indago rollout", acceptedName: "Ama Owusu" }];
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(sent[0]!.message).toEqual({
+      title: "A client accepted",
+      body: "Indago rollout, accepted by Ama Owusu",
+      url: "/PSH/pipelines/p1/cases/c1",
+      tag: "accepted:l1",
+      badge: 0,
+    });
+    expect(await service().notifyNewDecisions()).toBe(0);
+    expect(acceptancePushMessage([acceptances[0]!, { ...acceptances[0]!, id: "l2", title: "Acme" }], 0, "PSH").title).toBe("2 clients accepted");
+  });
+
+  it("finds clients who accepted in the last half hour", async () => {
+    const pipelineId = randomUUID();
+    const stageId = randomUUID();
+    const caseId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "accept", name: "Accept", requiresOrganisation: true });
+    await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 });
+    await db.insert(pipelineCases).values({ id: caseId, companyId, pipelineId, stageId, caseKey: "ind", title: "Indago" });
+    const expires = new Date(clock.getTime() + 86_400_000);
+    await db.insert(clientAcceptanceLinks).values([
+      { companyId, caseId, tokenHash: randomUUID(), expiresAt: expires, acceptedAt: new Date(clock.getTime() - 60_000), acceptedName: "Ama" },
+      { companyId, caseId, tokenHash: randomUUID(), expiresAt: expires, acceptedAt: new Date(clock.getTime() - 3 * 3_600_000), acceptedName: "Old" },
+      { companyId, caseId, tokenHash: randomUUID(), expiresAt: expires },
+    ]);
+    const spy = pushNotificationService(db, {
+      keys: () => keys,
+      buildFeed: async () => ({ cards: [], count: 0, assignedTasks: [] }),
+      finished: async () => [],
+      closedDeals: async () => [],
+      preferences: async () => prefs,
+      now: () => clock,
+      send: async (target, { companyId: _companyId, ...message }) => { sent.push({ target, message }); return sendResult; },
+    });
+    await spy.subscribe(companyId, "john", phone(9));
+    await db.delete(pushNotifiedDecisions);
+    await spy.notifyNewDecisions();
+    expect(sent.map((entry) => entry.message.body)).toEqual(["Indago, accepted by Ama"]);
+    await db.delete(pipelines).where(eq(pipelines.id, pipelineId));
+  });
+
+  it("summarises several closed deals, counting won and lost", () => {
+    expect(closedDealPushMessage([
+      { id: "a", pipelineId: "p1", title: "One", terminalKind: "done" },
+      { id: "b", pipelineId: "p1", title: "Two", terminalKind: "cancelled" },
+    ], 2, "PSH")).toEqual({ title: "2 deals closed: 1 won, 1 lost", body: "One and 1 more", url: "/PSH/pipelines/p1", tag: "closed-deals", badge: 2 });
+    expect(closedDealPushMessage([{ id: "c", pipelineId: "p1", title: "Three", terminalKind: "cancelled" }], 0, "PSH").title).toBe("Deal lost");
+  });
+
+  it("finds tasks the user created that someone else finished in the last half hour", async () => {
+    const real = () => pushNotificationService(db, {
+      keys: () => keys,
+      buildFeed: async () => ({ cards: [], count: 0, assignedTasks: [] }),
+      preferences: async () => prefs,
+      now: () => clock,
+      send: async (target, message) => {
+        sent.push({ target, message });
+        return sendResult;
+      },
+    });
+    await real().subscribe(companyId, "john", phone(1));
+    const minutesAgo = (n: number) => new Date(clock.getTime() - n * 60 * 1000);
+    await db.insert(issues).values([
+      { companyId, title: "Agent finished this", status: "done", createdByUserId: "john", completedAt: minutesAgo(5) },
+      { companyId, title: "John finished it himself", status: "done", createdByUserId: "john", assigneeUserId: "john", completedAt: minutesAgo(5) },
+      { companyId, title: "Someone else asked", status: "done", createdByUserId: "ben", completedAt: minutesAgo(5) },
+      { companyId, title: "Long ago", status: "done", createdByUserId: "john", completedAt: minutesAgo(90) },
+      { companyId, title: "Still open", status: "in_progress", createdByUserId: "john" },
+    ]);
+    expect(await real().notifyNewDecisions()).toBe(1);
+    expect(sent.map((item) => item.message.body)).toEqual(["Agent finished this"]);
+    await db.delete(issues);
+  });
+
+  it("never sends finished work from before notifications were turned on, nor when switched off", async () => {
+    finishedTasks = [{ id: "i1", identifier: "PSH-1", title: "Old work" }];
+    await service().subscribe(companyId, "john", phone(1));
+    expect(await service().notifyNewDecisions()).toBe(0);
+    prefs = { ...prefs, finishedWork: false };
+    finishedTasks = [...finishedTasks, { id: "i2", identifier: "PSH-2", title: "New work" }];
+    expect(await service().notifyNewDecisions()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
   it("never sends the tasks already assigned when notifications are turned on", async () => {
     assignedTasks = [{ id: "i1", title: "Old task" }];
     await service().subscribe(companyId, "john", phone(1));
@@ -190,6 +356,15 @@ describe("notification choices", () => {
     expect((await service().sendToUser(companyId, "john", message)).delivered).toBe(1);
   });
 
+  it("summarises several finished tasks into one notification for Today", () => {
+    const message = finishedTaskPushMessage(
+      [{ id: "a", identifier: "PSH-1", title: "One" }, { id: "b", identifier: null, title: "Two" }],
+      3,
+      "PSH",
+    );
+    expect(message).toEqual({ title: "2 tasks you asked for are done", body: "One and 1 more", url: "/PSH/today", tag: "finished-tasks", badge: 3 });
+  });
+
   it("summarises several tasks given at once", () => {
     expect(assignedTaskPushMessage([{ id: "a", title: "One" }, { id: "b", title: "Two" }], 3, "GRE")).toEqual({
       title: "2 tasks were given to you",
@@ -198,6 +373,43 @@ describe("notification choices", () => {
       tag: "assigned-tasks",
       badge: 3,
     });
+  });
+});
+
+describe("recent notifications", () => {
+  it("keeps what reached a phone, newest first, and only for that user", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    await service().deliver(companyId, "john", { title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
+    clock = new Date(clock.getTime() + 60_000);
+    await service().deliver(companyId, "john", { title: "A decision needs you", body: "Approve the brief", url: "/PSH/decisions", tag: "task:a" });
+    await service().sendTest(companyId, "john", "PSH");
+    await service().deliver(companyId, "ben", { title: "Not John's", body: "x", url: "/PSH/today", tag: "t" });
+    const recent = await service().recent(companyId, "john");
+    expect(recent.map((item) => item.title)).toEqual(["A decision needs you", "Deal won"]);
+    expect(recent[0]!.url).toBe("/PSH/decisions");
+    expect(await service().recent(companyId, "ben")).toEqual([]);
+  });
+
+  it("tells the phone which company sent it, so it can offer a pause, except on the test message", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    await service().deliver(companyId, "john", { title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
+    await service().sendTest(companyId, "john", "PSH");
+    expect(sentCompanyIds).toEqual([companyId, undefined]);
+  });
+
+  it("records nothing when no phone took the message", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    sendResult = { ok: false, status: 500 };
+    await service().deliver(companyId, "john", { title: "Lost", body: "x", url: "/PSH/today", tag: "t" });
+    expect(await service().recent(companyId, "john")).toEqual([]);
+  });
+
+  it("forgets what is older than two weeks", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    await service().deliver(companyId, "john", { title: "Old", body: "x", url: "/PSH/today", tag: "t" });
+    clock = new Date(clock.getTime() + 15 * 86_400_000);
+    await service().deliver(companyId, "john", { title: "New", body: "x", url: "/PSH/today", tag: "t" });
+    expect((await service().recent(companyId, "john")).map((item) => item.title)).toEqual(["New"]);
   });
 });
 

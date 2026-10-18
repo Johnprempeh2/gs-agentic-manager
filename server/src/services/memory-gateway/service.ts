@@ -2,6 +2,7 @@ import { and, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  companyMemberships,
   heartbeatRuns,
   memoryConflicts,
   memoryExtractedFacts,
@@ -96,6 +97,17 @@ export type RecordRow = typeof memoryRecords.$inferSelect;
 export type MemoryPermission = "memory:read" | "memory:contribute" | "memory:approve" | "memory:delete" | "memory:admin";
 export type GrantScopes = Map<string, Record<string, unknown> | null>;
 
+export type MemoryAccess = {
+  /** John: a person who owns or administers the company. Never an agent, whatever its grants. */
+  isOwner: boolean;
+  grants: GrantScopes;
+  ownsAgentScope(scope: ScopeRow): boolean;
+  /** The person behind the caller: the user, or the person an external app acts for (GRE-1081). */
+  person: string | null;
+  canRead(scope: ScopeRow): boolean;
+  canContribute(scope: ScopeRow): boolean;
+};
+
 export const MEMORY_DISABLED_MESSAGE = "Memory is not enabled for this company";
 
 export function bankForCompany(companyId: string) {
@@ -114,6 +126,26 @@ function scopeTag(kind: MemoryScopeKind, ids: { scopeId: string; projectId?: str
     case "agent":
       return `scope:agent:${ids.agentId}`;
   }
+}
+
+/**
+ * An app outside GSAM acting for one person through a memory key (GRE-958,
+ * GRE-1081): Claude Code, Codex and other MCP apps. It reads and proposes as
+ * that person; it never confirms, disputes, retires or deletes (deck v7 slide
+ * 22, guard 3).
+ */
+export function isExternalApp(caller: Pick<MemoryCaller, "app">) {
+  return caller.app === "memory_key";
+}
+
+/**
+ * The person an app link acts for: the `memoryConnection` an owner or the
+ * person made (GRE-1081). Null for any other agent, so a memory key on an
+ * agent that is not a person's link has no person and no rights.
+ */
+export function memoryLinkPerson(metadata: unknown): string | null {
+  const link = (metadata as { memoryConnection?: { createdByUserId?: unknown } } | null)?.memoryConnection;
+  return typeof link?.createdByUserId === "string" && link.createdByUserId.length > 0 ? link.createdByUserId : null;
 }
 
 export function isHardBoundary(kind: string) {
@@ -302,6 +334,7 @@ export function memoryGatewayService(
       companyId,
       enabled: row?.enabled ?? false,
       retainMode: (row?.retainMode as MemoryRetainMode | undefined) ?? "extract",
+      appSignIn: row?.appSignIn ?? false,
       updatedAt: row?.updatedAt ?? null,
     };
   }
@@ -345,17 +378,79 @@ export function memoryGatewayService(
     return new Map(rows.map((row) => [row.key, row.scope ?? null]));
   }
 
+  /**
+   * The person behind an external app, as a caller of their own, while they
+   * are still an active member. Null when the app is not tied to one.
+   */
+  async function externalAppPerson(caller: MemoryCaller): Promise<MemoryCaller | null> {
+    if (!caller.agentId) return null;
+    const agent = await db
+      .select({ metadata: agents.metadata })
+      .from(agents)
+      .where(and(eq(agents.id, caller.agentId), eq(agents.companyId, caller.companyId), ne(agents.status, "terminated")))
+      .then((rows) => rows[0] ?? null);
+    const userId = agent ? memoryLinkPerson(agent.metadata) : null;
+    if (!userId) return null;
+    const membership = await db
+      .select({ role: companyMemberships.membershipRole })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, caller.companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, userId),
+          eq(companyMemberships.status, "active"),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!membership) return null;
+    return {
+      companyId: caller.companyId,
+      actorType: "user",
+      actorId: userId,
+      agentId: null,
+      userId,
+      runId: null,
+      isBoardAdmin: membership.role === "owner" || membership.role === "admin",
+    };
+  }
+
   /** Access is checked on every call, never cached (G1 decision 6). */
-  async function accessFor(caller: MemoryCaller) {
+  async function accessFor(caller: MemoryCaller): Promise<MemoryAccess> {
     const grants = await loadGrants(caller);
-    const isAdmin = (caller.actorType === "user" && caller.isBoardAdmin) || grants.has("memory:admin");
     const ownsAgentScope = (scope: ScopeRow) =>
       scope.kind === "agent" && caller.agentId !== null && scope.agentId === caller.agentId;
+    if (isExternalApp(caller)) {
+      // GRE-1081: an app reads and proposes as its person, never beyond its
+      // own link's rights, and never with an admin bypass. Client and
+      // restricted scopes stay off unless the link's own grant names them.
+      const personCaller = await externalAppPerson(caller);
+      const person = personCaller ? await accessFor(personCaller) : null;
+      return {
+        isOwner: false,
+        grants,
+        ownsAgentScope,
+        person: personCaller?.userId ?? null,
+        canRead(scope: ScopeRow) {
+          if (!person || scope.companyId !== caller.companyId) return false;
+          if (ownsAgentScope(scope)) return true;
+          if (scope.kind === "organization") return person.canRead(scope);
+          return grantCovers(grants, "memory:read", scope) && person.canRead(scope);
+        },
+        canContribute(scope: ScopeRow) {
+          if (!person || scope.companyId !== caller.companyId) return false;
+          if (ownsAgentScope(scope)) return true;
+          return grantCovers(grants, "memory:contribute", scope) && person.canContribute(scope);
+        },
+      };
+    }
+    const isAdmin = (caller.actorType === "user" && caller.isBoardAdmin) || grants.has("memory:admin");
     return {
       /** John: a person who owns or administers the company. Never an agent, whatever its grants. */
       isOwner: caller.actorType === "user" && caller.isBoardAdmin,
       grants,
       ownsAgentScope,
+      person: caller.userId,
       canRead(scope: ScopeRow) {
         if (scope.companyId !== caller.companyId) return false;
         if (isAdmin || ownsAgentScope(scope)) return true;
@@ -853,7 +948,7 @@ export function memoryGatewayService(
     // Approved knowledge first, then disputes, then unreviewed, then history.
     // Newest is never treated as correct. With `asOf`, what was in force on
     // that date goes before everything else.
-    const rank: Record<string, number> = { approved: 0, disputed: 1, unreviewed: 2, superseded: 3 };
+    const rank: Record<string, number> = { approved: 0, disputed: 1, unreviewed: 2, superseded: 3, retired: 5 };
     const candidates = [...matched, ...added];
     if (input.asOf) {
       const inForce = await inForceAsOf(caller.companyId, candidates.map((hit) => hit.record), input.asOf);
@@ -893,7 +988,7 @@ export function memoryGatewayService(
 
   return {
     /** For the review service (review.ts) only; routes use the methods below. */
-    internals: { accessFor, logOperation, loadScope, callEngine, engine, engineTimeoutMs },
+    internals: { accessFor, externalAppPerson, logOperation, loadScope, callEngine, engine, engineTimeoutMs },
     getSettings,
     updateSettings,
     assertEnabled,

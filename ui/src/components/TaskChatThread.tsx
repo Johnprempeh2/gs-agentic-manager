@@ -449,6 +449,7 @@ function durableInputLabel(
     return interaction.title ?? "Connect service";
   if (interaction.kind === "request_draft_review")
     return interaction.title ?? "Review draft";
+  if (interaction.kind === "ask_agent") return "Question for an agent";
   if (
     interaction.payload.target?.type === "issue_document" &&
     interaction.payload.target.key === "plan"
@@ -2468,8 +2469,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         label:
           pendingRuntimeRequest.questionSet?.title ??
           (pendingRuntimeRequest.requestType === "permission"
-            ? "Runtime permission"
-            : "Runtime input"),
+            ? "The agent needs your permission"
+            : "The agent needs your answer"),
       });
     }
     const durable = (interactions ?? [])
@@ -2477,6 +2478,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         (interaction) =>
           interaction.status === "pending" &&
           interaction.kind !== "connection_intent" &&
+          interaction.kind !== "ask_agent" &&
           !shouldHideInteractionCard(interaction),
       )
       .sort((left, right) => toMs(right.createdAt) - toMs(left.createdAt));

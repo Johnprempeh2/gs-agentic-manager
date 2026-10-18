@@ -78,7 +78,7 @@ export function AuditHub({ section }: { section: AuditSection }) {
   );
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={History} message="Select an organization to view Audit." />;
+    return <EmptyState icon={History} message="Choose an organisation to view Audit." />;
   }
 
   return (
@@ -87,7 +87,7 @@ export function AuditHub({ section }: { section: AuditSection }) {
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">Audit</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
           Review what happened, inspect agent runs, and understand the costs and budget controls
-          behind your organization.
+          behind your organisation.
         </p>
       </div>
 

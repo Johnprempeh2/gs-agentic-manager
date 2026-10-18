@@ -347,6 +347,15 @@ describe("buildGitAuthInvocation", () => {
 });
 
 describe("credential helper execution (real git, no network)", () => {
+  // An agent run puts its managed git launcher first on PATH. The launcher
+  // swaps in the live run's credential, so the test must reach the real git.
+  // Match the launcher by its folder too: a clean env (`env -i HOME PATH`, as
+  // the release test gate runs) keeps PATH but drops GSAM_GITHUB_LAUNCHER_DIR.
+  function isGitHubLauncherDir(entry: string) {
+    return entry === process.env.GSAM_GITHUB_LAUNCHER_DIR
+      || path.basename(path.dirname(entry)) === "paperclip-github-runtime";
+  }
+
   async function runCredentialFill(description: string) {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-git-cred-fill-"));
     try {
@@ -363,7 +372,7 @@ describe("credential helper execution (real git, no network)", () => {
             // would replace it with the live run's credential before Git sees it.
             env: {
               PATH: (process.env.PATH ?? "").split(path.delimiter)
-                .filter((entry) => entry !== process.env.GSAM_GITHUB_LAUNCHER_DIR)
+                .filter((entry) => !isGitHubLauncherDir(entry))
                 .join(path.delimiter),
               SystemRoot: process.env.SystemRoot,
               GIT_CONFIG_GLOBAL: os.devNull,

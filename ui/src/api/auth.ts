@@ -12,6 +12,27 @@ import {
 import { redactUrlSecrets } from "@/lib/redact-url-secrets";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 
+export type SignedInDevice = {
+  id: string;
+  createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  /** The device this request came from. */
+  current: boolean;
+};
+
+/** One recent sign-in attempt on this person's account. */
+export type SignInAttempt = {
+  id: string;
+  /** signed_in, wrong_password, or code_needed (password right, two-step code not given). */
+  outcome: "signed_in" | "wrong_password" | "code_needed";
+  ipAddress: string | null;
+  userAgent: string | null;
+  at: string;
+};
+
 type AuthErrorBody =
   | {
     code?: string;
@@ -177,8 +198,56 @@ export const authApi = {
     return nested;
   },
 
-  signInEmail: async (input: { email: string; password: string }) => {
-    await authPost("/sign-in/email", input);
+  /**
+   * `twoFactorRequired` is true when the password was right and the person has
+   * two-step sign-in on: no session exists yet, and the code step
+   * (`verifyTwoStepCode`) finishes the sign-in.
+   */
+  signInEmail: async (input: { email: string; password: string }): Promise<{ twoFactorRequired: boolean }> => {
+    const payload = await authPost("/sign-in/email", input);
+    const twoFactorRequired = Boolean(
+      payload && typeof payload === "object" && (payload as { twoFactorRedirect?: unknown }).twoFactorRedirect === true,
+    );
+    return { twoFactorRequired };
+  },
+
+  /** The code step of sign-in: a 6-digit app code, or a backup code. */
+  verifyTwoStepCode: async (input: { code: string; trustDevice: boolean; backup: boolean }) => {
+    const code = input.code.replace(/\s+/g, "");
+    await authPost(input.backup ? "/two-factor/verify-backup-code" : "/two-factor/verify-totp", {
+      code,
+      trustDevice: input.trustDevice,
+    });
+  },
+
+  /** `required`: an admin has made two-step sign-in compulsory on this instance. */
+  getTwoStepStatus: async (): Promise<{ enabled: boolean; available: boolean; required: boolean }> => {
+    const res = await fetch("/api/auth/two-step-status", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
+    const value = (payload ?? {}) as { enabled?: unknown; available?: unknown; required?: unknown };
+    return { enabled: value.enabled === true, available: value.available === true, required: value.required === true };
+  },
+
+  /** Starts turning two-step sign-in on. It is on only after `confirmTwoStep`. */
+  startTwoStep: async (password: string): Promise<{ totpURI: string; backupCodes: string[] }> => {
+    const payload = (await authPost("/two-factor/enable", { password })) as { totpURI?: unknown; backupCodes?: unknown } | null;
+    if (!payload || typeof payload.totpURI !== "string" || !Array.isArray(payload.backupCodes)) {
+      throw new Error("The server did not return an authenticator key");
+    }
+    return { totpURI: payload.totpURI, backupCodes: payload.backupCodes.filter((c): c is string => typeof c === "string") };
+  },
+
+  /** Proves the authenticator app works, which turns two-step sign-in on. */
+  confirmTwoStep: async (code: string) => {
+    await authPost("/two-factor/verify-totp", { code: code.replace(/\s+/g, "") });
+  },
+
+  turnOffTwoStep: async (password: string) => {
+    await authPost("/two-factor/disable", { password });
   },
 
   /**
@@ -214,6 +283,39 @@ export const authApi = {
 
   updatePreferences: (input: UpdateCurrentUserPreferences): Promise<CurrentUserPreferences> =>
     authPatch("/preferences", input, (payload) => currentUserPreferencesSchema.parse(payload)),
+
+  /** Where this person is signed in, newest first. No tokens; rows go by session id. */
+  listSessions: async (): Promise<SignedInDevice[]> => {
+    const res = await fetch("/api/auth/sessions", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
+    const rows = (payload as { sessions?: unknown } | null)?.sessions;
+    return Array.isArray(rows) ? (rows as SignedInDevice[]) : [];
+  },
+
+  /** This person's recent sign-in attempts, newest first. */
+  listSignInHistory: async (): Promise<SignInAttempt[]> => {
+    const res = await fetch("/api/auth/sign-in-history", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
+    const rows = (payload as { events?: unknown } | null)?.events;
+    return Array.isArray(rows) ? (rows as SignInAttempt[]) : [];
+  },
+
+  signOutDevice: async (sessionId: string) => {
+    await authPost(`/sessions/${encodeURIComponent(sessionId)}/revoke`, {});
+  },
+
+  signOutOtherDevices: async (): Promise<number> => {
+    const payload = (await authPost("/sessions/revoke-others", {})) as { revoked?: unknown } | null;
+    return typeof payload?.revoked === "number" ? payload.revoked : 0;
+  },
 
   getProfile: async (): Promise<CurrentUserProfile> => {
     const res = await fetch("/api/auth/profile", {

@@ -13,16 +13,29 @@ const imagesApiMock = vi.hoisted(() => ({
   status: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
+  createVariations: vi.fn(),
   get: vi.fn(),
   remove: vi.fn(),
+  setFavourite: vi.fn(),
 }));
 vi.mock("../api/images", () => ({ imagesApi: imagesApiMock }));
+const studioLooksApiMock = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() }));
+vi.mock("../api/studioLooks", () => ({ studioLooksApi: studioLooksApiMock }));
 vi.mock("../api/organisations", () => ({
   organisationsApi: { list: vi.fn(async () => [{ id: "org-1", name: "Ethical Quest" }]) },
 }));
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, title, className }: { to: string; children: ReactNode; title?: string; className?: string }) =>
     createElement("a", { href: to, title, className }, children),
+}));
+vi.mock("../api/videos", () => ({
+  videosApi: {
+    status: vi.fn(async () => ({ configured: true, provider: "mock", providerLabel: "Practice mode" })),
+    list: vi.fn(async () => ({ videos: [], total: 0, nextOffset: null })),
+    create: vi.fn(),
+    remove: vi.fn(),
+    setFavourite: vi.fn(),
+  },
 }));
 vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn(async () => [{ id: "agent-1", name: "Everest" }]) } }));
 vi.mock("../api/auth", () => ({ authApi: { getSession: vi.fn(async () => ({ user: { id: "user-1" } })) } }));
@@ -37,6 +50,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     prompt: "A lighthouse at dawn",
     aspectRatio: "16:9",
     style: null,
+    camera: null,
     provider: "higgsfield",
     model: "higgsfield-ai/soul/standard",
     status: "completed",
@@ -50,6 +64,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     altText: "A test image",
     issueCover: false,
     organisationCover: false,
+    favourite: false,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,
@@ -68,7 +83,11 @@ async function render() {
       </QueryClientProvider>,
     );
   });
-  // Let the queries settle.
+  await settle();
+}
+
+/** Let queries and mutations settle. */
+async function settle() {
   for (let index = 0; index < 5; index += 1) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -88,6 +107,7 @@ describe("Images page", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     vi.clearAllMocks();
+    studioLooksApiMock.list.mockResolvedValue({ looks: [] });
   });
 
   afterEach(() => {
@@ -101,6 +121,7 @@ describe("Images page", () => {
     await render();
 
     expect(container.querySelector('[data-testid="images-not-set-up"]')?.textContent).toContain("not switched on yet");
+    expect(container.querySelector('[data-testid="images-get-key-link"]')?.getAttribute("href")).toBe("https://console.higgsfield.ai");
     expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).disabled).toBe(true);
     expect((container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).disabled).toBe(true);
     expect(container.textContent).toContain("No images yet");
@@ -160,6 +181,115 @@ describe("Images page", () => {
       style: "greatstone-brand",
       organisationId: "org-1",
     });
+  });
+
+  it("adds finishing touches and a camera look, and makes several versions", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.create.mockResolvedValue(image({ id: "image-4", status: "pending", contentPath: null, assetId: null }));
+    imagesApiMock.createVariations.mockResolvedValue({ images: [image({ id: "image-4", status: "pending", contentPath: null, assetId: null })] });
+    await render();
+
+    const textarea = container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement;
+    await act(async () => setTextarea(textarea, "A chef plating dessert"));
+    const golden = container.querySelector('[aria-label="Add golden hour"]') as HTMLButtonElement;
+    await act(async () => golden.click());
+    expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).value).toBe(
+      "A chef plating dessert, golden hour",
+    );
+    expect((container.querySelector('[aria-label="golden hour (added)"]') as HTMLButtonElement).disabled).toBe(true);
+
+    const filmStill = [...container.querySelectorAll('[aria-label="Camera looks"] button')].find(
+      (button) => button.textContent === "Film still",
+    ) as HTMLButtonElement;
+    await act(async () => filmStill.click());
+    expect(filmStill.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('[data-testid="studio-chip-camera"]')?.textContent).toContain("Grand Format 70mm Film");
+
+    const four = [...container.querySelectorAll('[data-testid="image-variations"] [role="radio"]')].find(
+      (button) => button.textContent === "4",
+    ) as HTMLButtonElement;
+    await act(async () => four.click());
+    expect(container.querySelector('[data-testid="make-image"]')?.textContent).toContain("Make 4 images");
+    await act(async () => (container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).click());
+    for (let index = 0; index < 5; index += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(imagesApiMock.create).not.toHaveBeenCalled();
+    expect(imagesApiMock.createVariations).toHaveBeenCalledTimes(1);
+    expect(imagesApiMock.createVariations).toHaveBeenCalledWith("company-1", {
+      prompt: "A chef plating dessert, golden hour",
+      aspectRatio: "1:1",
+      style: null,
+      camera: { camera: "70mm-film", lens: "classic-anamorphic", focalLength: 35, aperture: "f1.4" },
+      organisationId: null,
+      count: 4,
+    });
+  });
+
+  it("makes a storyboard from shot lines that share the description", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.createVariations.mockResolvedValue({ images: [] });
+    await render();
+
+    await act(async () => setTextarea(container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement, "Acme coffee, rainy London"));
+    const shot = (n: number) => container.querySelector(`[aria-label="Shot ${n}"]`) as HTMLInputElement;
+    const type = (input: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    await act(async () => type(shot(1), "A barista pours"));
+    await act(async () => type(shot(2), "A commuter sips"));
+    const make = container.querySelector('[data-testid="make-image"]') as HTMLButtonElement;
+    expect(make.textContent).toContain("Make storyboard (2 shots)");
+    await act(async () => make.click());
+
+    expect(imagesApiMock.createVariations).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({ prompt: "Acme coffee, rainy London", shots: ["A barista pours", "A commuter sips"] }),
+    );
+  });
+
+  it("makes the same image in two house looks to compare them", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.createVariations.mockResolvedValue({ images: [] });
+    const look = (id: string, name: string) => ({
+      id,
+      companyId: "company-1",
+      name,
+      description: null,
+      style: null,
+      camera: null,
+      words: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    studioLooksApiMock.list.mockResolvedValue({ looks: [look("look-warm", "Warm"), look("look-cool", "Cool")] });
+    await render();
+
+    await act(async () => setTextarea(container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement, "A lighthouse"));
+    const pick = (name: string) =>
+      [...container.querySelectorAll('[data-testid="image-compare-looks"] button')].find(
+        (button) => button.textContent === name,
+      ) as HTMLButtonElement;
+    await act(async () => pick("Warm").click());
+    await act(async () => pick("Cool").click());
+    expect(pick("Cool").getAttribute("aria-pressed")).toBe("true");
+    const make = container.querySelector('[data-testid="make-image"]') as HTMLButtonElement;
+    expect(make.textContent).toContain("Compare 2 looks");
+    await act(async () => make.click());
+
+    expect(imagesApiMock.createVariations).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({ prompt: "A lighthouse", lookId: null, lookIds: ["look-warm", "look-cool"] }),
+    );
   });
 
   it("searches the gallery and links each image to its task and client", async () => {
@@ -223,5 +353,93 @@ describe("Images page", () => {
     expect(cards[1]!.textContent).toContain("You");
     expect(cards[2]!.textContent).toContain("run out of credits");
     expect(cards[2]!.textContent).toContain("Try again");
+  });
+
+  it("stars a favourite and shows only favourites when asked", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    let starred = false;
+    imagesApiMock.list.mockImplementation(async (_companyId: string, params: { favourite?: boolean }) => {
+      const all = [image({ id: "image-1", favourite: starred }), image({ id: "image-2", prompt: "A harbour at dusk" })];
+      const images = params.favourite ? all.filter((item) => item.favourite) : all;
+      return { images, total: images.length, nextOffset: null };
+    });
+    imagesApiMock.setFavourite.mockImplementation(async (_id: string, body: { favourite: boolean }) => {
+      starred = body.favourite;
+      return image({ id: "image-1", favourite: starred });
+    });
+    await render();
+
+    const star = container.querySelector('[data-testid="image-favourite"]') as HTMLButtonElement;
+    expect(star.getAttribute("aria-label")).toBe("Add to favourites");
+    await act(async () => star.click());
+    await settle();
+    expect(imagesApiMock.setFavourite).toHaveBeenCalledWith("image-1", { favourite: true });
+    expect(container.querySelector('[data-testid="image-favourite"]')?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => (container.querySelector('[data-testid="image-favourites-filter"]') as HTMLButtonElement).click());
+    await settle();
+    expect(imagesApiMock.list).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ favourite: true }));
+    expect(container.querySelectorAll('[data-testid="generated-image-card"]')).toHaveLength(1);
+  });
+
+  it("opens one composer setting at a time from chips that are keyboard buttons", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    await render();
+
+    const chip = (id: string) => container.querySelector(`[data-testid="studio-chip-${id}"]`) as HTMLButtonElement;
+    const panel = (id: string) => container.querySelector(`[data-testid="studio-panel-${id}"]`) as HTMLElement;
+    for (const id of ["shape", "style", "look", "camera", "storyboard", "compare", "versions", "client"]) {
+      expect(chip(id).tagName).toBe("BUTTON");
+      expect(chip(id).getAttribute("tabindex")).not.toBe("-1");
+      expect(panel(id).hidden).toBe(true);
+    }
+    expect(chip("shape").getAttribute("aria-label")).toBe("Shape: Square");
+
+    chip("style").focus();
+    expect(document.activeElement).toBe(chip("style"));
+    await act(async () => chip("style").click());
+    expect(chip("style").getAttribute("aria-expanded")).toBe("true");
+    expect(chip("style").getAttribute("aria-controls")).toBe(panel("style").id);
+    expect(panel("style").hidden).toBe(false);
+
+    await act(async () => chip("camera").click());
+    expect(panel("style").hidden).toBe(true);
+    expect(panel("camera").hidden).toBe(false);
+    await act(async () => chip("camera").click());
+    expect(panel("camera").hidden).toBe(true);
+
+    // A mode tile opens its setting in the composer.
+    await act(async () => (container.querySelector('[data-testid="studio-mode-storyboard"]') as HTMLButtonElement).click());
+    expect(panel("storyboard").hidden).toBe(false);
+  });
+
+  it("puts card actions on focusable buttons that reuse and animate an image", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [image({ prompt: "A lighthouse at dawn", aspectRatio: "16:9" })], total: 1, nextOffset: null });
+    await render();
+
+    const card = container.querySelector('[data-testid="generated-image-card"]')!;
+    const actions = [...card.querySelectorAll('[data-testid="studio-card-actions"] button, [data-testid="studio-card-actions"] a')] as HTMLElement[];
+    expect(actions.map((action) => action.getAttribute("aria-label"))).toEqual([
+      "Add to favourites",
+      "Make another like this",
+      "Animate this image",
+      "Download",
+    ]);
+    for (const action of actions) {
+      action.focus();
+      expect(document.activeElement).toBe(action);
+    }
+    expect(card.querySelector('[data-testid="image-card-download"]')?.getAttribute("href")).toBe("/api/assets/asset-1/content");
+
+    await act(async () => (card.querySelector('[data-testid="image-card-reuse"]') as HTMLButtonElement).click());
+    expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).value).toBe("A lighthouse at dawn");
+    expect(container.querySelector('[data-testid="studio-chip-shape"]')?.getAttribute("aria-label")).toBe("Shape: Wide");
+
+    await act(async () => (card.querySelector('[data-testid="image-card-animate"]') as HTMLButtonElement).click());
+    await settle();
+    expect(container.querySelector('[data-testid="studio-tab-videos"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('[data-testid="video-source-image"] img')?.getAttribute("alt")).toBe("A test image");
   });
 });

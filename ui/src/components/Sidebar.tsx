@@ -357,16 +357,16 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showIntelligence = experimentalSettings?.enableIntelligence === true;
-  const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
   // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
   const myTasksCount = useMyTasksCount(selectedCompanyId);
+  // GRE-1633: Status Cards ignores the stored switch, but a client plan can still turn it off.
+  const showStatusCards = experimentalSettings?.enableStatusCards === true;
+  // GRE-1622: Cases ignores the stored switch, but a client plan can still turn it off.
   const showCases = experimentalSettings?.enableCases === true;
   // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
-  // Conference Room Chat flag (PAP-136/PAP-137): hidden entirely while the flag is off.
-  const conferenceRoomChatEnabled = experimentalSettings?.enableConferenceRoomChat === true;
   const showAgentChats = agentChatEnabled && !children;
   const showTeamChats = teamChatEnabled && !children;
 
@@ -446,15 +446,18 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     agents: link("/agents", "Agents", Users),
     scorecard: link("/scorecard", "Scorecard", Trophy),
     "weekly-report": link("/weekly-report", "This week", Newspaper),
-    "conference-room": gated(conferenceRoomChatEnabled, link("/board-chat", "Conference Room", MessagesSquare)),
-    status: gated(showStatusCards, link("/status", "Status", LayoutGrid, { textBadge: "beta" })),
+    // Greatstone (GRE-1624): Conference Room Chat graduated from Experimental; always shown.
+    "conference-room": link("/board-chat", "Conference Room", MessagesSquare),
+    // Greatstone (GRE-1622, GRE-1633): Status Cards graduated from Experimental;
+    // shown unless a client plan turns it off.
+    status: gated(showStatusCards, link("/status", "Status", LayoutGrid)),
     skills: link("/skills", "Skills", Boxes),
     connectors: link("/apps", "Connectors", Unplug),
     routines: link("/routines", "Routines", Repeat),
     workflows: link("/workflows", "Workflows", Workflow),
     workspaces: gated(showWorkspacesLink, link("/workspaces", "Workspaces", GitBranch)),
     artifacts: link("/artifacts", "Artifacts", Package),
-    cases: gated(showCases, link("/cases", "Cases", Layers, { textBadge: "beta" })),
+    cases: gated(showCases, link("/cases", "Cases", Layers)),
     website: gated(showWebsite, link("/website", "Website", Globe)),
     activity: link("/activity", "Audit", History),
     releases: gated(canRelease, link("/releases", "Releases", Rocket)),

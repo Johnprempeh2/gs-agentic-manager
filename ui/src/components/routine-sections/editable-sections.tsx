@@ -31,23 +31,24 @@ import { MarkdownEditor } from "../MarkdownEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariablesEditor";
 import { EnvironmentVariablesEditor } from "../environment-variables-editor";
 import { useRoutineDetail } from "./context";
+import { routineRunStatusLabel } from "../../lib/routine-run-status";
 import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@greatstone/shared";
 
 const concurrencyPolicyOptions = [
   {
     value: "coalesce_if_active",
-    title: "Coalesce if active",
-    description: "Keep one follow-up run queued while an active run is still working.",
+    title: "Keep one follow-up",
+    description: "If the last one is still going, line up just one more to follow it.",
   },
   {
     value: "always_enqueue",
-    title: "Always enqueue",
-    description: "Queue every trigger occurrence, even if several runs stack up.",
+    title: "Queue every one",
+    description: "Start every scheduled time, even if the last one is still going.",
   },
   {
     value: "skip_if_active",
-    title: "Skip if active",
-    description: "Drop overlapping trigger occurrences while the routine is already active.",
+    title: "Skip while busy",
+    description: "Skip a scheduled time if the last one is still going.",
   },
   {
     value: "reuse_standing_task",
@@ -59,35 +60,35 @@ const concurrencyPolicyOptions = [
 const catchUpPolicyOptions = [
   {
     value: "skip_missed",
-    title: "Skip missed",
-    description: "Ignore schedule windows that were missed while paused.",
+    title: "Skip missed times",
+    description: "Ignore any scheduled times that were missed while it was paused.",
   },
   {
     value: "enqueue_missed_with_cap",
-    title: "Enqueue missed with cap",
-    description: "Catch up missed schedule windows after recovery; sub-hourly schedules are combined into one catch-up run, slower schedules replay each missed window up to a cap.",
+    title: "Catch up missed times",
+    description: "If a time was missed, start it once things are running again. Frequent schedules catch up once rather than many times.",
   },
 ];
 
 const activityGatePolicyOptions = [
   {
     value: "always",
-    title: "Run on every scheduled tick",
-    description: "Fire on the schedule no matter what (the default behaviour).",
+    title: "Start at every scheduled time",
+    description: "Start on the schedule no matter what. This is the usual choice.",
   },
   {
     value: "require_external_activity",
-    title: "Skip when there's been no activity since the last run",
+    title: "Skip when nothing has happened since last time",
     description:
-      "On a scheduled tick, only run if something happened since the last run that finished. Lets a watcher-style routine stay asleep while the system is settled instead of burning tokens.",
+      "Only start if something has happened since the last time it finished. This saves AI costs when nothing has changed.",
   },
 ];
 
 const activityGateScopeOptions = [
   {
     value: "company",
-    title: "Organization-wide",
-    description: "Any activity across the organization counts as a reason to run.",
+    title: "Whole organisation",
+    description: "Any activity in your organisation can start this routine.",
   },
   {
     value: "project",
@@ -322,7 +323,7 @@ export function OverviewSection({
         <SummaryCard
           icon={Play}
           label="Last run"
-          value={lastRun ? lastRun.status.replaceAll("_", " ") : "No runs"}
+          value={lastRun ? routineRunStatusLabel(lastRun.status) : "No runs"}
           hint={lastRun ? timeAgo(lastRun.triggeredAt) : "Trigger a run"}
           to={() => navigateToSection("runs")}
           ariaLabel={lastRun ? `Last run ${lastRun.status}. Open runs.` : "No runs. Open runs."}
@@ -490,10 +491,10 @@ export function DeliverySection() {
     <div className="space-y-6">
       <div className="space-y-3">
         <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-          Concurrency
+          If it is still running
         </p>
         <RadioCardGroup
-          ariaLabel="Concurrency policy"
+          ariaLabel="If it is still running"
           value={editDraft.concurrencyPolicy}
           onValueChange={(concurrencyPolicy) =>
             setEditDraft((current) => ({ ...current, concurrencyPolicy }))
@@ -503,10 +504,10 @@ export function DeliverySection() {
       </div>
       <div className="space-y-3">
         <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-          Catch-up
+          If a time was missed
         </p>
         <RadioCardGroup
-          ariaLabel="Catch-up policy"
+          ariaLabel="If a time was missed"
           value={editDraft.catchUpPolicy}
           onValueChange={(catchUpPolicy) =>
             setEditDraft((current) => ({ ...current, catchUpPolicy }))

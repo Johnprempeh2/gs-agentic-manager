@@ -39,7 +39,7 @@ describe("signed entitlement document", () => {
     expect(() => verifyEntitlementEnvelope(file, otherHub.publicKey)).toThrow(/signature is invalid/);
 
     const envelope = JSON.parse(file);
-    const tampered = Buffer.from(envelope.document, "base64url").toString("utf8").replace('"enableCases":true', '"enableCases":true,"enableSummaries":true');
+    const tampered = Buffer.from(envelope.document, "base64url").toString("utf8").replace('"enableWebsiteView":true', '"enableWebsiteView":true,"enableIntelligence":true');
     envelope.document = Buffer.from(tampered).toString("base64url");
     expect(() => verifyEntitlementEnvelope(JSON.stringify(envelope), HUB_KEYS.publicKey)).toThrow(/signature is invalid/);
 
@@ -157,18 +157,18 @@ describe("entitlement runtime", () => {
     const started = await restarted.start();
     expect(started.entitlements.state).toBe("active");
     expect(started.entitlements.document?.version).toBe(1);
-    expect(restarted.entitled().enableCases).toBe(true);
+    expect(restarted.entitled().enableWebsiteView).toBe(true);
   });
 
   it("applies a new valid document on the next reload, and re-reads at least every 5 minutes", async () => {
     await fs.writeFile(paths.filePath, signedFile(documentFor()));
     const rt = runtime();
     await rt.start();
-    expect(rt.entitled().enableSummaries).toBe(false);
+    expect(rt.entitled().enableIntelligence).toBe(false);
 
     await fs.writeFile(
       paths.filePath,
-      signedFile(documentFor({ version: 2, features: { enablePipelines: true, enableSummaries: true } })),
+      signedFile(documentFor({ version: 2, features: { enablePipelines: true, enableIntelligence: true } })),
     );
     expect(ENTITLEMENT_RELOAD_INTERVAL_MS).toBeLessThanOrEqual(5 * 60 * 1000);
     vi.useFakeTimers();
@@ -178,7 +178,7 @@ describe("entitlement runtime", () => {
     vi.useRealTimers();
 
     // The tick reads the file asynchronously; wait for it to land.
-    await vi.waitFor(() => expect(rt.entitled()).toMatchObject({ enableSummaries: true, enableCases: false }));
+    await vi.waitFor(() => expect(rt.entitled()).toMatchObject({ enableIntelligence: true, enableWebsiteView: false }));
     const change = events.at(-1);
     expect(change).toMatchObject({
       kind: "changed",
@@ -190,8 +190,8 @@ describe("entitlement runtime", () => {
       at: clock.toISOString(),
     });
     expect(change?.kind === "changed" && change.changes).toEqual([
-      { key: "enableCases", from: true, to: false },
-      { key: "enableSummaries", from: false, to: true },
+      { key: "enableIntelligence", from: false, to: true },
+      { key: "enableWebsiteView", from: true, to: false },
     ]);
   });
 
@@ -255,15 +255,43 @@ describe("entitlement runtime", () => {
   });
 
   it("only narrows settings: stored values are untouched, so a downgrade deletes nothing", async () => {
-    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableCases: true } })));
+    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableWebsiteView: true } })));
     const rt = runtime();
     await rt.start();
-    const stored = { enablePipelines: true, enableCases: true, enableStreamlinedUi: true, enableNativeRunner: true };
+    const stored = { enablePipelines: true, enableWebsiteView: true, enableStreamlinedUi: true, enableNativeRunner: true };
     const view = applyEntitlementsToExperimental(stored, rt);
-    expect(view).toEqual({ ...view, enablePipelines: false, enableCases: true, enableStreamlinedUi: true, enableNativeRunner: true });
+    expect(view).toEqual({ ...view, enablePipelines: false, enableWebsiteView: true, enableStreamlinedUi: true, enableNativeRunner: true });
     expect(stored.enablePipelines).toBe(true);
     // Entitled but switched off by the client admin stays off.
-    expect(applyEntitlementsToExperimental({ enableCases: false }, rt).enableCases).toBe(false);
+    expect(applyEntitlementsToExperimental({ enableWebsiteView: false }, rt).enableWebsiteView).toBe(false);
+  });
+
+  it("still governs the graduated client-gated switches (GRE-1622, GRE-1633)", async () => {
+    const keys = [
+      "enableCases",
+      "enableExternalObjects",
+      "enableSummaries",
+      "enableStatusCards",
+      "enableAgentChat",
+      "enableBuiltInAgents",
+      "enableIssuePlanDecompositions",
+    ] as const;
+    const off = Object.fromEntries(keys.map((key) => [key, false]));
+    const on = Object.fromEntries(keys.map((key) => [key, true]));
+    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: off })));
+    const rt = runtime();
+    await rt.start();
+    // Client editions keep these gates (Everest on GRE-1632): a document that
+    // does not entitle them turns them off.
+    expect(applyEntitlementsToExperimental(on, rt)).toMatchObject(off);
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).toEqual(expect.arrayContaining([...keys]));
+    // Beta skills and Simplified English are preference keys, never entitlements.
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(
+      expect.arrayContaining(["enableBetaSkills"]),
+    );
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(
+      expect.arrayContaining(["enableSimplifiedEnglishInteractions"]),
+    );
   });
 
   it("passes settings through unchanged when entitlements are not configured", () => {
@@ -293,7 +321,7 @@ describe("signed entitlements through the settings service and the GRE-1077 gate
       singletonKey: "default",
       defaultEnvironmentId: null,
       general: {},
-      experimental: { enablePipelines: true, enableCases: true },
+      experimental: { enablePipelines: true, enableWebsiteView: true },
       createdAt: new Date("2026-10-01T00:00:00.000Z"),
       updatedAt: new Date("2026-10-01T00:00:00.000Z"),
     };
@@ -311,7 +339,7 @@ describe("signed entitlements through the settings service and the GRE-1077 gate
 
     expect(await isEntitled(db, "enablePipelines")).toBe(true);
 
-    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableCases: true } })));
+    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableWebsiteView: true } })));
     const rt = createEntitlementRuntime({
       publicKey: HUB_KEYS.publicKey,
       filePath: paths.filePath,
@@ -322,7 +350,7 @@ describe("signed entitlements through the settings service and the GRE-1077 gate
     setEntitlementRuntime(rt);
 
     const experimental = await instanceSettingsService(db, { runtimeEnv: {} }).getExperimental();
-    expect(experimental).toMatchObject({ enablePipelines: false, enableCases: true });
+    expect(experimental).toMatchObject({ enablePipelines: false, enableWebsiteView: true });
     expect(await isEntitled(db, "enablePipelines")).toBe(false);
     await expect(assertEntitled(db, "enablePipelines")).rejects.toMatchObject({ status: 403 });
     expect(row.experimental.enablePipelines).toBe(true);

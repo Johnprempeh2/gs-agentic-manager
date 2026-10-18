@@ -143,7 +143,7 @@ export function Memory() {
   );
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   }
 
   const header = <MemoryPageHeader tab="connections" />;
@@ -154,7 +154,7 @@ export function Memory() {
         {header}
         <EmptyState
           icon={Lock}
-          message="You do not have access to memory in this organization."
+          message="You do not have access to memory in this organisation."
           description="Ask a board admin if you need to see it."
         />
       </div>
@@ -167,8 +167,8 @@ export function Memory() {
         {header}
         <EmptyState
           icon={PowerOff}
-          message="Memory is turned off for this organization."
-          description="A board admin can turn it on in organization settings."
+          message="Memory is turned off for this organisation."
+          description="A board admin can turn it on in organisation settings."
         />
       </div>
     );

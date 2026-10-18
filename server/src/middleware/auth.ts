@@ -360,6 +360,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             companyIds: memberships.map((row) => row.companyId),
             memberships,
             isInstanceAdmin: Boolean(roleRow),
+            twoFactorEnabled: session.user.twoFactorEnabled === true,
             runId: runIdHeader ?? undefined,
             source: "session",
           };
@@ -403,6 +404,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           keyId: boardKey.id,
           runId: runIdHeader || undefined,
           source: "board_key",
+          twoFactorEnabled: access.user?.twoFactorEnabled === true,
         };
         next();
         return;

@@ -14,6 +14,9 @@ import { scrollTeamChatToLatest, TeamChatThread } from "@/components/team-chat/T
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { useConfirm } from "@/context/ConfirmContext";
+import { useToastActions } from "@/context/ToastContext";
+import { ErrorState } from "@/components/ErrorState";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { buildCompanyUserLabelMap, isAgentTaskTarget } from "@/lib/company-members";
@@ -34,6 +37,8 @@ export function TeamChat() {
   const { enabled, loaded } = useTeamChatEnabled();
   const { setBreadcrumbs } = useBreadcrumbs();
   const client = useQueryClient();
+  const confirm = useConfirm();
+  const { pushToast } = useToastActions();
   const [adding, setAdding] = useState(false);
   const [alertsPermission, setAlertsPermission] = useState(desktopAlertsPermission);
   const [alertsAsked, setAlertsAsked] = useState(() => localStorage.getItem(ALERTS_ASKED_KEY) === "1");
@@ -119,7 +124,8 @@ export function TeamChat() {
       </p>
     );
   }
-  if (chat.error || !summary) return <p className="text-sm text-destructive">{chat.error?.message ?? "Chat not found."}</p>;
+  if (chat.error) return <ErrorState error={chat.error} title="We could not open this chat" onRetry={() => void chat.refetch()} />;
+  if (!summary) return <p className="text-sm text-muted-foreground">This chat no longer exists, or you are not a member of it.</p>;
 
   const group = summary.kind === "group";
   const memberIds = new Set(summary.members.map((member) => `${member.type}:${member.id}`));
@@ -145,7 +151,11 @@ export function TeamChat() {
               aria-pressed={summary.muted}
               title={summary.muted ? "Muted: you hear only @mentions" : "Mute: alert only when you are @mentioned"}
               className="gap-1.5 text-muted-foreground"
-              onClick={() => void teamChatsApi.setMuted(summary.id, !summary.muted).then(updateSummary)}
+              onClick={() =>
+                void teamChatsApi.setMuted(summary.id, !summary.muted).then(updateSummary).catch(() =>
+                  pushToast({ title: summary.muted ? "Could not turn alerts back on" : "Could not mute this chat", body: "Try again in a moment.", tone: "error" }),
+                )
+              }
             >
               {summary.muted ? <BellOff aria-hidden="true" className="size-4" /> : <Bell aria-hidden="true" className="size-4" />}
               {summary.muted ? "Muted" : "Mute"}
@@ -166,7 +176,18 @@ export function TeamChat() {
                   type="button"
                   aria-label={`Remove ${member.name}`}
                   className="-mr-1 rounded-full p-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
-                  onClick={() => void teamChatsApi.removeMember(summary.id, member.type, member.id).then(updateSummary)}
+                  onClick={async () => {
+                    const confirmed = await confirm({
+                      title: `Remove ${member.name} from this chat?`,
+                      description: "They stop seeing new messages here. You can add them back later.",
+                      confirmLabel: "Remove",
+                      tone: "destructive",
+                    });
+                    if (!confirmed) return;
+                    void teamChatsApi.removeMember(summary.id, member.type, member.id).then(updateSummary).catch(() =>
+                      pushToast({ title: `Could not remove ${member.name}`, body: "Try again in a moment.", tone: "error" }),
+                    );
+                  }}
                 >
                   <X aria-hidden="true" className="size-3" />
                 </button>
@@ -198,6 +219,15 @@ export function TeamChat() {
           </div>
         )}
       </header>
+      {comments.error ? (
+        <ErrorState
+          error={comments.error}
+          title="Messages did not load"
+          onRetry={() => void comments.refetch()}
+          retrying={comments.isFetching}
+          compact
+        />
+      ) : null}
       <div data-tour="team-chat-thread">
         <TeamChatThread
           comments={comments.data ?? []}

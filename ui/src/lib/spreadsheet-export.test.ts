@@ -6,6 +6,7 @@ import {
   clientsSheet,
   columnName,
   exportFileName,
+  pipelineSheet,
   sheetToCsv,
   sheetsToXlsx,
   weeklyNumbersSheet,
@@ -42,6 +43,7 @@ const report: WeeklyReport = {
   pipeline: { added: 3, moved: 5, won: 1, lost: 0, moves: [] },
   needsYou: { count: 4, items: [] },
   costs: { totalCents: 12345, agents: [{ agentId: "a1", name: "Everest", cents: 12345 }] },
+  daily: [],
 };
 
 describe("spreadsheet export", () => {
@@ -90,5 +92,44 @@ describe("spreadsheet export", () => {
   it("names files after the company prefix and the day", () => {
     expect(exportFileName("GRE", "clients", "2026-10-16", "xlsx")).toBe("gre-clients-2026-10-16.xlsx");
     expect(exportFileName("", "tasks", "2026-10-16", "csv")).toBe("tasks-2026-10-16.csv");
+  });
+
+  it("turns a pipeline board into one row per card with its deal and weighted value", () => {
+    const sheet = pipelineSheet(
+      "DevTools deals",
+      [
+        {
+          id: "c1",
+          title: "Acme",
+          stageId: "s1",
+          stageEnteredAt: "2026-10-10T09:00:00Z",
+          fields: {
+            dealStatus: "Open",
+            dealValue: 12000,
+            dealCurrency: "GBP",
+            probability: 25,
+            dealOwner: "Ben",
+            expectedCloseDate: "2026-11-30",
+            nextActivityDate: "2026-10-20",
+            nextActivitySubject: "Demo call",
+            lastActivityDate: "2026-10-12",
+          },
+        },
+        { id: "c2", title: "Lead", stageId: null, fields: { leadValue: "500", leadCurrency: "USD" } },
+      ],
+      {
+        stageName: (id) => (id === "s1" ? "Qualified" : ""),
+        caseUrl: (item) => `https://gsam.example/cases/${item.title.toLowerCase()}`,
+      },
+      new Date("2026-10-17T09:00:00Z"),
+    );
+    expect(sheet.name).toBe("DevTools deals");
+    expect(sheet.rows[0]).toEqual([
+      "Acme", "Qualified", "Open", 12000, "GBP", 25, 3000, "Ben", "2026-11-30", "2026-10-20", "Demo call", "2026-10-12", 7,
+      "https://gsam.example/cases/acme",
+    ]);
+    expect(sheet.rows[1]!.slice(0, 7)).toEqual(["Lead", "", null, 500, "USD", null, null]);
+    expect(sheet.rows[0]).toHaveLength(sheet.headers.length);
+    expect(sheetToCsv(sheet).startsWith("\uFEFFTitle,Stage,Deal status,Value")).toBe(true);
   });
 });

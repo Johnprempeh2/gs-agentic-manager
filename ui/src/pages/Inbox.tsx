@@ -17,6 +17,10 @@ import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import {
   BLOCKED_GROUP_OPTIONS,
+  loadBlockedInboxGroupBy,
+  loadBlockedInboxSortBy,
+  saveBlockedInboxGroupBy,
+  saveBlockedInboxSortBy,
   BLOCKED_SORT_OPTIONS,
   type BlockedInboxGroupBy,
   type BlockedInboxSort,
@@ -27,6 +31,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useGeneralSettings } from "../context/GeneralSettingsContext";
 import { useSidebar } from "../context/SidebarContext";
 import { queryKeys } from "../lib/queryKeys";
+import { approvalStatusLabel } from "../lib/approval-status";
 import { useDialogActions } from "../context/DialogContext";
 import { useIssueExternalObjectSummaries } from "../hooks/useIssueExternalObjects";
 import {
@@ -149,6 +154,7 @@ import {
   getRecentTouchedIssues,
   activeSnoozedInboxIssueIds,
   inboxSnoozeUntilTomorrow,
+  inboxSnoozeUntilNextWeek,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadCollapsedInboxGroupKeys,
@@ -197,6 +203,8 @@ import {
   taskDateGroupSeparator,
   type TaskDateGroup,
 } from "../lib/task-date-groups";
+import { useConfirm } from "@/context/ConfirmContext";
+import { adapterLabels } from "../components/agent-config-primitives";
 
 const INBOX_HEARTBEAT_RUN_LIMIT = 200;
 const INBOX_ISSUE_LIST_LIMIT = 500;
@@ -293,11 +301,7 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
 }
 
 function runFailureMessage(run: HeartbeatRun): string {
-  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt && rebrandRunLogText(run.stderrExcerpt)) ?? "Run exited with an error.";
-}
-
-function approvalStatusLabel(status: Approval["status"]): string {
-  return status.replaceAll("_", " ");
+  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt && rebrandRunLogText(run.stderrExcerpt)) ?? "The agent stopped with an error.";
 }
 
 function readIssueIdFromRun(run: HeartbeatRun): string | null {
@@ -441,7 +445,7 @@ export function FailedRunInboxRow({
                   {issue.title}
                 </>
               ) : (
-                <>Failed run{linkedAgentName ? `: ${linkedAgentName}` : ""}</>
+                <>Agent work stopped{linkedAgentName ? `: ${linkedAgentName}` : ""}</>
               )}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -587,7 +591,7 @@ function ApprovalInboxRow({
               {label}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span className="capitalize">{approvalStatusLabel(approval.status)}</span>
+              <span>{approvalStatusLabel(approval.status)}</span>
               {requesterName ? <span>requested by {requesterName}</span> : null}
               <span>updated {timeAgo(approval.updatedAt)}</span>
             </span>
@@ -714,8 +718,8 @@ function JoinRequestInboxRow({
               {label}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span>requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}</span>
-              {joinRequest.adapterType && <span>adapter: {joinRequest.adapterType}</span>}
+              <span title={joinRequest.requestIp ? `Sent from ${joinRequest.requestIp}` : undefined}>Asked to join {timeAgo(joinRequest.createdAt)}</span>
+              {joinRequest.adapterType && <span>Runs on {adapterLabels[joinRequest.adapterType] ?? joinRequest.adapterType}</span>}
             </span>
           </span>
         </div>
@@ -801,6 +805,7 @@ function InboxCollectionToolbar({
 }
 
 export function Inbox() {
+  const confirmAction = useConfirm();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { openNewIssue } = useDialogActions();
@@ -823,8 +828,8 @@ export function Inbox() {
     () => loadInboxCollectionPreferences(selectedCompanyId).viewState,
   );
   const [groupBy, setGroupBy] = useState<InboxWorkItemGroupBy>(() => loadInboxWorkItemGroupBy());
-  const [blockedGroupBy, setBlockedGroupBy] = useState<BlockedInboxGroupBy>("none");
-  const [blockedSortBy, setBlockedSortBy] = useState<BlockedInboxSort>("most_recent");
+  const [blockedGroupBy, setBlockedGroupBy] = useState<BlockedInboxGroupBy>(() => loadBlockedInboxGroupBy());
+  const [blockedSortBy, setBlockedSortBy] = useState<BlockedInboxSort>(() => loadBlockedInboxSortBy());
   const [visibleIssueColumns, setVisibleIssueColumns] = useState<InboxIssueColumn[]>(
     () => loadInboxCollectionPreferences(selectedCompanyId).columns,
   );
@@ -916,6 +921,7 @@ export function Inbox() {
     data: approvals,
     isLoading: isApprovalsLoading,
     error: approvalsError,
+    refetch: refetchApprovals,
   } = useQuery({
     queryKey: queryKeys.approvals.list(selectedCompanyId!),
     queryFn: () => approvalsApi.list(selectedCompanyId!),
@@ -1781,7 +1787,7 @@ export function Inbox() {
       navigate(`/approvals/${id}?resolved=approved`);
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to approve");
+      setActionError(err instanceof Error ? err.message : "Could not approve this request.");
     },
   });
 
@@ -1792,7 +1798,7 @@ export function Inbox() {
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to reject");
+      setActionError(err instanceof Error ? err.message : "Could not reject this request.");
     },
   });
 
@@ -1807,7 +1813,7 @@ export function Inbox() {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to approve join request");
+      setActionError(err instanceof Error ? err.message : "Could not approve this join request.");
     },
   });
 
@@ -1820,7 +1826,7 @@ export function Inbox() {
       queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to reject join request");
+      setActionError(err instanceof Error ? err.message : "Could not reject this join request.");
     },
   });
 
@@ -1847,8 +1853,8 @@ export function Inbox() {
     },
     onError: (error) => {
       pushToast({
-        title: "Run retry failed",
-        body: error instanceof Error ? error.message : "Unable to retry run",
+        title: "Could not try that again",
+        body: `The agent could not restart this work. Try again in a minute, or open the task for details.${error instanceof Error ? ` (${error.message})` : ""}`,
         tone: "error",
       });
     },
@@ -1872,6 +1878,29 @@ export function Inbox() {
         title: "Back tomorrow at 08:00",
         body: issue.title,
         tone: "info",
+        secondaryAction: {
+          label: "Next week",
+          onClick: () => {
+            snoozeInboxItem(itemKey, inboxSnoozeUntilNextWeek().toISOString());
+            pushToast({
+              id: `inbox-later-week-${issue.id}`,
+              title: "Back Monday at 08:00",
+              body: issue.title,
+              tone: "info",
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  setLaterIssueIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(issue.id);
+                    return next;
+                  });
+                  restoreInboxItem(itemKey);
+                },
+              },
+            });
+          },
+        },
         action: {
           label: "Undo",
           onClick: () => {
@@ -1947,7 +1976,7 @@ export function Inbox() {
       return { companyId: selectedCompanyId, previousData };
     },
     onError: (err, id, context) => {
-      setActionError(err instanceof Error ? err.message : "Failed to archive task");
+      setActionError(err instanceof Error ? err.message : "Could not archive this task.");
       if (context?.companyId) clearLocalInboxArchive(context.companyId, id);
       setArchivingIssueIds((prev) => {
         const next = new Set(prev);
@@ -1988,7 +2017,7 @@ export function Inbox() {
       return { companyId: selectedCompanyId };
     },
     onError: (err, id, context) => {
-      setActionError(err instanceof Error ? err.message : "Failed to undo inbox archive");
+      setActionError(err instanceof Error ? err.message : "Could not undo the archive.");
       if (context?.companyId) {
         beginLocalInboxArchive(context.companyId, id);
         boundLocalInboxArchive(context.companyId, id);
@@ -2018,6 +2047,9 @@ export function Inbox() {
     onSuccess: () => {
       invalidateInboxIssueQueryCaches();
     },
+    onError: () => {
+      pushToast({ title: "Could not mark as read", body: "Try again in a moment.", tone: "error" });
+    },
     onSettled: (_data, _error, id) => {
       setTimeout(() => {
         setFadingOutIssues((prev) => {
@@ -2042,6 +2074,9 @@ export function Inbox() {
     },
     onSuccess: () => {
       invalidateInboxIssueQueryCaches();
+    },
+    onError: () => {
+      pushToast({ title: "Could not mark everything as read", body: "Try again in a moment.", tone: "error" });
     },
     onSettled: (_data, _error, issueIds) => {
       setTimeout(() => {
@@ -2394,7 +2429,7 @@ export function Inbox() {
   }, [selectedIndex]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={InboxIcon} message="Select an organization to view inbox." />;
+    return <EmptyState icon={InboxIcon} message="Choose an organisation to view inbox." />;
   }
 
   const hasRunFailures = failedRuns.length > 0;
@@ -2463,7 +2498,7 @@ export function Inbox() {
       issueFilters.statuses.includes(status as IssueFilterState["statuses"][number]),
     );
   const issueFilterFeedback = issueFilters.liveOnly
-    ? "Live runs only: tasks currently connected to an agent run."
+    ? "Only tasks an agent is working on right now."
     : activeStatusFilterApplied
       ? "Active statuses: open tasks, whether or not an agent is running."
       : null;
@@ -2557,7 +2592,10 @@ export function Inbox() {
                           "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
                           blockedGroupBy === value ? "bg-accent/50 text-foreground" : "text-muted-foreground hover:bg-accent/50",
                         )}
-                        onClick={() => setBlockedGroupBy(value)}
+                        onClick={() => {
+                          setBlockedGroupBy(value);
+                          saveBlockedInboxGroupBy(value);
+                        }}
                       >
                         <span>{label}</span>
                         {blockedGroupBy === value ? <Check className="h-3.5 w-3.5" /> : null}
@@ -2603,7 +2641,10 @@ export function Inbox() {
                           "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
                           blockedSortBy === value ? "bg-accent/50 text-foreground" : "text-muted-foreground hover:bg-accent/50",
                         )}
-                        onClick={() => setBlockedSortBy(value)}
+                        onClick={() => {
+                          setBlockedSortBy(value);
+                          saveBlockedInboxSortBy(value);
+                        }}
                       >
                         <span>{label}</span>
                         {blockedSortBy === value ? <Check className="h-3.5 w-3.5" /> : null}
@@ -2733,6 +2774,7 @@ export function Inbox() {
                           Cancel
                         </Button>
                         <Button
+                          disabled={markAllReadMutation.isPending}
                           onClick={() => {
                             setShowMarkAllReadConfirm(false);
                             markAllReadMutation.mutate(unreadIssueIds);
@@ -2756,7 +2798,7 @@ export function Inbox() {
         ) : null}
       />
 
-      {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
+      {approvalsError && <ErrorState error={approvalsError} title="Approvals did not load" onRetry={() => void refetchApprovals()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {tab === "mine" && needsMe ? <NeedsMeList needsMe={needsMe} includeDecisions /> : null}
@@ -2819,10 +2861,17 @@ export function Inbox() {
                 : "No inbox items match these filters."
           }
           description={
-            !searchQuery.trim() && tab === "mine"
+            searchQuery.trim()
+              ? undefined
+              : tab === "mine"
               ? "New activity on tasks you are part of lands here. Anything that needs your answer is in Decisions."
-              : undefined
+              : tab === "unread" || tab === "recent"
+                ? "You are all caught up. Anything that needs your answer is in Decisions."
+                : "Try a different filter, or look in Decisions for anything waiting on you."
           }
+          action={searchQuery.trim() ? "Clear search" : undefined}
+          onAction={searchQuery.trim() ? () => setSearchQuery("") : undefined}
+          hideActionIcon
         />
       )}
 
@@ -3167,7 +3216,15 @@ export function Inbox() {
                           joinRequest={item.joinRequest}
                           selected={isSelected}
                           onApprove={() => approveJoinMutation.mutate(item.joinRequest)}
-                          onReject={() => rejectJoinMutation.mutate(item.joinRequest)}
+                          onReject={async () => {
+                            const confirmed = await confirmAction({
+                              title: `Turn down ${formatJoinRequestInboxLabel(item.joinRequest)}?`,
+                              description: "They are not added to your organisation. They would need to ask again to join.",
+                              confirmLabel: "Turn down",
+                              tone: "destructive",
+                            });
+                            if (confirmed) rejectJoinMutation.mutate(item.joinRequest);
+                          }}
                           isPending={approveJoinMutation.isPending || rejectJoinMutation.isPending}
                           unreadState={nonIssueUnreadState(joinKey)}
                           onMarkRead={() => handleMarkNonIssueRead(joinKey)}
@@ -3327,9 +3384,8 @@ export function Inbox() {
                   >
                     <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
                     <span className="text-sm">
-                      Budget at{" "}
                       <span className="font-medium">{dashboard!.costs.monthUtilizationPercent}%</span>{" "}
-                      utilization this month
+                      of this month's budget used
                     </span>
                   </Link>
                   <button

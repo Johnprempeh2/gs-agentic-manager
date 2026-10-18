@@ -98,9 +98,9 @@ function TemplateCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => setJsonText(jsonText === null ? JSON.stringify(draft, null, 2) : null)}>
-            {jsonText === null ? "Edit as JSON" : "Close JSON"}
+            {jsonText === null ? "Advanced: edit the full template" : "Close advanced editor"}
           </Button>
-          <Button size="sm" onClick={onStart} disabled={dirty}>
+          <Button size="sm" onClick={onStart} disabled={dirty} title={dirty ? "Save or discard your changes first" : undefined}>
             <Play className="size-3.5" />
             Start
           </Button>
@@ -121,13 +121,13 @@ function TemplateCard({
             disabled={!parsedJson?.ok || save.isPending}
             onClick={() => parsedJson?.ok && save.mutate(parsedJson.definition)}
           >
-            Save JSON
+            Save template
           </Button>
         </div>
       ) : (
         <>
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <Label htmlFor={`${template.id}-coordinator`}>Coordinator issue</Label>
+            <Label htmlFor={`${template.id}-coordinator`}>Lead task</Label>
             <AgentSelect
               id={`${template.id}-coordinator`}
               value={draft.coordinator.assigneeAgentId}
@@ -223,7 +223,7 @@ function StartDialog({
     onSuccess: (result) => {
       pushToast({
         title: `${result.coordinator.identifier ?? "Pack"} started`,
-        body: `${result.steps.length} step issues created.`,
+        body: `${result.steps.length} step tasks created.`,
         tone: "success",
       });
       onClose();
@@ -238,7 +238,7 @@ function StartDialog({
         <DialogHeader>
           <DialogTitle>Start {template?.name}</DialogTitle>
           <DialogDescription>
-            Creates the coordinator issue, {template?.definition.steps.length ?? 0} step issues, the human checks and the
+            Creates the lead task, {template?.definition.steps.length ?? 0} step tasks, the human checks and the
             empty documents.
           </DialogDescription>
         </DialogHeader>
@@ -325,7 +325,7 @@ export function WorkflowTemplates() {
     onError: (err: Error) => pushToast({ title: "Could not add the template", body: err.message, tone: "error" }),
   });
 
-  if (!selectedCompanyId) return <EmptyState icon={Workflow} message="Select an organization to view workflows." />;
+  if (!selectedCompanyId) return <EmptyState icon={Workflow} message="Choose an organisation to view workflows." />;
   if (isLoading) return <PageSkeleton variant="list" />;
   if (error && !templates) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
@@ -344,7 +344,7 @@ export function WorkflowTemplates() {
         {templates && templates.length > 0 && !hasResearchPack ? (
           <Button size="sm" variant="outline" disabled={addResearchPack.isPending} onClick={() => addResearchPack.mutate()}>
             <Plus className="size-3.5" />
-            Research pack template
+            Add research pack template
           </Button>
         ) : null}
       </header>

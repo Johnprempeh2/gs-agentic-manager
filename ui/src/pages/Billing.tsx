@@ -11,6 +11,7 @@ import {
 } from "@greatstone/shared/billing-account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { InlineBanner } from "@/components/InlineBanner";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -315,9 +316,12 @@ export function Billing() {
 
   if (query.error || !query.data) {
     return (
-      <p role="alert" className="mx-auto max-w-3xl text-sm text-destructive">
-        Billing could not be loaded. Try again in a moment.
-      </p>
+      <ErrorState
+        title="Billing could not be loaded"
+        error={query.error ?? new Error("Try again in a moment.")}
+        onRetry={() => void query.refetch()}
+        retrying={query.isFetching}
+      />
     );
   }
 
@@ -328,7 +332,7 @@ export function Billing() {
       <EmptyState
         icon={ReceiptText}
         title="No billing account"
-        message="This instance has no billing account. Greatstone sets it up when your service starts."
+        message="There is no billing account yet. Greatstone sets it up when your service starts."
       />
     );
   }

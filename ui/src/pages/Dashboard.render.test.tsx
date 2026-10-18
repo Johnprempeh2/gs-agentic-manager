@@ -146,14 +146,14 @@ describe("Dashboard layout", () => {
     await flush();
 
     const text = container.textContent ?? "";
-    for (const label of ["Agents Enabled", "Tasks In Progress", "Month Spend", "Pending Approvals"]) {
+    for (const label of ["Agents switched on", "Tasks in progress", "Spent this month", "Waiting for your approval"]) {
       expect(text).toContain(label);
     }
 
     const charts = Array.from(container.querySelectorAll('[data-testid="chart"]')).map((node) =>
       node.getAttribute("aria-label"),
     );
-    expect(charts).toEqual(expect.arrayContaining(["Run Activity", "Tasks by Status", "Success Rate"]));
+    expect(charts).toEqual(expect.arrayContaining(["Work activity", "Tasks by status", "Work finished cleanly"]));
 
     expect(text).toContain("Recent Activity");
     expect(container.querySelectorAll('[data-testid="activity-row"]')).toHaveLength(2);
@@ -202,7 +202,7 @@ describe("Dashboard layout", () => {
     expect(container.querySelector('[data-testid="dashboard-overview"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="active-agents"]')).toBeNull();
     expect(container.querySelector('[data-testid="chart"]')).toBeNull();
-    expect(container.textContent).not.toContain("Agents Enabled");
+    expect(container.textContent).not.toContain("Agents switched on");
     expect(container.textContent).not.toContain("Recent Activity");
 
     const toggle = container.querySelector<HTMLButtonElement>('[data-testid="dashboard-phone-details-toggle"]')!;
@@ -211,7 +211,7 @@ describe("Dashboard layout", () => {
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector('[data-testid="active-agents"]')).not.toBeNull();
-    expect(container.textContent).toContain("Agents Enabled");
+    expect(container.textContent).toContain("Agents switched on");
     expect(container.textContent).toContain("Recent Activity");
     expect(container.querySelectorAll('[data-testid="chart"]').length).toBeGreaterThan(0);
   });

@@ -32,12 +32,13 @@ The document:
   "validUntil": "2026-11-09T00:00:00Z",
   "issuedBy": "jane@greatstone",
   "reason": "CRM bundle, monthly",
-  "features": { "enablePipelines": true, "enableCases": true },
+  "features": { "enablePipelines": true, "enableStrategy": true },
   "limits": { "maxAgents": 10 }
 }
 ```
 
 - `features` covers `ENTITLEMENT_FEATURE_KEYS` (managed product features). A governed key that is left out is not entitled. Other keys are ignored and listed as `ignoredFeatureKeys`.
+- Graduated switches that keep a client gate are still governed (GRE-1633): `enableAgentChat`, `enableBuiltInAgents`, `enableIssuePlanDecompositions`, `enableSummaries`, `enableStatusCards`, `enableCases`, `enableExternalObjects`, `enableEnvironments`, `enableChatConnectors` and `enableMemoryConnectors`. Greatstone and self-hosted read them on (no document); a document that leaves one out turns it off. `enableBetaSkills` and `enableSimplifiedEnglishInteractions` are preference switches and never governed.
 - `version` must go up. An older or equal version with different content is refused.
 - `limits` are reported by `GET /api/instance/entitlements`; they are not enforced yet.
 

@@ -20,6 +20,11 @@ const mocks = vi.hoisted(() => ({
   ensureChat: vi.fn(),
   experimental: vi.fn(),
   uploadAttachment: vi.fn(),
+  search: vi.fn(async () => ({ results: [] })),
+  quietClients: vi.fn(),
+  closingDeals: vi.fn(),
+  clientBrief: vi.fn(async () => ({ brief: null })),
+  recentClientActivity: vi.fn(async () => ({ days: 1, total: 0, clientCount: 0, byKind: [], activity: [] })),
 }));
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
@@ -29,6 +34,7 @@ vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecar
 vi.mock("../api/issues", () => ({
   issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
+vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients, closingDeals: mocks.closingDeals, clientBrief: mocks.clientBrief, recentClientActivity: mocks.recentClientActivity } }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
 vi.mock("@/lib/router", () => ({
@@ -128,6 +134,52 @@ describe("AskEverestPanel", () => {
     expect(mocks.needsMe).toHaveBeenCalledWith("company-1");
   });
 
+  it("answers when we last spoke to a client from imported notes and calls", async () => {
+    mocks.search.mockResolvedValueOnce({
+      results: [
+        { id: "activity:a1", type: "record", title: "Kick-off meeting", href: "/GRE/organisations/o1", updatedAt: "2026-09-01T10:00:00.000Z", record: { kind: "activity", subtitle: "Meeting, Acme Ltd, 1 Sep 2026" } },
+        { id: "activity:a2", type: "record", title: "Pricing call", href: "/GRE/organisations/o1", updatedAt: "2026-10-12T10:00:00.000Z", record: { kind: "activity", subtitle: "Call, Acme Ltd, 12 Oct 2026" } },
+      ],
+    } as never);
+    act(() => openAskEverest("When did we last speak to Acme?"));
+    await waitFor(() => {
+      expect(container.textContent).toContain("The latest with Acme: Pricing call (Call, Acme Ltd, 12 Oct 2026).");
+      expect(container.textContent).toContain("Kick-off meeting");
+    });
+    expect(mocks.search).toHaveBeenCalledWith("company-1", { q: "Acme", limit: 10, recordKind: ["activity"], scope: "records" });
+    expect(mocks.issuesList).not.toHaveBeenCalled();
+  });
+
+  it("lists clients that have gone quiet", async () => {
+    mocks.quietClients.mockResolvedValueOnce({
+      days: 14,
+      total: 1,
+      clients: [{ caseId: "c1", title: "Heron rollout", pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", organisationName: "Heron Ltd", lastTouchAt: "2026-08-29T09:00:00.000Z", lastTouchLabel: "Call: Pricing call", quietDays: 50, href: "/GRE/pipelines/p/items/c1" }],
+    });
+    act(() => openAskEverest("Which clients have gone quiet for 2 weeks?"));
+    await waitFor(() => expect(container.textContent).toContain("1 open deal or lead had no note, call or meeting in 14 days."));
+    expect(mocks.quietClients).toHaveBeenCalledWith("company-1", { days: 14, limit: 8 });
+  });
+
+  it("lists deals closing this week", async () => {
+    mocks.closingDeals.mockResolvedValueOnce({
+      days: 7,
+      total: 1,
+      overdueCount: 0,
+      valueByCurrency: [{ currency: "GBP", value: 2500, count: 1 }],
+      deals: [{ caseId: "c1", title: "Heron rollout", pipelineName: "Sales", stageName: "Proposal", organisationName: null, expectedCloseDate: "2026-10-22", overdue: false, value: 2500, currency: "GBP", href: "/GRE/pipelines/p/items/c1" }],
+    });
+    act(() => openAskEverest("Which deals are closing this week?"));
+    await waitFor(() => expect(container.textContent).toContain("1 open deal or lead closing this week, worth GBP 2,500."));
+    expect(mocks.closingDeals).toHaveBeenCalledWith("company-1", { days: 7, limit: 8 });
+  });
+
+  it("briefs on an organisation", async () => {
+    act(() => openAskEverest("Tell me about Grebe"));
+    await waitFor(() => expect(container.textContent).toContain("I could not find an organisation called Grebe."));
+    expect(mocks.clientBrief).toHaveBeenCalledWith("company-1", "Grebe");
+  });
+
   it("shows suggestions before a question is asked", async () => {
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", metaKey: true, bubbles: true }));
@@ -135,6 +187,7 @@ describe("AskEverestPanel", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("What is stuck?");
       expect(container.textContent).toContain("What did Mason do today?");
+      expect(container.textContent).toContain("Which deals are closing this month?");
     });
   });
 
@@ -237,6 +290,7 @@ describe("AskEverestPanel", () => {
 
     typeQuestion("What is happening?");
     await waitFor(() => expect(mocks.issuesList).toHaveBeenCalledWith("company-1", { q: "Acme Ltd", limit: 50 }));
+    expect(mocks.search).toHaveBeenCalledWith("company-1", { q: "Acme Ltd", scope: "records", limit: 4 });
     await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-live"]')).not.toBeNull());
     act(() => {
       (container.querySelector('[data-testid="ask-everest-live"]') as HTMLButtonElement).click();

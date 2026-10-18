@@ -1,4 +1,5 @@
 import { isBlockedDependentsHandoffCancelled } from "@/lib/blocked-dependents-handoff";
+import { openChildrenWarning } from "@/lib/open-children-warning";
 import { useMemo, useCallback } from "react";
 import { type InfiniteData, useMutation } from "@tanstack/react-query";
 import { issuesApi } from "../../api/issues";
@@ -250,7 +251,7 @@ export function useIssueMutations({
           body:
             error instanceof Error
               ? error.message
-              : "Unable to restore this task to the inbox",
+              : "Could not return this task to the inbox",
           tone: "error",
         });
       } finally {
@@ -386,11 +387,14 @@ export function useIssueMutations({
       comment: _comment,
       changes: _changes,
       blockedByIssueIds: _blockedByIssueIds,
+      openChildren,
       ...nextIssue
     }) => {
       const issueRefs = new Set<string>([issueId!, nextIssue.id]);
       if (nextIssue.identifier) issueRefs.add(nextIssue.identifier);
       mergeIssueResponseIntoCaches(issueRefs, nextIssue);
+      const openChildrenNotice = openChildrenWarning(openChildren);
+      if (openChildrenNotice) pushToast({ ...openChildrenNotice, tone: "warn" });
       if (sessionResolved) {
         recordRecentTask(nextIssue, currentUserId);
       }
@@ -413,9 +417,9 @@ export function useIssueMutations({
       // The person closed the blocked-dependents dialog; nothing failed.
       if (isBlockedDependentsHandoffCancelled(err)) return;
       pushToast({
-        title: "Task update failed",
+        title: "Your change was not saved",
         body:
-          err instanceof Error ? err.message : "Unable to save task changes",
+          err instanceof Error ? err.message : "Could not save your changes to this task",
         tone: "error",
       });
     },
@@ -448,7 +452,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Recovery resolution failed",
+        title: "Could not resolve this",
         body:
           err instanceof Error
             ? err.message
@@ -518,7 +522,7 @@ export function useIssueMutations({
         const pauseHoldId = treeControlState?.activePauseHold?.holdId;
         if (!pauseHoldId) {
           throw new Error(
-            "No active subtree pause hold is available to resume.",
+            "This task is not paused any more. Refresh to see its current state.",
           );
         }
         const releasedHold = await issuesApi.releaseTreeHold(
@@ -662,8 +666,8 @@ export function useIssueMutations({
       pushToast({
         title:
           status === "done"
-            ? "Run stopped and task done"
-            : "Run stopped and task cancelled",
+            ? "Work stopped and task marked done"
+            : "Work stopped and task cancelled",
         tone: "success",
       });
     },
@@ -671,14 +675,14 @@ export function useIssueMutations({
       const runWasStopped = didRunCancelBeforeStatusUpdateFail(err);
       pushToast({
         title: runWasStopped
-          ? "Run stopped; task update failed"
+          ? "The agent stopped, but the task status did not change"
           : status === "done"
-            ? "Stop and done failed"
-            : "Stop and cancel failed",
+            ? "Could not stop work and mark this done"
+            : "Could not stop work and cancel this task",
         body:
-          err instanceof Error
+          runWasStopped && err instanceof Error
             ? err.message
-            : "Unable to stop the run and update the task",
+            : `Please try again.${err instanceof Error ? ` (${err.message})` : ""}`,
         tone: "error",
       });
     },
@@ -716,11 +720,11 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Task update failed",
+        title: "Your change was not saved",
         body:
           err instanceof Error
             ? err.message
-            : "Unable to save sub-task changes",
+            : "Could not save sub-task changes",
         tone: "error",
       });
     },
@@ -790,11 +794,11 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Monitor check failed",
+        title: "Could not run the check",
         body:
           err instanceof Error
             ? err.message
-            : "Unable to trigger the monitor right now",
+            : "Could not start the check right now",
         tone: "error",
       });
     },

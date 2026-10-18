@@ -16,6 +16,8 @@ export interface IntegrationKeyItem {
   variables: IntegrationKeyVariable[];
   /** Where to get the key, and what it costs. */
   howToGet: string;
+  /** A direct link to the page where the key is made, when there is one. */
+  getKey?: { url: string; label: string } | null;
   note: string | null;
 }
 

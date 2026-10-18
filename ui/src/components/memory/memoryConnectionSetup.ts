@@ -12,6 +12,32 @@ export function memoryMcpUrl(origin: string) {
   return `${origin.replace(/\/+$/, "")}/api/mcp/memory-tools`;
 }
 
+/** Apps that connect by signing in to GSAM rather than with a pasted key. */
+export const MEMORY_SIGN_IN_APPS = ["chatgpt", "claude_ai"] as const;
+export type MemorySignInApp = (typeof MEMORY_SIGN_IN_APPS)[number];
+
+export function isMemorySignInApp(app: MemoryConnectionApp): app is MemorySignInApp {
+  return (MEMORY_SIGN_IN_APPS as readonly string[]).includes(app);
+}
+
+/** How to add GSAM memory in ChatGPT or Claude.ai, which sign in instead of taking a key. */
+export function memoryAppSignInSteps(app: MemorySignInApp, url: string): string[] {
+  if (app === "chatgpt") {
+    return [
+      "In ChatGPT, open Settings, then Apps and connectors. If there is no Create button, turn on Developer mode under Advanced first.",
+      `Choose Create, name it GSAM memory and paste this address: ${url}`,
+      "Choose OAuth for sign-in and save. ChatGPT opens GSAM: sign in if asked, then press Allow.",
+      "In a chat or in voice mode, ask ChatGPT to search GSAM memory.",
+    ];
+  }
+  return [
+    "On claude.ai, open Settings, then Connectors, and choose Add custom connector.",
+    `Name it GSAM memory, paste this address and choose Add: ${url}`,
+    "Choose Connect. Claude opens GSAM: sign in if asked, then press Allow.",
+    "It then works in every Claude.ai chat, including the phone app and projects.",
+  ];
+}
+
 /** Setup for each app. The key goes in a header, never in the URL. */
 export function memoryConnectionSetup(app: MemoryConnectionApp, url: string, token: string): MemoryConnectionSetup {
   switch (app) {
@@ -51,13 +77,8 @@ export function memoryConnectionSetup(app: MemoryConnectionApp, url: string, tok
         snippet: `[mcp_servers.gsam_memory]\nurl = "${url}"\nbearer_token_env_var = "GSAM_MEMORY_TOKEN"\n\n# in ~/.zshrc\nexport GSAM_MEMORY_TOKEN="${token}"`,
       };
     case "chatgpt":
-      return {
-        steps: [
-          "ChatGPT only connects to apps that offer a sign-in page, and GSAM does not offer one yet.",
-          "Until it does, bring ChatGPT's knowledge in with the import above.",
-        ],
-        snippet: null,
-      };
+    case "claude_ai":
+      return { steps: memoryAppSignInSteps(app, url), snippet: null };
     case "other":
       return {
         steps: ["Give the app this address and header. It must support MCP over HTTP."],

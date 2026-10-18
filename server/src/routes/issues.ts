@@ -1,4 +1,5 @@
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
+import { quietClientsService } from "../services/quiet-clients.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
@@ -78,8 +79,11 @@ import {
   companySearchQuerySchema,
   createIssueAttachmentMetadataSchema,
   createIssueThreadInteractionSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
+  updateIssueLabelSchema,
   createAcceptedPlanDecompositionSchema,
   checkoutIssueSchema,
   createDocumentAnnotationCommentSchema,
@@ -154,6 +158,7 @@ import {
   issueWriteDenialResponse,
   type IssueWriteDenialCode,
   type IssueWriteDenialContext,
+  ISSUE_PRIORITIES,
 } from "@greatstone/shared";
 import { trackAgentTaskCompleted } from "@greatstone/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
@@ -312,7 +317,7 @@ import {
   readAcceptedPlanConfirmationTarget,
   type IssuePostCommitAction,
 } from "../services/issues.js";
-import { authorizationDeniedDetails } from "../services/authorization.js";
+import { authorizationDeniedDetails, isAgentInSubtree } from "../services/authorization.js";
 import { stalledReviewDecisionService } from "../services/stalled-review-decisions.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -365,6 +370,8 @@ import {
   type IssueThreadInteractionResolverRestriction,
 } from "../services/issue-thread-interaction-resolution.js";
 import { resolveSelectedSuggestedTasks } from "../services/issue-thread-interactions.js";
+import { wakeMakersOfExpiredCards } from "../services/closed-card-wake.js";
+import type { IssueThreadInteraction } from "@greatstone/shared";
 import {
   asksToApproveVisualWork,
   issueHasApprovalEvidence,
@@ -1500,6 +1507,8 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "issue_commented",
   "issue_comment_mentioned",
   "issue_dependencies_blocked",
+  "agent_question",
+  "agent_question_answered",
   "issue_tree_hold_active",
   "missing_issue_comment",
   "process_lost_retry",
@@ -3775,8 +3784,8 @@ export function issueRoutes(
   const agentsSvc = agentService(db);
   const boardChats = strategyBoardChatService(db);
   const teamChats = teamChatService(db);
-  // GRE-1090: refuse these feature routes while their managed switch is off,
-  // before validation. Agent Chat on existing conversations checks per route.
+  // GRE-1622: External Objects ignores the stored switch, but a managed config
+  // or the entitlement document can still turn it off.
   router.use(
     [
       "/issues/:id/external-objects",
@@ -3785,6 +3794,9 @@ export function issueRoutes(
     ],
     requireEntitlement(instanceSettings, "enableExternalObjects"),
   );
+  // GRE-1090, GRE-1633: refuse these feature routes while a managed config or
+  // the entitlement document turns them off, before validation. Agent Chat on
+  // existing conversations checks per route.
   router.get(
     "/issues/:id/accepted-plan-decompositions",
     requireEntitlement(instanceSettings, "enableIssuePlanDecompositions"),
@@ -5016,12 +5028,20 @@ export function issueRoutes(
   }
 
   async function logExpiredRequestConfirmations(input: {
-    issue: { id: string; companyId: string; identifier?: string | null };
+    issue: {
+      id: string;
+      companyId: string;
+      identifier?: string | null;
+      title?: string | null;
+      status?: string | null;
+      assigneeAgentId?: string | null;
+    };
     interactions: Array<{
       id: string;
       kind: string;
       status: string;
       result?: unknown;
+      createdByAgentId?: string | null;
     }>;
     actor: ReturnType<typeof getActorInfo>;
     source: string;
@@ -5047,6 +5067,15 @@ export function issueRoutes(
         },
       });
     }
+    // A card that expired on a task that is still open wakes the agent that
+    // made it, once, so the question is not silently dropped.
+    await wakeMakersOfExpiredCards(heartbeat, {
+      issue: input.issue,
+      interactions: input.interactions as IssueThreadInteraction[],
+      actorAgentId: input.actor.agentId ?? null,
+      source: input.source,
+      logger,
+    });
   }
 
   async function queueExpiredInteractionReviewPathRecovery(input: {
@@ -7031,6 +7060,39 @@ export function issueRoutes(
     return false;
   }
 
+  /**
+   * Recording what an interrupted run did, which clears its recovery hold, is
+   * the board's call. On a task only agents work on (an agent assignee and no
+   * person assigned), a manager of that agent in the reporting chain may clear
+   * it too. The held agent never clears its own hold.
+   */
+  async function assertBoardOrManagerOfAgentOnlyTask(
+    req: Request,
+    issue: {
+      companyId: string;
+      assigneeAgentId: string | null;
+      assigneeUserId: string | null;
+    },
+    dbOrTx: Db = db,
+  ) {
+    const actorAgentId =
+      req.actor.type === "agent" ? req.actor.agentId : null;
+    if (
+      actorAgentId &&
+      issue.assigneeAgentId &&
+      !issue.assigneeUserId &&
+      issue.assigneeAgentId !== actorAgentId &&
+      (await isAgentInSubtree(
+        dbOrTx,
+        issue.companyId,
+        actorAgentId,
+        issue.assigneeAgentId,
+      ))
+    )
+      return;
+    assertBoard(req);
+  }
+
   async function requireRecoveryActionAuthority(
     req: Request,
     issue: { id: string; companyId: string; assigneeAgentId: string | null },
@@ -7189,6 +7251,8 @@ export function issueRoutes(
       Awaited<ReturnType<typeof recoveryActionsSvc.getActiveForIssue>>
     >;
     dbOrTx?: Db;
+    /** The resolution keeps the task in review, so a pending review stage is expected. */
+    keepsPendingReviewStage?: boolean;
   }) {
     const dbOrTx = input.dbOrTx ?? db;
     const returnOwnerAgentId = input.recoveryAction.returnOwnerAgentId;
@@ -7227,6 +7291,7 @@ export function issueRoutes(
       );
     }
     if (
+      !input.keepsPendingReviewStage &&
       parseIssueExecutionState(input.issue.executionState)?.status === "pending"
     ) {
       throw conflict(
@@ -7666,9 +7731,13 @@ export function issueRoutes(
    * something the other assumed it had, the chain of blocked issues grows,
    * and no one tells the human. Humans are unaffected, and closed ancestors
    * do not count — re-engaging the creator of finished work is normal.
+   * Handing work up to the agent's own manager (anyone above it in the
+   * reporting chain) is an escalation, not a cycle, and is never refused.
    */
   async function assertNoAgentDelegationCycle(input: {
     actorType: string;
+    actorAgentId?: string | null;
+    companyId: string;
     parentIssueId: string | null | undefined;
     assigneeAgentId: string | null | undefined;
   }) {
@@ -7679,9 +7748,20 @@ export function issueRoutes(
       input.assigneeAgentId,
     );
     if (!ancestor) return;
+    if (
+      input.actorAgentId &&
+      input.actorAgentId !== input.assigneeAgentId &&
+      (await isAgentInSubtree(
+        db,
+        input.companyId,
+        input.assigneeAgentId,
+        input.actorAgentId,
+      ))
+    )
+      return;
     throw conflict(
       `Delegation cycle: ${ancestor.identifier ?? "an ancestor issue"} in this chain was created by the agent this child would be assigned to. ` +
-        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to a board operator. Do not delegate the work back to the agent that delegated it to you.",
+        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to your manager or a board operator. Do not delegate the work back to the agent that delegated it to you.",
       {
         code: "delegation_cycle",
         ancestorIssueId: ancestor.id,
@@ -8290,6 +8370,163 @@ export function issueRoutes(
     res.json(result);
   });
 
+  // Open deals and leads with no note, call, meeting or email for a while (Ask Everest: "Which clients have gone quiet?").
+  router.get("/companies/:companyId/search/quiet-clients", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 30 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 10 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 1 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).list(companyId, { days, limit }));
+  });
+
+  // Imported notes, calls, meetings and emails from the last few days (Ask Everest: "What calls did we have this week?").
+  router.get("/companies/:companyId/search/recent-client-activity", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 7 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 10 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 1 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    // "since" (an ISO time, such as the last visit) overrides days.
+    const since = typeof req.query.since === "string" ? new Date(req.query.since) : undefined;
+    if (since && Number.isNaN(since.getTime())) {
+      res.status(400).json({ error: "since must be a date and time" });
+      return;
+    }
+    res.json(await quietClientsService(db).recentActivity(companyId, { days, limit, since }));
+  });
+
+  // A one-glance brief on the organisation that best matches a name (Ask Everest: "Tell me about Acme").
+  router.get("/companies/:companyId/search/client-brief", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const name = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!name || name.length > 200) {
+      res.status(400).json({ error: "q must be a name of 1 to 200 characters" });
+      return;
+    }
+    res.json(await quietClientsService(db).clientBrief(companyId, name));
+  });
+
+  // Open deals and leads by expected close date (Ask Everest: "Which deals are closing this month?").
+  router.get("/companies/:companyId/search/closing-deals", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 30 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 10 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 0 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 0 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).closing(companyId, { days, limit }));
+  });
+
+  // Open deals per stage, value per currency and the largest deals (Ask Everest: "How is the pipeline looking?").
+  router.get("/companies/:companyId/search/pipeline-summary", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const limit = req.query.limit === undefined ? 5 : Number(req.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    const owner = typeof req.query.owner === "string" ? req.query.owner.trim() : "";
+    if (req.query.owner !== undefined && (typeof req.query.owner !== "string" || owner.length > 120)) {
+      res.status(400).json({ error: "owner must be a name of up to 120 characters" });
+      return;
+    }
+    res.json(await quietClientsService(db).pipelineSummary(companyId, { limit, owner: owner || null }));
+  });
+
+  // Deals won and lost lately, with value and lost reasons (Ask Everest: "What did we win this month?").
+  router.get("/companies/:companyId/search/won-lost", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 30 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 5 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 1 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).wonLost(companyId, { days, limit }));
+  });
+
   router.get("/companies/:companyId/search", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -8398,6 +8635,34 @@ export function issueRoutes(
     const includeLiveDescendantSummary = parseOptionalBooleanQuery(
       req.query.includeLiveDescendantSummary,
     );
+    const priorityRaw = req.query.priority as string | string[] | undefined;
+    const priorityFilter = (Array.isArray(priorityRaw) ? priorityRaw : priorityRaw === undefined ? [] : [priorityRaw])
+      .flatMap((entry) => (typeof entry === "string" ? entry.split(",") : []))
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (priorityFilter.some((value) => !(ISSUE_PRIORITIES as readonly string[]).includes(value))) {
+      res.status(400).json({ error: `priority must be one of ${ISSUE_PRIORITIES.join(", ")}` });
+      return;
+    }
+    const createdByAgentRaw = req.query.createdByAgentId as string | undefined;
+    // "me" lets an agent follow up on the tasks it handed out.
+    const createdByAgentId = createdByAgentRaw === "me"
+      ? (req.actor.type === "agent" ? req.actor.agentId : undefined)
+      : createdByAgentRaw;
+    if (createdByAgentRaw === "me" && !createdByAgentId) {
+      res.status(400).json({ error: "createdByAgentId=me needs an agent key" });
+      return;
+    }
+    if (createdByAgentId !== undefined && !isUuidLike(createdByAgentId)) {
+      res.status(400).json({ error: "createdByAgentId must be an agent id or me" });
+      return;
+    }
+    const dueBefore = req.query.dueBefore as string | undefined;
+    if (dueBefore !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(dueBefore)) {
+      res.status(400).json({ error: "dueBefore must be a date such as 2026-10-31" });
+      return;
+    }
+    const overdue = parseOptionalBooleanQuery(req.query.overdue) === true;
     const assigneeAgentFilterRaw = req.query.assigneeAgentId;
     let assigneeAgentId: string | null | undefined;
     const rawUpdatedSince = req.query.updatedSince as string | undefined;
@@ -8585,6 +8850,10 @@ export function issueRoutes(
       afterId: req.query.afterId as string | undefined,
       sortDir: sortDir === "asc" || sortDir === "desc" ? sortDir : undefined,
       updatedSince: rawUpdatedSince,
+      priority: priorityFilter.length > 0 ? priorityFilter : undefined,
+      createdByAgentId,
+      dueOnOrBefore: dueBefore,
+      overdue: overdue || undefined,
     };
     const requestKey = issueListRequestKey({
       req,
@@ -8880,6 +9149,48 @@ export function issueRoutes(
       res.status(201).json(label);
     },
   );
+
+  router.patch("/labels/:labelId", validate(updateIssueLabelSchema), async (req, res) => {
+    const labelId = req.params.labelId as string;
+    const existing = await getAccessibleResource(
+      req,
+      res,
+      svc.getLabelById(labelId),
+      "Label not found",
+    );
+    if (!existing) return;
+    const nextName = typeof req.body.name === "string" ? req.body.name.trim() : undefined;
+    if (nextName !== undefined && nextName.toLowerCase() !== existing.name.toLowerCase()) {
+      const clash = (await svc.listLabels(existing.companyId)).find(
+        (label) => label.id !== existing.id && label.name.toLowerCase() === nextName.toLowerCase(),
+      );
+      if (clash) throw conflict(`A label called "${clash.name}" already exists`);
+    }
+    const updated = await svc.updateLabel(labelId, { name: nextName, color: req.body.color });
+    if (!updated) {
+      res.status(404).json({ error: "Label not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: updated.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "label.updated",
+      entityType: "label",
+      entityId: updated.id,
+      details: {
+        name: updated.name,
+        color: updated.color,
+        previousName: existing.name,
+        previousColor: existing.color,
+      },
+    });
+    res.json(updated);
+  });
 
   router.delete("/labels/:labelId", async (req, res) => {
     const labelId = req.params.labelId as string;
@@ -9638,6 +9949,15 @@ export function issueRoutes(
 
       const actor = getActorInfo(req);
       const actionStatus = outcome === "cancelled" ? "cancelled" : "resolved";
+      // A held task that is in review keeps its review. Clearing the hold
+      // records what the stopped run did and leaves the review stage pending,
+      // so the reviewer picks it up again. It never moves the task back to
+      // todo, which would bypass the review (GRE-1190, 16 Oct 2026).
+      const keepsPendingReview = (issue: { status: string; executionState?: unknown }) =>
+        outcome === "restored" &&
+        sourceIssueStatus === "in_review" &&
+        issue.status === "in_review" &&
+        parseIssueExecutionState(issue.executionState)?.status === "pending";
       const postCommitActivityPublications: ActivityPublication[] = [];
       const postCommitIssueActions: IssuePostCommitAction[] = [];
       // Every read in this transaction goes through `tx`. A read through the
@@ -9691,10 +10011,14 @@ export function issueRoutes(
             if (automatic?.replay === "blocked" && executionReconciliation) {
               // An automatic no-replay disposition is final until new evidence
               // arrives. Keep the supported evidence API usable without a dialog.
-              assertBoard(req);
+              await assertBoardOrManagerOfAgentOnlyTask(
+                req,
+                lockedIssue,
+                tx as unknown as Db,
+              );
               if (
                 activeRecoveryAction ||
-                sourceIssueStatus !== "todo" ||
+                (sourceIssueStatus !== "todo" && !keepsPendingReview(lockedIssue)) ||
                 outcome !== "restored"
               ) {
                 throw conflict(
@@ -9791,11 +10115,29 @@ export function issueRoutes(
           }
         }
 
+        const reconcilesInReview =
+          keepsPendingReview(lockedIssue) &&
+          requiresExecutionReconciliation(activeRecoveryAction.cause);
+        if (reconcilesInReview) {
+          // The same gates as a hand-back to todo, except the pending review
+          // stage, which this resolution keeps instead of bypassing.
+          await assertSafeRecoveryHandBackGates({
+            req,
+            issue: lockedIssue,
+            recoveryAction: activeRecoveryAction,
+            dbOrTx: tx as unknown as Db,
+            keepsPendingReviewStage: true,
+          });
+        }
         if (
-          sourceIssueStatus === "todo" &&
+          (sourceIssueStatus === "todo" || reconcilesInReview) &&
           requiresExecutionReconciliation(activeRecoveryAction.cause)
         ) {
-          assertBoard(req);
+          await assertBoardOrManagerOfAgentOnlyTask(
+            req,
+            lockedIssue,
+            tx as unknown as Db,
+          );
           await validateExecutionReconciliation({
             db: tx as unknown as Db,
             companyId: lockedIssue.companyId,
@@ -12581,6 +12923,8 @@ export function issueRoutes(
         );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
+        actorAgentId: req.actor.agentId ?? null,
+        companyId,
         parentIssueId:
           typeof effectiveParentId === "string" ? effectiveParentId : null,
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
@@ -12634,9 +12978,19 @@ export function issueRoutes(
           );
         }
       }
+      // A subtask carries its parent's billing code unless it names its own,
+      // so a cross-team request's costs roll up to the request (SPEC billing codes).
+      let inheritedBillingCode: string | null = null;
+      if (rawCreateBody.billingCode === undefined && typeof effectiveParentId === "string") {
+        const billingParent = createParent ?? (await svc.getById(effectiveParentId));
+        if (billingParent && billingParent.companyId === companyId) {
+          inheritedBillingCode = billingParent.billingCode ?? null;
+        }
+      }
       const createBody = {
         ...rawCreateBody,
         parentId: effectiveParentId,
+        ...(inheritedBillingCode ? { billingCode: inheritedBillingCode } : {}),
         ...(normalizedAssigneeAgentId !== undefined
           ? { assigneeAgentId: normalizedAssigneeAgentId }
           : {}),
@@ -13023,6 +13377,8 @@ export function issueRoutes(
         );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
+        actorAgentId: req.actor.agentId ?? null,
+        companyId: parent.companyId,
         parentIssueId: parent.id,
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
       });
@@ -16099,6 +16455,27 @@ export function issueRoutes(
 
       await queueTaskWatchdogEvaluation(issue, actor.runId);
       const changes = issueResponse.changes ?? {};
+      // Closing a parent leaves its open subtasks running; say so instead of refusing.
+      // The update is already saved, so a failed lookup only drops the warning.
+      let openChildren: Array<{ id: string; identifier: string | null; title: string; status: string }> = [];
+      if (closingToStatus === "done") {
+        try {
+          const rows = await db
+            .select({ id: issueRows.id, identifier: issueRows.identifier, title: issueRows.title, status: issueRows.status })
+            .from(issueRows)
+            .where(and(
+              eq(issueRows.companyId, issue.companyId),
+              eq(issueRows.parentId, issue.id),
+              isNull(issueRows.hiddenAt),
+              notInArray(issueRows.status, ["done", "cancelled"]),
+            ))
+            .limit(20);
+          openChildren = Array.isArray(rows) ? rows : [];
+        } catch (err) {
+          logger.warn({ err, issueId: issue.id }, "failed to list open subtasks after closing a parent");
+        }
+      }
+      const warning = openChildren.length > 0 ? { openChildren } : {};
       if (prefersMinimalIssueUpdateResponse(req)) {
         res.setHeader("Preference-Applied", "return=minimal");
         res.json({
@@ -16107,10 +16484,11 @@ export function issueRoutes(
           updatedAt: issueResponse.updatedAt,
           changes,
           comment,
+          ...warning,
         });
         return;
       }
-      res.json({ ...issueResponse, changes, comment });
+      res.json({ ...issueResponse, changes, comment, ...warning });
     },
   );
 
@@ -17169,6 +17547,199 @@ export function issueRoutes(
     },
   );
 
+  // An agent asks another agent in the same company a question on its own
+  // task. The target is woken to answer; the answer lands on this task and
+  // wakes the asking agent.
+  router.post(
+    "/issues/:id/agent-questions",
+    validate(createAgentQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (req.actor.type !== "agent") {
+        throw forbidden("Only agents can ask another agent a question");
+      }
+      if (
+        !(await assertAgentIssueMutationAllowed(req, res, issue, {
+          allowVisibleIssueWrite: true,
+        }))
+      )
+        return;
+      if (
+        await assertLowTrustControlPlaneDenied(req, res, issue.companyId, issue)
+      )
+        return;
+      const runId = requireAgentRunId(req, res);
+      if (!runId) return;
+      const actor = getActorInfo(req);
+      const { interaction, targetAgent } = await issueThreadInteractionService(
+        db,
+      ).askAgent(issue, req.body, {
+        identityContextId: req.actor.identityContextId,
+        agentId: actor.agentId,
+        runId,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.agent_question_asked",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          interactionId: interaction.id,
+          targetAgentId: targetAgent.id,
+          targetAgentName: targetAgent.name,
+        },
+      });
+
+      void heartbeat
+        .wakeup(targetAgent.id, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "agent_question",
+          payload: {
+            issueId: issue.id,
+            interactionId: interaction.id,
+            interactionKind: interaction.kind,
+            mutation: "interaction",
+          },
+          idempotencyKey: `agent-question:${interaction.id}`,
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: issue.id,
+            taskId: issue.id,
+            interactionId: interaction.id,
+            interactionKind: interaction.kind,
+            interactionStatus: interaction.status,
+            wakeReason: "agent_question",
+            source: "issue.agent_question.asked",
+          },
+        })
+        .catch((err) =>
+          logger.warn(
+            {
+              err,
+              issueId: issue.id,
+              interactionId: interaction.id,
+              agentId: targetAgent.id,
+            },
+            "failed to wake agent asked a question",
+          ),
+        );
+
+      res.status(201).json(interaction);
+    },
+  );
+
+  router.post(
+    "/issues/:id/agent-questions/:interactionId/answer",
+    validate(answerAgentQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const interactionId = req.params.interactionId as string;
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (req.actor.type !== "agent") {
+        throw forbidden("Only the agent this question was asked of can answer it");
+      }
+      const runId = requireAgentRunId(req, res);
+      if (!runId) return;
+      // Answering on another run's task spends the same per-run budget as
+      // resolving any other interaction there.
+      if (
+        !(await assertCrossIssueInfluenceWithinRunCap(
+          req,
+          res,
+          issue,
+          "interaction_resolution",
+        ))
+      )
+        return;
+      const actor = getActorInfo(req);
+      const interaction = await issueThreadInteractionService(
+        db,
+      ).answerAgentQuestion(issue, interactionId, req.body, {
+        identityContextId: req.actor.identityContextId,
+        agentId: actor.agentId,
+        runId,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.agent_question_answered",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          interactionId: interaction.id,
+          askedByAgentId: interaction.createdByAgentId ?? null,
+        },
+      });
+
+      const askerAgentId = interaction.createdByAgentId;
+      if (askerAgentId) {
+        void heartbeat
+          .wakeup(askerAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "agent_question_answered",
+            payload: {
+              issueId: issue.id,
+              interactionId: interaction.id,
+              interactionKind: interaction.kind,
+              mutation: "interaction",
+            },
+            idempotencyKey: `agent-question-answered:${interaction.id}`,
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: issue.id,
+              taskId: issue.id,
+              interactionId: interaction.id,
+              interactionKind: interaction.kind,
+              interactionStatus: interaction.status,
+              wakeReason: "agent_question_answered",
+              source: "issue.agent_question.answered",
+            },
+          })
+          .catch((err) =>
+            logger.warn(
+              {
+                err,
+                issueId: issue.id,
+                interactionId: interaction.id,
+                agentId: askerAgentId,
+              },
+              "failed to wake agent whose question was answered",
+            ),
+          );
+      }
+
+      res.json(interaction);
+    },
+  );
+
   router.post(
     "/issues/:id/interactions/:interactionId/accept",
     validate(acceptIssueThreadInteractionSchema),
@@ -17446,6 +18017,16 @@ export function issueRoutes(
               : 0,
         },
       });
+      if (interaction.status === "expired") {
+        // The card went stale before it could be accepted: tell its maker.
+        await wakeMakersOfExpiredCards(heartbeat, {
+          issue,
+          interactions: [interaction],
+          actorAgentId: actor.agentId ?? null,
+          source: "issue.interaction.accept",
+          logger,
+        });
+      }
 
       if (continuationIssue) {
         await logActivity(db, {
@@ -17622,6 +18203,16 @@ export function issueRoutes(
                 : null,
         },
       });
+      if (interaction.status === "expired") {
+        // The card went stale before it could be rejected: tell its maker.
+        await wakeMakersOfExpiredCards(heartbeat, {
+          issue,
+          interactions: [interaction],
+          actorAgentId: actor.agentId ?? null,
+          source: "issue.interaction.reject",
+          logger,
+        });
+      }
 
       await queueResolvedInteractionContinuationWakeup({
         db,
@@ -17796,6 +18387,16 @@ export function issueRoutes(
               : false,
         },
       });
+      if (interaction.status === "expired") {
+        // The card went stale before the verdicts landed: tell its maker.
+        await wakeMakersOfExpiredCards(heartbeat, {
+          issue,
+          interactions: [interaction],
+          actorAgentId: actor.agentId ?? null,
+          source: "issue.interaction.verdicts",
+          logger,
+        });
+      }
 
       if (newlyResolvedItemIds.length > 0) {
         await queueResolvedInteractionContinuationWakeup({

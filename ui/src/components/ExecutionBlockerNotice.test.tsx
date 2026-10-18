@@ -60,7 +60,7 @@ describe("stopped task recovery notice", () => {
     expect(container.textContent).toContain("Recovery needed.");
     expect(container.textContent).not.toContain("Retry");
     const link = container.querySelector("a")!;
-    expect(link.textContent).toBe("Inspect run");
+    expect(link.textContent).toBe("See what went wrong");
     expect(link.getAttribute("href")).toBe("/agents/agent/runs/failed-run");
     expect(agentsApi.retryFailedRun).not.toHaveBeenCalled();
   });

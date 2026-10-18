@@ -10,6 +10,7 @@ import { NotificationSettings, hourLabel } from "./NotificationSettings";
 const server = vi.hoisted(() => ({
   prefs: null as NotificationPreferences | null,
   patches: [] as Array<Record<string, unknown>>,
+  recent: [] as Array<{ id: string; title: string; body: string; url: string; sentAt: string }>,
 }));
 
 vi.mock("../api/notificationPreferences", () => ({
@@ -22,6 +23,7 @@ vi.mock("../api/notificationPreferences", () => ({
     },
   },
 }));
+vi.mock("../api/push", () => ({ pushApi: { recent: async () => server.recent } }));
 vi.mock("../hooks/usePushNotifications", () => ({
   usePushNotifications: () => ({ state: "off", error: null, enable: vi.fn(), disable: vi.fn(), sendTest: vi.fn() }),
 }));
@@ -35,6 +37,7 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   server.prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
   server.patches = [];
+  server.recent = [];
   container = document.createElement("div");
   document.body.appendChild(container);
 });
@@ -65,10 +68,44 @@ describe("NotificationSettings", () => {
   it("shows each choice in plain words, all on by default", async () => {
     await render();
     expect(container.textContent).toContain("Notifications are off for this computer.");
-    for (const label of ["A decision needs me", "A task is given to me", "Someone messages a team chat I am in"]) {
+    for (const label of ["A decision needs me", "A task is given to me", "A task I asked for is done", "A deal is won or lost, or a client accepts", "Someone messages a team chat I am in"]) {
       expect(toggle(label).getAttribute("aria-checked")).toBe("true");
     }
     expect(toggle("Use quiet hours").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("lists what reached the phone lately, each opening what it opened", async () => {
+    server.recent = [{ id: "n1", title: "Deal won", body: "Indago rollout", url: "/GRE/pipelines/p1/cases/c1", sentAt: new Date(Date.now() - 5 * 60_000).toISOString() }];
+    await render();
+    await flush();
+    const list = container.querySelector('[data-testid="recent-notifications"]')!;
+    expect(list.textContent).toContain("Deal won");
+    expect(list.textContent).toContain("Indago rollout");
+    expect(list.querySelector("a")!.getAttribute("href")).toBe("/GRE/pipelines/p1/cases/c1");
+  });
+
+  it("says so when nothing has reached the phone yet", async () => {
+    await render();
+    await flush();
+    expect(container.querySelector('[data-testid="recent-notifications"]')!.textContent).toContain("Nothing yet.");
+  });
+
+  it("pauses notifications for an hour and resumes them", async () => {
+    await render();
+    const button = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === text)!;
+    const before = Date.now();
+    await act(async () => { button("1 hour").click(); });
+    await flush();
+    const until = Date.parse(String(server.patches[0]?.pausedUntil));
+    expect(until - before).toBeGreaterThanOrEqual(59 * 60 * 1000);
+    expect(until - before).toBeLessThanOrEqual(61 * 60 * 1000);
+    expect(container.textContent).toContain("Notifications paused until");
+
+    await act(async () => { button("Resume now").click(); });
+    await flush();
+    expect(server.patches[1]).toEqual({ pausedUntil: null });
+    expect(container.textContent).not.toContain("Notifications paused until");
+    expect(button("Until tomorrow morning")).toBeTruthy();
   });
 
   it("saves a switch straight away", async () => {
@@ -85,6 +122,26 @@ describe("NotificationSettings", () => {
     await flush();
     expect(server.patches).toEqual([{ quietHoursStart: 22, quietHoursEnd: 7 }]);
     expect(container.textContent).toContain("From 22:00 to 07:00, your time.");
+  });
+
+  it("offers an evening wrap-up, off until chosen", async () => {
+    await render();
+    const label = "Send me an evening wrap-up";
+    expect(toggle(label).getAttribute("aria-checked")).toBe("false");
+    await act(async () => { toggle(label).click(); });
+    await flush();
+    expect(server.patches).toEqual([{ eveningSummary: true }]);
+    expect(container.textContent).toContain("Every day at 18:00, your time.");
+  });
+
+  it("keeps weekends quiet when chosen", async () => {
+    await render();
+    const label = "Keep weekends quiet";
+    expect(toggle(label).getAttribute("aria-checked")).toBe("false");
+    await act(async () => { toggle(label).click(); });
+    await flush();
+    expect(server.patches).toEqual([{ quietWeekends: true }]);
+    expect(container.textContent).toContain("Nothing is sent on Saturday or Sunday");
   });
 
   it("offers the weekly report on Monday mornings, off until chosen", async () => {

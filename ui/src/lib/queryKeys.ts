@@ -474,6 +474,9 @@ export const queryKeys = {
       ["organisations", companyId, "detail", organisationId] as const,
     history: (companyId: string, organisationId: string) =>
       ["organisations", companyId, "history", organisationId] as const,
+    unassignedContacts: (companyId: string) => ["organisations", companyId, "unassigned-contacts"] as const,
+    products: (companyId: string) => ["organisations", companyId, "products"] as const,
+    people: (companyId: string, q: string) => ["organisations", companyId, "people", q] as const,
   },
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
@@ -501,6 +504,8 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "contacts"] as const,
     projectCases: (projectId: string) =>
       ["pipelines", "project-cases", projectId] as const,
+    caseCrmHistory: (caseId: string) =>
+      ["pipelines", "item", caseId, "crm-history"] as const,
     caseOutputs: (caseId: string) =>
       ["pipelines", "item", caseId, "outputs"] as const,
     caseFiles: (caseId: string) =>
@@ -641,10 +646,18 @@ export const queryKeys = {
   images: {
     all: (companyId: string) => ["images", companyId] as const,
     status: (companyId: string) => ["images", companyId, "status"] as const,
-    list: (companyId: string, filters?: { q?: string; organisationId?: string }) =>
+    list: (companyId: string, filters?: { q?: string; organisationId?: string; favourite?: boolean }) =>
       filters ? (["images", companyId, "list", filters] as const) : (["images", companyId, "list"] as const),
     detail: (imageId: string) => ["images", "detail", imageId] as const,
     covers: (companyId: string) => ["images", companyId, "covers"] as const,
+  },
+  videos: {
+    status: (companyId: string) => ["videos", companyId, "status"] as const,
+    list: (companyId: string, filters?: { favourite?: boolean }) =>
+      filters ? (["videos", companyId, "list", filters] as const) : (["videos", companyId, "list"] as const),
+  },
+  studioLooks: {
+    list: (companyId: string) => ["studio-looks", companyId] as const,
   },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
@@ -720,6 +733,9 @@ export const queryKeys = {
   auth: {
     preferences: (userId: string | null) => ["auth", "preferences", userId] as const,
     session: ["auth", "session"] as const,
+    twoStep: ["auth", "two-step"] as const,
+    devices: ["auth", "devices"] as const,
+    signInHistory: ["auth", "sign-in-history"] as const,
   },
   inboxAgentPolicy: {
     mine: (companyId: string) =>
@@ -746,6 +762,7 @@ export const queryKeys = {
     experimentalSettings: ["instance", "experimental-settings"] as const,
     entitlements: ["instance", "entitlements"] as const,
     systemMemory: ["instance", "system-memory"] as const,
+    signInActivity: ["instance", "sign-in-activity"] as const,
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
     billingAccount: ["instance", "billing-account"] as const,
     fleetInstances: ["instance", "fleet-instances"] as const,
@@ -789,8 +806,10 @@ export const queryKeys = {
   calendar: (companyId: string, from: string, to: string) => ["calendar", companyId, from, to] as const,
   teamScorecard: (companyId: string, days: number) => ["team-scorecard", companyId, days] as const,
   notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
-  morningSummary: (companyId: string) => ["morning-summary", companyId] as const,
+  recentNotifications: (companyId: string) => ["recent-notifications", companyId] as const,
+  morningSummary: (companyId: string, window: "24h" | "day" = "24h") => ["morning-summary", companyId, window] as const,
   weeklyReport: (companyId: string) => ["weekly-report", companyId] as const,
+  agentDailyDigests: (companyId: string, from: string, to: string) => ["agent-daily-digests", companyId, from, to] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   /** One Decisions feed (GRE-263). Under the `attention` prefix so every
    *  existing attention invalidation also refreshes the feed and its count. */

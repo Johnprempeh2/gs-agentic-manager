@@ -219,7 +219,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
       await copyTextToClipboard(value);
       pushToast({ title: "Copied to clipboard", body: label, tone: "success" });
     } catch (error) {
-      pushToast({ title: "Copy failed", body: error instanceof Error ? error.message : "Clipboard access is unavailable.", tone: "error" });
+      pushToast({ title: "Could not copy", body: error instanceof Error ? error.message : "Clipboard access is unavailable.", tone: "error" });
     }
   }
 
@@ -593,7 +593,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                                     disabled={revokeTokenMutation.isPending}
                                   >
                                     <Check className="mr-1 h-3.5 w-3.5" />
-                                    Confirm
+                                    Revoke token
                                   </Button>
                                 </div>
                               ) : null}

@@ -43,6 +43,10 @@ vi.mock("../api/projects", () => ({
   projectsApi: mockProjectsApi,
 }));
 
+vi.mock("../api/agents", () => ({
+  agentsApi: { list: vi.fn().mockResolvedValue([]) },
+}));
+
 vi.mock("../api/resourceMemberships", () => ({
   resourceMembershipsApi: mockResourceMembershipsApi,
 }));
@@ -217,8 +221,8 @@ describe("Projects", () => {
     expect(intro?.querySelector('[data-testid="help-term-project"]')).toBeTruthy();
     expect(content.indexOf("My Projects")).toBeLessThan(content.indexOf("Alpha"));
     expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Charlie"));
-    expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Other Projects"));
-    expect(content.indexOf("Other Projects")).toBeLessThan(content.indexOf("Bravo"));
+    expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Other projects"));
+    expect(content.indexOf("Other projects")).toBeLessThan(content.indexOf("Bravo"));
     expect(content).toContain("in progress");
   });
 
@@ -230,7 +234,7 @@ describe("Projects", () => {
     const content = container.textContent ?? "";
     expect(content.indexOf("My Projects")).toBeLessThan(content.indexOf("Charlie"));
     expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Alpha"));
-    expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Other Projects"));
+    expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Other projects"));
   });
 
   it("reserves description line height for projects without descriptions", async () => {
@@ -243,5 +247,29 @@ describe("Projects", () => {
 
     expect(hiddenDescriptionLine).not.toBeNull();
     expect(hiddenDescriptionLine?.className).toContain("min-h-4");
+  });
+
+  it("offers to copy the projects as an update and to download them", async () => {
+    await renderProjects();
+    const labels = Array.from(container.querySelectorAll("button")).map((button) => button.textContent ?? "");
+    expect(labels).toContain("Copy as an update");
+    expect(labels.some((label) => label.includes("Download as spreadsheet"))).toBe(true);
+  });
+
+  it("filters to late projects and back", async () => {
+    mockProjectsApi.list.mockResolvedValue([
+      makeProject({ id: "late", urlKey: "late", name: "Latecomer", targetDate: "2020-01-01" }),
+      makeProject({ id: "fine", urlKey: "fine", name: "Ontime", targetDate: null }),
+    ]);
+    await renderProjects();
+    const lateButton = () => Array.from(container.querySelectorAll("button")).find((button) => /^Late \(1\)$|Show every project/.test(button.textContent ?? ""));
+    expect(lateButton()?.textContent).toBe("Late (1)");
+    await act(async () => {
+      lateButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(container.textContent).toContain("Latecomer");
+    expect(container.textContent).not.toContain("Ontime");
+    expect(lateButton()?.textContent).toBe("Show every project");
   });
 });

@@ -1,4 +1,5 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { ErrorState } from "@/components/ErrorState";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
@@ -36,6 +37,7 @@ import { AGENT_ROLE_LABELS, type Agent, type AgentTeam, type CompactIssue } from
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { plainTaskStatus } from "../lib/global-search";
 
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2;
@@ -183,7 +185,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   const showImport = !isCloud && !hiddenSettings.has("company.import");
   const showExport = !hiddenSettings.has("company.export");
 
-  const { data: queriedOrgTree, isLoading } = useQuery({
+  const { data: queriedOrgTree, isLoading, error: orgTreeError, refetch: refetchOrgTree, isFetching: isOrgTreeFetching } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId && providedOrgTree === undefined,
@@ -276,7 +278,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   }, [orgTree, agentMap, liveRuns, openIssues]);
 
   useEffect(() => {
-    if (!embedded) setBreadcrumbs([{ label: "Org Chart" }]);
+    if (!embedded) setBreadcrumbs([{ label: "Org chart" }]);
   }, [embedded, setBreadcrumbs]);
 
   // Layout computation
@@ -640,11 +642,22 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   }, []);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Network} message="Select an organization to view the org chart." />;
+    return <EmptyState icon={Network} message="Choose an organisation to view the org chart." />;
   }
 
   if (providedOrgTree === undefined && isLoading) {
     return <PageSkeleton variant="org-chart" />;
+  }
+
+  if (providedOrgTree === undefined && orgTreeError && !queriedOrgTree) {
+    return (
+      <ErrorState
+        error={orgTreeError}
+        title="The org chart did not load"
+        onRetry={() => void refetchOrgTree()}
+        retrying={isOrgTreeFetching}
+      />
+    );
   }
 
   if (orgTree && orgTree.length === 0) {
@@ -671,7 +684,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
           <Link to="/company/import">
             <Button variant="outline" size="sm">
               <Upload className="mr-1.5 h-3.5 w-3.5" />
-              Import organization
+              Import organisation
             </Button>
           </Link>
         ) : null}
@@ -679,7 +692,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
           <Link to="/company/export">
             <Button variant="outline" size="sm">
               <Download className="mr-1.5 h-3.5 w-3.5" />
-              Export organization
+              Export organisation
             </Button>
           </Link>
         ) : null}
@@ -1045,7 +1058,7 @@ function AgentPanel({
             <ul className="flex flex-col gap-1">
               {activity.openTasks.slice(0, 8).map((task) => (
                 <li key={task.id} className="flex min-w-0 items-baseline gap-2">
-                  <span className="shrink-0 text-xs text-muted-foreground">{task.status.replace(/_/g, " ")}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{plainTaskStatus(task.status)}</span>
                   <Link to={issueUrl(task)} className="truncate hover:underline" title={taskLabel(task)}>
                     {taskLabel(task)}
                   </Link>

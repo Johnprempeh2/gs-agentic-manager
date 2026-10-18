@@ -360,9 +360,9 @@ function MessageBubble({
         {message.createdByRunId && message.authorAgentId ? (
           <Link
             to={`/agents/${message.authorAgentId}/runs/${message.createdByRunId}`}
-            className="font-mono opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover/message:opacity-100"
+            className="opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover/message:opacity-100"
           >
-            run {message.createdByRunId.slice(0, 8)}
+            See the work
           </Link>
         ) : null}
         <time dateTime={createdAt.toISOString()} title={formatDateTime(message.createdAt)}>

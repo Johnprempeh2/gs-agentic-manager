@@ -875,6 +875,17 @@ describe("Routines page", () => {
     expect(text).toContain("Morning sync");
     expect(text).not.toContain("Archived cleanup");
 
+    const showArchived = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent === "Show archived routines (1)",
+    );
+    expect(showArchived).toBeTruthy();
+    await act(async () => {
+      showArchived?.click();
+      await flush();
+    });
+    expect(container.textContent).toContain("Archived cleanup");
+    expect(container.textContent).toContain("Hide archived routines");
+
     await act(async () => {
       root.unmount();
     });

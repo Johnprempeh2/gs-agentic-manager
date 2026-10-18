@@ -31,6 +31,7 @@ import {
 } from "@greatstone/db";
 import { runningProcesses } from "../adapters/index.js";
 import { heartbeatService } from "../services/heartbeat.ts";
+import { instanceSettingsService } from "../services/instance-settings.ts";
 import { issueThreadInteractionService } from "../services/issue-thread-interactions.js";
 import { isRetiredExternalChatQuestionSource, questionResponseDeliveryService } from "../services/question-response-delivery.js";
 import { SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY } from "../services/recovery/index.ts";
@@ -205,6 +206,11 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     );
     db = createDb(started.connectionString);
     tempDb = started;
+    // Tests here seed runs as running and leave them, so the shared database
+    // passes the default instance cap (6) partway through the file. A held run
+    // waits for the 10 s admission re-check, which outlasts these waits
+    // (GRE-1605). This file does not test admission; lift the cap.
+    await instanceSettingsService(db).updateGeneral({ runAdmission: { maxConcurrentRuns: 1000 } });
   }, 120_000);
 
   afterAll(async () => {

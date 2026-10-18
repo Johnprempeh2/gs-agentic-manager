@@ -35,6 +35,7 @@ import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { ConnectionNotice } from "./ConnectionNotice";
 import { NeedsYouAlert } from "./NeedsYouAlert";
+import { OfflineSnapshotSaver } from "./OfflineSnapshotSaver";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
@@ -657,6 +658,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <DevRestartBanner devServer={health?.devServer} />
       <ConnectionNotice />
       <NeedsYouAlert />
+      <OfflineSnapshotSaver />
       <div className={cn("min-h-0 flex-1 print:block print:overflow-visible", isMobile ? "w-full" : "flex overflow-clip")}>
         {isMobile && sidebarOpen && (
           <button
@@ -670,7 +672,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         {isMobile ? (
           <div
             className={cn(
-              "fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out print:hidden",
+              "gs-rail dark fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out print:hidden",
               sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           >
@@ -690,7 +692,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </div>
         ) : (
           <SidebarShell
-            className="print:hidden"
+            className="gs-rail dark print:hidden"
             open={sidebarOpen}
             collapsed={replacesPrimarySidebar ? false : collapsed}
             peeking={replacesPrimarySidebar ? false : peeking}

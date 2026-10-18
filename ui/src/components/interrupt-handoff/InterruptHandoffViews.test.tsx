@@ -96,7 +96,7 @@ describe("HandoffWakeRow", () => {
     const row = host.querySelector<HTMLElement>("[data-testid='handoff-wake-row']")!;
     expect(row.dataset.kind).toBe("agent_wake");
     expect(row.textContent).toContain("queued for QA");
-    expect(row.textContent).toContain("interrupted run attached");
+    expect(row.textContent).toContain("stopped work attached");
   });
 
   it("B. user destination = no wake", () => {
@@ -143,7 +143,7 @@ describe("ComposerHandoffPreviewRow", () => {
     const host = mount(<ComposerHandoffPreviewRow preview={preview} resolvers={resolvers} />);
     const row = host.querySelector<HTMLElement>("[data-testid='composer-handoff-preview']")!;
     expect(row.dataset.kind).toBe("interrupt_handoff_agent");
-    expect(row.textContent).toContain("Interrupt current run, hand off to");
+    expect(row.textContent).toContain("Stop the current work, hand off to");
     expect(row.textContent).toContain("QA");
   });
 
@@ -203,7 +203,7 @@ describe("AssigneeRunningBanner", () => {
     );
     const banner = host.querySelector<HTMLElement>("[data-testid='assignee-running-banner']")!;
     expect(banner.getAttribute("role")).toBe("status");
-    expect(banner.textContent).toContain("ClaudeCoder is running");
+    expect(banner.textContent).toContain("ClaudeCoder is working on this");
   });
 });
 

@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Check, Copy, FileSearch, FolderOpen, FolderSearch, GitBranch, Pencil, X } from "lucide-react";
 import { ReusableExecutionWorkspaceSelect } from "./ReusableExecutionWorkspaceSelect";
 import { Badge } from "@/components/ui/badge";
+import { sentenceCaseLabel } from "../lib/task-status-labels";
 
 /* -------------------------------------------------------------------------- */
 /*  Utility helpers (mirrored from IssueProperties for self-containment)      */
@@ -29,8 +30,8 @@ import { Badge } from "@/components/ui/badge";
 
 const EXECUTION_WORKSPACE_OPTIONS = [
   { value: "shared_workspace", label: "Project default" },
-  { value: "isolated_workspace", label: "New isolated workspace" },
-  { value: "reuse_existing", label: "Reuse existing workspace" },
+  { value: "isolated_workspace", label: "A fresh separate copy" },
+  { value: "reuse_existing", label: "One already in use" },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -97,11 +98,11 @@ function configuredWorkspaceLabel(
 ) {
   switch (selection) {
     case "isolated_workspace":
-      return "New isolated workspace";
+      return "A fresh separate copy";
     case "reuse_existing":
       return reusableWorkspace?.mode === "isolated_workspace"
         ? "Existing isolated workspace"
-        : "Reuse existing workspace";
+        : "One already in use";
     default:
       return "Project default";
   }
@@ -137,9 +138,15 @@ function statusBadge(status: string) {
     in_review: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
     archived: "bg-muted text-muted-foreground",
   };
+  const workspaceStatusLabels: Record<string, string> = {
+    active: "Active",
+    idle: "Idle",
+    in_review: "In review",
+    archived: "Archived",
+  };
   return (
     <Badge variant="ghost" className={cn("text-(length:--text-nano) px-1.5", colors[status] ?? colors.idle)}>
-      {status.replace(/_/g, " ")}
+      {workspaceStatusLabels[status] ?? sentenceCaseLabel(status)}
     </Badge>
   );
 }

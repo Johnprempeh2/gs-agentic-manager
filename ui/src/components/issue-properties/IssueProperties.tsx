@@ -1,4 +1,6 @@
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
+import { useOptionalToastActions } from "@/context/ToastContext";
+import { useConfirm } from "@/context/ConfirmContext";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { normalizeLegacyRunnerProvider } from "@greatstone/adapter-utils";
@@ -114,6 +116,7 @@ import {
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
+import { taskTimeLine } from "../../lib/time-to-done";
 import { IssueDueDateRow } from "./IssueDueDateRow";
 import {
   buildWorkspaceSelectionUpdate,
@@ -488,6 +491,7 @@ export function IssueProperties({
     enabled: !!companyId && parentOpen && normalizedParentSearch.length > 0,
   });
 
+  const toastActions = useOptionalToastActions();
   const createLabel = useMutation({
     mutationFn: (data: { name: string; color: string }) => issuesApi.createLabel(companyId!, data),
     onSuccess: async (created) => {
@@ -502,6 +506,13 @@ export function IssueProperties({
       onUpdate({ labelIds: [...(issue.labelIds ?? []), created.id] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.issues.labels(companyId!) });
       setNewLabelName("");
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "The label was not created",
+        body: error instanceof Error && error.message.trim() ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 
@@ -521,7 +532,7 @@ export function IssueProperties({
     onError: (error) => {
       setUnarchiveErrorMessage(error instanceof Error && error.message.trim().length > 0
         ? error.message
-        : "Failed to unarchive this issue. Please try again.");
+        : "The task could not be brought back. Try again in a moment.");
     },
   });
 
@@ -591,9 +602,9 @@ export function IssueProperties({
     (workspace) => workspace.id === issue.executionWorkspaceId,
   ) ?? issue.currentExecutionWorkspace ?? null;
   const workspaceTriggerLabel = activeWorkspacePickerMode === "isolated"
-    ? "New isolated workspace"
+    ? "A fresh separate copy"
     : activeWorkspacePickerMode === "reuse"
-      ? boundWorkspace?.name ?? "Reuse existing workspace"
+      ? boundWorkspace?.name ?? "One already in use"
       : "Default";
   const workspaceTriggerTitle = activeWorkspacePickerMode === "reuse"
     ? boundWorkspace?.branchName ?? undefined
@@ -662,7 +673,7 @@ export function IssueProperties({
     },
     onError: (error) => {
       setRuntimeActionMessage(null);
-      setRuntimeActionErrorMessage(error instanceof Error ? error.message : "Failed to control workspace commands.");
+      setRuntimeActionErrorMessage(error instanceof Error ? error.message : "Could not run that workspace command.");
     },
   });
   const pendingWorkspaceRuntimeAction = controlWorkspaceRuntime.isPending ? controlWorkspaceRuntime.variables ?? null : null;
@@ -848,7 +859,7 @@ export function IssueProperties({
         assigneeOverrideThinkingEffort,
         assigneeOverrideChrome ? "Chrome" : "",
       ].filter(Boolean);
-      const summary = details.length > 0 ? `Override · ${details.join(" · ")}` : "Override · adapter options";
+      const summary = details.length > 0 ? `Custom settings · ${details.join(" · ")}` : "Custom settings";
       return (
         <span
           className="min-w-0 truncate text-sm"
@@ -863,8 +874,8 @@ export function IssueProperties({
   const assigneeOptionsContent = supportsAssigneeOverrides ? (
     <div className="w-full space-y-3 p-2">
       <div className="space-y-1.5">
-        <div className="text-xs text-muted-foreground">Model lane</div>
-        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Model lane">
+        <div className="text-xs text-muted-foreground">Which AI model</div>
+        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Which AI model">
           {(["primary", "custom"] as const).map((lane) => (
             <button
               key={lane}
@@ -872,12 +883,12 @@ export function IssueProperties({
               role="radio"
               aria-checked={assigneeOverrideLane === lane}
               className={cn(
-                "flex-1 px-2 py-1 text-xs capitalize transition-colors hover:bg-accent/40",
+                "flex-1 px-2 py-1 text-xs transition-colors hover:bg-accent/40",
                 assigneeOverrideLane === lane && "bg-accent text-foreground",
               )}
               onClick={() => setAssigneeOverrideLane(lane)}
             >
-              {lane === "primary" ? "Primary" : "Override"}
+              {lane === "primary" ? "Agent's usual" : "Pick one for this task"}
             </button>
           ))}
         </div>
@@ -921,7 +932,7 @@ export function IssueProperties({
           </div>
           {assigneeAdapterType === "claude_local" ? (
             <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
-              <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
+              <div className="text-xs text-muted-foreground">Let the agent use a Chrome browser</div>
               <ToggleSwitch
                 checked={assigneeOverrideChrome}
                 onCheckedChange={(next) => updateAssigneeOverrideConfig({ chrome: next ? true : undefined })}
@@ -935,8 +946,8 @@ export function IssueProperties({
     <div className="w-full space-y-2 p-2">
       <p className="text-xs text-muted-foreground">
         {assignee
-          ? "This assignee's adapter does not expose editable task overrides."
-          : "Select a compatible assignee agent to edit these overrides."}
+          ? "The AI service this agent uses has no settings to change for one task."
+          : "Assign the task to an agent first to change these settings."}
       </p>
       <button
         type="button"
@@ -1128,6 +1139,7 @@ export function IssueProperties({
       setWatchdogOpen(false);
     },
   });
+  const confirmAction = useConfirm();
   const deleteWatchdog = useMutation({
     mutationFn: () => issuesApi.deleteWatchdog(issue.id),
     onSuccess: () => {
@@ -1145,8 +1157,15 @@ export function IssueProperties({
       instructions: watchdogInstructionsInput.trim() || null,
     });
   };
-  const removeWatchdog = () => {
+  const removeWatchdog = async () => {
     if (issue.watchdog) {
+      const ok = await confirmAction({
+        title: "Remove the watchdog?",
+        description: "The watchdog agent stops keeping an eye on this task, and its instructions are cleared.",
+        confirmLabel: "Remove watchdog",
+        tone: "destructive",
+      });
+      if (!ok) return;
       deleteWatchdog.mutate();
     } else {
       setWatchdogOpen(false);
@@ -1257,7 +1276,7 @@ export function IssueProperties({
           type="button"
           className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
           disabled={deleteWatchdog.isPending || (!issue.watchdog && !watchdogAgentInput)}
-          onClick={removeWatchdog}
+          onClick={() => void removeWatchdog()}
         >
           {deleteWatchdog.isPending ? "Removing…" : "Remove"}
         </button>
@@ -1488,7 +1507,7 @@ export function IssueProperties({
         ) : null}
         {scheduledRetry.retryOfRunId ? (
           <>
-            <dt className="text-muted-foreground">Replaces run</dt>
+            <dt className="text-muted-foreground">Follows</dt>
             <dd className="text-foreground">
               <Link
                 to={`/agents/${scheduledRetry.agentId}/runs/${scheduledRetry.retryOfRunId}`}
@@ -1544,7 +1563,7 @@ export function IssueProperties({
           ) : scheduledRetryRetryNowSuccess ? (
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              {retryNow.data?.outcome === "already_promoted" ? "Already promoted" : "Promoted"}
+              {retryNow.data?.outcome === "already_promoted" ? "Already starting" : "Started"}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5">
@@ -1555,14 +1574,14 @@ export function IssueProperties({
         </Button>
         <span className="text-right text-xs text-muted-foreground">
           {retryNow.isPending
-            ? "Promoting scheduled retry"
+            ? "Starting now…"
             : scheduledRetryRetryNowSuccess
               ? retryNow.data?.outcome === "already_promoted"
-                ? "Already promoted: run starting"
-                : "Promoted: run starting"
+                ? "Already starting"
+                : "The agent is starting again"
               : scheduledRetryIsContinuation
-                ? "Pulls continuation forward immediately"
-                : "Pulls retry forward immediately"}
+                ? "Start it now instead of waiting"
+                : "Try again now instead of waiting"}
         </span>
       </div>
     </div>
@@ -2465,6 +2484,15 @@ export function IssueProperties({
           />
         </PropertyRow>
 
+        {(() => {
+          const timeLine = taskTimeLine(issue);
+          return timeLine ? (
+            <PropertyRow label={timeLine.label}>
+              <span className="text-sm tabular-nums" data-testid="task-time-line">{timeLine.value}</span>
+            </PropertyRow>
+          ) : null;
+        })()}
+
         {/* PAP-411: priority UI is hidden behind SHOW_TASK_PRIORITY_UI. Revive by flipping the flag. */}
         {SHOW_TASK_PRIORITY_UI && (
           <PropertyRow label="Priority">
@@ -2790,7 +2818,7 @@ export function IssueProperties({
 
         {showScheduledRetryRow && scheduledRetry?.scheduledRetryReason === "workspace_busy" ? (
           <PropertyRow label="Workspace">
-            <span className="text-sm text-muted-foreground">Waiting for workspace</span>
+            <span className="text-sm text-muted-foreground">Waiting for another task to finish</span>
           </PropertyRow>
         ) : showScheduledRetryRow && scheduledRetryContent ? (
           <PropertyPicker
@@ -2887,7 +2915,7 @@ export function IssueProperties({
                       onClick={() => saveWorkspaceSelection("isolated_workspace")}
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm">New isolated workspace</span>
+                        <span className="block text-sm">A fresh separate copy</span>
                         <span className="block text-xs text-muted-foreground">Create a fresh workspace on the next run</span>
                       </span>
                       {activeWorkspacePickerMode === "isolated" ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
@@ -2898,7 +2926,7 @@ export function IssueProperties({
                       onClick={() => setWorkspacePickerStep("reuse")}
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm">Reuse existing workspace…</span>
+                        <span className="block text-sm">One already in use…</span>
                         <span className="block text-xs text-muted-foreground">Pick a workspace to reuse</span>
                       </span>
                       {activeWorkspacePickerMode === "reuse" ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
@@ -2933,7 +2961,7 @@ export function IssueProperties({
                     {reusableExecutionWorkspacesLoading ? (
                       <div className="px-2 py-2 text-xs text-muted-foreground">Loading workspaces...</div>
                     ) : reusableExecutionWorkspacesError ? (
-                      <div className="px-2 py-2 text-xs text-destructive">Failed to load workspaces.</div>
+                      <div className="px-2 py-2 text-xs text-destructive">Could not load workspaces.</div>
                     ) : reusableWorkspaceOptions.length === 0 ? (
                       <div className="px-2 py-2 text-xs text-muted-foreground">No matching workspaces.</div>
                     ) : reusableWorkspaceOptions.map((group) => (

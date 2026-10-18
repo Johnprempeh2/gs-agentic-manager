@@ -180,7 +180,7 @@ export function WhatNeedsMe() {
   }, []);
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   }
 
   if (isLoading) {

@@ -208,11 +208,11 @@ export function IssueChatAssistantMessage({
             })
             .catch((error) => {
               toastActions?.pushToast({
-                title: "Copy failed",
+                title: "Could not copy",
                 body:
                   error instanceof Error
                     ? error.message
-                    : "Unable to copy message",
+                    : "Could not copy the message",
                 tone: "error",
               });
             });
@@ -262,11 +262,11 @@ export function IssueChatAssistantMessage({
             onClick={() => {
               void copyTextToClipboard(copyText).catch((error) => {
                 toastActions?.pushToast({
-                  title: "Copy failed",
+                  title: "Could not copy",
                   body:
                     error instanceof Error
                       ? error.message
-                      : "Unable to copy message",
+                      : "Could not copy the message",
                   tone: "error",
                 });
               });

@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentIdentity } from "./AgentIdentity";
 import { AgentAvatar } from "./AgentAvatar";
-import { AgentStatusBadge } from "./StatusBadge";
+import { AgentStatusBadge, sentenceCaseStatus } from "./StatusBadge";
 import { IssueRow } from "./IssueRow";
 import { PriorityIcon } from "./PriorityIcon";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
@@ -223,7 +223,7 @@ export function DashboardOverview({
                   to={agentUrl(row.agent)}
                   role="listitem"
                   className="flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-md text-center text-inherit no-underline active:scale-95 transition-transform duration-(--motion-press)"
-                  aria-label={`${row.agent.name}, ${status}`}
+                  aria-label={`${row.agent.name}, ${sentenceCaseStatus(status)}`}
                 >
                   <span
                     className={cn(
@@ -277,9 +277,9 @@ export function DashboardOverview({
                     title={currentTask.title}
                   >
                     <StatusIcon status={currentTask.status} blockerAttention={currentTask.blockerAttention} waiting={!live && isWaitingOnMonitor(currentTask)} />
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                      {currentTask.identifier ?? currentTask.id.slice(0, 8)}
-                    </span>
+                    {currentTask.identifier ? (
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">{currentTask.identifier}</span>
+                    ) : null}
                     <span className="min-w-0 truncate">{currentTask.title}</span>
                   </Link>
                 ) : live && liveIssueId ? (

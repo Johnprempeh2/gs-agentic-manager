@@ -25,6 +25,8 @@ declare global {
           status?: string;
         }>;
         isInstanceAdmin?: boolean;
+        /** Session actors only: whether this person has two-step sign-in on. */
+        twoFactorEnabled?: boolean;
         keyId?: string;
         keyScope?: AgentApiKeyScope;
         runId?: string;

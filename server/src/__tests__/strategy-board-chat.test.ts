@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
   activityLog,
+  agentRuntimeState,
+  companySkills,
   agents,
   agentWakeupRequests,
   authUsers,
@@ -13,6 +15,7 @@ import {
   goalKpiReadings,
   goals,
   goalWhyRequests,
+  heartbeatRunEvents,
   heartbeatRuns,
   issueComments,
   issues,
@@ -27,7 +30,7 @@ import { agentRoutes } from "../routes/agents.js";
 import { goalRoutes } from "../routes/goals.js";
 import { issueRoutes } from "../routes/issues.js";
 import { strategyBoardRoutes } from "../routes/strategy-board.js";
-import { buildPaperclipTaskMarkdown } from "../services/heartbeat.js";
+import { buildPaperclipTaskMarkdown, heartbeatService } from "../services/heartbeat.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { issueService } from "../services/issues.js";
 import { BOARD_QUESTION_ORIGIN_KIND, strategyBoardChatService } from "../services/strategy-board-chat.js";
@@ -39,6 +42,7 @@ import {
   useEmbeddedPostgres,
   type BoardActor,
 } from "./helpers/route-test-harness.js";
+import { drainHeartbeatRunsToQuiescence } from "./helpers/drain-heartbeat-runs.js";
 
 function dayOffset(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
@@ -57,6 +61,11 @@ type AgentActor = {
 describeEmbeddedPostgres("board agent chat (GRE-1186)", () => {
   const ctx = useEmbeddedPostgres("gsam-strategy-board-chat-", {
     resetEach: async (db) => {
+      // A board chat message starts a real run in the background, and that
+      // run installs the company's bundled skills. Wait for it to finish, or
+      // it can add a company_skills row after the delete below and break the
+      // companies delete (GRE-1661).
+      await drainHeartbeatRunsToQuiescence(db, heartbeatService(db));
       await db.delete(activityLog);
       await db.delete(strategyBoardPacks);
       await db.delete(goalKpiAlerts);
@@ -64,19 +73,24 @@ describeEmbeddedPostgres("board agent chat (GRE-1186)", () => {
       await db.delete(goalKpiReadings);
       await db.delete(goalCheckIns);
       await db.delete(issueComments);
+      // Board chats now start real runs (Agent Chat graduated, GRE-1621), so
+      // runs go before the wakeups they point at.
+      await db.delete(heartbeatRunEvents);
+      await db.delete(heartbeatRuns);
       await db.delete(agentWakeupRequests);
       await db.delete(issues);
-      await db.delete(heartbeatRuns);
       await db.update(goals).set({ parentId: null });
       await db.delete(goals);
+      await db.delete(agentRuntimeState);
       await db.delete(agents);
       await db.delete(principalPermissionGrants);
+      await db.delete(companySkills);
       await resetCompanyIssueFixtures(db);
     },
   });
 
   beforeEach(async () => {
-    await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: true, enableAgentChat: false });
+    await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: true });
   });
   afterEach(() => {
     delete process.env.GSAM_RESPONSIBLE_USER_AUTHZ_MODE;

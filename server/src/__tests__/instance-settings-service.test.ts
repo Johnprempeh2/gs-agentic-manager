@@ -15,14 +15,18 @@ describe("instance settings service", () => {
     const patched = applyExperimentalSettingsPatch({}, { enableNativeRunner: false });
     expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(patched))).enableNativeRunner).toBe(true);
   });
-  it("keeps chat connectors opt-in across legacy storage and patches without disabling Apps", () => {
-    for (const stored of [undefined, {}, { enableApps: true }, { enableConferenceRoomChat: true }]) {
-      expect(normalizeExperimentalSettings(stored).enableChatConnectors).toBe(false);
+  it("always reads the graduated Chat and Memory connectors flags as on (GRE-1620)", () => {
+    for (const stored of [
+      undefined,
+      {},
+      { enableChatConnectors: false, enableMemoryConnectors: false },
+      { enableChatConnectors: true, enableMemoryConnectors: true },
+    ]) {
+      expect(normalizeExperimentalSettings(stored)).toMatchObject({ enableChatConnectors: true, enableMemoryConnectors: true });
     }
-    const enabled = applyExperimentalSettingsPatch({}, { enableChatConnectors: true });
-    expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(enabled))).enableChatConnectors).toBe(true);
-    const disabled = applyExperimentalSettingsPatch(enabled, { enableChatConnectors: false });
-    expect(disabled).toMatchObject({ enableApps: true, enableChatConnectors: false });
+    const patched = applyExperimentalSettingsPatch({}, { enableChatConnectors: false, enableMemoryConnectors: false });
+    expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(patched))))
+      .toMatchObject({ enableApps: true, enableChatConnectors: true, enableMemoryConnectors: true });
   });
   it("ignores retired experimental flags without resetting current settings", () => {
     expect(normalizeExperimentalSettings({
@@ -50,15 +54,15 @@ describe("instance settings service", () => {
       enableStreamlinedUi: true,
       enableApps: true,
     enableMcpAggregators: true,
-      enableAgentChat: false,
-      enableChatConnectors: false,
-      enableMemoryConnectors: false,
-      enableConferenceRoomChat: false,
+      enableAgentChat: true,
+      enableChatConnectors: true,
+      enableMemoryConnectors: true,
+      enableConferenceRoomChat: true,
       enableClassicTaskInterface: false,
-      enableExternalObjects: false,
+      enableExternalObjects: true,
       enableSmokeLab: false,
       enablePipelines: false,
-      enableCases: false,
+      enableCases: true,
       enableDeepDive: false,
       enableStrategy: true,
       enableStrategyBoard: false,
@@ -69,14 +73,14 @@ describe("instance settings service", () => {
       enableIssuePlanDecompositions: true,
       enableExperimentalFileViewer: true,
       enableBuiltInAgents: true,
-      enableBetaSkills: false,
-      enableSummaries: false,
-      enableStatusCards: false,
+      enableBetaSkills: true,
+      enableSummaries: true,
+      enableStatusCards: true,
       enableDecisions: true,
       enableGoalsSidebarLink: true,
       enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: false,
-      enableSimplifiedEnglishInteractions: false,
+      enableSimplifiedEnglishInteractions: true,
       enableFirstTaskPlanProposal: false,
       autoRestartDevServerWhenIdle: false,
       enableWorkspaceBranchReconcileForward: true,
@@ -131,13 +135,22 @@ describe("instance settings service", () => {
     ).toBe(true);
   });
 
-  it("defaults enableConferenceRoomChat to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableConferenceRoomChat).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableConferenceRoomChat).toBe(false);
-    // Rows persisted before the flag existed (PAP-137) must normalize to off.
+  it("keeps Conference Room Chat on for empty, legacy, patched, invalid, and managed-off settings (GRE-1624)", () => {
+    expect(normalizeExperimentalSettings(undefined).enableConferenceRoomChat).toBe(true);
+    expect(normalizeExperimentalSettings({}).enableConferenceRoomChat).toBe(true);
+    expect(normalizeExperimentalSettings({ enableConferenceRoomChat: false }).enableConferenceRoomChat).toBe(true);
+    expect(normalizeExperimentalSettings({ enableConferenceRoomChat: "yes" }).enableConferenceRoomChat).toBe(true);
     expect(
-      normalizeExperimentalSettings({ enableStreamlinedLeftNavigation: true }).enableConferenceRoomChat,
-    ).toBe(false);
+      applyExperimentalSettingsPatch({}, { enableConferenceRoomChat: false }).enableConferenceRoomChat,
+    ).toBe(true);
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+      normalizeExperimentalSettings({}),
+      { features: { enableConferenceRoomChat: false } } as unknown as Parameters<
+        typeof applyManagedExperimentalOverlay
+      >[1],
+    );
+    expect(experimental.enableConferenceRoomChat).toBe(true);
+    expect(managedKeys.enableConferenceRoomChat).toBeUndefined();
   });
 
   it("defaults enableClassicTaskInterface to false for empty and legacy stored settings", () => {
@@ -173,17 +186,19 @@ describe("instance settings service", () => {
     });
   });
 
-  it("defaults enableSimplifiedEnglishInteractions to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableSimplifiedEnglishInteractions).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableSimplifiedEnglishInteractions).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ enableStreamlinedLeftNavigation: true })
-        .enableSimplifiedEnglishInteractions,
-    ).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ enableSimplifiedEnglishInteractions: true })
-        .enableSimplifiedEnglishInteractions,
-    ).toBe(true);
+  it("reads the GRE-1621 graduated switches as on, ignoring stored off values", () => {
+    const keys = [
+      "enableAgentChat",
+      "enableIssuePlanDecompositions",
+      "enableBuiltInAgents",
+      "enableBetaSkills",
+      "enableSimplifiedEnglishInteractions",
+    ] as const;
+    const storedOff = Object.fromEntries(keys.map((key) => [key, false]));
+    for (const stored of [undefined, {}, storedOff]) {
+      const normalized = normalizeExperimentalSettings(stored);
+      for (const key of keys) expect(normalized[key], key).toBe(true);
+    }
   });
 
   it("defaults enableSmokeLab to false for empty and legacy stored settings", () => {
@@ -194,12 +209,15 @@ describe("instance settings service", () => {
     ).toBe(false);
   });
 
-  it("defaults enableServerInfoDebugView to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableServerInfoDebugView).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableServerInfoDebugView).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ autoRestartDevServerWhenIdle: true }).enableServerInfoDebugView,
-    ).toBe(false);
+  it("keeps Environments, File Viewer and Server Info on for empty, legacy and stored-off settings (GRE-1623)", () => {
+    for (const key of ["enableEnvironments", "enableExperimentalFileViewer", "enableServerInfoDebugView"] as const) {
+      expect(normalizeExperimentalSettings(undefined)[key]).toBe(true);
+      expect(normalizeExperimentalSettings({})[key]).toBe(true);
+      expect(normalizeExperimentalSettings({ autoRestartDevServerWhenIdle: true })[key]).toBe(true);
+      expect(normalizeExperimentalSettings({ [key]: false })[key]).toBe(true);
+      // An unparseable row takes the fallback branch.
+      expect(normalizeExperimentalSettings({ [key]: "yes" })[key]).toBe(true);
+    }
   });
 
   it("defaults enablePaperclipDeveloperMode to false for empty and legacy settings", () => {
@@ -251,37 +269,6 @@ describe("instance settings service", () => {
       normalizeExperimentalSettings({ enableWorkspaceBranchReconcileForward: false })
         .enableWorkspaceDirtyQuarantineRepair,
     ).toBe(true);
-  });
-
-  it("round-trips an enableConferenceRoomChat patch through the update merge", () => {
-    // updateExperimental merges `{ ...normalize(current), ...patch }` and
-    // re-normalizes; emulate that to prove the flag survives the roundtrip
-    // without disturbing other settings.
-    const current = normalizeExperimentalSettings({});
-    const enabled = normalizeExperimentalSettings({ ...current, enableConferenceRoomChat: true });
-    expect(enabled.enableConferenceRoomChat).toBe(true);
-    expect(enabled.enableStreamlinedLeftNavigation).toBe(true);
-
-    const disabled = normalizeExperimentalSettings({ ...enabled, enableConferenceRoomChat: false });
-    expect(disabled).toEqual(current);
-  });
-
-  it("rejects non-boolean enableConferenceRoomChat values back to the default", () => {
-    expect(
-      normalizeExperimentalSettings({ enableConferenceRoomChat: "yes" }).enableConferenceRoomChat,
-    ).toBe(false);
-  });
-
-  it("defaults enableBuiltInAgents to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableBuiltInAgents).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableBuiltInAgents).toBe(false);
-    expect(normalizeExperimentalSettings({ enableExternalObjects: true }).enableBuiltInAgents).toBe(false);
-  });
-
-  it("preserves enableBetaSkills and defaults it off for legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableBetaSkills).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableBetaSkills).toBe(false);
-    expect(normalizeExperimentalSettings({ enableBetaSkills: true }).enableBetaSkills).toBe(true);
   });
 
   it("sets worktree run execution activation fields on a false to true transition", () => {

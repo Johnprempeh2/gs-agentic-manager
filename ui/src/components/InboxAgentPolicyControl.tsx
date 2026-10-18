@@ -9,6 +9,7 @@ import { isAgentTaskTarget } from "@/lib/company-members";
 import { AgentMultiSelect } from "@/components/AgentMultiSelect";
 import { Button } from "@/components/ui/button";
 import { RadioCardGroup, type RadioCardOption } from "@/components/ui/radio-card";
+import { ErrorState } from "@/components/ErrorState";
 
 const MODE_OPTIONS: RadioCardOption[] = [
   {
@@ -111,9 +112,13 @@ export function InboxAgentPolicyControl({ companyId }: { companyId: string | nul
 
   if (policyQuery.error) {
     return (
-      <div className="text-sm text-destructive">
-        {policyQuery.error instanceof Error ? policyQuery.error.message : "Failed to load inbox agent policy."}
-      </div>
+      <ErrorState
+        compact
+        error={policyQuery.error}
+        title="Your inbox settings did not load"
+        onRetry={() => void policyQuery.refetch()}
+        retrying={policyQuery.isFetching}
+      />
     );
   }
 
@@ -167,7 +172,7 @@ export function InboxAgentPolicyControl({ companyId }: { companyId: string | nul
 
       {updateMutation.error ? (
         <div className="max-w-2xl rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {updateMutation.error instanceof Error ? updateMutation.error.message : "Failed to save inbox agent policy."}
+          {updateMutation.error instanceof Error ? updateMutation.error.message : "Could not save your inbox settings."}
         </div>
       ) : null}
 

@@ -7,6 +7,7 @@ import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { teamChatsApi } from "@/api/teamChats";
 import { SidebarNavItem } from "@/components/SidebarNavItem";
+import { ErrorState } from "@/components/ErrorState";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
@@ -92,6 +93,16 @@ export function SidebarTeamChats({ agentChatsFollow = false }: { agentChatsFollo
     return (
       <section aria-label={heading} className="flex flex-col gap-0.5">
         <span className={rail ? "sr-only" : HEADING}>{heading}</span>
+        {kind === "direct" && chats.isError && !rail ? (
+          <ErrorState
+            compact
+            className="px-4"
+            error={chats.error}
+            title="Could not load chats"
+            onRetry={() => void chats.refetch()}
+            retrying={chats.isFetching}
+          />
+        ) : null}
         {rows.map((chat) => (
           <SidebarNavItem
             key={chat.id}

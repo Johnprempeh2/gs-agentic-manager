@@ -68,8 +68,8 @@ export function ExecutionWorkspaceCloseDialog({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to close workspace",
-        body: error instanceof Error ? error.message : "Unknown error",
+        title: "Could not close the work area",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Lock, Radar, Sparkles } from "lucide-react";
+import { Check, ClipboardList, Lock, Radar, Sparkles } from "lucide-react";
 import { ListenButton } from "../components/ListenButton";
 import {
   INTELLIGENCE_BOARD_LABELS,
@@ -31,6 +31,8 @@ import {
 } from "../components/intelligence/IntelligenceCards";
 import { ArticleImage, BrandLogo, TagChip } from "../components/intelligence/IntelligenceMedia";
 import { Button } from "@/components/ui/button";
+import { pulseText } from "@/lib/pulse-text";
+import { useCopyAction } from "@/lib/use-copy-action";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -688,6 +690,7 @@ export function Intelligence() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const todayRef = useRef<HTMLDivElement>(null);
+  const pulseCopy = useCopyAction();
   const newsRef = useRef<HTMLDivElement>(null);
   const tabParam = searchParams.get("tab");
   const tab: Tab = TABS.some(([id]) => id === tabParam) ? (tabParam as Tab) : "overview";
@@ -756,8 +759,18 @@ export function Intelligence() {
     [historyQuery.data],
   );
 
-  if (!selectedCompanyId) return <EmptyState icon={Radar} message="Select an organization to see its intelligence." />;
+  if (!selectedCompanyId) return <EmptyState icon={Radar} message="Choose an organisation to see its intelligence." />;
   if (settingsQuery.isLoading) return <PageSkeleton variant="dashboard" />;
+  if (settingsQuery.error) {
+    return (
+      <ErrorState
+        error={settingsQuery.error}
+        title="Intelligence did not load"
+        onRetry={() => void settingsQuery.refetch()}
+        retrying={settingsQuery.isFetching}
+      />
+    );
+  }
   if (!on) {
     return (
       <EmptyState
@@ -829,7 +842,16 @@ export function Intelligence() {
           {loading(pulseQuery) ??
             (pulse ? (
               <div className="space-y-3">
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Copy the Daily Pulse as text with its links, ready to paste"
+                    onClick={() => void pulseCopy.copy(pulseText(pulse))}
+                  >
+                    {pulseCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                    {pulseCopy.copied ? "Copied" : pulseCopy.failed ? "Could not copy" : "Copy the Pulse"}
+                  </Button>
                   <ListenButton targetRef={todayRef} label="Listen to the Pulse" />
                 </div>
                 <div ref={todayRef}>

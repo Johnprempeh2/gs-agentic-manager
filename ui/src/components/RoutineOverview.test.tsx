@@ -156,19 +156,19 @@ describe("RoutineOverview", () => {
   it("summarizes enabled schedules and their next run", () => {
     expect(summarizeRoutineSchedule(routine.triggers)).toMatchObject({
       label: "1 active schedule",
-      detail: "0 9 * * 1-5 · America/Los_Angeles",
+      detail: "Every weekday at 09:00 · America/Los_Angeles",
       nextRunAt: new Date("2026-09-01T16:00:00.000Z"),
     });
     expect(summarizeRoutineSchedule([{ ...routine.triggers[0]!, enabled: false }])).toEqual({
       label: "No active schedule",
-      detail: "Manual runs only",
+      detail: "Only when you start it",
       nextRunAt: null,
     });
   });
 
   it("describes webhook-only routines as externally triggered", () => {
     expect(summarizeRoutineSchedule([{ ...routine.triggers[0]!, kind: "webhook", enabled: true }])).toEqual({
-      label: "1 active webhook", detail: "Runs on incoming requests", nextRunAt: null,
+      label: "1 app connected", detail: "Starts when another app sends an update", nextRunAt: null,
     });
   });
 
@@ -194,7 +194,7 @@ describe("RoutineOverview", () => {
     ));
 
     expect(container.textContent).toContain("1 active schedule");
-    expect(container.textContent).toContain("Next run");
+    expect(container.textContent).toContain("Next time");
     expect(container.textContent).toContain("Release Manager");
     expect(container.textContent).toContain("Summarize **release readiness** for the operator.");
     expect(container.textContent).toContain("Prepare the release digest");

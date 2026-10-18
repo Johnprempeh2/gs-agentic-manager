@@ -3,6 +3,9 @@ import { useOptionalToastActions } from "@/context/ToastContext";
 import { DispositionRecoveryNotice } from "../components/DispositionRecoveryNotice";
 import { SetupPrompt } from "./apps/chat/SetupPrompt";
 import { MediaArtifactCard } from "@/components/artifacts/MediaArtifactCard";
+import { STUDIO_GENERATE_CLASS, STUDIO_PROMPT_CLASS, StudioComposer } from "@/components/StudioComposer";
+import { STUDIO_GALLERY_CLASS, STUDIO_MEDIA_CLASS, StudioEmptyGallery, StudioMediaAction, StudioMediaCard } from "@/components/StudioMediaCard";
+import { StudioModeTile } from "@/components/StudioModeTile";
 import { ConfidentialityBadge, LinkStatusBadges, SiteThumbnail } from "@/components/deliverables/DeliverableBadges";
 import { ExpectedList } from "@/components/ClientJourneyStages";
 import { WebhookUrlWarning } from "@/components/routine-triggers/WebhookUrlWarning";
@@ -27,6 +30,7 @@ import { TaskChatMarker } from "@/components/task-chat/TaskChatMarker";
 import { TaskChatComposer } from "@/components/task-chat/TaskChatComposer";
 import { TaskTreeControlDialog, TaskTreeControlMenuItems } from "@/components/TaskTreeControls";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import {
   BookOpen,
   Bot,
@@ -50,6 +54,12 @@ import {
   Upload,
   User,
   Zap,
+  Download,
+  ImageIcon,
+  Layers,
+  Sparkles,
+  Star,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -286,6 +296,47 @@ const DESIGN_GUIDE_TASK = {
   priority: "medium",
   blockerAttention: false,
 } as unknown as Issue;
+
+/* ------------------------------------------------------------------ */
+/*  Studio demo (composer bar with its own open chip)                  */
+/* ------------------------------------------------------------------ */
+
+function StudioComposerDemo() {
+  const [openChip, setOpenChip] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
+  return (
+    <div className="flex max-w-3xl flex-col">
+      <StudioComposer
+        title="Make an image"
+        aside="Using Practice mode"
+        openChip={openChip}
+        onOpenChipChange={setOpenChip}
+        footnote="Usually ready in under a minute."
+        chips={[
+          { id: "shape", icon: ImageIcon, label: "Shape", value: "Square", panel: <p className="text-sm text-muted-foreground">Shape choices go here.</p> },
+          { id: "style", icon: Sparkles, label: "Style", value: null, panel: <p className="text-sm text-muted-foreground">Style choices go here.</p> },
+          { id: "versions", icon: Layers, label: "Versions", value: "4 versions", panel: <p className="text-sm text-muted-foreground">Version count goes here.</p> },
+        ]}
+        action={
+          <Button className={STUDIO_GENERATE_CLASS} disabled={prompt.trim().length < 3}>
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            Make image
+          </Button>
+        }
+      >
+        <label htmlFor="design-studio-prompt" className="sr-only">What should the image show?</label>
+        <Textarea
+          id="design-studio-prompt"
+          rows={2}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="Describe the image you want"
+          className={STUDIO_PROMPT_CLASS}
+        />
+      </StudioComposer>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Section wrapper                                                    */
@@ -2471,6 +2522,60 @@ export function DesignGuide() {
           <MediaArtifactCard id="design-image" title="Launch artwork" contentPath="/announcement-preview.svg" contentType="image/svg+xml" originalFilename="launch.svg" detail="Image" />
           <MediaArtifactCard id="design-video" title="Video preview unavailable" contentPath="" contentType="video/mp4" originalFilename="preview.mp4" detail="Video" />
         </div>
+      </Section>
+
+      <Section title="Studio">
+        <p className="text-sm text-muted-foreground">
+          The image and video studio: a floating prompt bar with setting chips and one lime action, compact mode tiles, and a
+          media-first masonry gallery. Card actions show on hover or keyboard focus (always on touch screens). On a phone the
+          composer docks at the bottom of its flex column.
+        </p>
+        <SubSection title="Prompt composer (StudioComposer)">
+          <StudioComposerDemo />
+        </SubSection>
+        <SubSection title="Mode tiles (StudioModeTile)">
+          <div className="grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
+            <StudioModeTile icon={ImageIcon} title="Image" description="Pictures from a few words" selected onClick={() => {}} />
+            <StudioModeTile icon={Video} title="Video" description="Short clips from words" onClick={() => {}} />
+            <StudioModeTile icon={Layers} title="Storyboard" description="Shots that belong together" badge="New" onClick={() => {}} />
+            <StudioModeTile icon={Star} title="Top pick" description="A tile with a Top badge" badge="Top" onClick={() => {}} />
+          </div>
+        </SubSection>
+        <SubSection title="Media cards (StudioMediaCard): finished, making, failed">
+          <div className={cn(STUDIO_GALLERY_CLASS, "max-w-3xl")}>
+            <StudioMediaCard
+              aspectRatio="4 / 3"
+              status="completed"
+              pendingLabel="Making your image..."
+              media={<img src="/announcement-preview.svg" alt="Launch artwork" className={STUDIO_MEDIA_CLASS} />}
+              actions={
+                <>
+                  <StudioMediaAction icon={Star} label="Add to favourites" pressed={false} onClick={() => {}} />
+                  <StudioMediaAction icon={Download} label="Download" href="/announcement-preview.svg" download="launch.svg" />
+                </>
+              }
+              caption={<p className="text-sm text-foreground">Launch artwork</p>}
+            />
+            <StudioMediaCard aspectRatio="1 / 1" status="pending" pendingLabel="Making your image..." caption={<p className="text-sm text-foreground">In progress</p>} />
+            <StudioMediaCard
+              aspectRatio="1 / 1"
+              status="failed"
+              pendingLabel="Making your image..."
+              failure={{ message: "This image could not be made.", detail: "The account has run out of credits.", onRetry: () => {} }}
+              caption={<p className="text-sm text-foreground">Failed</p>}
+            />
+          </div>
+        </SubSection>
+        <SubSection title="Empty gallery (StudioEmptyGallery)">
+          <div className="max-w-3xl">
+            <StudioEmptyGallery
+              icon={ImageIcon}
+              title="No images yet"
+              message="Images you make will appear here. Start with an idea:"
+              suggestions={[{ label: "Social post", onPick: () => {} }, { label: "Product shot", onPick: () => {} }]}
+            />
+          </div>
+        </SubSection>
       </Section>
 
       <Section title="Deliverable labels and live sites">

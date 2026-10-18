@@ -2,7 +2,13 @@ import request from "supertest";
 import { eq } from "drizzle-orm";
 import { activityLog, assets, generatedImages, issues, organisations } from "@greatstone/db";
 import { expect, it } from "vitest";
-import { IMAGE_STYLE_PRESETS, type GeneratedImage, type GeneratedImagesResponse } from "@greatstone/shared";
+import {
+  IMAGE_STYLE_PRESETS,
+  studioCameraWords,
+  type GeneratedImage,
+  type GeneratedImagesResponse,
+  type StudioCameraSettings,
+} from "@greatstone/shared";
 import { generatedImageRoutes } from "../routes/generated-images.js";
 import { waitForGeneratedImageJobs } from "../services/generated-images.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "../services/image-generation/types.js";
@@ -171,6 +177,42 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(badStyle.status).toBe(400);
   });
 
+  it("keeps the camera picks and sends their wording to the provider", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images camera");
+    const { storage } = memoryStorage();
+    const seen: string[] = [];
+    const server = app(actor, storage, () =>
+      provider(async (input) => {
+        seen.push(input.prompt);
+        return { image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null };
+      }),
+    );
+
+    const camera = { camera: "16mm-film", lens: "vintage-prime", focalLength: 50, aperture: "f4" };
+    const created = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A jazz trio in a smoky bar", camera });
+    expect(created.status).toBe(202);
+    expect(created.body).toMatchObject({ prompt: "A jazz trio in a smoky bar", camera });
+    const plain = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A quiet library", camera: {} });
+    expect(plain.body.camera).toBeNull();
+    await waitForGeneratedImageJobs();
+
+    expect(seen).toContain(`A jazz trio in a smoky bar, ${studioCameraWords(camera as StudioCameraSettings)}`);
+    expect(seen).toContain("A quiet library");
+    const fetched = await request(server).get(`/api/generated-images/${created.body.id}`);
+    expect(fetched.body.camera).toEqual(camera);
+    const [requested] = await ctx.db.select().from(activityLog).where(eq(activityLog.entityId, created.body.id));
+    expect(requested?.details).toMatchObject({ camera });
+
+    const bad = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "Anything", camera: { focalLength: 40 } });
+    expect(bad.status).toBe(400);
+  });
+
   it("uses an image as the cover of its task or client, one cover each", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images covers");
     const [task] = await ctx.db.insert(issues).values({ companyId, title: "Launch deck" }).returning();
@@ -211,6 +253,49 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(after.body.organisations).toEqual({});
     const logged = await ctx.db.select().from(activityLog).where(eq(activityLog.action, "generated_image.cover_changed"));
     expect(logged).toHaveLength(3);
+  });
+
+  it("stars favourites, lists only them, and refuses to star an unfinished image", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images favourites");
+    const { storage } = memoryStorage();
+    let fail = false;
+    const server = app(actor, storage, () =>
+      provider(async () => {
+        if (fail) throw new ImageGenerationError("Higgsfield could not make this image. Please try again.", "provider_error");
+        return { image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null };
+      }),
+    );
+    const make = async (prompt: string) =>
+      (await request(server).post(`/api/companies/${companyId}/generated-images`).send({ prompt })).body as GeneratedImage;
+    const keeper = await make("Barista pouring a flat white");
+    const other = await make("Empty cafe at closing time");
+    await waitForGeneratedImageJobs();
+    fail = true;
+    const broken = await make("Neon cafe sign in the rain");
+    await waitForGeneratedImageJobs();
+
+    expect((await request(server).get(`/api/generated-images/${keeper.id}`)).body.favourite).toBe(false);
+    const starred = await request(server).patch(`/api/generated-images/${keeper.id}/favourite`).send({ favourite: true });
+    expect(starred.status).toBe(200);
+    expect(starred.body).toMatchObject({ id: keeper.id, favourite: true });
+
+    const favourites = await request(server).get(`/api/companies/${companyId}/generated-images?favourite=true`);
+    expect(favourites.body.images.map((image: GeneratedImage) => image.id)).toEqual([keeper.id]);
+    const rest = await request(server).get(`/api/companies/${companyId}/generated-images?favourite=false`);
+    expect(rest.body.images.map((image: GeneratedImage) => image.id).sort()).toEqual([other.id, broken.id].sort());
+    const bad = await request(server).get(`/api/companies/${companyId}/generated-images?favourite=maybe`);
+    expect(bad.status).toBe(400);
+
+    const notReady = await request(server).patch(`/api/generated-images/${broken.id}/favourite`).send({ favourite: true });
+    expect(notReady.status).toBe(422);
+    expect(notReady.body.details.code).toBe("generated_image_not_ready");
+    const missing = await request(server).patch(`/api/generated-images/${keeper.id}/favourite`).send({});
+    expect(missing.status).toBe(400);
+
+    const unstarred = await request(server).patch(`/api/generated-images/${keeper.id}/favourite`).send({ favourite: false });
+    expect(unstarred.body.favourite).toBe(false);
+    const logged = await ctx.db.select().from(activityLog).where(eq(activityLog.action, "generated_image.favourite_changed"));
+    expect(logged.map((row) => row.details)).toEqual([{ favourite: true }, { favourite: false }]);
   });
 
   it("records a plain reason when the provider fails", async () => {

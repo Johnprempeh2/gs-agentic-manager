@@ -77,6 +77,7 @@ export type {
   NeedsMe,
   NeedsMeTask,
   NeedsMeOverdueWait,
+  NeedsMeExpiredCard,
 } from "./decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./decisions-feed.js";
 export type {
@@ -417,9 +418,26 @@ export type {
   CompanySearchFilterOptionCounts,
   CompanySearchHighlight,
   CompanySearchArtifactSummary,
+  CompanySearchFileSummary,
+  CompanySearchRecordKind,
+  CompanySearchRecordSummary,
   CompanySearchIssueFilterKey,
   CompanySearchIssueSummary,
   CompanySearchResponse,
+  CompanyQuietClient,
+  CompanyQuietClientsResponse,
+  CompanyClientActivity,
+  CompanyRecentClientActivityResponse,
+  CompanyClientBrief,
+  CompanyClientBriefResponse,
+  CompanyClosingDeal,
+  CompanyClosingDealsResponse,
+  CompanyPipelineDeal,
+  CompanyPipelineStageSummary,
+  CompanyPipelineSummaryResponse,
+  CompanyClosedDeal,
+  CompanyClosedDealsGroup,
+  CompanyWonLostResponse,
   CompanySearchResult,
   CompanySearchResultType,
   CompanySearchScope,
@@ -433,6 +451,7 @@ export {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
   COMPANY_SEARCH_SCOPES,
+  COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SORTS,
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
 } from "./search.js";
@@ -808,6 +827,8 @@ export type {
   RequestConfirmationConnectionAuthorizationPayload,
   ConnectionIntentPhase,
   ConnectionIntentPayload,
+  AskAgentPayload,
+  AskAgentResult,
   ConnectionIntentResult,
   RequestConfirmationSecretProposalPayload,
   RequestConfirmationSecretProposalResult,
@@ -836,6 +857,7 @@ export type {
   RequestDraftReviewResult,
   RequestDraftReviewResultDraft,
   ConnectionIntentInteraction,
+  AskAgentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
   IssueThreadInteractionResult,
@@ -911,6 +933,7 @@ export type {
   BudgetOverview,
   BudgetPolicyUpsertInput,
   BudgetIncidentResolutionInput,
+  BudgetAuthority,
 } from "./budget.js";
 export type {
   SecretProvider,
@@ -980,7 +1003,7 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, IssueCostSummary, IssueCostModelRow, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
+export type { CostEvent, CostSummary, IssueCostSummary, IssueCostModelRow, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CostByBillingCode, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
   AgentWakeupResponse,

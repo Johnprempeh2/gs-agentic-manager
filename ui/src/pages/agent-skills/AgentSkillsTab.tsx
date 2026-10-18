@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PageSkeleton } from "../../components/PageSkeleton";
+import { ErrorState } from "@/components/ErrorState";
 import {
   applyAgentSkillSnapshot,
   isReadOnlyUnmanagedSkillEntry,
@@ -74,7 +75,13 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   // payload on every `isPending` flip (that was an infinite 422 retry storm).
   const failedSkillDraftRef = useRef<string[] | null>(null);
 
-  const { data: skillSnapshot, isLoading } = useQuery({
+  const {
+    data: skillSnapshot,
+    isLoading,
+    error: skillsError,
+    refetch: refetchSkills,
+    isFetching: skillsFetching,
+  } = useQuery({
     queryKey: queryKeys.agents.skills(agent.id),
     queryFn: () => agentsApi.skills(agent.id, companyId),
     enabled: Boolean(companyId),
@@ -86,7 +93,8 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     enabled: Boolean(companyId),
   });
 
-  // Beta skills experimental flag — gates the per-agent release picker entirely.
+  // Beta skills (GRE-1621, GRE-1633): on for Greatstone and self-hosted, off in
+  // client installs. Gates the per-agent release picker entirely.
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -99,7 +107,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   );
 
   // Seeded releases (release_id IS NOT NULL) for the paperclip core skill. Only
-  // fetched when the flag is on and the skill is present in the library.
+  // fetched when Beta skills reads on and the skill is present in the library.
   const { data: paperclipVersions } = useQuery({
     queryKey: queryKeys.companySkills.versions(companyId ?? "", paperclipCoreSkill?.id ?? ""),
     queryFn: () => companySkillsApi.versions(companyId!, paperclipCoreSkill!.id),
@@ -316,7 +324,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     if (agent.adapterType === "openclaw_gateway") {
       return "GS Agentic Manager cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
     }
-    return "GS Agentic Manager cannot manage skills for this adapter yet. Manage them in the adapter directly.";
+    return "GS Agentic Manager cannot manage skills for agents that run on this service yet. Manage them in that service directly.";
   }, [agent.adapterConfig.agent, agent.adapterType, unsupported]);
 
   const hasUnsavedChanges = !sameSkillSelection(skillDraft, lastSavedSkills);
@@ -340,8 +348,8 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     syncSkills.mutate(toDesiredSkillPayload(skillDraft, nextPins));
   };
 
-  // The release picker only applies to the enabled paperclip core skill while the
-  // beta-skills flag is on and seeded releases exist.
+  // The release picker only applies to the enabled paperclip core skill while Beta
+  // skills reads on and seeded releases exist.
   const releasePickerActive = betaSkillsEnabled && paperclipReleases.length > 0;
 
   const renderRow = (row: AgentSkillRowData, variant: "enabled" | "available") => {
@@ -462,7 +470,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
               className="flex items-center justify-between gap-3 border-b border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 last:border-b-0 dark:border-amber-500/20 dark:bg-amber-950/20 dark:text-amber-200"
             >
               <span className="min-w-0 truncate">
-                <span className="font-medium">{key}</span> is enabled but missing from the organization library.
+                <span className="font-medium">{key}</span> is turned on but no longer in your organisation's skills.
               </span>
               <button
                 type="button"
@@ -479,6 +487,13 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
 
       {isLoading ? (
         <PageSkeleton variant="list" />
+      ) : skillsError && !skillSnapshot ? (
+        <ErrorState
+          error={skillsError}
+          title="Skills did not load"
+          onRetry={() => void refetchSkills()}
+          retrying={skillsFetching}
+        />
       ) : libraryEmpty && detectedRows.length === 0 ? (
         <EmptyLibraryCard />
       ) : (
@@ -501,7 +516,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
                 {search
                   ? "No available skills match your search."
                   : libraryEmpty
-                    ? "Import skills into the organization library to enable them here."
+                    ? "Add skills on the Skills page to turn them on here."
                     : "Every library skill is enabled on this agent."}
               </SectionEmpty>
             )}
@@ -614,9 +629,9 @@ function EmptyLibraryCard() {
     <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-10 text-center">
       <Store className="h-8 w-8 text-subtle-foreground" />
       <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">No skills in the organization library</p>
+        <p className="text-sm font-medium text-foreground">Your organisation has no skills yet</p>
         <p className="text-xs text-muted-foreground">
-          Install skills to the organization, then enable them on this agent.
+          Add skills from the Skills page, then turn them on for this agent.
         </p>
       </div>
       <Button asChild variant="outline" size="sm">

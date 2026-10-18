@@ -83,7 +83,7 @@ describe("InstanceAccess company directory", () => {
   it("lets admins grant access outside their navigation list and refreshes their own navigation", async () => {
     await renderPage();
     await eventually(() => {
-      expect(button("Save organization access")).toBeDefined();
+      expect(button("Save organisation access")).toBeDefined();
       expect(container.querySelector("nav")?.textContent).toBe("Company A");
     });
     const otherCompany = [...container.querySelectorAll("label")].find((label) => label.textContent?.includes("Company B"));
@@ -97,7 +97,7 @@ describe("InstanceAccess company directory", () => {
       return {};
     });
     await act(async () => checkbox!.click());
-    await act(async () => button("Save organization access")!.click());
+    await act(async () => button("Save organisation access")!.click());
     await eventually(() => {
       expect(mocks.setUserCompanyAccess).toHaveBeenCalledWith(user.id, [companyA.id, companyB.id]);
       expect(container.querySelector("nav")?.textContent).toBe("Company A, Company B");
@@ -108,14 +108,14 @@ describe("InstanceAccess company directory", () => {
     mocks.directory.mockRejectedValue(new Error("Unavailable"));
     await renderPage();
     await eventually(() => {
-      expect(container.textContent).toContain("Failed to load organizations.");
+      expect(container.textContent).toContain("Organisations did not load.");
       expect(container.querySelector("nav")?.textContent).toBe("Company A");
     });
-    expect(button("Save organization access")).toBeUndefined();
+    expect(button("Save organisation access")).toBeUndefined();
     expect(mocks.setUserCompanyAccess).not.toHaveBeenCalled();
     mocks.directory.mockResolvedValue([companyA, companyB]);
     await act(async () => button("Try again")!.click());
-    await eventually(() => expect(button("Save organization access")).toBeDefined());
+    await eventually(() => expect(button("Save organisation access")).toBeDefined());
   });
 
   it("does not request the directory when instance administration is forbidden", async () => {

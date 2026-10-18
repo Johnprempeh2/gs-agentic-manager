@@ -1728,7 +1728,7 @@ function OnboardingWizardInner({
     if (companyIdNow === companyIdAtStart || companyIdNow === returnedCompanyId) {
       return true;
     }
-    setError("Organization created, but onboarding switched to another organization.");
+    setError("Your organisation was created, but setup switched to a different organisation. Choose it from the organisation menu to carry on.");
     return false;
   }
 
@@ -1843,7 +1843,7 @@ function OnboardingWizardInner({
       // dashboard) so they land on the conversation the agent will start in.
       navigate(prefix ? `/${prefix}/issues/${issueRef}` : `/issues/${issueRef}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to launch first task");
+      setError(err instanceof Error ? err.message : "Could not start the first task. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -1966,7 +1966,7 @@ function OnboardingWizardInner({
   ): Promise<AdapterEnvironmentTestResult | null> {
     if (!createdCompanyId) {
       setAdapterEnvError(
-        "Create or select an organization before testing adapter environment."
+        "Name your organisation first, then test the connection."
       );
       return null;
     }
@@ -2040,7 +2040,7 @@ function OnboardingWizardInner({
     } catch (err) {
       if (!isCurrent()) return null;
       setAdapterEnvError(
-        err instanceof Error ? err.message : "Adapter environment test failed"
+        err instanceof Error ? err.message : "Connection test failed"
       );
       return null;
     } finally {
@@ -2085,7 +2085,7 @@ function OnboardingWizardInner({
       setSelectedCompanyId(company.id);
       setStep(nextStep);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create organization");
+      setError(`We could not create your organisation. Please try again.${err instanceof Error ? ` (${err.message})` : ""}`);
     } finally {
       creatingCompanyRef.current = false;
       setLoading(false);
@@ -2104,7 +2104,7 @@ function OnboardingWizardInner({
     if (adapterType === "paperclip_runner") {
       setAdapterType("claude_local");
       setModel("");
-      setError("GS Agentic Manager Runner is not available during onboarding. Choose a legacy adapter.");
+      setError("This option is not available during setup yet. Please choose one of the other ways to connect.");
       return;
     }
     if (createdAgentId) {
@@ -2232,8 +2232,8 @@ function OnboardingWizardInner({
         if (blocksAgentCreate(result)) {
           setError(
             result.status === "fail"
-              ? "The environment test failed. Fix the reported checks before you hire this agent."
-              : "No working authentication was found. Fix the reported checks before you hire this agent.",
+              ? "The connection test failed. Fix the items marked below, then try again."
+              : "We could not sign in to your AI provider. Fix the items marked below, then try again.",
           );
           return;
         }
@@ -2314,7 +2314,7 @@ function OnboardingWizardInner({
       setStep(5);
     } catch (err) {
       if (!isCurrent()) return;
-      setError(err instanceof Error ? err.message : "Failed to create agent");
+      setError(err instanceof Error ? err.message : "Could not create the agent. Please try again.");
     } finally {
       if (hiringAgentRef.current === attempt) hiringAgentRef.current = null;
       if (isCurrent()) setLoading(false);
@@ -2363,14 +2363,14 @@ function OnboardingWizardInner({
       const result = await runAdapterEnvironmentTest(configWithUnset);
       if (result?.status === "fail") {
         setError(
-          "Retried with ANTHROPIC_API_KEY unset in adapter config, but the environment test is still failing."
+          "We removed the saved Anthropic key and tested again, but the connection still fails."
         );
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to unset ANTHROPIC_API_KEY and retry."
+          : "We could not remove the saved key. Please try again."
       );
     } finally {
       setUnsetAnthropicLoading(false);
@@ -2633,7 +2633,7 @@ function OnboardingWizardInner({
                       title={
                         <motion.span key={step} {...titleSwapMotion} className="inline-block">
                           {step === 1
-                            ? "What is the name of your organization?"
+                            ? "What is the name of your organisation?"
                             : step === 3
                               ? "Create your first agent"
                               : step === 4
@@ -3058,10 +3058,9 @@ function OnboardingWizardInner({
                       {shouldSuggestUnsetAnthropicApiKey && (
                         <div className="rounded-md border border-amber-300/60 bg-amber-50/40 px-2.5 py-2 space-y-2">
                           <p className="text-(length:--text-micro) text-amber-900/90 leading-relaxed">
-                            Claude failed while{" "}
-                            <span className="font-mono">ANTHROPIC_API_KEY</span>{" "}
-                            is set. You can clear it in this adapter config
-                            and retry the probe.
+                            Claude could not start because an older Anthropic
+                            key (<span className="font-mono">ANTHROPIC_API_KEY</span>)
+                            is saved here. Remove it and test again.
                           </p>
                           <Button
                             size="sm"
@@ -3073,15 +3072,15 @@ function OnboardingWizardInner({
                             onClick={() => void handleUnsetAnthropicApiKey()}
                           >
                             {unsetAnthropicLoading
-                              ? "Retrying..."
-                              : "Unset ANTHROPIC_API_KEY"}
+                              ? "Testing again..."
+                              : "Remove saved key and test again"}
                           </Button>
                         </div>
                       )}
 
                       {adapterEnvResult && adapterEnvResult.status === "fail" && (
-                        <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-(length:--text-micro) space-y-1.5">
-                          <p className="font-medium">Manual debug</p>
+                        <details className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-(length:--text-micro) space-y-1.5">
+                          <summary className="cursor-pointer font-medium">Details for whoever set up this computer</summary>
                           <p className="text-muted-foreground font-mono break-all">
                             {adapterType === "cursor"
                               ? `${effectiveAdapterCommand} -p --mode ask --output-format json \"Respond with hello.\"`
@@ -3136,7 +3135,7 @@ function OnboardingWizardInner({
                               and retry.
                             </p>
                           )}
-                        </div>
+                        </details>
                       )}
                     </div>
                   )}
@@ -3285,8 +3284,8 @@ function AdapterEnvironmentResult({
             key={`${check.code}-${idx}`}
             className="leading-relaxed break-words"
           >
-            <span className="font-medium uppercase tracking-wide">
-              {check.level}
+            <span className="font-medium">
+              {({ error: "Problem", warn: "Check", info: "Note" } as Record<string, string>)[check.level] ?? check.level}
             </span>
             <span className="mx-1 opacity-60">·</span>
             <span>{check.message}</span>

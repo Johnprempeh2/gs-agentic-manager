@@ -724,7 +724,10 @@ describe.sequential("agent skill routes", () => {
     );
   });
 
-  it("rejects version pins while beta skills are disabled", async () => {
+  // GRE-1633: a stored off is ignored (instance-settings tests), but a client
+  // install reads Beta skills off, so its agents run released skills only.
+  it("rejects version pins when Beta skills reads off (client install)", async () => {
+    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBetaSkills: false });
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
@@ -738,11 +741,12 @@ describe.sequential("agent skill routes", () => {
       }));
 
     expect(res.status, JSON.stringify(res.body)).toBe(400);
-    expect(res.body.error).toContain("Beta skills experimental setting");
+    expect(res.body.error).toContain("client installs run released skills only");
     expect(mockAgentService.update).not.toHaveBeenCalled();
   });
 
-  it("accepts version pins while beta skills are enabled", async () => {
+  // Beta skills graduated (GRE-1621): Greatstone and self-hosted read it on.
+  it("accepts version pins when Beta skills reads on (Greatstone and self-hosted)", async () => {
     mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBetaSkills: true });
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
     const versionId = "22222222-2222-4222-8222-222222222222";
@@ -1023,25 +1027,6 @@ describe.sequential("agent skill routes", () => {
         agentRole: "engineer",
       }),
     );
-  });
-
-  it("rejects version pins when creating an agent while beta skills are disabled", async () => {
-    const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
-      .post("/api/companies/company-1/agents")
-      .send({
-        name: "QA Agent",
-        role: "engineer",
-        adapterType: "claude_local",
-        desiredSkills: [{
-          key: "paperclipai/paperclip/paperclip",
-          versionId: "22222222-2222-4222-8222-222222222222",
-        }],
-        adapterConfig: {},
-      }));
-
-    expect(res.status, JSON.stringify(res.body)).toBe(400);
-    expect(res.body.error).toContain("Beta skills experimental setting");
-    expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
   it("accepts the security role on direct agent creation and preserves it in telemetry", async () => {
@@ -1444,26 +1429,6 @@ describe.sequential("agent skill routes", () => {
       adapterConfig: Record<string, unknown>;
     };
     expect(createInput.adapterConfig.paperclipSkillSync).toBeUndefined();
-  });
-
-  it("rejects version pins in agent hires while beta skills are disabled", async () => {
-    const res = await request(await createApp(createDb(true)))
-      .post("/api/companies/company-1/agent-hires")
-      .send({
-        name: "QA Agent",
-        role: "engineer",
-        adapterType: "claude_local",
-        desiredSkills: [{
-          key: "paperclipai/paperclip/paperclip",
-          versionId: "22222222-2222-4222-8222-222222222222",
-        }],
-        adapterConfig: {},
-      });
-
-    expect(res.status, JSON.stringify(res.body)).toBe(400);
-    expect(res.body.error).toContain("Beta skills experimental setting");
-    expect(mockAgentService.create).not.toHaveBeenCalled();
-    expect(mockApprovalService.create).not.toHaveBeenCalled();
   });
 
   it("preserves hire source issues, icons, desired skills, and approval payload details", async () => {

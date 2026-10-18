@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, readCardSummary, readClientRecord } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, averageDaysToWin, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, lostReasonBreakdown, ownerScorecard, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -10,5 +10,195 @@ describe("readClientRecord", () => {
 
   it("prefers an owner set in GSAM over the imported deal owner", () => {
     expect(readClientRecord({ ownerPerson: "John", dealOwner: "Ben Asante" }).owner).toBe("John");
+  });
+});
+
+describe("DevTools clients", () => {
+  it("treats Pipedrive pipelines and the leads inbox as DevTools clients", () => {
+    expect(isDevtoolsCaseType("pipedrive-12")).toBe(true);
+    expect(isDevtoolsCaseType("pipedrive-leads")).toBe(true);
+    expect(isDevtoolsCaseType("client")).toBe(false);
+    expect(isDevtoolsCaseType(null)).toBe(false);
+  });
+
+  it("reads a deal and falls back to lead fields", () => {
+    expect(readDevtoolsDeal({ dealStatus: "Lost", lostOn: "2026-09-01", lostReason: "Budget", dealValue: "900" })).toMatchObject({
+      status: "Lost",
+      closedOn: "2026-09-01",
+      lostReason: "Budget",
+      value: 900,
+    });
+    expect(readDevtoolsDeal({ leadValue: 300, leadCurrency: "EUR", leadOwner: "Ben" })).toMatchObject({
+      value: 300,
+      currency: "EUR",
+      owner: "Ben",
+      status: null,
+    });
+  });
+});
+
+describe("deal value totals", () => {
+  it("sums deal and lead values per currency, largest first, and skips cases with none", () => {
+    const totals = sumDealValues([
+      { fields: { dealValue: 1000, dealCurrency: "GBP" } },
+      { fields: { dealValue: "2500.4", dealCurrency: "GBP" } },
+      { fields: { leadValue: 9000, leadCurrency: "USD" } },
+      { fields: { title: "No value" } },
+      { fields: null },
+    ]);
+    expect(totals).toEqual([
+      { currency: "USD", total: 9000 },
+      { currency: "GBP", total: 3500.4 },
+    ]);
+    expect(formatDealTotals(totals)).toBe("9,000 USD + 3,500 GBP");
+    expect(formatDealTotals(sumDealValues([{ fields: {} }]))).toBe("");
+  });
+});
+
+describe("dealsClosedThisMonth", () => {
+  it("counts deals won or lost this calendar month with their values", () => {
+    const now = new Date("2026-10-16T18:00:00Z");
+    const cases = [
+      { fields: { dealStatus: "Won", wonOn: "2026-10-02", dealValue: 9000, dealCurrency: "USD" } },
+      { fields: { dealStatus: "won", wonOn: "2026-10-15T09:00:00Z", dealValue: 1000, dealCurrency: "USD" } },
+      { fields: { dealStatus: "Won", wonOn: "2026-09-30", dealValue: 5000, dealCurrency: "USD" } },
+      { fields: { dealStatus: "Lost", lostOn: "2026-10-10", dealValue: 2000, dealCurrency: "GBP" } },
+      { fields: { dealStatus: "Open", dealValue: 7000, dealCurrency: "USD" } },
+    ];
+    expect(dealsClosedThisMonth(cases, "won", now)).toEqual({ count: 2, totals: [{ currency: "USD", total: 10000 }] });
+    expect(dealsClosedThisMonth(cases, "lost", now)).toEqual({ count: 1, totals: [{ currency: "GBP", total: 2000 }] });
+  });
+});
+
+describe("weightedDealValues", () => {
+  it("weights each deal by its probability and skips deals without one", () => {
+    expect(
+      weightedDealValues([
+        { fields: { dealValue: 10000, dealCurrency: "GBP", probability: 50 } },
+        { fields: { dealValue: 2000, dealCurrency: "GBP", probability: "25" } },
+        { fields: { dealValue: 4000, dealCurrency: "USD", probability: 100 } },
+        { fields: { dealValue: 9000, dealCurrency: "USD" } },
+        { fields: { dealValue: 1000, dealCurrency: "USD", probability: 150 } },
+      ]),
+    ).toEqual([
+      { currency: "GBP", total: 5500 },
+      { currency: "USD", total: 5000 },
+    ]);
+  });
+});
+
+describe("forecastByCloseMonth", () => {
+  it("groups open deals by expected close month, with overdue, later and no date", () => {
+    const deal = (value: number, expectedCloseDate?: string, extra: Record<string, unknown> = {}) => ({
+      fields: { dealStatus: "Open", dealValue: value, dealCurrency: "GBP", probability: 50, ...(expectedCloseDate ? { expectedCloseDate } : {}), ...extra },
+    });
+    const buckets = forecastByCloseMonth(
+      [
+        deal(1000, "2026-09-30"),
+        deal(2000, "2026-10-20"),
+        deal(3000, "2026-10-28"),
+        deal(4000, "2026-12-01"),
+        deal(5000, "2027-03-01"),
+        deal(6000),
+        deal(7000, "2026-10-01", { dealStatus: "Won" }),
+        { fields: { dealStatus: "Open", expectedCloseDate: "2026-10-05" } },
+      ],
+      new Date("2026-10-17T12:00:00Z"),
+    );
+    expect(buckets.map((bucket) => [bucket.label, bucket.count, bucket.totals[0]?.total ?? 0, bucket.weighted[0]?.total ?? 0])).toEqual([
+      ["Overdue", 1, 1000, 500],
+      ["Oct 2026", 2, 5000, 2500],
+      ["Nov 2026", 0, 0, 0],
+      ["Dec 2026", 1, 4000, 2000],
+      ["Later", 1, 5000, 2500],
+      ["No close date", 1, 6000, 3000],
+    ]);
+  });
+});
+
+describe("dealWinRate and averageDaysInStage", () => {
+  const now = new Date("2026-10-17T12:00:00Z");
+  it("counts deals won and lost in the last 90 days", () => {
+    expect(
+      dealWinRate(
+        [
+          { fields: { dealStatus: "Won", wonOn: "2026-10-01" } },
+          { fields: { dealStatus: "Won", wonOn: "2026-05-01" } },
+          { fields: { dealStatus: "Lost", lostOn: "2026-09-20" } },
+          { fields: { dealStatus: "Lost", lostOn: "2026-08-20" } },
+          { fields: { dealStatus: "Open" } },
+        ],
+        now,
+      ),
+    ).toEqual({ won: 1, lost: 2, percent: 33 });
+    expect(dealWinRate([{ fields: { dealStatus: "Open" } }], now)).toBeNull();
+  });
+
+  it("averages the days in stage", () => {
+    expect(averageDaysInStage([{ stageEnteredAt: "2026-10-07T12:00:00Z" }, { stageEnteredAt: "2026-10-14T12:00:00Z" }, {}], now)).toBe(7);
+    expect(averageDaysInStage([{}], now)).toBeNull();
+  });
+});
+
+describe("dealNextStepLabel", () => {
+  it("shows the next step date and subject for a card", () => {
+    const day = (value: string) => `day ${value}`;
+    expect(dealNextStepLabel({ nextActivityDate: "2026-10-20", nextActivitySubject: "Demo call" }, day)).toBe("day 2026-10-20 · Demo call");
+    expect(dealNextStepLabel({ nextActivityDate: "2026-10-20T09:00:00Z" }, day)).toBe("day 2026-10-20");
+    expect(dealNextStepLabel({ nextActivitySubject: "Demo" }, day)).toBeNull();
+  });
+});
+
+describe("lostReasonBreakdown", () => {
+  it("groups deals lost in the last 90 days by reason, most common first", () => {
+    const lost = (lostReason: string | null, lostOn: string, dealValue = 1000) => ({
+      fields: { dealStatus: "Lost", lostOn, dealValue, dealCurrency: "GBP", ...(lostReason ? { lostReason } : {}) },
+    });
+    expect(
+      lostReasonBreakdown(
+        [lost("Price", "2026-10-01"), lost("Price", "2026-09-01", 500), lost(null, "2026-10-10"), lost("Timing", "2026-05-01"), { fields: { dealStatus: "Won", wonOn: "2026-10-01" } }],
+        new Date("2026-10-17T12:00:00Z"),
+      ),
+    ).toEqual([
+      { reason: "Price", count: 2, totals: [{ currency: "GBP", total: 1500 }] },
+      { reason: "No reason given", count: 1, totals: [{ currency: "GBP", total: 1000 }] },
+    ]);
+  });
+});
+
+describe("ownerScorecard", () => {
+  it("groups deals by owner with open value, late next steps and win rate", () => {
+    const now = new Date("2026-10-18T09:00:00Z");
+    const rows = ownerScorecard(
+      [
+        { fields: { dealOwner: "Ann", dealStatus: "open", dealValue: 1000, dealCurrency: "GBP", probability: 50, nextActivityDate: "2026-10-10" } },
+        { fields: { dealOwner: "Ann", dealStatus: "won", dealValue: 500, dealCurrency: "GBP", wonOn: "2026-10-01" } },
+        { fields: { dealOwner: "Ann", dealStatus: "lost", dealValue: 500, dealCurrency: "GBP", lostOn: "2026-09-20" } },
+        { fields: { dealOwner: "Ben", dealStatus: "open", dealValue: 3000, dealCurrency: "GBP", nextActivityDate: "2026-10-20" } },
+        { fields: { dealStatus: "open", dealValue: 200, dealCurrency: "GBP" } },
+        { fields: { dealOwner: "Cat", dealStatus: "lost", lostOn: "2025-01-01" } },
+      ],
+      now,
+    );
+    expect(rows.map((row) => [row.owner, row.open, row.openTotals[0]?.total, row.overdueNextSteps, row.winRate])).toEqual([
+      ["Ben", 1, 3000, 0, null],
+      ["Ann", 1, 1000, 1, 50],
+      ["No owner", 1, 200, 0, null],
+    ]);
+    expect(rows[1]!.weighted).toEqual([{ currency: "GBP", total: 500 }]);
+  });
+});
+
+describe("averageDaysToWin", () => {
+  const now = new Date("2026-10-17T12:00:00Z");
+  it("averages added-to-won days over deals won in the last 90 days", () => {
+    expect(averageDaysToWin([
+      { fields: { dealStatus: "Won", addedOn: "2026-09-01", wonOn: "2026-10-01" } },
+      { fields: { dealStatus: "Won", addedOn: "2026-09-21", wonOn: "2026-10-01" } },
+      { fields: { dealStatus: "Won", addedOn: "2026-01-01", wonOn: "2026-05-01" } },
+      { fields: { dealStatus: "Lost", addedOn: "2026-09-01", lostOn: "2026-10-01" } },
+      { fields: { dealStatus: "Won", wonOn: "2026-10-01" } },
+    ], now)).toEqual({ deals: 2, days: 20 });
+    expect(averageDaysToWin([{ fields: { dealStatus: "Open", addedOn: "2026-09-01" } }], now)).toBeNull();
   });
 });

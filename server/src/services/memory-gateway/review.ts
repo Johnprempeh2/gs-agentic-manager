@@ -45,12 +45,14 @@ import {
   authorRefusal,
   insertRelationship,
   insertReviewEvent,
+  loadChainAuthorLinks,
   loadEditChain,
   type MemoryReviewActor,
 } from "./review-store.js";
 import {
   DIRECT_RETAIN_GRACE_MS,
   grantedScopeIds,
+  isExternalApp,
   grantCovers,
   isHardBoundary,
   toRecord,
@@ -85,7 +87,11 @@ const REFUSALS = {
   no_delete_right: "You do not have the right to delete this record",
   no_contribute_right: "You do not have the right to add relationships in this scope",
   no_retention_right: "Only the company owner or a memory admin can run retention",
+  external_app: "An app outside GSAM can read and propose only. A person confirms, disputes, retires or deletes in GSAM.",
 } as const;
+
+/** A versioned write against a card that changed since the caller read it (GRE-1081). */
+export const MEMORY_STALE_VERSION_MESSAGE = "This card changed since you read it. Read it again and retry with its current version.";
 type Refusal = keyof typeof REFUSALS;
 
 function toEvent(row: typeof memoryReviewEvents.$inferSelect): MemoryReviewEvent {
@@ -167,7 +173,9 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     for (const row of rows) {
       const chain = await loadEditChain(db, caller.companyId, row);
       if (!chain) await refuse(caller, operation, "incomplete_history", audit);
-      if (authorRefusal(caller, chain!)) await refuse(caller, operation, "own_entry", audit);
+      if (authorRefusal(caller, chain!, await loadChainAuthorLinks(db, caller.companyId, chain!))) {
+        await refuse(caller, operation, "own_entry", audit);
+      }
     }
   }
 
@@ -199,6 +207,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     scope: ScopeRow,
     decisionClass: string,
   ): Promise<Refusal | null> {
+    if (isExternalApp(caller)) return "external_app";
     if (scope.kind === "agent") return "working_notes";
     if (access.isOwner) return null;
     if (isHardBoundary(scope.kind)) return "owner_only";
@@ -233,9 +242,12 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
       throw conflict(`A ${row.status} record cannot be reviewed`);
     }
     const target: MemoryRecordStatus = input.action === "approve" ? "approved" : "disputed";
-    if (row.status === target) throw conflict(`The record is already ${target}`);
     const refusal = await reviewRefusal(caller, access, scope, row.decisionClass);
     if (refusal) await refuse(caller, operation, refusal, audit);
+    if (input.expectedVersion !== undefined && input.expectedVersion !== row.version) {
+      await refuseStale(caller, operation, audit, input.expectedVersion, row);
+    }
+    if (row.status === target) throw conflict(`The record is already ${target}`);
     if (input.action === "approve") await refuseIfAuthor(caller, operation, [row], audit);
 
     if (input.action === "approve") {
@@ -254,10 +266,11 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
 
     const now = new Date();
     const updated = await db.transaction(async (tx) => {
+      // The version moves on with the status, so a call made against the old card is refused (GRE-1081).
       const [next] = await tx
         .update(memoryRecords)
-        .set({ status: target, reviewedAt: now, updatedAt: now })
-        .where(and(eq(memoryRecords.id, row.id), eq(memoryRecords.status, row.status)))
+        .set({ status: target, version: row.version + 1, reviewedAt: now, updatedAt: now })
+        .where(and(eq(memoryRecords.id, row.id), eq(memoryRecords.status, row.status), eq(memoryRecords.version, row.version)))
         .returning();
       if (!next) return null;
       await insertReviewEvent(tx, caller, row, {
@@ -269,9 +282,24 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
       });
       return next;
     });
-    if (!updated) throw conflict("The record changed while it was reviewed; read it again");
+    if (!updated) await refuseStale(caller, operation, audit, input.expectedVersion ?? row.version, row);
     await logOperation(caller, operation, "ok", { ...audit, detail: { from: row.status, to: target } });
-    return toRecord(updated, scope);
+    return toRecord(updated!, scope);
+  }
+
+  /** Refuses a write made against a version the card has moved past, with an audit row. */
+  async function refuseStale(
+    caller: MemoryCaller,
+    operation: string,
+    audit: { scopeIds: string[]; recordId: string },
+    expectedVersion: number,
+    row: RecordRow,
+  ): Promise<never> {
+    await logOperation(caller, operation, "denied", {
+      ...audit,
+      detail: { reason: "stale_version", expectedVersion, version: row.version, status: row.status },
+    });
+    throw conflict(MEMORY_STALE_VERSION_MESSAGE);
   }
 
   /**
@@ -297,12 +325,13 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
         effectiveTo: old.effectiveTo ?? replacement.effectiveFrom ?? now,
         updatedAt: now,
       })
-      .where(and(eq(memoryRecords.id, old.id), eq(memoryRecords.status, old.status)))
+      .where(and(eq(memoryRecords.id, old.id), eq(memoryRecords.status, old.status), eq(memoryRecords.version, old.version)))
       .returning();
     if (!oldNext) return null;
+    // Numbered after the card it replaces, and never back to a version a caller already saw (GRE-1081).
     const [replacementNext] = await tx
       .update(memoryRecords)
-      .set({ status: "approved", supersedesId: old.id, version: old.version + 1, reviewedAt: now, updatedAt: now })
+      .set({ status: "approved", supersedesId: old.id, version: Math.max(old.version, replacement.version) + 1, reviewedAt: now, updatedAt: now })
       .where(and(eq(memoryRecords.id, replacement.id), eq(memoryRecords.status, replacement.status)))
       .returning();
     if (!replacementNext) throw conflict("The replacement changed while it was reviewed; read it again");
@@ -388,6 +417,9 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     for (const decisionClass of new Set([old.decisionClass, replacement.decisionClass])) {
       const refusal = await reviewRefusal(caller, access, scope, decisionClass);
       if (refusal) await refuse(caller, operation, refusal, audit);
+    }
+    if (input.expectedVersion !== undefined && input.expectedVersion !== old.version) {
+      await refuseStale(caller, operation, audit, input.expectedVersion, old);
     }
     await refuseIfAuthor(caller, operation, [replacement], audit);
 
@@ -494,6 +526,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     const operation = "delete";
     const { row, scope, access } = await loadReadable(caller, recordId, operation);
     const audit = { scopeIds: [scope.id], recordId: row.id };
+    if (isExternalApp(caller)) await refuse(caller, operation, "external_app", audit);
     if (row.status === "deleted") return toRecord(row, scope);
     const allowed = access.isOwner || access.ownsAgentScope(scope) || grantCovers(access.grants, "memory:delete", scope);
     if (!allowed) await refuse(caller, operation, "no_delete_right", audit);
@@ -952,7 +985,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
 
   return {
     /** For the steward actions (steward-actions.ts) only. */
-    internals: { reviewRefusal, applySupersede, loadReadable, refuse },
+    internals: { reviewRefusal, applySupersede, loadReadable, refuse, refuseStale },
     review,
     supersede,
     deleteRecord,

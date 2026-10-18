@@ -675,6 +675,70 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(byAgentModelRow?.costCents).toBe(4_000_000_000);
   });
 
+  it("groups cost events by billing code and counts tasks each agent finished", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `B${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Billing Agent",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    const base = {
+      companyId,
+      agentId,
+      provider: "openai",
+      biller: "openai",
+      billingType: "metered_api",
+      model: "gpt-5",
+      inputTokens: 10,
+      cachedInputTokens: 0,
+      outputTokens: 5,
+      occurredAt: new Date("2026-04-10T00:00:00.000Z"),
+    };
+    await db.insert(costEvents).values([
+      { ...base, billingCode: "ACME-1", costCents: 100 },
+      { ...base, billingCode: "ACME-1", costCents: 50 },
+      { ...base, billingCode: "BETA-2", costCents: 400 },
+      { ...base, billingCode: null, costCents: 999 },
+      { ...base, billingCode: "", costCents: 999 },
+    ]);
+
+    await db.insert(issues).values([
+      { companyId, title: "Done in range", status: "done", assigneeAgentId: agentId, completedAt: new Date("2026-04-12T00:00:00.000Z") },
+      { companyId, title: "Done in range too", status: "done", assigneeAgentId: agentId, completedAt: new Date("2026-04-13T00:00:00.000Z") },
+      { companyId, title: "Done last month", status: "done", assigneeAgentId: agentId, completedAt: new Date("2026-03-12T00:00:00.000Z") },
+      { companyId, title: "Still open", status: "todo", assigneeAgentId: agentId },
+    ]);
+    const [agentRow] = await costs.byAgent(companyId, {
+      from: new Date("2026-04-01T00:00:00.000Z"),
+      to: new Date("2026-04-30T23:59:59.999Z"),
+    });
+    expect(agentRow?.tasksDone).toBe(2);
+
+    const rows = await costs.byBillingCode(companyId, {
+      from: new Date("2026-04-01T00:00:00.000Z"),
+      to: new Date("2026-04-30T23:59:59.999Z"),
+    });
+
+    expect(rows.map((row) => [row.billingCode, row.costCents, row.eventCount])).toEqual([
+      ["BETA-2", 400, 1],
+      ["ACME-1", 150, 2],
+    ]);
+  });
+
   it("aggregates issue costs across recursive descendants only", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();

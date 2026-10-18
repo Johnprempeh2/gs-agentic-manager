@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import {
   activityLog,
   agents,
+  authUsers,
   companies,
   companyMemberships,
   createDb,
@@ -43,6 +44,9 @@ const recordedPages = (): Pages => ({
   persons: { 0: recorded.personsPage1, 2: recorded.personsPage2 },
 });
 
+/** Reads these tests do not cover: no person fields, users or deals on the account. */
+const NO_DEAL_PATHS = new Set(["/api/v1/personFields", "/api/v1/pipelines", "/api/v1/stages", "/api/v1/users", "/api/v1/dealFields", "/api/v1/deals", "/api/v1/activities", "/api/v1/notes", "/api/v1/callLogs"]);
+
 /** Answers v1 list calls from recorded pages by `start`. Records every call so tests can prove nothing is written. */
 function fakePipedrive(pages: () => Pages) {
   const calls: Array<{ method: string; url: string }> = [];
@@ -57,7 +61,9 @@ function fakePipedrive(pages: () => Pages) {
         ? current.organizations[start]
         : parsed.pathname === "/api/v1/persons"
           ? current.persons[start]
-          : undefined;
+          : NO_DEAL_PATHS.has(parsed.pathname)
+            ? { success: true, data: [] }
+            : undefined;
     return {
       status: body ? 200 : 404,
       headers: { get: () => null },
@@ -209,6 +215,7 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
     await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companies);
+    await db.delete(authUsers);
     await db.delete(instanceSettings);
   });
 
@@ -288,7 +295,8 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
     const first = await request(app(owner, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(first.status).toBe(200);
     expect(first.body.organisations).toEqual({ created: 3, updated: 0, skipped: 1, errors: 0 });
-    expect(first.body.contacts).toEqual({ created: 3, updated: 0, skipped: 2, errors: 0 });
+    // Everyone comes across, including people with no organisation or one that was not imported.
+    expect(first.body.contacts).toEqual({ created: 5, updated: 0, skipped: 0, errors: 0 });
 
     const rows = await db.select().from(organisations).where(eq(organisations.companyId, companyId));
     expect(rows.map((row) => [row.externalId, row.name, row.status, row.source]).sort()).toEqual([
@@ -301,6 +309,22 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
       .then((found) => found[0]!);
     expect(esi).toMatchObject({ name: "Esi Boateng", role: "Chief Financial Officer", email: "esi@example.test", source: "pipedrive" });
     expect(esi.organisationId).toBe(rows.find((row) => row.externalId === "101")!.id);
+    const unassigned = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts/unassigned`);
+    expect(unassigned.status).toBe(200);
+    expect(unassigned.body.map((person: { name: string; organisationId: string | null }) => [person.name, person.organisationId])).toEqual([
+      ["Lone Freelancer", null],
+      ["Wanjiru Kamau", null],
+    ]);
+    // The people search finds anyone by name, email or organisation, with their organisation's name.
+    const byOrg = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=northwind`);
+    expect(byOrg.status).toBe(200);
+    expect(byOrg.body.map((person: { name: string }) => person.name)).toContain("Esi Boateng");
+    expect(byOrg.body.every((person: { organisationName: string | null }) => person.organisationName?.startsWith("Northwind"))).toBe(true);
+    const byEmail = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=esi@example`);
+    expect(byEmail.body.map((person: { name: string }) => person.name)).toEqual(["Esi Boateng"]);
+    const lone = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=lone`);
+    expect(lone.body).toEqual([expect.objectContaining({ name: "Lone Freelancer", organisationName: null })]);
+    expect((await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=e`)).status).toBe(400);
 
     // Read only: every call to Pipedrive is a GET.
     expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
@@ -331,6 +355,63 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
 
     const audit = await db.select().from(activityLog).where(eq(activityLog.action, "organisation.import_completed"));
     expect(audit).toHaveLength(3);
+    // Each run logs every count it made, so Integrations can say what a re-import changed.
+    const latest = audit.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!;
+    expect(latest.details).toMatchObject({
+      source: "pipedrive",
+      organisations: expect.objectContaining({ skipped: expect.any(Number) }),
+      contacts: expect.objectContaining({ created: expect.any(Number) }),
+      errorCount: expect.any(Number),
+    });
+    expect(latest.details).not.toHaveProperty("errorSamples");
+    expect(latest.details).not.toHaveProperty("startedAt");
+  });
+
+  it("links each organisation's Pipedrive owner to the GSAM member with the same email", async () => {
+    const companyId = await seedCompany();
+    const owner = await seedMember(companyId, "owner");
+    const connectionId = await seedConnection(companyId);
+    const now = new Date();
+    const member = async (name: string, email: string, status = "active") => {
+      const userId = `user-${randomUUID().slice(0, 8)}`;
+      await db.insert(authUsers).values({ id: userId, name, email, createdAt: now, updatedAt: now });
+      await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: userId, status, membershipRole: "operator" });
+      return userId;
+    };
+    const ama = await member("Ama Owusu", "Ama@Example.test");
+    const kofi = await member("Kofi Mensah", "kofi@example.test");
+    let pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+    // Blue Harbour's owner comes as a bare link, so the email is found in the users list.
+    const fetch: PipedriveFetch = async (url, init) => new URL(url).pathname === "/api/v1/users"
+      ? {
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ success: true, data: [{ id: 9001, name: "Ama Owusu", email: "ama@example.test" }, { id: 9002, name: "Kofi Mensah", email: "kofi@example.test" }] }),
+      }
+      : pipedrive.fetch(url, init);
+
+    const first = await request(app(owner, fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    const ownersOf = async () => new Map((await db.select().from(organisations).where(eq(organisations.companyId, companyId)))
+      .map((row) => [row.externalId, [row.countryOwner, row.countryOwnerUserId]]));
+    expect(await ownersOf()).toEqual(new Map([
+      ["101", ["Ama Owusu", ama]],
+      ["102", ["Kofi Mensah", kofi]],
+      ["103", [null, null]],
+    ]));
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+
+    const rerun = await request(app(owner, fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.organisations).toEqual({ created: 0, updated: 0, skipped: 4, errors: 0 });
+
+    // Pipedrive hands the organisation to someone with no GSAM account: the old member is unlinked.
+    const changed = structuredClone(recorded.organizationsPage1);
+    changed.data[1].owner_id = { id: 9004, name: "New Starter", value: 9004 };
+    pages = { ...recordedPages(), organizations: { ...recordedPages().organizations, 0: changed } };
+    const third = await request(app(owner, fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(third.body.organisations).toEqual({ created: 0, updated: 1, skipped: 3, errors: 0 });
+    expect((await ownersOf()).get("102")).toEqual(["New Starter", null]);
   });
 
   it("fills CRM fields from Pipedrive on a rerun but never blanks what was typed in GSAM (GRE-1539)", async () => {

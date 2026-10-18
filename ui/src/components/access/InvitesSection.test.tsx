@@ -82,6 +82,7 @@ describe("InvitesSection", () => {
   });
 
   beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     container = document.createElement("div");
     document.body.appendChild(container);
 
@@ -238,6 +239,46 @@ describe("InvitesSection", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it("shares a new invite from the phone's share sheet", async () => {
+    const nav = navigator as unknown as { share?: (data: ShareData) => Promise<void> };
+    const share = vi.fn(async () => {});
+    nav.share = share;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      await act(async () => {
+        root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={queryClient}>
+              <InvitesSection />
+            </QueryClientProvider>
+          </MemoryRouter>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+      const createButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Create invite");
+      await act(async () => {
+        createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flushReact();
+      await flushReact();
+      const shareButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Share invite");
+      await act(async () => {
+        shareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      expect(share).toHaveBeenCalledWith({
+        title: "Join GS Agentic Manager on GS Agentic Manager",
+        text: "You're invited to join GS Agentic Manager on GS Agentic Manager: https://paperclip.local/invite/new-token",
+      });
+    } finally {
+      delete nav.share;
+      await act(async () => {
+        root.unmount();
+      });
+    }
   });
 
   it("falls back to selectable text when browser clipboard access is unavailable", async () => {

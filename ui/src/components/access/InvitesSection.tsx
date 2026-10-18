@@ -10,13 +10,15 @@ import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/context/ConfirmContext";
+import { ShareTextButton } from "@/components/ShareTextButton";
 
 const inviteRoleOptions = [
   {
     value: "viewer",
     label: "Viewer",
-    description: "Can view organization work and follow along.",
-    gets: "View-only organization membership.",
+    description: "Can see your organisation's work and follow along.",
+    gets: "View-only organisation membership.",
   },
   {
     value: "operator",
@@ -33,7 +35,7 @@ const inviteRoleOptions = [
   {
     value: "owner",
     label: "Owner",
-    description: "Full organization access, including membership management.",
+    description: "Full access, including who can join.",
     gets: "Everything in Admin, plus managing members.",
   },
 ] as const;
@@ -47,7 +49,8 @@ function isInviteHistoryRow(value: unknown): value is Awaited<ReturnType<typeof 
 
 /** The Invites tab of the Members page (extracted from the former standalone Invites page). */
 export function InvitesSection() {
-  const { selectedCompanyId } = useCompany();
+  const confirm = useConfirm();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [humanRole, setHumanRole] = useState<"owner" | "admin" | "operator" | "viewer">("operator");
@@ -128,7 +131,7 @@ export function InvitesSection() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to create invite",
+        title: "Could not create the invite",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -143,7 +146,7 @@ export function InvitesSection() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to revoke invite",
+        title: "Could not revoke the invite",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -151,7 +154,7 @@ export function InvitesSection() {
   });
 
   if (!selectedCompanyId) {
-    return <div className="text-sm text-muted-foreground">Select an organization to manage invites.</div>;
+    return <div className="text-sm text-muted-foreground">Choose an organisation to manage invites.</div>;
   }
 
   if (invitesQuery.isLoading) {
@@ -161,17 +164,17 @@ export function InvitesSection() {
   if (invitesQuery.error) {
     const message =
       invitesQuery.error instanceof ApiError && invitesQuery.error.status === 403
-        ? "You do not have permission to manage organization invites."
+        ? "Only organisation owners can send or cancel invites."
         : invitesQuery.error instanceof Error
           ? invitesQuery.error.message
-          : "Failed to load invites.";
+          : "Could not load invites.";
     return <div className="text-sm text-destructive">{message}</div>;
   }
 
   return (
     <div className="max-w-6xl space-y-8">
       <p className="max-w-3xl text-sm text-muted-foreground">
-        Invite people to request access to this organization. New invite links are copied to your clipboard when they are
+        Invite people to request access to this organisation. New invite links are copied to your clipboard when they are
         generated.
       </p>
 
@@ -271,6 +274,11 @@ export function InvitesSection() {
                 <Copy className="h-4 w-4" />
                 Copy link
               </Button>
+              <ShareTextButton
+                label="Share invite"
+                title={`Join ${selectedCompany?.name || "us"} on GS Agentic Manager`}
+                getText={() => `You're invited to join ${selectedCompany?.name || "us"} on GS Agentic Manager: ${latestInviteUrl}`}
+              />
             </div>
           </div>
         ) : null}
@@ -291,7 +299,7 @@ export function InvitesSection() {
 
         {inviteHistory.length === 0 ? (
           <div className="border-t border-border px-5 py-8 text-sm text-muted-foreground">
-            No invites have been created for this organization yet.
+            No invites have been created for this organisation yet.
           </div>
         ) : (
           <div className="border-t border-border">
@@ -339,7 +347,15 @@ export function InvitesSection() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => revokeMutation.mutate(invite.id)}
+                            onClick={async () => {
+                              const confirmed = await confirm({
+                                title: "Revoke this invite?",
+                                description: "The link stops working. You can send a new invite later.",
+                                confirmLabel: "Revoke invite",
+                                tone: "destructive",
+                              });
+                              if (confirmed) revokeMutation.mutate(invite.id);
+                            }}
                             disabled={revokeMutation.isPending}
                           >
                             Revoke

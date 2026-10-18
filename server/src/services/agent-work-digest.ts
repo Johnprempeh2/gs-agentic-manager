@@ -36,6 +36,8 @@ export const HOUSEKEEPING_ISSUE_ORIGIN_KINDS = [
   "issue_productivity_review",
   "harness_liveness_escalation",
   "skill_test",
+  // The lead agent's standing "Daily digest" task: the platform writes to it nightly.
+  "agent_daily_digest",
 ] as const;
 
 const FAILED_RUN_STATUSES = ["failed", "timed_out"] as const;

@@ -1,13 +1,17 @@
 import { and, count, desc, eq, ilike, inArray, lt, or, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { assets, generatedImages, issues, organisations } from "@greatstone/db";
+import { assets, generatedImages, issues, organisations, studioLooks } from "@greatstone/db";
 import {
   composeImagePrompt,
+  composeStoryboardPrompt,
+  hasStudioCamera,
   imageAltText,
   createGeneratedImageSchema,
+  createGeneratedImageVariationsSchema,
   generatedImagesQuerySchema,
   GENERATED_IMAGES_MAX_PENDING_PER_COMPANY,
   type CreateGeneratedImage,
+  type CreateGeneratedImageVariations,
   type GeneratedImage,
   type GeneratedImageCovers,
   type GeneratedImagesQuery,
@@ -16,12 +20,15 @@ import {
   type ImageAspectRatio,
   type ImageGenerationProviderId,
   type ImageStylePresetId,
+  type StudioCameraSettings,
   type UpdateGeneratedImageCover,
+  type UpdateGeneratedImageFavourite,
 } from "@greatstone/shared";
 import { notFound, tooManyRequests, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 import { logActivity } from "./activity-log.js";
+import { applyStudioLook } from "./studio-looks.js";
 import { resolveImageGenerationProvider } from "./image-generation/registry.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "./image-generation/types.js";
 
@@ -61,6 +68,7 @@ export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageL
     prompt: row.prompt,
     aspectRatio: row.aspectRatio as ImageAspectRatio,
     style: (row.style as ImageStylePresetId | null) ?? null,
+    camera: (row.camera as StudioCameraSettings | null) ?? null,
     provider: row.provider as ImageGenerationProviderId,
     model: row.model,
     status: row.status as GeneratedImageStatus,
@@ -74,6 +82,7 @@ export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageL
     altText: imageAltText(row.prompt, row.style),
     issueCover: row.issueCover,
     organisationCover: row.organisationCover,
+    favourite: row.favourite,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -134,7 +143,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     activeJobs.add(row.id);
     try {
       const result = await provider.generate({
-        prompt: composeImagePrompt(row.prompt, row.style),
+        prompt: composeImagePrompt(row.prompt, row.style, row.camera as StudioCameraSettings | null),
         aspectRatio: row.aspectRatio as ImageAspectRatio,
       });
       const stored = await storage.putFile({
@@ -284,11 +293,13 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     }
   }
 
-  return {
+  const service = {
     status: () => resolveProvider(),
 
     create: async (companyId: string, input: CreateGeneratedImage, actor: GeneratedImageActor) => {
       const parsed = createGeneratedImageSchema.parse(input);
+      const look = parsed.lookId ? await applyStudioLook(db, companyId, parsed.lookId, parsed) : null;
+      if (look) Object.assign(parsed, { prompt: look.prompt, style: look.style, camera: look.camera });
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
       const provider = resolveProvider();
@@ -316,6 +327,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           prompt: parsed.prompt,
           aspectRatio: parsed.aspectRatio,
           style: parsed.style ?? null,
+          camera: hasStudioCamera(parsed.camera) ? parsed.camera : null,
           issueId,
           organisationId,
           provider: provider.id,
@@ -342,6 +354,8 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           model: provider.model,
           aspectRatio: parsed.aspectRatio,
           style: parsed.style ?? null,
+          camera: hasStudioCamera(parsed.camera) ? parsed.camera : null,
+          lookId: look?.lookId ?? null,
           issueId,
           organisationId,
         },
@@ -351,12 +365,13 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     },
 
     list: async (companyId: string, query: Partial<GeneratedImagesQuery> = {}): Promise<GeneratedImagesResponse> => {
-      const { limit, offset, q, issueId, organisationId } = generatedImagesQuerySchema.parse(query);
+      const { limit, offset, q, issueId, organisationId, favourite } = generatedImagesQuerySchema.parse(query);
       await failLostJobs(companyId);
       const filters: SQL[] = [eq(generatedImages.companyId, companyId)];
       if (q) filters.push(ilike(generatedImages.prompt, `%${q.replace(/[\\%_]/g, (match) => `\\${match}`)}%`));
       if (issueId) filters.push(eq(generatedImages.issueId, issueId));
       if (organisationId) filters.push(eq(generatedImages.organisationId, organisationId));
+      if (favourite !== undefined) filters.push(eq(generatedImages.favourite, favourite));
       const where = and(...filters);
       const [rows, [{ total }]] = await Promise.all([
         db
@@ -437,6 +452,19 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       return updated;
     },
 
+    /** Star or unstar an image as a favourite. Only a finished image can be starred. */
+    setFavourite: async (row: GeneratedImageRow, patch: UpdateGeneratedImageFavourite) => {
+      if (patch.favourite && (row.status !== "completed" || !row.assetId)) {
+        throw unprocessable("Only a finished image can be a favourite", { code: "generated_image_not_ready" });
+      }
+      return db
+        .update(generatedImages)
+        .set({ favourite: patch.favourite, updatedAt: new Date() })
+        .where(eq(generatedImages.id, row.id))
+        .returning()
+        .then((rows) => rows[0] ?? row);
+    },
+
     /** Every cover in the company, keyed by task id and by client id, for the boards. */
     covers: async (companyId: string): Promise<GeneratedImageCovers> => {
       const rows = await db
@@ -486,7 +514,48 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       }
       return row;
     },
+
+    /**
+     * Several takes on one brief at once: `count` copies, one per house look,
+     * or one per storyboard shot. Every look and the pending cap are checked before any is made, so
+     * a request either starts all of its pictures or none.
+     */
+    createVariations: async (companyId: string, input: CreateGeneratedImageVariations, actor: GeneratedImageActor) => {
+      const { count: takes, lookIds, shots, ...request } = createGeneratedImageVariationsSchema.parse(input);
+      const takesWanted = takes ?? shots?.length ?? 0;
+      const looks: Array<string | null> = lookIds ?? Array.from({ length: takesWanted }, () => request.lookId ?? null);
+      if (lookIds) {
+        const found = await db
+          .select({ id: studioLooks.id })
+          .from(studioLooks)
+          .where(and(eq(studioLooks.companyId, companyId), inArray(studioLooks.id, lookIds)));
+        if (found.length !== lookIds.length) {
+          throw unprocessable("That look is not in this organisation", { code: "studio_look_not_found" });
+        }
+      }
+      await failLostJobs(companyId);
+      const [{ pending }] = await db
+        .select({ pending: count() })
+        .from(generatedImages)
+        .where(and(eq(generatedImages.companyId, companyId), eq(generatedImages.status, "pending")));
+      if (Number(pending) + looks.length > GENERATED_IMAGES_MAX_PENDING_PER_COMPANY) {
+        const free = Math.max(0, GENERATED_IMAGES_MAX_PENDING_PER_COMPANY - Number(pending));
+        throw tooManyRequests(
+          free === 0
+            ? `${GENERATED_IMAGES_MAX_PENDING_PER_COMPANY} images are already being made. Wait for one to finish, then try again.`
+            : `Only ${free} more ${free === 1 ? "image" : "images"} can start now. Ask for fewer, or wait for some to finish.`,
+          { code: "image_generation_busy" },
+        );
+      }
+      const images = [];
+      for (const [index, lookId] of looks.entries()) {
+        const prompt = shots ? composeStoryboardPrompt(shots[index]!, request.prompt) : request.prompt;
+        images.push(await service.create(companyId, { ...request, prompt, lookId }, actor));
+      }
+      return { images };
+    },
   };
+  return service;
 }
 
 /** Test hook: lets a test wait until every queued image job has settled. */

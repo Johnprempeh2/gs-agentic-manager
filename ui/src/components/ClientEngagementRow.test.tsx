@@ -6,11 +6,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientEngagement } from "@greatstone/shared";
 import { fireFiles } from "../fixtures/fileEvents";
-import { ClientEngagementRow, engagementSummary } from "./ClientEngagementRow";
+import { ClientEngagementRow, engagementSummary, onlineLinkSummary } from "./ClientEngagementRow";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const api = vi.hoisted(() => ({ setCaseEngagement: vi.fn(), uploadEngagementFile: vi.fn() }));
+const api = vi.hoisted(() => ({
+  setCaseEngagement: vi.fn(),
+  uploadEngagementFile: vi.fn(),
+  createEngagementLink: vi.fn(),
+  revokeEngagementLink: vi.fn(),
+}));
 const pushToast = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/pipelines", () => ({ pipelinesApi: api }));
@@ -122,5 +127,53 @@ describe("ClientEngagementRow", () => {
     expect(button("Upload the pack")).toBeUndefined();
     expect(button("Replace the signed acceptance")).toBeDefined();
     expect(engagementSummary(accepted, true)).toMatch(/^Accepted .+, sent .+\.$/);
+  });
+
+  const sentWithPack: ClientEngagement = {
+    ...notSent,
+    status: "sent",
+    sentAt: "2026-10-10T09:00:00.000Z",
+    pack: { evidenceId: "ev-1", title: "Pack.pdf", contentPath: "/api/x", uploadedAt: "2026-10-10T09:00:00.000Z" },
+  };
+
+  it("makes an online acceptance link and shows it once to copy", async () => {
+    api.createEngagementLink.mockResolvedValue({
+      url: "https://gsam.example.com/accept/gsa_accept_abc",
+      path: "/accept/gsa_accept_abc",
+      link: { id: "l1", createdAt: "2026-10-16T09:00:00.000Z", expiresAt: "2026-11-15T09:00:00.000Z", expired: false, acceptedAt: null, acceptedName: null, acceptedRole: null, acceptedEmail: null },
+    });
+    render(sentWithPack, true);
+    const online = container.querySelector("[data-testid='journey-engagement-online']")!;
+    expect(online.textContent).toContain("accept it without signing in");
+    const make = [...online.querySelectorAll("button")].find((button) => button.textContent?.includes("Make an acceptance link"))!;
+    await act(async () => make.click());
+    await flush();
+    expect(api.createEngagementLink).toHaveBeenCalledWith("case-1");
+    const url = container.querySelector<HTMLInputElement>("[data-testid='journey-engagement-online-url']")!;
+    expect(url.value).toBe("https://gsam.example.com/accept/gsa_accept_abc");
+  });
+
+  it("hides the online link until the pack is uploaded and the NDA cleared", () => {
+    render(notSent, true);
+    expect(container.querySelector("[data-testid='journey-engagement-online']")).toBeNull();
+    render(sentWithPack, false);
+    expect(container.querySelector("[data-testid='journey-engagement-online']")).toBeNull();
+  });
+
+  it("says who accepted online", () => {
+    const link = {
+      id: "l1",
+      createdAt: "2026-10-16T09:00:00.000Z",
+      expiresAt: "2026-11-15T09:00:00.000Z",
+      expired: false,
+      acceptedAt: "2026-10-17T09:00:00.000Z",
+      acceptedName: "Ada Mensah",
+      acceptedRole: "Chief Executive",
+      acceptedEmail: "ada@omni.com",
+    };
+    expect(onlineLinkSummary(link)).toMatch(/^Accepted online by Ada Mensah, Chief Executive \(ada@omni\.com\) on /);
+    render({ ...sentWithPack, status: "accepted", acceptedAt: link.acceptedAt, onlineLink: link }, true);
+    expect(container.querySelector("[data-testid='journey-engagement-online']")!.textContent).toContain("Ada Mensah");
+    expect(onlineLinkSummary({ ...link, acceptedAt: null, expired: true })).toContain("expired");
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@greatstone/shared";
 import { projectsApi } from "../api/projects";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -13,7 +14,12 @@ import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { formatDate, formatNumber, formatProjectBudget, projectUrl } from "../lib/utils";
+import { formatDate, formatProjectBudget, projectUrl } from "../lib/utils";
+import { isProjectLate, projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "../lib/projects-text";
+import { downloadTextFile } from "../lib/issues-csv";
+import { projectProgress } from "../lib/project-progress";
+import { exportFileName, localToday } from "../lib/spreadsheet-export";
+import { useCopyAction } from "../lib/use-copy-action";
 import {
   isStarred,
   resourceMembershipState,
@@ -22,7 +28,7 @@ import {
 } from "../hooks/useResourceMemberships";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowUpDown, Check, Hexagon, Plus } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, Check, ClipboardList, Download, Hexagon, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
@@ -79,11 +85,12 @@ function sortProjects(projects: Project[], sortField: ProjectSortField, sortDir:
 }
 
 export function Projects() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewProject } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [sortField, setSortField] = useState<ProjectSortField>("name");
   const [sortDir, setSortDir] = useState<ProjectSortDir>("asc");
+  const [lateOnly, setLateOnly] = useState(false);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Projects" }]);
@@ -94,15 +101,23 @@ export function Projects() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const projectsCopy = useCopyAction();
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
   const projects = useMemo(
     () => allProjects ?? [],
     [allProjects],
   );
+  const lateCount = useMemo(() => projects.filter((project) => isProjectLate(project)).length, [projects]);
+  const showLateOnly = lateOnly && lateCount > 0;
   const sortedProjects = useMemo(
-    () => sortProjects(projects, sortField, sortDir),
-    [projects, sortDir, sortField],
+    () => sortProjects(showLateOnly ? projects.filter((project) => isProjectLate(project)) : projects, sortField, sortDir),
+    [projects, showLateOnly, sortDir, sortField],
   );
   const groupedProjects = useMemo(() => {
     const groups = {
@@ -118,10 +133,19 @@ export function Projects() {
 
     return groups;
   }, [membershipsQuery.data, sortedProjects]);
+  const agentNames = useMemo(() => new Map((agents ?? []).map((agent) => [agent.id, agent.name])), [agents]);
+  const textLookups = { agentName: (id: string) => agentNames.get(id) };
+  const hasLiveProjects = projectsForUpdate(projects).length > 0;
+  const copyProjectsUpdate = () => {
+    void projectsCopy.copy(projectsUpdateText(projects, textLookups, localToday()));
+  };
+  const downloadProjects = () => {
+    downloadTextFile(exportFileName(selectedCompany?.issuePrefix, "projects", localToday(), "csv"), projectsToCsv(projects, textLookups));
+  };
   const sortLabel = PROJECT_SORT_OPTIONS.find((option) => option.field === sortField)?.label ?? "Name";
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Hexagon} message="Select an organization to view projects." />;
+    return <EmptyState icon={Hexagon} message="Choose an organisation to view projects." />;
   }
 
   if (isLoading) {
@@ -177,10 +201,47 @@ export function Projects() {
             </div>
           </PopoverContent>
         </Popover>
-        <Button size="sm" variant="outline" onClick={openNewProject}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add project
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {lateCount > 0 ? (
+            <Button
+              size="sm"
+              variant={showLateOnly ? "secondary" : "outline"}
+              aria-pressed={showLateOnly}
+              title={showLateOnly ? "Show every project again" : "Show only open projects past their target date"}
+              onClick={() => setLateOnly((current) => !current)}
+            >
+              <AlertTriangle className="h-4 w-4 mr-1" />
+              {showLateOnly ? "Show every project" : `Late (${lateCount})`}
+            </Button>
+          ) : null}
+          {hasLiveProjects ? (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy every open project and how it is going, to paste into an email or a board pack"
+              onClick={copyProjectsUpdate}
+            >
+              {projectsCopy.copied ? <Check className="h-4 w-4 mr-1" /> : <ClipboardList className="h-4 w-4 mr-1" />}
+              {projectsCopy.copied ? "Copied" : projectsCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          ) : null}
+          {hasLiveProjects ? (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Download every open project as a spreadsheet that opens in Excel or Google Sheets"
+              onClick={downloadProjects}
+            >
+              <Download className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">Download as spreadsheet</span>
+              <span className="sr-only sm:hidden">Download as spreadsheet</span>
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => openNewProject()}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add project
+          </Button>
+        </div>
       </div>
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
@@ -191,7 +252,7 @@ export function Projects() {
           message="No projects yet."
           description="A project groups related tasks, like a client engagement or a launch, so you can see progress in one place."
           action="Add project"
-          onAction={openNewProject}
+          onAction={() => openNewProject()}
         />
       )}
 
@@ -199,7 +260,7 @@ export function Projects() {
         <div className="space-y-6">
           {([
             ["My Projects", groupedProjects.mine],
-            ["Other Projects", groupedProjects.other],
+            ["Other projects", groupedProjects.other],
           ] as const).map(([label, sectionProjects]) => {
             if (sectionProjects.length === 0) return null;
 
@@ -231,20 +292,18 @@ export function Projects() {
                         className={state === "left" ? "group text-muted-foreground" : "group"}
                         trailing={
                           <div className="flex items-center gap-3">
-                            <span
-                              className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
-                              title={`${formatNumber(project.taskCount ?? 0)} task${(project.taskCount ?? 0) === 1 ? "" : "s"}`}
-                            >
-                              {formatNumber(project.taskCount ?? 0)} task{(project.taskCount ?? 0) === 1 ? "" : "s"}
-                            </span>
+                            <ProjectProgressCell project={project} />
                             {project.budget && (
                               <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
                                 {formatProjectBudget(project.budget)}
                               </span>
                             )}
                             {project.targetDate && (
-                              <span className="hidden text-xs text-muted-foreground md:inline">
-                                {formatDate(project.targetDate)}
+                              <span
+                                className="hidden text-xs text-muted-foreground md:inline"
+                                title={`Target date ${formatDate(project.targetDate)}`}
+                              >
+                                {projectTargetLabel(project) ?? formatDate(project.targetDate)}
                               </span>
                             )}
                             <StatusBadge status={project.status} />
@@ -290,5 +349,26 @@ export function Projects() {
         </div>
       )}
     </div>
+  );
+}
+
+function ProjectProgressCell({ project }: { project: { taskCount?: number; doneTaskCount?: number } }) {
+  const progress = projectProgress(project);
+  return (
+    <span className="hidden items-center gap-2 text-xs text-muted-foreground tabular-nums sm:inline-flex" title={progress.label}>
+      {progress.percent !== null ? (
+        <span
+          className="h-1 w-10 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label="Tasks done"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress.percent}
+        >
+          <span className="block h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
+        </span>
+      ) : null}
+      {progress.label}
+    </span>
   );
 }

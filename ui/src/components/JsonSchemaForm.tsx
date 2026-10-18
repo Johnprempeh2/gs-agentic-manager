@@ -708,7 +708,7 @@ const SecretField = React.memo(({
       label={label}
       description={
         description ||
-        "Pick an existing organization secret, or paste a raw value (GS Agentic Manager will store it as a secret on save)."
+        "Pick a saved organisation secret, or paste the value (it is saved as a secret when you save)."
       }
       required={isRequired}
       error={error}

@@ -101,6 +101,109 @@ new extension in this change.
 PostgreSQL documents the existing index support in
 [pg_trgm](https://www.postgresql.org/docs/17/pgtrgm.html).
 
+## Inside uploaded files
+
+Search also finds words inside uploaded files: PDF, Word (`.docx`), PowerPoint
+(`.pptx`), Excel (`.xlsx`), HTML and plain text such as CSV, JSON and Markdown.
+A background round every minute reads up to 10 unread files, newest first, and
+stores their words in `asset_texts` (`server/src/services/asset-text-index.ts`,
+reader in `server/src/services/file-text.ts`). It runs inside the server with no
+outside service. Files over 25MB and other kinds (images, video) are not read.
+
+A file shows only when it belongs to a visible task (a chat or comment
+attachment) or to a client in a pipeline that is not retired. The result opens
+that task or client and shows the line of the file that holds the most search
+words. Images are found by the alt text written for them in a comment or task
+description (`![Blue logo](/api/attachments/<id>/content)`).
+
+The `files` scope returns only these results; `all` includes them, and
+Cmd/Ctrl+K shows them under "Inside files". Issue-only filters (status,
+assignee and so on) leave files out.
+
+## Clients and records
+
+The `records` scope (also in `all`) finds business records outside tasks:
+organisations (also by their imported CRM fields, such as a Pipedrive sector or
+tag), people (organisation contacts, by name, email, role, phone, organisation
+name or imported CRM fields),
+clients (pipeline items, which include imported Pipedrive deals and leads), CRM
+products (linked to the latest deal that carries them) and completed generated
+images (by prompt and style), plus imported CRM notes, calls, meetings and
+emails (by subject, text, type, owner, or the name of their deal or organisation;
+deal stage changes are left out), which
+open on their deal, or on their organisation when they have no deal. Archived
+organisations and people, retired or
+hidden pipeline items, items in archived pipelines and inactive products are
+left out. Every search word must appear in the record. Cmd/Ctrl+K shows these
+under "Clients, people and records". Pass `recordKind` (comma separated:
+organisation, person, client, product, image, activity) to keep only some kinds;
+the Search page shows these as chips on the "Clients and records" tab, and
+`gsam search --kind` does the same. Ask Everest answers "When did we last speak
+to Acme?" from the `activity` kind, newest first, and "Who is our contact at
+Acme?" from the `person` kind.
+
+## Clients that have gone quiet
+
+`GET /api/companies/:companyId/search/quiet-clients?days=30&limit=10` lists
+open deals and leads (in a working or review stage, not retired, hidden or
+archived) with no imported note, call, meeting or email on the deal or its
+organisation for `days` days (1 to 365), quietest first, with the last contact
+and how many days ago it was. A deal never contacted counts from when it was
+added. Stage changes do not count. Ask Everest answers "Which clients have gone
+quiet?" and "Who haven't we spoken to in 2 weeks?" from it.
+
+`GET /api/companies/:companyId/search/recent-client-activity?days=7&limit=10`
+lists imported notes, calls, meetings and emails from the last `days` days,
+newest first, with the deal or organisation each belongs to, plus the total,
+how many clients had contact and counts by kind. Ask Everest answers "What calls
+did we have this week?" from it; asked on a client's page, it answers for that
+client instead. Pass `since` (an ISO time) instead of `days` to count from a moment,
+such as the last visit: "What happened since I was last here?" adds the client
+notes and calls since then.
+
+`GET /api/companies/:companyId/search/client-brief?q=<name>` returns a brief on
+the organisation that best matches the name (exact name first, then names that
+start with it, then names that contain it): status, industry, country, up to
+three people (key contacts first) and the total, open deals, and the last note,
+call or meeting with days since. Ask Everest answers "Tell me about Acme" and
+"What do we know about Acme?" from it; agents use `gsam client-brief <name>`.
+
+## Deals closing soon
+
+`GET /api/companies/:companyId/search/closing-deals?days=30&limit=10` lists open
+deals and leads whose imported expected close date falls within the next `days`
+days (0 to 365; 0 lists only those already past their date), soonest first, so
+overdue ones lead. Each carries its stage, value and currency (`dealValue` or
+`leadValue`), and the response adds the total, how many are overdue and the
+value per currency. Deals with no valid close date are left out. Ask Everest
+answers "Which deals are closing this month?", "What is closing this week?",
+"How much is in the pipeline this quarter?" and "Which deals have slipped?" from
+it; agents use `gsam closing-deals`.
+
+`GET /api/companies/:companyId/search/pipeline-summary?limit=5` sums up every
+open deal and lead: the count and value per stage (in pipeline and stage order,
+empty stages left out), the overall value per currency, and the largest deals by
+value, and open deals per imported owner. Values are summed per currency, never
+converted. Ask Everest answers "How is the pipeline looking?", "What are our
+biggest deals?", "Who has the most deals?" (by owner) and "Which deals have no
+close date?" (counts of open deals missing a close date, value, owner or
+organisation, oldest first) from it; a pipeline
+question with a time ("this quarter") goes to deals closing instead. Add
+`owner=<name>` to narrow it to one owner, matching the full imported owner name,
+the first name or the last name, ignoring case; the response echoes
+`ownerFilter` and lists all that owner's deals, valued ones first (`value` is
+null for one with no value). Ask Everest answers "Show me Sarah's deals",
+"Which deals are owned by Kofi Mensah?" and "What does Ama own?" this way.
+Agents use `gsam pipeline-summary [--owner <name>]`.
+
+`GET /api/companies/:companyId/search/won-lost?days=30&limit=5` lists deals and
+leads won (done stage) and lost (cancelled stage) in the last `days` days (1 to
+365), most recent first, with the count and value per currency for each and the
+top lost reasons. The day is the imported won or lost date, else the imported
+closed date, else when the case reached that stage. Ask Everest answers "What
+did we win this month?", "Which deals did we lose this quarter?" and "Why are we
+losing deals?" from it; agents use `gsam won-lost`.
+
 ## Reproduce the evaluation
 
 ```sh

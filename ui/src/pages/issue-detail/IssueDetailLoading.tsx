@@ -164,7 +164,7 @@ export function IssueDetailLoadingState({
                 <Badge
                   variant="outline"
                   className="border-violet-500/30 bg-violet-500/10 text-(length:--text-nano) text-violet-600 dark:text-violet-400"
-                  title={`Routine execution from routine ${headerSeed.originId}`}
+                  title="Started automatically by a routine"
                 >
                   <Repeat className="h-3 w-3" />
                   Routine

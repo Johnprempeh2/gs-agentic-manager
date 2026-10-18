@@ -749,7 +749,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
       await clickByText((t) => t.includes("Back"));
 
-      expect(document.body.textContent).toContain("What is the name of your organization?");
+      expect(document.body.textContent).toContain("What is the name of your organisation?");
       expect(document.body.textContent).not.toContain("Define your mission");
 
       await act(async () => root.unmount());
@@ -1263,7 +1263,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
       expect(mockAgentsApi.hire).not.toHaveBeenCalled();
       expect(document.body.textContent).toContain(
-        "No working authentication was found",
+        "We could not sign in to your AI provider",
       );
 
       await act(async () => root.unmount());

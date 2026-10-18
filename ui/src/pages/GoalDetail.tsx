@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useParams } from "@/lib/router";
+import { Link, useLocation, useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
@@ -52,7 +52,10 @@ import { KpiDraftNotice } from "../components/goals/KpiDraftNotice";
 import { GOAL_KIND_LABELS, GOAL_KIND_PARENTS, type StrategyBoardKpi } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Plus, SlidersHorizontal } from "lucide-react";
+import { Check, ClipboardList, FileText, Plus, SlidersHorizontal } from "lucide-react";
+import { goalDetailUpdateText } from "../lib/goals-text";
+import { localToday } from "../lib/calendar";
+import { useCopyAction } from "../lib/use-copy-action";
 import { ErrorState } from "../components/ErrorState";
 
 interface GoalPropertiesToggleButtonProps {
@@ -83,11 +86,12 @@ export function GoalPropertiesToggleButton({
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
   const { selectedCompanyId, setSelectedCompanyId } = useCompany();
-  const { openNewGoal } = useDialogActions();
+  const { openNewGoal, openNewProject } = useDialogActions();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
+  const goalCopy = useCopyAction();
   const [packDialogOpen, setPackDialogOpen] = useState(false);
 
   const {
@@ -102,13 +106,13 @@ export function GoalDetail() {
   });
   const resolvedCompanyId = goal?.companyId ?? selectedCompanyId;
 
-  const { data: allGoals } = useQuery({
+  const { data: allGoals, error: allGoalsError, refetch: refetchAllGoals, isFetching: allGoalsFetching } = useQuery({
     queryKey: queryKeys.goals.list(resolvedCompanyId!),
     queryFn: () => goalsApi.list(resolvedCompanyId!),
     enabled: !!resolvedCompanyId
   });
 
-  const { data: allProjects } = useQuery({
+  const { data: allProjects, error: allProjectsError, refetch: refetchAllProjects, isFetching: allProjectsFetching } = useQuery({
     queryKey: queryKeys.projects.list(resolvedCompanyId!, { includeArchived: true }),
     queryFn: () => projectsApi.list(resolvedCompanyId!, { includeArchived: true }),
     enabled: !!resolvedCompanyId
@@ -120,7 +124,7 @@ export function GoalDetail() {
     enabled: !!resolvedCompanyId
   });
 
-  const { data: checkIns } = useQuery({
+  const { data: checkIns, error: checkInsError, refetch: refetchCheckIns, isFetching: checkInsFetching } = useQuery({
     queryKey: queryKeys.goals.checkIns(goalId!),
     queryFn: () => goalsApi.listCheckIns(goalId!),
     enabled: !!goalId
@@ -202,13 +206,16 @@ export function GoalDetail() {
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!resolvedCompanyId) throw new Error("No organization selected");
+      if (!resolvedCompanyId) throw new Error("Choose an organisation first");
       return assetsApi.uploadImage(
         resolvedCompanyId,
         file,
         `goals/${goalId ?? "draft"}`
       );
-    }
+    },
+    onError: (err) => {
+      pushToast({ title: "Image not uploaded", body: err instanceof Error ? err.message : "Try again in a moment.", tone: "error" });
+    },
   });
 
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
@@ -248,7 +255,15 @@ export function GoalDetail() {
   }, [hash, hasBlockers]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/goals" className="underline underline-offset-2">Back to goals</Link>
+        </p>
+      </div>
+    );
   if (!goal) return null;
 
   const health = goalHealth(goal);
@@ -280,6 +295,31 @@ export function GoalDetail() {
             </span>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy this goal and where each of its tasks stands, to paste into an email or a chat"
+              onClick={() =>
+                void goalCopy.copy(
+                  goalDetailUpdateText(
+                    goal,
+                    health,
+                    goal.milestones ?? [],
+                    {
+                      agentName: (id) => agentsById.get(id)?.name,
+                      userName: (id) => usersById.get(id)?.label,
+                    },
+                    localToday(),
+                  ),
+                )
+              }
+            >
+              {goalCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              <span className="hidden sm:inline">
+                {goalCopy.copied ? "Copied" : goalCopy.failed ? "Could not copy" : "Copy as an update"}
+              </span>
+              <span className="sr-only sm:hidden">Copy as an update</span>
+            </Button>
             <GoalOwnerPicker
               agents={agents ?? []}
               people={people}
@@ -412,17 +452,27 @@ export function GoalDetail() {
         <h3 id="goal-recap-heading" className="text-sm font-semibold">
           Recap
         </h3>
-        <GoalCheckIns
-          checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
-          agentsById={agentsById}
-          ownerName={ownerName}
-        />
+        {checkInsError && !goal.latestCheckIn ? (
+          <ErrorState
+            compact
+            error={checkInsError}
+            title="Check-ins did not load"
+            onRetry={() => void refetchCheckIns()}
+            retrying={checkInsFetching}
+          />
+        ) : (
+          <GoalCheckIns
+            checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
+            agentsById={agentsById}
+            ownerName={ownerName}
+          />
+        )}
       </section>
 
       <Tabs defaultValue="children">
         <TabsList>
           <TabsTrigger value="children">
-            Sub-Goals ({childGoals.length})
+            Smaller goals ({childGoals.length})
           </TabsTrigger>
           <TabsTrigger value="projects">
             Projects ({linkedProjects.length})
@@ -437,7 +487,7 @@ export function GoalDetail() {
               onClick={() => openNewGoal({ parentId: goalId })}
             >
               <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Sub Goal
+              Smaller goal
             </Button>
             {kind && GOAL_KIND_PARENTS.kpi?.includes(kind) ? (
               <Button size="sm" variant="outline" className="ml-2" onClick={() => setPackDialogOpen(true)}>
@@ -446,16 +496,38 @@ export function GoalDetail() {
               </Button>
             ) : null}
           </div>
-          {childGoals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sub-goals.</p>
+          {allGoalsError ? (
+            <ErrorState
+              compact
+              error={allGoalsError}
+              title="Smaller goals did not load"
+              onRetry={() => void refetchAllGoals()}
+              retrying={allGoalsFetching}
+            />
+          ) : childGoals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">This goal has no smaller goals yet.</p>
           ) : (
             <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
           )}
         </TabsContent>
 
-        <TabsContent value="projects" className="mt-4">
-          {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
+        <TabsContent value="projects" className="mt-4 space-y-3">
+          <div className="flex items-center justify-start">
+            <Button size="sm" variant="outline" onClick={() => openNewProject({ goalId })}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New project
+            </Button>
+          </div>
+          {allProjectsError ? (
+            <ErrorState
+              compact
+              error={allProjectsError}
+              title="Projects did not load"
+              onRetry={() => void refetchAllProjects()}
+              retrying={allProjectsFetching}
+            />
+          ) : linkedProjects.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No projects are linked to this goal yet. Create one here and it is linked for you.</p>
           ) : (
             <div className="border border-border">
               {linkedProjects.map((project) => (

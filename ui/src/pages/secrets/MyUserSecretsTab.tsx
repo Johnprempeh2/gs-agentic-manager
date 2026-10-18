@@ -9,6 +9,7 @@ import { secretsApi, type MyUserSecretEntry } from "../../api/secrets";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn } from "../../lib/utils";
 import { useToastActions } from "../../context/ToastContext";
+import { useConfirm } from "../../context/ConfirmContext";
 import { SetMyUserSecretDialog } from "./SetMyUserSecretDialog";
 import { SecretPathName } from "./SecretPathName";
 import {
@@ -26,6 +27,7 @@ import {
 export function MyUserSecretsTab({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
+  const confirmAction = useConfirm();
   const [dialogFor, setDialogFor] = useState<MyUserSecretEntry | null>(null);
 
   const mySecretsQuery = useQuery({
@@ -81,7 +83,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
         ) : entries.length === 0 && !mySecretsQuery.isPending ? (
           <EmptyState
             icon={KeyRound}
-            message="No user secrets are defined for this organization yet. An admin defines which credentials each member supplies."
+            message="No user secrets are defined for this organisation yet. An admin defines which credentials each member supplies."
           />
         ) : (
           <ul className="space-y-2">
@@ -90,7 +92,17 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
                 key={entry.definition.id}
                 entry={entry}
                 onSet={() => setDialogFor(entry)}
-                onClear={() => entry.secret && clear.mutate(entry.secret)}
+                onClear={async () => {
+                  const secret = entry.secret;
+                  if (!secret) return;
+                  const ok = await confirmAction({
+                    title: `Clear your saved value for ${entry.definition.name}?`,
+                    description: "Agents that need it will stop until you add it again.",
+                    confirmLabel: "Clear value",
+                    tone: "destructive",
+                  });
+                  if (ok) clear.mutate(secret);
+                }}
                 clearing={clear.isPending}
               />
             ))}

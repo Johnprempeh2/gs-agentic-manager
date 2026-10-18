@@ -406,10 +406,10 @@ function MailboxRow({
           )}
           <Button size="sm" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-            Test
+            Check connection
           </Button>
           <Button size="sm" variant="outline" onClick={() => setEditing((value) => !value)}>
-            Agents
+            Choose agents
           </Button>
           <Button size="sm" variant="ghost" aria-label={`Remove ${mailbox.label}`} onClick={onRemove}>
             <Trash2 className="size-4" aria-hidden="true" />
@@ -534,6 +534,13 @@ export function Mailboxes() {
       void cache.invalidateQueries({ queryKey: queryKeys.mailboxes.list(companyId) });
       pushToast({ title: "Mailbox removed", tone: "success" });
     },
+    onError: (error) => {
+      pushToast({
+        title: "Could not remove the mailbox",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
 
   const canSubmit =
@@ -542,6 +549,12 @@ export function Mailboxes() {
     Number(draft.port) > 0 &&
     draft.password &&
     !connect.isPending;
+  const missingForConnect = [
+    draft.address.includes("@") ? null : "email address",
+    draft.host.trim() ? null : "server",
+    Number(draft.port) > 0 ? null : "port",
+    draft.password ? null : "password",
+  ].filter((item): item is string => item !== null);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -600,7 +613,7 @@ export function Mailboxes() {
             if (canSubmit) connect.mutate();
           }}
         >
-          <h2 className="text-sm font-semibold">Add an IMAP mailbox</h2>
+          <h2 className="text-sm font-semibold">Add a mailbox with a password (IMAP)</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="mailbox-address">Email address</Label>
@@ -693,6 +706,9 @@ export function Mailboxes() {
               {connect.error.message}
             </p>
           )}
+          {missingForConnect.length > 0 ? (
+            <p className="text-xs text-muted-foreground">Still needed: {missingForConnect.join(", ")}.</p>
+          ) : null}
           <div className="flex gap-2">
             <Button type="submit" disabled={!canSubmit}>
               {connect.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
@@ -733,7 +749,7 @@ export function Mailboxes() {
             ))}
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No mailboxes yet.</p>
+          <p className="p-4 text-sm text-muted-foreground">No mailboxes yet. Sign in with Microsoft or Google above, or add one by hand, so agents can read and reply to email for you.</p>
         )}
       </section>
 

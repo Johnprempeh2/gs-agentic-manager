@@ -6,6 +6,7 @@
  * (GRE-1435: `mailboxes` was missing).
  */
 export const RESERVED_APP_SUBPATHS: ReadonlySet<string> = new Set([
+  "access",
   "advanced",
   "app",
   "attention",

@@ -19,6 +19,7 @@ import { ConfigureBuiltInAgentModal } from "@/components/ConfigureBuiltInAgentMo
 import { InlineBanner } from "@/components/InlineBanner";
 import { useSummaryDraftStream } from "@/components/useSummaryDraftStream";
 import { useCompanyLiveEvent } from "@/context/LiveUpdatesProvider";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -142,6 +143,7 @@ export function SummarySlotCard({
   className,
 }: SummarySlotCardProps) {
   const queryClient = useQueryClient();
+  const toastActions = useOptionalToastActions();
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
   const [configureOpen, setConfigureOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -153,6 +155,7 @@ export function SummarySlotCard({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
+  // GRE-1633: stored values are ignored, but a client plan can turn either off.
   const summariesEnabled = experimentalQuery.data?.enableSummaries === true;
   const builtInAgentsEnabled = experimentalQuery.data?.enableBuiltInAgents === true;
 
@@ -211,6 +214,13 @@ export function SummarySlotCard({
       if (companyId) {
         await queryClient.invalidateQueries({ queryKey: queryKeys.builtInAgents.list(companyId) });
       }
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Could not resume the agent",
+        body: error instanceof Error ? error.message : undefined,
+        tone: "error",
+      });
     },
   });
 

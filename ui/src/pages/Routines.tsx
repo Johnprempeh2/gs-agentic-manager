@@ -2,7 +2,7 @@ import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useSearchParams } from "@/lib/router";
-import { ArrowUpDown, Check, ChevronDown, ChevronRight, Layers, Plus, Repeat } from "lucide-react";
+import { ArrowUpDown, Check, ChevronDown, ChevronRight, ClipboardList, Layers, Plus, Repeat } from "lucide-react";
 import { routinesApi } from "../api/routines";
 import { foldersApi } from "../api/folders";
 import { agentsApi } from "../api/agents";
@@ -15,8 +15,11 @@ import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { cn } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
+import { routinesScheduleText } from "../lib/routine-schedule";
+import { useCopyAction } from "../lib/use-copy-action";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
+import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import { HelpTerm } from "../components/HelpTerm";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -29,7 +32,6 @@ import {
 } from "../components/RoutineRunVariablesDialog";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -63,15 +65,25 @@ import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"];
 const catchUpPolicies = ["skip_missed", "enqueue_missed_with_cap"];
+const concurrencyPolicyLabels: Record<string, string> = {
+  coalesce_if_active: "Keep one follow-up",
+  always_enqueue: "Queue every one",
+  skip_if_active: "Skip while busy",
+  reuse_standing_task: "Reuse the same task",
+};
+const catchUpPolicyLabels: Record<string, string> = {
+  skip_missed: "Skip missed times",
+  enqueue_missed_with_cap: "Catch up missed times",
+};
 const concurrencyPolicyDescriptions: Record<string, string> = {
-  coalesce_if_active: "If a run is already active, keep just one follow-up run queued.",
-  always_enqueue: "Queue every trigger occurrence, even if the routine is already running.",
-  skip_if_active: "Drop new trigger occurrences while a run is still active.",
+  coalesce_if_active: "If the last one is still going, line up just one more to follow it.",
+  always_enqueue: "Start every scheduled time, even if the last one is still going.",
+  skip_if_active: "Skip a scheduled time if the last one is still going.",
   reuse_standing_task: "Open the same task again each time instead of creating a new one.",
 };
 const catchUpPolicyDescriptions: Record<string, string> = {
-  skip_missed: "Ignore windows that were missed while the scheduler or routine was paused.",
-  enqueue_missed_with_cap: "Catch up missed schedule windows after recovery; sub-hourly schedules are combined into one catch-up run, slower schedules replay each missed window up to a cap.",
+  skip_missed: "Ignore times that were missed while GSAM or the routine was paused.",
+  enqueue_missed_with_cap: "Make up for missed times once things are running again. Frequent schedules catch up once; slower ones make up each missed time, up to a limit.",
 };
 
 function autoResizeTextarea(element: HTMLTextAreaElement | null) {
@@ -319,6 +331,7 @@ export function Routines() {
   const [folderDialogTarget, setFolderDialogTarget] = useState<FolderListItem | null>(null);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<FolderListItem | null>(null);
   const [mobileFoldersOpen, setMobileFoldersOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<string[]>([]);
   const [moveAfterCreateIds, setMoveAfterCreateIds] = useState<string[]>([]);
@@ -363,7 +376,7 @@ export function Routines() {
     setRoutineViewState(getRoutineViewState(routineViewStateKey));
   }, [routineViewStateKey]);
 
-  const { data: routines, isLoading, error } = useQuery({
+  const { data: routines, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.routines.list(selectedCompanyId!),
     queryFn: () => routinesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -448,7 +461,7 @@ export function Routines() {
           ]);
         } catch (moveError) {
           pushToast({
-            title: "Folder created, move failed",
+            title: "Folder made, but the routines did not move",
             body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
             tone: "error",
           });
@@ -461,7 +474,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to save folder",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the folder.",
         tone: "error",
       });
@@ -477,7 +490,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the folder.",
         tone: "error",
       });
@@ -496,7 +509,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder delete failed",
+        title: "Could not delete the folder",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not delete the folder.",
         tone: "error",
       });
@@ -513,7 +526,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Move failed",
+        title: "Could not move it",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not move the routine.",
         tone: "error",
       });
@@ -535,7 +548,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -570,8 +583,8 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Routine run failed",
-        body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not start the routine run.",
+        title: "The routine did not start",
+        body: `Please try again. If it keeps failing, check the routine has an agent assigned.${mutationError instanceof Error ? ` (${mutationError.message})` : ""}`,
         tone: "error",
       });
     },
@@ -604,6 +617,7 @@ export function Routines() {
     () => new Map((agents ?? []).map((agent) => [agent.id, agent])),
     [agents],
   );
+  const scheduleCopy = useCopyAction();
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
@@ -612,9 +626,13 @@ export function Routines() {
     () => new Map((routineFolders?.folders ?? []).map((folder) => [folder.id, folder])),
     [routineFolders],
   );
-  const visibleRoutines = useMemo(
-    () => (routines ?? []).filter((routine) => routine.status !== "archived"),
+  const archivedRoutineCount = useMemo(
+    () => (routines ?? []).filter((routine) => routine.status === "archived").length,
     [routines],
+  );
+  const visibleRoutines = useMemo(
+    () => (routines ?? []).filter((routine) => showArchived || routine.status !== "archived"),
+    [routines, showArchived],
   );
   const folderFilteredRoutines = useMemo(() => {
     if (routineViewState.groupBy !== "folder") return visibleRoutines;
@@ -702,7 +720,7 @@ export function Routines() {
       pushToast({ title: "Routines moved", body: `${ids.length} routine${ids.length === 1 ? "" : "s"} filed.`, tone: "success" });
     } catch (moveError) {
       pushToast({
-        title: "Failed to move routines",
+        title: "Could not move the routines",
         body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
         tone: "error",
       });
@@ -736,7 +754,7 @@ export function Routines() {
   }
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Repeat} message="Select an organization to view routines." />;
+    return <EmptyState icon={Repeat} message="Choose an organisation to view routines." />;
   }
 
   if (legacyRunsRequested) {
@@ -757,8 +775,20 @@ export function Routines() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {(routines?.length ?? 0) > 0 ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                void scheduleCopy.copy(routinesScheduleText(routines ?? [], (id) => agentById.get(id)?.name));
+              }}
+              title="Copy every routine, when it runs next and who does it, ready to paste"
+            >
+              {scheduleCopy.copied ? <Check className="mr-2 h-4 w-4" /> : <ClipboardList className="mr-2 h-4 w-4" />}
+              {scheduleCopy.copied ? "Copied" : scheduleCopy.failed ? "Could not copy" : "Copy the schedule"}
+            </Button>
+          ) : null}
           <Button variant="outline" asChild>
-            <Link to={auditSectionHref("runs", {})}>View all runs</Link>
+            <Link to={auditSectionHref("runs", {})}>See all activity</Link>
           </Button>
           <Button onClick={openCreateRoutine} data-tour="routines-create">
             <Plus className="mr-2 h-4 w-4" />
@@ -908,6 +938,7 @@ export function Routines() {
                 ref={titleInputRef}
                 className="w-full resize-none overflow-hidden bg-transparent text-xl font-semibold outline-none placeholder:text-subtle-foreground"
                 placeholder="Routine title"
+                aria-label="Routine title"
                 {...noContactAutofill("routine")}
                 rows={1}
                 value={draft.title}
@@ -1063,7 +1094,7 @@ export function Routines() {
                 contentClassName="min-h-(--sz-160px) text-sm text-muted-foreground"
                 mentions={mentionOptions}
                 onSubmit={() => {
-                  if (!createRoutine.isPending && draft.title.trim() && draft.projectId && draft.assigneeAgentId) {
+                  if (!createRoutine.isPending && draft.title.trim()) {
                     createRoutine.mutate();
                   }
                 }}
@@ -1075,14 +1106,14 @@ export function Routines() {
                 <CollapsibleTrigger className="flex w-full items-center justify-between text-left">
                   <div>
                     <p className="text-sm font-medium">Advanced delivery settings</p>
-                    <p className="text-sm text-muted-foreground">Keep policy controls secondary to the work definition.</p>
+                    <p className="text-sm text-muted-foreground">What happens when a routine is still running or a time is missed.</p>
                   </div>
                   {advancedOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">Concurrency</p>
+                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">If it is still running</p>
                       <Select
                         value={draft.concurrencyPolicy}
                         onValueChange={(concurrencyPolicy) => setDraft((current) => ({ ...current, concurrencyPolicy }))}
@@ -1092,14 +1123,14 @@ export function Routines() {
                         </SelectTrigger>
                         <SelectContent>
                           {concurrencyPolicies.map((value) => (
-                            <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>
+                            <SelectItem key={value} value={value}>{concurrencyPolicyLabels[value] ?? value.replaceAll("_", " ")}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">{concurrencyPolicyDescriptions[draft.concurrencyPolicy]}</p>
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">Catch-up</p>
+                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">If a time was missed</p>
                       <Select
                         value={draft.catchUpPolicy}
                         onValueChange={(catchUpPolicy) => setDraft((current) => ({ ...current, catchUpPolicy }))}
@@ -1109,7 +1140,7 @@ export function Routines() {
                         </SelectTrigger>
                         <SelectContent>
                           {catchUpPolicies.map((value) => (
-                            <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>
+                            <SelectItem key={value} value={value}>{catchUpPolicyLabels[value] ?? value.replaceAll("_", " ")}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1136,9 +1167,12 @@ export function Routines() {
                 <Plus className="mr-2 h-4 w-4" />
                 {createRoutine.isPending ? "Creating..." : "Create routine"}
               </Button>
+              {!draft.title.trim() ? (
+                <p className="text-xs text-muted-foreground">Give the routine a title to create it.</p>
+              ) : null}
               {createRoutine.isError ? (
-                <p className="text-sm text-destructive">
-                  {createRoutine.error instanceof Error ? createRoutine.error.message : "Failed to create routine"}
+                <p role="alert" className="text-sm text-destructive">
+                  {createRoutine.error instanceof Error ? createRoutine.error.message : "We couldn't create this routine. Try again."}
                 </p>
               ) : null}
             </div>
@@ -1147,11 +1181,13 @@ export function Routines() {
       </Dialog>
 
       {error ? (
-        <Card>
-          <CardContent className="pt-6 text-sm text-destructive">
-            {error instanceof Error ? error.message : "Failed to load routines"}
-          </CardContent>
-        </Card>
+        <ErrorState
+          error={error}
+          title="Routines did not load"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+          compact={!!routines}
+        />
       ) : null}
 
       <div className={cn(showFolderRail && "flex gap-4")}>
@@ -1204,7 +1240,20 @@ export function Routines() {
               }}
             />
           ) : null}
-          {visibleRoutines.length === 0 ? (
+          {archivedRoutineCount > 0 ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-pressed={showArchived}
+                onClick={() => setShowArchived((current) => !current)}
+              >
+                {showArchived ? "Hide archived routines" : `Show archived routines (${archivedRoutineCount})`}
+              </Button>
+            </div>
+          ) : null}
+          {error && !routines ? null : visibleRoutines.length === 0 ? (
             <div className="py-12">
               <EmptyState
                 icon={Repeat}
@@ -1219,6 +1268,7 @@ export function Routines() {
               <EmptyState
                 icon={Repeat}
                 message={folderSelection === "all" ? "No routines match this view." : "This folder is empty."}
+                description={folderSelection === "all" ? "Change the filters above, or create a new routine." : undefined}
               />
               {folderSelection !== "all" ? (
                 <div className="mt-3 flex justify-center">

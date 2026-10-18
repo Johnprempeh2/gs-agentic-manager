@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createDb, companies, issues, notificationPreferences, pushSubscriptions } from "@greatstone/db";
+import { agents, createDb, companies, heartbeatRuns, issues, notificationPreferences, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type MorningSummary, type NeedsMe } from "@greatstone/shared";
-import { morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems } from "../services/morning-summary.js";
+import { eveningSummaryDue, eveningSummaryMessage, morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems, startOfLocalDay } from "../services/morning-summary.js";
 
 const summary = (needs: number, finished: number, stuck: number, due = 0): MorningSummary => ({
   companyId: "c",
@@ -38,6 +38,9 @@ describe("morning summary wording", () => {
     expect(morningSummaryMessage(summary(1, 0, 0, 2), "GRE").body).toBe(
       "2 tasks are due today. No tasks finished since yesterday. Nothing is stuck.",
     );
+    expect(morningSummaryMessage({ ...summary(0, 0, 0), deals: { won: 2, lost: 1, items: [] } }, "GRE").body).toBe(
+      "No tasks finished since yesterday. Nothing is stuck. 2 deals won.",
+    );
   });
 
   it("lists decisions before assigned tasks, once per task, and leaves out outage notices", () => {
@@ -53,6 +56,36 @@ describe("morning summary wording", () => {
       { id: "a", identifier: "GRE-1", title: "Approve brief" },
       { id: "b", identifier: "GRE-2", title: "Pick a date" },
     ]);
+  });
+});
+
+describe("evening wrap-up", () => {
+  it("leads with what still needs you, then what got done today", () => {
+    expect(eveningSummaryMessage({ ...summary(2, 4, 0), deals: { won: 1, lost: 1, items: [] }, workingNow: { count: 3, items: [] } }, "GRE")).toEqual({
+      title: "Today's wrap-up. 2 things still need you",
+      body: "4 tasks finished today. 1 deal won. 1 deal lost. Nothing is stuck. 3 tasks are still being worked on.",
+      url: "/GRE/morning?window=day",
+      tag: "evening-summary",
+      badge: 2,
+    });
+    expect(eveningSummaryMessage(summary(0, 0, 1), "GRE")).toMatchObject({
+      title: "Today's wrap-up. Nothing needs you",
+      body: "No tasks finished today. 1 task is stuck.",
+    });
+  });
+
+  it("goes at the chosen evening hour once a day, only when chosen", () => {
+    const prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, timeZone: "Europe/London", eveningSummary: true, eveningSummaryHour: 18 };
+    expect(eveningSummaryDue(prefs, null, new Date("2026-10-16T16:59:00Z")).due).toBe(false);
+    expect(eveningSummaryDue(prefs, null, new Date("2026-10-16T17:00:00Z"))).toEqual({ due: true, localDate: "2026-10-16" });
+    expect(eveningSummaryDue(prefs, "2026-10-16", new Date("2026-10-16T17:30:00Z")).due).toBe(false);
+    expect(eveningSummaryDue({ ...prefs, eveningSummary: false }, null, new Date("2026-10-16T17:00:00Z")).due).toBe(false);
+    expect(eveningSummaryDue(DEFAULT_NOTIFICATION_PREFERENCES, null, new Date("2026-10-16T17:00:00Z")).due).toBe(false);
+  });
+
+  it("counts the day from local midnight", () => {
+    expect(startOfLocalDay("Europe/London", new Date("2026-10-16T17:42:10.500Z")).toISOString()).toBe("2026-10-15T23:00:00.000Z");
+    expect(startOfLocalDay("UTC", new Date("2026-10-16T17:42:00Z")).toISOString()).toBe("2026-10-16T00:00:00.000Z");
   });
 });
 
@@ -100,6 +133,52 @@ describe("morning summary service", () => {
       { companyId, title: "Due tomorrow", status: "todo", dueDate: "2026-10-17" },
       { companyId, title: "Done today", status: "done", dueDate: "2026-10-16" },
     ]);
+    const [agent] = await db.insert(agents).values({ companyId, name: "Writer" }).returning();
+    const [running, finished] = await db
+      .insert(heartbeatRuns)
+      .values([
+        { companyId, agentId: agent!.id, status: "running" },
+        { companyId, agentId: agent!.id, status: "succeeded" },
+      ])
+      .returning();
+    const [pipeline] = await db.insert(pipelines).values({ companyId, key: "pipedrive-1", name: "DevTools" }).returning();
+    const [pdOpen, pdWon] = await db
+      .insert(pipelineStages)
+      .values([
+        { pipelineId: pipeline!.id, key: "pd_1", name: "Qualified", kind: "working", position: 0 },
+        { pipelineId: pipeline!.id, key: "won", name: "Won", kind: "done", position: 1 },
+      ])
+      .returning();
+    const deal = (title: string, fields: Record<string, unknown>, stageId = pdOpen!.id) => ({
+      companyId, pipelineId: pipeline!.id, stageId, caseKey: title.toLowerCase().replace(/\W+/g, "-"), title, fields,
+    });
+    await db.insert(pipelineCases).values([
+      deal("Acme", { dealStatus: "Open", nextActivityDate: "2026-10-16", nextActivitySubject: "Demo call" }),
+      deal("Globex", { dealStatus: "Open", nextActivityDate: "2026-10-12" }),
+      deal("Initech", { dealStatus: "Open", nextActivityDate: "2026-10-20" }),
+      deal("Umbrella", { dealStatus: "Lost", nextActivityDate: "2026-10-10" }),
+      deal("Hooli", { dealStatus: "Open", nextActivityDate: "2026-10-10" }, pdWon!.id),
+      deal("Client journey card", { nextActivityDate: "2026-10-10" }),
+    ]);
+    await db.insert(issues).values([
+      { companyId, title: "Drafting the deck", status: "in_progress", executionRunId: running!.id },
+      { companyId, title: "Run already ended", status: "in_progress", executionRunId: finished!.id },
+    ]);
+    // Deals: two closed on a client pipeline since yesterday, one older, one on another pipeline.
+    const [clients, hiring] = await db.insert(pipelines).values([
+      { companyId, key: "clients", name: "Clients", requiresOrganisation: true },
+      { companyId, key: "hiring", name: "Hiring" },
+    ]).returning();
+    const [won, hired] = await db.insert(pipelineStages).values([
+      { companyId, pipelineId: clients!.id, key: "won", name: "Won", kind: "done", position: 0 },
+      { companyId, pipelineId: hiring!.id, key: "hired", name: "Hired", kind: "done", position: 0 },
+    ]).returning();
+    await db.insert(pipelineCases).values([
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "a", title: "Indago rollout", terminalKind: "done", terminalAt: new Date("2026-10-16T06:00:00Z") },
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "b", title: "Acme renewal", terminalKind: "cancelled", terminalAt: new Date("2026-10-15T21:00:00Z") },
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "c", title: "Last week's win", terminalKind: "done", terminalAt: new Date("2026-10-10T09:00:00Z") },
+      { companyId, pipelineId: hiring!.id, stageId: hired!.id, caseKey: "d", title: "Candidate hired", terminalKind: "done", terminalAt: new Date("2026-10-16T05:00:00Z") },
+    ]);
   }, 90000);
   afterAll(async () => { await database?.cleanup(); vi.unstubAllEnvs(); if (home) await rm(home, { recursive: true, force: true }); });
   beforeEach(async () => {
@@ -118,6 +197,18 @@ describe("morning summary service", () => {
     expect(built.needsYou.count).toBe(2);
   });
 
+  it("counts client deals won and lost since yesterday, newest first", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.deals?.won).toBe(1);
+    expect(built.deals?.lost).toBe(1);
+    expect(built.deals?.items.map((deal) => [deal.title, deal.outcome])).toEqual([["Indago rollout", "won"], ["Acme renewal", "lost"]]);
+  });
+
+  it("lists the tasks an agent is working on right now", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.workingNow).toEqual({ count: 1, items: [expect.objectContaining({ title: "Drafting the deck" })] });
+  });
+
   it("lists open tasks due today by the person's own date, late ones first", async () => {
     const built = await service().build(companyId, "john", now);
     expect(built.dueToday.count).toBe(2);
@@ -131,6 +222,16 @@ describe("morning summary service", () => {
     expect(tokyo.dueToday.count).toBe(3);
   });
 
+  it("lists open Pipedrive deals whose next step is due today or late, linking to each deal", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.dealNextSteps?.count).toBe(2);
+    expect(built.dealNextSteps?.items).toEqual([
+      expect.objectContaining({ title: "Globex", dueDate: "2026-10-12", href: expect.stringMatching(/^\/pipelines\/.+\/cases\/.+$/) }),
+      expect.objectContaining({ title: "Acme: Demo call", dueDate: "2026-10-16" }),
+    ]);
+    expect(morningSummaryMessage(built, "MRN").body).toContain("2 deals have their next step due.");
+  });
+
   it("sends once a day to people with a phone registered", async () => {
     await db.insert(pushSubscriptions).values({ companyId, userId: "john", endpoint: "https://push.example/1", p256dh: "k", auth: "a" });
     const sent: Array<{ userId: string; title: string }> = [];
@@ -141,5 +242,31 @@ describe("morning summary service", () => {
     expect(await service().sendDue(deliver, now)).toBe(1);
     expect(await service().sendDue(deliver, new Date(now.getTime() + 60_000))).toBe(0);
     expect(sent).toEqual([{ userId: "john", title: "Good morning. 2 things need you" }]);
+  });
+
+  it("counts only today in the evening wrap-up", async () => {
+    const built = await service().build(companyId, "john", now, "day");
+    expect(built.since).toBe("2026-10-15T23:00:00.000Z");
+    expect(built.deals?.won).toBe(1);
+    expect(built.deals?.lost).toBe(0);
+    expect(built.dueTomorrow).toEqual({ count: 1, items: [expect.objectContaining({ title: "Due tomorrow", dueDate: "2026-10-17" })] });
+    expect(eveningSummaryMessage(built, "GRE").body).toContain("1 task is due tomorrow.");
+    // The morning view does not look ahead.
+    expect((await service().build(companyId, "john", now)).dueTomorrow).toBeUndefined();
+  });
+
+  it("sends the evening wrap-up once a day to people who chose it", async () => {
+    await db.insert(pushSubscriptions).values({ companyId, userId: "john", endpoint: "https://push.example/1", p256dh: "k", auth: "a" });
+    const sent: string[] = [];
+    const deliver = async (_companyId: string, _userId: string, message: { title: string }) => {
+      sent.push(message.title);
+      return { targets: 1, delivered: 1 };
+    };
+    const evening = new Date("2026-10-16T17:05:00Z");
+    expect(await service().sendEveningDue(deliver, evening)).toBe(0);
+    await db.insert(notificationPreferences).values({ companyId, userId: "john", eveningSummary: true });
+    expect(await service().sendEveningDue(deliver, evening)).toBe(1);
+    expect(await service().sendEveningDue(deliver, new Date(evening.getTime() + 60_000))).toBe(0);
+    expect(sent).toEqual(["Today's wrap-up. 2 things still need you"]);
   });
 });

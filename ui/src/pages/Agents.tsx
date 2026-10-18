@@ -26,12 +26,16 @@ import { costsApi } from "../api/costs";
 import { agentTeamsApi } from "../api/agentTeams";
 import { AgentTeamsDialog, TeamColorDot } from "../components/AgentTeamsDialog";
 import { filterAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "../lib/agent-teams";
+import { agentsSheet, agentsUpdateText, budgetUseLabel } from "../lib/agents-export";
+import { useCopyAction } from "../lib/use-copy-action";
+import { EmptyTimerRunsBanner } from "../components/EmptyTimerRunsBanner";
+import { downloadBytes, exportFileName, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AgentTeam, ApiEquivalentAgentRow } from "@greatstone/shared";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Bot, Plus, List, Network, Users } from "lucide-react";
+import { AlertTriangle, Bot, Check, ClipboardList, Download, Plus, List, Network, Users } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@greatstone/shared";
 import {
   isStarred,
@@ -61,7 +65,7 @@ const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
   { value: "paused", label: "Paused" },
-  { value: "error", label: "Error" },
+  { value: "error", label: "Needs attention" },
   { value: "builtin", label: "Built-in" },
 ];
 
@@ -200,7 +204,8 @@ export type AgentsView = "list" | "org";
 
 export function Agents({ initialView = "list" }: { initialView?: AgentsView } = {}) {
   const agentChat = useAgentChatEnabled();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
+  const teamCopy = useCopyAction();
   const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
@@ -275,7 +280,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
 
-  const { data: orgTree } = useQuery({
+  const { data: orgTree, error: orgTreeError, refetch: refetchOrgTree, isFetching: orgTreeFetching } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId && view === "org",
@@ -362,7 +367,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   }, [builtInAgentsEnabled, instanceSettings, navigate, requestedTab, selectedCompanyId]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Bot} message="Select an organization to view agents." />;
+    return <EmptyState icon={Bot} message="Choose an organisation to view agents." />;
   }
 
   if (isLoading) {
@@ -473,10 +478,22 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
               {liveRunByAgent.has(agent.id) && (
                 <LiveRunIndicator
                   agentRef={agentRouteRef(agent)}
+                  agentName={agent.name}
                   runId={liveRunByAgent.get(agent.id)!.runId}
                   liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                 />
               )}
+              {(() => {
+                const budgetUse = budgetUseLabel(agent);
+                return budgetUse ? (
+                  <span
+                    className={cn("whitespace-nowrap text-xs font-medium", budgetUse.tone === "danger" ? "text-status-danger" : "text-status-warning")}
+                    title="How much of this month's budget the agent has spent"
+                  >
+                    {budgetUse.text}
+                  </span>
+                ) : null;
+              })()}
               <span className="w-20 flex justify-end">
                 <AgentStatusBadge status={agent.status} />
               </span>
@@ -579,6 +596,33 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
               </SelectContent>
             </Select>
           )}
+          {filtered.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy how each agent on screen is doing, ready to paste"
+              onClick={() => void teamCopy.copy(agentsUpdateText(filtered, (at) => relativeTime(at)))}
+            >
+              {teamCopy.copied ? <Check className="h-3.5 w-3.5 mr-1.5" /> : <ClipboardList className="h-3.5 w-3.5 mr-1.5" />}
+              {teamCopy.copied ? "Copied" : teamCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          )}
+          {filtered.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Download the agents on screen as an Excel file"
+              onClick={() =>
+                downloadBytes(
+                  exportFileName(selectedCompany?.issuePrefix, "agents", localToday(), "xlsx"),
+                  sheetsToXlsx([agentsSheet(filtered, teamsForAgent)]),
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Download as spreadsheet
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setTeamsDialogOpen(true)}>
             <Users className="h-3.5 w-3.5 mr-1.5" />
             Teams
@@ -596,11 +640,14 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
+      {agents && selectedCompanyId ? <EmptyTimerRunsBanner companyId={selectedCompanyId} agents={agents} /> : null}
+
       {agents && agents.length === 0 && (
         <EmptyState
           icon={Bot}
           message="Create your first agent to get started."
-          action="New Agent"
+          description="An agent is an AI teammate with a job, such as a researcher or a writer. Give it tasks and it works on them."
+          action="New agent"
           onAction={openNewAgent}
         />
       )}
@@ -613,9 +660,20 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
       )}
 
       {view === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          {teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}
-        </p>
+        <div className="space-y-2 py-8 text-center text-sm text-muted-foreground">
+          <p>{teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setTeamFilter(null);
+              navigate("/agents/all");
+            }}
+          >
+            Show all agents
+          </Button>
+        </div>
       )}
 
       {/* Org chart view */}
@@ -629,9 +687,19 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         </p>
       )}
 
+      {view === "org" && orgTreeError && !orgTree && (
+        <ErrorState
+          compact
+          error={orgTreeError}
+          title="Reporting lines did not load"
+          onRetry={() => void refetchOrgTree()}
+          retrying={orgTreeFetching}
+        />
+      )}
+
       {view === "org" && orgTree && orgTree.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No organizational hierarchy defined.
+          No reporting lines yet. Set who each agent reports to on their page.
         </p>
       )}
       {teamsDialogOpen && (
@@ -764,6 +832,7 @@ function OrgTreeNode({
             {liveRunByAgent.has(node.id) ? (
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
+                agentName={node.name}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
@@ -775,6 +844,7 @@ function OrgTreeNode({
             {liveRunByAgent.has(node.id) && (
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
+                agentName={node.name}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
@@ -867,10 +937,10 @@ function formatWorkValue(cents: number): string {
   return `$${Math.round(cents / 100).toLocaleString("en-GB")}`;
 }
 
-/** "$123 of work · 41 runs this week", or that it did not run. */
+/** "$123 of work · Worked 41 times this week", or that it did no work. */
 export function agentWeekLine(row: ApiEquivalentAgentRow | undefined): string {
-  if (!row || row.runCount === 0) return "No runs this week";
-  const runs = `${row.runCount} ${row.runCount === 1 ? "run" : "runs"} this week`;
+  if (!row || row.runCount === 0) return "No work this week";
+  const runs = `Worked ${row.runCount} ${row.runCount === 1 ? "time" : "times"} this week`;
   return row.apiEquivalentCents > 0 ? `${formatWorkValue(row.apiEquivalentCents)} of work · ${runs}` : runs;
 }
 
@@ -896,7 +966,7 @@ function AgentMetaColumns({
             {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "$0"}
           </div>
           <div className="truncate text-(length:--text-micro) tabular-nums text-subtle-foreground">
-            {week?.runCount ? `${week.runCount} ${week.runCount === 1 ? "run" : "runs"} this week` : "No runs this week"}
+            {week?.runCount ? `Worked ${week.runCount} ${week.runCount === 1 ? "time" : "times"} this week` : "No work this week"}
           </div>
         </div>
       )}
@@ -925,26 +995,36 @@ function AgentMetaColumns({
         className="w-28 whitespace-nowrap text-right text-xs text-muted-foreground"
         title="When this agent last checked in for work"
       >
-        {agent.lastHeartbeatAt ? `Active ${relativeTime(agent.lastHeartbeatAt)}` : "Not run yet"}
+        {agent.lastHeartbeatAt ? `Active ${relativeTime(agent.lastHeartbeatAt)}` : "Not started yet"}
       </span>
     </>
   );
 }
 
+// Rendered inside the agent row link, so it is a button that navigates rather
+// than a nested <a> (invalid markup and a hydration error, GRE-1664).
 function LiveRunIndicator({
   agentRef,
+  agentName,
   runId,
   liveCount,
 }: {
   agentRef: string;
+  agentName: string;
   runId: string;
   liveCount: number;
 }) {
+  const navigate = useNavigate();
   return (
-    <Link
-      to={`/agents/${agentRef}/runs/${runId}`}
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
-      onClick={(e) => e.stopPropagation()}
+    <button
+      type="button"
+      aria-label={`Open live run for ${agentName}`}
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigate(`/agents/${agentRef}/runs/${runId}`);
+      }}
     >
       <span className="relative flex h-2 w-2">
         <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
@@ -953,6 +1033,6 @@ function LiveRunIndicator({
       <span className="text-(length:--text-micro) font-medium text-blue-700 dark:text-blue-400">
         Live{liveCount > 1 ? ` (${liveCount})` : ""}
       </span>
-    </Link>
+    </button>
   );
 }

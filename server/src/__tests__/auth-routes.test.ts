@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { errorHandler } from "../middleware/index.js";
 import { authRoutes } from "../routes/auth.js";
 
+// A board change from the browser carries its own origin (board mutation guard).
+const SAME_ORIGIN = "http://127.0.0.1:3100";
+
 function createSelectChain(rows: unknown[]) {
   return {
     from() {
@@ -255,7 +258,7 @@ describe.sequential("auth routes", () => {
     );
 
     const res = await request(app)
-      .patch("/api/auth/profile")
+      .patch("/api/auth/profile").set("origin", SAME_ORIGIN)
       .send({ name: "Board Operator", image: "" });
 
     expect(res.status).toBe(200);
@@ -278,7 +281,7 @@ describe.sequential("auth routes", () => {
     );
 
     const res = await request(app)
-      .patch("/api/auth/profile")
+      .patch("/api/auth/profile").set("origin", SAME_ORIGIN)
       .send({ name: "Board Operator" });
 
     expect(res.status).toBe(200);
@@ -301,7 +304,7 @@ describe.sequential("auth routes", () => {
     );
 
     const res = await request(app)
-      .patch("/api/auth/profile")
+      .patch("/api/auth/profile").set("origin", SAME_ORIGIN)
       .send({ name: "Jane Example", image: "/api/assets/asset-1/content" });
 
     expect(res.status).toBe(200);
@@ -319,7 +322,7 @@ describe.sequential("auth routes", () => {
     );
 
     const res = await request(app)
-      .patch("/api/auth/profile")
+      .patch("/api/auth/profile").set("origin", SAME_ORIGIN)
       .send({ name: "Jane Example", image: "not-a-url" });
 
     expect(res.status).toBe(400);

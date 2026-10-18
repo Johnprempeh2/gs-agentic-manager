@@ -51,6 +51,7 @@ type PipelineCase = {
   childCount?: number;
   terminalChildCount?: number;
   pendingSuggestion?: JsonObject | null;
+  fields?: JsonObject | null;
 };
 
 type CaseListRow = {
@@ -123,6 +124,33 @@ interface CasesOptions extends PipelineOptions {
   q?: string;
 }
 
+interface DealsDueOptions extends PipelineOptions {
+  days?: string;
+  unscheduled?: boolean;
+}
+
+interface NextStepDoneOptions extends PipelineOptions {
+  note?: string;
+  nextDate?: string;
+  nextSubject?: string;
+}
+
+interface SetDealOptions extends PipelineOptions {
+  owner?: string;
+  value?: string;
+  currency?: string;
+  expectedClose?: string;
+  probability?: string;
+  nextDate?: string;
+  nextSubject?: string;
+}
+
+interface CloseDealOptions extends PipelineOptions {
+  won?: boolean;
+  lost?: boolean;
+  reason?: string;
+}
+
 interface EditOptions extends PipelineOptions {
   expectedVersion?: string;
   title?: string;
@@ -192,6 +220,220 @@ interface ReviewInboxOptions extends PipelineOptions {
 
 interface ReviewBulkOptions extends PipelineOptions {
   file: string;
+}
+
+export type DealsSummaryRow = {
+  pipelineId: string;
+  pipelineName: string;
+  open: number;
+  openValue: Record<string, number>;
+  weightedValue: Record<string, number>;
+  lateNextSteps: number;
+  noNextStep: number;
+  won90d: number;
+  lost90d: number;
+  winRate90d: number | null;
+};
+
+export type DealDue = {
+  caseId: string;
+  pipelineId: string;
+  pipelineName: string;
+  title: string;
+  stage: string;
+  nextActivityDate: string | null;
+  nextActivitySubject: string | null;
+};
+
+function fieldString(fields: JsonObject | null | undefined, key: string): string | null {
+  const value = fields?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Open Pipedrive deals whose next step is due on or before `until`
+ * (YYYY-MM-DD), oldest first; with `unscheduled`, also open deals with no
+ * next step at all. Won, lost and closed-stage deals are left out.
+ */
+export function selectDealsDue(
+  pipelines: Array<{ id: string; name: string; rows: CaseListRow[] }>,
+  until: string,
+  unscheduled = false,
+): DealDue[] {
+  const due: DealDue[] = [];
+  for (const pipeline of pipelines) {
+    for (const row of pipeline.rows) {
+      const fields = row.case.fields ?? null;
+      if (!fields || !("dealStatus" in fields)) continue;
+      if (row.stage.kind === "done" || row.stage.kind === "cancelled") continue;
+      const status = fieldString(fields, "dealStatus")?.toLowerCase();
+      if (status && status !== "open") continue;
+      const date = fieldString(fields, "nextActivityDate")?.slice(0, 10) ?? null;
+      if (date ? date > until : !unscheduled) continue;
+      due.push({
+        caseId: row.case.id,
+        pipelineId: pipeline.id,
+        pipelineName: pipeline.name,
+        title: row.case.title,
+        stage: row.stage.name,
+        nextActivityDate: date,
+        nextActivitySubject: date ? fieldString(fields, "nextActivitySubject") : null,
+      });
+    }
+  }
+  return due.sort((left, right) =>
+    (left.nextActivityDate ?? "9999").localeCompare(right.nextActivityDate ?? "9999") || left.title.localeCompare(right.title));
+}
+
+function fieldAmount(fields: JsonObject, key: string): number | null {
+  const value = fields[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * One line per DevTools deal pipeline: open deals with their value and
+ * weighted value per currency, next steps that are late or missing, and
+ * deals won and lost in the 90 days to `today`, like the board header.
+ */
+export function summariseDeals(pipelines: Array<{ id: string; name: string; rows: CaseListRow[] }>, today: string): DealsSummaryRow[] {
+  const since = new Date(new Date(`${today}T00:00:00Z`).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return pipelines.map((pipeline) => {
+    const row: DealsSummaryRow = {
+      pipelineId: pipeline.id,
+      pipelineName: pipeline.name,
+      open: 0,
+      openValue: {},
+      weightedValue: {},
+      lateNextSteps: 0,
+      noNextStep: 0,
+      won90d: 0,
+      lost90d: 0,
+      winRate90d: null,
+    };
+    for (const item of pipeline.rows) {
+      const fields = item.case.fields ?? null;
+      if (!fields || !("dealStatus" in fields)) continue;
+      const status = fieldString(fields, "dealStatus")?.toLowerCase();
+      if (status === "won" || status === "lost") {
+        const closedOn = fieldString(fields, status === "won" ? "wonOn" : "lostOn")?.slice(0, 10);
+        if (closedOn && closedOn >= since && closedOn <= today) {
+          if (status === "won") row.won90d += 1;
+          else row.lost90d += 1;
+        }
+        continue;
+      }
+      if (item.stage.kind === "done" || item.stage.kind === "cancelled") continue;
+      row.open += 1;
+      const value = fieldAmount(fields, "dealValue");
+      if (value != null) {
+        const currency = fieldString(fields, "dealCurrency")?.toUpperCase() ?? "";
+        row.openValue[currency] = (row.openValue[currency] ?? 0) + value;
+        const probability = fieldAmount(fields, "probability");
+        if (probability != null) row.weightedValue[currency] = (row.weightedValue[currency] ?? 0) + (value * probability) / 100;
+      }
+      const next = fieldString(fields, "nextActivityDate")?.slice(0, 10);
+      if (!next) row.noNextStep += 1;
+      else if (next < today) row.lateNextSteps += 1;
+    }
+    const closed = row.won90d + row.lost90d;
+    row.winRate90d = closed === 0 ? null : Math.round((row.won90d / closed) * 100);
+    return row;
+  });
+}
+
+function formatAmounts(amounts: Record<string, number>) {
+  const parts = Object.entries(amounts).map(([currency, total]) => `${Math.round(total)}${currency ? ` ${currency}` : ""}`);
+  return parts.length > 0 ? parts.join(" + ") : "0";
+}
+
+/** The stage a deal moves to when it is won or lost. Matches the deal page's Mark won and Mark lost. */
+export function dealOutcomeStage(stages: readonly PipelineStage[], outcome: "won" | "lost"): PipelineStage | null {
+  const kind = outcome === "won" ? "done" : "cancelled";
+  return stages.find((stage) => stage.key === outcome) ?? stages.find((stage) => stage.kind === kind) ?? null;
+}
+
+/** A deal's fields once it is won or lost on `today`; a loss keeps its reason, if given. */
+export function closeDealFields(fields: Record<string, unknown>, outcome: "won" | "lost", today: string, reason?: string) {
+  const next: Record<string, unknown> = { ...fields, dealStatus: outcome === "won" ? "Won" : "Lost" };
+  if (outcome === "won") next.wonOn = today;
+  else {
+    next.lostOn = today;
+    if (reason?.trim()) next.lostReason = reason.trim();
+  }
+  return next;
+}
+
+/**
+ * A deal's fields once its next step is done: the step becomes the last
+ * activity (dated `today`, with the note), and the follow-up, if given,
+ * becomes the next step. Matches "Mark next step done" on the deal page.
+ */
+export function completeDealNextStep(
+  fields: JsonObject | null | undefined,
+  input: { note?: string; nextDate?: string; nextSubject?: string },
+  today: string,
+): JsonObject {
+  const next: JsonObject = { ...(fields ?? {}) };
+  const done = fieldString(next, "nextActivitySubject");
+  next.lastActivityDate = today;
+  if (done) next.lastActivitySubject = done;
+  else delete next.lastActivitySubject;
+  const note = input.note?.trim();
+  if (note) next.lastActivityNote = note;
+  else delete next.lastActivityNote;
+  if (input.nextDate) {
+    next.nextActivityDate = input.nextDate;
+    const subject = input.nextSubject?.trim();
+    if (subject) next.nextActivitySubject = subject;
+    else delete next.nextActivitySubject;
+  } else {
+    delete next.nextActivityDate;
+    delete next.nextActivitySubject;
+  }
+  return next;
+}
+
+/**
+ * A deal's fields after `case set-deal`. Only the options given change; an
+ * empty string removes that field. A Pipedrive lead keeps its lead keys, like
+ * "Edit deal" on the deal page.
+ */
+export function applyDealSettings(fields: JsonObject | null | undefined, input: Omit<SetDealOptions, keyof PipelineOptions>): JsonObject {
+  const next: JsonObject = { ...(fields ?? {}) };
+  const lead = "leadValue" in next && !("dealValue" in next);
+  const set = (key: string, value: unknown) => {
+    if (value === "" || value == null) delete next[key];
+    else next[key] = value;
+  };
+  const date = (value: string, flag: string) => {
+    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${flag} must be YYYY-MM-DD`);
+    return value;
+  };
+  const number = (value: string, flag: string) => {
+    if (value.trim() === "") return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) throw new Error(`${flag} must be a number`);
+    return parsed;
+  };
+  if (input.owner !== undefined) set(lead ? "leadOwner" : "dealOwner", input.owner.trim());
+  if (input.value !== undefined) set(lead ? "leadValue" : "dealValue", number(input.value, "--value"));
+  if (input.currency !== undefined) set(lead ? "leadCurrency" : "dealCurrency", input.currency.trim().toUpperCase());
+  if (input.expectedClose !== undefined) set("expectedCloseDate", date(input.expectedClose.trim(), "--expected-close"));
+  if (input.probability !== undefined) {
+    const probability = number(input.probability, "--probability");
+    if (probability != null && (probability < 0 || probability > 100)) throw new Error("--probability must be between 0 and 100");
+    set("probability", probability);
+  }
+  if (input.nextSubject !== undefined && !input.nextDate && !fieldString(next, "nextActivityDate")) {
+    throw new Error("--next-subject needs --next-date");
+  }
+  if (input.nextDate !== undefined) {
+    set("nextActivityDate", date(input.nextDate.trim(), "--next-date"));
+    if (!input.nextDate.trim()) delete next.nextActivitySubject;
+  }
+  if (input.nextSubject !== undefined) set("nextActivitySubject", input.nextSubject.trim());
+  return next;
 }
 
 export function registerPipelineCommands(program: Command): void {
@@ -384,6 +626,57 @@ export function registerPipelineCommands(program: Command): void {
       })),
   );
 
+  addPipelineOptions(
+    pipelines
+      .command("deals-due")
+      .description("List open Pipedrive deals whose next step is due today or late, across the DevTools pipelines")
+      .option("--days <n>", "Also include next steps due in the next N days", "0")
+      .option("--unscheduled", "Also include open deals with no next step booked")
+      .action((opts: DealsDueOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        const days = Number(opts.days ?? "0");
+        if (!Number.isInteger(days) || days < 0) throw new Error("--days must be a whole number of 0 or more");
+        const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const all = await ctx.api.get<PipelineSummary[]>(apiPath`/api/companies/${ctx.companyId}/pipelines`) ?? [];
+        const dealPipelines = all.filter((pipeline) => pipeline.key.startsWith("pipedrive-") && pipeline.key !== "pipedrive-leads");
+        const loaded = await Promise.all(dealPipelines.map(async (pipeline) => ({
+          id: pipeline.id,
+          name: pipeline.name,
+          rows: await ctx.api.get<CaseListRow[]>(apiPath`/api/pipelines/${pipeline.id}/cases`) ?? [],
+        })));
+        const due = selectDealsDue(loaded, until, Boolean(opts.unscheduled));
+        if (ctx.json) return printOutput(due, { json: true });
+        if (due.length === 0) return console.log("No open deal has a next step due.");
+        due.forEach((deal) => console.log(
+          `${deal.nextActivityDate ?? "no next step"}  ${deal.title}${deal.nextActivitySubject ? `: ${deal.nextActivitySubject}` : ""}  ${pc.dim(`${deal.pipelineName} / ${deal.stage} / ${deal.caseId}`)}`,
+        ));
+      })),
+  );
+
+  addPipelineOptions(
+    pipelines
+      .command("deals-summary")
+      .description("Summarise the open Pipedrive deals in each DevTools pipeline: value, weighted value, late next steps and 90 day win rate")
+      .action((opts: PipelineOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        const all = await ctx.api.get<PipelineSummary[]>(apiPath`/api/companies/${ctx.companyId}/pipelines`) ?? [];
+        const dealPipelines = all.filter((pipeline) => pipeline.key.startsWith("pipedrive-") && pipeline.key !== "pipedrive-leads");
+        const loaded = await Promise.all(dealPipelines.map(async (pipeline) => ({
+          id: pipeline.id,
+          name: pipeline.name,
+          rows: await ctx.api.get<CaseListRow[]>(apiPath`/api/pipelines/${pipeline.id}/cases`) ?? [],
+        })));
+        const summary = summariseDeals(loaded, new Date().toISOString().slice(0, 10));
+        if (ctx.json) return printOutput(summary, { json: true });
+        if (summary.length === 0) return console.log("No Pipedrive deal pipelines.");
+        summary.forEach((row) => console.log([
+          `${row.pipelineName}: ${row.open} open, ${formatAmounts(row.openValue)} (${formatAmounts(row.weightedValue)} weighted)`,
+          `${row.lateNextSteps} late next steps, ${row.noNextStep} with none booked`,
+          row.winRate90d == null ? "no deals closed in 90 days" : `${row.winRate90d}% win rate in 90 days (${row.won90d} won, ${row.lost90d} lost)`,
+        ].join(" · ")));
+      })),
+  );
+
   const caseCommand = pipelines.command("case").description("Pipeline case operations");
   registerCaseCommands(caseCommand);
 
@@ -477,6 +770,110 @@ function registerCaseCommands(caseCommand: Command): void {
         if (fields !== undefined) body.fields = fields;
         if (opts.workspaceRefJson) body.workspaceRef = parseJson(opts.workspaceRefJson);
         printOutput(await ctx.api.patch(apiPath`/api/cases/${caseId}`, body), { json: ctx.json });
+      })),
+  );
+
+  addPipelineOptions(
+    caseCommand
+      .command("next-step-done")
+      .description("Mark a Pipedrive deal's next step done, with a note and an optional follow-up")
+      .argument("<caseId>", "Case ID")
+      .option("--note <text>", "What happened")
+      .option("--next-date <yyyy-mm-dd>", "Date of the follow-up next step")
+      .option("--next-subject <text>", "Subject of the follow-up next step")
+      .action((caseId: string, opts: NextStepDoneOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        if (opts.nextDate && !/^\d{4}-\d{2}-\d{2}$/.test(opts.nextDate)) throw new Error("--next-date must be YYYY-MM-DD");
+        if (opts.nextSubject && !opts.nextDate) throw new Error("--next-subject needs --next-date");
+        const detail = await ctx.api.get<CaseDetail>(apiPath`/api/cases/${caseId}`);
+        if (!detail) throw new Error(`Case ${caseId} not found`);
+        const fields = detail.case.fields ?? null;
+        if (!fields || !("dealStatus" in fields)) throw new Error("This case is not a Pipedrive deal");
+        const status = fieldString(fields, "dealStatus")?.toLowerCase();
+        if (status && status !== "open") throw new Error(`This deal is ${status}; only an open deal has a next step to mark done`);
+        if (!fieldString(fields, "nextActivityDate")) throw new Error("This deal has no next step to mark done");
+        const today = new Date().toISOString().slice(0, 10);
+        const result = await ctx.api.patch(apiPath`/api/cases/${caseId}`, {
+          fields: completeDealNextStep(fields, opts, today),
+          expectedVersion: detail.case.version,
+        });
+        if (ctx.json) return printOutput(result, { json: true });
+        console.log(opts.nextDate
+          ? `Next step done on ${detail.case.title}. Follow-up booked for ${opts.nextDate}.`
+          : `Next step done on ${detail.case.title}. No follow-up booked.`);
+      })),
+  );
+
+  addPipelineOptions(
+    caseCommand
+      .command("set-deal")
+      .description("Change a Pipedrive deal's owner, value, expected close, probability or next step (GSAM only)")
+      .argument("<caseId>", "Case ID")
+      .option("--owner <name>", "Deal owner (\"\" removes it)")
+      .option("--value <amount>", "Deal value (\"\" removes it)")
+      .option("--currency <code>", "Currency code, such as GBP")
+      .option("--expected-close <yyyy-mm-dd>", "Expected close date (\"\" removes it)")
+      .option("--probability <0-100>", "Win probability in percent (\"\" removes it)")
+      .option("--next-date <yyyy-mm-dd>", "Next step date (\"\" removes the next step)")
+      .option("--next-subject <text>", "Next step subject")
+      .action((caseId: string, opts: SetDealOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        const { owner, value, currency, expectedClose, probability, nextDate, nextSubject } = opts;
+        const input = { owner, value, currency, expectedClose, probability, nextDate, nextSubject };
+        if (Object.values(input).every((item) => item === undefined)) {
+          throw new Error("Give at least one of --owner, --value, --currency, --expected-close, --probability, --next-date or --next-subject");
+        }
+        const detail = await ctx.api.get<CaseDetail>(apiPath`/api/cases/${caseId}`);
+        if (!detail) throw new Error(`Case ${caseId} not found`);
+        const fields = detail.case.fields ?? null;
+        if (!fields || !("dealStatus" in fields || "leadValue" in fields || "dealValue" in fields)) {
+          throw new Error("This case is not a Pipedrive deal");
+        }
+        const result = await ctx.api.patch(apiPath`/api/cases/${caseId}`, {
+          fields: applyDealSettings(fields, input),
+          expectedVersion: detail.case.version,
+        });
+        if (ctx.json) return printOutput(result, { json: true });
+        console.log(`Updated ${detail.case.title}.`);
+      })),
+  );
+
+  addPipelineOptions(
+    caseCommand
+      .command("close-deal")
+      .description("Mark a Pipedrive deal won or lost, as Mark won and Mark lost do on the deal page (GSAM only)")
+      .argument("<caseId>", "Case ID")
+      .option("--won", "The deal was won")
+      .option("--lost", "The deal was lost")
+      .option("--reason <text>", "Why it was lost")
+      .action((caseId: string, opts: CloseDealOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        if (opts.won === opts.lost) throw new Error("Give exactly one of --won or --lost");
+        if (opts.won && opts.reason) throw new Error("--reason is only for a lost deal");
+        const outcome = opts.won ? "won" : "lost";
+        const detail = await ctx.api.get<CaseDetail>(apiPath`/api/cases/${caseId}`);
+        if (!detail) throw new Error(`Case ${caseId} not found`);
+        const fields = detail.case.fields ?? null;
+        if (!fields || !("dealStatus" in fields)) throw new Error("This case is not a Pipedrive deal");
+        const status = fieldString(fields, "dealStatus")?.toLowerCase();
+        if (status && status !== "open") throw new Error(`This deal is already ${status}`);
+        const pipeline = await ctx.api.get<PipelineDetail>(apiPath`/api/pipelines/${detail.case.pipelineId}`);
+        const stage = dealOutcomeStage(pipeline?.stages ?? [], outcome);
+        if (!stage) throw new Error(`This pipeline has no ${outcome === "won" ? "Won" : "Lost"} stage`);
+        const reason = opts.reason?.trim();
+        const moved = await ctx.api.post<{ case?: { version?: number } }>(apiPath`/api/cases/${caseId}/transition`, {
+          toStageKey: stage.key,
+          expectedVersion: detail.case.version,
+          reason: outcome === "won" ? "Marked won from the CLI." : `Marked lost from the CLI${reason ? `: ${reason}` : "."}`,
+          force: true,
+        });
+        const today = new Date().toISOString().slice(0, 10);
+        const result = await ctx.api.patch(apiPath`/api/cases/${caseId}`, {
+          fields: closeDealFields(fields, outcome, today, reason),
+          expectedVersion: moved?.case?.version ?? detail.case.version + 1,
+        });
+        if (ctx.json) return printOutput(result, { json: true });
+        console.log(`${detail.case.title} marked ${outcome}.`);
       })),
   );
 

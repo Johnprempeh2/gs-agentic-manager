@@ -89,7 +89,10 @@ const nativeRunnerSuite =
 // unknown workflow degrades to today's slower-but-covered behavior rather
 // than dropping the suite.
 const prWorkflowName = "PR";
-const nativeRunnerSuiteRunsInRustCachedLane = process.env.GITHUB_WORKFLOW === prWorkflowName;
+// Fork CI's pull request server lanes carry no Rust toolchain, so they set
+// GSAM_SKIP_NATIVE_RUNNER_SUITE=1 and leave this suite to the manual full run.
+const nativeRunnerSuiteRunsInRustCachedLane =
+  process.env.GITHUB_WORKFLOW === prWorkflowName || process.env.GSAM_SKIP_NATIVE_RUNNER_SUITE === "1";
 const withoutChatExcludedSuites = nativeRunnerSuiteRunsInRustCachedLane
   ? [chatSuite, nativeRunnerSuite]
   : [chatSuite];

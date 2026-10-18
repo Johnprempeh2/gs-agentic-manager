@@ -45,7 +45,7 @@ const localIcons = {
 
 const auditItems = [
   { section: "activity", label: "Activity", icon: Activity },
-  { section: "runs", label: "Runs", icon: PlayCircle },
+  { section: "runs", label: "Work history", icon: PlayCircle },
   { section: "costs", label: "Costs", icon: ReceiptText },
   { section: "budgets", label: "Budgets", icon: BadgeDollarSign },
 ] as const;

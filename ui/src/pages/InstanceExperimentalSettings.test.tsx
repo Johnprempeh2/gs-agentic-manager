@@ -46,8 +46,8 @@ async function flushReact() {
   flushSync(() => {});
 }
 
-const CONFERENCE_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle conference room chat experimental setting"]';
+const TEAM_CHAT_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle team chat experimental setting"]';
 const TASK_WATCHDOGS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle task watchdogs experimental setting"]';
 const CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR =
@@ -56,20 +56,10 @@ const GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR =
   'button[aria-label="Toggle goals sidebar link experimental setting"]';
 const DECISIONS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle decisions experimental setting"]';
-const SERVER_INFO_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle server info debug view experimental setting"]';
 const GSAM_DEVELOPER_MODE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager developer mode experimental setting"]';
-const BUILT_IN_AGENTS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle built-in agents experimental setting"]';
-const BETA_SKILLS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle beta skills experimental setting"]';
-const SUMMARIES_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle summaries experimental setting"]';
-const STATUS_CARDS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle status cards experimental setting"]';
-const CASES_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle cases experimental setting"]';
+const INTELLIGENCE_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle intelligence experimental setting"]';
 const DEEP_DIVE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle deep dive experimental setting"]';
 const STRATEGY_TOGGLE_SELECTOR = 'button[aria-label="Toggle strategy setting"]';
@@ -88,10 +78,10 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableStreamlinedUi: true,
     enableApps: true,
     enableMcpAggregators: true,
-    enableChatConnectors: false,
-    enableMemoryConnectors: false,
+    enableChatConnectors: true,
+    enableMemoryConnectors: true,
     enablePipelines: false,
-    enableCases: false,
+    enableCases: true,
     enableDeepDive: false,
     enableStrategy: false,
     enableStrategyBoard: false,
@@ -104,11 +94,11 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: false,
     enableExperimentalFileViewer: false,
-    enableExternalObjects: false,
+    enableExternalObjects: true,
     enableBuiltInAgents: false,
     enableBetaSkills: false,
-    enableSummaries: false,
-    enableStatusCards: false,
+    enableSummaries: true,
+    enableStatusCards: true,
     enableDecisions: false,
     enableGoalsSidebarLink: false,
     enableServerInfoDebugView: false,
@@ -234,8 +224,8 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
         graceEndsAt: "2026-11-15T00:00:00.000Z",
       },
       features: {
-        enableBuiltInAgents: { entitled: false, effective: false, pendingRestart: false },
-        enableConferenceRoomChat: { entitled: true, effective: false, pendingRestart: true },
+        enableIntelligence: { entitled: false, effective: false, pendingRestart: false },
+        enableTeamChat: { entitled: true, effective: false, pendingRestart: true },
       },
       limits: {},
       ignoredFeatureKeys: [],
@@ -249,8 +239,8 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).toContain("Plan v3 for acme");
     expect(container.textContent).toContain("Not in your plan");
     expect(container.textContent).toContain("Pending restart");
-    expect(container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR)?.disabled).toBe(true);
-    expect(container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR)?.disabled).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR)?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>(TEAM_CHAT_TOGGLE_SELECTOR)?.disabled).toBe(false);
 
     const syncButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Sync now");
     await act(() => syncButton!.click());
@@ -265,17 +255,12 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Show the Apps navigation");
   });
 
-  it("defaults memory connectors off and persists an explicit toggle in both directions", async () => {
+  it("no longer shows Chat or Memory connectors toggles (graduated, GRE-1620)", async () => {
     await renderPage();
-    const selector = 'button[aria-label="Toggle memory connectors experimental setting"]';
-    expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain("Existing connections keep running.");
-    for (const enabled of [true, false]) {
-      await act(() => container.querySelector<HTMLButtonElement>(selector)!.click());
-      await flushReact();
-      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({ enableMemoryConnectors: enabled });
-      expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe(String(enabled));
-    }
+    expect(container.querySelector('button[aria-label="Toggle memory connectors experimental setting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle chat connectors experimental setting"]')).toBeNull();
+    expect(container.textContent).not.toContain("Memory connectors");
+    expect(container.textContent).not.toContain("Chat connectors");
   });
 
   it("does not offer a retired MCP aggregators toggle", async () => {
@@ -284,26 +269,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("MCP aggregators");
   });
 
-  it("defaults chat connectors off and persists an explicit toggle in both directions", async () => {
-    await renderPage();
-    const selector = 'button[aria-label="Toggle chat connectors experimental setting"]';
-    expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain("Existing chat connections keep running");
-    for (const enabled of [true, false]) {
-      await act(() => container.querySelector<HTMLButtonElement>(selector)!.click());
-      await flushReact();
-      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({ enableChatConnectors: enabled });
-      expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe(String(enabled));
-      expect(currentExperimentalSettings.enableApps).toBe(true);
-    }
-  });
-
-  it("renders the Conference Room Chat toggle off by default (GRE-230)", async () => {
+  it("no longer shows a Conference Room Chat toggle (graduated, GRE-1624)", async () => {
     await renderPage();
 
-    const titles = [...container.querySelectorAll("h3")].map((h) => h.textContent);
-    expect(titles).toContain("Conference Room Chat");
-    expect(container.querySelector(CONFERENCE_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).not.toContain("Conference Room Chat");
+    expect(
+      container.querySelector('button[aria-label="Toggle conference room chat experimental setting"]'),
+    ).toBeNull();
   });
 
   it("does not render the Pipelines experimental setting for now", async () => {
@@ -312,28 +284,6 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     const headings = [...container.querySelectorAll("section h2")].map((h) => h.textContent);
     expect(headings).not.toContain("Pipelines");
     expect(container.querySelector('button[aria-label="Toggle pipelines experimental setting"]')).toBeNull();
-  });
-
-  it("reflects a stored Conference Room Chat value and saves it off and on (GRE-230)", async () => {
-    currentExperimentalSettings = {
-      ...currentExperimentalSettings,
-      enableConferenceRoomChat: true,
-    };
-    await renderPage();
-
-    const toggle = container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-
-    for (const enabled of [false, true]) {
-      await act(() => toggle?.click());
-      await flushReact();
-      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-        enableConferenceRoomChat: enabled,
-      });
-      expect(toggle?.getAttribute("aria-checked")).toBe(String(enabled));
-      expect(currentExperimentalSettings.enableConferenceRoomChat).toBe(enabled);
-    }
   });
 
   it("no longer shows a Streamlined UI toggle (graduated, GRE-1441)", async () => {
@@ -607,115 +557,36 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Running tasks created after");
   });
 
-  it("renders and patches the Built-in Agents experimental toggle", async () => {
+  it("no longer shows the switches graduated in GRE-1621", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Built-in Agents");
-    expect(container.textContent).toContain("Show GS Agentic Manager-managed built-in agent surfaces");
-
-    const toggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableBuiltInAgents: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    for (const label of [
+      "agent chat",
+      "beta skills",
+      "built-in agents",
+      "simplified english interactions",
+      "task plan decomposition panel",
+    ]) {
+      expect(container.querySelector(`button[aria-label="Toggle ${label} experimental setting"]`)).toBeNull();
+    }
+    for (const title of ["Agent Chat", "Beta skills", "Built-in Agents", "Simplified English Interactions", "Task Plan Decomposition"]) {
+      expect([...container.querySelectorAll("h3")].map((heading) => heading.textContent)).not.toContain(title);
+    }
   });
 
-  it("renders and patches the Beta skills experimental toggle", async () => {
+  it("no longer shows Cases, External Objects, Status Cards or Summaries toggles (graduated, GRE-1622)", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Beta skills");
-    expect(container.textContent).toContain("pin beta releases of the GS Agentic Manager core skill");
-
-    const toggle = container.querySelector<HTMLButtonElement>(BETA_SKILLS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableBetaSkills: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    for (const label of ["cases", "external objects", "status cards", "summaries"]) {
+      expect(container.querySelector(`button[aria-label="Toggle ${label} experimental setting"]`)).toBeNull();
+    }
+    const titles = [...container.querySelectorAll("h3")].map((heading) => heading.textContent);
+    for (const title of ["Cases", "Enable External Objects", "Status Cards", "Summaries"]) {
+      expect(titles).not.toContain(title);
+    }
   });
 
-  it("renders and patches the Summaries experimental toggle", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("Summaries");
-    expect(container.textContent).toContain("Show Summarizer-generated status slots");
-
-    const toggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("enables Summaries when enabling the Status Cards experimental toggle", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("Status Cards");
-    expect(container.textContent).toContain("experimental shared status-card board");
-
-    const toggle = container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: true,
-      enableStatusCards: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-    expect(
-      container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("true");
-  });
-
-  it("disables Status Cards when disabling Summaries", async () => {
-    currentExperimentalSettings = {
-      ...currentExperimentalSettings,
-      enableSummaries: true,
-      enableStatusCards: true,
-    };
-    await renderPage();
-
-    const summariesToggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    await act(async () => {
-      summariesToggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: false,
-      enableStatusCards: false,
-    });
-    expect(summariesToggle?.getAttribute("aria-checked")).toBe("false");
-    expect(
-      container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("false");
-  });
-
-  it("enables Cases when enabling the Deep Dive experimental toggle", async () => {
+  it("turns Deep Dive on alone now that Cases are always on (GRE-1622)", async () => {
     await renderPage();
 
     const toggle = container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR);
@@ -726,43 +597,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     });
     await flushReact();
 
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableCases: true,
-      enableDeepDive: true,
-    });
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableDeepDive: true });
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
-    expect(
-      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("true");
   });
 
-  it("disables Deep Dive when disabling Cases", async () => {
+  it("turns Deep Dive off alone", async () => {
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
-      enableCases: true,
-      enableDeepDive: true,
-    };
-    await renderPage();
-
-    const casesToggle = container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR);
-    await act(async () => {
-      casesToggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableCases: false,
-      enableDeepDive: false,
-    });
-    expect(
-      container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("false");
-  });
-
-  it("turns only Deep Dive off and leaves Cases on", async () => {
-    currentExperimentalSettings = {
-      ...currentExperimentalSettings,
-      enableCases: true,
       enableDeepDive: true,
     };
     await renderPage();
@@ -773,9 +614,6 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     await flushReact();
 
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableDeepDive: false });
-    expect(
-      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("true");
   });
 
   it("turns Strategy on with the Board, and the Board off with Strategy (GRE-1382)", async () => {
@@ -801,26 +639,16 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("renders and patches the Server Info Debug View experimental toggle", async () => {
+  it("no longer shows Environments, File Viewer or Server Info toggles (graduated, GRE-1623)", async () => {
+    setWorktreeRuntimeMeta(true);
     await renderPage();
 
-    expect(container.textContent).toContain("Server Info Debug View");
-    expect(container.textContent).toContain(
-      'Show a "Server" section in the account drawer with the current server restart time and running commit.',
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(SERVER_INFO_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableServerInfoDebugView: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).not.toContain("Enable Environments");
+    expect(container.textContent).not.toContain("Experimental File Viewer");
+    expect(container.textContent).not.toContain("Server Info Debug View");
+    expect(container.querySelector('button[aria-label="Toggle environments experimental setting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle experimental file viewer setting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle server info debug view experimental setting"]')).toBeNull();
   });
 });
 
@@ -869,29 +697,29 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
   it("renders a managed key locked with the badge while unmanaged keys stay editable", async () => {
     await renderPage({
       ...defaultExperimentalSettings(),
-      enableBuiltInAgents: true,
+      enableIntelligence: true,
       managedKeys: {
-        enableBuiltInAgents: { managed: true, managedBy: "paperclip-cloud" },
+        enableIntelligence: { managed: true, managedBy: "paperclip-cloud" },
       },
     });
 
     expect(container.textContent).toContain(MANAGED_BADGE_TEXT);
 
-    const builtInAgentsToggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(builtInAgentsToggle?.getAttribute("aria-checked")).toBe("true");
-    expect(builtInAgentsToggle?.disabled).toBe(true);
+    const intelligenceToggle = container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR);
+    expect(intelligenceToggle?.getAttribute("aria-checked")).toBe("true");
+    expect(intelligenceToggle?.disabled).toBe(true);
 
-    await act(() => builtInAgentsToggle?.click());
+    await act(() => intelligenceToggle?.click());
     await flushReact();
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
 
-    const summariesToggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    expect(summariesToggle?.disabled).toBe(false);
+    const teamChatToggle = container.querySelector<HTMLButtonElement>(TEAM_CHAT_TOGGLE_SELECTOR);
+    expect(teamChatToggle?.disabled).toBe(false);
 
-    await act(() => summariesToggle?.click());
+    await act(() => teamChatToggle?.click());
     await flushReact();
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: true,
+      enableTeamChat: true,
     });
   });
 
@@ -919,64 +747,17 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
   });
 
-  it("keeps a managed chat connectors setting locked", async () => {
-    await renderPage({
-      ...defaultExperimentalSettings(),
-      managedKeys: { enableChatConnectors: { managed: true, managedBy: "paperclip-cloud" } },
-    });
-    const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle chat connectors experimental setting"]');
-    expect(toggle?.disabled).toBe(true);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain(MANAGED_BADGE_TEXT);
-    await act(() => toggle?.click());
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-  });
-
-  it("locks Status Cards when managed Summaries is disabled", async () => {
-    await renderPage({
-      ...defaultExperimentalSettings(),
-      managedKeys: {
-        enableSummaries: { managed: true, managedBy: "paperclip-cloud" },
-      },
-    });
-
-    const statusCardsToggle = container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR);
-    expect(statusCardsToggle?.disabled).toBe(true);
-
-    await act(() => statusCardsToggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-  });
-
-  it("locks Summaries on when managed Status Cards is enabled", async () => {
-    await renderPage({
-      ...defaultExperimentalSettings(),
-      enableSummaries: true,
-      enableStatusCards: true,
-      managedKeys: {
-        enableStatusCards: { managed: true, managedBy: "paperclip-cloud" },
-      },
-    });
-
-    const summariesToggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    expect(summariesToggle?.disabled).toBe(true);
-
-    await act(() => summariesToggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-  });
-
   it("renders no managed badge and keeps toggles editable without managedKeys (self-hosted)", async () => {
     await renderPage(defaultExperimentalSettings());
 
     expect(container.textContent).not.toContain(MANAGED_BADGE_TEXT);
 
-    const builtInAgentsToggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(builtInAgentsToggle?.disabled).toBe(false);
+    const intelligenceToggle = container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR);
+    expect(intelligenceToggle?.disabled).toBe(false);
 
-    await act(() => builtInAgentsToggle?.click());
+    await act(() => intelligenceToggle?.click());
     await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableBuiltInAgents: true });
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableIntelligence: true });
   });
 });
 
@@ -1037,9 +818,11 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     expect(sections.at(-1)?.textContent).toContain("Run tasks in this worktree");
     expect(sections.at(-1)?.textContent).toContain("Managed Environment Only");
     expect(sections.at(-1)?.textContent).not.toContain("Auto-Restart Dev Server When Idle");
-    expect(sections.at(-1)?.textContent).toContain("Server Info Debug View");
+    // Server Info Debug View graduated (GRE-1623).
+    expect(sections.at(-1)?.textContent).not.toContain("Server Info Debug View");
     expect(sections.at(-1)?.textContent).not.toContain("Smoke Lab");
-    expect(sections.at(-1)?.textContent).toContain("Task Plan Decomposition");
+    // Task Plan Decomposition graduated (GRE-1621).
+    expect(sections.at(-1)?.textContent).not.toContain("Task Plan Decomposition");
     // Classic Task Interface is retired (GRE-196) and Goals Sidebar Link graduated (GRE-191).
     expect(container.textContent).not.toContain("These features are going to be removed.");
   });
@@ -1060,7 +843,8 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     await renderPage(defaultExperimentalSettings());
 
     const cards = [...container.querySelectorAll('[data-slot="card"]')];
-    expect(cards.length).toBeGreaterThan(10);
+    // Fewer cards since the GRE-193 graduations; the check is that none has a background.
+    expect(cards.length).toBeGreaterThan(5);
     expect(cards.every((card) => card.classList.contains("bg-transparent"))).toBe(true);
   });
 
@@ -1115,16 +899,16 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   }
 
   it("renders nothing for an operator-hidden toggle and keeps the rest", async () => {
-    await renderPage(["instance.experimental.enableEnvironments"]);
+    await renderPage(["instance.experimental.enableWebsiteView"]);
 
-    expect(container.textContent).not.toContain("Enable Environments");
-    expect(container.textContent).toContain("Beta skills");
+    expect(container.textContent).not.toContain("Website view");
+    expect(container.textContent).toContain("Team Chat");
     expect(container.textContent).not.toContain("Show the Apps navigation");
   });
 
   it("keeps only permitted controls in alphabetical order, including when hidden features are enabled", async () => {
     setWorktreeRuntimeMeta(true);
-    const visible = new Set(["enableExternalObjects", "enableMemoryConnectors", "enableSimplifiedEnglishInteractions"]);
+    const visible = new Set(["enableTeamChat", "enableWebsiteView"]);
     await renderPage(
       INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`),
       {
@@ -1139,21 +923,20 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
     );
 
     expect([...container.querySelectorAll("h3")].map((heading) => heading.textContent)).toEqual([
-      "Enable External Objects",
-      "Memory connectors",
-      "Simplified English Interactions",
+      "Team Chat",
+      "Website view",
     ]);
     expect([...container.querySelectorAll("section h2")].map((heading) => heading.textContent)).toEqual([
       "Experimental features",
     ]);
-    expect(container.querySelectorAll('button[role="switch"]')).toHaveLength(3);
+    expect(container.querySelectorAll('button[role="switch"]')).toHaveLength(2);
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
   });
 
   it("retains a section when one of its controls is visible", async () => {
-    const visible = new Set(["enableServerInfoDebugView"]);
+    const visible = new Set(["enableManagedSandboxOnly"]);
     await renderPage(INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`));
-    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Server Info Debug View");
+    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Managed Environment Only");
     // Legacy has no visible cards now that Goals Sidebar Link graduated (GRE-191).
     expect(container.querySelector('[aria-labelledby="legacy-heading"]')).toBeNull();
   });
@@ -1161,7 +944,7 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   it("shows every toggle when nothing is hidden", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Enable Environments");
-    expect(container.textContent).toContain("Beta skills");
+    expect(container.textContent).toContain("Team Chat");
+    expect(container.textContent).toContain("Website view");
   });
 });

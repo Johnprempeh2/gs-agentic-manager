@@ -1,6 +1,6 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
 
-export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "agents", "projects"] as const;
+export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "files", "records", "agents", "projects"] as const;
 export type CompanySearchScope = (typeof COMPANY_SEARCH_SCOPES)[number];
 
 export const COMPANY_SEARCH_SORTS = ["relevance", "updated", "created", "priority"] as const;
@@ -9,7 +9,7 @@ export type CompanySearchSort = (typeof COMPANY_SEARCH_SORTS)[number];
 export const COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS = ["24h", "7d", "30d", "90d"] as const;
 export type CompanySearchUpdatedWithinOption = (typeof COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS)[number];
 
-export type CompanySearchResultType = "issue" | "artifact" | "agent" | "project";
+export type CompanySearchResultType = "issue" | "artifact" | "file" | "record" | "agent" | "project";
 export type CompanySearchCountType = CompanySearchResultType | "comment" | "document";
 export type CompanySearchIssueFilterKey =
   | "status"
@@ -58,6 +58,34 @@ export interface CompanySearchArtifactSummary {
   updatedAt: string;
 }
 
+/** An uploaded file whose words matched: a PDF, Word file or text file, or an image by its alt text. */
+/** Kinds of business record search finds outside tasks: imported CRM data (including notes, calls, meetings and emails) and generated images. */
+export const COMPANY_SEARCH_RECORD_KINDS = ["organisation", "person", "client", "product", "image", "activity"] as const;
+export type CompanySearchRecordKind = (typeof COMPANY_SEARCH_RECORD_KINDS)[number];
+
+export interface CompanySearchRecordSummary {
+  kind: CompanySearchRecordKind;
+  /** One plain line under the title, such as "Finance director at Acme Ltd" or "Lead in Sales". */
+  subtitle: string | null;
+}
+
+export interface CompanySearchFileSummary {
+  assetId: string;
+  filename: string | null;
+  contentType: string;
+  mediaKind: "image" | "document";
+  /** Where the file lives: a task (or chat) or a client in a pipeline. */
+  owner: {
+    kind: "task" | "client" | "organisation";
+    label: string;
+    href: string;
+  };
+  /** Where the file itself opens, when it is reachable as an attachment. */
+  contentPath: string | null;
+  /** True when the match is the image's alt text rather than words inside the file. */
+  matchedAltText: boolean;
+}
+
 export interface CompanySearchResult {
   id: string;
   type: CompanySearchResultType;
@@ -70,6 +98,8 @@ export interface CompanySearchResult {
   snippets: CompanySearchSnippet[];
   issue?: CompanySearchIssueSummary;
   artifact?: CompanySearchArtifactSummary;
+  file?: CompanySearchFileSummary;
+  record?: CompanySearchRecordSummary;
   updatedAt: string | null;
   previewImageUrl: string | null;
 }
@@ -151,4 +181,181 @@ export interface CompanySearchExtractResponse {
   results: CompanySearchExtractIssueResult[];
   hasMore: boolean;
   truncated: boolean;
+}
+
+/** An open deal or lead with no note, call, meeting or email for a while. */
+export interface CompanyQuietClient {
+  caseId: string;
+  title: string;
+  pipelineId: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  /** When we last had a note, call, meeting or email; null when never. */
+  lastTouchAt: string | null;
+  /** What that last touch was: "Call: Pricing call". */
+  lastTouchLabel: string | null;
+  /** Whole days since the last touch, or since the deal was added when never. */
+  quietDays: number;
+  href: string;
+}
+
+export interface CompanyQuietClientsResponse {
+  days: number;
+  clients: CompanyQuietClient[];
+  /** Open deals and leads that went quiet, beyond the ones listed. */
+  total: number;
+}
+
+/** One imported note, call, meeting or email, with the client it belongs to. */
+export interface CompanyClientActivity {
+  id: string;
+  /** "Call", "Meeting", "Note", "Email". */
+  kindLabel: string;
+  title: string;
+  /** The deal or organisation it belongs to. */
+  clientName: string | null;
+  ownerName: string | null;
+  occurredAt: string;
+  href: string;
+}
+
+export interface CompanyRecentClientActivityResponse {
+  days: number;
+  activity: CompanyClientActivity[];
+  total: number;
+  /** How many distinct deals or organisations had contact. */
+  clientCount: number;
+  /** Counts by kind label, largest first: [["Call", 4], ["Note", 2]]. */
+  byKind: Array<[string, number]>;
+}
+
+/** A one-glance brief on the organisation that best matches a name. */
+export interface CompanyClientBrief {
+  organisation: {
+    id: string;
+    name: string;
+    status: string;
+    industry: string | null;
+    country: string | null;
+    href: string;
+  };
+  /** Up to three people, key contacts first. */
+  people: Array<{ name: string; role: string | null; email: string | null }>;
+  peopleCount: number;
+  /** Open deals and leads, newest first. */
+  openDeals: Array<{
+    title: string;
+    stageName: string;
+    pipelineName: string;
+    /** Imported value and currency, when set. */
+    value: number | null;
+    currency: string | null;
+    /** Imported expected close date, YYYY-MM-DD, when set. */
+    expectedCloseDate: string | null;
+    href: string;
+  }>;
+  lastTouch: { at: string; label: string } | null;
+  /** Days since the last note, call or meeting; null when never. */
+  quietDays: number | null;
+}
+
+export interface CompanyClientBriefResponse {
+  brief: CompanyClientBrief | null;
+}
+
+export interface CompanyClosingDeal {
+  caseId: string;
+  title: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  /** Expected close date, YYYY-MM-DD. */
+  expectedCloseDate: string;
+  /** True when the expected close date has passed and the deal is still open. */
+  overdue: boolean;
+  value: number | null;
+  currency: string | null;
+  href: string;
+}
+
+export interface CompanyClosingDealsResponse {
+  days: number;
+  /** Open deals and leads expected to close within `days` (or already past their date), soonest first. */
+  deals: CompanyClosingDeal[];
+  total: number;
+  overdueCount: number;
+  /** Value of the deals in the window, per currency (null currency when none was set). */
+  valueByCurrency: Array<{ currency: string | null; value: number; count: number }>;
+}
+
+export interface CompanyPipelineStageSummary {
+  pipelineId: string;
+  pipelineName: string;
+  stageName: string;
+  count: number;
+  valueByCurrency: Array<{ currency: string | null; value: number }>;
+}
+
+export interface CompanyPipelineDeal {
+  caseId: string;
+  title: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  /** Null only for an owner's deals that have no value recorded. */
+  value: number | null;
+  currency: string | null;
+  /** Expected close date, YYYY-MM-DD, when one was imported. */
+  expectedCloseDate: string | null;
+  href: string;
+}
+
+export interface CompanyPipelineSummaryResponse {
+  /** The owner name the summary was narrowed to (full or first name), or null for every owner. */
+  ownerFilter?: string | null;
+  /** Open deals and leads across all pipelines. */
+  total: number;
+  valueByCurrency: Array<{ currency: string | null; value: number; count: number }>;
+  /** Open deals per stage, in pipeline and stage order; empty stages left out. */
+  stages: CompanyPipelineStageSummary[];
+  /** The largest open deals by value (values are not converted between currencies). With an owner filter, that owner's deals, valued ones first. */
+  topDeals: CompanyPipelineDeal[];
+  /** Open deals per imported owner, most deals first; null owner when none was set. */
+  owners: Array<{ owner: string | null; count: number; valueByCurrency: Array<{ currency: string | null; value: number }> }>;
+  /** How many open deals lack each key field, and up to `limit` of them, oldest first. */
+  missing: {
+    closeDate: number;
+    value: number;
+    owner: number;
+    organisation: number;
+    deals: Array<{ caseId: string; title: string; pipelineName: string; stageName: string; missing: Array<"closeDate" | "value" | "owner" | "organisation">; href: string }>;
+  };
+}
+
+export interface CompanyClosedDeal {
+  caseId: string;
+  title: string;
+  pipelineName: string;
+  organisationName: string | null;
+  /** The day it was won or lost, YYYY-MM-DD. */
+  closedOn: string;
+  value: number | null;
+  currency: string | null;
+  /** Why it was lost, when recorded. */
+  lostReason: string | null;
+  href: string;
+}
+
+export interface CompanyClosedDealsGroup {
+  count: number;
+  valueByCurrency: Array<{ currency: string | null; value: number }>;
+  /** Most recent first. */
+  deals: CompanyClosedDeal[];
+}
+
+export interface CompanyWonLostResponse {
+  days: number;
+  won: CompanyClosedDealsGroup;
+  lost: CompanyClosedDealsGroup & { reasons: Array<{ reason: string; count: number }> };
 }

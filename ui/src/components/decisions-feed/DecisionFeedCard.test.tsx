@@ -159,7 +159,7 @@ describe("DecisionFeedCard rendering per kind", () => {
     ["question", questionCard(), "Question"],
     ["approval", approvalCard(), "Approval"],
     ["blocked", blockedCard(), "Blocked"],
-    ["failed run", failedRunCard(), "Failed run"],
+    ["failed run", failedRunCard(), "Stopped with an error"],
     ["review", reviewCard(), "Review"],
     ["merged GRE-138", mergedCard(), "Stopped"],
   ])("a %s card says what is blocked, why, who waits and what happens next", (_name, card, kindLabel) => {
@@ -181,7 +181,7 @@ describe("DecisionFeedCard rendering per kind", () => {
   it("shows every merged kind on one card", () => {
     render(mergedCard());
     const chips = [...container.querySelectorAll("[data-decision-card] span.rounded-full")].map((el) => el.textContent);
-    expect(chips).toEqual(["Stopped", "Failed run", "Connection"]);
+    expect(chips).toEqual(["Stopped", "Stopped with an error", "Connection"]);
   });
 
   it("answers a question in place, without the Answer link", () => {

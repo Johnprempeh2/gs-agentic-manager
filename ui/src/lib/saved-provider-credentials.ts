@@ -60,7 +60,7 @@ export function savedProviderKeys(
         ? [
             {
               id: `company:${secret.id}`,
-              label: `${secret.name} (Organization key)`,
+              label: `${secret.name} (Organisation key)`,
               binding: {
                 type: "secret_ref" as const,
                 secretId: secret.id,

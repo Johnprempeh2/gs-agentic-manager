@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToastActions } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
+import { ErrorState } from "@/components/ErrorState";
 import { ChoosePathButton } from "@/components/PathInstructionsModal";
 import { invalidateDynamicParser } from "@/adapters/dynamic-loader";
 import { invalidateConfigSchemaCache } from "@/adapters/schema-config-fields";
@@ -269,13 +270,13 @@ export function AdapterManager() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Adapters" },
     ]);
   }, [selectedCompany?.name, setBreadcrumbs]);
 
-  const { data: adapters, isLoading } = useQuery({
+  const { data: adapters, isLoading, error: adaptersError, refetch: refetchAdapters, isFetching: adaptersFetching } = useQuery({
     queryKey: queryKeys.adapters.all,
     queryFn: () => adaptersApi.list(),
   });
@@ -392,6 +393,16 @@ export function AdapterManager() {
     }));
 
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading adapters...</div>;
+  if (adaptersError && !adapters) {
+    return (
+      <ErrorState
+        error={adaptersError}
+        title="AI engines did not load"
+        onRetry={() => void refetchAdapters()}
+        retrying={adaptersFetching}
+      />
+    );
+  }
 
   const isMutating = installMutation.isPending || removeMutation.isPending || toggleMutation.isPending || overrideMutation.isPending || reloadMutation.isPending || reinstallMutation.isPending;
 

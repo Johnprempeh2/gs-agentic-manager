@@ -132,6 +132,7 @@ import {
 import type { MyUserSecretEntry } from "../api/secrets";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/context/ConfirmContext";
 
 type CreateMode = "managed" | "external";
 // "value" writes a new secret value (for external references: through to the
@@ -657,6 +658,7 @@ export function Secrets() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
+  const confirmAction = useConfirm();
   const [activeTab, setActiveTab] = useState<SecretsTab>("secrets");
   // Operator-hidden sub-tabs (UI-only; the secrets APIs stay live for agents).
   const { hidden: hiddenSettings } = useHiddenSettings();
@@ -1201,7 +1203,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Status update failed",
+        title: "Could not change the status",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1217,7 +1219,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Status update failed",
+        title: "Could not change the status",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1234,7 +1236,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Delete failed",
+        title: "Could not delete it",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1252,7 +1254,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Delete failed",
+        title: "Could not delete it",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1314,7 +1316,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Disable failed",
+        title: "Could not turn it off",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1334,7 +1336,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Remove failed",
+        title: "Could not remove it",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1349,7 +1351,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Default update failed",
+        title: "Could not change the default",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1364,7 +1366,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Health check failed",
+        title: "Could not check the connection",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1498,7 +1500,7 @@ export function Secrets() {
       .then(() => pushToast({ title: "Link copied", body: "Deep link to this secret", tone: "success" }))
       .catch((error) =>
         pushToast({
-          title: "Copy failed",
+          title: "Could not copy",
           body: error instanceof Error ? error.message : "Unable to copy link",
           tone: "error",
         }),
@@ -1510,7 +1512,7 @@ export function Secrets() {
       .then(() => pushToast({ title: "Secret key copied", body: key, tone: "success" }))
       .catch((error) =>
         pushToast({
-          title: "Copy failed",
+          title: "Could not copy",
           body: error instanceof Error ? error.message : "Unable to copy secret key",
           tone: "error",
         }),
@@ -1802,7 +1804,7 @@ export function Secrets() {
 
   if (!selectedCompanyId) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">Select an organization to manage secrets.</div>
+      <div className="p-6 text-sm text-muted-foreground">Choose an organisation to manage secrets.</div>
     );
   }
 
@@ -1979,7 +1981,7 @@ export function Secrets() {
               !(showFolderView && folderPath) ? (
               <EmptyState
                 icon={KeyRound}
-                message="No secrets yet. Create a shared organization secret or one that each user supplies."
+                message="No secrets yet. Create a shared organisation secret or one that each user supplies."
                 action="New secret"
                 onAction={openCreateSecret}
               />
@@ -2097,7 +2099,7 @@ export function Secrets() {
                             <div className="mt-1">
                               {row.kind === "company" ? (
                                 <MetaChip>
-                                  <ShieldCheck className="h-3 w-3" /> Organization
+                                  <ShieldCheck className="h-3 w-3" /> Organisation
                                 </MetaChip>
                               ) : (
                                 <UserSecretChip label="Each user" />
@@ -2162,7 +2164,7 @@ export function Secrets() {
                           {row.kind === "company" ? (
                             <>
                               <MetaChip>
-                                <ShieldCheck className="h-3 w-3" /> Organization
+                                <ShieldCheck className="h-3 w-3" /> Organisation
                               </MetaChip>
                               <SecretProviderIndicator
                                 secret={row.secret}
@@ -2218,7 +2220,16 @@ export function Secrets() {
             onRetry={() => providerConfigsQuery.refetch()}
             onCreate={openCreateVault}
             onEdit={openEditVault}
-            onDisable={(config) => disableVaultMutation.mutate(config.id)}
+            onDisable={async (config) => {
+                if (await confirmAction({
+                  title: `Turn off ${config.displayName}?`,
+                  description: "Agents that use secrets from this vault cannot read them until you turn it back on.",
+                  confirmLabel: "Turn off",
+                  tone: "destructive",
+                })) {
+                  disableVaultMutation.mutate(config.id);
+                }
+              }}
             onRemove={(config) => setRemoveVaultConfirm(config)}
             onSetDefault={(config) => defaultVaultMutation.mutate(config.id)}
             onHealthCheck={(config) => healthVaultMutation.mutate(config.id)}
@@ -2278,7 +2289,7 @@ export function Secrets() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <MetaChip>
-                    <ShieldCheck className="h-3 w-3" /> Organization
+                    <ShieldCheck className="h-3 w-3" /> Organisation
                   </MetaChip>
                   <MetaChip>{modeLabel(selectedSecret.managedMode)}</MetaChip>
                   <MetaChip>{providerLabel(providers, selectedSecret.provider)}</MetaChip>
@@ -2610,12 +2621,12 @@ export function Secrets() {
                   }}
                 >
                   <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="company">Organization</TabsTrigger>
+                    <TabsTrigger value="company">Organisation</TabsTrigger>
                     <TabsTrigger value="user">Each user</TabsTrigger>
                   </TabsList>
                 </Tabs>
                 <p className="text-(length:--text-micro) text-muted-foreground">
-                  Organization stores one shared value. Each user lets every member supply their own value under My secrets.
+                  Organisation stores one shared value. Each user lets every member supply their own value under My secrets.
                 </p>
               </div>
             ) : null}
@@ -3181,7 +3192,7 @@ export function Secrets() {
           <DialogHeader>
             <DialogTitle>Delete secret</DialogTitle>
             <DialogDescription>
-              Permanently removes <strong>{deleteConfirm?.name}</strong>. Active bindings will fail until you remap them.
+              Permanently removes <strong>{deleteConfirm?.name}</strong>. Anything that uses this secret stops working until you pick a new one.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -3206,7 +3217,7 @@ export function Secrets() {
           <DialogHeader>
             <DialogTitle>Delete user-provided secret</DialogTitle>
             <DialogDescription>
-              Permanently removes <strong>{definitionDeleteConfirm?.name}</strong> for the whole organization.
+              Permanently removes <strong>{definitionDeleteConfirm?.name}</strong> for the whole organisation.
               Existing member values become unreferenced and active bindings must be remapped.
             </DialogDescription>
           </DialogHeader>
@@ -3375,7 +3386,7 @@ function SecretsFiltersPopover({
               <div className="space-y-0.5">
                 {[
                   { value: "all" as const, label: "All sources" },
-                  { value: "company" as const, label: "Organization" },
+                  { value: "company" as const, label: "Organisation" },
                   { value: "user" as const, label: "Each user" },
                 ].map((option) => (
                   <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
@@ -3611,7 +3622,7 @@ export function ProviderVaultsTab({
               <div className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
                 {isComingSoonFamily
                   ? "Not yet supported."
-                  : "No organization-specific vaults yet. Secrets can still use the deployment default provider settings."}
+                  : "No organisation-specific vaults yet. Secrets can still use the deployment default provider settings."}
               </div>
             ) : (
               <div className="space-y-3">
@@ -3739,7 +3750,7 @@ function ProviderVaultCard({
           disabled={pending || config.status === "disabled"}
         >
           <Ban className="h-3.5 w-3.5 mr-1" />
-          Disable
+          Turn off
         </Button>
         <Button
           variant="outline"
@@ -4388,6 +4399,7 @@ function AgentAccessSection({
   companyId: string;
   reference: AgentAccessReference;
 }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -4512,7 +4524,7 @@ function AgentAccessSection({
       </div>
       <p className="mt-0.5 text-(length:--text-micro) text-muted-foreground">
         {reference.kind === "company"
-          ? "Add here to inject this secret as an environment variable at run start. API-access grants (fetched on demand, no env var) are managed from each agent's Secret access settings and shown below."
+          ? "Agents you add here get this secret each time they start work. Agents that fetch it only when needed are managed in each agent's Secret access settings, shown below."
           : "These agents resolve the responsible user's value as an environment variable at run start."}
       </p>
       {agentsQuery.isPending ? (
@@ -4556,7 +4568,15 @@ function AgentAccessSection({
                     className="h-6 w-6 shrink-0 p-0 text-muted-foreground"
                     aria-label={`Remove access for ${agent.name}`}
                     disabled={revokeMutation.isPending}
-                    onClick={() => revokeMutation.mutate({ agentId: agent.id })}
+                    onClick={async () => {
+                      const confirmed = await confirm({
+                        title: `Remove ${agent.name}'s access to this secret?`,
+                        description: "Work that needs it will stop until you give access back.",
+                        confirmLabel: "Remove access",
+                        tone: "destructive",
+                      });
+                      if (confirmed) revokeMutation.mutate({ agentId: agent.id });
+                    }}
                   >
                     <X className="h-3 w-3" />
                   </Button>
@@ -4564,7 +4584,7 @@ function AgentAccessSection({
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-(length:--text-micro) text-muted-foreground">No agents have access yet.</p>
+            <p className="mt-2 text-(length:--text-micro) text-muted-foreground">No agents have access yet. Choose an agent below to give it access.</p>
           )}
           <div className="mt-2 flex items-end gap-2">
             <div className="min-w-0 flex-1">
@@ -4650,7 +4670,7 @@ function SecretDetailsTab({
       <DetailRow label="Description">
         <span>{secret.description ?? <span className="text-muted-foreground">None</span>}</span>
       </DetailRow>
-      <DetailRow label="Provided by">Organization</DetailRow>
+      <DetailRow label="Provided by">Organisation</DetailRow>
       <DetailRow label="Custody">{modeLabel(secret.managedMode)}</DetailRow>
       <DetailRow label="Provider">{providerLabel(providers, secret.provider)}</DetailRow>
       <DetailRow label="Provider vault">{providerVaultLabel(providerConfigs, secret.providerConfigId)}</DetailRow>

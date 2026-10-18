@@ -1,12 +1,12 @@
 import {
   ORGANISATION_STATUS_LABELS,
   type Issue,
-  type IssueStatus,
   type OrganisationListItem,
   type WeeklyReport,
 } from "@greatstone/shared";
 import { ISSUES_CSV_HEADERS, csvCell, issuesToRows, type IssuesCsvLookups } from "./issues-csv";
 import { createZipArchive } from "./zip";
+import { daysInStage, readCardSummary, readDevtoolsDeal } from "./client-case";
 
 /**
  * Spreadsheet downloads for Settings > Integrations and the Organisations list:
@@ -163,15 +163,7 @@ export function clientsSheet(rows: readonly OrganisationListItem[]): Sheet {
   };
 }
 
-export const TASK_STATUS_LABELS: Record<IssueStatus, string> = {
-  backlog: "Backlog",
-  todo: "Todo",
-  in_progress: "In progress",
-  in_review: "In review",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
-};
+export { TASK_STATUS_LABELS } from "./task-status-labels";
 
 export function tasksSheet(issues: readonly Issue[], lookups: IssuesCsvLookups): Sheet {
   return { name: "Tasks", headers: [...ISSUES_CSV_HEADERS], rows: issuesToRows(issues, lookups) };
@@ -196,6 +188,55 @@ export function weeklyNumbersSheet(report: WeeklyReport): Sheet {
   for (const agent of report.finished.agents) rows.push([`Tasks finished: ${agent.name}`, agent.finished]);
   for (const agent of report.costs.agents) rows.push([`Spend (USD): ${agent.name}`, money(agent.cents)]);
   return { name: "This week", headers: ["Measure", "Value"], rows };
+}
+
+export interface PipelineSheetCase {
+  id: string;
+  title: string;
+  stageId?: string | null;
+  fields?: Record<string, unknown> | null;
+  stageEnteredAt?: Date | string | null;
+}
+
+export interface PipelineSheetLookups {
+  stageName: (stageId: string | null | undefined) => string;
+  /** Absolute link to a card, for the Link column. */
+  caseUrl: (item: PipelineSheetCase) => string;
+}
+
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+
+/**
+ * The cards a pipeline board shows, one row each, with the deal fields a
+ * Pipedrive user expects in a spreadsheet. Numbers stay numbers so Excel can
+ * sum the Value and Weighted value columns.
+ */
+export function pipelineSheet(name: string, cases: readonly PipelineSheetCase[], lookups: PipelineSheetLookups, now = new Date()): Sheet {
+  return {
+    name: name.slice(0, 31) || "Pipeline",
+    headers: ["Title", "Stage", "Deal status", "Value", "Currency", "Probability", "Weighted value", "Owner", "Expected close", "Next step on", "Next step", "Last activity", "Days in stage", "Link"],
+    rows: cases.map((item) => {
+      const deal = readDevtoolsDeal(item.fields);
+      const probability = deal.probability == null ? null : Math.min(100, Math.max(0, deal.probability));
+      const subject = typeof item.fields?.nextActivitySubject === "string" ? item.fields.nextActivitySubject.trim() : "";
+      return [
+        item.title,
+        lookups.stageName(item.stageId),
+        deal.status,
+        deal.value == null ? null : roundMoney(deal.value),
+        deal.currency,
+        probability,
+        deal.value != null && probability != null ? roundMoney((deal.value * probability) / 100) : null,
+        deal.owner ?? readCardSummary(item.fields).owner,
+        deal.expectedClose,
+        deal.nextActivity,
+        subject || readCardSummary(item.fields).nextAction,
+        deal.lastActivity,
+        daysInStage(item.stageEnteredAt, now),
+        lookups.caseUrl(item),
+      ];
+    }),
+  };
 }
 
 /** "gre-clients-2026-10-16.csv" */

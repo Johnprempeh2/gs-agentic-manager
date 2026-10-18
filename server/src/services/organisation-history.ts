@@ -1,25 +1,51 @@
-import { and, asc, desc, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  crmFiles,
+  crmTimelineEntries,
   issues,
+  organisationContacts,
   organisations,
+  pipelineCaseContacts,
   pipelineCaseEvents,
   pipelineCaseIssueLinks,
   pipelineCaseProjectLinks,
   pipelineCases,
+  pipelineFieldDefinitions,
   pipelineStages,
   pipelines,
   projects,
 } from "@greatstone/db";
-import type { OrganisationHistory, OrganisationHistoryCase } from "@greatstone/shared";
+import type { CrmFile, CrmRecordField, CrmTimelineEntry, OrganisationHistory, OrganisationHistoryCase } from "@greatstone/shared";
+
+/** Newest timeline entries shown on the organisation page. */
+const MAX_TIMELINE_ENTRIES = 300;
+/** Newest CRM files shown on the organisation page. */
+const MAX_FILES = 200;
+
+export function crmFileContentPath(companyId: string, fileId: string) {
+  return `/api/companies/${companyId}/crm-files/${fileId}/content`;
+}
 
 const STAGE_CHANGE_TYPES = ["transitioned", "transition_forced"];
 
 function iso(value: Date | string | null | undefined) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+/** A case field value as an imported field, or null when it is empty or not a plain value. */
+function fieldValue(value: unknown): CrmRecordField["value"] | null {
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    const items = value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+    return items.length ? items : null;
+  }
+  return null;
 }
 
 function latest(values: Array<string | null>) {
@@ -57,6 +83,7 @@ export function organisationHistoryService(db: Db) {
           terminalKind: pipelineCases.terminalKind,
           ndaStatus: pipelineCases.ndaStatus,
           engagementStatus: pipelineCases.engagementStatus,
+          fields: pipelineCases.fields,
           createdAt: pipelineCases.createdAt,
           updatedAt: pipelineCases.updatedAt,
         })
@@ -72,12 +99,92 @@ export function organisationHistoryService(db: Db) {
         )
         .orderBy(desc(pipelineCases.updatedAt));
 
-      if (caseRows.length === 0) return { organisationId, lastContactAt: null, cases: [] };
       const caseIds = caseRows.map((row) => row.id);
+
+      // Activities, notes and calls about the organisation, its people or its cases.
+      const contactIds = db
+        .select({ id: organisationContacts.id })
+        .from(organisationContacts)
+        .where(and(eq(organisationContacts.companyId, companyId), eq(organisationContacts.organisationId, organisationId)));
+      const timelineRows = await db
+        .select({
+          entry: crmTimelineEntries,
+          contactName: organisationContacts.name,
+          caseTitle: pipelineCases.title,
+        })
+        .from(crmTimelineEntries)
+        .leftJoin(organisationContacts, eq(organisationContacts.id, crmTimelineEntries.contactId))
+        .leftJoin(pipelineCases, eq(pipelineCases.id, crmTimelineEntries.caseId))
+        .where(and(
+          eq(crmTimelineEntries.companyId, companyId),
+          or(
+            eq(crmTimelineEntries.organisationId, organisationId),
+            inArray(crmTimelineEntries.contactId, contactIds),
+            ...(caseIds.length > 0 ? [inArray(crmTimelineEntries.caseId, caseIds)] : []),
+          ),
+        ))
+        .orderBy(sql`${crmTimelineEntries.occurredAt} desc nulls last`, desc(crmTimelineEntries.createdAt))
+        .limit(MAX_TIMELINE_ENTRIES);
+      const timeline: CrmTimelineEntry[] = timelineRows.map(({ entry, contactName, caseTitle }) => ({
+        id: entry.id,
+        source: entry.source,
+        kind: entry.kind as CrmTimelineEntry["kind"],
+        activityType: entry.activityType,
+        subject: entry.subject,
+        body: entry.body,
+        occurredAt: iso(entry.occurredAt),
+        durationMinutes: entry.durationMinutes,
+        done: entry.done,
+        ownerName: entry.ownerName,
+        contactId: entry.contactId,
+        contactName,
+        caseId: entry.caseId,
+        caseTitle,
+        details: entry.details ?? {},
+      }));
+      const fileRows = await db
+        .select({ file: crmFiles, contactName: organisationContacts.name, caseTitle: pipelineCases.title })
+        .from(crmFiles)
+        .leftJoin(organisationContacts, eq(organisationContacts.id, crmFiles.contactId))
+        .leftJoin(pipelineCases, eq(pipelineCases.id, crmFiles.caseId))
+        .where(and(
+          eq(crmFiles.companyId, companyId),
+          or(
+            eq(crmFiles.organisationId, organisationId),
+            inArray(crmFiles.contactId, contactIds),
+            ...(caseIds.length > 0 ? [inArray(crmFiles.caseId, caseIds)] : []),
+          ),
+        ))
+        .orderBy(sql`${crmFiles.addedAt} desc nulls last`, desc(crmFiles.createdAt))
+        .limit(MAX_FILES);
+      const files: CrmFile[] = fileRows.map(({ file, contactName, caseTitle }) => ({
+        id: file.id,
+        source: file.source,
+        name: file.name,
+        contentType: file.contentType,
+        byteSize: file.byteSize,
+        description: file.description,
+        ownerName: file.ownerName,
+        addedAt: iso(file.addedAt),
+        contentPath: file.assetId ? crmFileContentPath(companyId, file.id) : null,
+        remoteUrl: file.remoteUrl,
+        notCopied: typeof file.details?.notCopied === "string" ? file.details.notCopied : null,
+        contactName,
+        caseId: file.caseId,
+        caseTitle,
+      }));
+      // A done activity, a note, a call or an email in the past counts as contact; a planned activity or a stage change does not.
+      const nowIso = new Date().toISOString();
+      const timelineContact = timeline
+        .filter((entry) => entry.occurredAt && entry.occurredAt <= nowIso && entry.kind !== "stage_change" && (entry.kind !== "activity" || entry.done))
+        .map((entry) => entry.occurredAt);
+
+      if (caseRows.length === 0) return { organisationId, lastContactAt: latest(timelineContact), cases: [], timeline, files };
 
       const fromStage = alias(pipelineStages, "from_stage");
       const toStage = alias(pipelineStages, "to_stage");
-      const [stageChanges, lastEvents, projectRows, taskRows] = await Promise.all([
+      const pipelineIds = [...new Set(caseRows.map((row) => row.pipelineId))];
+      const [stageChanges, lastEvents, projectRows, taskRows, fieldDefs, peopleRows] = await Promise.all([
         db
           .select({
             id: pipelineCaseEvents.id,
@@ -137,7 +244,31 @@ export function organisationHistoryService(db: Db) {
             ),
           )
           .orderBy(desc(issues.updatedAt)),
+        db
+          .select({
+            pipelineId: pipelineFieldDefinitions.pipelineId,
+            key: pipelineFieldDefinitions.key,
+            label: pipelineFieldDefinitions.label,
+          })
+          .from(pipelineFieldDefinitions)
+          .where(and(
+            eq(pipelineFieldDefinitions.companyId, companyId),
+            inArray(pipelineFieldDefinitions.pipelineId, pipelineIds),
+            isNull(pipelineFieldDefinitions.archivedAt),
+          ))
+          .orderBy(asc(pipelineFieldDefinitions.position), asc(pipelineFieldDefinitions.label)),
+        db
+          .select({ caseId: pipelineCaseContacts.caseId, name: pipelineCaseContacts.name, role: pipelineCaseContacts.role })
+          .from(pipelineCaseContacts)
+          .where(and(eq(pipelineCaseContacts.companyId, companyId), inArray(pipelineCaseContacts.caseId, caseIds)))
+          .orderBy(asc(pipelineCaseContacts.position), asc(pipelineCaseContacts.name)),
       ]);
+      const defsByPipeline = new Map<string, Array<{ key: string; label: string }>>();
+      for (const def of fieldDefs) {
+        const defs = defsByPipeline.get(def.pipelineId) ?? [];
+        defs.push({ key: def.key, label: def.label });
+        defsByPipeline.set(def.pipelineId, defs);
+      }
 
       const cases = new Map<string, OrganisationHistoryCase>();
       for (const row of caseRows) {
@@ -154,10 +285,18 @@ export function organisationHistoryService(db: Db) {
           engagementStatus: row.engagementStatus === "sent" || row.engagementStatus === "accepted" ? row.engagementStatus : "not_sent",
           createdAt: iso(row.createdAt)!,
           updatedAt: iso(row.updatedAt)!,
+          details: (defsByPipeline.get(row.pipelineId) ?? []).flatMap((def) => {
+            const value = fieldValue(row.fields?.[def.key]);
+            return value === null ? [] : [{ key: def.key, label: def.label, value }];
+          }),
+          people: [],
           stageChanges: [],
           projects: [],
           tasks: [],
         });
+      }
+      for (const row of peopleRows) {
+        cases.get(row.caseId)?.people?.push({ name: row.name, role: row.role });
       }
       for (const row of stageChanges) {
         cases.get(row.caseId)?.stageChanges.push({
@@ -187,8 +326,9 @@ export function organisationHistoryService(db: Db) {
         ...caseRows.map((row) => iso(row.createdAt)),
         ...lastEvents.map((row) => iso(row.at)),
         ...taskRows.map((row) => iso(row.updatedAt)),
+        ...timelineContact,
       ]);
-      return { organisationId, lastContactAt, cases: [...cases.values()] };
+      return { organisationId, lastContactAt, cases: [...cases.values()], timeline, files };
     },
   };
 }

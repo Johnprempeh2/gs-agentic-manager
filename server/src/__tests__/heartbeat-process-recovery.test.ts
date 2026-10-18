@@ -1,7 +1,6 @@
 import * as executionContinuation from "../services/execution-continuation.js";
 import { legacyDispositionFingerprint, LEGACY_DISPOSITION_REPAIR_INSTRUCTION } from "../services/recovery/legacy-continuation.js";
 import * as controllerLeases from "../services/legacy-controller-lease.js";
-import { instanceSettingsService } from "../services/instance-settings.js";
 import { randomUUID } from "node:crypto";
 import { terminalizeLegacyExecution } from "../services/legacy-execution-recovery.js";
 import { issueService } from "../services/issues.js";
@@ -1776,6 +1775,33 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(wake.status).toBe("deferred_issue_execution");
     expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, runId))).toHaveLength(0);
   });
+
+  it.each(["resolved", "cancelled"] as const)(
+    "does not raise a %s hold again for the same stopped run",
+    async (closedStatus) => {
+      const { agentId, issueId, runId } = await seedStrandedIssueFixture({
+        status: "in_progress", runStatus: "cancelled",
+        resultJson: { executionCancellation: { state: "acknowledged" } },
+      });
+      await db.update(agents).set({ adapterType: "process" }).where(eq(agents.id, agentId));
+      const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+      await terminalizeLegacyExecution({ db, run, status: "cancelled" });
+      const [hold] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, issueId));
+      expect(hold).toMatchObject({ status: "active", cause: "legacy_execution_requires_reconciliation" });
+      // An operator clears the hold (GRE-1190, 16 Oct 2026).
+      await db.update(issueRecoveryActions)
+        .set({ status: closedStatus, outcome: closedStatus === "resolved" ? "restored" : "cancelled", resolvedAt: new Date() })
+        .where(eq(issueRecoveryActions.id, hold!.id));
+
+      const [again] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+      await terminalizeLegacyExecution({ db, run: again!, status: "cancelled" });
+      await heartbeatService(db).reconcileStrandedAssignedIssues();
+
+      const holds = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, issueId));
+      expect(holds).toHaveLength(1);
+      expect(holds[0]).toMatchObject({ id: hold!.id, status: closedStatus });
+    },
+  );
 
   it("leaves hidden issues out of stranded-issue reconciliation", async () => {
     const { issueId } = await seedStrandedIssueFixture({
@@ -7487,6 +7513,110 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(takeoverWakes).toHaveLength(0);
   });
 
+  it("does not make a task wait on a sub-task that already waits on it (16 Oct 2026 startup crash)", async () => {
+    const { companyId, agentId, issueId } = await seedStrandedIssueFixture({
+      status: "in_progress",
+      runStatus: "failed",
+    });
+    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    const waitingChildId = randomUUID();
+    await db.update(issues).set({ status: "blocked" }).where(eq(issues.id, issueId));
+    await db.insert(issues).values({
+      id: waitingChildId,
+      companyId,
+      parentId: issueId,
+      title: "Sub-task that waits on its parent",
+      status: "blocked",
+      priority: "medium",
+      issueNumber: 30,
+      identifier: `${issuePrefix}-30`,
+    });
+    // The parent blocks its own sub-task, so the sub-task looks healthy (it
+    // has a blocker to wait on). Making the parent wait on it would close a loop.
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId,
+      relatedIssueId: waitingChildId,
+      type: "blocks",
+    });
+    await db.insert(issueRecoveryActions).values({
+      companyId,
+      sourceIssueId: issueId,
+      kind: "stranded_assigned_issue",
+      status: "active",
+      ownerType: "agent",
+      ownerAgentId: agentId,
+      previousOwnerAgentId: agentId,
+      returnOwnerAgentId: agentId,
+      cause: "process_lost",
+      fingerprint: `loop:${issueId}`,
+      evidence: { latestRunId: null },
+      nextAction: "Recovery action whose sub-task waits on the source",
+      wakePolicy: {
+        type: "bounded_recovery_owner",
+        ownerAgentId: agentId,
+        attempt: 1,
+        maxAttempts: 5,
+      },
+      attemptCount: 1,
+      maxAttempts: 5,
+    });
+
+    await expect(heartbeatService(db).reconcileStrandedAssignedIssues()).resolves.toBeDefined();
+
+    expect(await sourceBlockerIssueIds(companyId, issueId)).toEqual([]);
+    expect(await sourceBlockerIssueIds(companyId, waitingChildId)).toEqual([issueId]);
+  });
+
+  it("leaves out a sub-task that already waits on its parent when parking a continuation for review", async () => {
+    const { companyId, issueId } = await seedStrandedIssueFixture({
+      status: "in_progress",
+      runStatus: "cancelled",
+      retryReason: "issue_continuation_needed",
+      runErrorCode: "issue_continuation_waiting_on_review",
+      runError: "Continuation parked: issue is waiting on review/approval",
+    });
+    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    const waitingChildId = randomUUID();
+    const openChildId = randomUUID();
+    await db.insert(issues).values([
+      {
+        id: waitingChildId,
+        companyId,
+        parentId: issueId,
+        title: "Sub-task that waits on its parent",
+        status: "blocked",
+        priority: "medium",
+        issueNumber: 31,
+        identifier: `${issuePrefix}-31`,
+      },
+      {
+        id: openChildId,
+        companyId,
+        parentId: issueId,
+        title: "Sub-task still to do",
+        status: "todo",
+        priority: "medium",
+        issueNumber: 32,
+        identifier: `${issuePrefix}-32`,
+      },
+    ]);
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId,
+      relatedIssueId: waitingChildId,
+      type: "blocks",
+    });
+
+    const result = await heartbeatService(db).reconcileStrandedAssignedIssues();
+
+    expect(result.waitingOnReviewResolved).toBe(1);
+    expect(await sourceBlockerIssueIds(companyId, issueId)).toEqual([openChildId]);
+    const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+    expect(comments[0]?.body).toContain(`${issuePrefix}-32`);
+    expect(comments[0]?.body).not.toContain(`${issuePrefix}-31`);
+  });
+
   it("does not consume a disposition-repair attempt when on-demand wakes are disabled", async () => {
     const { companyId, agentId, issueId } = await seedStrandedIssueFixture({
       status: "in_progress",
@@ -7737,7 +7867,6 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       });
       const persistentConversation = direction === "persistent agent conversation";
       if (persistentConversation) {
-        await instanceSettingsService(db).updateExperimental({ enableAgentChat: true });
         await db.update(issues).set({
           conversationAgentId: agentId, conversationUserId: "responsible-user", conversationState: "active",
         }).where(eq(issues.id, issueId));
@@ -7855,7 +7984,6 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
         });
         expect(retained?.payload).toEqual(deferredPayload);
       } finally {
-        if (persistentConversation) await instanceSettingsService(db).updateExperimental({ enableAgentChat: false });
         // Keep this fixture's parked donor from being scheduled during teardown.
         await db
           .update(agents)
@@ -11788,29 +11916,24 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       livenessState: "advanced",
       resultJson: { finalizationReasonCode: "conversation_turn_finished" },
     });
-    await instanceSettingsService(db).updateExperimental({ enableAgentChat: true });
-    try {
-      await db.update(issues).set({
-        conversationAgentId: agentId,
-        conversationUserId: "responsible-user",
-        conversationState: "active",
-      }).where(eq(issues.id, issueId));
-      const result = await heartbeatService(db).reconcileStrandedAssignedIssues();
-      expect(result.continuationRequeued).toBe(0);
-      expect(result.escalated).toBe(0);
-      const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
-      expect(runs.map((run) => run.id)).toEqual([runId]);
-      const wakes = await db.select().from(agentWakeupRequests)
-        .where(eq(agentWakeupRequests.agentId, agentId));
-      expect(wakes).toHaveLength(1);
-      expect(wakes[0].reason).toBe("issue_assigned");
-      const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
-      // No fabricated idle state: durable response publication still settles it.
-      expect(issue.status).toBe("in_progress");
-      expect(issue.conversationState).toBe("active");
-    } finally {
-      await instanceSettingsService(db).updateExperimental({ enableAgentChat: false });
-    }
+    await db.update(issues).set({
+      conversationAgentId: agentId,
+      conversationUserId: "responsible-user",
+      conversationState: "active",
+    }).where(eq(issues.id, issueId));
+    const result = await heartbeatService(db).reconcileStrandedAssignedIssues();
+    expect(result.continuationRequeued).toBe(0);
+    expect(result.escalated).toBe(0);
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
+    expect(runs.map((run) => run.id)).toEqual([runId]);
+    const wakes = await db.select().from(agentWakeupRequests)
+      .where(eq(agentWakeupRequests.agentId, agentId));
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0].reason).toBe("issue_assigned");
+    const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
+    // No fabricated idle state: durable response publication still settles it.
+    expect(issue.status).toBe("in_progress");
+    expect(issue.conversationState).toBe("active");
   });
 
   it("does not turn a pre-adapter setup failure into a duplicate continuation run", async () => {

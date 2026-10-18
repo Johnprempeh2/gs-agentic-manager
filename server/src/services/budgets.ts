@@ -1,10 +1,12 @@
-import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
+  agentWakeupRequests,
   agents,
   approvals,
   budgetIncidents,
   budgetPolicies,
+  budgetTopUps,
   companies,
   costEvents,
   projects,
@@ -25,6 +27,7 @@ import type {
 } from "@greatstone/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
+import { logger } from "../middleware/logger.js";
 
 type ScopeRecord = {
   companyId: string;
@@ -46,7 +49,40 @@ export type BudgetServiceHooks = {
   cancelWorkForScope?: (scope: BudgetEnforcementScope) => Promise<void>;
   /** Once per hard incident, after the scope is paused: tell the open work why it stopped. */
   noticeHardStop?: (scope: BudgetEnforcementScope) => Promise<void>;
+  /** After the scope resumes: wake each task its hard stop held, once (GRE-1365). */
+  releaseHeldWorkForScope?: (scope: BudgetEnforcementScope) => Promise<void>;
 };
+
+/**
+ * Wake statuses of task work kept at a budget hard stop in hold mode
+ * (GRE-1365). `budget_releasing` is a release in flight; it still counts.
+ */
+export const BUDGET_HELD_WAKE_STATUSES = ["budget_held", "budget_releasing"] as const;
+
+/** Tasks held at a hard stop, by scope: one per agent and task, however many wakes. */
+async function countHeldTasks(db: Db, companyId: string, scope?: { scopeType: BudgetScopeType; scopeId: string }) {
+  const heldIssueId = sql`${agentWakeupRequests.payload} ->> 'issueId'`;
+  const conditions = [
+    eq(agentWakeupRequests.companyId, companyId),
+    inArray(agentWakeupRequests.status, [...BUDGET_HELD_WAKE_STATUSES]),
+  ];
+  if (scope?.scopeType === "agent") conditions.push(eq(agentWakeupRequests.agentId, scope.scopeId));
+  if (scope?.scopeType === "project") {
+    conditions.push(sql`exists (
+      select 1 from issues held_issue
+      where held_issue.company_id = ${companyId}
+        and held_issue.id::text = ${heldIssueId}
+        and held_issue.project_id = ${scope.scopeId}
+    )`);
+  }
+  const [row] = await db
+    .select({
+      count: sql<number>`count(distinct (${agentWakeupRequests.agentId}::text || ':' || coalesce(${heldIssueId}, '')))::int`,
+    })
+    .from(agentWakeupRequests)
+    .where(and(...conditions));
+  return Number(row?.count ?? 0);
+}
 
 function currentUtcMonthWindow(now = new Date()) {
   const year = now.getUTCFullYear();
@@ -75,6 +111,65 @@ function budgetStatusFromObserved(
   if (observedAmount >= amount) return "hard_stop";
   if (observedAmount >= Math.ceil((amount * warnPercent) / 100)) return "warning";
   return "ok";
+}
+
+/**
+ * The policy as it stands at `now` (GRE-1363). A dated change that is due
+ * counts at once, before the budget sweep writes it into `amount`, so a raise
+ * dated tomorrow applies tomorrow with no restart and no wait for the sweep.
+ */
+function inForce(policy: PolicyRow, now = new Date()): PolicyRow {
+  if (policy.pendingAmount == null || !policy.pendingEffectiveFrom || policy.pendingEffectiveFrom > now) return policy;
+  return { ...policy, amount: policy.pendingAmount, isActive: policy.pendingAmount > 0 };
+}
+
+/** `YYYY-MM-01` of the calendar month (UTC) that holds `now`. */
+export function topUpWindowStartOn(now: Date) {
+  return currentUtcMonthWindow(now).start.toISOString().slice(0, 10);
+}
+
+/** Applied top-ups of the company in the month that holds `now` (GRE-1371). */
+export async function appliedTopUpCents(db: Db, companyId: string, now = new Date()) {
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${budgetTopUps.amountCents}), 0)::double precision` })
+    .from(budgetTopUps)
+    .where(
+      and(
+        eq(budgetTopUps.companyId, companyId),
+        eq(budgetTopUps.windowStart, topUpWindowStartOn(now)),
+        eq(budgetTopUps.kind, "top_up"),
+        eq(budgetTopUps.status, "applied"),
+      ),
+    );
+  return Number(row?.total ?? 0);
+}
+
+/** A top-up raises the company's monthly cap for its month only. No cap (0) stays no cap. */
+function takesTopUps(policy: PolicyRow) {
+  return policy.scopeType === "company"
+    && policy.windowKind === "calendar_month_utc"
+    && policy.isActive
+    && policy.amount > 0;
+}
+
+/** The policy in force at `now`, with this month's top-ups added to a company monthly cap. */
+async function inForceWithTopUps(db: Db, policy: PolicyRow, now = new Date()): Promise<PolicyRow & { topUpCents: number }> {
+  const current = inForce(policy, now);
+  if (!takesTopUps(current)) return { ...current, topUpCents: 0 };
+  const topUpCents = await appliedTopUpCents(db, current.companyId, now);
+  return { ...current, amount: current.amount + topUpCents, topUpCents };
+}
+
+const CLEARED_PENDING_CHANGE = {
+  pendingAmount: null,
+  pendingEffectiveFrom: null,
+  pendingReason: null,
+  pendingRequestedByUserId: null,
+} as const;
+
+function pendingChangeOf(policy: PolicyRow | null) {
+  if (!policy || policy.pendingAmount == null || !policy.pendingEffectiveFrom) return null;
+  return { amount: policy.pendingAmount, effectiveFrom: policy.pendingEffectiveFrom.toISOString() };
 }
 
 function normalizeScopeName(scopeType: BudgetScopeType, name: string) {
@@ -266,6 +361,22 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
   }
 
   async function resumeScopeFromBudget(policy: PolicyRow) {
+    await resumeScopeRowsFromBudget(policy);
+    // Hold mode (GRE-1365): the release checks each held task's gate again, so
+    // a task another budget still stops stays held. It never fails the raise;
+    // the heartbeat sweep releases anything this call missed.
+    try {
+      await hooks.releaseHeldWorkForScope?.({
+        companyId: policy.companyId,
+        scopeType: policy.scopeType as BudgetScopeType,
+        scopeId: policy.scopeId,
+      });
+    } catch (err) {
+      logger.warn({ err, policyId: policy.id }, "held budget work not released yet; the sweep retries");
+    }
+  }
+
+  async function resumeScopeRowsFromBudget(policy: PolicyRow) {
     const now = new Date();
     if (policy.scopeType === "agent") {
       await db
@@ -321,7 +432,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       .orderBy(desc(budgetPolicies.updatedAt));
   }
 
-  async function buildPolicySummary(policy: PolicyRow): Promise<BudgetPolicySummary> {
+  async function buildPolicySummary(storedPolicy: PolicyRow): Promise<BudgetPolicySummary> {
+    const policy = await inForceWithTopUps(db, storedPolicy);
+    const dueNow = inForce(storedPolicy) !== storedPolicy;
+    const pending = dueNow ? null : pendingChangeOf(storedPolicy);
     const scope = await resolveScopeRecord(db, policy.scopeType as BudgetScopeType, policy.scopeId);
     const observedAmount = await computeObservedAmount(db, policy);
     const { start, end } = resolveWindow(policy.windowKind as BudgetWindowKind);
@@ -351,6 +465,13 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       pauseReason: scope.pauseReason,
       windowStart: start,
       windowEnd: end,
+      pendingAmount: pending?.amount ?? null,
+      pendingEffectiveFrom: pending ? storedPolicy.pendingEffectiveFrom : null,
+      heldTaskCount: await countHeldTasks(db, policy.companyId, {
+        scopeType: policy.scopeType as BudgetScopeType,
+        scopeId: policy.scopeId,
+      }),
+      topUpCents: policy.topUpCents,
     };
   }
 
@@ -501,6 +622,100 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
     );
   }
 
+  async function syncScopeMonthlyBudget(policy: PolicyRow, now: Date) {
+    if (policy.windowKind !== "calendar_month_utc") return;
+    if (policy.scopeType === "company") {
+      await db
+        .update(companies)
+        .set({ budgetMonthlyCents: policy.amount, updatedAt: now })
+        .where(eq(companies.id, policy.scopeId));
+    }
+    if (policy.scopeType === "agent") {
+      await db
+        .update(agents)
+        .set({ budgetMonthlyCents: policy.amount, updatedAt: now })
+        .where(eq(agents.id, policy.scopeId));
+    }
+  }
+
+  /** After the amount in force changes: resume the scope under it, or warn and stop it over it. */
+  async function reconcileScopeAfterAmountChange(storedRow: PolicyRow, actorUserId: string | null) {
+    const row = await inForceWithTopUps(db, storedRow);
+    if (row.amount > 0) {
+      const observedAmount = await computeObservedAmount(db, row);
+      if (observedAmount < row.amount) {
+        await resumeScopeFromBudget(row);
+        await resolveOpenIncidentsForPolicy(row.id, actorUserId ? "approved" : null, actorUserId);
+      } else {
+        const softThreshold = Math.ceil((row.amount * row.warnPercent) / 100);
+        if (row.notifyEnabled && observedAmount >= softThreshold) {
+          await createIncidentIfNeeded(row, "soft", observedAmount);
+        }
+        if (row.hardStopEnabled && observedAmount >= row.amount) {
+          await resolveOpenSoftIncidents(row.id);
+          await createIncidentIfNeeded(row, "hard", observedAmount);
+          await pauseAndCancelScopeForBudget(row);
+        }
+      }
+    } else {
+      await resumeScopeFromBudget(row);
+      await resolveOpenIncidentsForPolicy(row.id, actorUserId ? "approved" : null, actorUserId);
+    }
+  }
+
+  /**
+   * Write a due dated change into `amount`, once. The guarded update matches
+   * the exact pending change, so two sweeps (or a sweep and a request) racing
+   * on one policy apply it one time; the loser re-reads the row.
+   */
+  async function applyPendingIfDue(policy: PolicyRow, now = new Date()): Promise<{ row: PolicyRow; applied: boolean }> {
+    if (policy.pendingAmount == null || !policy.pendingEffectiveFrom || policy.pendingEffectiveFrom > now) {
+      return { row: policy, applied: false };
+    }
+    const applied = await db
+      .update(budgetPolicies)
+      .set({
+        amount: policy.pendingAmount,
+        isActive: policy.pendingAmount > 0,
+        ...CLEARED_PENDING_CHANGE,
+        updatedByUserId: policy.pendingRequestedByUserId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(budgetPolicies.id, policy.id),
+          eq(budgetPolicies.pendingAmount, policy.pendingAmount),
+          eq(budgetPolicies.pendingEffectiveFrom, policy.pendingEffectiveFrom),
+        ),
+      )
+      .returning()
+      .then((rows) => rows[0] ?? null);
+    if (!applied) return { row: await getPolicyRow(policy.id), applied: false };
+
+    await syncScopeMonthlyBudget(applied, now);
+    await logActivity(db, {
+      companyId: applied.companyId,
+      actorType: "system",
+      actorId: "budget_service",
+      action: "budget.policy_change_applied",
+      entityType: "budget_policy",
+      entityId: applied.id,
+      details: {
+        scopeType: applied.scopeType,
+        scopeId: applied.scopeId,
+        windowKind: applied.windowKind,
+        amount: applied.amount,
+        oldValue: policy.amount,
+        newValue: applied.amount,
+        effectiveFrom: policy.pendingEffectiveFrom.toISOString(),
+        reason: policy.pendingReason,
+        requestedByUserId: policy.pendingRequestedByUserId,
+      },
+    });
+    await reconcileScopeAfterAmountChange(applied, policy.pendingRequestedByUserId);
+    return { row: applied, applied: true };
+  }
+
   return {
     listPolicies: async (companyId: string): Promise<BudgetPolicy[]> => {
       const rows = await listPolicyRows(companyId);
@@ -526,7 +741,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       const windowKind = input.windowKind ?? (input.scopeType === "project" ? "lifetime" : "calendar_month_utc");
       const amount = Math.max(0, Math.floor(input.amount));
       const nextIsActive = amount > 0 && (input.isActive ?? true);
-      const existing = await db
+      const now = new Date();
+      const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom) : null;
+      const reason = input.reason?.trim() || null;
+      const stored = await db
         .select()
         .from(budgetPolicies)
         .where(
@@ -539,8 +757,70 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           ),
         )
         .then((rows) => rows[0] ?? null);
+      // A due dated change lands first, so this change replaces it, not the reverse.
+      const existing = stored ? (await applyPendingIfDue(stored, now)).row : null;
+      const oldValue = existing ? existing.amount : null;
+      const replacedPending = pendingChangeOf(existing);
 
-      const now = new Date();
+      if (effectiveFrom && effectiveFrom > now) {
+        // Dated change: only the amount changes, from `effectiveFrom`. The old
+        // cap stays in force until then.
+        const pendingChange = {
+          pendingAmount: amount,
+          pendingEffectiveFrom: effectiveFrom,
+          pendingReason: reason,
+          pendingRequestedByUserId: actorUserId,
+        };
+        const row = existing
+          ? await db
+            .update(budgetPolicies)
+            .set({ ...pendingChange, updatedByUserId: actorUserId, updatedAt: now })
+            .where(eq(budgetPolicies.id, existing.id))
+            .returning()
+            .then((rows) => rows[0])
+          : await db
+            .insert(budgetPolicies)
+            .values({
+              companyId,
+              scopeType: input.scopeType,
+              scopeId: input.scopeId,
+              metric,
+              windowKind,
+              amount: 0,
+              warnPercent: input.warnPercent ?? 80,
+              hardStopEnabled: input.hardStopEnabled ?? true,
+              notifyEnabled: input.notifyEnabled ?? true,
+              isActive: false,
+              ...pendingChange,
+              createdByUserId: actorUserId,
+              updatedByUserId: actorUserId,
+            })
+            .returning()
+            .then((rows) => rows[0]);
+
+        await logActivity(db, {
+          companyId,
+          actorType: "user",
+          actorId: actorUserId ?? "board",
+          action: "budget.policy_change_scheduled",
+          entityType: "budget_policy",
+          entityId: row.id,
+          details: {
+            scopeType: row.scopeType,
+            scopeId: row.scopeId,
+            windowKind: row.windowKind,
+            amount: row.amount,
+            oldValue,
+            newValue: amount,
+            effectiveFrom: effectiveFrom.toISOString(),
+            reason,
+            replacedPending,
+          },
+        });
+
+        return buildPolicySummary(row);
+      }
+
       const row = existing
         ? await db
           .update(budgetPolicies)
@@ -550,6 +830,8 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
             hardStopEnabled: input.hardStopEnabled ?? existing.hardStopEnabled,
             notifyEnabled: input.notifyEnabled ?? existing.notifyEnabled,
             isActive: nextIsActive,
+            // A change that acts now replaces any dated change still waiting.
+            ...CLEARED_PENDING_CHANGE,
             updatedByUserId: actorUserId,
             updatedAt: now,
           })
@@ -575,46 +857,8 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           .returning()
           .then((rows) => rows[0]);
 
-      if (input.scopeType === "company" && windowKind === "calendar_month_utc") {
-        await db
-          .update(companies)
-          .set({
-            budgetMonthlyCents: amount,
-            updatedAt: now,
-          })
-          .where(eq(companies.id, input.scopeId));
-      }
-
-      if (input.scopeType === "agent" && windowKind === "calendar_month_utc") {
-        await db
-          .update(agents)
-          .set({
-            budgetMonthlyCents: amount,
-            updatedAt: now,
-          })
-          .where(eq(agents.id, input.scopeId));
-      }
-
-      if (amount > 0) {
-        const observedAmount = await computeObservedAmount(db, row);
-        if (observedAmount < amount) {
-          await resumeScopeFromBudget(row);
-          await resolveOpenIncidentsForPolicy(row.id, actorUserId ? "approved" : null, actorUserId);
-        } else {
-          const softThreshold = Math.ceil((row.amount * row.warnPercent) / 100);
-          if (row.notifyEnabled && observedAmount >= softThreshold) {
-            await createIncidentIfNeeded(row, "soft", observedAmount);
-          }
-          if (row.hardStopEnabled && observedAmount >= row.amount) {
-            await resolveOpenSoftIncidents(row.id);
-            await createIncidentIfNeeded(row, "hard", observedAmount);
-            await pauseAndCancelScopeForBudget(row);
-          }
-        }
-      } else {
-        await resumeScopeFromBudget(row);
-        await resolveOpenIncidentsForPolicy(row.id, actorUserId ? "approved" : null, actorUserId);
-      }
+      await syncScopeMonthlyBudget(row, now);
+      await reconcileScopeAfterAmountChange(row, actorUserId);
 
       await logActivity(db, {
         companyId,
@@ -628,10 +872,62 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           scopeId: row.scopeId,
           amount: row.amount,
           windowKind: row.windowKind,
+          oldValue,
+          newValue: row.amount,
+          effectiveFrom: now.toISOString(),
+          reason,
+          replacedPending,
         },
       });
 
       return buildPolicySummary(row);
+    },
+
+    /**
+     * After a top-up (GRE-1371): measure the company's monthly cap again with
+     * the month's top-ups, and resume the company if it is now under it.
+     */
+    reconcileCompanyCap: async (companyId: string, actorUserId: string | null) => {
+      const stored = await db
+        .select()
+        .from(budgetPolicies)
+        .where(
+          and(
+            eq(budgetPolicies.companyId, companyId),
+            eq(budgetPolicies.scopeType, "company"),
+            eq(budgetPolicies.scopeId, companyId),
+            eq(budgetPolicies.metric, "billed_cents"),
+            eq(budgetPolicies.windowKind, "calendar_month_utc"),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!stored) return;
+      const { row } = await applyPendingIfDue(stored);
+      if (!row.isActive || row.amount <= 0) return;
+      await reconcileScopeAfterAmountChange(row, actorUserId);
+    },
+
+    /**
+     * The budget sweep: write each due dated change into its policy, resume
+     * or stop the scope, and log it. Safe to run again or in parallel.
+     */
+    applyDueChanges: async (now = new Date()) => {
+      const due = await db
+        .select()
+        .from(budgetPolicies)
+        .where(and(isNotNull(budgetPolicies.pendingAmount), lte(budgetPolicies.pendingEffectiveFrom, now)))
+        .limit(100);
+      let applied = 0;
+      for (const policy of due) {
+        // One bad policy must not hold back the rest on every sweep. Its
+        // pending change is cleared once applied, so it is not retried forever.
+        try {
+          if ((await applyPendingIfDue(policy, now)).applied) applied += 1;
+        } catch (err) {
+          logger.error({ err, policyId: policy.id }, "dated budget change could not be applied");
+        }
+      }
+      return { applied };
     },
 
     overview: async (companyId: string): Promise<BudgetOverview> => {
@@ -650,6 +946,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         pausedAgentCount: policies.filter((policy) => policy.scopeType === "agent" && policy.paused).length,
         pausedProjectCount: policies.filter((policy) => policy.scopeType === "project" && policy.paused).length,
         pendingApprovalCount: activeIncidents.filter((incident) => incident.approvalStatus === "pending").length,
+        heldTaskCount: await countHeldTasks(db, companyId),
       };
     },
 
@@ -665,7 +962,9 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           ),
         );
 
-      const relevantPolicies = candidatePolicies.filter((policy) => {
+      const now = new Date();
+      const inForcePolicies = await Promise.all(candidatePolicies.map((policy) => inForceWithTopUps(db, policy, now)));
+      const relevantPolicies = inForcePolicies.filter((policy) => {
         if (policy.scopeType === "company") return policy.scopeId === event.companyId;
         if (policy.scopeType === "agent") return policy.scopeId === event.agentId;
         if (policy.scopeType === "project") return Boolean(event.projectId) && policy.scopeId === event.projectId;
@@ -766,7 +1065,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         };
       }
 
-      const companyPolicy = await db
+      const companyPolicyRow = await db
         .select()
         .from(budgetPolicies)
         .where(
@@ -779,6 +1078,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           ),
         )
         .then((rows) => rows[0] ?? null);
+      const companyPolicy = companyPolicyRow ? await inForceWithTopUps(db, companyPolicyRow) : null;
       if (companyPolicy && companyPolicy.hardStopEnabled && companyPolicy.amount > 0) {
         const observed = await computeObservedAmount(db, companyPolicy);
         if (observed >= companyPolicy.amount) {
@@ -800,7 +1100,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         };
       }
 
-      const agentPolicy = await db
+      const agentPolicyRow = await db
         .select()
         .from(budgetPolicies)
         .where(
@@ -813,6 +1113,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           ),
         )
         .then((rows) => rows[0] ?? null);
+      const agentPolicy = agentPolicyRow ? inForce(agentPolicyRow) : null;
       if (agentPolicy && agentPolicy.hardStopEnabled && agentPolicy.amount > 0) {
         const observed = await computeObservedAmount(db, agentPolicy);
         if (observed >= agentPolicy.amount) {
@@ -841,7 +1142,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         .then((rows) => rows[0] ?? null);
 
       if (!project || project.companyId !== companyId) return null;
-      const projectPolicy = await db
+      const projectPolicyRow = await db
         .select()
         .from(budgetPolicies)
         .where(
@@ -854,6 +1155,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           ),
         )
         .then((rows) => rows[0] ?? null);
+      const projectPolicy = projectPolicyRow ? inForce(projectPolicyRow) : null;
       if (projectPolicy && projectPolicy.hardStopEnabled && projectPolicy.amount > 0) {
         const observed = await computeObservedAmount(db, projectPolicy);
         if (observed >= projectPolicy.amount) {
@@ -880,6 +1182,8 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       incidentId: string,
       input: BudgetIncidentResolutionInput,
       actorUserId: string,
+      /** Throws to refuse a raise, before anything is written (GRE-1363 ceiling). */
+      authorizeRaise?: (policy: PolicyRow, amount: number) => void,
     ): Promise<BudgetIncident> => {
       const incident = await db
         .select()
@@ -889,9 +1193,12 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       if (!incident) throw notFound("Budget incident not found");
       if (incident.companyId !== companyId) throw notFound("Budget incident not found");
 
-      const policy = await getPolicyRow(incident.policyId);
+      const policy = (await applyPendingIfDue(await getPolicyRow(incident.policyId))).row;
+      const oldValue = policy.amount;
+      const replacedPending = pendingChangeOf(policy);
       if (input.action === "raise_budget_and_resume") {
         const nextAmount = Math.max(0, Math.floor(input.amount ?? 0));
+        authorizeRaise?.(policy, nextAmount);
         const currentObserved = await computeObservedAmount(db, policy);
         if (nextAmount <= currentObserved) {
           throw unprocessable("New budget must exceed current observed spend");
@@ -903,6 +1210,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           .set({
             amount: nextAmount,
             isActive: true,
+            ...CLEARED_PENDING_CHANGE,
             updatedByUserId: actorUserId,
             updatedAt: now,
           })
@@ -957,6 +1265,12 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           amount: input.amount ?? null,
           scopeType: incident.scopeType,
           scopeId: incident.scopeId,
+          policyId: policy.id,
+          oldValue,
+          newValue: input.action === "raise_budget_and_resume" ? Math.max(0, Math.floor(input.amount ?? 0)) : oldValue,
+          effectiveFrom: new Date().toISOString(),
+          reason: input.decisionNote?.trim() || null,
+          replacedPending: input.action === "raise_budget_and_resume" ? replacedPending : null,
         },
       });
 

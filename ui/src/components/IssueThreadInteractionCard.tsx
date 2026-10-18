@@ -33,6 +33,7 @@ import {
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
+import { AgentQuestionCard } from "./AgentQuestionCard";
 import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { InteractionGuideSheet, InteractionGuideText } from "./InteractionGuide";
 import { interactionGuideSummary, needsInteractionGuide } from "../lib/interaction-guide";
@@ -152,7 +153,7 @@ function resolveActorLabel(args: {
 }) {
   const { agentId, userId, agentMap, currentUserId, userLabelMap } = args;
   if (agentId) {
-    return agentMap?.get(agentId)?.name ?? agentId.slice(0, 8);
+    return agentMap?.get(agentId)?.name ?? "An agent";
   }
   if (userId) {
     return formatAssigneeUserLabel(userId, currentUserId, userLabelMap) ?? "Board";
@@ -223,6 +224,8 @@ function interactionKindLabel(kind: IssueThreadInteraction["kind"]) {
       return "Connection request";
     case "request_draft_review":
       return "Draft";
+    case "ask_agent":
+      return "Question for an agent";
     default:
       return kind;
   }
@@ -856,7 +859,7 @@ function SuggestTasksCard({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>{totalTasks === 1 ? "1 draft issue" : `${totalTasks} draft issues`}</span>
+        <span>{totalTasks === 1 ? "1 draft task" : `${totalTasks} draft tasks`}</span>
         {interaction.payload.defaultParentId ? (
           <TaskField label="Default parent" value={interaction.payload.defaultParentId} tone="subtle" />
         ) : null}
@@ -3717,6 +3720,9 @@ export function IssueThreadInteractionCard({
   // created and stored server-side; only the render is suppressed. Composition
   // sites additionally filter it so no empty slot lingers.
   if (shouldHideInteractionCard(interaction)) return null;
+  if (interaction.kind === "ask_agent") {
+    return <AgentQuestionCard interaction={interaction} agentMap={agentMap} />;
+  }
   const isPlan = isPlanConfirmation(interaction);
   const isToolAction =
     interaction.kind === "request_confirmation" && isToolActionConfirmation(interaction);
@@ -3908,7 +3914,7 @@ export function IssueThreadInteractionCard({
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    Directed to {addresseeLabel}. Agent-addressed interactions are owned by that agent and are kept out of the open organization attention feed.
+                    Directed to {addresseeLabel}. Agent-addressed interactions are owned by that agent and are kept out of the organisation's shared list of things needing attention.
                   </TooltipContent>
                 </Tooltip>
               ) : null}

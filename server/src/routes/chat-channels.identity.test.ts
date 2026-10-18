@@ -54,7 +54,7 @@ function fixture(
 }
 
 describe("chat identity-link preview authority", () => {
-  it.each([false, undefined])("blocks every identity API when chat rollout is disabled (%s)", async (enabled) => {
+  it.each([false, undefined])("blocks every identity API when a managed config or entitlement turns Chat connectors off (%s, GRE-1633)", async (enabled) => {
     settings.getExperimental.mockResolvedValue({ enableChatConnectors: enabled });
     const f = fixture();
     await request(f.app).get("/api/chat-identity-links/preview").query({ token }).expect(403);

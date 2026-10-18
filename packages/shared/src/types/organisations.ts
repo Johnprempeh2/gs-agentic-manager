@@ -7,15 +7,25 @@ import type {
 
 /** API response shapes for CRM organisations (GRE-1477). Every record is scoped to one company. */
 
+/** A field imported from a CRM that has no column in GSAM, under the CRM's own name. */
+export interface CrmRecordField {
+  key: string;
+  label: string;
+  value: string | number | boolean | string[];
+}
+
 export interface OrganisationContact {
   id: string;
   companyId: string;
-  organisationId: string;
+  /** Null for a person imported from a CRM with no organisation. */
+  organisationId: string | null;
   name: string;
   role: string | null;
   email: string | null;
   phone: string | null;
   isKeyContact: boolean;
+  /** Imported fields with no column of their own, in the CRM's order. */
+  crmFields?: CrmRecordField[];
   source: OrganisationSource;
   externalId: string | null;
   archivedAt: string | null;
@@ -61,6 +71,8 @@ export interface Organisation {
   description: string | null;
   registrationNumber: string | null;
   taxId: string | null;
+  /** Imported fields with no column of their own (custom fields, labels, address), in the CRM's order. */
+  crmFields?: CrmRecordField[];
   source: OrganisationSource;
   externalId: string | null;
   archivedAt: string | null;
@@ -78,6 +90,11 @@ export interface OrganisationPipelineStage {
   stageName: string;
   stageKind: string;
   terminalKind: "done" | "cancelled" | null;
+}
+
+/** A person found by the people search, with the name of their organisation (null when they have none). */
+export interface OrganisationPerson extends OrganisationContact {
+  organisationName: string | null;
 }
 
 /** One row on the Organisations list: the organisation, its key contacts and where it is in the pipelines. */
@@ -108,12 +125,32 @@ export interface OrganisationImportResult {
   source: "pipedrive" | "hubspot";
   organisations: OrganisationImportCounts;
   contacts: OrganisationImportCounts;
-  /** Export import only: deals added as client cases in the chosen pipeline. */
+  /** Deals made into cases: in the chosen pipeline (export) or each deal's own pipeline (connection). */
   deals?: OrganisationImportCounts;
-  /** Export import only: activities attached to the imported deals' cases. */
+  /** Connection import only: Pipedrive pipelines made into GSAM pipelines with their stages. */
+  pipelines?: OrganisationImportCounts;
+  /** Activities: attached to the deals' cases (export), or on the timeline (connection). */
   activities?: OrganisationImportCounts;
+  /** Connection import only: notes on the timeline. */
+  notes?: OrganisationImportCounts;
+  /** Connection import only: call logs on the timeline. */
+  calls?: OrganisationImportCounts;
+  /** Connection import only: emails from each deal's history. */
+  emails?: OrganisationImportCounts;
+  /** Connection import only: stage, pipeline and status changes from each deal's history. */
+  stageChanges?: OrganisationImportCounts;
+  /** Connection import only: the product catalogue. */
+  products?: OrganisationImportCounts;
+  /** Connection import only: the products on each deal, with quantity, price and discount. */
+  dealProducts?: OrganisationImportCounts;
+  /** Connection import only: the Leads inbox, as cases in the "Pipedrive leads" pipeline. */
+  leads?: OrganisationImportCounts;
+  /** Connection import only: files on deals, leads, people and organisations. */
+  files?: OrganisationImportCounts;
+  /** Connection import only: the people on each deal, kept as the case's contacts. */
+  participants?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product" | "lead" | "file" | "participant"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }
@@ -143,6 +180,10 @@ export interface OrganisationHistoryCase {
   /** The client's NDA and engagement pack, as on the journey (Ben, 12 Oct). */
   ndaStatus?: "required" | "accepted" | "suspended";
   engagementStatus?: "not_sent" | "sent" | "accepted";
+  /** The case's filled-in fields under the pipeline's labels, such as a Pipedrive deal's value, owner and products. */
+  details?: CrmRecordField[];
+  /** The people on the case, main contact first. */
+  people?: Array<{ name: string; role: string | null }>;
   createdAt: string;
   updatedAt: string;
   /** Oldest first. */
@@ -160,4 +201,96 @@ export interface OrganisationHistory {
   /** Latest activity on any of its cases or linked tasks; null when there is none. */
   lastContactAt: string | null;
   cases: OrganisationHistoryCase[];
+  /** Activities, notes and calls about it, its people or its cases, newest first. */
+  timeline?: CrmTimelineEntry[];
+  /** Files from a CRM on it, its people or its cases, newest first. */
+  files?: CrmFile[];
+}
+
+/** Answer of GET /api/cases/:caseId/crm-history: what a CRM import filed on one client case. */
+export interface PipelineCaseCrmHistory {
+  caseId: string;
+  /** Activities, notes, calls, emails and stage changes on the case, newest first. */
+  timeline: CrmTimelineEntry[];
+  /** Files that were on the deal or lead, newest first. */
+  files: CrmFile[];
+  /** True when the case has more entries than were returned. */
+  truncated: boolean;
+}
+
+/** One file imported from a CRM. */
+export interface CrmFile {
+  id: string;
+  source: string;
+  name: string;
+  contentType: string | null;
+  byteSize: number | null;
+  description: string | null;
+  ownerName: string | null;
+  addedAt: string | null;
+  /** GSAM path that serves the copied file; null when the bytes were not copied. */
+  contentPath: string | null;
+  /** The CRM's own link, for a file linked from elsewhere or not copied. */
+  remoteUrl: string | null;
+  /** Why the bytes were not copied, such as a file linked from Google Drive. */
+  notCopied: string | null;
+  contactName: string | null;
+  caseId: string | null;
+  caseTitle: string | null;
+}
+
+/** One activity, note or call imported from a CRM. */
+export interface CrmTimelineEntry {
+  id: string;
+  source: string;
+  kind: "activity" | "note" | "call" | "email" | "stage_change" | "field_change";
+  /** The CRM's activity type, such as call, meeting, task or email. */
+  activityType: string | null;
+  subject: string | null;
+  body: string | null;
+  occurredAt: string | null;
+  durationMinutes: number | null;
+  /** Activities only: done or still planned. */
+  done: boolean | null;
+  ownerName: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  caseId: string | null;
+  caseTitle: string | null;
+  /** Location, participants, outcome and anything else the CRM held. */
+  details: Record<string, unknown>;
+}
+
+/** One price of a CRM product in one currency. */
+export interface CrmProductPriceView {
+  currency: string;
+  price: number | null;
+  cost: number | null;
+  overheadCost: number | null;
+}
+
+/** A deal that includes a product, with what was sold on it. */
+export interface CrmProductDeal {
+  caseId: string;
+  pipelineId: string;
+  title: string;
+  quantity: number | null;
+  sum: number | null;
+  currency: string | null;
+}
+
+/** A product from the CRM's catalogue, with the deals it is on (Pipedrive import). */
+export interface CrmProduct {
+  id: string;
+  source: string;
+  name: string;
+  code: string | null;
+  unit: string | null;
+  description: string | null;
+  tax: number | null;
+  active: boolean;
+  ownerName: string | null;
+  prices: CrmProductPriceView[];
+  fields: CrmRecordField[];
+  deals: CrmProductDeal[];
 }

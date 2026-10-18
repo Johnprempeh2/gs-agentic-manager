@@ -40,27 +40,27 @@ export const BLOCKED_REASON_VARIANT_ORDER: BlockedReasonVariant[] = [
 
 export const BLOCKED_VARIANT_LABELS: Record<BlockedReasonVariant, string> = {
   needs_decision: "Needs decision",
-  stalled: "Blocked chain stalled",
+  stalled: "Waiting on stuck work",
   needs_attention: "Needs attention",
-  recovery_required: "Recovery required",
-  external_wait: "External wait",
-  owner_paused: "Owner paused",
+  recovery_required: "Needs fixing",
+  external_wait: "Waiting on someone outside",
+  owner_paused: "Owner is paused",
 };
 
 const REASON_LABELS: Record<IssueBlockedInboxReason, string> = {
-  pending_board_decision: "Pending board decision",
-  pending_user_decision: "Pending user decision",
-  missing_successful_run_disposition: "Pick disposition",
-  blocked_chain_stalled: "Blocked chain stalled",
-  blocked_by_unassigned_issue: "Unassigned blocker",
-  blocked_by_assigned_backlog_issue: "Parked blocker",
-  blocked_by_cancelled_issue: "Cancelled blocker",
-  blocked_without_action_path: "No unblock path",
-  in_review_without_action_path: "Review without action path",
-  invalid_review_participant: "Invalid review participant",
-  open_recovery_issue: "Recovery in progress",
-  external_owner_action: "External owner action",
-  blocked_by_uninvokable_assignee: "Owner paused",
+  pending_board_decision: "Waiting for your decision",
+  pending_user_decision: "Waiting for a person to decide",
+  missing_successful_run_disposition: "Say what happens next",
+  blocked_chain_stalled: "Waiting on stuck work",
+  blocked_by_unassigned_issue: "Waiting on a task nobody owns",
+  blocked_by_assigned_backlog_issue: "Waiting on a parked task",
+  blocked_by_cancelled_issue: "Waiting on a cancelled task",
+  blocked_without_action_path: "No clear way forward",
+  in_review_without_action_path: "Review with no next step",
+  invalid_review_participant: "Reviewer can no longer review",
+  open_recovery_issue: "Being fixed",
+  external_owner_action: "Waiting on someone outside",
+  blocked_by_uninvokable_assignee: "Owner is paused",
 };
 
 const SEVERITY_RANK: Record<IssueBlockedInboxSeverity, number> = {
@@ -108,11 +108,12 @@ export interface BlockedInboxIssueRow {
   stoppedAtMs: number | null;
 }
 
-export type BlockedInboxGroupBy = "blocker_type" | "none";
+export type BlockedInboxGroupBy = "blocker_type" | "root_blocker" | "none";
 export type BlockedInboxSort = "urgency" | "most_recent" | "longest_stopped";
 
 export const BLOCKED_GROUP_OPTIONS: readonly [BlockedInboxGroupBy, string][] = [
   ["blocker_type", "Blocker type"],
+  ["root_blocker", "Root blocker"],
   ["none", "None"],
 ];
 
@@ -122,7 +123,48 @@ export const BLOCKED_SORT_OPTIONS: readonly [BlockedInboxSort, string][] = [
   ["longest_stopped", "Longest stopped"],
 ];
 
+const BLOCKED_GROUP_BY_KEY = "gsam:inbox:blocked-group-by";
+const BLOCKED_SORT_BY_KEY = "gsam:inbox:blocked-sort-by";
+
+/** The Blocked tab's last Group choice, so "Root blocker" stays on between visits. */
+export function loadBlockedInboxGroupBy(): BlockedInboxGroupBy {
+  try {
+    const raw = localStorage.getItem(BLOCKED_GROUP_BY_KEY);
+    return BLOCKED_GROUP_OPTIONS.some(([value]) => value === raw) ? (raw as BlockedInboxGroupBy) : "none";
+  } catch {
+    return "none";
+  }
+}
+
+export function saveBlockedInboxGroupBy(groupBy: BlockedInboxGroupBy) {
+  try {
+    localStorage.setItem(BLOCKED_GROUP_BY_KEY, groupBy);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+/** The Blocked tab's last Sort choice. */
+export function loadBlockedInboxSortBy(): BlockedInboxSort {
+  try {
+    const raw = localStorage.getItem(BLOCKED_SORT_BY_KEY);
+    return BLOCKED_SORT_OPTIONS.some(([value]) => value === raw) ? (raw as BlockedInboxSort) : "most_recent";
+  } catch {
+    return "most_recent";
+  }
+}
+
+export function saveBlockedInboxSortBy(sortBy: BlockedInboxSort) {
+  try {
+    localStorage.setItem(BLOCKED_SORT_BY_KEY, sortBy);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
 export interface BlockedInboxGroup {
+  /** Stable id for React keys, collapse state and test ids. */
+  key: string;
   variant: BlockedReasonVariant;
   label: string;
   rows: BlockedInboxIssueRow[];
@@ -212,7 +254,52 @@ export function groupBlockedInboxRows(
     const list = buckets.get(variant);
     if (!list || list.length === 0) continue;
     const sorted = sortBlockedInboxRows(list, sort);
-    groups.push({ variant, label: BLOCKED_VARIANT_LABELS[variant], rows: sorted });
+    groups.push({ key: variant, variant, label: BLOCKED_VARIANT_LABELS[variant], rows: sorted });
+  }
+  return groups;
+}
+
+export const NO_ROOT_BLOCKER_GROUP_KEY = "root-none";
+
+/**
+ * Groups stopped tasks by the one task at the bottom of their blocking chain,
+ * so "9 tasks waiting on GRE-1463" shows as one group. Biggest chains come
+ * first; tasks with no single root blocker sit in a last group.
+ */
+export function groupBlockedInboxRowsByRoot(
+  rows: readonly BlockedInboxIssueRow[],
+  sort: BlockedInboxSort = "urgency",
+): BlockedInboxGroup[] {
+  const buckets = new Map<string, { label: string; rows: BlockedInboxIssueRow[] }>();
+  const unrooted: BlockedInboxIssueRow[] = [];
+  for (const row of rows) {
+    const leaf = row.attention.leafIssue;
+    if (!leaf || leaf.id === row.issue.id) {
+      unrooted.push(row);
+      continue;
+    }
+    const bucket = buckets.get(leaf.id);
+    if (bucket) {
+      bucket.rows.push(row);
+    } else {
+      const name = leaf.identifier ? `${leaf.identifier} ${leaf.title}` : leaf.title;
+      buckets.set(leaf.id, { label: `Waiting on ${name}`, rows: [row] });
+    }
+  }
+  const groups: BlockedInboxGroup[] = [...buckets.entries()]
+    .map(([leafId, bucket]) => {
+      const sorted = sortBlockedInboxRows(bucket.rows, sort);
+      return { key: `root-${leafId}`, variant: sorted[0]!.variant, label: bucket.label, rows: sorted };
+    })
+    .sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label));
+  if (unrooted.length > 0) {
+    const sorted = sortBlockedInboxRows(unrooted, sort);
+    groups.push({
+      key: NO_ROOT_BLOCKER_GROUP_KEY,
+      variant: sorted[0]!.variant,
+      label: "No single blocker",
+      rows: sorted,
+    });
   }
   return groups;
 }

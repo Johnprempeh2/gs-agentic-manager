@@ -150,9 +150,14 @@ export function EmailDraftDialog({
               Cancel
             </Button>
             {usable.length > 0 ? (
+              <div className="flex items-center gap-3">
+              {!ready ? (
+                <span className="text-xs text-muted-foreground">Add a recipient, subject and message to save.</span>
+              ) : null}
               <Button type="submit" form="email-draft-form" disabled={!ready || save.isPending}>
                 {save.isPending ? "Saving..." : "Save as draft"}
               </Button>
+              </div>
             ) : null}
           </DialogFooter>
         </DialogContent>

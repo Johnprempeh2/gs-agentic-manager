@@ -377,7 +377,7 @@ export function ImportSkillsFromProjectDialog({
     onError: (error) => {
       toast.pushToast({
         tone: "error",
-        title: "Import failed",
+        title: "Could not import",
         body: readableErrorMessage(error),
       });
     },
@@ -685,7 +685,7 @@ function PickProjectStep({
             <div>{readableErrorMessage(error)}</div>
           </div>
         ) : totalProjects === 0 ? (
-          <EmptyState icon={Layers} message="This organization has no projects yet." />
+          <EmptyState icon={Layers} message="No projects yet. Create a project first, then add its skills here." />
         ) : projects.length === 0 ? (
           <EmptyState icon={Search} message={`No projects match "${filter}".`} />
         ) : (
@@ -955,7 +955,7 @@ function SelectStep({
           </p>
           <p className="mt-1.5 text-sm text-muted-foreground">
             {grant
-              ? "Your account doesn't have permission to add skills to this organization. Ask an owner to grant the skills permission, then try again."
+              ? "Your account doesn't have permission to add skills to this organisation. Ask an owner to grant the skills permission, then try again."
               : readableErrorMessage(scanError)}
           </p>
           {!grant && (

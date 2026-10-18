@@ -78,8 +78,8 @@ describe("InboundTaskHooksDialog", () => {
     mocks.list.mockResolvedValue([]);
     mocks.create.mockResolvedValue({ ...hook, token: "gsam_ith_secret" });
     await render();
-    expect(document.body.textContent).toContain("No webhooks yet.");
-    expect(button("Make webhook").disabled).toBe(true);
+    expect(document.body.textContent).toContain("No addresses yet.");
+    expect(button("Make address").disabled).toBe(true);
 
     const input = document.body.querySelector("#inbound-hook-name") as HTMLInputElement;
     await act(async () => {
@@ -87,12 +87,12 @@ describe("InboundTaskHooksDialog", () => {
       setter.call(input, "Website form");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () => { button("Make webhook").click(); });
+    await act(async () => { button("Make address").click(); });
     await flush();
 
     expect(mocks.create).toHaveBeenCalledWith("company-1", { name: "Website form", assigneeAgentId: null });
-    expect(document.body.textContent).toContain("The token is shown only once");
-    expect((document.body.querySelector("input[aria-label=Token]") as HTMLInputElement).value).toBe("gsam_ith_secret");
+    expect(document.body.textContent).toContain("The private key is shown only once");
+    expect((document.body.querySelector("input[aria-label='Private key']") as HTMLInputElement).value).toBe("gsam_ith_secret");
     expect(document.body.querySelector("pre")?.textContent).toContain("Authorization: Bearer gsam_ith_secret");
   });
 

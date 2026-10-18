@@ -132,6 +132,27 @@ describe.sequential("cli auth routes", () => {
     expect(res.body.approvalUrl).toContain("/cli-auth/12345678-1234-4123-8123-123456789abc?token=pcp_cli_auth_secret");
   });
 
+  it.sequential("limits how many CLI auth challenges one address can open", async () => {
+    mockBoardAuthService.createCliAuthChallenge.mockResolvedValue({
+      challenge: {
+        id: "12345678-1234-4123-8123-123456789abc",
+        expiresAt: new Date("2026-03-23T13:00:00.000Z"),
+      },
+      challengeSecret: "pcp_cli_auth_secret",
+      pendingBoardToken: "pcp_board_token",
+    });
+
+    const app = await createApp({ type: "none", source: "none" });
+    const body = { command: "gsam company import", clientName: "gsam cli", requestedAccess: "board" };
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const res = await request(app).post("/api/cli-auth/challenges").send(body);
+      expect(res.status).toBe(201);
+    }
+    const refused = await request(app).post("/api/cli-auth/challenges").send(body);
+    expect(refused.status).toBe(429);
+    expect(refused.headers["retry-after"]).toBeTruthy();
+  });
+
   it.sequential("rejects anonymous access to generic skill documents", async () => {
     const indexApp = await createApp({ type: "none", source: "none" });
     const skillApp = await createApp({ type: "none", source: "none" });

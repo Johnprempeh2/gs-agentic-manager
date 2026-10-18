@@ -1,8 +1,10 @@
 import { Router, type Request } from "express";
 import { companies, type Db } from "@greatstone/db";
 import {
+  AI_ROUTE_CHANGE_APPROVAL_TYPE,
   INSTANCE_FEATURE_CATALOG,
   featureDependencyViolations,
+  requestAiRouteChangeSchema,
   patchInstanceSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   patchInstanceGeneralSettingsSchema,
@@ -24,6 +26,7 @@ import {
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {
+  approvalService,
   companyService,
   heartbeatService,
   instanceSettingsService,
@@ -33,7 +36,18 @@ import {
 } from "../services/index.js";
 import { environmentService } from "../services/environments.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
-import { assertBoardOrgAccess, getActorInfo } from "./authz.js";
+import {
+  assertBoard,
+  assertBoardOrgAccess,
+  assertCompanyAccess,
+  getActorInfo,
+  hasCompanyOwnerOrAdminRole,
+  isHostingOperator,
+} from "./authz.js";
+import { readAiAccessRoute } from "../services/ai-access-route.js";
+import { applyAiRouteChange, logAiRouteChanged } from "../services/ai-route-change.js";
+import { clearTwoStepRequirementCache, needsTwoStepSetup } from "../auth/two-step-requirement.js";
+import { signInHistoryService } from "../auth/sign-in-history.js";
 
 function sameJsonValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -246,8 +260,31 @@ export function instanceSettingsRoutes(db: Db) {
         () => svc.getGeneral(),
         (field) => hidden.has(`instance.general.${field}`),
       );
+      // Turning on compulsory two-step sign-in from a password session that
+      // has none would lock the admin out of the page they are on.
+      if (req.body.requireTwoStepSignIn === true && needsTwoStepSetup(req.actor)) {
+        throw forbidden("Turn on two-step sign-in for yourself in your profile first.", {
+          code: "TWO_STEP_SELF_REQUIRED",
+        });
+      }
+      const changesAiRoute = Object.prototype.hasOwnProperty.call(req.body, "aiAccessRoute");
+      const previousAiRoute = changesAiRoute ? readAiAccessRoute(await svc.getGeneral()) : null;
       const updated = await svc.updateGeneral(req.body);
+      if (Object.prototype.hasOwnProperty.call(req.body, "requireTwoStepSignIn")) clearTwoStepRequirementCache();
       const actor = getActorInfo(req);
+      const nextAiRoute = readAiAccessRoute(updated.general);
+      if (changesAiRoute && nextAiRoute !== previousAiRoute) {
+        // GRE-1363 (AT-2.9): the AI route change gets its own audit row with old and new.
+        await logAiRouteChanged(db, {
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          settingsId: updated.id,
+          oldRoute: previousAiRoute,
+          newRoute: nextAiRoute,
+          reason: null,
+        });
+      }
       const companyIds = await svc.listCompanyIds();
       await Promise.all(
         companyIds.map((companyId) =>
@@ -272,7 +309,90 @@ export function instanceSettingsRoutes(db: Db) {
     },
   );
 
+  /**
+   * GRE-1363 (AT-2.9): a client owner or admin asks for an AI route change; the
+   * hosting operator decides it as an `ai_route_change` approval. The operator
+   * calling this changes the route at once, with the same audit row.
+   */
+  router.post(
+    "/companies/:companyId/ai-route-change-requests",
+    validate(requestAiRouteChangeSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      if (isHostingOperator(req)) {
+        const result = await applyAiRouteChange(db, {
+          route: req.body.route,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          reason: req.body.reason,
+        });
+        res.json({ status: "applied", ...result });
+        return;
+      }
+      if (!hasCompanyOwnerOrAdminRole(req, companyId)) {
+        throw forbidden("Owner or admin role required");
+      }
+      const currentRoute = readAiAccessRoute(await svc.getGeneral());
+      if (currentRoute === req.body.route) {
+        res.json({ status: "unchanged", oldRoute: currentRoute, newRoute: currentRoute });
+        return;
+      }
+      const approval = await approvalService(db).create(companyId, {
+        type: AI_ROUTE_CHANGE_APPROVAL_TYPE,
+        requestedByUserId: actor.actorId,
+        requestedByAgentId: null,
+        status: "pending",
+        payload: {
+          title: `AI route: ${currentRoute ?? "none"} to ${req.body.route ?? "none"}`,
+          fromRoute: currentRoute,
+          toRoute: req.body.route,
+          reason: req.body.reason,
+        },
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        action: "ai_route.change_requested",
+        entityType: "approval",
+        entityId: approval.id,
+        details: {
+          oldValue: currentRoute,
+          newValue: req.body.route,
+          effectiveFrom: null,
+          reason: req.body.reason,
+          approvalId: approval.id,
+        },
+      });
+      res.status(202).json({ status: "pending_operator_approval", approval });
+    },
+  );
+
   // Read-only host memory for the run-cap suggestion on the Settings page.
+  // Settings > Security > Sign-in activity: wrong passwords and passwords
+  // held at the two-step code on any account, for the instance admin to spot
+  // someone guessing, plus counts for the last day.
+  router.get("/instance/sign-in-activity", async (req, res) => {
+    assertCanManageInstanceSettings(req);
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const { counts, events } = await signInHistoryService(db).unfinishedAcrossInstance(since);
+    res.json({
+      since: since.toISOString(),
+      counts,
+      events: events.map((row) => ({
+        id: row.id,
+        outcome: row.outcome,
+        ipAddress: row.ipAddress ?? null,
+        userAgent: row.userAgent ?? null,
+        at: row.createdAt.toISOString(),
+        user: { id: row.userId, email: row.email ?? null, name: row.name ?? null },
+      })),
+    });
+  });
+
   router.get("/instance/system-memory", async (req, res) => {
     assertBoardOrgAccess(req);
     res.json(await readInstanceSystemMemory(readSystemMemory));

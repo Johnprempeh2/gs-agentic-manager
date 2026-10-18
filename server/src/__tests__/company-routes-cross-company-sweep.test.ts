@@ -9,7 +9,7 @@ import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
   companyMemberships, companySecretProviderConfigs, companySecrets, crmSyncBindings, crmSyncConflicts,
   decisions, decisionTrainingExamples, intelligenceRecommendations, workflowTemplates,
-  environmentLeases, environments, executionWorkspaces, generatedImages, feedbackExports, feedbackVotes, goals, heartbeatRuns,
+  environmentLeases, environments, executionWorkspaces, generatedImages, generatedVideos, studioLooks, feedbackExports, feedbackVotes, goals, heartbeatRuns,
   invites, issueAttachments, issues, goalWhyRequests, strategyBoardPacks,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
@@ -89,11 +89,14 @@ const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
 // they are checked instead.
 const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/invites/:token": "Public invite link, the token is the credential.",
+  "/api/client-acceptance/:token": "Public client acceptance link, the 256-bit token is the credential and reaches one client's pack only.",
   "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
   "/api/join-requests/:requestId": "Only POST .../claim-api-key, which a joining agent calls before it has a key; "
     + "the claim secret in the body is the credential, not a session. Company join-request routes are swept above.",
   "/api/board-api-keys/:keyId": "Board API keys belong to the signed-in user, not a company.",
   "/api/cli-auth/challenges/:id": "CLI login challenges belong to the signed-in user, not a company.",
+  "/api/auth/sessions/:sessionId": "Sign-in sessions belong to the signed-in user, not a company; "
+    + "the revoke handler only matches the caller's own sessions.",
   "/api/admin/users/:userId": "Instance-admin only; the id is a user, not a company record.",
   "/api/adapters/:type": "Adapter types are instance-wide code, not company records.",
   "/api/skills/:skillName": "Bundled skill docs, the same for every company.",
@@ -332,7 +335,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const inviteId = id(), decisionId = id();
     const boardPackId = id(), whyRequestId = id();
     const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
-    const teamChatId = id(), generatedImageId = id();
+    const teamChatId = id(), generatedImageId = id(), generatedVideoId = id(), studioLookId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -442,6 +445,10 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     await ctx.db.insert(generatedImages).values({
       ...A, id: generatedImageId, prompt: "Company A image", aspectRatio: "1:1", provider: "mock", model: "practice",
     });
+    await ctx.db.insert(generatedVideos).values({
+      ...A, id: generatedVideoId, prompt: "Company A clip", model: "hailuo-2.3", provider: "mock", durationSeconds: 6,
+    });
+    await ctx.db.insert(studioLooks).values({ ...A, id: studioLookId, name: "Company A look" });
 
     // Team chats are issues with the team_chat origin kind.
     await ctx.db.insert(issues).values({
@@ -476,6 +483,8 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/workflow-templates/:id": workflowTemplateId,
       "/api/team-chats/:id": teamChatId,
       "/api/generated-images/:id": generatedImageId,
+      "/api/generated-videos/:id": generatedVideoId,
+      "/api/studio-looks/:id": studioLookId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),

@@ -106,7 +106,7 @@ export function TaskChatMarker({
                 ) : null}
                 {item.runHref ? (
                   <Button asChild variant="ghost" size="xs">
-                    <Link to={item.runHref}>View run</Link>
+                    <Link to={item.runHref}>See what the agent did</Link>
                   </Button>
                 ) : null}
                 {onTryAgain ? (

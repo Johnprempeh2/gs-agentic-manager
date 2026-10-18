@@ -268,7 +268,7 @@ describe("New agent setup", () => {
     expect(container.querySelector('[aria-label="Thinking effort"]')).toBeNull();
     await fill("GitHub repository", "https://github.com/paperclipai/paperclip");
     await fill("Branch", "master");
-    await fill("CURSOR_API_KEY", "cursor-test-key");
+    await fill("Cursor API key", "cursor-test-key");
     await click("Run test");
     expect(api.testEnvironment.mock.calls[0][2]).toMatchObject({
       adapterConfig: { repoUrl: "https://github.com/paperclipai/paperclip", repoStartingRef: "master" },
@@ -289,23 +289,23 @@ describe("New agent setup", () => {
     secrets.list.mockResolvedValue([{ id: "existing", key: "CURSOR_API_KEY", name: "Cursor", status: "active" }]);
     secrets.listMyUserSecrets.mockResolvedValue([{ definition: { key: "CURSOR_API_KEY" }, secret: { id: "personal-key" } }]);
     await render("cursor_cloud");
-    expect(container.textContent).not.toContain("Or use an organization secret");
+    expect(container.textContent).not.toContain("Or use a saved organisation key");
     await fill("GitHub repository", "https://github.com/example/repo");
     await click("Finish setup");
     expect(api.hire).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Enter a Cursor API key");
-    await fill("CURSOR_API_KEY", "new-cursor-key");
+    await fill("Cursor API key", "new-cursor-key");
     await click("Finish setup");
     expect(secrets.create).toHaveBeenCalledWith("company-1", expect.objectContaining({ value: "new-cursor-key" }));
     expect(api.hire.mock.calls[0][1].adapterConfig.env.CURSOR_API_KEY).toMatchObject({ type: "secret_ref", secretId: "org-secret-1" });
   });
   it.each([
-    ["cursor", "CURSOR_API_KEY"],
-    ["gemini_local", "GEMINI_API_KEY"],
-    ["hermes_local", "OPENROUTER_API_KEY"],
-  ])("provides %s credentials to tests and stores only a secret reference", async (adapter, key) => {
+    ["cursor", "CURSOR_API_KEY", "Cursor API key"],
+    ["gemini_local", "GEMINI_API_KEY", "Gemini API key"],
+    ["hermes_local", "OPENROUTER_API_KEY", "OpenRouter API key"],
+  ])("provides %s credentials to tests and stores only a secret reference", async (adapter, key, label) => {
     await render(adapter);
-    await fill(key, "adapter-test-key");
+    await fill(label, "adapter-test-key");
     await click("Finish setup");
     expect(api.testEnvironment.mock.calls[0][2].testCredentials).toEqual({ [key]: "adapter-test-key" });
     expect(api.hire.mock.calls[0][1].adapterConfig.env[key]).toMatchObject({ type: "secret_ref", secretId: "org-secret-1" });
@@ -313,7 +313,7 @@ describe("New agent setup", () => {
   });
   it("defines a Kimi API model without overriding it with a CLI model alias", async () => {
     await render("kimi_local");
-    await fill("KIMI_MODEL_API_KEY", "kimi-test-key");
+    await fill("Kimi model API key", "kimi-test-key");
     await click("Run test");
     expect(api.testEnvironment).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Enter the Kimi API model name");
@@ -332,7 +332,7 @@ describe("New agent setup", () => {
     await render("hermes_gateway");
     expect(container.querySelector('[aria-label="Model"]')).toBeNull();
     await fill("Hermes API base URL", "https://hermes.example.com");
-    await fill("API_SERVER_KEY", "hermes-test-key");
+    await fill("API server key", "hermes-test-key");
     await click("Finish setup");
     expect(api.testEnvironment.mock.calls[0][2]).toMatchObject({
       adapterConfig: { apiBaseUrl: "https://hermes.example.com" },
@@ -472,7 +472,7 @@ describe("New agent setup", () => {
     async (adapter) => {
       await render(adapter);
       await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
-      await fill("OPENROUTER_API_KEY", "example-test-secret");
+      await fill("OpenRouter API key", "example-test-secret");
       await click("Run test");
       expect(secrets.rotateMyUserSecret).not.toHaveBeenCalled();
       expect(secrets.createMyUserSecret).not.toHaveBeenCalled();
@@ -565,7 +565,7 @@ describe("New agent setup", () => {
     secrets.listMyUserSecrets.mockResolvedValue([{ definition: { id: "existing-definition", key: "OPENROUTER_API_KEY" }, secret: { id: "working-secret" } }]);
     await render();
     await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
-    await fill("OPENROUTER_API_KEY", "invalid-replacement");
+    await fill("OpenRouter API key", "invalid-replacement");
     api.testEnvironment.mockResolvedValueOnce({ ...pass, status: "fail" });
     await click("Run test");
     expect(secrets.rotateMyUserSecret).not.toHaveBeenCalled();
@@ -577,7 +577,7 @@ describe("New agent setup", () => {
   it("does not store a key when leaving after a successful test", async () => {
     await render();
     await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
-    await fill("OPENROUTER_API_KEY", "abandoned-key");
+    await fill("OpenRouter API key", "abandoned-key");
     await click("Run test");
     await act(async () => root.render(null));
     expect(secrets.createUserSecretDefinition).not.toHaveBeenCalled();
@@ -585,7 +585,7 @@ describe("New agent setup", () => {
   it("removes the staged credential when hiring fails", async () => {
     await render();
     await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
-    await fill("OPENROUTER_API_KEY", "new-key");
+    await fill("OpenRouter API key", "new-key");
     api.hire.mockRejectedValueOnce(new Error("Creation rejected"));
     await click("Finish setup");
     expect(secrets.remove).toHaveBeenCalledWith("org-secret-1");
@@ -594,7 +594,7 @@ describe("New agent setup", () => {
   it("preserves the creation error when credential cleanup also fails", async () => {
     await render();
     await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
-    await fill("OPENROUTER_API_KEY", "new-key");
+    await fill("OpenRouter API key", "new-key");
     api.hire.mockRejectedValueOnce(new Error("Agent quota exceeded"));
     secrets.remove.mockRejectedValueOnce(new Error("Cleanup unavailable"));
     await click("Finish setup");

@@ -77,6 +77,8 @@ export interface CostByAgent {
   subscriptionCachedInputTokens: number;
   subscriptionInputTokens: number;
   subscriptionOutputTokens: number;
+  /** Tasks assigned to this agent that were finished in the same period. */
+  tasksDone?: number;
 }
 
 export interface CostByProviderModel {
@@ -141,6 +143,17 @@ export interface CostWindowSpendRow {
 }
 
 /** cost attributed to a project via heartbeat run → activity log → issue → project chain */
+/** Spend per billing code (a cross-team request), for the Costs page "By request" table. */
+export interface CostByBillingCode {
+  billingCode: string;
+  costCents: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  eventCount: number;
+  lastOccurredAt: Date | string | null;
+}
+
 export interface CostByProject {
   projectId: string | null;
   projectName: string | null;

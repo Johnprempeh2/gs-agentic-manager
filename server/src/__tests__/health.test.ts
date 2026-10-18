@@ -66,6 +66,8 @@ describe("GET /health", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockReadPersistedDevServerStatus.mockReturnValue(undefined);
+    // Keep these responses independent of whether this host has bwrap.
+    vi.stubEnv("GSAM_AGENT_SECRET_SHIELD", "off");
   });
 
   afterEach(() => {
@@ -169,6 +171,32 @@ describe("GET /health", () => {
     });
   });
 
+  it("warns on full health details when local agent runs cannot be sandboxed (GRE-1094)", async () => {
+    const { resetAgentSecretShieldCacheForTests } = await import("@greatstone/adapter-utils/local-process-sandbox");
+    vi.stubEnv("GSAM_AGENT_SECRET_SHIELD", "");
+    vi.stubEnv("GSAM_AGENT_SECRET_SHIELD_BWRAP", path.join(os.tmpdir(), "gsam-missing-bwrap-for-health-test"));
+    resetAgentSecretShieldCacheForTests();
+    try {
+      const res = await request(createApp(createHealthyDb())).get("/health");
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("ok");
+      if (process.platform === "linux") {
+        expect(res.body.agentSandbox).toMatchObject({ state: "unavailable", command: null });
+        expect(res.body.warnings).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            code: "agent_sandbox_unavailable",
+            message: expect.stringContaining("install bubblewrap"),
+          }),
+        ]));
+      } else {
+        expect(res.body.agentSandbox).toMatchObject({ state: "disabled" });
+      }
+    } finally {
+      resetAgentSecretShieldCacheForTests();
+    }
+  });
+
   it("returns 503 when the database probe fails", async () => {
     const db = {
       execute: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")),
@@ -186,6 +214,24 @@ describe("GET /health", () => {
       error: "database_unreachable",
       serverInfo: testServerInfo,
     });
+  });
+
+  it("names lost PostgreSQL shared memory on the 503", async () => {
+    const lost = new Error('could not open shared memory segment "/PostgreSQL.1450751626": No such file or directory');
+    const db = {
+      execute: vi.fn().mockRejectedValue(new Error("Failed query: SELECT 1", { cause: lost })),
+    } as unknown as Db;
+    const app = createApp(db);
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({
+      status: "unhealthy",
+      error: "database_unreachable",
+      reason: "shared_memory_lost",
+    });
+    expect(res.body.hint).toContain("enable-linger");
   });
 
   it("returns safe server info fallbacks when git metadata is unavailable", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from "./studio/camera.js";
 
 // Image generation: agents and board users ask for a picture from a written
 // description and GSAM keeps the result as a company image. The provider is
@@ -12,6 +13,13 @@ export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId,
   openai: "OpenAI",
   mock: "Practice mode",
 };
+
+/**
+ * Where Higgsfield API keys are made (docs.higgsfield.ai/docs/authentication,
+ * checked 16 Oct 2026). API use needs no higgsfield.ai plan: it draws on its
+ * own prepaid US dollar balance.
+ */
+export const HIGGSFIELD_API_KEYS_URL = "https://console.higgsfield.ai";
 
 export const IMAGE_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIOS)[number];
@@ -115,12 +123,21 @@ export function parseImageStyle(value: string | null | undefined): ImageStylePre
   return IMAGE_STYLE_PRESETS.find((preset) => preset.id === normalised || preset.label.toLowerCase() === normalised)?.id ?? null;
 }
 
-/** The text the image service receives: the person's words, then the style's guidance. */
-export function composeImagePrompt(prompt: string, style: string | null | undefined): string {
+/**
+ * The text the image service receives: the person's words, then the camera
+ * wording (when a camera is picked), then the style's guidance.
+ */
+export function composeImagePrompt(
+  prompt: string,
+  style: string | null | undefined,
+  camera?: StudioCameraSettings | null,
+): string {
   const preset = imageStylePreset(style);
-  const trimmed = prompt.trim();
-  if (!preset) return trimmed;
-  const sentence = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  const cameraWords = studioCameraWords(camera);
+  let text = prompt.trim();
+  if (cameraWords) text = `${text.replace(/[.,;\s]+$/, "")}, ${cameraWords}`;
+  if (!preset) return text;
+  const sentence = /[.!?]$/.test(text) ? text : `${text}.`;
   return `${sentence} ${preset.guidance}`;
 }
 
@@ -178,12 +195,60 @@ export const createGeneratedImageSchema = z.object({
     .max(GENERATED_IMAGE_PROMPT_MAX_LENGTH, `Keep the description under ${GENERATED_IMAGE_PROMPT_MAX_LENGTH} characters`),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS).default(DEFAULT_IMAGE_ASPECT_RATIO),
   style: z.enum(IMAGE_STYLE_IDS).nullable().optional(),
+  /** Cinema camera picks (camera, lens, focal length, aperture); their wording is added to the prompt. */
+  camera: studioCameraSchema.nullable().optional(),
+  /** A saved house look; its style, camera and words fill in what the request leaves out. */
+  lookId: z.string().uuid().nullable().optional(),
   /** The task the image is for, when it is made from a task. */
   issueId: z.string().uuid().nullable().optional(),
   /** The client the image is for. */
   organisationId: z.string().uuid().nullable().optional(),
 });
 export type CreateGeneratedImage = z.input<typeof createGeneratedImageSchema>;
+
+/** Most pictures one variations request may make; it must also fit under the pending cap. */
+export const GENERATED_IMAGE_VARIATIONS_MAX = 4;
+
+/** Longest single shot line in a storyboard. */
+export const GENERATED_IMAGE_SHOT_MAX_LENGTH = 300;
+
+/**
+ * Joins a storyboard shot to the description every shot shares, so each
+ * picture shows its own moment in the same setting and look.
+ */
+export function composeStoryboardPrompt(shot: string, shared: string): string {
+  const moment = shot.trim().replace(/[.\s]+$/, "");
+  return `${moment}. ${shared.trim()}`.slice(0, GENERATED_IMAGE_PROMPT_MAX_LENGTH);
+}
+
+/**
+ * Several takes on one brief, side by side: `count` copies of the same
+ * request (with its `lookId`, if any), one picture per house look in
+ * `lookIds` to compare looks, or one picture per line in `shots` for a
+ * storyboard that shares the description and look.
+ */
+export const createGeneratedImageVariationsSchema = createGeneratedImageSchema
+  .extend({
+    count: z.coerce.number().int().min(2).max(GENERATED_IMAGE_VARIATIONS_MAX).optional(),
+    lookIds: z.array(z.string().uuid()).min(2).max(GENERATED_IMAGE_VARIATIONS_MAX).optional(),
+    shots: z
+      .array(z.string().trim().min(GENERATED_IMAGE_PROMPT_MIN_LENGTH, "Describe each shot in a few words").max(GENERATED_IMAGE_SHOT_MAX_LENGTH))
+      .min(2)
+      .max(GENERATED_IMAGE_VARIATIONS_MAX)
+      .optional(),
+  })
+  .refine((value) => [value.count, value.lookIds, value.shots].filter((item) => item !== undefined).length === 1, {
+    message: "Say how many takes (count), which looks to compare (lookIds) or which shots to make (shots): one of them",
+  })
+  .refine((value) => !(value.lookIds && value.lookId), {
+    message: "Use lookIds to compare looks, or lookId with count, not both",
+    path: ["lookId"],
+  })
+  .refine((value) => !value.lookIds || new Set(value.lookIds).size === value.lookIds.length, {
+    message: "Pick each look once",
+    path: ["lookIds"],
+  });
+export type CreateGeneratedImageVariations = z.input<typeof createGeneratedImageVariationsSchema>;
 
 export const generatedImagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(GENERATED_IMAGES_MAX_LIMIT).default(GENERATED_IMAGES_DEFAULT_LIMIT),
@@ -192,6 +257,8 @@ export const generatedImagesQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   issueId: z.string().uuid().optional(),
   organisationId: z.string().uuid().optional(),
+  /** "true" shows only starred favourites. */
+  favourite: z.union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")]).optional(),
 });
 export type GeneratedImagesQuery = z.infer<typeof generatedImagesQuerySchema>;
 
@@ -207,6 +274,10 @@ export const updateGeneratedImageCoverSchema = z
   });
 export type UpdateGeneratedImageCover = z.infer<typeof updateGeneratedImageCoverSchema>;
 
+/** Star (or unstar) an image as a favourite, a keeper worth using. */
+export const updateGeneratedImageFavouriteSchema = z.object({ favourite: z.boolean() }).strict();
+export type UpdateGeneratedImageFavourite = z.infer<typeof updateGeneratedImageFavouriteSchema>;
+
 /** Cover pictures by task id and by client id, each the image's contentPath and alt text. */
 export interface GeneratedImageCovers {
   issues: Record<string, { imageId: string; contentPath: string; altText: string }>;
@@ -219,6 +290,8 @@ export interface GeneratedImage {
   prompt: string;
   aspectRatio: ImageAspectRatio;
   style: ImageStylePresetId | null;
+  /** Cinema camera picks, or null when none were made. */
+  camera: StudioCameraSettings | null;
   provider: ImageGenerationProviderId;
   model: string;
   status: GeneratedImageStatus;
@@ -239,8 +312,14 @@ export interface GeneratedImage {
   issueCover: boolean;
   /** True when this image shows on its client's card. */
   organisationCover: boolean;
+  /** Starred as a keeper by the board or an agent. */
+  favourite: boolean;
   createdAt: string;
   completedAt: string | null;
+}
+
+export interface GeneratedImageVariationsResponse {
+  images: GeneratedImage[];
 }
 
 export interface GeneratedImagesResponse {

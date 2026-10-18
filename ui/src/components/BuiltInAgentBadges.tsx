@@ -30,7 +30,7 @@ export function BuiltInLifecycleChip({
       title={
         isPendingApproval
           ? "Waiting on board hire approval before the feature can run"
-          : "Needs adapter/model setup before the feature can run"
+          : "Choose which AI this runs on before it can start"
       }
     >
       {isPendingApproval ? (compact ? "Approval" : "Pending approval") : compact ? "Setup" : "Needs setup"}

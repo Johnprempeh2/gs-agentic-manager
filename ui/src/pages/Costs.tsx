@@ -10,7 +10,7 @@ import type {
   FinanceEvent,
   QuotaWindow,
 } from "@greatstone/shared";
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, DollarSign, ReceiptText } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Check, ChevronDown, ChevronRight, ClipboardList, Coins, DollarSign, Download, ReceiptText } from "lucide-react";
 import { budgetsApi } from "../api/budgets";
 import { costsApi } from "../api/costs";
 import { ApiEquivalentCard } from "../components/ApiEquivalentCard";
@@ -30,10 +30,15 @@ import { StatusBadge } from "../components/StatusBadge";
 import { SubscriptionsCard } from "../components/SubscriptionsCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { useDateRange, PRESET_KEYS, PRESET_LABELS } from "../hooks/useDateRange";
 import { queryKeys } from "../lib/queryKeys";
 import { billingTypeDisplayName, cn, formatCents, formatTokens, providerDisplayName } from "../lib/utils";
+import { costsByAgentSheet, costsByProjectSheet, costsFileName, costsUpdateText } from "../lib/costs-export";
+import { useCopyAction } from "../lib/use-copy-action";
+import { downloadBytes, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ErrorState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -126,9 +131,9 @@ function FinanceSummaryCard({
   return (
     <Card>
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle className="text-base">Finance ledger</CardTitle>
+        <CardTitle className="text-base">Other charges</CardTitle>
         <CardDescription>
-          Account-level charges that do not map to a single inference request.
+          Top-ups, fees and refunds that are not tied to one piece of work.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 px-5 pb-5 pt-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -153,7 +158,7 @@ function FinanceSummaryCard({
         <MetricTile
           label="Estimated"
           value={formatCents(estimatedDebitCents)}
-          subtitle="Estimated debits that are not yet invoice-authoritative"
+          subtitle="Expected charges not yet on an invoice"
           icon={Coins}
         />
       </CardContent>
@@ -167,9 +172,10 @@ export function Costs({
   lockTab = false,
   hideBudgetsTab = false,
 }: CostsProps = {}) {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const toastActions = useOptionalToastActions();
 
   const [mainTab, setMainTab] = useState<CostsMainTab>(initialTab);
   const [activeProvider, setActiveProvider] = useState("all");
@@ -216,7 +222,7 @@ export function Costs({
   const weekRange = useMemo(() => currentWeekRange(), [today]);
   const companyId = selectedCompanyId ?? NO_COMPANY;
 
-  const { data: budgetData, isLoading: budgetLoading, error: budgetError } = useQuery({
+  const { data: budgetData, isLoading: budgetLoading, error: budgetError, refetch: refetchBudget } = useQuery({
     queryKey: queryKeys.budgets.overview(companyId),
     queryFn: () => budgetsApi.overview(companyId),
     enabled: !!selectedCompanyId && customReady,
@@ -245,25 +251,42 @@ export function Costs({
         amount: input.amount,
         windowKind: input.windowKind,
       }),
-    onSuccess: invalidateBudgetViews,
+    onSuccess: () => {
+      invalidateBudgetViews();
+      toastActions?.pushToast({ title: "Spending limit saved", tone: "success" });
+    },
+    onError: (err) => {
+      toastActions?.pushToast({ title: "The spending limit was not saved", body: err instanceof Error ? err.message : "Try again.", tone: "error" });
+    },
   });
 
   const incidentMutation = useMutation({
     mutationFn: (input: { incidentId: string; action: "keep_paused" | "raise_budget_and_resume"; amount?: number }) =>
       budgetsApi.resolveIncident(companyId, input.incidentId, input),
-    onSuccess: invalidateBudgetViews,
+    onSuccess: (_result, input) => {
+      invalidateBudgetViews();
+      toastActions?.pushToast({
+        title: input.action === "raise_budget_and_resume" ? "Limit raised. Work is restarting" : "Work stays paused",
+        tone: "success",
+      });
+    },
+    onError: (err) => {
+      toastActions?.pushToast({ title: "The paused work was not changed", body: err instanceof Error ? err.message : "Try again.", tone: "error" });
+    },
   });
 
-  const { data: spendData, isLoading: spendLoading, error: spendError } = useQuery({
+  const costsCopy = useCopyAction();
+  const { data: spendData, isLoading: spendLoading, error: spendError, refetch: refetchSpend } = useQuery({
     queryKey: queryKeys.costs(companyId, from || undefined, to || undefined),
     queryFn: async () => {
-      const [summary, byAgent, byProject, byAgentModel] = await Promise.all([
+      const [summary, byAgent, byProject, byAgentModel, byBillingCode] = await Promise.all([
         costsApi.summary(companyId, from || undefined, to || undefined),
         costsApi.byAgent(companyId, from || undefined, to || undefined),
         costsApi.byProject(companyId, from || undefined, to || undefined),
         costsApi.byAgentModel(companyId, from || undefined, to || undefined),
+        costsApi.byBillingCode(companyId, from || undefined, to || undefined).catch(() => []),
       ]);
-      return { summary, byAgent, byProject, byAgentModel };
+      return { summary, byAgent, byProject, byAgentModel, byBillingCode };
     },
     enabled: !!selectedCompanyId && customReady && showSummaryChrome,
   });
@@ -280,7 +303,7 @@ export function Costs({
     enabled: !!selectedCompanyId && showSummaryChrome,
   });
 
-  const { data: financeData, isLoading: financeLoading, error: financeError } = useQuery({
+  const { data: financeData, isLoading: financeLoading, error: financeError, refetch: refetchFinance } = useQuery({
     queryKey: [
       queryKeys.financeSummary(companyId, from || undefined, to || undefined),
       queryKeys.financeByBiller(companyId, from || undefined, to || undefined),
@@ -326,7 +349,12 @@ export function Costs({
     return map;
   }, [spendData?.byAgentModel]);
 
-  const { data: providerData } = useQuery({
+  const {
+    data: providerData,
+    error: providerError,
+    refetch: refetchProviders,
+    isFetching: providersFetching,
+  } = useQuery({
     queryKey: queryKeys.usageByProvider(companyId, from || undefined, to || undefined),
     queryFn: () => costsApi.byProvider(companyId, from || undefined, to || undefined),
     enabled: !!selectedCompanyId && customReady && (mainTab === "providers" || mainTab === "billers"),
@@ -334,7 +362,12 @@ export function Costs({
     staleTime: 10_000,
   });
 
-  const { data: billerData } = useQuery({
+  const {
+    data: billerData,
+    error: billerError,
+    refetch: refetchBillers,
+    isFetching: billersFetching,
+  } = useQuery({
     queryKey: queryKeys.usageByBiller(companyId, from || undefined, to || undefined),
     queryFn: () => costsApi.byBiller(companyId, from || undefined, to || undefined),
     enabled: !!selectedCompanyId && customReady && mainTab === "billers",
@@ -533,7 +566,7 @@ export function Costs({
         value: "all",
         label: (
           <span className="flex items-center gap-1.5">
-            <span>All billers</span>
+            <span>Everyone who bills you</span>
             {billerKeys.length > 0 ? (
               <>
                 <span className="font-mono text-xs text-muted-foreground">{formatTokens(allTokens)}</span>
@@ -566,7 +599,7 @@ export function Costs({
   }), [budgetPolicies]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={DollarSign} message="Select an organization to view costs." />;
+    return <EmptyState icon={DollarSign} message="Choose an organisation to view costs." />;
   }
 
   const showCustomPrompt = preset === "custom" && !customReady;
@@ -590,6 +623,38 @@ export function Costs({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {(spendData?.byAgent.length ?? 0) > 0 || (spendData?.byProject.length ?? 0) > 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Download spend by agent and by project for this range, as an Excel workbook"
+                  onClick={() => {
+                    if (!spendData) return;
+                    downloadBytes(
+                      costsFileName(selectedCompany?.issuePrefix, from || undefined, to || undefined, localToday()),
+                      sheetsToXlsx([costsByAgentSheet(spendData.byAgent), costsByProjectSheet(spendData.byProject)]),
+                    );
+                  }}
+                >
+                  <Download className="size-3.5" />
+                  Download as spreadsheet
+                </Button>
+              ) : null}
+              {spendData ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy spend against budget and the top agents and projects, ready to paste"
+                  onClick={() =>
+                    void costsCopy.copy(
+                      costsUpdateText(spendData, preset === "custom" && from && to ? `${from} to ${to}` : PRESET_LABELS[preset]),
+                    )
+                  }
+                >
+                  {costsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                  {costsCopy.copied ? "Copied" : costsCopy.failed ? "Could not copy" : "Copy as an update"}
+                </Button>
+              ) : null}
               {PRESET_KEYS.map((key) => (
                 <Button
                   key={key}
@@ -624,9 +689,9 @@ export function Costs({
 
           <div className="grid gap-3 lg:grid-cols-4">
             <MetricTile
-              label="Inference spend"
+              label="AI spend this period"
               value={formatCents(spendData?.summary.spendCents ?? 0)}
-              subtitle={`${formatTokens(inferenceTokenTotal)} tokens across request-scoped events`}
+              subtitle={`${formatTokens(inferenceTokenTotal)} units of AI usage`}
               icon={DollarSign}
             />
             <MetricTile
@@ -641,18 +706,18 @@ export function Costs({
                   ? `${budgetData?.pausedAgentCount ?? 0} agents paused · ${budgetData?.pausedProjectCount ?? 0} projects paused`
                   : spendData?.summary.budgetCents && spendData.summary.budgetCents > 0
                     ? `${formatCents(spendData.summary.spendCents)} of ${formatCents(spendData.summary.budgetCents)}`
-                    : "No monthly cap configured"
+                    : "No monthly limit set"
               }
               icon={Coins}
             />
             <MetricTile
-              label="Finance net"
+              label="Other charges (net)"
               value={formatCents(financeData?.summary.netCents ?? 0)}
               subtitle={`${formatCents(financeData?.summary.debitCents ?? 0)} debits · ${formatCents(financeData?.summary.creditCents ?? 0)} credits`}
               icon={ReceiptText}
             />
             <MetricTile
-              label="Finance events"
+              label="Other charge entries"
               value={String(financeData?.summary.eventCount ?? 0)}
               subtitle={`${formatCents(financeData?.summary.estimatedDebitCents ?? 0)} estimated in range`}
               icon={ArrowUpRight}
@@ -666,8 +731,8 @@ export function Costs({
           <TabsList variant="line" className="justify-start">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             {!hideBudgetsTab ? <TabsTrigger value="budgets">Budgets</TabsTrigger> : null}
-            <TabsTrigger value="providers">Providers</TabsTrigger>
-            <TabsTrigger value="billers">Billers</TabsTrigger>
+            <TabsTrigger value="providers">AI providers</TabsTrigger>
+            <TabsTrigger value="billers">Who bills you</TabsTrigger>
             <TabsTrigger value="finance">Finance</TabsTrigger>
           </TabsList>
         ) : null}
@@ -678,7 +743,14 @@ export function Costs({
           ) : showOverviewLoading ? (
             <PageSkeleton variant="costs" />
           ) : overviewError ? (
-            <p className="text-sm text-destructive">{(overviewError as Error).message}</p>
+            <ErrorState
+              error={overviewError}
+              title="We could not load spending figures"
+              onRetry={() => {
+                void refetchSpend();
+                void refetchFinance();
+              }}
+            />
           ) : (
             <>
               {activeBudgetIncidents.length > 0 ? (
@@ -708,9 +780,9 @@ export function Costs({
               <div className="grid gap-4 xl:grid-cols-(--gtc-31)">
                 <Card>
                   <CardHeader className="px-5 pt-5 pb-2">
-                    <CardTitle className="text-base">Inference ledger</CardTitle>
+                    <CardTitle className="text-base">AI spending</CardTitle>
                     <CardDescription>
-                      Request-scoped inference spend for the selected period.
+                      What the AI models cost in the period you picked.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 px-5 pb-5 pt-2">
@@ -772,7 +844,7 @@ export function Costs({
                   </CardHeader>
                   <CardContent className="space-y-2 px-5 pb-5 pt-2">
                     {(spendData?.byAgent.length ?? 0) === 0 ? (
-                      <p className="text-sm text-muted-foreground">No cost events yet.</p>
+                      <p className="text-sm text-muted-foreground">No spending yet. Costs appear here once agents start work.</p>
                     ) : (
                       spendData?.byAgent.map((row) => {
                         const modelRows = agentModelRows.get(row.agentId) ?? [];
@@ -807,6 +879,13 @@ export function Costs({
                                     {row.subscriptionRunCount > 0
                                       ? `${row.subscriptionRunCount} subscription`
                                       : "0 subscription"}
+                                  </div>
+                                ) : null}
+                                {row.tasksDone ? (
+                                  <div className="text-xs text-muted-foreground" title="Spend in this period divided by the tasks this agent finished in it.">
+                                    {row.tasksDone === 1 ? "1 task done" : `${row.tasksDone} tasks done`}
+                                    {" · "}
+                                    {formatCents(Math.round(row.costCents / row.tasksDone))} each
                                   </div>
                                 ) : null}
                               </div>
@@ -856,11 +935,11 @@ export function Costs({
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">
                       <CardTitle className="text-base">By project</CardTitle>
-                      <CardDescription>Run costs attributed through project-linked tasks.</CardDescription>
+                      <CardDescription>What the tasks in each project cost.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2 px-5 pb-5 pt-2">
                       {(spendData?.byProject.length ?? 0) === 0 ? (
-                        <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
+                        <p className="text-sm text-muted-foreground">No project spending yet. Costs appear once agents work on tasks in a project.</p>
                       ) : (
                         spendData?.byProject.map((row, index) => (
                           <div
@@ -875,7 +954,27 @@ export function Costs({
                     </CardContent>
                   </Card>
 
-                  <FinanceTimelineCard rows={topFinanceEvents.slice(0, 6)} emptyMessage="No finance events yet. Add account-level charges once biller invoices or credits land." />
+                  {(spendData?.byBillingCode.length ?? 0) > 0 ? (
+                    <Card data-testid="costs-by-billing-code">
+                      <CardHeader className="px-5 pt-5 pb-2">
+                        <CardTitle className="text-base">By billing code</CardTitle>
+                        <CardDescription>What agent work cost, grouped by billing code. Sub-tasks use their parent task's code.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 px-5 pb-5 pt-2">
+                        {spendData?.byBillingCode.map((row) => (
+                          <div
+                            key={row.billingCode}
+                            className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm"
+                          >
+                            <span className="truncate">{row.billingCode}</span>
+                            <span className="font-medium tabular-nums">{formatCents(row.costCents)}</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  <FinanceTimelineCard rows={topFinanceEvents.slice(0, 6)} emptyMessage="No other charges yet. Top-ups, fees and refunds appear here." />
                 </div>
               </div>
             </>
@@ -886,39 +985,39 @@ export function Costs({
           {budgetLoading ? (
             <PageSkeleton variant="costs" />
           ) : budgetError ? (
-            <p className="text-sm text-destructive">{(budgetError as Error).message}</p>
+            <ErrorState error={budgetError} title="We could not load spending limits" onRetry={() => void refetchBudget()} />
           ) : (
             <>
               <Card className="border-border/70 bg-(image:--gradient-extract-2)">
                 <CardHeader className="px-5 pt-5 pb-3">
-                  <CardTitle className="text-base">Budget control plane</CardTitle>
+                  <CardTitle className="text-base">Spending limits</CardTitle>
                   <CardDescription>
-                    Hard-stop spend limits for agents and projects. Provider subscription quota stays separate and appears under Providers.
+                    Limits that stop agents and projects from overspending. AI subscription limits are under AI providers.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 px-5 pb-5 pt-0 md:grid-cols-4">
                   <MetricTile
-                    label="Active incidents"
+                    label="Limits reached"
                     value={String(activeBudgetIncidents.length)}
-                    subtitle="Open soft or hard threshold crossings"
+                    subtitle="Limits that are close to or over"
                     icon={ReceiptText}
                   />
                   <MetricTile
                     label="Pending approvals"
                     value={String(budgetData?.pendingApprovalCount ?? 0)}
-                    subtitle="Budget override approvals awaiting board action"
+                    subtitle="Requests to raise a limit, waiting on you"
                     icon={ArrowUpRight}
                   />
                   <MetricTile
                     label="Paused agents"
                     value={String(budgetData?.pausedAgentCount ?? 0)}
-                    subtitle="Agent heartbeats blocked by budget"
+                    subtitle="Agents stopped because they hit their limit"
                     icon={Coins}
                   />
                   <MetricTile
                     label="Paused projects"
                     value={String(budgetData?.pausedProjectCount ?? 0)}
-                    subtitle="Project execution blocked by budget"
+                    subtitle="Projects stopped because they hit their limit"
                     icon={DollarSign}
                   />
                 </CardContent>
@@ -927,7 +1026,7 @@ export function Costs({
               {activeBudgetIncidents.length > 0 ? (
                 <div className="space-y-3">
                   <div>
-                    <h2 className="text-lg font-semibold">Active incidents</h2>
+                    <h2 className="text-lg font-semibold">Limits reached</h2>
                     <p className="text-sm text-muted-foreground">
                       Resolve hard stops here by raising the budget or explicitly keeping the scope paused.
                     </p>
@@ -958,13 +1057,13 @@ export function Costs({
                   return (
                     <section key={scopeType} className="space-y-3">
                       <div>
-                        <h2 className="text-lg font-semibold capitalize">{scopeType === "company" ? "organization" : scopeType} budgets</h2>
+                        <h2 className="text-lg font-semibold capitalize">{scopeType === "company" ? "organisation" : scopeType} budgets</h2>
                         <p className="text-sm text-muted-foreground">
                           {scopeType === "company"
-                            ? "Organization-wide monthly policy."
+                            ? "One monthly limit for the whole organisation."
                             : scopeType === "agent"
-                              ? "Recurring monthly spend policies for individual agents."
-                              : "Lifetime spend policies for execution-bound projects."}
+                              ? "Monthly limits for individual agents."
+                              : "Total limits for projects."}
                         </p>
                       </div>
                       <div className="grid gap-4 xl:grid-cols-2">
@@ -990,7 +1089,7 @@ export function Costs({
                 {budgetPolicies.length === 0 ? (
                   <Card>
                     <CardContent className="px-5 py-8 text-sm text-muted-foreground">
-                      No budget policies yet. Set agent and project budgets from their detail pages, or use the existing organization monthly budget control.
+                      No spending limits yet. Open an agent or project and set its budget there.
                     </CardContent>
                   </Card>
                 ) : null}
@@ -1008,8 +1107,16 @@ export function Costs({
                 <PageTabBar items={providerTabItems} value={effectiveProvider} />
 
                 <TabsContent value="all" className="mt-4">
-                  {providers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No cost events in this period.</p>
+                  {providerError && !providerData ? (
+                    <ErrorState
+                      compact
+                      error={providerError}
+                      title="Spending figures did not load"
+                      onRetry={() => void refetchProviders()}
+                      retrying={providersFetching}
+                    />
+                  ) : providers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No spending in this period. Try a longer date range above.</p>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                       {providers.map((provider) => (
@@ -1063,8 +1170,16 @@ export function Costs({
                 <PageTabBar items={billerTabItems} value={effectiveBiller} />
 
                 <TabsContent value="all" className="mt-4">
-                  {billers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No billable events in this period.</p>
+                  {billerError && !billerData ? (
+                    <ErrorState
+                      compact
+                      error={billerError}
+                      title="Spending figures did not load"
+                      onRetry={() => void refetchBillers()}
+                      retrying={billersFetching}
+                    />
+                  ) : billers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No spending in this period. Try a longer date range above.</p>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                       {billers.map((biller) => {
@@ -1113,7 +1228,7 @@ export function Costs({
           ) : financeLoading ? (
             <PageSkeleton variant="costs" />
           ) : financeError ? (
-            <p className="text-sm text-destructive">{(financeError as Error).message}</p>
+            <ErrorState error={financeError} title="We could not load other charges" onRetry={() => void refetchFinance()} />
           ) : (
             <>
               <FinanceSummaryCard
@@ -1128,12 +1243,12 @@ export function Costs({
                 <div className="space-y-4">
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">
-                      <CardTitle className="text-base">By biller</CardTitle>
-                      <CardDescription>Account-level financial events grouped by who charged or credited them.</CardDescription>
+                      <CardTitle className="text-base">By who bills you</CardTitle>
+                      <CardDescription>Other charges, grouped by who charged or refunded them.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-4 px-5 pb-5 pt-2 md:grid-cols-2">
                       {(financeData?.byBiller.length ?? 0) === 0 ? (
-                        <p className="text-sm text-muted-foreground">No finance events yet.</p>
+                        <p className="text-sm text-muted-foreground">No other charges yet.</p>
                       ) : (
                         financeData?.byBiller.map((row) => <FinanceBillerCard key={row.biller} row={row} />)
                       )}

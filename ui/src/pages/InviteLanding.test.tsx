@@ -228,7 +228,7 @@ describe("InviteLandingPage", () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
       emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
       emailInput!.dispatchEvent(new Event("change", { bubbles: true }));
-      inputValueSetter!.call(passwordInput, "supersecret");
+      inputValueSetter!.call(passwordInput, "supersecret-passphrase");
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
       passwordInput!.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -247,7 +247,7 @@ describe("InviteLandingPage", () => {
       {
         name: "Jane Example",
         email: "jane@example.com",
-        password: "supersecret",
+        password: "supersecret-passphrase",
       },
       { inviteToken: "pcp_invite_test" },
     );
@@ -519,7 +519,7 @@ describe("InviteLandingPage", () => {
       nameInput!.dispatchEvent(new Event("input", { bubbles: true }));
       inputValueSetter!.call(emailInput, "jane@example.com");
       emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
-      inputValueSetter!.call(passwordInput, "supersecret");
+      inputValueSetter!.call(passwordInput, "supersecret-passphrase");
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
@@ -540,7 +540,7 @@ describe("InviteLandingPage", () => {
       {
         name: "Jane Example",
         email: "jane@example.com",
-        password: "supersecret",
+        password: "supersecret-passphrase",
       },
       { inviteToken: "pcp_invite_test" },
     );
@@ -598,7 +598,7 @@ describe("InviteLandingPage", () => {
 
     expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
     expect(container.textContent).toContain("Request to join Acme Robotics");
-    expect(container.textContent).toContain("An organization admin must approve your request to join.");
+    expect(container.textContent).toContain("An organisation admin must approve your request to join.");
     expect(container.textContent).toContain(
       "Ask them to visit Settings → Members to approve your request.",
     );
@@ -786,7 +786,7 @@ describe("InviteLandingPage", () => {
     await act(async () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
       emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
-      inputValueSetter!.call(passwordInput, "supersecret");
+      inputValueSetter!.call(passwordInput, "supersecret-passphrase");
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
@@ -801,7 +801,7 @@ describe("InviteLandingPage", () => {
 
     expect(signInEmailMock).toHaveBeenCalledWith({
       email: "jane@example.com",
-      password: "supersecret",
+      password: "supersecret-passphrase",
     });
     expect(acceptInviteMock).not.toHaveBeenCalled();
     expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", { source: "manual" });
@@ -893,7 +893,7 @@ describe("InviteLandingPage", () => {
       await act(async () => {
         inputValueSetter!.call(emailInput, "sam@example.com");
         emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
-        inputValueSetter!.call(passwordInput, "supersecret");
+        inputValueSetter!.call(passwordInput, "supersecret-passphrase");
         passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
       });
 
@@ -908,7 +908,7 @@ describe("InviteLandingPage", () => {
 
       expect(signInEmailMock).toHaveBeenCalledWith({
         email: "sam@example.com",
-        password: "supersecret",
+        password: "supersecret-passphrase",
       });
       // The cached list was refused, not read as proof of membership.
       expect(listCompaniesMock).toHaveBeenCalled();
@@ -967,7 +967,7 @@ describe("InviteLandingPage", () => {
       await flushReact();
 
       expect(listCompaniesMock).toHaveBeenCalled();
-      expect(container.textContent).not.toContain("Already in this organization");
+      expect(container.textContent).not.toContain("Already in this organisation");
       expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
       expect(container.textContent).toContain("Request to join Acme Robotics");
 
@@ -1032,7 +1032,7 @@ describe("InviteLandingPage", () => {
       await flushReact();
       await flushReact();
 
-      expect(container.textContent).toContain("Already in this organization");
+      expect(container.textContent).toContain("Already in this organisation");
       expect(acceptInviteMock).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -1073,12 +1073,12 @@ describe("InviteLandingPage", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Join Acme Robotics");
-    expect(container.textContent).toContain("Already in this organization");
+    expect(container.textContent).toContain("Already in this organisation");
     expect(container.textContent).toContain("This account already belongs to Acme Robotics.");
     expect(acceptInviteMock).not.toHaveBeenCalled();
 
     const openButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Open organization",
+      (button) => button.textContent === "Open organisation",
     );
     expect(openButton).not.toBeNull();
 
@@ -1222,7 +1222,7 @@ describe("InviteLandingPage", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Checking your access...");
-    expect(container.textContent).not.toContain("Accept organization invite");
+    expect(container.textContent).not.toContain("Accept organisation invite");
     expect(acceptInviteMock).not.toHaveBeenCalled();
 
     await act(async () => {

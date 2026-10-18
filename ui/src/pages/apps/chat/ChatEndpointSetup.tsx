@@ -469,7 +469,7 @@ function ChatSdkEndpointSetup() {
   if (!selectedCompanyId)
     return (
       <p className="text-sm text-muted-foreground">
-        Select an organization to connect chat.
+        Choose an organisation to connect chat.
       </p>
     );
 
@@ -1158,7 +1158,7 @@ settings:
               <strong>Microsoft Entra admin center · App registrations</strong>:
               select <strong>New registration</strong>, choose{" "}
               <strong>
-                Accounts in this organizational directory only (Single tenant)
+                Accounts in this organisational directory only (Single tenant)
               </strong>
               , then select <strong>Register</strong>. Copy{" "}
               <strong>Application (client) ID</strong> and{" "}

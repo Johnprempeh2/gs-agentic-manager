@@ -246,6 +246,33 @@ describeEmbeddedPostgres("one needs-me list for the board user (GRE-355)", () =>
     expect(body).toMatchObject({ count: 1, decisionCount: 0, assignedTaskCount: 1 });
   });
 
+  it("lists an agent's question that expired unanswered on an open task, once per task", async () => {
+    const { companyId, agentId } = await seedCompany();
+    const expiredOnOpen = await task(companyId, { status: "in_progress", assigneeAgentId: agentId });
+    const reAsked = await task(companyId, { status: "in_progress", assigneeAgentId: agentId });
+    const closed = await task(companyId, { status: "done", assigneeAgentId: agentId });
+    const old = await task(companyId, { status: "todo", assigneeAgentId: agentId });
+    const otherUser = await task(companyId, { status: "todo", assigneeAgentId: agentId });
+    await question(companyId, expiredOnOpen, agentId, { status: "expired", title: "Older question" });
+    await question(companyId, expiredOnOpen, agentId, { status: "expired", title: "Which month?" });
+    await question(companyId, reAsked, agentId, { status: "expired" });
+    await question(companyId, reAsked, agentId, { status: "pending", title: "Asked again" });
+    await question(companyId, closed, agentId, { status: "expired" });
+    await question(companyId, old, agentId, {
+      status: "expired",
+      updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    });
+    await question(companyId, otherUser, agentId, { status: "expired", addresseeUserId: OTHER_USER_ID });
+
+    const body = await needsMe(companyId);
+
+    expect(body.expiredCards?.map((card) => card.id)).toEqual([expiredOnOpen]);
+    expect(body.expiredCards?.[0]).toMatchObject({ identifier: expect.any(String), question: expect.any(String) });
+    // The re-asked task shows as a decision instead.
+    expect(body.decisions.map((card) => card.task?.id)).toEqual([reAsked]);
+    expect(body.count).toBe(2);
+  });
+
   it("refuses agents", async () => {
     const { companyId, agentId } = await seedCompany();
     await request(app(companyId, { type: "agent", agentId, companyId, source: "agent_key" }))

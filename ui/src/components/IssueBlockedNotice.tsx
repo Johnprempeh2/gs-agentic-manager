@@ -32,6 +32,7 @@ import {
   readRecoveryRetryLineage,
 } from "../lib/recovery-lineage";
 import { StatusGlyph } from "./StatusGlyph";
+import { taskStatusLabel } from "../lib/task-status-labels";
 
 function BlockerRecoveryIndicator({
   action,
@@ -113,7 +114,7 @@ function SuccessfulRunRetryNowControl({
           ) : success ? (
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              {retryNow.data?.outcome === "already_promoted" ? "Already promoted" : "Promoted"}
+              {retryNow.data?.outcome === "already_promoted" ? "Already starting" : "Started"}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5">
@@ -138,7 +139,7 @@ function SuccessfulRunRetryNowControl({
 const EMPTY_LIVE_IDS: ReadonlySet<string> = new Set<string>();
 
 function waitingTaskStatusLabel(status: string): string {
-  return status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+  return taskStatusLabel(status);
 }
 
 function WaitingChipLink({
@@ -539,7 +540,7 @@ export function IssueBlockedNotice({
     ? reopenSuppressedLeaf.identifier ?? reopenSuppressedLeaf.id.slice(0, 8)
     : null;
   const reopenSuppressedLeafStatus = reopenSuppressedLeaf
-    ? reopenSuppressedLeaf.status.replace(/_/g, " ")
+    ? taskStatusLabel(reopenSuppressedLeaf.status)
     : null;
   const reopenSuppressedOtherCount = Math.max(unresolvedLeafBlockers.length - 1, 0);
 

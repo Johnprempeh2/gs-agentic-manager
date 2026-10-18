@@ -7,6 +7,7 @@ import { formatCents, providerDisplayName } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/context/ConfirmContext";
 
 interface Draft {
   id: string | null;
@@ -39,6 +40,7 @@ export function SubscriptionsCard({
   companyId: string;
   data: CompanySubscriptionsResult;
 }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +105,15 @@ export function SubscriptionsCard({
                     size="sm"
                     variant="ghost"
                     disabled={remove.isPending}
-                    onClick={() => remove.mutate(subscription.id)}
+                    onClick={async () => {
+                      const confirmed = await confirm({
+                        title: `Remove ${providerDisplayName(subscription.provider)} subscription?`,
+                        description: "It stops counting towards your monthly costs.",
+                        confirmLabel: "Remove",
+                        tone: "destructive",
+                      });
+                      if (confirmed) remove.mutate(subscription.id);
+                    }}
                   >
                     Remove
                   </Button>

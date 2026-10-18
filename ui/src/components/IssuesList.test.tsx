@@ -1443,6 +1443,53 @@ describe("IssuesList", () => {
     });
   }, 10_000);
 
+  it("explains what a task is when there are none yet, and offers to clear filters when filters hide everything", async () => {
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-empty-issues"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No tasks yet.");
+      expect(container.textContent).toContain("A task is a piece of work for an agent or a person.");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+
+    localStorage.setItem(
+      "paperclip:test-filtered-issues:company-1",
+      JSON.stringify({ statuses: ["done"] }),
+    );
+    const filtered = renderWithQueryClient(
+      <IssuesList
+        issues={[createIssue({ id: "issue-open", title: "Open issue", status: "todo" })]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-filtered-issues"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("No tasks match the current filters or search.");
+      const clear = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Clear filters");
+      expect(clear).toBeDefined();
+    });
+
+    act(() => {
+      filtered.root.unmount();
+    });
+  });
+
   it("loads board issues with a separate result limit for each status column", async () => {
     localStorage.setItem(
       "paperclip:test-issues:company-1",
@@ -2128,14 +2175,14 @@ describe("IssuesList", () => {
 
     await waitForAssertion(() => {
       const toggle = Array.from(document.body.querySelectorAll("label")).find(
-        (label) => label.textContent?.includes("Hide routine runs"),
+        (label) => label.textContent?.includes("Hide scheduled routine tasks"),
       );
       expect(toggle).not.toBeUndefined();
     });
 
     await act(async () => {
       const toggle = Array.from(document.body.querySelectorAll("label")).find(
-        (label) => label.textContent?.includes("Hide routine runs"),
+        (label) => label.textContent?.includes("Hide scheduled routine tasks"),
       );
       toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();

@@ -1461,7 +1461,9 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           .where(eq(agents.companyId, companyId))
         : [];
       const companyAgentMap = new Map(companyAgentRows.map((agent) => [agent.id, agent]));
+      // A question one agent asks another is answered by that agent, never by a person.
       const boardInteractionRows = interactionRows.filter((row) =>
+        row.kind !== "ask_agent" &&
         (row.addresseeAgentId === null ||
           !evaluateAgentInvokability(companyAgentMap.get(row.addresseeAgentId), companyAgentRows).invokable)
         && (row.addresseeUserId === null || row.addresseeUserId === options.userId

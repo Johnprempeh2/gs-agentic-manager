@@ -154,7 +154,7 @@ export function MemberHandoverDialog({
     onError: (error) => {
       pushToast({
         title: "Could not hand over",
-        body: error instanceof Error ? error.message : "Unknown error",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },

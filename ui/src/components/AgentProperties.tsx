@@ -60,8 +60,8 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
             <span className="text-sm">{agent.title}</span>
           </PropertyRow>
         )}
-        <PropertyRow label="Adapter">
-          <span className="text-sm font-mono">{getAdapterLabel(agent.adapterType)}</span>
+        <PropertyRow label="Runs on">
+          <span className="text-sm">{getAdapterLabel(agent.adapterType)}</span>
         </PropertyRow>
       </div>
 
@@ -89,7 +89,7 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
           </PropertyRow>
         )}
         {agent.lastHeartbeatAt && (
-          <PropertyRow label="Last Heartbeat">
+          <PropertyRow label="Last checked in">
             <span className="text-sm">{formatDate(agent.lastHeartbeatAt)}</span>
           </PropertyRow>
         )}

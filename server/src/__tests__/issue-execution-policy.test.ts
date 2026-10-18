@@ -1544,6 +1544,34 @@ describe("issue execution policy transitions", () => {
   });
 
   describe("policy edits while a stage is active", () => {
+    it.each(["pending", "changes_requested"] as const)("rejects done when a replacement policy drops a %s review", (status) => {
+      const originalPolicy = twoStagePolicy();
+      const replacementPolicy = twoStagePolicy();
+      expect(() => applyIssueExecutionPolicyTransition({
+        issue: {
+          status: status === "pending" ? "in_review" : "in_progress",
+          assigneeAgentId: status === "pending" ? qaAgentId : coderAgentId,
+          assigneeUserId: null,
+          executionPolicy: originalPolicy,
+          executionState: {
+            status,
+            currentStageId: originalPolicy.stages[0].id,
+            currentStageIndex: 0,
+            currentStageType: "review",
+            currentParticipant: { type: "agent", agentId: qaAgentId },
+            returnAssignee: { type: "agent", agentId: coderAgentId },
+            completedStageIds: [],
+            lastDecisionId: null,
+            lastDecisionOutcome: status === "pending" ? null : "changes_requested",
+          },
+        },
+        policy: replacementPolicy,
+        requestedStatus: "done",
+        requestedAssigneePatch: {},
+        actor: { agentId: status === "pending" ? qaAgentId : coderAgentId },
+      })).toThrow(expect.objectContaining({ status: 422, details: { code: "unexecuted_review_stage" } }));
+    });
+
     it("clears the active execution state when its stage is removed from the policy", () => {
       const reviewAndApproval = twoStagePolicy();
       const approvalOnly = approvalOnlyPolicy();

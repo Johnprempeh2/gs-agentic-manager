@@ -1,14 +1,13 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import type { ToolConnectionCredentialSource } from "@greatstone/shared";
 import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
-import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
-import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
 import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
+import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
 import { IsolatedWorkspacesRouteGate } from "./components/IsolatedWorkspacesRouteGate";
@@ -29,10 +28,12 @@ import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
+import { ClientAcceptancePage } from "./pages/ClientAcceptance";
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { sharedTaskDefaults } from "./lib/share-target";
 import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import { lazyPage } from "./lib/lazy-page";
 import {
@@ -88,6 +89,7 @@ const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
 const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
 const MemoryReview = lazyPage(() => import("./pages/MemoryReview"), "MemoryReview");
 const MemoryApps = lazyPage(() => import("./pages/MemoryApps"), "MemoryApps");
+const MemoryConnectApp = lazyPage(() => import("./pages/MemoryConnectApp"), "MemoryConnectApp");
 const MemoryClientDetail = lazyPage(() => import("./pages/MemoryClients"), "MemoryClientDetail");
 const MemoryClients = lazyPage(() => import("./pages/MemoryClients"), "MemoryClients");
 const GoalDetail = lazyPage(() => import("./pages/GoalDetail"), "GoalDetail");
@@ -123,6 +125,7 @@ const ProfileWizardRoute = lazyPage(() => import("./pages/tools/profiles/Profile
 const ProfileDetailRoute = lazyPage(() => import("./pages/tools/profiles/ProfileDetailRoute"), "ProfileDetailRoute");
 const Browse = lazyPage(() => import("./pages/apps/Browse"), "Browse");
 const Mailboxes = lazyPage(() => import("./pages/apps/Mailboxes"), "Mailboxes");
+const AgentAccess = lazyPage(() => import("./pages/apps/AgentAccess"), "AgentAccess");
 const AppsConnect = lazyPage(() => import("./pages/apps/AppsConnect"), "AppsConnect");
 const ChatEndpointSetup = lazyPage(() => import("./pages/apps/chat/ChatEndpointSetup"), "ChatEndpointSetup");
 const ChatEndpointDetail = lazyPage(() => import("./pages/apps/chat/ChatEndpointDetail"), "ChatEndpointDetail");
@@ -213,6 +216,7 @@ function boardRoutes() {
       <Route path="tools/:tab" element={<LegacyToolsRedirect />} />
       <Route path="apps" element={<Browse />} />
       <Route path="apps/mailboxes" element={<Mailboxes />} />
+      <Route path="apps/access" element={<AgentAccess />} />
       <Route path="apps/browse" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connections" element={<Navigate to="/apps" replace />} />
       <Route path="apps/byo" element={<AppsConnect byoOnly />} />
@@ -322,6 +326,7 @@ function boardRoutes() {
       <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="chats/:agentRef" element={<AgentChat />} />
       <Route path="messages/:chatId" element={<TeamChat />} />
+      <Route path="issues/new" element={<NewTaskRoute />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
@@ -428,6 +433,7 @@ function boardRoutes() {
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
       <Route path="memory/apps" element={<MemoryApps />} />
+      <Route path="memory/connect-app" element={<MemoryConnectApp />} />
       <Route path="memory/clients" element={<MemoryClients />} />
       <Route path="memory/clients/:scopeId" element={<MemoryClientDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
@@ -456,15 +462,10 @@ function boardRoutes() {
       <Route path="runs" element={<AuditCompatibilityRedirect to="/activity/runs" />} />
       <Route path="costs" element={<AuditCompatibilityRedirect to="/activity/costs" />} />
       <Route path="budgets" element={<AuditCompatibilityRedirect to="/activity/budgets" />} />
-      {/* Conference Room Chat surfaces (PAP-136/PAP-137): routes stay
-          registered but redirect to the company home while the experimental
-          flag is off. The board-level `artifacts` mount below is the new
-          conference-room one; the master-level mount above it still serves
-          `/artifacts` in both modes. */}
-      <Route element={<ConferenceRoomChatGate />}>
-        <Route path="board-chat" element={<BoardChat />} />
-        <Route path="artifacts" element={<Artifacts />} />
-      </Route>
+      {/* Conference Room Chat (PAP-136/PAP-137) graduated from Experimental
+          (GRE-1624), so its route is no longer gated. `artifacts` is already
+          mounted above. */}
+      <Route path="board-chat" element={<BoardChat />} />
       {/* Task chat dev harness — dev builds only. */}
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
@@ -501,6 +502,23 @@ function AppsConnectEntryRoute({
   return canEnterAppsConnect(searchParams, { chatConnectorsEnabled })
     ? <AppsConnect credentialSource={credentialSource} />
     : <Navigate to="/apps" replace />;
+}
+
+/**
+ * `/issues/new`: the home screen New task shortcut, and where Android sends
+ * a page or text shared to GSAM. Opens the new task form, filled from what
+ * was shared, over the task list.
+ */
+function NewTaskRoute() {
+  const location = useLocation();
+  const { openNewIssue } = useDialogActions();
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+    openNewIssue(sharedTaskDefaults(location.search));
+  }, [location.search, openNewIssue]);
+  return <Navigate to="/issues" replace />;
 }
 
 function InboxRootRedirect() {
@@ -622,13 +640,13 @@ export function OnboardingRoutePage() {
   const title = matchedCompany
     ? `Add another agent to ${matchedCompany.name}`
     : companies.length > 0
-      ? "Create another organization"
-      : "Create your first organization";
+      ? "Create another organisation"
+      : "Create your first organisation";
   const description = matchedCompany
-    ? "Run onboarding again to add an agent and a starter task for this organization."
+    ? "Run onboarding again to add an agent and a starter task for this organisation."
     : companies.length > 0
-      ? "Run onboarding again to create another organization and seed its first agent."
-      : "Get started by creating an organization and your first agent.";
+      ? "Run onboarding again to create another organisation and seed its first agent."
+      : "Get started by creating an organisation and your first agent.";
 
   return (
     <div className="mx-auto max-w-xl py-10">
@@ -763,10 +781,10 @@ function NoCompaniesStartPage() {
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">
-          {t("app.noCompanies.title", { defaultValue: "Create your first organization" })}
+          {t("app.noCompanies.title", { defaultValue: "Create your first organisation" })}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {t("app.noCompanies.description", { defaultValue: "Get started by creating an organization." })}
+          {t("app.noCompanies.description", { defaultValue: "Get started by creating an organisation." })}
         </p>
         <div className="mt-4">
           {/* Same as the onboarding route: no Cloud origin means nowhere to
@@ -786,7 +804,7 @@ function NoCompaniesStartPage() {
                   : openOnboarding()
               }
             >
-              {t("app.noCompanies.newCompany", { defaultValue: "New Organization" })}
+              {t("app.noCompanies.newCompany", { defaultValue: "New organisation" })}
             </Button>
           )}
         </div>
@@ -805,6 +823,7 @@ export function App() {
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
+        <Route path="accept/:token" element={<ClientAcceptancePage />} />
         <Route element={<CloudAccessGate allowMembershipRequest />}>
           {/* The identity APIs enforce the chat rollout flag. Nonmembers cannot
               read experimental settings, but a private invitation may request membership. */}
@@ -859,6 +878,7 @@ export function App() {
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/apps" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/connect-app" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/clients" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/clients/:scopeId" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
+import { AGENT_ROLE_LABELS } from "@greatstone/shared";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, sentenceCaseStatus } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ChevronRight, GitBranch } from "lucide-react";
@@ -76,8 +77,8 @@ function OrgTreeNode({
           )}
         />
         <span className="font-medium flex-1">{node.name}</span>
-        <span className="text-xs text-muted-foreground">{node.role}</span>
-        <StatusBadge status={node.status} />
+        <span className="text-xs text-muted-foreground">{(AGENT_ROLE_LABELS as Record<string, string>)[node.role] ?? sentenceCaseStatus(node.role)}</span>
+        <StatusBadge status={node.status} label={sentenceCaseStatus(node.status)} />
       </Link>
       {hasChildren && expanded && (
         <OrgTree nodes={node.reports} depth={depth + 1} hrefFn={hrefFn} />
@@ -92,7 +93,7 @@ export function Org() {
   const { setBreadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Org Chart" }]);
+    setBreadcrumbs([{ label: "Org chart" }]);
   }, [setBreadcrumbs]);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -102,7 +103,7 @@ export function Org() {
   });
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={GitBranch} message="Select an organization to view org chart." />;
+    return <EmptyState icon={GitBranch} message="Choose an organisation to view org chart." />;
   }
 
   if (isLoading) {

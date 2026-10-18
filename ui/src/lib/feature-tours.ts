@@ -1,5 +1,6 @@
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import { SEARCH_ASK_TOUR } from "./search-ask-tour";
+import { IMAGES_TOUR } from "./images-tour";
 
 /**
  * One stop on a tour: the element with `data-tour="<target>"`, a title and a
@@ -72,7 +73,7 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
   id: "pipeline-board",
   title: "A pipeline's board",
   description: "Stages as columns, moving a case on, and adding items.",
-  version: 1,
+  version: 2,
   flag: "enablePipelines",
   label: "this board",
   steps: [
@@ -80,6 +81,16 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
       target: "board-columns",
       title: "Stages as columns",
       body: "Each column is a stage, in order from left to right. The cards in a column are the cases sitting in that stage.",
+    },
+    {
+      target: "pipeline-open-deal-value",
+      title: "What the open deals are worth",
+      body: "On a board of Pipedrive deals, the total value of every deal still open. When more than one person owns deals, the Owner menu at the top shows just one person's.",
+    },
+    {
+      target: "stage-deal-value",
+      title: "Value in each stage",
+      body: "Each column shows what the deals in that stage are worth, so you can see where the money sits.",
     },
     {
       target: "pipeline-card",
@@ -107,8 +118,8 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
 export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
   title: "Client page",
-  description: "Where a client is in their journey, the next action and who you deal with.",
-  version: 1,
+  description: "Where a client is in their journey, where things stand, the next action and who you deal with.",
+  version: 4,
   flag: "enablePipelines",
   label: "this client",
   steps: [
@@ -116,6 +127,11 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-journey",
       title: "Where the client is",
       body: "The journey shows which stages are done, the stage the client is in now, and how long they have been there.",
+    },
+    {
+      target: "client-status",
+      title: "Where things stand",
+      body: "Each stage so far, what is done, what is waiting and on whom (the client or us), with the documents received. Read this first before a call.",
     },
     {
       target: "client-next-action",
@@ -126,6 +142,31 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-contacts",
       title: "Contacts",
       body: "The people you deal with at this client, so anyone on your team can pick up the relationship.",
+    },
+    {
+      target: "deal-outcome",
+      title: "Won or lost",
+      body: "For a client imported from Pipedrive, press Won when they sign or Lost when they say no. The client moves to that stage and the date is kept. Lost asks for a reason, which is optional.",
+    },
+    {
+      target: "case-crm-history",
+      title: "History from Pipedrive",
+      body: "Every note, email, call and file from Pipedrive, newest first. Use the buttons to show one kind at a time.",
+    },
+    {
+      target: "client-evidence",
+      title: "Evidence",
+      body: "Files and links you keep for this client, such as a brief or signed papers. Upload a file or add a link so everyone works from the same copy.",
+    },
+    {
+      target: "client-deliverables",
+      title: "Journey by stage",
+      body: "What belongs in each stage. Upload a document to the stage it belongs to; uploading the signed NDA marks it accepted.",
+    },
+    {
+      target: "client-portal",
+      title: "What the client sees",
+      body: "A preview of the client's own portal, so you know exactly what they can see before you share anything.",
     },
     {
       target: "client-projects",
@@ -295,8 +336,8 @@ export const DASHBOARD_TOUR: TourDefinition = {
 export const NEEDED_TOUR: TourDefinition = {
   id: "needed",
   title: "Needed from you",
-  description: "Everything the team is waiting on you for, on one page.",
-  version: 2,
+  description: "Everything the team is waiting on you for, on one page, and on your phone.",
+  version: 3,
   autoStart: false,
   route: { match: /^\/needed\/?$/, path: "/needed" },
   label: "Needed from you",
@@ -315,6 +356,10 @@ export const NEEDED_TOUR: TourDefinition = {
       target: "needed-meanwhile",
       title: "What the team did meanwhile",
       body: "Below the list, see what each agent finished and started since you were last here.",
+    },
+    {
+      title: "On your phone",
+      body: "This page works on a phone too. Swipe a row to the right to put it away until tomorrow, and select Undo if you change your mind. Your Inbox works the same way.",
     },
     {
       title: "When it is empty",
@@ -585,7 +630,7 @@ export const INTEGRATIONS_TOUR: TourDefinition = {
   id: "integrations",
   title: "Integrations",
   description: "What each integration is for: bringing work in, sending updates out, spreadsheets and keys.",
-  version: 1,
+  version: 2,
   autoStart: false,
   route: { match: /^\/company\/settings\/integrations\/?$/, path: "/company/settings/integrations" },
   label: "Integrations",
@@ -598,6 +643,11 @@ export const INTEGRATIONS_TOUR: TourDefinition = {
       target: "integrations-apps",
       title: "Your other tools",
       body: "Each card says what it does and when you would want it. Connect lets agents work in that tool. Import copies your clients and notes in once, from a file, with no key.",
+    },
+    {
+      target: "integration-pipedrive",
+      title: "Pipedrive",
+      body: "Connect with your Pipedrive key to bring in organisations, people, deals, activities, notes, emails and files. GSAM only reads from Pipedrive and never changes anything there. No key? Upload a Pipedrive export instead.",
     },
     {
       target: "integrations-builtin",
@@ -618,18 +668,319 @@ export const INTEGRATIONS_TOUR: TourDefinition = {
 };
 
 /** Everyday pages: their tours live in the page bar. */
+export const WEEKLY_REPORT_TOUR: TourDefinition = {
+  id: "weekly-report",
+  title: "This week",
+  description: "A one page report of the week to read or share with your team.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/weekly-report\/?$/, path: "/weekly-report" },
+  label: "This week",
+  steps: [
+    {
+      target: "weekly-report-headline",
+      title: "The week in one line",
+      body: "The first line sums up the last seven days: what was finished, what is stuck and what is waiting on you.",
+    },
+    {
+      target: "weekly-report-needs-you",
+      title: "What needs you",
+      body: "Anything the agents cannot finish without you. Select an item to open it and answer.",
+    },
+    {
+      target: "weekly-report-stuck",
+      title: "What is stuck",
+      body: "Work that has stopped, and why. These are the items to ask about in your next team meeting.",
+    },
+    {
+      target: "weekly-report-share",
+      title: "Share it",
+      body: "Download a PDF or copy the report as text to paste into an email or chat. Nobody needs a login to read it.",
+    },
+  ],
+};
+
+export const CALENDAR_TOUR: TourDefinition = {
+  id: "calendar",
+  title: "Calendar",
+  description: "Due dates, routines and meetings by month or by week.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/calendar\/?$/, path: "/calendar" },
+  label: "Calendar",
+  steps: [
+    {
+      title: "Everything with a date",
+      body: "Task due dates, routines and goals in one place. Select a day to see what is on it and move a due date.",
+    },
+    {
+      target: "calendar-view",
+      title: "Month or week",
+      body: "Switch to Week to see every item for seven days in one row, with nothing hidden. On a phone the calendar shows a list instead.",
+    },
+    {
+      target: "calendar-filters",
+      title: "Choose what to show",
+      body: "Turn tasks, routines or goals on or off so the calendar shows only what you care about.",
+    },
+    {
+      target: "calendar-copy-week",
+      title: "Share the week ahead",
+      body: "Copy the next seven days as text to paste into an email or chat.",
+    },
+    {
+      target: "calendar-add",
+      title: "Add it to your own calendar",
+      body: "Download a file for Outlook, Google Calendar or Apple Calendar so due dates show next to your meetings.",
+    },
+  ],
+};
+
+export const BLOCKED_TOUR: TourDefinition = {
+  id: "blocked",
+  title: "Blocked work",
+  description: "What is holding work up, which tasks are on hold, and how to get them moving.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/inbox\/blocked\/?$/, path: "/inbox/blocked" },
+  label: "Blocked work",
+  steps: [
+    {
+      title: "Why work has stopped",
+      body: "This page lists every task that cannot go on, and what it is waiting for. Most need one answer or one decision from someone.",
+    },
+    {
+      target: "recovery-holds",
+      title: "Tasks on hold",
+      body: "GSAM puts a task on hold when it keeps failing, so it stops using time and money. Read the reason, fix it, then clear the hold to let the agent try again.",
+    },
+    {
+      target: "blocked-work-summary",
+      title: "What is holding work up",
+      body: "One line for each thing that is blocking other work, with how many tasks wait on it. Clear the top one first: it frees the most.",
+    },
+    {
+      target: "blocked-inbox",
+      title: "Every blocked task",
+      body: "Each row says who or what it is waiting on and for how long. Open a task to answer, reassign it or unblock it.",
+    },
+  ],
+};
+
+export const SCORECARD_TOUR: TourDefinition = {
+  id: "scorecard",
+  title: "Scorecard",
+  description: "What each agent finished, how that compares with before, and how to share it.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/scorecard\/?$/, path: "/scorecard" },
+  label: "Scorecard",
+  steps: [
+    {
+      target: "scorecard-totals",
+      title: "The team at a glance",
+      body: "Finished, under way, waiting for review, stuck and past due. The small line under Finished says whether that is up or down on the period before, so you can see if the team is speeding up.",
+    },
+    {
+      target: "scorecard-period",
+      title: "Choose the period",
+      body: "Switch between the last 7 and the last 30 days. Each comparison uses the same length of time just before it.",
+    },
+    {
+      target: "scorecard-agents",
+      title: "Each agent",
+      body: "One card per agent, with stuck work first. Each card says what they finished and are on now, and whether they finished more or less than before.",
+    },
+    {
+      target: "scorecard-actions",
+      title: "Ask and share",
+      body: "Ask about every stuck task in one go, download the numbers as a spreadsheet, or copy a short written update to paste into an email.",
+    },
+  ],
+};
+
+export const MORNING_TOUR: TourDefinition = {
+  id: "morning",
+  title: "Your morning summary",
+  description: "One page each morning: what needs you, what is due and what the team did.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/(morning|today)\/?$/, path: "/today" },
+  label: "Morning summary",
+  steps: [
+    {
+      title: "Start your day here",
+      body: "A short summary of the last day, made for reading on a phone with a coffee. It reaches your phone each morning too.",
+    },
+    {
+      target: "morning-needs-you",
+      title: "Needs you",
+      body: "Questions and sign-offs waiting on you. Open Decisions to answer them all in one place.",
+    },
+    {
+      target: "morning-due-today",
+      title: "Due today",
+      body: "Tasks with today's due date, so nothing slips.",
+    },
+    {
+      target: "morning-finished-since-yesterday",
+      title: "What the team finished",
+      body: "Everything the agents completed in the last 24 hours.",
+    },
+    {
+      target: "morning-stuck",
+      title: "What is stuck",
+      body: "Tasks that cannot go on. Open the blocked page to see why and get them moving.",
+    },
+  ],
+};
+
+export const ORGANISATIONS_TOUR: TourDefinition = {
+  id: "organisations",
+  title: "Organisations",
+  description: "Every company you work with in one list, and bringing them in from Pipedrive, HubSpot or Notion.",
+  version: 1,
+  flag: "enablePipelines",
+  autoStart: false,
+  route: { match: /^\/organisations\/?$/, path: "/organisations" },
+  label: "Organisations",
+  steps: [
+    {
+      title: "Everyone you work with",
+      body: "Targets, prospects, clients and former clients, each with their contacts, owner and country. Open one to see its timeline and cases.",
+    },
+    {
+      target: "organisations-import",
+      title: "Bring in your CRM",
+      body: "Select Import from Pipedrive to copy your organisations, people, deals, notes and files across. You see a preview first, and running it again updates rather than duplicates. HubSpot and Notion work the same way.",
+    },
+    {
+      target: "organisations-search",
+      title: "Find one fast",
+      body: "Search by name, industry, country or contact, or pick a status such as Client to narrow the list.",
+    },
+  ],
+};
+
+export const SEARCH_PAGE_TOUR: TourDefinition = {
+  id: "search",
+  title: "Search",
+  description: "Find any task, comment, document or agent, and narrow the results.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/search\/?$/, path: "/search" },
+  label: "Search",
+  steps: [
+    {
+      target: "search-page-input",
+      title: "Type anything",
+      body: "A client, a task number or a few words from a document. Results update as you type.",
+    },
+    {
+      target: "search-filters",
+      title: "Narrow the results",
+      body: "When there are too many results, use the filters and the sort order to narrow the list.",
+    },
+    {
+      target: "search-results",
+      title: "Open what you need",
+      body: "The best matches come first. Select a result to open it.",
+    },
+    {
+      title: "From any page",
+      body: "Press Cmd or Ctrl and K to search from anywhere, or Cmd or Ctrl and J to ask Everest a question in plain words.",
+    },
+  ],
+};
+
+export const DELIVERABLES_TOUR: TourDefinition = {
+  id: "deliverables",
+  title: "Deliverables",
+  description: "Every finished document and site the agents made, in one place.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/deliverables\/?$/, path: "/deliverables" },
+  label: "Deliverables",
+  steps: [
+    {
+      title: "Finished work lives here",
+      body: "When an agent finishes a document, a deck or a website, it lands on this page. Open any card to read it or download it.",
+    },
+    {
+      target: "deliverables-search",
+      title: "Find anything",
+      body: "Type a title, a client or a few words from inside a document. Press / to jump here from anywhere on the page.",
+    },
+    {
+      target: "deliverable-audience",
+      title: "Who it is for",
+      body: "Switch between work made for your clients and work made for your own team.",
+    },
+    {
+      target: "deliverables-kind",
+      title: "Pick a kind",
+      body: "Show only documents, sites or another kind of work.",
+    },
+    {
+      target: "deliverable-sort",
+      title: "Sort and group",
+      body: "Put the newest first, or group the work by project or client.",
+    },
+    {
+      target: "deliverables-live-previews",
+      title: "Live sites",
+      body: "Websites the agents are building show a live preview here, so you can check them without leaving the page.",
+    },
+  ],
+};
+
+export const SINCE_LAST_VISIT_TOUR: TourDefinition = {
+  id: "since-last-visit",
+  title: "Since you were last here",
+  description: "A catch-up on what each agent did while you were away.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/since-last-visit\/?$/, path: "/since-last-visit" },
+  label: "Since you were last here",
+  steps: [
+    {
+      title: "Catch up in a minute",
+      body: "This page shows what changed since your last visit, so you do not need to read every update.",
+    },
+    {
+      target: "since-last-visit-agents",
+      title: "One section per agent",
+      body: "Each agent lists what it finished and what it moved on. Open a task to see the detail.",
+    },
+    {
+      title: "Need everything?",
+      body: "The link at the bottom opens the full Audit log with every event.",
+    },
+  ],
+};
+
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
   DASHBOARD_TOUR,
   DECISIONS_TOUR,
   MY_TASKS_TOUR,
   TASKS_TOUR,
+  CALENDAR_TOUR,
   AGENTS_TOUR,
   PROJECTS_TOUR,
   GOALS_TOUR,
   ROUTINES_TOUR,
   APPROVALS_TOUR,
   MEMORY_TOUR,
+  MORNING_TOUR,
+  WEEKLY_REPORT_TOUR,
+  SCORECARD_TOUR,
+  BLOCKED_TOUR,
+  ORGANISATIONS_TOUR,
+  SEARCH_PAGE_TOUR,
+  DELIVERABLES_TOUR,
+  SINCE_LAST_VISIT_TOUR,
+  IMAGES_TOUR,
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,
   INTEGRATIONS_TOUR,

@@ -233,13 +233,9 @@ function StaleDispositionWarningMetadataRow({
           <span className="font-medium text-foreground">{row.name}</span>
         );
       case "run": {
-        const runShort =
-          row.runId.length > 12 ? `${row.runId.slice(0, 8)}...` : row.runId;
         const content = (
           <>
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-micro) text-foreground/80">
-              {runShort}
-            </code>
+            <span className="font-medium text-foreground">View details</span>
             {row.status ? <span>{row.status}</span> : null}
           </>
         );
@@ -537,11 +533,11 @@ function SystemNoticeCommentContent({
       })
       .catch((error) => {
         toastActions?.pushToast({
-          title: "Copy failed",
+          title: "Could not copy",
           body:
             error instanceof Error
               ? error.message
-              : "Unable to copy system notice",
+              : "Could not copy this note",
           tone: "error",
         });
       });
@@ -557,11 +553,11 @@ function SystemNoticeCommentContent({
       })
       .catch((error) => {
         toastActions?.pushToast({
-          title: "Copy failed",
+          title: "Could not copy",
           body:
             error instanceof Error
               ? error.message
-              : "Unable to copy system notice link",
+              : "Could not copy the link",
           tone: "error",
         });
       });
@@ -879,12 +875,12 @@ export function IssueChatSystemMessage({ message }: { message: ThreadMessage }) 
           >
             {displayedRunAgentName}
           </Link>
-          <span className="text-muted-foreground">run</span>
+          <span className="text-muted-foreground">worked on this</span>
           <Link
             to={`/agents/${runAgentId}/runs/${runId}`}
-            className="inline-flex items-center rounded-md border border-border bg-accent/40 px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            className="inline-flex items-center rounded-md border border-border bg-accent/40 px-1.5 py-0.5 text-(length:--text-nano) text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
           >
-            {runId.slice(0, 8)}
+            View details
           </Link>
           <RunStatusBadge
             status={runStatus}

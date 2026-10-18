@@ -1,5 +1,6 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
-import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion } from "./closed-card-wake.js";
+import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion, wakeMakersOfExpiredCards } from "./closed-card-wake.js";
+import type { IssueThreadInteraction } from "@greatstone/shared";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
@@ -359,6 +360,43 @@ async function wakeClosedCardMaker(
       { err, interactionId: action.interactionId, agentId: action.agentId },
       "failed to wake the maker of a card expired by a task close",
     );
+  }
+}
+
+// Cards a person's comment expired inside an addComment transaction, keyed by
+// that transaction, so the makers can be woken once it commits.
+const cardsExpiredByCommentInTx = new WeakMap<object, IssueThreadInteraction[]>();
+
+async function wakeMakersOfCardsExpiredByComment(
+  db: Db,
+  issueId: string,
+  expiredCards: IssueThreadInteraction[],
+): Promise<void> {
+  if (expiredCards.length === 0) return;
+  try {
+    const issue = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        identifier: issues.identifier,
+        title: issues.title,
+        status: issues.status,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows) => rows[0] ?? null);
+    if (!issue) return;
+    const { heartbeatService } = await import("./heartbeat.js");
+    await wakeMakersOfExpiredCards(heartbeatService(db), {
+      issue,
+      interactions: expiredCards,
+      source: "issue.comment",
+      logger,
+    });
+  } catch (err) {
+    // The cards are already expired and logged; a lost wake must not fail the comment.
+    logger.warn({ err, issueId }, "failed to wake the makers of cards expired by a comment");
   }
 }
 
@@ -1939,6 +1977,39 @@ export interface IssueFilters {
   sortDir?: "asc" | "desc";
   /** ISO 8601 timestamp — only return issues with updatedAt strictly after this value. */
   updatedSince?: string;
+  /** One or more priorities, as a comma list or an array. */
+  priority?: string | readonly string[];
+  /** Only issues created by this agent. */
+  createdByAgentId?: string;
+  /** Only issues due on or before this date (YYYY-MM-DD). */
+  dueOnOrBefore?: string;
+  /** Only open issues whose due date is before today (UTC). */
+  overdue?: boolean;
+}
+
+const CLOSED_ISSUE_STATUSES = ["done", "cancelled"] as const;
+
+/** Conditions for the priority, creator and due date filters, shared by list and count. */
+export function issueDeadlineAndOwnerConditions(
+  filters: Pick<IssueFilters, "priority" | "createdByAgentId" | "dueOnOrBefore" | "overdue"> | undefined,
+  today: string = new Date().toISOString().slice(0, 10),
+): SQL[] {
+  const conditions: SQL[] = [];
+  const priorities = parseStatusFilter(filters?.priority);
+  if (priorities.length === 1) conditions.push(eq(issues.priority, priorities[0]!));
+  else if (priorities.length > 1) conditions.push(inArray(issues.priority, priorities));
+  if (filters?.createdByAgentId) conditions.push(eq(issues.createdByAgentId, filters.createdByAgentId));
+  if (filters?.dueOnOrBefore) {
+    conditions.push(isNotNull(issues.dueDate), lte(issues.dueDate, filters.dueOnOrBefore));
+  }
+  if (filters?.overdue) {
+    conditions.push(
+      isNotNull(issues.dueDate),
+      lt(issues.dueDate, today),
+      notInArray(issues.status, [...CLOSED_ISSUE_STATUSES]),
+    );
+  }
+  return conditions;
 }
 
 type IssueRow = typeof issues.$inferSelect & { externalConversationState?: "active" | "waiting" | null };
@@ -6522,6 +6593,7 @@ async function blockedInboxIssueConditions(
   if (filters?.projectId)
     conditions.push(eq(issues.projectId, filters.projectId));
   if (filters?.teamId) conditions.push(eq(issues.teamId, filters.teamId));
+  conditions.push(...issueDeadlineAndOwnerConditions(filters));
   if (filters?.workspaceId) {
     conditions.push(
       or(
@@ -7594,13 +7666,14 @@ export function issueService(db: Db) {
     }));
   }
 
-  async function assertNoBlockingCycles(
+  /** The blockers in `blockerIssueIds` that `issueId` already blocks, directly or through other tasks. */
+  async function findCyclicBlockers(
     companyId: string,
     issueId: string,
     blockerIssueIds: string[],
     dbOrTx: DbReader = db,
-  ) {
-    if (blockerIssueIds.length === 0) return;
+  ): Promise<string[]> {
+    if (blockerIssueIds.length === 0) return [];
 
     const rows = await dbOrTx
       .select({
@@ -7622,19 +7695,22 @@ export function issueService(db: Db) {
       adjacency.set(row.blockerIssueId, list);
     }
 
+    const cyclic: string[] = [];
     for (const blockerIssueId of blockerIssueIds) {
       const queue = [...(adjacency.get(issueId) ?? [])];
       const visited = new Set<string>([issueId]);
       while (queue.length > 0) {
         const current = queue.shift()!;
         if (current === blockerIssueId) {
-          throw unprocessable("Blocking relations cannot contain cycles");
+          cyclic.push(blockerIssueId);
+          break;
         }
         if (visited.has(current)) continue;
         visited.add(current);
         queue.push(...(adjacency.get(current) ?? []));
       }
     }
+    return cyclic;
   }
 
   async function syncBlockedByIssueIds(
@@ -7668,7 +7744,39 @@ export function issueService(db: Db) {
           "Blocked-by issues must belong to the same company",
         );
       }
-      await assertNoBlockingCycles(companyId, issueId, deduped, dbOrTx);
+      // Only a blocker this write adds can be refused for making a cycle.
+      // Re-saving blockers the task already has (recovery does this on every
+      // startup) must not fail on a cycle that is already in the data, or one
+      // bad pair of tasks stops the server from starting (16 Oct 2026).
+      const existingBlockerIds = new Set<string>(
+        await dbOrTx
+          .select({ id: issueRelations.issueId })
+          .from(issueRelations)
+          .where(
+            and(
+              eq(issueRelations.companyId, companyId),
+              eq(issueRelations.relatedIssueId, issueId),
+              eq(issueRelations.type, "blocks"),
+            ),
+          )
+          .then((rows: Array<{ id: string }>) => rows.map((row) => row.id)),
+      );
+      const addedBlockerIds = deduped.filter((id) => !existingBlockerIds.has(id));
+      const addedCyclic = await findCyclicBlockers(companyId, issueId, addedBlockerIds, dbOrTx);
+      if (addedCyclic.length > 0) {
+        throw unprocessable("Blocking relations cannot contain cycles", {
+          issueId,
+          cyclicBlockerIssueIds: addedCyclic,
+        });
+      }
+      const keptBlockerIds = deduped.filter((id) => existingBlockerIds.has(id));
+      const keptCyclic = await findCyclicBlockers(companyId, issueId, keptBlockerIds, dbOrTx);
+      if (keptCyclic.length > 0) {
+        logger.warn(
+          { companyId, issueId, cyclicBlockerIssueIds: keptCyclic },
+          "task keeps blockers that already form a cycle; remove one of these blocked-by links to repair it",
+        );
+      }
     }
 
     await dbOrTx
@@ -8127,6 +8235,9 @@ export function issueService(db: Db) {
     clearExecutionRunIfTerminal,
     clearCheckoutRunIfTerminal,
     addStopRelayCommentIfNeeded,
+    /** The candidate blockers that would close a blocking loop if added to `issueId`. */
+    findCyclicBlockers: (companyId: string, issueId: string, blockerIssueIds: string[]) =>
+      findCyclicBlockers(companyId, issueId, blockerIssueIds),
 
     list: async (companyId: string, filters?: IssueFilters) => {
       if (filters?.sortField === "id" && filters.attention) {
@@ -8244,6 +8355,7 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.teamId)
         conditions.push(eq(issues.teamId, filters.teamId));
+      conditions.push(...issueDeadlineAndOwnerConditions(filters));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -8533,6 +8645,7 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.teamId)
         conditions.push(eq(issues.teamId, filters.teamId));
+      conditions.push(...issueDeadlineAndOwnerConditions(filters));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -9629,6 +9742,7 @@ export function issueService(db: Db) {
             ? parent.projectWorkspaceId
             : undefined),
         goalId: issueData.goalId ?? parent.goalId,
+        billingCode: issueData.billingCode ?? parent.billingCode,
         actorResponsibleUserId: issueData.actorResponsibleUserId ?? null,
         trustExplicitResponsibleUserId:
           issueData.trustExplicitResponsibleUserId === true,
@@ -12275,6 +12389,18 @@ export function issueService(db: Db) {
       return created;
     },
 
+    updateLabel: async (id: string, data: { name?: string; color?: string }) =>
+      db
+        .update(labels)
+        .set({
+          ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+          ...(data.color !== undefined ? { color: data.color } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(labels.id, id))
+        .returning()
+        .then((rows) => rows[0] ?? null),
+
     deleteLabel: async (id: string) =>
       db
         .delete(labels)
@@ -12510,8 +12636,10 @@ export function issueService(db: Db) {
       dbOrTx: any = db,
     ): Promise<IssueComment> {
       if (dbOrTx === db && (actor.runId || actor.userId)) {
-        const append = () =>
-          db.transaction(async (tx) => {
+        const append = async () => {
+          const expiredCards: IssueThreadInteraction[] = [];
+          const saved = await db.transaction(async (tx) => {
+            cardsExpiredByCommentInTx.set(tx, expiredCards);
             // Serialize run-authored comments on the issue so a provider retry
             // cannot publish the same visible result twice. This needs no schema
             // change: the issue row is the transaction fence, and the recursive
@@ -12525,6 +12653,10 @@ export function issueService(db: Db) {
               .for(REFERENCED_ROW_LOCK);
             return addComment(issueId, body, actor, options, tx);
           });
+          // After commit: a person's comment expired cards, so tell their makers.
+          await wakeMakersOfCardsExpiredByComment(db, issueId, expiredCards);
+          return saved;
+        };
         return options?.authorizationReason ===
           CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON
           ? retryNativeChatReviewPresentation(append)
@@ -12544,11 +12676,12 @@ export function issueService(db: Db) {
 
       if (issue.conversationAgentId && actor.userId) {
         // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+        // Agent Chat ignores the stored switch (GRE-1621), but a client plan can turn it off (GRE-1633).
         const experimental = await instanceSettingsService(dbOrTx).getExperimental();
         if (issue.originKind === "strategy_board_question") {
           if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
         } else if (!experimental.enableAgentChat) {
-          throw unprocessable("Agent Chat is disabled in Experimental settings");
+          throw unprocessable("Agent Chat is not part of this plan");
         }
       }
       const currentUserRedactionOptions = {
@@ -13109,6 +13242,7 @@ export function issueService(db: Db) {
           comment,
           { agentId: actor.agentId, userId: actor.userId },
         );
+        cardsExpiredByCommentInTx.get(dbOrTx)?.push(...expiredInteractions);
         for (const interaction of expiredInteractions) {
           await logActivity(dbOrTx, {
             companyId: issue.companyId,

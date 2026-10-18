@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity as ActivityIcon } from "lucide-react";
 import { issuesApi } from "@/api/issues";
@@ -18,7 +19,7 @@ export function RunsSection() {
   const { pushToast } = useToastActions();
   const filters = { originKind: "routine_execution", originId: routine.id };
   const issueQueryKey = [...queryKeys.issues.list(companyId), "routine", routine.id];
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch } = useQuery({
     queryKey: issueQueryKey,
     queryFn: () => issuesApi.list(companyId, filters),
   });
@@ -29,7 +30,7 @@ export function RunsSection() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.routines.detail(routine.id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.routines.runs(routine.id) });
     },
-    onError: (updateError) => pushToast({ title: "Failed to update task", body: updateError.message, tone: "error" }),
+    onError: (updateError) => pushToast({ title: "Could not update the task", body: updateError.message, tone: "error" }),
   });
 
   return (
@@ -37,6 +38,7 @@ export function RunsSection() {
       issues={issues ?? []}
       isLoading={isLoading}
       error={error}
+      onRetry={() => void refetch()}
       agents={agents}
       projects={projects}
       liveIssueIds={new Set(hasLiveRun && activeIssueId ? [activeIssueId] : [])}
@@ -50,7 +52,11 @@ export function RunsSection() {
   );
 }
 
-export function ActivitySection({ isLoading = false, error }: { isLoading?: boolean; error?: Error | null } = {}) {
+export function ActivitySection({
+  isLoading = false,
+  error,
+  onRetry,
+}: { isLoading?: boolean; error?: Error | null; onRetry?: () => void } = {}) {
   const ctx = useRoutineDetail();
   const { activity } = ctx;
   const events = activity ?? [];
@@ -76,10 +82,10 @@ export function ActivitySection({ isLoading = false, error }: { isLoading?: bool
   }, [events]);
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading activity…</p>;
-  if (error) return <p role="alert" className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} title="Activity did not load" onRetry={onRetry} compact />;
 
   if (events.length === 0) {
-    return <EmptyState icon={ActivityIcon} message="No activity yet." />;
+    return <EmptyState icon={ActivityIcon} message="No activity yet." description="Each time this routine runs or someone changes it, it shows here." />;
   }
 
   return (
