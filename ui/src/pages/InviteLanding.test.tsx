@@ -228,7 +228,7 @@ describe("InviteLandingPage", () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
       emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
       emailInput!.dispatchEvent(new Event("change", { bubbles: true }));
-      inputValueSetter!.call(passwordInput, "supersecret");
+      inputValueSetter!.call(passwordInput, "supersecret-passphrase");
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
       passwordInput!.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -247,7 +247,7 @@ describe("InviteLandingPage", () => {
       {
         name: "Jane Example",
         email: "jane@example.com",
-        password: "supersecret",
+        password: "supersecret-passphrase",
       },
       { inviteToken: "pcp_invite_test" },
     );
@@ -519,7 +519,7 @@ describe("InviteLandingPage", () => {
       nameInput!.dispatchEvent(new Event("input", { bubbles: true }));
       inputValueSetter!.call(emailInput, "jane@example.com");
       emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
-      inputValueSetter!.call(passwordInput, "supersecret");
+      inputValueSetter!.call(passwordInput, "supersecret-passphrase");
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
@@ -540,7 +540,7 @@ describe("InviteLandingPage", () => {
       {
         name: "Jane Example",
         email: "jane@example.com",
-        password: "supersecret",
+        password: "supersecret-passphrase",
       },
       { inviteToken: "pcp_invite_test" },
     );
@@ -786,7 +786,7 @@ describe("InviteLandingPage", () => {
     await act(async () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
       emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
-      inputValueSetter!.call(passwordInput, "supersecret");
+      inputValueSetter!.call(passwordInput, "supersecret-passphrase");
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
@@ -801,7 +801,7 @@ describe("InviteLandingPage", () => {
 
     expect(signInEmailMock).toHaveBeenCalledWith({
       email: "jane@example.com",
-      password: "supersecret",
+      password: "supersecret-passphrase",
     });
     expect(acceptInviteMock).not.toHaveBeenCalled();
     expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", { source: "manual" });
@@ -893,7 +893,7 @@ describe("InviteLandingPage", () => {
       await act(async () => {
         inputValueSetter!.call(emailInput, "sam@example.com");
         emailInput!.dispatchEvent(new Event("input", { bubbles: true }));
-        inputValueSetter!.call(passwordInput, "supersecret");
+        inputValueSetter!.call(passwordInput, "supersecret-passphrase");
         passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
       });
 
@@ -908,7 +908,7 @@ describe("InviteLandingPage", () => {
 
       expect(signInEmailMock).toHaveBeenCalledWith({
         email: "sam@example.com",
-        password: "supersecret",
+        password: "supersecret-passphrase",
       });
       // The cached list was refused, not read as proof of membership.
       expect(listCompaniesMock).toHaveBeenCalled();

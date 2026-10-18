@@ -215,6 +215,44 @@ describe("AuthPage", () => {
     });
   });
 
+  it("shows the password rule on sign-up and refuses a short password before sending it", async () => {
+    const { root } = await mount();
+    const createOne = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Create one",
+    );
+    await act(async () => {
+      createOne?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("At least 12 characters");
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+    expect(passwordInput.getAttribute("aria-describedby")).toBe("password-rule");
+    await act(async () => {
+      setValue!.call(nameInput, "Jane");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setValue!.call(emailInput, "jane@example.com");
+      emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setValue!.call(passwordInput, "supersecret");
+      passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const form = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Use at least 12 characters");
+    expect(signUpEmailMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("renders auth errors in an assertive alert region referenced by the inputs", async () => {
     const { root } = await mount();
 

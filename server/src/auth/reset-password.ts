@@ -1,11 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { authAccounts, authSessions, authTwoFactors, authUsers, type Db } from "@greatstone/db";
-
-/** Better Auth's default `minPasswordLength`; sign-up refuses anything shorter. */
-export const MIN_RESET_PASSWORD_LENGTH = 8;
-/** Better Auth's default `maxPasswordLength`. */
-export const MAX_RESET_PASSWORD_LENGTH = 128;
+import { passwordProblem } from "@greatstone/shared";
 
 export type ResetCredentialPasswordResult = {
   userId: string;
@@ -38,12 +34,9 @@ export async function resetCredentialPassword(
 ): Promise<ResetCredentialPasswordResult> {
   const email = input.email.trim().toLowerCase();
   const password = input.newPassword;
-  if (password.length < MIN_RESET_PASSWORD_LENGTH || password.length > MAX_RESET_PASSWORD_LENGTH) {
-    throw new ResetCredentialPasswordError(
-      `Password must be ${MIN_RESET_PASSWORD_LENGTH}-${MAX_RESET_PASSWORD_LENGTH} characters.`,
-      "invalid_password",
-    );
-  }
+  // The same rule as sign-up in the app (`passwordProblem`).
+  const problem = passwordProblem(password, { email });
+  if (problem) throw new ResetCredentialPasswordError(problem, "invalid_password");
 
   const user = await db
     .select({ id: authUsers.id, email: authUsers.email })

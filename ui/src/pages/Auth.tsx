@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PASSWORD_RULE_HINT, passwordProblem } from "@greatstone/shared";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
@@ -91,7 +92,7 @@ export function AuthPage() {
     ? code.replace(/\s+/g, "").length >= 6
     : email.trim().length > 0 &&
     password.trim().length > 0 &&
-    (mode === "sign_in" || (name.trim().length > 0 && password.trim().length >= 8));
+    (mode === "sign_in" || (name.trim().length > 0 && !passwordProblem(password, { email })));
 
   if (isSessionLoading) {
     return (
@@ -164,7 +165,8 @@ export function AuthPage() {
               event.preventDefault();
               if (mutation.isPending) return;
               if (!canSubmit) {
-                setError("Please fill in all required fields.");
+                const weak = mode === "sign_up" && password.length > 0 ? passwordProblem(password, { email }) : null;
+                setError(weak ?? "Please fill in all required fields.");
                 return;
               }
               mutation.mutate();
@@ -218,8 +220,11 @@ export function AuthPage() {
                 required
                 aria-required="true"
                 aria-invalid={error ? true : undefined}
-                aria-describedby={error ? errorId : undefined}
+                aria-describedby={[error ? errorId : null, mode === "sign_up" ? "password-rule" : null].filter(Boolean).join(" ") || undefined}
               />
+              {mode === "sign_up" && (
+                <p id="password-rule" className="mt-1 text-xs text-muted-foreground">{PASSWORD_RULE_HINT}</p>
+              )}
             </div>
             {error && (
               <p id={errorId} role="alert" className="text-xs text-destructive">
