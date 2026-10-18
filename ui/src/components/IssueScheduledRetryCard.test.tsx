@@ -123,7 +123,7 @@ function getRetryNowButton() {
 describe("IssueScheduledRetryCard", () => {
   it("shows workspace contention as an automatic wait without failure or retry controls", () => {
     renderWithProviders(<IssueScheduledRetryCard issueId="issue-1" scheduledRetry={{ ...baseRetry, scheduledRetryReason: "workspace_busy" }} />);
-    expect(container.textContent).toContain("Waiting for workspace");
+    expect(container.textContent).toContain("Waiting for another task to finish");
     expect(container.textContent).toContain("Work starts automatically");
     expect(container.textContent).not.toMatch(/failed|Retry|Attempt|Replaces run/);
     expect(getRetryNowButton()).toBeNull();
@@ -153,7 +153,7 @@ describe("IssueScheduledRetryCard", () => {
     expect(text).toContain("Retry scheduled");
     expect(text).toContain("Attempt 4");
     expect(text).toContain("Transient failure");
-    expect(text).toContain("Automatic retry in 15m");
+    expect(text).toContain("Agent tries again in 15m");
     expect(text).toContain("run-prev");
   });
 
@@ -166,8 +166,8 @@ describe("IssueScheduledRetryCard", () => {
     );
     const text = getCard()?.textContent ?? "";
     expect(text).toContain("Continuation scheduled");
-    expect(text).toContain("Automatic continuation");
-    expect(text).toContain("Pulls continuation forward immediately");
+    expect(text).toContain("Agent carries on");
+    expect(text).toContain("Start it now instead of waiting");
   });
 
   it("uses 'due now' label when scheduledRetryAt is at the current time", () => {
@@ -178,7 +178,7 @@ describe("IssueScheduledRetryCard", () => {
       />,
     );
     const text = getCard()?.textContent ?? "";
-    expect(text).toContain("Automatic retry due now");
+    expect(text).toContain("Agent tries again now");
   });
 
   it("invokes retry-now and shows promoted state on success", async () => {
@@ -192,10 +192,10 @@ describe("IssueScheduledRetryCard", () => {
     act(() => {
       button!.click();
     });
-    await waitForRetryButtonText("Promoted");
+    await waitForRetryButtonText("Started");
     expect(retryNowMock).toHaveBeenCalledWith("issue-1");
     const finalButton = getRetryNowButton();
-    expect(finalButton!.textContent ?? "").toContain("Promoted");
+    expect(finalButton!.textContent ?? "").toContain("Started");
     expect(finalButton!.disabled).toBe(true);
   });
 
@@ -207,8 +207,8 @@ describe("IssueScheduledRetryCard", () => {
     act(() => {
       getRetryNowButton()!.click();
     });
-    await waitForRetryButtonText("Already promoted");
-    expect(getRetryNowButton()!.textContent ?? "").toContain("Already promoted");
+    await waitForRetryButtonText("Already starting");
+    expect(getRetryNowButton()!.textContent ?? "").toContain("Already starting");
     expect(container.querySelector('[data-testid="issue-scheduled-retry-error-band"]')).toBeNull();
   });
 

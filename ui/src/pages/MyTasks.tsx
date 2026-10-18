@@ -160,7 +160,13 @@ export function MyTasks() {
   });
 
   // Same query as the sidebar Decisions badge, so the two share one cache entry.
-  const { data: attentionFeed, isLoading: attentionLoading } = useQuery({
+  const {
+    data: attentionFeed,
+    isLoading: attentionLoading,
+    error: attentionError,
+    refetch: refetchAttention,
+    isFetching: attentionFetching,
+  } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
     queryFn: () => attentionApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -551,8 +557,17 @@ export function MyTasks() {
   const page = (
     <div className="min-w-0 flex-1 space-y-6">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
+      {attentionError && (
+        <ErrorState
+          compact
+          error={attentionError}
+          title="Questions and approvals did not load"
+          onRetry={() => void refetchAttention()}
+          retrying={attentionFetching}
+        />
+      )}
 
-      {nothingNeedsYou ? (
+      {nothingNeedsYou && !attentionError ? (
         <EmptyState
           icon={CheckCircle2}
           message="Nothing needs you right now."

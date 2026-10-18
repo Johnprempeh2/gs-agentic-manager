@@ -31,7 +31,7 @@ export function GoalCheckInsEmpty({ ownerName }: { ownerName: string | null }) {
       </span>
       <p className="mb-1 mt-3 text-sm font-semibold text-foreground">No check-ins yet</p>
       <p className="mx-auto max-w-sm">
-        {ownerName ?? "The owner"} writes the first check-in on the next routine run. Progress above is live from
+        {ownerName ?? "The owner"} writes the first check-in at the next scheduled check-in. Progress above is live from
         linked tasks.
       </p>
     </div>

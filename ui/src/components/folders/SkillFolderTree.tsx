@@ -647,7 +647,7 @@ function TreeBranch({
               {editable ? (
                 <>
                   <DropdownMenuItem onSelect={() => onStartRename(folder)}>Rename</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onEditFolder(folder)}>Edit color</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onEditFolder(folder)}>Edit colour</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => onMoveFolder(folder, isInMySkills ? "company" : "my")}>
                     <MoveRight className="h-3.5 w-3.5" />
                     Move to {isInMySkills ? "Organisation" : "My Skills"}

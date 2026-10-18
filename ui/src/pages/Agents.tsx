@@ -65,7 +65,7 @@ const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
   { value: "paused", label: "Paused" },
-  { value: "error", label: "Error" },
+  { value: "error", label: "Needs attention" },
   { value: "builtin", label: "Built-in" },
 ];
 
@@ -280,7 +280,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
 
-  const { data: orgTree } = useQuery({
+  const { data: orgTree, error: orgTreeError, refetch: refetchOrgTree, isFetching: orgTreeFetching } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId && view === "org",
@@ -686,6 +686,16 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         </p>
       )}
 
+      {view === "org" && orgTreeError && !orgTree && (
+        <ErrorState
+          compact
+          error={orgTreeError}
+          title="Reporting lines did not load"
+          onRetry={() => void refetchOrgTree()}
+          retrying={orgTreeFetching}
+        />
+      )}
+
       {view === "org" && orgTree && orgTree.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
           No reporting lines yet. Set who each agent reports to on their page.
@@ -982,7 +992,7 @@ function AgentMetaColumns({
         className="w-28 whitespace-nowrap text-right text-xs text-muted-foreground"
         title="When this agent last checked in for work"
       >
-        {agent.lastHeartbeatAt ? `Active ${relativeTime(agent.lastHeartbeatAt)}` : "Not run yet"}
+        {agent.lastHeartbeatAt ? `Active ${relativeTime(agent.lastHeartbeatAt)}` : "Not started yet"}
       </span>
     </>
   );

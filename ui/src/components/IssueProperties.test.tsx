@@ -2389,7 +2389,7 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("Model lane");
+    expect(container.textContent).not.toContain("Which AI model");
     expect(container.textContent).not.toContain("Codex options");
 
     act(() => root.unmount());
@@ -2430,7 +2430,7 @@ describe("IssueProperties", () => {
     await flush();
 
     expect(container.textContent).toContain("Custom settings · gpt-5.4 · high");
-    expect(container.textContent).toContain("Model lane");
+    expect(container.textContent).toContain("Which AI model");
 
     // Wait for the adapter-models query to resolve so the model options render.
     let modelButton: HTMLButtonElement | undefined;
@@ -2555,7 +2555,7 @@ describe("IssueProperties", () => {
     await flush();
 
     const primaryLane = Array.from(container.querySelectorAll('button[role="radio"]'))
-      .find((button) => button.textContent?.trim() === "Primary");
+      .find((button) => button.textContent?.trim() === "Agent's usual");
     expect(primaryLane).not.toBeUndefined();
 
     await act(async () => {

@@ -33,6 +33,12 @@ import {
   ArchiveRestore,
 } from "lucide-react";
 
+const COMPANY_STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  paused: "Paused",
+  archived: "Archived",
+};
+
 export function Companies() {
   const {
     companies,
@@ -48,7 +54,7 @@ export function Companies() {
   // server-side, so the wizard entry point is hidden rather than dead-ending.
   const isCloud = Boolean(useCloudInstance());
 
-  const { data: stats } = useQuery({
+  const { data: stats, isError: statsFailed } = useQuery({
     queryKey: queryKeys.companies.stats,
     queryFn: () => companiesApi.stats(),
   });
@@ -222,11 +228,11 @@ export function Companies() {
                               : "bg-muted text-muted-foreground"
                         }`}
                       >
-                        {company.status}
+                        {COMPANY_STATUS_LABELS[company.status] ?? company.status}
                       </Badge>
                       <Button
-                        aria-label="Rename company"
-                        title="Rename company"
+                        aria-label="Rename organisation"
+                        title="Rename organisation"
                         variant="ghost"
                         size="icon-xs"
                         className="text-muted-foreground opacity-0 group-hover:opacity-100"
@@ -294,13 +300,13 @@ export function Companies() {
                 <div className="flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5" />
                   <span>
-                    {agentCount} {agentCount === 1 ? "agent" : "agents"}
+                    {statsFailed ? "Agents: could not load" : `${agentCount} ${agentCount === 1 ? "agent" : "agents"}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <CircleDot className="h-3.5 w-3.5" />
                   <span>
-                    {issueCount} {issueCount === 1 ? "task" : "tasks"}
+                    {statsFailed ? "Tasks: could not load" : `${issueCount} ${issueCount === 1 ? "task" : "tasks"}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 tabular-nums">

@@ -1263,7 +1263,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
       expect(mockAgentsApi.hire).not.toHaveBeenCalled();
       expect(document.body.textContent).toContain(
-        "No working authentication was found",
+        "We could not sign in to your AI provider",
       );
 
       await act(async () => root.unmount());

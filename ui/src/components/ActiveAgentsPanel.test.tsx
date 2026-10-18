@@ -149,7 +149,7 @@ describe("ActiveAgentsPanel", () => {
     });
 
     const moreLink = [...container.querySelectorAll("a")].find((anchor) =>
-      anchor.textContent?.includes("more active/recent"),
+      anchor.textContent?.includes("of recent work"),
     );
     expect(moreLink?.getAttribute("href")).toBe("/dashboard/live");
     expect(container.textContent).not.toContain("Run output");
@@ -185,7 +185,7 @@ describe("ActiveAgentsPanel", () => {
       minCount: 50,
       limit: 50,
     });
-    expect(container.textContent).not.toContain("more active/recent");
+    expect(container.textContent).not.toContain("of recent work");
     expect(container.textContent).not.toContain("Run output");
 
     await act(async () => {

@@ -36,6 +36,7 @@ import { MediaArtifactCard } from "@/components/artifacts/MediaArtifactCard";
 import { isImageLikeOutput, isVideoLikeOutput } from "@/lib/issue-output";
 import { attachmentDownloadPath, attachmentOpenPath } from "@/lib/issue-attachments";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { ErrorState } from "@/components/ErrorState";
 import { RichWorkProductCard } from "@/components/task-chat/RichWorkProductCard";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "@/components/IssueDocumentAnnotations";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -359,14 +360,17 @@ function DocumentRow({
  * thread.
  */
 export function IssuePropertiesArtifactsTab({ issue, documentDeepLink, onOpenDocument }: IssuePropertiesArtifactsTabProps) {
-  const { data: attachments } = useQuery({
+  const attachmentsQuery = useQuery({
     queryKey: queryKeys.issues.attachments(issue.id),
     queryFn: () => issuesApi.listAttachments(issue.id),
   });
-  const { data: workProducts } = useQuery({
+  const workProductsQuery = useQuery({
     queryKey: queryKeys.issues.workProducts(issue.id),
     queryFn: () => issuesApi.listWorkProducts(issue.id),
   });
+  const attachments = attachmentsQuery.data;
+  const workProducts = workProductsQuery.data;
+  const loadError = attachmentsQuery.error ?? workProductsQuery.error;
   const { data: documents } = useIssueDocuments(issue.id);
   const { data: runs } = useQuery({
     queryKey: queryKeys.issues.runs(issue.id),
@@ -432,9 +436,23 @@ export function IssuePropertiesArtifactsTab({ issue, documentDeepLink, onOpenDoc
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 
   if (workProductRows.length === 0 && documentRows.length === 0 && fileRows.length === 0) {
+    if (loadError) {
+      return (
+        <ErrorState
+          compact
+          error={loadError}
+          title="Could not load what this task has made"
+          onRetry={() => {
+            void attachmentsQuery.refetch();
+            void workProductsQuery.refetch();
+          }}
+          retrying={attachmentsQuery.isFetching || workProductsQuery.isFetching}
+        />
+      );
+    }
     return (
       <div className="px-1 py-6 text-sm text-muted-foreground">
-        No artifacts yet. Work products, documents, and agent-produced files will appear here.
+        Nothing made yet. Files and documents your agents produce show here.
       </div>
     );
   }

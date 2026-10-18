@@ -45,7 +45,7 @@ describe("EmptyTimerRunsBanner", () => {
     const root = render();
     expect(root.textContent).toContain("1 agent wakes on a timer even when nothing has changed");
     expect(root.textContent).toContain("Everest");
-    const button = [...root.querySelectorAll("button")].find((b) => b.textContent === "Skip empty runs")!;
+    const button = [...root.querySelectorAll("button")].find((b) => b.textContent === "Skip needless check-ins")!;
     await act(async () => {
       button.click();
     });

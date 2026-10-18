@@ -13,17 +13,17 @@ export type TestState = "idle" | "running" | "pass" | "fail";
 const copy = {
   idle: {
     title: "Test your agent",
-    description: "Check that your runtime and model can respond.",
+    description: "Check your agent can reply.",
     action: "Run test",
   },
   running: {
     title: "Testing connection",
-    description: "Checking the runtime and waiting for a model response…",
+    description: "Checking your agent and waiting for a reply…",
     action: "Testing…",
   },
   pass: {
     title: "Connection successful",
-    description: "Your runtime checks passed. Review the details below.",
+    description: "Your agent replied. Review the details below.",
     action: "Test again",
   },
   warn: {
@@ -62,7 +62,7 @@ export function RuntimeTestCard({
           : Play;
   return (
     <section
-      aria-label="Runtime test"
+      aria-label="Agent test"
       className="rounded-lg border border-border bg-card"
     >
       <div className="flex items-start gap-3 p-4 sm:items-center">
