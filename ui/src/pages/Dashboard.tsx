@@ -550,7 +550,7 @@ export function Dashboard() {
                     <span>
                       {data.agents.running} running{", "}
                       {data.agents.paused} paused{", "}
-                      {data.agents.error} errors
+                      {data.agents.error} {data.agents.error === 1 ? "needs" : "need"} attention
                     </span>
                   }
                 />
@@ -591,12 +591,12 @@ export function Dashboard() {
                   icon={ShieldCheck}
                   value={data.pendingApprovals + data.budgets.pendingApprovals}
                   label="Pending Approvals"
-                  to="/approvals"
+                  to={data.pendingApprovals === 0 && data.budgets.pendingApprovals > 0 ? "/costs" : "/approvals"}
                   description={
                     <span>
                       {data.budgets.pendingApprovals > 0
-                        ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
-                        : "Awaiting board review"}
+                        ? `Includes ${data.budgets.pendingApprovals} ${data.budgets.pendingApprovals === 1 ? "request" : "requests"} to raise a spending limit, handled on Costs`
+                        : "Waiting for your sign-off"}
                     </span>
                   }
                 />
