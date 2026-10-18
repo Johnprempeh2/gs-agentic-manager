@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ApprovalPayloadRenderer, approvalLabel } from "./ApprovalPayload";
+import { ApprovalPayloadRenderer, approvalLabel, permissionKeyLabel, scopeTypeLabel } from "./ApprovalPayload";
 import { ThemeProvider } from "../context/ThemeContext";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -208,5 +208,62 @@ describe("ApprovalPayloadRenderer", () => {
     act(() => {
       root.unmount();
     });
+  });
+  it("names permission requests and budget scopes in plain words", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <ApprovalPayloadRenderer
+            type="permission_grant"
+            payload={{ agentName: "Designer", permissionKey: "tasks:assign" }}
+          />
+          <ApprovalPayloadRenderer
+            type="budget_override_required"
+            payload={{ scopeType: "company", windowKind: "lifetime" }}
+          />
+        </ThemeProvider>,
+      );
+    });
+
+    expect(container.textContent).toContain("Assign tasks");
+    expect(container.textContent).not.toContain("tasks:assign");
+    expect(container.textContent).toContain("The whole organisation");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("tucks the raw payload of an unknown approval type behind Technical details", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <ApprovalPayloadRenderer type="something_new" payload={{ mystery: 42 }} />
+        </ThemeProvider>,
+      );
+    });
+
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toBe("Technical details");
+    expect(details?.textContent).toContain("\"mystery\": 42");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+});
+
+describe("permissionKeyLabel and scopeTypeLabel", () => {
+  it("falls back to a humanised key and the raw scope", () => {
+    expect(permissionKeyLabel("memory:read")).toBe("Read organisation memory");
+    expect(permissionKeyLabel("widgets:do_thing")).toBe("Widgets: do thing");
+    expect(scopeTypeLabel("agent")).toBe("An agent");
+    expect(scopeTypeLabel("team")).toBe("team");
   });
 });

@@ -35,6 +35,8 @@ import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariable
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { EnvironmentVariablesEditor } from "../environment-variables-editor";
 import { createDefaultNewTrigger, useRoutineDetail } from "./context";
+import { useConfirm } from "@/context/ConfirmContext";
+import { routineRunStatusLabel } from "../../lib/routine-run-status";
 import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@greatstone/shared";
 
 const concurrencyPolicyOptions = [
@@ -90,8 +92,8 @@ const activityGatePolicyOptions = [
 const activityGateScopeOptions = [
   {
     value: "company",
-    title: "Company-wide",
-    description: "Any activity across the company counts as a reason to run.",
+    title: "Organisation-wide",
+    description: "Any activity across the organisation counts as a reason to start.",
   },
   {
     value: "project",
@@ -347,10 +349,10 @@ export function OverviewSection({
         <SummaryCard
           icon={Play}
           label="Last run"
-          value={lastRun ? lastRun.status.replaceAll("_", " ") : "No runs"}
+          value={lastRun ? routineRunStatusLabel(lastRun.status) : "No runs"}
           hint={lastRun ? timeAgo(lastRun.triggeredAt) : "Trigger a run"}
           to={() => navigateToSection("runs")}
-          ariaLabel={lastRun ? `Last run ${lastRun.status}. Open runs.` : "No runs. Open runs."}
+          ariaLabel={lastRun ? `Last run ${routineRunStatusLabel(lastRun.status)}. Open runs.` : "No runs. Open runs."}
         />
       </div>
 
@@ -424,6 +426,7 @@ function SummaryCard({
 
 export function TriggersSection() {
   const ctx = useRoutineDetail();
+  const confirmAction = useConfirm();
   const { routine, newTrigger, setNewTrigger, createTrigger, updateTrigger, deleteTrigger, rotateTrigger, secretMessage, copySecretValue, setSecretMessage } = ctx;
   const [addOpen, setAddOpen] = useState(false);
   const [newScheduleEditorValid, setNewScheduleEditorValid] = useState(true);
@@ -609,8 +612,24 @@ export function TriggersSection() {
               key={trigger.id}
               trigger={trigger}
               onSave={(id, patch) => updateTrigger.mutate({ id, patch })}
-              onRotate={(id) => rotateTrigger.mutate(id)}
-              onDelete={(id) => deleteTrigger.mutate(id)}
+              onRotate={async (id) => {
+                const ok = await confirmAction({
+                  title: "Make a new secret key?",
+                  description: "Anything using the old one will stop working.",
+                  confirmLabel: "Make new key",
+                  tone: "destructive",
+                });
+                if (ok) rotateTrigger.mutate(id);
+              }}
+              onDelete={async (id) => {
+                const ok = await confirmAction({
+                  title: "Delete this trigger?",
+                  description: "The routine will stop starting from it. This cannot be undone.",
+                  confirmLabel: "Delete trigger",
+                  tone: "destructive",
+                });
+                if (ok) deleteTrigger.mutate(id);
+              }}
             />
           ))}
         </div>

@@ -518,7 +518,7 @@ export function useIssueMutations({
         const pauseHoldId = treeControlState?.activePauseHold?.holdId;
         if (!pauseHoldId) {
           throw new Error(
-            "No active subtree pause hold is available to resume.",
+            "This task is not paused any more. Refresh to see its current state.",
           );
         }
         const releasedHold = await issuesApi.releaseTreeHold(

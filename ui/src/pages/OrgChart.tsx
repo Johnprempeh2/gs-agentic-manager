@@ -37,6 +37,7 @@ import { AGENT_ROLE_LABELS, type Agent, type AgentTeam, type CompactIssue } from
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { plainTaskStatus } from "../lib/global-search";
 
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2;
@@ -1057,7 +1058,7 @@ function AgentPanel({
             <ul className="flex flex-col gap-1">
               {activity.openTasks.slice(0, 8).map((task) => (
                 <li key={task.id} className="flex min-w-0 items-baseline gap-2">
-                  <span className="shrink-0 text-xs text-muted-foreground">{task.status.replace(/_/g, " ")}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{plainTaskStatus(task.status)}</span>
                   <Link to={issueUrl(task)} className="truncate hover:underline" title={taskLabel(task)}>
                     {taskLabel(task)}
                   </Link>

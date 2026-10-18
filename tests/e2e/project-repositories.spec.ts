@@ -50,7 +50,7 @@ test("project creation and repository configuration persist on a short mobile vi
   await section.getByRole("button", { name: "Save URL" }).click();
   await page.reload();
   await expect(section.getByText("https://git.example/org/updated", { exact: true })).toBeVisible();
-  await expect(page.getByText("Set the KEY to the env var name", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Name each setting the way the tool expects", { exact: false })).toHaveCount(0);
   await expect(page.getByText("Applied to all runs for tasks in this project.", { exact: false })).toHaveCount(0);
   const created = page.getByText("Created", { exact: true });
   await created.scrollIntoViewIfNeeded();

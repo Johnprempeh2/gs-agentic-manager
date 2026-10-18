@@ -42,7 +42,12 @@ export function ApprovalDetail() {
   });
   const resolvedCompanyId = approval?.companyId ?? selectedCompanyId;
 
-  const { data: comments } = useQuery({
+  const {
+    data: comments,
+    error: commentsError,
+    refetch: refetchComments,
+    isFetching: isCommentsFetching,
+  } = useQuery({
     queryKey: queryKeys.approvals.comments(approvalId!),
     queryFn: () => approvalsApi.listComments(approvalId!),
     enabled: !!approvalId,
@@ -382,6 +387,15 @@ export function ApprovalDetail() {
 
       <div className="border border-border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-medium">Comments ({comments?.length ?? 0})</h3>
+        {commentsError ? (
+          <ErrorState
+            error={commentsError}
+            title="Comments did not load"
+            onRetry={() => void refetchComments()}
+            retrying={isCommentsFetching}
+            compact
+          />
+        ) : null}
         <div className="space-y-2">
           {(comments ?? []).map((comment: ApprovalComment) => (
             <div key={comment.id} className="border border-border/60 rounded-md p-3">

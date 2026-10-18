@@ -44,7 +44,7 @@ export function BoardSecretarySetting({
           onChange={(event) => onChange(event.target.value || null)}
         >
           <option value="">No board secretary</option>
-          {!known ? <option value={value!}>An agent in another company</option> : null}
+          {!known ? <option value={value!}>An agent in another organisation</option> : null}
           {choices.map((agent) => (
             <option key={agent.id} value={agent.id}>{agent.name}</option>
           ))}

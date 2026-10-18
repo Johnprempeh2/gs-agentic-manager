@@ -26,7 +26,7 @@ describe("RunInvocationCard", () => {
     );
 
     expect(html).toContain("Invocation");
-    expect(html).toContain("Adapter:");
+    expect(html).toContain("Runs on:");
     expect(html).toContain("Working dir:");
     expect(html).toContain("Details");
     expect(html).not.toContain("Command:");

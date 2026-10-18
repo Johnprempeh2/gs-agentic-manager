@@ -432,8 +432,8 @@ function KanbanCard({
             return name ? (
               <AgentIdentity agent={agents?.find((agent) => agent.id === issue.assigneeAgentId) ?? { id: issue.assigneeAgentId, name }} size="xs" />
             ) : (
-              <span className="text-xs text-muted-foreground font-mono">
-                {issue.assigneeAgentId.slice(0, 8)}
+              <span className="text-xs text-muted-foreground">
+                An agent
               </span>
             );
           })()}

@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PageSkeleton } from "../../components/PageSkeleton";
+import { ErrorState } from "@/components/ErrorState";
 import {
   applyAgentSkillSnapshot,
   isReadOnlyUnmanagedSkillEntry,
@@ -74,7 +75,13 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   // payload on every `isPending` flip (that was an infinite 422 retry storm).
   const failedSkillDraftRef = useRef<string[] | null>(null);
 
-  const { data: skillSnapshot, isLoading } = useQuery({
+  const {
+    data: skillSnapshot,
+    isLoading,
+    error: skillsError,
+    refetch: refetchSkills,
+    isFetching: skillsFetching,
+  } = useQuery({
     queryKey: queryKeys.agents.skills(agent.id),
     queryFn: () => agentsApi.skills(agent.id, companyId),
     enabled: Boolean(companyId),
@@ -480,6 +487,13 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
 
       {isLoading ? (
         <PageSkeleton variant="list" />
+      ) : skillsError && !skillSnapshot ? (
+        <ErrorState
+          error={skillsError}
+          title="Skills did not load"
+          onRetry={() => void refetchSkills()}
+          retrying={skillsFetching}
+        />
       ) : libraryEmpty && detectedRows.length === 0 ? (
         <EmptyLibraryCard />
       ) : (

@@ -219,6 +219,15 @@ export function TeamChat() {
           </div>
         )}
       </header>
+      {comments.error ? (
+        <ErrorState
+          error={comments.error}
+          title="Messages did not load"
+          onRetry={() => void comments.refetch()}
+          retrying={comments.isFetching}
+          compact
+        />
+      ) : null}
       <div data-tour="team-chat-thread">
         <TeamChatThread
           comments={comments.data ?? []}
