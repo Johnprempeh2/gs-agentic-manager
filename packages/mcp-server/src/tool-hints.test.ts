@@ -33,6 +33,7 @@ const WRITES = [
   "paperclipLinkIssueApproval",
   "paperclipApprovalDecision",
   "paperclipAddApprovalComment",
+  "studio_attach_to_task",
   "studio_make_image",
   "studio_make_video",
   "studio_save_look",

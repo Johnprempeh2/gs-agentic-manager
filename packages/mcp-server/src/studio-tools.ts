@@ -50,6 +50,29 @@ const STUDIO_MAKE_VIDEO_DESCRIPTION = [
 
 const studioMakeVideoSchema = createGeneratedVideoSchema.safeExtend({ companyId: companyIdOptional });
 
+interface StudioMadeFile {
+  companyId: string;
+  prompt: string;
+  status: string;
+  assetId: string | null;
+  issue: { id: string } | null;
+}
+
+const STUDIO_FILE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/png": "png",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+};
+
+/** A readable file name from the description, such as "a-lighthouse-at-dawn.png". */
+export function studioFileName(prompt: string, contentType: string): string {
+  const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "studio";
+  return `${slug}.${STUDIO_FILE_EXTENSIONS[contentType.split(";")[0]!.trim()] ?? "bin"}`;
+}
+
 export function studioTools(client: PaperclipApiClient): ToolDefinition[] {
   return [
     makeTool(
@@ -138,6 +161,37 @@ export function studioTools(client: PaperclipApiClient): ToolDefinition[] {
         if (organisationId) search.set("organisationId", organisationId);
         search.set("limit", String(limit ?? 20));
         return client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/generated-videos?${search}`);
+      },
+    ),
+    makeTool(
+      "studio_attach_to_task",
+      "Attach a finished studio image (imageId) or clip (videoId) to a task as a file, so it sits with the task's attachments for the board. issueId defaults to the task it was made for. Large clips can be over the attachment size limit; then link the clip instead.",
+      mcpToolHints("write"),
+      z.object({
+        imageId: z.string().guid().optional(),
+        videoId: z.string().guid().optional(),
+        issueId: z.string().guid().optional(),
+      }),
+      async ({ imageId, videoId, issueId }) => {
+        if (Boolean(imageId) === Boolean(videoId)) throw new Error("Give imageId or videoId, not both");
+        const kind = imageId ? "image" : "clip";
+        const made = await client.requestJson<StudioMadeFile>(
+          "GET",
+          imageId ? `/generated-images/${encodeURIComponent(imageId)}` : `/generated-videos/${encodeURIComponent(videoId!)}`,
+        );
+        if (made.status !== "completed" || !made.assetId) {
+          throw new Error(`That ${kind} is not finished yet (status ${made.status}). Wait until it is completed, then attach it.`);
+        }
+        const target = issueId ?? made.issue?.id;
+        if (!target) throw new Error(`That ${kind} is not linked to a task; say which task with issueId`);
+        const file = await client.requestBytes(`/assets/${encodeURIComponent(made.assetId)}/content`);
+        const form = new FormData();
+        form.set("file", new Blob([file.body], { type: file.contentType }), studioFileName(made.prompt, file.contentType));
+        const attachment = await client.requestForm(
+          `/companies/${encodeURIComponent(made.companyId)}/issues/${encodeURIComponent(target)}/attachments`,
+          form,
+        );
+        return { issueId: target, ...(imageId ? { imageId } : { videoId }), attachment };
       },
     ),
     makeTool(

@@ -83,6 +83,8 @@ The Images page works as an image studio, built from the ideas in
 Agents get the same studio three ways: `gsam image generate` with `--camera`,
 `--lens`, `--focal`, `--aperture` and `--count`; the MCP tools `studio_status`,
 `studio_make_image`, `studio_get_image` and `studio_list_images`; or the API.
+`studio_attach_to_task` attaches a finished image or clip to a task as a file,
+through the same upload route and checks as the board.
 
 At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart

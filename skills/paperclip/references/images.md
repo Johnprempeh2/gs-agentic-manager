@@ -118,7 +118,8 @@ the board can pick one.
    `failed` (then `error` says why in plain words).
 3. To attach it to your task, download `contentPath` and upload the file to
    `POST /api/companies/{companyId}/issues/{issueId}/attachments` as described
-   in `references/artifacts.md`. When you put the image in a document or
+   in `references/artifacts.md` (with MCP, `studio_attach_to_task` does both
+   steps for an image or clip). When you put the image in a document or
    comment, use its `altText` as the alt text: `![<altText>](<url>)`.
 4. To show it on the task's or client's card, `PATCH /api/generated-images/{id}/cover`
    with `{"issueCover": true}` or `{"organisationCover": true}`. The image must

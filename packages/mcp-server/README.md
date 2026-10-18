@@ -44,6 +44,7 @@ Image studio tools:
 - `studio_list_videos`
 - `studio_list_looks`
 - `studio_save_look` (write)
+- `studio_attach_to_task` (write): attach a finished image or clip to a task as a file
 
 Run-scoped connection tools:
 
