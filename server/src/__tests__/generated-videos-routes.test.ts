@@ -204,6 +204,38 @@ describeEmbeddedPostgres("generated videos routes", () => {
     await waitForGeneratedVideoJobs();
   });
 
+  it("stars favourite clips, lists only them, and refuses an unfinished clip", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Videos favourites");
+    let fail = false;
+    const server = app(actor, memoryStorage().storage, () =>
+      provider(async () => {
+        if (fail) throw new VideoGenerationError("Higgsfield could not make this clip. Please try again.", "provider_error");
+        return { video: { bytes: MP4, contentType: "video/mp4" }, providerRequestId: null };
+      }),
+    );
+    const keeper = (await request(server).post(`/api/companies/${companyId}/generated-videos`).send({ prompt: "Waves on a pebble beach" })).body as GeneratedVideo;
+    const other = (await request(server).post(`/api/companies/${companyId}/generated-videos`).send({ prompt: "Gulls over a harbour" })).body as GeneratedVideo;
+    await waitForGeneratedVideoJobs();
+    fail = true;
+    const broken = (await request(server).post(`/api/companies/${companyId}/generated-videos`).send({ prompt: "Fog over the pier" })).body as GeneratedVideo;
+    await waitForGeneratedVideoJobs();
+
+    const starred = await request(server).patch(`/api/generated-videos/${keeper.id}/favourite`).send({ favourite: true });
+    expect(starred.status).toBe(200);
+    expect(starred.body).toMatchObject({ id: keeper.id, favourite: true });
+    const favourites = await request(server).get(`/api/companies/${companyId}/generated-videos?favourite=true`);
+    expect(favourites.body.videos.map((video: GeneratedVideo) => video.id)).toEqual([keeper.id]);
+    const rest = await request(server).get(`/api/companies/${companyId}/generated-videos?favourite=false`);
+    expect(rest.body.videos.map((video: GeneratedVideo) => video.id).sort()).toEqual([other.id, broken.id].sort());
+
+    const notReady = await request(server).patch(`/api/generated-videos/${broken.id}/favourite`).send({ favourite: true });
+    expect(notReady.status).toBe(422);
+    expect(notReady.body.details.code).toBe("generated_video_not_ready");
+    expect((await request(server).patch(`/api/generated-videos/${keeper.id}/favourite`).send({})).status).toBe(400);
+    const unstarred = await request(server).patch(`/api/generated-videos/${keeper.id}/favourite`).send({ favourite: false });
+    expect(unstarred.body.favourite).toBe(false);
+  });
+
   it("keeps other companies out", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Videos mine");
     const other = await seedCompanyWithBoardAccess(ctx.db, "Videos theirs");

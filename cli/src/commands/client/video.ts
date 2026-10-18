@@ -136,11 +136,14 @@ export function registerVideoCommands(program: Command): void {
       .command("list")
       .description("List clips made for the company, newest first")
       .option("--limit <n>", "How many to show", "20")
-      .action(async (opts: BaseClientOptions & { limit?: string }) => {
+      .option("--favourites", "Show only clips starred as favourites")
+      .action(async (opts: BaseClientOptions & { limit?: string; favourites?: boolean }) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const search = new URLSearchParams({ limit: opts.limit ?? "20" });
+          if (opts.favourites) search.set("favourite", "true");
           const response = await ctx.api.get<GeneratedVideosResponse>(
-            `${apiPath`/api/companies/${ctx.companyId}/generated-videos`}?limit=${encodeURIComponent(opts.limit ?? "20")}`,
+            `${apiPath`/api/companies/${ctx.companyId}/generated-videos`}?${search}`,
           );
           if (ctx.json) {
             printOutput(response, { json: true });
@@ -152,6 +155,7 @@ export function registerVideoCommands(program: Command): void {
               status: item.status,
               model: item.model,
               seconds: item.durationSeconds,
+              favourite: item.favourite ? "yes" : "",
               prompt: item.prompt.length > 60 ? `${item.prompt.slice(0, 57)}...` : item.prompt,
             })),
           );
@@ -160,6 +164,25 @@ export function registerVideoCommands(program: Command): void {
         }
       }),
     { includeCompany: true },
+  );
+
+  addCommonClientOptions(
+    video
+      .command("favourite")
+      .description("Star a finished clip as a favourite (a keeper), or unstar it with --off")
+      .argument("<videoId>", "Generated video ID")
+      .option("--off", "Remove the star")
+      .action(async (videoId: string, opts: BaseClientOptions & { off?: boolean }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(
+            await ctx.api.patch<GeneratedVideo>(apiPath`/api/generated-videos/${videoId}/favourite`, { favourite: !opts.off }),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
   );
 
   addCommonClientOptions(

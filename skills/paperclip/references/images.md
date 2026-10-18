@@ -107,7 +107,9 @@ The board stars the takes it likes. Before using a picture, check for picks
 with `gsam image list --favourites` (MCP: `favourite: true` on
 `studio_list_images`). To suggest your own best take, star it with
 `gsam image favourite <id>` (MCP: `studio_favourite_image`) and say so in your
-comment.
+comment. Clips work the same way: `gsam video list --favourites` and
+`gsam video favourite <id>` (MCP: `favourite` on `studio_list_videos`,
+`studio_favourite_video`).
 
 ## With curl
 

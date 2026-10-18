@@ -66,6 +66,22 @@ describe("gsam video", () => {
     expect(polls).toBe(2);
   });
 
+  it("stars a favourite clip and lists only favourites", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.includes("/generated-videos?")) return json({ videos: [], total: 0, nextOffset: null });
+      return json({ id: VIDEO_ID, favourite: true });
+    }));
+    const base = ["--api-base", "http://localhost:3100", "--api-key", "t"];
+
+    await createProgram().parseAsync(["video", "favourite", VIDEO_ID, ...base], { from: "user" });
+    await createProgram().parseAsync(["video", "list", "--favourites", "--company-id", COMPANY_ID, ...base], { from: "user" });
+
+    expect(calls[0]).toMatchObject({ url: `http://localhost:3100/api/generated-videos/${VIDEO_ID}/favourite`, method: "PATCH", body: { favourite: true } });
+    expect(calls[1]!.url).toBe(`http://localhost:3100/api/companies/${COMPANY_ID}/generated-videos?limit=20&favourite=true`);
+  });
+
   it("refuses an image-only model without an image before calling the server", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

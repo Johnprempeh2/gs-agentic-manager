@@ -158,23 +158,33 @@ export function studioTools(client: PaperclipApiClient): ToolDefinition[] {
     ),
     makeTool(
       "studio_list_videos",
-      "List studio video clips for the company, newest first. Filter by words in the description (q), a task (issueId) or a client (organisationId).",
+      "List studio video clips for the company, newest first. Filter by words in the description (q), a task (issueId), a client (organisationId), or favourite true for the starred keepers.",
       mcpToolHints("read"),
       z.object({
         companyId: companyIdOptional,
         q: z.string().trim().max(200).optional(),
         issueId: z.string().guid().optional(),
         organisationId: z.string().guid().optional(),
+        favourite: z.boolean().optional(),
         limit: z.number().int().min(1).max(200).optional(),
       }),
-      async ({ companyId, q, issueId, organisationId, limit }) => {
+      async ({ companyId, q, issueId, organisationId, favourite, limit }) => {
         const search = new URLSearchParams();
         if (q) search.set("q", q);
         if (issueId) search.set("issueId", issueId);
         if (organisationId) search.set("organisationId", organisationId);
+        if (favourite !== undefined) search.set("favourite", String(favourite));
         search.set("limit", String(limit ?? 20));
         return client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/generated-videos?${search}`);
       },
+    ),
+    makeTool(
+      "studio_favourite_video",
+      "Star a finished studio clip as a favourite (favourite true), or unstar it (false), so the board sees your pick.",
+      mcpToolHints("write"),
+      z.object({ videoId: z.string().guid(), favourite: z.boolean() }),
+      async ({ videoId, favourite }) =>
+        client.requestJson("PATCH", `/generated-videos/${encodeURIComponent(videoId)}/favourite`, { body: { favourite } }),
     ),
     makeTool(
       "studio_attach_to_task",

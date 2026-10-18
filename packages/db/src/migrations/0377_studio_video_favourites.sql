@@ -1,0 +1,2 @@
+ALTER TABLE "generated_videos" ADD COLUMN "favourite" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "generated_videos_company_favourite_idx" ON "generated_videos" USING btree ("company_id","favourite");

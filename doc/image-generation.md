@@ -173,3 +173,9 @@ list takes `?favourite=true`. Agents use `gsam image favourite <id>` (`--off`
 to unstar) and `gsam image list --favourites`, or `studio_favourite_image` and
 `favourite` on `studio_list_images`.
 
+Clips on the Videos tab have the same star and **Favourites** filter:
+`PATCH /api/generated-videos/:id/favourite` (`422` `generated_video_not_ready`
+for an unfinished clip) and `?favourite=true` on the clip list. Agents use
+`gsam video favourite <id>` and `gsam video list --favourites`, or
+`studio_favourite_video` and `favourite` on `studio_list_videos`.
+

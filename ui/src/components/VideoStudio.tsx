@@ -12,11 +12,12 @@ import {
   videoMotionLabel,
   type GeneratedImage,
   type GeneratedVideo,
+  type GeneratedVideosResponse,
   type StudioCameraSettings,
   type VideoModelId,
   type VideoMotionPresetId,
 } from "@greatstone/shared";
-import { AlertCircle, Clapperboard, Download, Film, Loader2, RotateCcw, Trash2, X } from "lucide-react";
+import { AlertCircle, Clapperboard, Download, Film, Loader2, RotateCcw, Star, Trash2, X } from "lucide-react";
 import { videosApi } from "../api/videos";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
@@ -64,14 +65,17 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   const [camera, setCamera] = useState<StudioCameraSettings>({});
   const [lookId, setLookId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [favouritesOnly, setFavouritesOnly] = useState(false);
+  const filters = favouritesOnly ? { favourite: true } : {};
 
   const statusQuery = useQuery({
     queryKey: queryKeys.videos.status(companyId),
     queryFn: () => videosApi.status(companyId),
   });
   const listQuery = useQuery({
-    queryKey: queryKeys.videos.list(companyId),
-    queryFn: () => videosApi.list(companyId, { limit: 60 }),
+    queryKey: queryKeys.videos.list(companyId, filters),
+    queryFn: () => videosApi.list(companyId, { limit: 60, ...filters }),
+    placeholderData: (previous) => previous,
     refetchInterval: (query) => (query.state.data?.videos.some((video) => video.status === "pending") ? 5_000 : false),
   });
 
@@ -121,6 +125,21 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
       onDeleted?.();
       void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) });
     },
+    onError: (error) => onError(errorMessage(error)),
+  });
+
+  const favourite = useMutation({
+    mutationFn: ({ id, favourite: value }: { id: string; favourite: boolean }) => videosApi.setFavourite(id, { favourite: value }),
+    onMutate: async ({ id, favourite: value }) => {
+      // Fill the star straight away (after any refetch in flight, which would undo it).
+      await queryClient.cancelQueries({ queryKey: queryKeys.videos.list(companyId) });
+      queryClient.setQueriesData<GeneratedVideosResponse>({ queryKey: queryKeys.videos.list(companyId) }, (current) =>
+        current
+          ? { ...current, videos: current.videos.map((video) => (video.id === id ? { ...video, favourite: value } : video)) }
+          : current,
+      );
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) }),
     onError: (error) => onError(errorMessage(error)),
   });
 
@@ -277,8 +296,24 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
         </div>
       </section>
 
+      {videos.length > 0 || favouritesOnly ? (
+        <Button
+          variant={favouritesOnly ? "default" : "outline"}
+          aria-pressed={favouritesOnly}
+          onClick={() => setFavouritesOnly((value) => !value)}
+          data-testid="video-favourites-filter"
+        >
+          <Star className={favouritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} aria-hidden="true" />
+          Favourites
+        </Button>
+      ) : null}
+
       {videos.length === 0 ? (
-        <EmptyState icon={Film} title="No videos yet" message="Clips you and your agents make will appear here, ready to play or download." />
+        favouritesOnly ? (
+          <EmptyState icon={Star} title="No favourite clips yet" message="Tap the star on a clip to keep it here." />
+        ) : (
+          <EmptyState icon={Film} title="No videos yet" message="Clips you and your agents make will appear here, ready to play or download." />
+        )
       ) : (
         <section aria-label="Your videos" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {videos.map((video) => (
@@ -327,6 +362,19 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
                     .join(" · ")}
                 </p>
                 <div className="flex gap-2 pt-1">
+                  {video.status === "completed" && video.contentPath ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={video.favourite}
+                      aria-label={video.favourite ? "Remove from favourites" : "Add to favourites"}
+                      title={video.favourite ? "Remove from favourites" : "Add to favourites"}
+                      onClick={() => favourite.mutate({ id: video.id, favourite: !video.favourite })}
+                      data-testid="video-favourite"
+                    >
+                      <Star className={video.favourite ? "h-3.5 w-3.5 fill-current text-primary" : "h-3.5 w-3.5"} aria-hidden="true" />
+                    </Button>
+                  ) : null}
                   {video.contentPath ? (
                     <Button asChild size="sm" variant="outline">
                       <a href={video.contentPath} download={downloadName(video)}>

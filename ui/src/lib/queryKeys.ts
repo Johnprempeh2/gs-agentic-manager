@@ -653,7 +653,8 @@ export const queryKeys = {
   },
   videos: {
     status: (companyId: string) => ["videos", companyId, "status"] as const,
-    list: (companyId: string) => ["videos", companyId, "list"] as const,
+    list: (companyId: string, filters?: { favourite?: boolean }) =>
+      filters ? (["videos", companyId, "list", filters] as const) : (["videos", companyId, "list"] as const),
   },
   studioLooks: {
     list: (companyId: string) => ["studio-looks", companyId] as const,
