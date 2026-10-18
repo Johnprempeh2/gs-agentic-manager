@@ -65,8 +65,8 @@ to it.
    hand. Link the GRE issue. Put the pull request link on the issue, add
    Keystone as the reviewer (`executionPolicy` with one `review` stage whose
    participant is agent Keystone), and set the issue to `in_review`.
-6. **Checks and review.** Fork CI runs the fast lanes on every pull request. If
-   they fail, fix on the same branch and push again. Keystone reviews and
+6. **Checks and review.** Fork CI runs the fast lanes and the full test matrix
+   on every pull request. If they fail, fix on the same branch and push again. Keystone reviews and
    merges (see "The merge rule"); nobody merges their own pull request.
 7. **Release.** Merged changes go live only through the release flow below.
 
@@ -108,10 +108,15 @@ to it.
   runs the live app, so `run` refuses a pull request from a fork (also with
   `--dry-run`). A fork pull request waits for GitHub CI.
   Note on the issue that the merge used `local-ci`. Runner and vitest lanes are
-  not part of it; they are not part of Fork CI on pull requests either.
-- **Green CI is not green tests.** Fork CI runs no tests on pull requests or
-  main (the Tests lanes run only by hand, to save Actions minutes). Failing
-  tests can merge; they are stopped at the release by the test gate (step 3).
+  not part of it, so a `local-ci` merge has not run the tests; say so.
+- **Green CI includes the tests (18 Oct 2026).** The repository is public, so
+  GitHub-hosted runners cost no Actions minutes, and Fork CI runs the whole
+  test matrix (the same 13 lanes as the release test gate, about 13 minutes)
+  on every pull request. A newer push cancels the older run. A red Tests lane
+  blocks the merge like any other lane: fix the test or the code (never skip
+  a test); if you think it is a flake, rerun the job once and say so on the
+  issue. Only the runner's Rust tests stay manual. The release test gate still
+  runs the same lanes on the exact commit before each release (step 3).
   Run the tests your change touches before you open the pull request, and
   name them under "Tests run".
 
@@ -309,6 +314,19 @@ Merging does not change the live app. A version goes live in these steps.
    <rc-tag>` says whether a tag has passed. The release task names the gate
    result ("Test gate: passed <time>").
 
+   **The queue gates main by itself.** The release queue's worker on the PC
+   (see "The release queue" below) runs the same gate on every new
+   `origin/main` commit while nothing is queued: by commit, before any tag is
+   cut (`scripts/greatstone-test-gate.sh <full sha>` also works by hand). Only
+   the newest commit is tested: when main moves during a run, that run stops
+   and the newest starts; nothing piles up. It runs at low priority (`nice`,
+   `ionice`) and gives way: any other gate that finds it holding the lock stops
+   it and runs (the lock's `owner` file says `yield`). A candidate cut on a
+   commit that already passed needs no second gate: the pass marker is keyed by
+   commit. `scripts/greatstone-release-queue.mjs status` and the Releases page
+   show "main at <sha>: passed / failing (the failing lanes and tests) /
+   testing".
+
    **From an agent run, start the gate detached** (GRE-1643). The gate takes
    longer than most runs, and when a run ends the server stops its processes
    and deletes its scratch folder. So an agent cuts the tag with
@@ -393,18 +411,23 @@ Merging does not change the live app. A version goes live in these steps.
    of Decisions and the "needs me" list: a task whose title names an `rc-*`
    or `live-*` tag and the word "release" (`server/src/services/release-task.ts`).
    They still show in Issues and Inbox.
-6. **Release (John, by hand).** John runs the release from the dev checkout
-   (see "By hand" below) and marks his task done. The **Releases** page in the
-   app (board only; agents get 403 on every release action) still works but
-   is not part of the normal flow. For reference, the page shows the
-   live version, the next version (the pull requests merged into `main` since
-   live, a proposed title and the changelog, and Fork CI on that commit), the
-   history, and the progress. **Release now** needs no prepared candidate: the
-   server cuts the `rc-*` tag from `origin/main` itself, with the title and the
-   changelog, once Fork CI on that commit is green. The release script then
-   refuses that tag unless the test gate already passed on the same commit
-   (the app runs no gate), so in practice the page releases only a commit the
-   gate passed. A checked `rc-*` tag can also be released. Keystone may edit the proposed title
+6. **Release (John: the queue, or by hand).** John asks the release queue
+   (see "The release queue" below): **Release now** on the Releases page,
+   from his phone or any device, or
+   `node scripts/greatstone-release-queue.mjs enqueue main "<title>"` over SSH
+   on the PC. The queue runs the gate (skipped when main already passed), the
+   preview and the release script, with every check and the backup below. He
+   can still run the release from the dev checkout by hand (see "By hand"
+   below). He marks his task done. The **Releases** page (board only; agents
+   get 403 on every release action except reading and adding to the queue,
+   which the release manager may do) shows the live version, the next version
+   (the pull requests merged into `main` since live, a proposed title and the
+   changelog, and Fork CI on that commit), the release queue, the history, and
+   the progress of a rollback. **Release now** adds a request for main to the
+   queue with the proposed title; it no longer cuts and releases a tag itself,
+   so it never skips the gate or the preview.
+   `POST /api/companies/:companyId/releases/release` still cuts and releases
+   from the server (the "Update live?" card uses it), but the page does not. Keystone may edit the proposed title
    (`PATCH /api/companies/:companyId/releases/next`); nothing else. The
    "Update live?" card (a `request_confirmation` with `idempotencyKey`
    `live-release:rc-YYYY-MM-DD.N`) still works and calls the same service, but
@@ -499,6 +522,79 @@ Merging does not change the live app. A version goes live in these steps.
    commit. Flint spot-checks the changes in live and reports on the release
    issue. Keystone closes it, or gives John the rollback command if live is
    broken.
+
+### The release queue
+
+One queue on the PC that every release request feeds, and one worker that
+works through it in order. It keeps every safety step: the full test suite on
+the exact commit, the preview on a copy of the live data with its switch
+tests, the database backup before the switch, and the rollback command.
+
+**Ask for a release.**
+
+- John: **Release now** on the Releases page (any device; in login mode it
+  asks for the password again), or over SSH on the PC from the dev checkout:
+
+  ```sh
+  node scripts/greatstone-release-queue.mjs enqueue main "Decisions in the sidebar"   # or an rc-* tag, or a commit sha on main
+  node scripts/greatstone-release-queue.mjs status                                    # main's gate, the running request, the queue, results
+  node scripts/greatstone-release-queue.mjs cancel rq-1a2b3c
+  ```
+
+- Keystone (the release manager agent): the same API as the page,
+  `POST /api/companies/:companyId/releases/queue` with
+  `{"ref": "main", "title": "..."}` (`ref` may be an `rc-*` tag or a commit
+  sha on main), and `GET /api/companies/:companyId/releases/queue` to follow
+  it. Other agents get 403. Only an owner or admin cancels
+  (`POST /api/companies/:companyId/releases/queue/:id/cancel`).
+
+**What the worker does with each request**, one at a time:
+
+1. Pulls the dev checkout (`git pull --ff-only origin main`; it refuses a
+   checkout that is not on `main`) and resolves the ref; `main` means
+   `origin/main` at that moment. Requests for main that wait next to each other
+   become one release of the newest main (the newest request's title names
+   it); the others show "Released with another". A request whose commit live
+   already runs ends as "Nothing to release".
+2. **Gate:** skipped when the commit has a pass marker (the queue's background
+   gate usually got there first); otherwise the full gate, and a failure ends
+   the request with the failing lanes and tests.
+3. **Candidate:** `greatstone-candidate.mjs` cuts the next `rc-*` tag on that
+   commit with the title (proposed from the changes when none was given).
+4. **Preview:** stops any preview, starts the candidate on a fresh copy of the
+   live data and runs `switch-tests`. A failure ends the request, stops the
+   preview and deletes the unreleased tag.
+5. **Pausing new runs (the drain):** the task drain holds every new agent run
+   (queued work stays queued; timers and wakes wait). Running runs finish, for
+   at most 10 minutes. Nothing is stopped: if runs still run at the cap, the
+   drain is lifted, runs go on, and it tries again in 10 minutes, three times,
+   then ends the request with "nothing was released". The page says
+   "Releasing: new agent runs paused" while this lasts.
+6. **Releasing:** `scripts/greatstone-release.sh <rc-tag>`, the same command
+   as by hand: test gate and preview checks, backup, `live-*` tag, switch, hot
+   restart, health check, automatic rollback if live does not come up. Then the
+   drain is lifted, also when the release failed. The result keeps the
+   rollback command and the backup file.
+
+A request is cancelled at once while it waits, or before its next step while
+it runs (a running gate is stopped). The release step itself cannot be
+cancelled; roll back afterwards.
+
+**State.** `~/GSAM/release-queue/queue.json` (requests, main's gate, the
+worker's last run; it survives restarts) and one log per request in
+`~/GSAM/release-queue/logs/`. The worker writes it under the lock
+`~/GSAM/locks/release-queue-state.lock`; one worker runs at a time
+(`~/GSAM/locks/release-queue-worker.lock`). A request left running by a
+worker that stopped starts again if it was before the preview, and is marked
+failed if it was later, so a person checks live.
+
+**The worker on the PC.** The PC's watchdog (`~/GSAM/autostart.sh --watchdog`,
+every minute, from `gsam-watchdog.timer`) runs
+`node scripts/greatstone-release-queue.mjs tick` from the dev checkout. It
+starts the worker in its own session when none runs; the worker exits when the
+queue is empty and main is tested, so each run uses the scripts on the dev
+checkout's `main`. The worker's output is in `~/GSAM/release-queue/worker.log`.
+If the page says the worker has not run, the watchdog line is missing.
 
 ### Waiting for a release (agents)
 
