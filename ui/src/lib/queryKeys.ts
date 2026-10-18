@@ -734,6 +734,7 @@ export const queryKeys = {
     session: ["auth", "session"] as const,
     twoStep: ["auth", "two-step"] as const,
     devices: ["auth", "devices"] as const,
+    signInHistory: ["auth", "sign-in-history"] as const,
   },
   inboxAgentPolicy: {
     mine: (companyId: string) =>

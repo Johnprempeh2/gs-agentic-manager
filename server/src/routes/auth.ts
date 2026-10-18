@@ -17,6 +17,7 @@ import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import { resolveSentryDsns } from "../sentry-dsn.js";
 import { isTwoStepExemptEmail, isTwoStepSignInRequired } from "../auth/two-step-requirement.js";
+import { signInHistoryService } from "../auth/sign-in-history.js";
 
 async function loadCurrentUserProfile(db: Db, userId: string) {
   const user = await db
@@ -113,6 +114,24 @@ export function authRoutes(db: Db) {
         ipAddress: row.ipAddress ?? null,
         userAgent: row.userAgent ?? null,
         current: row.id === req.actor.sessionId,
+      })),
+    });
+  });
+
+  // This person's recent sign-in attempts, newest first: wrong passwords and
+  // passwords waiting for a two-step code show someone else may know it.
+  router.get("/sign-in-history", async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      throw unauthorized("Board authentication required");
+    }
+    const rows = await signInHistoryService(db).recent(req.actor.userId);
+    res.json({
+      events: rows.map((row) => ({
+        id: row.id,
+        outcome: row.outcome,
+        ipAddress: row.ipAddress ?? null,
+        userAgent: row.userAgent ?? null,
+        at: row.createdAt.toISOString(),
       })),
     });
   });

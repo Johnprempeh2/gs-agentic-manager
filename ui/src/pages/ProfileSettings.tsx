@@ -10,6 +10,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { InboxAgentPolicyControl } from "@/components/InboxAgentPolicyControl";
 import { TwoStepSignInSection } from "@/components/TwoStepSignInSection";
 import { SignedInDevicesSection } from "@/components/SignedInDevicesSection";
+import { SignInHistorySection } from "@/components/SignInHistorySection";
 import { ErrorState } from "@/components/ErrorState";
 import { useConfirm } from "@/context/ConfirmContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -322,6 +323,8 @@ export function ProfileSettings() {
         <TwoStepSignInSection />
 
         <SignedInDevicesSection />
+
+        <SignInHistorySection />
 
         <InboxAgentPolicyControl companyId={selectedCompanyId} />
       </section>

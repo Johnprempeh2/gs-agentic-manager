@@ -264,6 +264,22 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
       .send({ code: enable.body.backupCodes[0] });
     expect(backup.status, JSON.stringify(backup.body)).toBe(200);
     expect(sessionCookies(backup).length).toBeGreaterThan(0);
+
+    // Profile's recent sign-ins, newest first: each password step that waited
+    // for a code, and each code that finished it. A wrong password is listed
+    // too; an email with no account is never stored.
+    await request(app).post("/api/auth/sign-in/email").set("origin", ORIGIN).send({ email, password: "not-the-password" });
+    await request(app).post("/api/auth/sign-in/email").set("origin", ORIGIN).send({ email: "nobody@example.com", password: PASSWORD });
+    const history = await request(app).get("/api/auth/sign-in-history").set("cookie", cookieHeader(backup));
+    expect(history.status, JSON.stringify(history.body)).toBe(200);
+    expect(history.body.events.map((event: { outcome: string }) => event.outcome)).toEqual([
+      "wrong_password",
+      "signed_in",
+      "code_needed",
+      "signed_in",
+      "code_needed",
+    ]);
+    expect(JSON.stringify(history.body)).not.toContain("nobody@example.com");
   });
 
   it("holds a password-only session at setup while two-step sign-in is required, and a reset clears it", async () => {
