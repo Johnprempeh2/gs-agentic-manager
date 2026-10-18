@@ -5,6 +5,7 @@ import {
   GENERATED_VIDEO_PROMPT_MIN_LENGTH,
   HIGGSFIELD_PLAN_LABEL,
   hasStudioCamera,
+  LOCAL_GPU_LABEL,
   studioCameraLabel,
   VIDEO_MODELS,
   VIDEO_MOTION_PRESETS,
@@ -18,7 +19,7 @@ import {
   type VideoModelId,
   type VideoMotionPresetId,
 } from "@greatstone/shared";
-import { Bookmark, Camera, Cpu, Download, Film, Loader2, Move3d, Star, Timer, Trash2, X } from "lucide-react";
+import { Bookmark, Camera, CircleStop, Cpu, Download, Film, Loader2, Move3d, Star, Timer, Trash2, X } from "lucide-react";
 import { videosApi } from "../api/videos";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
@@ -43,6 +44,16 @@ function errorMessage(error: unknown) {
 function downloadName(video: GeneratedVideo) {
   const slug = video.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
   return `${slug || "clip"}.mp4`;
+}
+
+/** What a pending clip is doing; local clips say their place in the queue and how far along they are. */
+export function pendingLabel(video: GeneratedVideo): string {
+  const progress = video.progress;
+  if (!progress) return "Making your video...";
+  if (progress.queuePosition > 0) {
+    return `Waiting for this PC's graphics card (${progress.queuePosition} ahead)`;
+  }
+  return progress.percent === null ? "Starting on this PC..." : `Making your video on this PC: ${progress.percent}%`;
 }
 
 /** Ready-made clip ideas for the empty gallery. */
@@ -96,15 +107,25 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   });
 
   const model = videoModel(modelId)!;
-  // A model that only animates images cannot be used without one.
-  const usableModels = VIDEO_MODELS.filter((item) => sourceImage || item.textPath);
-  const effectiveModel = usableModels.some((item) => item.id === modelId) ? model : videoModel(usableModels[0]!.id)!;
+  // A model that only animates images cannot be used without one. This PC's
+  // models are offered only while its ComfyUI answers; the paid ones only when
+  // their service is set up.
+  const cloudReady = !!statusQuery.data?.provider && statusQuery.data.provider !== "local";
+  const localReady = statusQuery.data?.local?.videoModels ?? [];
+  const usableModels = VIDEO_MODELS.filter(
+    (item) =>
+      (sourceImage || item.textPath) && (item.provider === "local" ? localReady.includes(item.id) : cloudReady || !statusQuery.data),
+  );
+  const fallbackModel = usableModels[0] ?? VIDEO_MODELS[0];
+  const effectiveModel = usableModels.some((item) => item.id === modelId) ? model : videoModel(fallbackModel.id)!;
   const effectiveDuration = duration && (effectiveModel.durations as readonly number[]).includes(duration) ? duration : effectiveModel.durations[0];
   const plan = statusQuery.data?.plan ?? null;
   const alsoAvailable = statusQuery.data?.alsoAvailable ?? null;
-  const usingPlan = !!plan && (preferPlan || !alsoAvailable);
+  // Models on this PC never use the plan.
+  const onThisPc = effectiveModel.provider === "local";
+  const usingPlan = !!plan && !onThisPc && (preferPlan || !alsoAvailable);
   const planEmpty = usingPlan && plan.credits !== null && plan.credits <= 0;
-  const provider = plan ? (usingPlan ? ("higgsfield_plan" as const) : alsoAvailable?.provider) : undefined;
+  const provider = plan && !onThisPc ? (usingPlan ? ("higgsfield_plan" as const) : alsoAvailable?.provider) : undefined;
   const refreshPlan = () => {
     if (plan) void queryClient.invalidateQueries({ queryKey: queryKeys.videos.status(companyId) });
   };
@@ -146,6 +167,12 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
       void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) });
       refreshPlan();
     },
+    onError: (error) => onError(errorMessage(error)),
+  });
+
+  const cancel = useMutation({
+    mutationFn: (id: string) => videosApi.cancel(id),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) }),
     onError: (error) => onError(errorMessage(error)),
   });
 
@@ -306,11 +333,13 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
         <StudioComposer
           title={sourceImage ? "Bring an image to life" : "Make a video"}
           aside={
-            plan
-              ? `Using ${usingPlan ? HIGGSFIELD_PLAN_LABEL : alsoAvailable?.providerLabel}`
-              : statusQuery.data?.providerLabel
-                ? `Using ${statusQuery.data.providerLabel}`
-                : null
+            effectiveModel.provider === "local" && localReady.includes(effectiveModel.id)
+              ? `Using ${LOCAL_GPU_LABEL}, no cost`
+              : plan && !onThisPc
+                ? `Using ${usingPlan ? HIGGSFIELD_PLAN_LABEL : alsoAvailable?.providerLabel}`
+                : statusQuery.data?.providerLabel
+                  ? `Using ${statusQuery.data.providerLabel}`
+                  : null
           }
           chips={chips}
           openChip={openChip}
@@ -318,7 +347,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
           footnote="Clips usually take a few minutes. You can leave this page; it keeps going."
           notice={
             <>
-              {plan ? (
+              {plan && !onThisPc ? (
                 <StudioPlanBar
                   companyId={companyId}
                   plan={plan}
@@ -426,7 +455,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
                   data-testid="generated-video-card"
                   aspectRatio="16 / 9"
                   status={video.status === "completed" && video.contentPath ? "completed" : video.status === "pending" ? "pending" : "failed"}
-                  pendingLabel="Making your video..."
+                  pendingLabel={pendingLabel(video)}
                   media={
                     <video
                       src={video.contentPath ?? undefined}
@@ -488,6 +517,18 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
                           .join(" · ")}
                       </p>
                       <div className="flex gap-2 pt-1">
+                        {video.status === "pending" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => cancel.mutate(video.id)}
+                            disabled={cancel.isPending}
+                            data-testid="video-cancel"
+                          >
+                            <CircleStop className="h-3.5 w-3.5" aria-hidden="true" />
+                            Cancel
+                          </Button>
+                        ) : null}
                         {confirmDeleteId === video.id ? (
                           <Button
                             size="sm"

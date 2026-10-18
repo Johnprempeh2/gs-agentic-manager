@@ -13,7 +13,8 @@ interface StudioPlanBarProps {
   /** The API key service, when it can be picked instead of the plan. */
   alsoAvailable: { providerLabel: string } | null | undefined;
   usingPlan: boolean;
-  onUsingPlanChange: (usingPlan: boolean) => void;
+  /** Needed only with alsoAvailable, where the bar shows the service picker. */
+  onUsingPlanChange?: (usingPlan: boolean) => void;
   /** Credits the current settings would take, from Higgsfield's price check. */
   cost: number | null;
   onError: (error: unknown) => void;
@@ -47,7 +48,7 @@ export function StudioPlanBar({ companyId, plan, alsoAvailable, usingPlan, onUsi
           <NativeSelect
             id={selectId}
             value={usingPlan ? "plan" : "key"}
-            onChange={(event) => onUsingPlanChange(event.target.value === "plan")}
+            onChange={(event) => onUsingPlanChange?.(event.target.value === "plan")}
             className="h-8 w-auto text-xs"
             data-testid="studio-provider"
           >

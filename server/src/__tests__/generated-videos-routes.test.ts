@@ -3,7 +3,8 @@ import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
 import { activityLog, assets, generatedImages, generatedVideos, issues } from "@greatstone/db";
 import { expect, it } from "vitest";
-import type { GeneratedVideo, GeneratedVideosResponse } from "@greatstone/shared";
+import type { GeneratedVideo, GeneratedVideosResponse, LocalGpuStatus } from "@greatstone/shared";
+import { runOnGpu, type LocalGpu } from "../services/local-gpu.js";
 import { generatedVideoRoutes } from "../routes/generated-videos.js";
 import { waitForGeneratedVideoJobs } from "../services/generated-videos.js";
 import { VideoGenerationError, type VideoGenerationInput, type VideoGenerationProvider } from "../services/video-generation/types.js";
@@ -60,15 +61,46 @@ describeEmbeddedPostgres("generated videos routes", () => {
     },
   });
 
-  function app(actor: BoardActor, storage: StorageService, resolveProvider: () => VideoGenerationProvider | null) {
-    return routeApp(ctx.db, actor, (db) => generatedVideoRoutes(db, storage, { resolveProvider }));
+  function app(
+    actor: BoardActor,
+    storage: StorageService,
+    resolveProvider: () => VideoGenerationProvider | null,
+    localGpu: LocalGpu | null = null,
+  ) {
+    return routeApp(ctx.db, actor, (db) => generatedVideoRoutes(db, storage, { resolveProvider, localGpu }));
   }
+
+  /** A pretend local GPU whose clips wait in the real one-at-a-time queue until `release` is called. */
+  function fakeLocalGpu(status: LocalGpuStatus | null) {
+    const waiting: Array<() => void> = [];
+    const local: LocalGpu = {
+      status: async () => status,
+      imageProvider: () => {
+        throw new Error("not used");
+      },
+      videoProvider: () => ({
+        id: "local",
+        generate: (input) =>
+          runOnGpu(
+            input.jobId!,
+            () =>
+              new Promise((resolve, reject) => {
+                input.signal?.addEventListener("abort", () => reject(new VideoGenerationError("Cancelled.", "provider_error")));
+                waiting.push(() => resolve({ video: { bytes: MP4, contentType: "video/mp4" }, providerRequestId: "comfy-clip" }));
+              }),
+            input.signal,
+          ),
+      }),
+    };
+    return { local, release: () => waiting.shift()?.() };
+  }
+  const LOCAL_READY: LocalGpuStatus = { label: "This PC (local GPU)", imageModels: [], videoModels: ["wan-2.2-5b"], queued: 0 };
 
   it("says when clips are off, and refuses to start one", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Videos off");
     const server = app(actor, memoryStorage().storage, () => null);
     const status = await request(server).get(`/api/companies/${companyId}/video-generation`);
-    expect(status.body).toEqual({ configured: false, provider: null, providerLabel: null });
+    expect(status.body).toEqual({ configured: false, provider: null, providerLabel: null, local: null });
     const created = await request(server).post(`/api/companies/${companyId}/generated-videos`).send({ prompt: "Waves on rocks" });
     expect(created.status).toBe(422);
     expect(created.body.details.code).toBe("video_generation_not_configured");
@@ -247,5 +279,50 @@ describeEmbeddedPostgres("generated videos routes", () => {
     expect((await request(server).get(`/api/generated-videos/${row!.id}`)).status).toBe(404);
     expect((await request(server).get(`/api/companies/${other.companyId}/generated-videos`)).status).toBe(403);
     expect((await request(server).get(`/api/companies/${companyId}/generated-videos`)).body.total).toBe(0);
+  });
+
+  it("makes clips on this PC one at a time, shows the queue, and cancels one that is waiting", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Videos local");
+    const { storage } = memoryStorage();
+    const gpu = fakeLocalGpu(LOCAL_READY);
+    const server = app(actor, storage, () => null, gpu.local);
+
+    const status = await request(server).get(`/api/companies/${companyId}/video-generation`);
+    expect(status.body).toMatchObject({ configured: true, provider: "local", local: LOCAL_READY });
+
+    const first = await request(server).post(`/api/companies/${companyId}/generated-videos`).send({ prompt: "Waves on rocks", model: "wan-2.2-5b" });
+    const second = await request(server).post(`/api/companies/${companyId}/generated-videos`).send({ prompt: "A slow sunrise", model: "wan-2.2-5b", duration: 5 });
+    expect(first.status).toBe(202);
+    expect(first.body).toMatchObject({ provider: "local", model: "wan-2.2-5b", durationSeconds: 3 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await request(server).get(`/api/generated-videos/${first.body.id}`)).body.progress).toEqual({ queuePosition: 0, percent: null });
+    expect((await request(server).get(`/api/generated-videos/${second.body.id}`)).body.progress).toEqual({ queuePosition: 1, percent: null });
+
+    const cancelled = await request(server).post(`/api/generated-videos/${second.body.id}/cancel`).send({});
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body).toMatchObject({ status: "failed", error: "Cancelled by a board member.", progress: null });
+    const again = await request(server).post(`/api/generated-videos/${second.body.id}/cancel`).send({});
+    expect(again.status).toBe(422);
+
+    gpu.release();
+    await waitForGeneratedVideoJobs();
+    const done = await request(server).get(`/api/generated-videos/${first.body.id}`);
+    expect(done.body).toMatchObject({ status: "completed", progress: null });
+    const actions = (await ctx.db.select().from(activityLog)).map((row) => row.action);
+    expect(actions).toContain("generated_video.cancelled");
+  });
+
+  it("refuses a local clip when this PC is not answering, and a paid model when only this PC is set up", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Videos local down");
+    const { storage } = memoryStorage();
+    const down = await request(app(actor, storage, () => null, fakeLocalGpu(null).local))
+      .post(`/api/companies/${companyId}/generated-videos`)
+      .send({ prompt: "Waves on rocks", model: "wan-2.2-5b" });
+    expect(down.status).toBe(422);
+    expect(down.body.details.code).toBe("local_gpu_unavailable");
+    const paid = await request(app(actor, storage, () => null, fakeLocalGpu(LOCAL_READY).local))
+      .post(`/api/companies/${companyId}/generated-videos`)
+      .send({ prompt: "Waves on rocks", model: "hailuo-2.3" });
+    expect(paid.body.details.code).toBe("video_generation_not_configured");
   });
 });

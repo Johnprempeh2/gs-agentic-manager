@@ -168,7 +168,7 @@ describe("Higgsfield plan choice and spend guard", () => {
     expect(() => pickStudioProvider({ requested: "higgsfield_plan", envProvider: api, plan: null, planProvider, isAgent: false, kind: "image" })).toThrow(
       /Connect it under Apps/,
     );
-    expect(describeImageGeneration(null, null)).toEqual({ configured: false, provider: null, providerLabel: null, model: null });
+    expect(describeImageGeneration(null, null)).toEqual({ configured: false, provider: null, providerLabel: null, model: null, local: null });
   });
 
   it("keeps agents off the plan by default, falling back to the API key, and lets them on when allowed", () => {

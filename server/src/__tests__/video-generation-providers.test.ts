@@ -99,7 +99,7 @@ describe("video provider choice", () => {
       resolveVideoGenerationProvider({ GSAM_IMAGE_PROVIDER: "openai", HIGGSFIELD_API_KEY_ID: "a", HIGGSFIELD_API_KEY_SECRET: "b" })?.id,
     ).toBe("higgsfield");
     expect(resolveVideoGenerationProvider({ GSAM_VIDEO_PROVIDER: "mock", HIGGSFIELD_API_KEY: "a:b" })?.id).toBe("mock");
-    expect(describeVideoGeneration(null)).toEqual({ configured: false, provider: null, providerLabel: null });
+    expect(describeVideoGeneration(null)).toEqual({ configured: false, provider: null, providerLabel: null, local: null });
   });
 
   it("makes a playable practice clip", async () => {

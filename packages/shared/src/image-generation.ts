@@ -30,13 +30,47 @@ export interface HiggsfieldPlanStatus {
 export const updateHiggsfieldPlanSettingsSchema = z.object({ agentsMaySpend: z.boolean() }).strict();
 export type UpdateHiggsfieldPlanSettings = z.infer<typeof updateHiggsfieldPlanSettingsSchema>;
 
-export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock", "higgsfield_plan"] as const;
+
+/** What people see for models that run on the GSAM machine's own graphics card. */
+export const LOCAL_GPU_LABEL = "This PC (local GPU)";
+
+/**
+ * Image models that run on this PC through ComfyUI. Both licences allow
+ * commercial use of the pictures: FLUX.1 schnell is Apache 2.0, SDXL base 1.0
+ * is CreativeML Open RAIL++-M.
+ */
+export const LOCAL_IMAGE_MODELS = [
+  { id: "flux-schnell", label: "FLUX.1 schnell", hint: "Fast and sharp", negativePrompt: false },
+  { id: "sdxl", label: "SDXL", hint: "Takes words to leave out", negativePrompt: true },
+] as const;
+export type LocalImageModelId = (typeof LOCAL_IMAGE_MODELS)[number]["id"];
+
+export function localImageModel(id: string | null | undefined) {
+  return LOCAL_IMAGE_MODELS.find((model) => model.id === id) ?? null;
+}
+
+/** What the local GPU can do right now; null on a status when it is not answering. */
+export interface LocalGpuStatus {
+  label: string;
+  /** Local image model ids that are installed and ready. */
+  imageModels: string[];
+  /** Local video model ids that are installed and ready. */
+  videoModels: string[];
+  /** Pictures and clips waiting for the graphics card, including the one it is on. */
+  queued: number;
+}
+
+/** Highest seed a request may name. */
+export const IMAGE_SEED_MAX = 4_294_967_295;
+
+export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock", "local", "higgsfield_plan"] as const;
 export type ImageGenerationProviderId = (typeof IMAGE_GENERATION_PROVIDERS)[number];
 
 export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId, string> = {
   higgsfield: "Higgsfield",
   openai: "OpenAI",
   mock: "Practice mode",
+  local: LOCAL_GPU_LABEL,
   higgsfield_plan: HIGGSFIELD_PLAN_LABEL,
 };
 
@@ -220,8 +254,6 @@ export const createGeneratedImageSchema = z.object({
     .min(GENERATED_IMAGE_PROMPT_MIN_LENGTH, "Describe the image in a few words")
     .max(GENERATED_IMAGE_PROMPT_MAX_LENGTH, `Keep the description under ${GENERATED_IMAGE_PROMPT_MAX_LENGTH} characters`),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS).default(DEFAULT_IMAGE_ASPECT_RATIO),
-  /** Which image service to use. Left out, the server picks: your Higgsfield plan when it is connected. */
-  provider: z.enum(IMAGE_GENERATION_PROVIDERS).optional(),
   style: z.enum(IMAGE_STYLE_IDS).nullable().optional(),
   /** Cinema camera picks (camera, lens, focal length, aperture); their wording is added to the prompt. */
   camera: studioCameraSchema.nullable().optional(),
@@ -231,6 +263,18 @@ export const createGeneratedImageSchema = z.object({
   issueId: z.string().uuid().nullable().optional(),
   /** The client the image is for. */
   organisationId: z.string().uuid().nullable().optional(),
+  /**
+   * Which service makes it. Left out, the server picks: your Higgsfield plan
+   * when its app is connected, then the API key service, then this PC.
+   * "local" runs it on this PC.
+   */
+  provider: z.enum(IMAGE_GENERATION_PROVIDERS).optional(),
+  /** For provider "local": one of LOCAL_IMAGE_MODELS. */
+  model: z.string().trim().max(100).optional(),
+  /** Same seed and words give the same picture (local models only); versions count up from it. */
+  seed: z.number().int().min(0).max(IMAGE_SEED_MAX).optional(),
+  /** Things to keep out of the picture (local models that take them). */
+  negativePrompt: z.string().trim().max(1000).optional(),
 });
 export type CreateGeneratedImage = z.input<typeof createGeneratedImageSchema>;
 
@@ -361,6 +405,8 @@ export interface ImageGenerationStatus {
   provider: ImageGenerationProviderId | null;
   providerLabel: string | null;
   model: string | null;
+  /** The local GPU, when it is answering. */
+  local: LocalGpuStatus | null;
   /** The Higgsfield plan, when its app is connected. The studio uses it by default. */
   plan?: (HiggsfieldPlanStatus & { model: string; creditsPerImage: number | null }) | null;
   /** The server's own image service, when the plan is the default and this can be picked instead. */

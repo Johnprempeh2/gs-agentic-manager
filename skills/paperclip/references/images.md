@@ -84,6 +84,29 @@ one only when the task asks for video. Run `gsam video status` first; if it
 says video is off, tell the board rather than trying another service. With
 MCP: `studio_make_video`, then poll `studio_get_video`.
 
+### On this PC (local GPU), at no cost
+
+GSAM's own PC can make pictures and clips on its graphics card. It costs
+nothing, but it does one thing at a time. `gsam image status` (or
+`studio_status`) shows `local.imageModels` and `gsam video status` shows
+`local.videoModels` while it is ready; `local: null` means it is off, so use
+the normal service instead.
+
+```bash
+gsam image generate --prompt "..." --model flux-schnell   # fast default
+gsam image generate --prompt "..." --model sdxl --negative "text, blur" --seed 42
+gsam video generate --prompt "..." --model wan-2.2-5b --duration 3
+gsam video cancel "$VIDEO_ID"   # stop a clip that is waiting or being made
+```
+
+`--model` with a local model name means `--provider local`. `--seed` makes
+the same picture again from the same words; with `--count`, versions use
+seed, seed + 1 and so on. `wan-2.2-5b` makes 3 or 5 second clips from words
+or from `--image`; a clip takes several minutes, and while it waits
+`gsam video get` shows `progress` with its `queuePosition` and `percent`.
+With MCP, pass `provider: "local"` and `model` to `studio_make_image`, or
+`model: "wan-2.2-5b"` to `studio_make_video`.
+
 ### House looks
 
 When a client's pictures must match, use their house look instead of

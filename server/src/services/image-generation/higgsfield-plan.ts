@@ -294,9 +294,11 @@ export async function describeHiggsfieldPlan(plan: HiggsfieldPlan): Promise<Higg
 }
 
 /**
- * Picks the service for one request. Left to choose, the studio uses the plan
- * when it is connected; an agent uses it only when the board allows agents to
- * spend it, and otherwise falls back to the server's API key service.
+ * Picks the cloud service for one request. Left to choose, the studio uses the
+ * plan when it is connected; an agent uses it only when the board allows
+ * agents to spend it, and otherwise falls back to the server's API key
+ * service. A null provider means no cloud service fits: the caller tries this
+ * PC next.
  */
 export function pickStudioProvider<P extends { id: string }>(input: {
   requested: string | undefined;
@@ -310,7 +312,7 @@ export function pickStudioProvider<P extends { id: string }>(input: {
   // Practice mode is a deliberate server choice, so the plan is never picked over it unasked.
   const usePlan =
     requested === "higgsfield_plan" ||
-    (!requested && !!plan && envProvider?.id !== "mock" && (!isAgent || plan.agentsMaySpend || !envProvider));
+    (!requested && !!plan && envProvider?.id !== "mock" && (!isAgent || plan.agentsMaySpend));
   if (usePlan) {
     if (!plan) {
       throw unprocessable("Higgsfield (your plan) needs the Higgsfield app. Connect it under Apps.", {
@@ -320,7 +322,9 @@ export function pickStudioProvider<P extends { id: string }>(input: {
     return { provider: input.planProvider(plan), plan };
   }
   if (requested && envProvider?.id !== requested) {
-    throw unprocessable(`That ${input.kind} service is not set up here.`, { code: `${input.kind}_provider_unavailable` });
+    throw unprocessable(`That ${input.kind} service is not set up. Ask your admin, or pick another one.`, {
+      code: `${input.kind}_generation_not_configured`,
+    });
   }
   return { provider: envProvider, plan: null };
 }

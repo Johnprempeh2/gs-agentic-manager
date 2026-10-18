@@ -1,6 +1,6 @@
 import { VIDEO_MODELS, type VideoModelId } from "@greatstone/shared";
 import type { HiggsfieldPlanClient } from "../image-generation/higgsfield-plan.js";
-import { downloadVideo, type VideoGenerationInput, type VideoGenerationProvider, type VideoGenerationResult } from "./types.js";
+import { downloadVideo, VideoGenerationError, type VideoGenerationInput, type VideoGenerationProvider, type VideoGenerationResult } from "./types.js";
 
 // Studio clips on the Higgsfield plan (see image-generation/higgsfield-plan.ts).
 // The studio's video models are Higgsfield API paths; the plan's MCP catalogue
@@ -8,7 +8,8 @@ import { downloadVideo, type VideoGenerationInput, type VideoGenerationProvider,
 // 3.0 Turbo, the nearest Kling there, and Hailuo 2.3 maps to its own variant.
 // Both animate a picture as the start_image.
 
-export const HIGGSFIELD_PLAN_VIDEO_MODELS: Record<VideoModelId, { model: string; params: Record<string, unknown> }> = {
+// Local models (provider "local") run on this PC and have no plan mapping.
+export const HIGGSFIELD_PLAN_VIDEO_MODELS: Partial<Record<VideoModelId, { model: string; params: Record<string, unknown> }>> = {
   "kling-2.5-turbo-pro": { model: "kling3_0_turbo", params: { resolution: "1080p" } },
   "kling-2.5-turbo-standard": { model: "kling3_0_turbo", params: { resolution: "720p" } },
   "hailuo-2.3": { model: "minimax_hailuo", params: { variant: "minimax-2.3" } },
@@ -17,13 +18,14 @@ export const HIGGSFIELD_PLAN_VIDEO_MODELS: Record<VideoModelId, { model: string;
 /** The MCP params for one clip, without the prompt and picture. */
 export function planVideoParams(model: VideoModelId, durationSeconds: number) {
   const mapped = HIGGSFIELD_PLAN_VIDEO_MODELS[model];
+  if (!mapped) throw new VideoGenerationError("That video model is not on the Higgsfield plan.", "rejected");
   return { model: mapped.model, ...mapped.params, duration: durationSeconds };
 }
 
 /** Credits per studio model and length, from Higgsfield's price check. */
 export async function planClipCosts(client: HiggsfieldPlanClient) {
   const entries = await Promise.all(
-    VIDEO_MODELS.map(async (model) => {
+    VIDEO_MODELS.filter((model) => HIGGSFIELD_PLAN_VIDEO_MODELS[model.id]).map(async (model) => {
       const byDuration: Record<number, number | null> = {};
       for (const duration of model.durations) {
         byDuration[duration] = await client.cost("generate_video", { ...planVideoParams(model.id, duration), prompt: "price check" });

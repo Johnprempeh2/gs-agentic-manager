@@ -1,8 +1,11 @@
 import { writeFile } from "node:fs/promises";
 import { Command } from "commander";
 import {
+  IMAGE_GENERATION_PROVIDERS,
+  IMAGE_SEED_MAX,
   IMAGE_SHAPE_OPTIONS,
   IMAGE_STYLE_PRESETS,
+  LOCAL_IMAGE_MODELS,
   parseImageShape,
   parseImageStyle,
   parseStudioChoice,
@@ -44,6 +47,10 @@ interface ImageGenerateOptions extends BaseClientOptions {
   count?: string;
   compare?: string;
   shot?: string[];
+  provider?: string;
+  model?: string;
+  seed?: string;
+  negative?: string;
 }
 
 interface ImageListOptions extends BaseClientOptions {
@@ -62,6 +69,35 @@ const LENS_HELP = STUDIO_LENSES.map((item) => item.id).join(", ");
 const FOCAL_HELP = STUDIO_FOCAL_LENGTHS.map((item) => item.value).join(", ");
 const APERTURE_HELP = STUDIO_APERTURES.map((item) => item.label).join(", ");
 const POLL_INTERVAL_MS = 3_000;
+const LOCAL_MODEL_HELP = LOCAL_IMAGE_MODELS.map((model) => `${model.id} (${model.label})`).join(", ");
+
+/**
+ * Reads --provider, --model, --seed and --negative. A local model name on its
+ * own means provider local, the PC's graphics card; throws on a bad value.
+ */
+export function engineFromOptions(opts: Pick<ImageGenerateOptions, "provider" | "model" | "seed" | "negative">) {
+  const model = opts.model?.trim().toLowerCase() || undefined;
+  let provider = opts.provider?.trim().toLowerCase() || undefined;
+  if (provider && !(IMAGE_GENERATION_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new Error(`Unknown provider "${opts.provider}". Use one of: ${IMAGE_GENERATION_PROVIDERS.join(", ")}`);
+  }
+  if (model) {
+    if (!LOCAL_IMAGE_MODELS.some((item) => item.id === model)) throw new Error(`Unknown model "${opts.model}". Use one of: ${LOCAL_MODEL_HELP}`);
+    if (provider && provider !== "local") throw new Error("--model names a local model; use it with --provider local or on its own");
+    provider = "local";
+  }
+  const seed = opts.seed?.trim() ? Number(opts.seed) : undefined;
+  if (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > IMAGE_SEED_MAX)) {
+    throw new Error(`--seed must be a whole number from 0 to ${IMAGE_SEED_MAX}`);
+  }
+  const negativePrompt = opts.negative?.trim() || undefined;
+  return {
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    ...(seed !== undefined ? { seed } : {}),
+    ...(negativePrompt ? { negativePrompt } : {}),
+  };
+}
 
 function unknownChoice(flag: string, raw: string, help: string): never {
   throw new Error(`Unknown ${flag} "${raw}". Use one of: ${help}`);
@@ -112,6 +148,10 @@ export function registerImageCommands(program: Command): void {
         "A storyboard shot; repeat for 2 to 4 shots. Each is joined to --prompt, which they all share",
         (value: string, previous: string[] = []) => [...previous, value],
       )
+      .option("--provider <provider>", `Which service makes it: ${IMAGE_GENERATION_PROVIDERS.join(", ")}; local is this PC's graphics card, at no cost`)
+      .option("--model <model>", `A model on this PC (implies --provider local): ${LOCAL_MODEL_HELP}`)
+      .option("--seed <n>", "Local models: the same seed and words make the same picture; versions count up from it")
+      .option("--negative <text>", "Local models that take it (sdxl): what to keep out of the picture")
       .option("--out <path>", "Also save the finished image to this file (with --count, a number is added)")
       .option("--no-wait", "Return as soon as the request is accepted")
       .option("--timeout <seconds>", "How long to wait for the image", "300")
@@ -140,7 +180,9 @@ export function registerImageCommands(program: Command): void {
           if (shots.length > 0 && (compare.length > 0 || count > 1)) throw new Error("Use --shot without --compare or --count");
           const lookIds = await Promise.all(compare.map((name) => resolveLookId(ctx, name)));
           const issueId = opts.issueId?.trim() || null;
+          const engine = engineFromOptions(opts);
           const body = {
+            ...engine,
             prompt: opts.prompt,
             aspectRatio,
             ...(style ? { style } : {}),

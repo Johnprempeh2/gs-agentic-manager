@@ -10,6 +10,9 @@ import {
   createGeneratedImageVariationsSchema,
   generatedImagesQuerySchema,
   GENERATED_IMAGES_MAX_PENDING_PER_COMPANY,
+  IMAGE_SEED_MAX,
+  LOCAL_IMAGE_MODELS,
+  localImageModel,
   type CreateGeneratedImage,
   type CreateGeneratedImageVariations,
   type GeneratedImage,
@@ -39,6 +42,7 @@ import {
   type HiggsfieldPlan,
   type ResolveHiggsfieldPlan,
 } from "./image-generation/higgsfield-plan.js";
+import { localGpuFromEnv, type LocalGpu } from "./local-gpu.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "./image-generation/types.js";
 
 // Image generation. A request is saved as a pending row and answered at once;
@@ -62,6 +66,8 @@ export interface GeneratedImageActor {
 export interface GeneratedImageServiceOptions {
   /** Defaults to reading the server environment on each request. */
   resolveProvider?: () => ImageGenerationProvider | null;
+  /** This PC's graphics card through ComfyUI; defaults to GSAM_COMFYUI_URL. Null switches it off. */
+  localGpu?: LocalGpu | null;
   /** The company's connected Higgsfield plan; defaults to looking up its app connection. */
   resolvePlan?: ResolveHiggsfieldPlan;
   now?: () => Date;
@@ -70,6 +76,12 @@ export interface GeneratedImageServiceOptions {
 /** The plan's price check for one picture; the price does not depend on the words. */
 function planImageCost(plan: HiggsfieldPlan, provider: ImageGenerationProvider, aspectRatio: ImageAspectRatio) {
   return plan.client.cost("generate_image", { model: provider.model, prompt: "price check", aspect_ratio: aspectRatio });
+}
+
+/** Settings that are passed to the image service but not kept on the row. */
+interface RunExtras {
+  seed?: number;
+  negativePrompt?: string | null;
 }
 
 export interface GeneratedImageLinks {
@@ -145,7 +157,55 @@ function drain() {
 export function generatedImageService(db: Db, storage: StorageService, options: GeneratedImageServiceOptions = {}) {
   const resolveProvider = options.resolveProvider ?? (() => resolveImageGenerationProvider());
   const resolvePlan = options.resolvePlan ?? higgsfieldPlanResolver(db);
+  const localGpu = options.localGpu === undefined ? localGpuFromEnv() : options.localGpu;
   const now = options.now ?? (() => new Date());
+
+  /**
+   * The service a request asked for, or the default: the Higgsfield plan when
+   * its app is connected, then the API key service, then this PC. Throws a
+   * plain reason when it cannot be used.
+   */
+  async function pickProvider(
+    companyId: string,
+    input: { provider?: string; model?: string },
+    isAgent: boolean,
+  ): Promise<{ provider: ImageGenerationProvider; plan: HiggsfieldPlan | null }> {
+    if (input.provider === "local") {
+      const model = localImageModel(input.model ?? LOCAL_IMAGE_MODELS[0].id);
+      if (!model) {
+        throw unprocessable(`Pick a local model: ${LOCAL_IMAGE_MODELS.map((item) => item.id).join(" or ")}`, {
+          code: "local_image_model_unknown",
+        });
+      }
+      const local = localGpu ? await localGpu.status() : null;
+      if (!localGpu || !local) {
+        throw unprocessable("This PC's image server is not answering. Check that ComfyUI is running on the PC, then try again.", {
+          code: "local_gpu_unavailable",
+        });
+      }
+      if (!local.imageModels.includes(model.id)) {
+        throw unprocessable(`${model.label} is not installed on this PC.`, { code: "local_image_model_missing" });
+      }
+      return { provider: localGpu.imageProvider(model.id), plan: null };
+    }
+    const plan = input.provider && input.provider !== "higgsfield_plan" ? null : await resolvePlan(companyId);
+    const picked = pickStudioProvider({
+      requested: input.provider,
+      envProvider: resolveProvider(),
+      plan,
+      planProvider: (connected) => createHiggsfieldPlanImageProvider(connected.client),
+      isAgent,
+      kind: "image",
+    });
+    if (picked.provider) return { provider: picked.provider, plan: picked.plan };
+    const local = localGpu ? await localGpu.status() : null;
+    const fallback = local?.imageModels[0];
+    if (localGpu && fallback) return { provider: localGpu.imageProvider(fallback as "flux-schnell" | "sdxl"), plan: null };
+    if (plan && isAgent) await assertPlanCanSpend(plan, isAgent, null);
+    throw unprocessable("Image generation is not set up yet. Ask your admin to add an image service key.", {
+      code: "image_generation_not_configured",
+    });
+  }
 
   async function finish(id: string, patch: Partial<typeof generatedImages.$inferInsert>) {
     const [row] = await db
@@ -156,12 +216,15 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     return row ?? null;
   }
 
-  async function run(row: GeneratedImageRow, provider: ImageGenerationProvider) {
+  async function run(row: GeneratedImageRow, provider: ImageGenerationProvider, extras: RunExtras = {}) {
     activeJobs.add(row.id);
     try {
       const result = await provider.generate({
         prompt: composeImagePrompt(row.prompt, row.style, row.camera as StudioCameraSettings | null),
         aspectRatio: row.aspectRatio as ImageAspectRatio,
+        seed: extras.seed,
+        negativePrompt: extras.negativePrompt,
+        jobId: row.id,
       });
       const stored = await storage.putFile({
         companyId: row.companyId,
@@ -317,13 +380,14 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
         logger.warn({ err: error, companyId }, "could not read the Higgsfield plan connection");
         return null;
       });
-      if (!plan) return describeImageGeneration(envProvider);
+      const local = localGpu ? await localGpu.status() : null;
+      if (!plan) return describeImageGeneration(envProvider, local);
       const provider = createHiggsfieldPlanImageProvider(plan.client);
       const [described, creditsPerImage] = await Promise.all([
         describeHiggsfieldPlan(plan),
         planImageCost(plan, provider, "1:1"),
       ]);
-      return describeImageGeneration(envProvider, { ...described, model: provider.model, creditsPerImage });
+      return describeImageGeneration(envProvider, local, { ...described, model: provider.model, creditsPerImage });
     },
 
     create: async (companyId: string, input: CreateGeneratedImage, actor: GeneratedImageActor) => {
@@ -333,20 +397,8 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
       const isAgent = actor.actorType === "agent";
-      const picked = pickStudioProvider({
-        requested: parsed.provider,
-        envProvider: resolveProvider(),
-        plan: parsed.provider && parsed.provider !== "higgsfield_plan" ? null : await resolvePlan(companyId),
-        planProvider: (plan) => createHiggsfieldPlanImageProvider(plan.client),
-        isAgent,
-        kind: "image",
-      });
+      const picked = await pickProvider(companyId, parsed, isAgent);
       const provider = picked.provider;
-      if (!provider) {
-        throw unprocessable("Image generation is not set up yet. Ask your admin to add an image service key.", {
-          code: "image_generation_not_configured",
-        });
-      }
       await assertLinksInCompany(companyId, issueId, organisationId);
       if (picked.plan) {
         await assertPlanCanSpend(picked.plan, isAgent, await planImageCost(picked.plan, provider, parsed.aspectRatio));
@@ -400,9 +452,12 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           lookId: look?.lookId ?? null,
           issueId,
           organisationId,
+          ...(parsed.seed !== undefined ? { seed: parsed.seed } : {}),
         },
       });
-      schedule(() => run(row!, provider));
+      // Counted as running from now, so a long wait in the queue is not taken for a lost job.
+      activeJobs.add(row!.id);
+      schedule(() => run(row!, provider, { seed: parsed.seed, negativePrompt: parsed.negativePrompt }));
       return withLinks(row!);
     },
 
@@ -592,7 +647,9 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       const images = [];
       for (const [index, lookId] of looks.entries()) {
         const prompt = shots ? composeStoryboardPrompt(shots[index]!, request.prompt) : request.prompt;
-        images.push(await service.create(companyId, { ...request, prompt, lookId }, actor));
+        // A named seed makes each version different but repeatable: seed, seed + 1, ...
+        const seed = request.seed === undefined ? undefined : (request.seed + index) % (IMAGE_SEED_MAX + 1);
+        images.push(await service.create(companyId, { ...request, prompt, lookId, seed }, actor));
       }
       return { images };
     },
