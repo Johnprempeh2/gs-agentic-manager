@@ -10,11 +10,11 @@
 #   scripts/greatstone-test-gate.sh --check <rc-tag>   say whether <rc-tag>'s commit has a pass marker
 #                                                     (exit 0 = yes); runs nothing
 #
-# <rc-tag> may also be a full commit sha: the release queue
-# (scripts/greatstone-release-queue.mjs) gates each new origin/main commit before
-# any tag is cut, so a release of a commit that already passed skips the gate.
-# A gate started with GSAM_TEST_GATE_YIELD=1 (the queue's background run on main)
-# gives way: any other gate that finds it holding the lock stops it and runs.
+# <rc-tag> may also be a full commit sha (the pass marker is keyed by commit).
+#
+# Since 18 Oct 2026 the release gate is Fork CI's full test matrix on GitHub
+# (scripts/greatstone-github-gate.mjs). This PC gate is the fallback: for
+# greatstone-release.sh --pc-gate, and when GitHub cannot be asked.
 #
 # Fork CI ran no tests on pull requests until 18 Oct 2026, so failing tests
 # reached main and then live; it now runs the same lanes on each pull request,
@@ -102,12 +102,9 @@ done
 mkdir -p "$TEST_GATE_DIR" "$GATE_TMPDIR"
 export TMPDIR="$GATE_TMPDIR"
 lock_owner() { head -n 1 "$LOCK_DIR/owner" 2>/dev/null || echo unknown; }
-# True when the gate holding the lock is the queue's background run on main,
-# which gives way to any other gate.
-yields() { [ "${GSAM_TEST_GATE_YIELD:-}" != 1 ] && grep -qx yield "$LOCK_DIR/owner" 2>/dev/null; }
 
 if [ "$DETACH" = 1 ]; then
-  [ ! -d "$LOCK_DIR" ] || yields || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
+  [ ! -d "$LOCK_DIR" ] || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
   OUT="$TEST_GATE_DIR/$TAG.out"
   SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
   # A new session: no terminal or agent shell can send it a hangup, and its
@@ -149,23 +146,15 @@ on_signal() {
   exit "$2"
 }
 
-# One gate at a time: they share the clone. The queue's background run on main
-# gives way: it is stopped (it frees the lock on its way out) and this one runs.
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  yields || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
-  yield_pid="$(sed -n '1s/^pid \([0-9]*\),.*/\1/p' "$LOCK_DIR/owner")"
-  say "Stopping the background test gate of main ($(lock_owner)) so this one can run."
-  [ -z "$yield_pid" ] || kill -TERM "$yield_pid" 2>/dev/null || true
-  for _ in $(seq 1 60); do [ -d "$LOCK_DIR" ] || break; sleep 1; done
-  mkdir "$LOCK_DIR" 2>/dev/null || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
-fi
+# One gate at a time: they share the clone.
+mkdir "$LOCK_DIR" 2>/dev/null \
+  || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
 trap 'stop_group; rm -rf "$LOCK_DIR"' EXIT
 trap 'on_signal HUP 129' HUP
 trap 'on_signal INT 130' INT
 trap 'on_signal PIPE 141' PIPE
 trap 'on_signal TERM 143' TERM
 printf 'pid %s, %s, started %s\n' "$$" "$TAG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$LOCK_DIR/owner"
-[ "${GSAM_TEST_GATE_YIELD:-}" != 1 ] || echo yield >>"$LOCK_DIR/owner"
 
 # A clean clone of the tag, fetched from the local repository so an unpushed
 # rc-* tag works (as greatstone-preview.sh does).

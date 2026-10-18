@@ -6,8 +6,10 @@
 #   scripts/greatstone-release.sh --full-restart <tag>  the same, but stop live completely and start it
 #                                                     again instead of a hot restart (GRE-442)
 #
-# An rc-* tag is released only when scripts/greatstone-test-gate.sh passed the
-# full test suite on its commit (--skip-test-gate "<reason>" in an emergency),
+# An rc-* tag is released only when Fork CI's full test matrix is green on
+# GitHub for its commit (scripts/greatstone-github-gate.mjs; --pc-gate, or
+# GitHub out of reach, uses the PC's scripts/greatstone-test-gate.sh pass
+# marker instead; --skip-test-gate "<reason>" in an emergency),
 # and, by hand, only while the preview runs it and answers
 # (--skip-preview "<reason>" in an emergency).
 #
@@ -32,12 +34,14 @@ die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 # --skip-preview "<reason>": release an rc-* tag by hand when the preview does
 # not run it or does not answer. Emergencies only; the reason goes to
 # $GS_ROOT/preview-overrides.log.
+# --pc-gate: decide by the PC test gate's pass marker, not GitHub.
 FULL_RESTART=0
 SKIP_TEST_GATE=""
 SKIP_PREVIEW=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --full-restart) FULL_RESTART=1; shift ;;
+    --pc-gate) export GSAM_RELEASE_GATE=pc; shift ;;
     --skip-test-gate)
       [ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" ] && case "$2" in rc-* | live-* | --*) false ;; esac \
         || die "--skip-test-gate needs a reason first, for example: --skip-test-gate \"live is down, fix for GRE-123\" rc-YYYY-MM-DD.N"
@@ -53,7 +57,7 @@ TAG="${1:-}"
 case "$TAG" in
   rc-*) MODE=release ;;
   live-*) MODE=rollback ;;
-  *) die "usage: greatstone-release.sh [--full-restart] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
+  *) die "usage: greatstone-release.sh [--full-restart] [--pc-gate] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
 # GSAM_RELEASE_FROM_APP=1: started by the live server (the Releases page, GRE-121).
@@ -117,9 +121,10 @@ if [ "$MODE" = release ]; then
     || die "live runs $PREVIOUS ($LIVE_HEAD), which $RELEASE_REPO does not have, so it cannot tell whether $TAG is newer. Fetch it, then release again. Nothing was changed."
   git -C "$RELEASE_REPO" merge-base --is-ancestor "$LIVE_HEAD" "$TARGET" \
     || die "$TAG is older than live ($PREVIOUS); to go back, use the rollback form with a live-* tag. Nothing was changed."
-  # The full test suite must have passed on exactly this commit: Fork CI runs
-  # no tests on pull requests, so this is where failing tests are stopped.
-  if GATE="$(test_gate_check "$TARGET" "$TAG")"; then
+  # The full test suite must have passed on exactly this commit (or on the
+  # pull request run that tested the same files): GitHub's Fork CI matrix, or
+  # the PC test gate with --pc-gate or when GitHub cannot be asked.
+  if GATE="$(release_gate_check "$TARGET" "$TAG")"; then
     say "Test gate: $GATE"
   elif [ -n "$SKIP_TEST_GATE" ]; then
     mkdir -p "$TEST_GATE_DIR"

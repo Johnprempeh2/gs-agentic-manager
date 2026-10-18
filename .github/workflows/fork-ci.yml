@@ -14,16 +14,17 @@
 #   build      pnpm build: every workspace, including the runner's release
 #              binary built with cargo
 #   runner     the runner's Rust tests (the rebrand edits Rust sources)
-#   ui-tests   the ui and cli vitest suites, on pushes to main (the test
-#              matrix runs the same group on pull requests and by hand)
 #   server-security  the server's authz, cross-company and route contract
 #              tests (16 files, about 5 minutes), on every run
 #   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys, overnight-features and smoke-pages specs)
 #   test       the full vitest suite through scripts/run-vitest-stable.mjs,
 #              sharded across 13 runners (the server suites run one file at a
 #              time): the same lanes as the PC's release test gate
-#              (scripts/greatstone-test-gate.lanes), on every pull request and
-#              by hand
+#              (scripts/greatstone-test-gate.lanes), on every pull request,
+#              every push to main and by hand. It is the release gate:
+#              scripts/greatstone-github-gate.mjs lets a commit go live only
+#              when this run is green for it (or for the pull request run that
+#              tested the same files)
 #   Fork CI    a single result to require in branch protection
 #
 # Triggers: pull requests, pushes to main, and manual runs. Since the
@@ -33,8 +34,10 @@
 # stopped at the pull request, not at the release gate. The matrix was manual
 # only while the repository was private, to save the allowance. A new push to
 # a pull request cancels its older run (the concurrency group below). The
-# runner's Rust tests stay manual. The release test gate on the PC still runs
-# the same lanes on the exact commit before each release.
+# runner's Rust tests stay manual. Every push to main gets the full matrix too
+# (main runs are never cancelled), so each merge is tested on its exact commit.
+# The PC's test gate (scripts/greatstone-test-gate.sh) is only the fallback
+# when GitHub cannot be asked.
 #
 # No secrets, a read-only token, GitHub-hosted runners only.
 
@@ -49,8 +52,11 @@ on:
 permissions:
   contents: read
 
+# One group per pull request (a newer push cancels the older run), and one
+# per main commit: a group keeps only one waiting run, so a shared main group
+# would drop the runs of merges that land close together.
 concurrency:
-  group: fork-ci-${{ github.event.pull_request.number || github.ref }}
+  group: fork-ci-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -173,25 +179,6 @@ jobs:
       - name: Runner Rust checks and tests
         run: pnpm --filter @greatstone/paperclip-runner run check:runner
 
-  # The "ui and cli" shard of the full matrix below, on pushes to main. Pull
-  # requests and manual runs skip it, because the matrix runs the same group.
-  ui-tests:
-    name: Tests (ui and cli)
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup
-        uses: ./.github/actions/fork-setup
-
-      - name: Run vitest (ui and cli)
-        run: pnpm test:run:general -- --group general-workspaces-a
-
   # The server's company boundary and route contract tests, by file name: every
   # authz, cross-company and cross-tenant suite, the upload type rules and the
   # API document. A new route with no company boundary test fails here, on the
@@ -249,7 +236,6 @@ jobs:
 
   test:
     name: Tests (${{ matrix.label }})
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -311,7 +297,7 @@ jobs:
   result:
     name: Fork CI
     if: always()
-    needs: [guard, typecheck, build, ui-tests, server-security, journeys, runner, test]
+    needs: [guard, typecheck, build, server-security, journeys, runner, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

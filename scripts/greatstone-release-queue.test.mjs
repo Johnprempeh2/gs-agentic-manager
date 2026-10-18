@@ -20,6 +20,20 @@ const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8",
 
 // The step scripts the worker calls, as stubs. Each appends one line to $CALLS.
 const STUBS = {
+  // The GitHub gate: $GH_GATE lists "<commit> <exit code>" lines (default 0 = passed).
+  "greatstone-github-gate.mjs": `import { appendFileSync, existsSync, readFileSync } from "node:fs";
+const [sha, ...rest] = process.argv.slice(2);
+const json = rest.includes("--json");
+if (!json) appendFileSync(process.env.CALLS, \`github \${sha}\\n\`);
+const line = existsSync(process.env.GH_GATE) ? readFileSync(process.env.GH_GATE, "utf8").split("\\n").find((l) => l.startsWith(sha)) : null;
+const code = line ? Number(line.split(" ")[1]) : 0;
+const seconds = existsSync(process.env.GH_GATE_SECONDS) ? Number(readFileSync(process.env.GH_GATE_SECONDS, "utf8")) : 0;
+await new Promise((r) => setTimeout(r, seconds * 1000));
+const state = ["passed", "failed", "pending", "unreachable"][code];
+const message = { passed: "GitHub: the full test matrix passed on " + sha.slice(0, 9), failed: "GitHub: Fork CI failed on " + sha.slice(0, 9) + ": Tests (server 3/6) (failure)", pending: "GitHub: Fork CI is still running", unreachable: "GitHub could not be asked: offline" }[state];
+console.log(json ? JSON.stringify({ state, message, names: state === "failed" ? ["Tests (server 3/6) (failure)"] : [] }) : message);
+process.exit(code);
+`,
   "greatstone-test-gate.sh": `#!/usr/bin/env bash
 echo "gate $1 yield=\${GSAM_TEST_GATE_YIELD:-0}" >>"$CALLS"
 trap 'echo "gate-stopped $1" >>"$CALLS"; echo "test-gate: stopped by SIGTERM"; exit 143' TERM
@@ -48,9 +62,9 @@ echo "preview $*" >>"$CALLS"
 `,
   "greatstone-release.sh": `#!/usr/bin/env bash
 owner="$(sed -n 's/^pid=//p' "$GSAM_ROOT/locks/release.lock/owner" 2>/dev/null)"
-echo "release $1 draining=$(curl -s "$GSAM_LIVE_URL/api/instance/task-drain" | sed 's/.*"draining":\\([a-z]*\\).*/\\1/') lock=$([ "$owner" = "$PPID" ] && echo parent || echo "\${owner:-none}") inherited=\${GSAM_RELEASE_LOCK_INHERITED:-0}" >>"$CALLS"
+echo "release $* draining=$(curl -s "$GSAM_LIVE_URL/api/instance/task-drain" | sed 's/.*"draining":\\([a-z]*\\).*/\\1/') lock=$([ "$owner" = "$PPID" ] && echo parent || echo "\${owner:-none}") inherited=\${GSAM_RELEASE_LOCK_INHERITED:-0}" >>"$CALLS"
 if [ -n "\${RELEASE_FAIL:-}" ]; then echo "release: the live app did not report it"; exit 1; fi
-echo "Tagged $1 as live-2026-10-18.9: title"
+echo "Tagged \${@: -1} as live-2026-10-18.9: title"
 echo "Roll back with: scripts/greatstone-release.sh live-2026-10-18.8"
 echo "Database backup from before this release: /backups/before.sql.gz"
 `,
@@ -121,6 +135,8 @@ async function sandbox(t, { running = () => 0 } = {}) {
       CALLS: calls,
       FAIL_COMMITS: join(root, "fail-commits"),
       GATE_SECONDS_FILE: join(root, "gate-seconds"),
+      GH_GATE: join(root, "gh-gate"),
+      GH_GATE_SECONDS: join(root, "gh-gate-seconds"),
       ...extra,
     };
   };
@@ -168,7 +184,6 @@ test("requests run in order, main requests collapse into one release of the newe
   const tagged = box.merge("tagged");
   git(box.dev, "fetch", "--quiet", "origin");
   git(box.dev, "tag", "-a", "rc-2026-10-18.1", tagged, "-m", "Tagged one");
-  box.pass(tagged);
   const rc = enqueue(box, "rc-2026-10-18.1");
   const m1 = enqueue(box, "main", "First title");
   box.merge("later");
@@ -182,13 +197,14 @@ test("requests run in order, main requests collapse into one release of the newe
   const { code, out } = await box.worker().done;
   assert.equal(code, 0, out);
   const calls = box.callLines();
-  // The rc tag first: its gate is skipped (it passed), then preview and release.
-  assert.equal(calls.filter((c) => c.startsWith("gate ")).length, 1, calls.join("\n"));
+  // The gate is GitHub's: no test runs on the PC.
+  assert.equal(calls.filter((c) => c.startsWith("gate ")).length, 0, calls.join("\n"));
+  assert.deepEqual(calls.filter((c) => c.startsWith("github ")), [`github ${tagged}`, `github ${newest}`]);
   const releases = calls.filter((c) => c.startsWith("release "));
   assert.equal(releases.length, 2, calls.join("\n"));
+  // The rc tag first, then one release for the three main requests, of the
+  // newest main, named by the newest title.
   assert.match(releases[0], /^release rc-2026-10-18\.1 /);
-  // One release for the three main requests, of the newest main, named by the newest title.
-  assert.ok(calls.includes(`gate ${newest} yield=0`), calls.join("\n"));
   const cut = calls.find((c) => c.startsWith("candidate "));
   assert.match(cut, new RegExp(`^candidate rc-\\d{4}-\\d\\d-\\d\\d\\.\\d+ ${newest} Newest title$`));
   assert.ok(calls.indexOf("preview switch-tests") < calls.indexOf(releases[1]));
@@ -203,7 +219,7 @@ test("requests run in order, main requests collapse into one release of the newe
   assert.equal(box.state().main.status, "passed");
 });
 
-test("cancel: a queued request at once; a running one before its next step, and its gate stops", async (t) => {
+test("cancel: a queued request at once; a running one before its next step, and its GitHub wait stops", async (t) => {
   const box = await sandbox(t);
   box.merge("change");
   const a = enqueue(box, "main", "Will run");
@@ -213,19 +229,19 @@ test("cancel: a queued request at once; a running one before its next step, and 
   assert.equal(box.state().items.find((i) => i.id === b.id).status, "cancelled");
   assert.match(box.cli(["cancel", b.id]).stderr, /already cancelled/);
 
-  const w = box.worker({ GATE_SECONDS: "60" });
-  await waitFor("the gate to start", () => box.callLines().some((c) => c.startsWith("gate ")));
+  // GitHub's Fork CI is still running: the request waits on it.
+  writeFileSync(join(box.root, "gh-gate-seconds"), "60");
+  const w = box.worker();
+  await waitFor("the GitHub check to start", () => box.callLines().some((c) => c.startsWith("github ")));
   assert.equal(box.state().items.find((i) => i.id === a.id).step, "gate");
   assert.equal(box.cli(["cancel", a.id]).status, 0);
-  // Then, with nothing queued, it gates main in the background; let that be quick.
-  writeFileSync(join(box.root, "gate-seconds"), "0");
+  writeFileSync(join(box.root, "gh-gate-seconds"), "0");
   const { code, out } = await w.done;
   assert.equal(code, 0, out);
   const item = box.state().items.find((i) => i.id === a.id);
   assert.equal(item.status, "cancelled", JSON.stringify(item));
   const calls = box.callLines();
-  assert.ok(calls.some((c) => c.startsWith("gate-stopped ")), calls.join("\n"));
-  assert.ok(!calls.some((c) => c.startsWith("release ") || c.startsWith("candidate ")), calls.join("\n"));
+  assert.ok(!calls.some((c) => c.startsWith("release ") || c.startsWith("candidate ") || c.startsWith("gate ")), calls.join("\n"));
 });
 
 test("only one worker runs; a request left running by a stopped worker starts again, or fails after the release began", async (t) => {
@@ -251,48 +267,59 @@ test("only one worker runs; a request left running by a stopped worker starts ag
   assert.match(byId["rq-dead00"].reason, /the worker stopped during releasing; check live/);
 });
 
-test("with nothing queued it gates main in the background, the newest commit only, and records a failure once", async (t) => {
-  const box = await sandbox(t);
-  const older = box.merge("older");
-  const w = box.worker({ GATE_SECONDS: "60" });
-  await waitFor("the gate on the older main", () => box.callLines().includes(`gate ${older} yield=1`));
-  assert.equal(box.state().main.status, "testing");
-  // Main moves while it runs: that gate stops and the newest is tested, never a
-  // backlog. The newest one fails at once.
-  writeFileSync(join(box.root, "gate-seconds"), "0");
-  const newest = box.merge("newest");
-  writeFileSync(join(box.root, "fail-commits"), `${newest}\n`);
-  const { code, out } = await w.done;
-  assert.ok(box.callLines().includes(`gate ${newest} yield=1`), box.callLines().join("\n"));
-  assert.ok(box.callLines().includes(`gate-stopped ${older}`));
-  assert.equal(code, 0, out);
-  const main = box.state().main;
-  assert.equal(main.commit, newest);
-  assert.equal(main.status, "failing", JSON.stringify(main));
-  assert.match(main.summary.join("\n"), /FAIL {2}src\/a\.test\.ts > adds up/);
-  assert.equal(existsSync(join(box.root, "test-gate", "passed", older)), false);
-
-  // The same failing commit is not tested again; a passed one is just recorded.
-  const before = box.callLines().length;
-  assert.equal((await box.worker().done).code, 0);
-  assert.equal(box.callLines().length, before);
-  const fixed = box.merge("fixed");
-  box.pass(fixed);
-  assert.equal((await box.worker().done).code, 0);
-  assert.deepEqual([box.state().main.commit, box.state().main.status], [fixed, "passed"]);
-});
-
-test("a request for main shares the background gate already running on that commit", async (t) => {
+test("with nothing queued it runs no tests and records what GitHub says about main", async (t) => {
   const box = await sandbox(t);
   const head = box.merge("change");
-  const w = box.worker({ GATE_SECONDS: "2" });
-  await waitFor("the background gate", () => box.callLines().includes(`gate ${head} yield=1`));
-  enqueue(box, "main", "Ship it");
-  const { code, out } = await w.done;
-  assert.equal(code, 0, out);
+  writeFileSync(join(box.root, "gh-gate"), `${head} 1\n`);
+  assert.equal((await box.worker().done).code, 0);
+  assert.deepEqual(box.callLines(), [], "no PC gate, no release");
+  const main = box.state().main;
+  assert.deepEqual([main.commit, main.status, main.source], [head, "failing", "github"]);
+  assert.deepEqual(main.summary, ["Tests (server 3/6) (failure)"]);
+  writeFileSync(join(box.root, "gh-gate"), "");
+  assert.equal((await box.worker().done).code, 0);
+  assert.equal(box.state().main.status, "passed");
+});
+
+test("GitHub red refuses with the failing jobs; GitHub out of reach falls back to the PC gate; --pc-gate asks for it", async (t) => {
+  const box = await sandbox(t);
+  const red = box.merge("red");
+  writeFileSync(join(box.root, "gh-gate"), `${red} 1\n`);
+  const a = enqueue(box, "main", "Red");
+  assert.equal((await box.worker().done).code, 0);
+  let item = box.state().items.find((i) => i.id === a.id);
+  assert.equal(item.status, "failed");
+  assert.match(item.reason, /^GitHub: Fork CI failed on [0-9a-f]{9}: Tests \(server 3\/6\) \(failure\)$/);
+  assert.ok(!box.callLines().some((c) => c.startsWith("gate ") || c.startsWith("release ")));
+
+  const offline = box.merge("offline");
+  writeFileSync(join(box.root, "gh-gate"), `${offline} 3\n`);
+  const b = enqueue(box, "main", "Offline");
+  assert.equal((await box.worker().done).code, 0);
+  item = box.state().items.find((i) => i.id === b.id);
+  assert.equal(item.status, "released", JSON.stringify(item));
   const calls = box.callLines();
-  assert.equal(calls.filter((c) => c.startsWith("gate ")).length, 1, calls.join("\n"));
-  assert.ok(calls.some((c) => c.startsWith("release ")), calls.join("\n"));
+  assert.ok(calls.includes(`gate ${offline} yield=0`), calls.join("\n"));
+  assert.match(calls.find((c) => c.startsWith("release ")), /^release --pc-gate /, "release.sh decides by the PC marker too");
+
+  const pcAsked = box.merge("pc asked");
+  writeFileSync(join(box.root, "gh-gate"), "");
+  const cli = box.cli(["enqueue", "--pc-gate", "--json", "--", "main", "On the PC"]);
+  assert.equal(JSON.parse(cli.stdout).item.pcGate, true);
+  assert.equal((await box.worker().done).code, 0);
+  assert.ok(box.callLines().includes(`gate ${pcAsked} yield=0`));
+  assert.ok(!box.callLines().includes(`github ${pcAsked}`));
+});
+
+test("a GitHub check still running at the cap fails the request without releasing", async (t) => {
+  const box = await sandbox(t);
+  const head = box.merge("slow");
+  writeFileSync(join(box.root, "gh-gate"), `${head} 2\n`);
+  enqueue(box, "main", "Slow");
+  assert.equal((await box.worker({ GSAM_GITHUB_GATE_WAIT_SECONDS: "60" }).done).code, 0);
+  const item = box.state().items[0];
+  assert.equal(item.status, "failed");
+  assert.match(item.reason, /still running after 1 min of waiting$/);
 });
 
 test("drain: new runs are held while running runs finish, the release runs drained, and runs resume even when it fails", async (t) => {

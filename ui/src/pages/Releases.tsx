@@ -301,7 +301,7 @@ export function ReleaseProgressPanel({
 // ── Release queue ───────────────────────────────────────────────────────────
 
 const QUEUE_STEPS: { step: ReleaseQueueStep; label: string }[] = [
-  { step: "gate", label: "Test gate" },
+  { step: "gate", label: "Tests on GitHub" },
   { step: "candidate", label: "Candidate" },
   { step: "preview", label: "Preview" },
   { step: "draining", label: "Pausing new runs" },
@@ -372,8 +372,8 @@ export function ReleaseQueueCard({
       <CardHeader className="px-5 py-4">
         <CardTitle className="text-base">Release queue</CardTitle>
         <CardDescription>
-          Each request runs the full test suite (skipped when that commit already passed), a preview on a copy of the
-          live data, then the release. New agent runs pause only while it releases.
+          Each request needs Fork CI's full test matrix green on GitHub for its commit (it waits while CI runs), then
+          a preview on a copy of the live data, then the release. New agent runs pause only while it releases.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-5 pb-5">
@@ -381,14 +381,14 @@ export function ReleaseQueueCard({
           {main ? (
             <>
               <ReleaseChip tone={MAIN_TONE[main.status]}>
-                {`main at ${shortId(main.commit)}: ${main.status === "untested" ? "not tested yet" : main.status}`}
+                {`main at ${shortId(main.commit)} on GitHub: ${main.status === "untested" ? "not tested yet" : main.status}`}
               </ReleaseChip>
               {main.finishedAt && main.status !== "testing" ? (
                 <span className="text-xs text-muted-foreground">{formatDateTime(main.finishedAt)}</span>
               ) : null}
             </>
           ) : (
-            <span className="text-muted-foreground">The queue has not tested main yet.</span>
+            <span className="text-muted-foreground">The queue has not checked main on GitHub yet.</span>
           )}
         </div>
         {main?.status === "failing" && main.summary.length > 0 ? (
@@ -747,7 +747,7 @@ export function ReleasesView({
     void queryClient.invalidateQueries({ queryKey: queryKeys.releases(companyId) });
   };
 
-  // "Release now" asks the release queue: test gate, preview, then release.
+  // "Release now" asks the release queue: tests on GitHub, preview, then release.
   const queue = useQuery({
     queryKey: queryKeys.releaseQueue(companyId),
     queryFn: () => releasesApi.queue(companyId),
@@ -801,8 +801,8 @@ export function ReleasesView({
         ...next.changelog.fixes.map((item) => `• Fix: ${item}`),
       ].join("\n"),
       queue.data?.main && queue.data.main.commit === next.commit && queue.data.main.status === "passed"
-        ? "The full test suite already passed on this commit, so it goes straight to the preview on a copy of the live data, then live."
-        : "It joins the release queue on the PC: the full test suite (about 25 minutes), a preview on a copy of the live data, then live.",
+        ? "Fork CI's full test matrix already passed on GitHub for this commit, so it goes straight to the preview on a copy of the live data, then live."
+        : "It joins the release queue: it waits for Fork CI's full test matrix to pass on GitHub for this commit, then a preview on a copy of the live data, then live.",
       "When it reaches the release, new agent runs pause and running runs finish first (at most 10 minutes; nothing is stopped). Runs resume on their own afterwards, also if the release fails.",
     ].filter(Boolean);
     const ok = await confirm({

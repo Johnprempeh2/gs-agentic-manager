@@ -376,7 +376,7 @@ describe("Release now confirm", () => {
     expect(dialog?.textContent).toContain("Live moves from Run limits (live-2026-09-21.1) to Release from the app.");
     expect(dialog?.textContent).toContain("Releases page with one-click release and rollback");
     expect(dialog?.textContent).toContain("Fix: Update live card works after the preview is stopped");
-    expect(dialog?.textContent).toContain("It joins the release queue on the PC: the full test suite");
+    expect(dialog?.textContent).toContain("It joins the release queue: it waits for Fork CI's full test matrix to pass on GitHub");
     expect(dialog?.textContent).toContain("a preview on a copy of the live data, then live.");
     expect(dialog?.textContent).toContain("new agent runs pause and running runs finish first (at most 10 minutes; nothing is stopped)");
     expect(dialog?.textContent).toContain("Runs resume on their own afterwards, also if the release fails.");
@@ -816,10 +816,10 @@ describe("Release queue", () => {
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
 
     const card = document.querySelector('[data-testid="release-queue"]')!;
-    expect(card.querySelector('[data-testid="release-queue-main"]')?.textContent).toContain("main at abcdef1: failing");
+    expect(card.querySelector('[data-testid="release-queue-main"]')?.textContent).toContain("main at abcdef1 on GitHub: failing");
     expect(card.querySelector('[data-testid="release-queue-main-failures"]')?.textContent).toContain("FAIL  src/a.test.ts > adds up");
     const now = card.querySelector('[data-testid="release-queue-running"]')!;
-    expect(now.querySelector('[aria-current="step"]')?.textContent).toBe("Test gate");
+    expect(now.querySelector('[aria-current="step"]')?.textContent).toBe("Tests on GitHub");
     expect(now.textContent).toContain("running the full test suite on abcdef123");
     expect(now.querySelector('[data-testid="release-queue-log"]')?.textContent).toContain("server-2 pass in 310s");
     expect(card.querySelector('[data-testid="release-queue-paused"]')).toBeNull();

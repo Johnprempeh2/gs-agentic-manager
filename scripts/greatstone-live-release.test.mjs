@@ -478,7 +478,7 @@ function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
   git(root, "clone", "--quiet", origin, dev);
   configure(dev);
   mkdirSync(join(dev, "scripts"));
-  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh", "greatstone-test-gate.sh"]) {
+  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh", "greatstone-test-gate.sh", "greatstone-github-gate.mjs"]) {
     copyFileSync(join(scriptsDir, f), join(dev, "scripts", f));
   }
   const addFiles = (files) => {
@@ -531,9 +531,12 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
     GSAM_LIVE_BOARD_KEY_FILE: join(root, "no-key"),
     GSAM_RELEASE_FROM_APP: "1",
     GSAM_RELEASE_POLL_SECONDS: "0.05",
+    // No gh: GitHub "cannot be asked", so the PC pass marker decides (the
+    // GitHub gate has its own tests below and in greatstone-github-gate.test.mjs).
+    GSAM_GH_BIN: join(root, "no-gh"),
     PATH: `${bin}:${process.env.PATH}`,
   });
-  return { root, origin, dev, live, env, passGate };
+  return { root, origin, dev, live, env, passGate, bin };
 }
 
 test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
@@ -629,6 +632,55 @@ test("a release with a test gate pass says so and needs no override", (t) => {
   assert.match(run.stdout, /^Test gate: the full test suite passed on rc-2026-09-29\.1 \([0-9a-f]{40}\) at 2026-09-29T07:00:00Z$/m, run.stderr);
   assert.match(run.stdout, /^Tagged rc-2026-09-29\.1 as /m);
   assert.equal(existsSync(join(root, "test-gate", "overrides.log")), false);
+});
+
+// The release gate is GitHub's Fork CI matrix on the exact commit (18 Oct 2026).
+// A stub gh answers the runs and jobs API from a table.
+function fakeGh(bin, table) {
+  writeFileSync(join(bin, "gh-table.json"), JSON.stringify(table));
+  writeFileSync(join(bin, "gh"), `#!/usr/bin/env node
+const p = process.argv[3]; const t = JSON.parse(require("node:fs").readFileSync(${JSON.stringify(join(bin, "gh-table.json"))}, "utf8"));
+const k = Object.keys(t).find((k) => p.endsWith(k));
+if (!k) { console.error("gh: Not Found (HTTP 404)"); process.exit(1); }
+console.log(JSON.stringify(t[k]));
+`, { mode: 0o755 });
+  return join(bin, "gh");
+}
+const MATRIX = ["server 1/6", "server 2/6", "server 3/6", "server 4/6", "server 5/6", "server 6/6", "server chat", "ui and cli", "packages", "serialized 1/4", "serialized 2/4", "serialized 3/4", "serialized 4/4"];
+const forkCiJobs = (conclusion = "success") => [...MATRIX.map((l) => ({ id: 1, name: `Tests (${l})`, status: "completed", conclusion })), { id: 2, name: "Fork CI", status: "completed", conclusion }];
+
+test("a release passes on a green GitHub matrix for its exact commit, with no PC gate run; a red one is refused by name", (t) => {
+  const { root, dev, live, env, bin } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  rmSync(join(root, "test-gate"), { recursive: true, force: true }); // no PC pass marker
+  const commit = git(dev, "rev-parse", "rc-2026-09-29.1^{commit}");
+  const runs = { [`runs?head_sha=${commit}&per_page=50`]: { workflow_runs: [{ id: 5, event: "push", path: ".github/workflows/fork-ci.yml", created_at: "2026-09-29T07:00:00Z", html_url: "https://ci/5" }] } };
+  const release = (...args) => spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), ...args], { encoding: "utf8", env: { ...env("http://127.0.0.1:9"), GSAM_GH_BIN: gh } });
+
+  let gh = fakeGh(bin, { ...runs, "runs/5/jobs?filter=latest&per_page=100": { jobs: forkCiJobs() } });
+  const passed = release("rc-2026-09-29.1");
+  assert.match(passed.stdout, /^Test gate: GitHub: the full test matrix passed on [0-9a-f]{9} \(push run https:\/\/ci\/5\)$/m, passed.stderr);
+  assert.match(passed.stdout, /^Tagged rc-2026-09-29\.1 as /m);
+  // The failed install left files in the sandbox live checkout.
+  git(live, "clean", "--quiet", "-fdx");
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
+
+  gh = fakeGh(bin, { ...runs, "runs/5/jobs?filter=latest&per_page=100": { jobs: [...forkCiJobs().slice(1), { id: 3, name: "Tests (server 1/6)", status: "completed", conclusion: "failure" }] } });
+  const red = release("rc-2026-09-29.1");
+  assert.equal(red.status, 1);
+  assert.match(red.stderr, /^release: GitHub: Fork CI failed on [0-9a-f]{9} \(https:\/\/ci\/5\): Tests \(server 1\/6\) \(failure\)\. Fix it on main first\. .*--skip-test-gate .*Nothing was changed\.$/m);
+  assert.doesNotMatch(red.stdout, /Backed up|Tagged/);
+
+  // --pc-gate decides by the PC pass marker only: there is none here.
+  const pc = release("--pc-gate", "rc-2026-09-29.1");
+  assert.equal(pc.status, 1);
+  assert.match(pc.stderr, /^release: the full test suite has not passed on rc-2026-09-29\.1 /m);
+});
+
+test("with GitHub out of reach the release falls back to the PC test gate and says so", (t) => {
+  const { dev, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  const run = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+  assert.match(run.stderr, /^GitHub could not be asked: .*; using the PC test gate instead\.$/m);
+  assert.match(run.stdout, /^Test gate: the full test suite passed on rc-2026-09-29\.1 /m);
 });
 
 // GRE-930: the live database has a random password. The backup gets it as

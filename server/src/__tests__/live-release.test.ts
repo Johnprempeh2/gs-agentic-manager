@@ -277,7 +277,7 @@ describe("\"Update live?\" card", () => {
     expect(holds).toEqual([]);
     expect(launches).toEqual([]);
     expect(svc.listJobs()).toEqual([]);
-    expect(comments.at(-1)).toMatch(/^Added rc-2026-09-27\.2 to the release queue as rq-abc123\. It runs the full test suite .* a preview on a copy of the live data, then the release\./);
+    expect(comments.at(-1)).toMatch(/^Added rc-2026-09-27\.2 to the release queue as rq-abc123\. It waits for Fork CI's full test matrix .* a preview on a copy of the live data, then the release\./);
   });
 
   it("says on the issue when the queue refuses it", async () => {

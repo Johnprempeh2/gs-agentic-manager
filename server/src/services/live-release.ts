@@ -866,7 +866,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     if (!queued.ok) return refuse(`the release queue refused it (${queued.error})`);
     await deps.postComment(
       input.issueId,
-      `Added ${rcTag} to the release queue as ${queued.item.id}. It runs the full test suite (skipped if that commit already passed), a preview on a copy of the live data, then the release. New agent runs pause only while it releases. Follow it on the Releases page.`,
+      `Added ${rcTag} to the release queue as ${queued.item.id}. It waits for Fork CI's full test matrix to pass on GitHub for that commit, then a preview on a copy of the live data, then the release. New agent runs pause only while it releases. Follow it on the Releases page.`,
     );
     return queued.item;
   };

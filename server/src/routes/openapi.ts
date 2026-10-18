@@ -3450,7 +3450,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/releases/queue",
   tags: ["releases"],
-  summary: "The release queue: the running request with its step and log tail, queued requests, recent results and the test gate on main (board or the release manager agent)",
+  summary: "The release queue: the running request with its step and log tail, queued requests, recent results and Fork CI on main as GitHub reports it (board or the release manager agent)",
   request: { params: releaseCompanyParams },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
@@ -3459,7 +3459,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/releases/queue",
   tags: ["releases"],
-  summary: "Ask for a release: the PC's worker runs the test gate (skipped if the commit passed), the preview and the release in order (board owner or admin, or the release manager agent)",
+  summary: "Ask for a release: the PC's worker waits for Fork CI's full test matrix on GitHub for the commit, then runs the preview and the release in order (board owner or admin, or the release manager agent)",
   request: {
     params: releaseCompanyParams,
     body: jsonBody(z.object({ ref: z.string().optional(), title: z.string().optional() })),

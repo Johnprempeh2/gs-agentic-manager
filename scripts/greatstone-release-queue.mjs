@@ -4,8 +4,11 @@
 // the app, Claude sessions over SSH and agents (Keystone, through the same API).
 // One worker works through it in order, and keeps every safety step:
 //
-//   gate       the full test suite (scripts/greatstone-test-gate.sh) on the exact
-//              commit, skipped when that commit already has a pass marker
+//   gate       Fork CI's full test matrix green on GitHub for the exact commit,
+//              or for the pull request run that tested the same files
+//              (scripts/greatstone-github-gate.mjs); it waits while CI runs.
+//              The PC test gate (scripts/greatstone-test-gate.sh) runs instead
+//              for a request made with --pc-gate, or when GitHub cannot be asked.
 //   candidate  an rc-* tag with a title and changelog (scripts/greatstone-candidate.mjs)
 //   preview    the candidate on a copy of the live data, then its switch tests
 //   draining   new agent runs are held (the task drain); running runs finish,
@@ -16,11 +19,10 @@
 //              The drain is lifted afterwards, also when the release fails.
 //
 // Requests for main that wait next to each other become one release of the
-// newest main. With nothing queued, the worker runs the test gate on each new
-// origin/main commit (the newest only, at low priority), so a release of a
-// commit that already passed goes straight to the preview.
+// newest main. With nothing queued, the worker records what GitHub says about
+// origin/main for the Releases page; it runs no tests itself.
 //
-//   node scripts/greatstone-release-queue.mjs enqueue [main | <rc-tag> | <sha>] ["<title>"] [--by <who>] [--json]
+//   node scripts/greatstone-release-queue.mjs enqueue [main | <rc-tag> | <sha>] ["<title>"] [--pc-gate] [--by <who>] [--json]
 //   node scripts/greatstone-release-queue.mjs status [--json]
 //   node scripts/greatstone-release-queue.mjs cancel <id> [--by <who>] [--json]
 //   (options may also come first, then "--" and the arguments)
@@ -34,7 +36,7 @@
 // to enqueue or cancel, so there is one writer implementation.
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, realpathSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -63,6 +65,7 @@ export function config() {
     drainRetryMs: num("GSAM_RELEASE_DRAIN_RETRY_SECONDS", 600) * 1000,
     drainAttempts: num("GSAM_RELEASE_DRAIN_ATTEMPTS", 3),
     stepWaitMs: num("GSAM_RELEASE_QUEUE_STEP_WAIT_SECONDS", 3600) * 1000,
+    githubWaitMs: num("GSAM_GITHUB_GATE_WAIT_SECONDS", 1800) * 1000,
     nice: num("GSAM_RELEASE_QUEUE_NICE", 15),
   };
 }
@@ -135,7 +138,7 @@ export function refProblem(ref) {
   return `"${oneLine(ref)}" is not something the queue can release: give main, an rc-YYYY-MM-DD.N tag or a commit sha on main`;
 }
 
-export function enqueue(cfg, { ref = "main", title = null, by = null }) {
+export function enqueue(cfg, { ref = "main", title = null, by = null, pcGate = false }) {
   const problem = refProblem(ref) ?? (title ? titleProblem(title, ref) : null) ?? (title && title.trim().length > 120 ? "the title must be at most 120 characters" : null);
   if (problem) throw new Error(problem);
   return mutate(cfg, (s) => {
@@ -144,6 +147,7 @@ export function enqueue(cfg, { ref = "main", title = null, by = null }) {
       ref,
       title: title ? title.trim() : null,
       requestedBy: by ? oneLine(by) : null,
+      pcGate: pcGate === true,
       requestedAt: nowIso(),
       status: "queued",
       step: null,
@@ -286,56 +290,43 @@ function activeRuns(cfg) {
 // ── The worker ─────────────────────────────────────────────────────────────
 
 /**
- * The one test gate the worker runs at a time. A gate on another commit is
- * stopped first; a gate already on the same commit is shared (a request for
- * main picks up the background run on main).
+ * Runs a command while a request waits on it, and stops it (SIGTERM) when the
+ * request is cancelled. Resolves to { code, out }.
  */
-function createGate(cfg) {
-  let current = null;
-  const stop = async () => {
-    if (!current) return;
-    const { child, exit } = current;
-    current.stopped = true;
-    try { child.kill("SIGTERM"); } catch {}
-    await exit;
-  };
-  const start = async (commit, { log, background }) => {
-    if (current?.commit === commit) return current;
-    await stop();
-    const args = [join(cfg.scripts, "greatstone-test-gate.sh"), commit];
-    // Low priority for CPU and disk, so live stays responsive while 13 lanes run.
-    const lowPriority = process.platform === "linux" && existsSync("/usr/bin/ionice") ? ["ionice", "-c2", "-n7", "nice", "-n", String(cfg.nice)] : ["nice", "-n", String(cfg.nice)];
-    const [cmd, ...pre] = cfg.nice > 0 ? lowPriority : ["bash"];
-    const gate = { commit, stopped: false, child: null };
-    if (originMain(cfg) === commit) recordMain(cfg, { commit, status: "testing", startedAt: nowIso(), finishedAt: null, summary: [], log });
-    gate.exit = run(cfg, cmd, cfg.nice > 0 ? [...pre, "bash", ...args] : args, {
-      log,
-      extraEnv: background ? { GSAM_TEST_GATE_YIELD: "1" } : {},
-      onSpawn: (child) => { gate.child = child; },
-    }).then((result) => {
-      if (current === gate) current = null;
-      const locked = LOCKED.exec(result.out)?.[0] ?? null;
-      const stopped = gate.stopped || result.code === 143 || /stopped by SIG/.test(result.out);
-      const outcome = result.code === 0 ? "passed" : locked ? "locked" : stopped ? "stopped" : "failing";
-      if (outcome === "passed" || outcome === "failing") {
-        recordMain(cfg, { commit, status: outcome, finishedAt: nowIso(), summary: outcome === "failing" ? gateSummary(result.out) : [], log }, true);
-      } else {
-        recordMain(cfg, { commit, status: "untested", finishedAt: nowIso(), summary: [locked ?? "stopped"], log }, true);
-      }
-      return { ...result, outcome, locked };
-    });
-    current = gate;
-    return gate;
-  };
-  return { start, stop, current: () => current };
+async function runCancellable(cfg, cmd, args, { log, extraEnv, cancelAsked, onPoll }) {
+  let child = null;
+  const exit = run(cfg, cmd, args, { log, extraEnv, onSpawn: (c) => { child = c; } });
+  for (;;) {
+    const result = await Promise.race([exit, sleep(cfg.pollMs).then(() => null)]);
+    if (result) return result;
+    onPoll?.();
+    if (cancelAsked()) {
+      try { child?.kill("SIGTERM"); } catch {}
+      await exit;
+      return { code: null, out: "", cancelled: true };
+    }
+  }
 }
 
-/** Writes the main status, only while `commit` is still origin/main (newer main replaces older results). */
-function recordMain(cfg, main, onlyIfSame = false) {
+/** The PC test gate, at low priority for CPU and disk so live stays responsive. */
+function pcGateCommand(cfg, commit) {
+  const args = [join(cfg.scripts, "greatstone-test-gate.sh"), commit];
+  if (cfg.nice <= 0) return ["bash", args];
+  const pre = process.platform === "linux" && existsSync("/usr/bin/ionice") ? ["ionice", "-c2", "-n7", "nice", "-n", String(cfg.nice)] : ["nice", "-n", String(cfg.nice)];
+  return [pre[0], [...pre.slice(1), "bash", ...args]];
+}
+
+/** origin/main as GitHub's Fork CI sees it, for the Releases page. One look, no wait. */
+function recordMainFromGitHub(cfg) {
+  const commit = originMain(cfg);
+  if (!commit) return;
+  const r = spawnSync(process.execPath, [join(cfg.scripts, "greatstone-github-gate.mjs"), commit, "--json"], { encoding: "utf8", env });
+  let verdict = null;
+  try { verdict = JSON.parse(r.stdout.trim().split("\n").pop()); } catch {}
+  if (!verdict || verdict.state === "unreachable") return;
+  const status = { passed: "passed", failed: "failing", pending: verdict.names?.length ? "testing" : "untested" }[verdict.state] ?? "untested";
   mutate(cfg, (s) => {
-    if (onlyIfSame && s.main?.commit !== main.commit) return;
-    if (originMain(cfg) !== main.commit && s.main?.commit !== main.commit) return;
-    s.main = { ...(s.main?.commit === main.commit ? s.main : {}), ...main };
+    s.main = { commit, status, source: "github", startedAt: null, finishedAt: nowIso(), summary: status === "failing" ? verdict.names : [], detail: verdict.message };
   });
 }
 
@@ -366,7 +357,6 @@ class Stop extends Error {
 }
 
 function createWorker(cfg) {
-  const gate = createGate(cfg);
   const cancelAsked = (id) => load(cfg).items.find((i) => i.id === id)?.cancelRequested === true;
   const checkCancel = (item) => { if (cancelAsked(item.id)) throw new Stop("cancelled", load(cfg).items.find((i) => i.id === item.id)?.reason ?? "cancelled"); };
   const step = (item, name, detail) => { logLine(item.log, `${name}: ${detail}`); patchItem(cfg, item.id, { step: name, detail }); };
@@ -385,35 +375,56 @@ function createWorker(cfg) {
     }
   };
 
-  const runGate = async (item, commit) => {
+  /** The PC test gate on `commit` (the fallback); waits while another gate holds the PC gate's lock. */
+  const runPcGate = async (item, commit) => {
     if (passed(cfg, commit)) {
-      step(item, "gate", `the full test suite already passed on ${commit.slice(0, 9)}; skipped`);
+      step(item, "gate", `the PC test gate already passed on ${commit.slice(0, 9)}; skipped`);
       return;
     }
-    step(item, "gate", `running the full test suite on ${commit.slice(0, 9)}`);
+    step(item, "gate", `running the PC test gate on ${commit.slice(0, 9)}`);
     const deadline = Date.now() + cfg.stepWaitMs;
     for (;;) {
       if (passed(cfg, commit)) return; // another gate passed it meanwhile
-      const g = await gate.start(commit, { log: item.log, background: false });
-      let result = null;
-      while (!result) {
-        result = await Promise.race([g.exit, sleep(cfg.pollMs).then(() => null)]);
-        heartbeat(cfg);
-        if (!result && cancelAsked(item.id)) {
-          await gate.stop();
-          checkCancel(item);
-        }
-      }
-      if (result.outcome === "passed") return;
-      // Another gate holds the lock, or stopped the shared background gate: wait for it.
-      if ((result.outcome === "locked" || result.outcome === "stopped") && Date.now() < deadline) {
-        patchItem(cfg, item.id, { detail: `waiting: ${result.locked ?? "another test gate runs"}` });
+      const [cmd, args] = pcGateCommand(cfg, commit);
+      const result = await runCancellable(cfg, cmd, args, { log: item.log, cancelAsked: () => cancelAsked(item.id), onPoll: () => heartbeat(cfg) });
+      if (result.cancelled) checkCancel(item);
+      if (result.code === 0) return;
+      const locked = LOCKED.exec(result.out)?.[0];
+      if (locked && Date.now() < deadline) {
+        patchItem(cfg, item.id, { detail: `waiting: ${locked}` });
         await sleep(cfg.pollMs);
         checkCancel(item);
         continue;
       }
-      throw new Stop("failed", `the test gate failed on ${commit.slice(0, 9)}: ${gateSummary(result.out).join(" | ").slice(0, 600)}`);
+      throw new Stop("failed", `the PC test gate failed on ${commit.slice(0, 9)}: ${gateSummary(result.out).join(" | ").slice(0, 600)}`);
     }
+  };
+
+  /**
+   * The release gate: Fork CI's full test matrix green on GitHub for `commit`
+   * (or for the pull request run that tested the same files), waiting while it
+   * runs (at most githubWaitMs). The PC gate runs instead with --pc-gate, or
+   * when GitHub cannot be asked. Returns "github" or "pc".
+   */
+  const runGate = async (item, commit) => {
+    if (!item.pcGate) {
+      step(item, "gate", `GitHub: checking Fork CI's full test matrix on ${commit.slice(0, 9)}`);
+      const result = await runCancellable(cfg, process.execPath, [join(cfg.scripts, "greatstone-github-gate.mjs"), commit, "--wait", String(Math.round(cfg.githubWaitMs / 1000))], {
+        log: item.log,
+        cancelAsked: () => cancelAsked(item.id),
+        onPoll: () => heartbeat(cfg),
+      });
+      if (result.cancelled) checkCancel(item);
+      const message = lastLine(result.out);
+      if (result.code === 0) {
+        step(item, "gate", message);
+        return "github";
+      }
+      if (result.code !== 3) throw new Stop("failed", result.code === 2 ? `${message} after ${Math.round(cfg.githubWaitMs / 60000)} min of waiting` : message);
+      logLine(item.log, `${message}; running the PC test gate instead`);
+    }
+    await runPcGate(item, commit);
+    return "pc";
   };
 
   /**
@@ -436,16 +447,16 @@ function createWorker(cfg) {
     }
   };
 
-  const drainAndRelease = async (item, tag) => {
+  const drainAndRelease = async (item, tag, releaseArgs) => {
     const freeLock = await takeReleaseLock(item);
     try {
-      return await drainAndReleaseLocked(item, tag);
+      return await drainAndReleaseLocked(item, tag, releaseArgs);
     } finally {
       freeLock();
     }
   };
 
-  const drainAndReleaseLocked = async (item, tag) => {
+  const drainAndReleaseLocked = async (item, tag, releaseArgs) => {
     for (let attempt = 1; attempt <= cfg.drainAttempts; attempt += 1) {
       checkCancel(item);
       const held = await liveApi(cfg, "POST", "/api/instance/task-drain", { ttlMs: cfg.drainCapMs + 30 * 60_000 }).catch((e) => ({ ok: false, status: 0, text: e.message }));
@@ -469,7 +480,7 @@ function createWorker(cfg) {
         }
         if (n === 0) {
           step(item, "releasing", `Releasing ${tag}: new agent runs paused`);
-          return await run(cfg, "bash", [join(cfg.scripts, "greatstone-release.sh"), tag], { log: item.log, extraEnv: { GSAM_RELEASE_LOCK_INHERITED: "1" } });
+          return await run(cfg, "bash", [join(cfg.scripts, "greatstone-release.sh"), ...releaseArgs, tag], { log: item.log, extraEnv: { GSAM_RELEASE_LOCK_INHERITED: "1" } });
         }
         logLine(item.log, `${n ?? "some"} run(s) still running after ${Math.round(cfg.drainCapMs / 60000)} min; nothing was stopped`);
       } finally {
@@ -515,7 +526,7 @@ function createWorker(cfg) {
       patchItem(cfg, item.id, { commit, ...(title ? { title } : {}) });
       if (commit === liveHead(cfg)) throw new Stop("skipped", `live already runs ${commit.slice(0, 9)}; nothing to release`);
 
-      await runGate(item, commit);
+      const gateUsed = await runGate(item, commit);
       checkCancel(item);
 
       if (!tag) {
@@ -544,7 +555,7 @@ function createWorker(cfg) {
       if (switches.code !== 0) throw new Stop("failed", `the switch tests failed on the preview of ${tag}: ${lastLine(switches.out, "preview:")}`);
       checkCancel(item);
 
-      const result = await drainAndRelease(item, tag);
+      const result = await drainAndRelease(item, tag, gateUsed === "pc" ? ["--pc-gate"] : []);
       const rollback = /^Roll back with: (.+)$/m.exec(result.out)?.[1]?.trim() ?? null;
       const backupFile = /^Database backup from before this release: (.+)$/m.exec(result.out)?.[1]?.trim() ?? null;
       const liveTag = /^Tagged \S+ as (live-\S+?):/m.exec(result.out)?.[1] ?? null;
@@ -566,35 +577,12 @@ function createWorker(cfg) {
     }
   };
 
-  /** The background gate on origin/main. Returns when there is nothing more to test or a request arrives. */
-  const gateMain = async () => {
-    const commit = originMain(cfg);
-    const state = load(cfg);
-    if (!commit || passed(cfg, commit)) {
-      if (commit && !(state.main?.commit === commit && state.main.status === "passed")) recordMain(cfg, { commit, status: "passed", startedAt: null, finishedAt: nowIso(), summary: [], log: null });
-      return false;
-    }
-    if (state.main?.commit === commit && state.main.status === "failing") return false;
-    const g = await gate.start(commit, { log: join(cfg.logs, `main-${commit.slice(0, 12)}.log`), background: true });
-    for (;;) {
-      const result = await Promise.race([g.exit, sleep(cfg.pollMs).then(() => null)]);
-      heartbeat(cfg);
-      if (result) return result.outcome !== "locked" && result.outcome !== "stopped";
-      if (nextBatch(load(cfg).items)) return true; // a request: it may share this gate
-      git(cfg, "fetch", "--quiet", "origin", "main");
-      if (originMain(cfg) !== commit) {
-        await gate.stop();
-        return true;
-      }
-    }
-  };
-
   const work = async () => {
     const free = (() => {
       try { return takeLock(cfg.root, "release-queue-worker", "greatstone-release-queue.mjs work"); } catch { return null; }
     })();
     if (!free) return "busy";
-    const stopOnSignal = () => { gate.stop().finally(() => process.exit(143)); };
+    const stopOnSignal = () => process.exit(143);
     process.on("SIGTERM", stopOnSignal);
     process.on("SIGINT", stopOnSignal);
     try {
@@ -614,9 +602,9 @@ function createWorker(cfg) {
           await processItem(batch.head, batch.merged.map((i) => i.id));
           continue;
         }
-        if (!(await gateMain())) break;
+        recordMainFromGitHub(cfg);
+        break;
       }
-      await gate.stop();
       return "done";
     } finally {
       free();
@@ -662,12 +650,13 @@ async function main(argv) {
   const flag = (name) => { const i = args.indexOf(name); if (i < 0) return false; args.splice(i, 1); return true; };
   const opt = (name) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v ?? null; };
   const json = flag("--json");
+  const pcGate = flag("--pc-gate");
   const by = opt("--by") ?? `cli:${userInfo().username}`;
   const out = (value, text) => (json ? console.log(JSON.stringify(value)) : console.log(text));
   const [cmd, ...rest] = [...args, ...tail];
   switch (cmd) {
     case "enqueue": {
-      const item = enqueue(cfg, { ref: rest[0] || "main", title: rest[1] || null, by });
+      const item = enqueue(cfg, { ref: rest[0] || "main", title: rest[1] || null, by, pcGate });
       const ahead = view(load(cfg)).queued.length - 1 + (view(load(cfg)).running ? 1 : 0);
       return out({ item }, `Queued ${item.id}: release ${item.ref}${item.title ? ` "${item.title}"` : ""} (${ahead} ahead). The worker starts within a minute; follow it with: node scripts/greatstone-release-queue.mjs status`);
     }
@@ -694,7 +683,9 @@ async function main(argv) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// realpath: on macOS a temp path under /var is /private/var to import.meta.url.
+const invokedAs = (() => { try { return pathToFileURL(realpathSync(process.argv[1] ?? "")).href; } catch { return ""; } })();
+if (import.meta.url === invokedAs) {
   main(process.argv.slice(2)).then(
     () => process.exit(0),
     (error) => {

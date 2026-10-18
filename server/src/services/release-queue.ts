@@ -34,7 +34,7 @@ export interface ReleaseQueueItem {
   log?: string;
 }
 
-/** The test gate on origin/main, as the worker last saw it. */
+/** Fork CI on origin/main, as GitHub last told the worker. */
 export interface ReleaseQueueMain {
   commit: string;
   status: "testing" | "passed" | "failing" | "untested";
