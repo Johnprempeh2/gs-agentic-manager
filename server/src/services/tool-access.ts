@@ -170,6 +170,7 @@ import {
   type GitHubConnectorProfileId,
   type GoogleWorkspaceConnectorProfileId,
 } from "@greatstone/shared";
+import { requestConfirmationPayloadSchema } from "@greatstone/shared";
 import {
   checkMcpRemoteHeaderName,
   checkMcpRemoteHeaderValue,
@@ -14988,6 +14989,9 @@ export function toolAccessService(
           href: authorizationUrl.toString(),
         },
       };
+      // This card skips the create route, so hold it to the rule every read
+      // applies; a row the read schema rejects blocks the whole thread (GRE-1688).
+      requestConfirmationPayloadSchema.parse(payload);
       const [existingInteraction] = await db
         .select()
         .from(issueThreadInteractions)

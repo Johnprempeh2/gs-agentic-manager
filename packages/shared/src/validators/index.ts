@@ -486,6 +486,7 @@ export {
   askUserQuestionsResultSchema,
   requestConfirmationIssueDocumentTargetSchema,
   requestConfirmationCustomTargetSchema,
+  REQUEST_CONFIRMATION_CUSTOM_TARGET_KEY_MAX_LENGTH,
   requestConfirmationTargetSchema,
   requestConfirmationPayloadSchema,
   requestConfirmationResumeFailureSchema,

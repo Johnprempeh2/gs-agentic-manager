@@ -1552,10 +1552,22 @@ export const requestConfirmationIssueDocumentTargetSchema =
     revisionNumber: z.number().int().positive().nullable().optional(),
   });
 
+/**
+ * Server-built custom keys embed ids, e.g. `connection:<uid>:user:<userId>`,
+ * where a gallery connection uid alone can pass 120 characters. Stored rows
+ * are re-parsed on every read, so create and read share this one limit
+ * (GRE-1688: a 120 limit made a stored card unreadable and blocked comments).
+ */
+export const REQUEST_CONFIRMATION_CUSTOM_TARGET_KEY_MAX_LENGTH = 1000;
+
 export const requestConfirmationCustomTargetSchema =
   requestConfirmationTargetBaseSchema.extend({
     type: z.literal("custom"),
-    key: z.string().trim().min(1).max(120),
+    key: z
+      .string()
+      .trim()
+      .min(1)
+      .max(REQUEST_CONFIRMATION_CUSTOM_TARGET_KEY_MAX_LENGTH),
     revisionId: z.string().trim().min(1).max(255).nullable().optional(),
     revisionNumber: z.number().int().positive().nullable().optional(),
   });
