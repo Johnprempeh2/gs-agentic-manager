@@ -55,7 +55,7 @@ export function DictationButton({
       title={label}
       data-testid={testId}
       className={cn(
-        "relative grid h-7 w-7 shrink-0 place-items-center rounded-md transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
+        "relative grid h-7 w-7 shrink-0 place-items-center rounded-md outline-none transition-colors duration-150 focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
         dictation.listening
           ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
           : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -73,7 +73,10 @@ export function DictationButton({
   );
 }
 
-/** "Listening…" line with the words heard so far, shown under the draft. */
+/**
+ * "Listening…" with the words heard so far, shown under the draft. Long speech
+ * wraps to two lines and clips from the top, so the newest words stay visible.
+ */
 export function DictationInterim({
   dictation,
   className,
@@ -88,10 +91,14 @@ export function DictationInterim({
     <div
       aria-live="polite"
       data-testid={testId}
-      className={cn("mt-1 truncate text-xs text-muted-foreground", className)}
+      className={cn("mt-1 flex items-start gap-1.5 text-xs leading-4 text-muted-foreground", className)}
     >
-      <span className="font-medium text-destructive">Listening…</span>
-      {dictation.interim ? <span className="ml-1.5 italic">{dictation.interim}</span> : null}
+      <span className="shrink-0 font-medium text-destructive">Listening…</span>
+      {dictation.interim ? (
+        <span className="flex max-h-8 min-w-0 flex-col justify-end overflow-hidden">
+          <span className="break-words italic">{dictation.interim}</span>
+        </span>
+      ) : null}
     </div>
   );
 }

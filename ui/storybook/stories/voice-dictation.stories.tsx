@@ -10,7 +10,11 @@ import {
 // Storybook browsers may lack speech recognition; the fake keeps the mic visible.
 installFakeSpeechRecognition();
 
-function DictationExample({ listening }: { listening: boolean }) {
+const SHORT_PHRASE = "invoice for Acme before Friday";
+const LONG_PHRASE =
+  "invoice for Acme before Friday and then send the signed copy to finance with a note that the second payment moves to the end of next month";
+
+function DictationExample({ listening, phrase = SHORT_PHRASE }: { listening: boolean; phrase?: string }) {
   const [boardDraft, setBoardDraft] = useState("Can you check the");
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -20,11 +24,11 @@ function DictationExample({ listening }: { listening: boolean }) {
     mics?.forEach((mic) => mic.click());
     const timer = window.setTimeout(() => {
       for (const recognition of FakeSpeechRecognition.instances) {
-        recognition.hear("invoice for Acme before Friday", false);
+        recognition.hear(phrase, false);
       }
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [listening]);
+  }, [listening, phrase]);
 
   return (
     <div ref={rootRef} className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
@@ -65,3 +69,5 @@ type Story = StoryObj<typeof meta>;
 
 export const Idle: Story = {};
 export const Listening: Story = { args: { listening: true } };
+/** Long speech wraps to two lines and keeps the newest words in view. */
+export const ListeningLongSpeech: Story = { args: { listening: true, phrase: LONG_PHRASE } };
