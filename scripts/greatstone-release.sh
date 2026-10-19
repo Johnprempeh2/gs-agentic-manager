@@ -11,7 +11,11 @@
 # GitHub out of reach, uses the PC's scripts/greatstone-test-gate.sh pass
 # marker instead; --skip-test-gate "<reason>" in an emergency),
 # and, by hand, only while the preview runs it and answers
-# (--skip-preview "<reason>" in an emergency).
+# (--skip-preview "<reason>" in an emergency). The preview proves database
+# migrations on a copy of the live data, so a release that changes nothing in
+# the database (db_change_check in greatstone-common.sh) needs none; the skip
+# is logged in ~/GSAM/preview-overrides.log, and if live does not come up
+# healthy on such a release, it rolls back to the previous live tag on its own.
 #
 # Run from the dev checkout. The live app is a separate clone that only ever
 # sits on a live-* tag; this script is the one thing that moves it. Before it
@@ -36,6 +40,7 @@ die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 # $GS_ROOT/preview-overrides.log.
 # --pc-gate: decide by the PC test gate's pass marker, not GitHub.
 FULL_RESTART=0
+NO_DB_CHANGE=0
 SKIP_TEST_GATE=""
 SKIP_PREVIEW=""
 while [ "$#" -gt 0 ]; do
@@ -83,8 +88,11 @@ on_exit() {
   [ "$OWN_RELEASE_LOCK" = 0 ] || rm -rf "$RELEASE_LOCK_DIR"
 }
 trap on_exit EXIT
-if [ "${GSAM_RELEASE_LOCK_INHERITED:-}" = 1 ] && [ "$(sed -n 's/^pid=//p' "$RELEASE_LOCK_DIR/owner" 2>/dev/null)" = "$PPID" ]; then
-  say "Release lock: held by the release queue (pid $PPID)."
+# The automatic rollback below runs this script again inside the release, with
+# GSAM_RELEASE_LOCK_OWNER naming the lock's holder.
+RELEASE_LOCK_OWNER="${GSAM_RELEASE_LOCK_OWNER:-$PPID}"
+if [ "${GSAM_RELEASE_LOCK_INHERITED:-}" = 1 ] && [ "$(sed -n 's/^pid=//p' "$RELEASE_LOCK_DIR/owner" 2>/dev/null)" = "$RELEASE_LOCK_OWNER" ]; then
+  say "Release lock: held by the release queue (pid $RELEASE_LOCK_OWNER)."
 else
   LOCK_PROBLEM="$(gs_lock release "$TAG")" || die "${LOCK_PROBLEM/another release step runs/another release runs}"
   OWN_RELEASE_LOCK=1
@@ -133,17 +141,24 @@ if [ "$MODE" = release ]; then
   else
     die "$GATE"
   fi
+  # The preview proves the database migrations on a copy of the live data. A
+  # release that changes nothing in the database needs none (John, 19 Oct
+  # 2026: releases must be fast); when unsure, db_change_check says it changes.
+  if DB_NOTE="$(db_change_check "$LIVE_HEAD" "$TARGET")"; then NO_DB_CHANGE=1; fi
   # By hand, the candidate must be the one up in the preview right now: a
   # preview that never came up is a check that did not run (15 Oct 2026).
   if [ "$FROM_APP" = 1 ]; then
     : # the one-click release checks no preview (see GSAM_RELEASE_FROM_APP above)
+  elif [ "$NO_DB_CHANGE" = 1 ]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TAG" "$TARGET" "${USER:-unknown}" "preview skipped: $DB_NOTE" >>"$GS_ROOT/preview-overrides.log"
+    say "Preview skipped: $DB_NOTE ($PREVIOUS to $TAG). Logged in $GS_ROOT/preview-overrides.log. If live does not come up healthy, it rolls back to $PREVIOUS on its own."
   elif PREVIEW_NOTE="$(preview_check "$TARGET" "$TAG")"; then
     say "Preview: $PREVIEW_NOTE"
   elif [ -n "$SKIP_PREVIEW" ]; then
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TAG" "$TARGET" "${USER:-unknown}" "$(printf '%s' "$SKIP_PREVIEW" | tr '\t\n' '  ')" >>"$GS_ROOT/preview-overrides.log"
     say "Preview check SKIPPED for $TAG ($TARGET): $SKIP_PREVIEW. Logged in $GS_ROOT/preview-overrides.log. Why: $PREVIEW_NOTE"
   else
-    die "$PREVIEW_NOTE"
+    die "$PREVIEW_NOTE (no skip: $DB_NOTE)"
   fi
 fi
 
@@ -162,6 +177,30 @@ fi
 
 ROLLBACK="scripts/greatstone-release.sh $PREVIOUS"
 [ "$FULL_RESTART" = 0 ] || ROLLBACK="scripts/greatstone-release.sh --full-restart $PREVIOUS"
+# A release that changes no database is code only: when live does not come up
+# on it, going back to $PREVIOUS is safe, so it is done at once. The one-click
+# launcher (greatstone-live-release.sh) rolls back on its own already.
+AUTO_ROLLBACK=0
+if [ "$MODE" = release ] && [ "$NO_DB_CHANGE" = 1 ] && [ "$FROM_APP" != 1 ]; then
+  case "$PREVIOUS" in live-*) AUTO_ROLLBACK=1 ;; esac
+fi
+
+# fail_live <reason>: live moved to the new code and did not come up. With
+# AUTO_ROLLBACK, roll back to $PREVIOUS (this script again, inside this
+# release's lock; its output indented so the queue does not read it as ours),
+# then stop and say how it went. Otherwise stop with the rollback command.
+fail_live() {
+  [ "$AUTO_ROLLBACK" = 1 ] || die "$1 Roll back with: $ROLLBACK (database backup: $BACKUP_FILE)"
+  say "release: $1 This release changes no database, so live rolls back to $PREVIOUS on its own." >&2
+  local owner=$PPID flag=""
+  [ "$OWN_RELEASE_LOCK" = 0 ] || owner=$$
+  [ "$FULL_RESTART" = 0 ] || flag=--full-restart
+  if GSAM_RELEASE_EXISTING_BACKUP="$BACKUP_FILE" GSAM_RELEASE_LOCK_INHERITED=1 GSAM_RELEASE_LOCK_OWNER="$owner" \
+    bash "$GS_SCRIPT_DIR/greatstone-release.sh" $flag "$PREVIOUS" 2>&1 | sed 's/^/  rollback: /'; then
+    die "$1 Rolled back automatically to $PREVIOUS, which runs healthy; $TAG is not live. Database backup: $BACKUP_FILE"
+  fi
+  die "$1 The automatic rollback to $PREVIOUS failed too (see above); live may be down. Roll back by hand with: $ROLLBACK (database backup: $BACKUP_FILE)"
+}
 
 # Back up the live database before anything moves. The backup only reads.
 if LIVE_DB_URL="$(live_database_url)"; then
@@ -211,14 +250,15 @@ say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD)
 # Non-interactive so a pnpm store change cannot hang on a hidden prompt. Such a
 # change purges node_modules under the running server; see the runbook.
 (cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
-  --config.confirm-modules-purge=false --reporter=silent </dev/null)
+  --config.confirm-modules-purge=false --reporter=silent </dev/null) \
+  || fail_live "pnpm install failed on $LIVE_TAG; live code is on $LIVE_TAG."
 # Live serves the built UI (ui/dist, set up by ~/GSAM/start-live.sh) instead of
 # the Vite dev middleware, which a phone over Tailscale could not load. The
 # server reads ui/dist from disk on each request, so the rebuilt UI is live at
 # once, even when the release needs no server restart.
 if [ -f "$LIVE_DIR/ui/dist/index.html" ]; then
   (cd "$LIVE_DIR" && pnpm --filter @greatstone/ui build >/dev/null </dev/null) \
-    || die "the UI build failed on $LIVE_TAG; live code is on $LIVE_TAG but its UI is not rebuilt. Roll back with: $ROLLBACK"
+    || fail_live "the UI build failed on $LIVE_TAG; live code is on $LIVE_TAG but its UI is not rebuilt."
   say "Rebuilt the UI for $LIVE_TAG"
 fi
 
@@ -235,13 +275,13 @@ if [ "$FULL_RESTART" = 1 ]; then
     || die "live did not stop completely (see above). Live code is on $LIVE_TAG and nothing new was started; stop what is left by hand, then run $GS_ROOT/start-live.sh, or roll back with: $ROLLBACK"
   say "Live is stopped: no runner, server or database of $LIVE_DIR is left, and nothing answers on $LIVE_URL"
   [ -x "$GS_ROOT/start-live.sh" ] || die "there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG and live is stopped; start the live server by hand."
-  start_live_server || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
+  start_live_server || fail_live "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log."
   say "Started the live server"
 elif [ -z "$STARTED_BEFORE" ]; then
   # No live server answered before the switch (for example a rollback after a
   # failed version): start it instead of asking it to restart.
   [ -x "$GS_ROOT/start-live.sh" ] || die "the live server is not running and there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG; start the live server by hand."
-  start_live_server || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
+  start_live_server || fail_live "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log."
   say "Started the live server"
 else
   RESTART=""
@@ -285,4 +325,4 @@ for _ in $(seq 1 90); do
     exit 0
   fi
 done
-die "the live app did not report $LIVE_TAG within 3 minutes; check the server log. Roll back with: $ROLLBACK (database backup: $BACKUP_FILE)"
+fail_live "the live app did not report $LIVE_TAG within 3 minutes; check the server log."

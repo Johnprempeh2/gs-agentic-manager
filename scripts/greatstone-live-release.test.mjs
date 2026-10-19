@@ -457,6 +457,9 @@ test("a release by hand refuses release scripts older than origin/main and makes
 // finds no pnpm of its own, a stub fails).
 // An empty workspace: greatstone-common.sh puts its own node (and pnpm) first
 // on PATH, so with these files the real `pnpm install` passes offline.
+// A release that changes the database: it needs the preview (db_change_check).
+const DB_MIGRATION = { "packages/db/src/migrations/0001_sandbox.sql": "CREATE TABLE sandbox (id int);\n" };
+
 const EMPTY_WORKSPACE = {
   ".gitignore": "node_modules/\n",
   "package.json": '{ "name": "sandbox", "private": true }\n',
@@ -811,13 +814,13 @@ test("drop_unpushed_live_tag keeps a live tag origin already has", (t) => {
 // and the release by hand went out anyway: it only refused a preview of
 // another tag. Now it needs the preview of this tag, up and answering.
 test("a release by hand refuses before the backup and the tag when the preview of the tag is not up", async (t) => {
-  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: DB_MIGRATION });
   const fake = await fakeRestartNotRequired(box.live);
   t.after(() => fake.server.close());
   const before = git(box.live, "rev-parse", "HEAD");
   const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { ...box.env(fake.url), GSAM_RELEASE_FROM_APP: "" });
   assert.equal(release.status, 1, release.stdout);
-  assert.match(release.stderr, /^release: no preview of rc-2026-09-29\.1 is running, so it was not checked on a copy of the live data\. .*Nothing was changed\.$/m);
+  assert.match(release.stderr, /^release: no preview of rc-2026-09-29\.1 is running, so it was not checked on a copy of the live data\. .*Nothing was changed\. \(no skip: the database changes between [0-9a-f]{9} and [0-9a-f]{9}: packages\/db\/src\/migrations\/0001_sandbox\.sql\)$/m);
   assert.equal(existsSync(join(box.root, "backups")), false);
   assert.equal(git(box.dev, "tag", "--list", "live-*"), "live-2026-09-01.1");
   assert.equal(git(box.live, "rev-parse", "HEAD"), before);
@@ -831,7 +834,7 @@ test("--skip-preview needs a reason", () => {
 });
 
 test("a release by hand goes ahead when the preview runs the tag and answers, then stops it", async (t) => {
-  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: DB_MIGRATION });
   const fake = await fakeRestartNotRequired(box.live);
   t.after(() => fake.server.close());
   const commit = git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}");
@@ -918,7 +921,7 @@ function freePort() {
 }
 
 async function fullRestartSandbox(t) {
-  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: { ...EMPTY_WORKSPACE, "server/VERSION": "old" }, rc: { "server/VERSION": "new" } });
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: { ...EMPTY_WORKSPACE, "server/VERSION": "old" }, rc: { "server/VERSION": "new", ...DB_MIGRATION } });
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const serverDir = join(box.live, "server");
@@ -986,7 +989,7 @@ test("--full-restart still fails with the rollback hint when start-live.sh fails
   writeFileSync(join(box.root, "start-live.sh"), '#!/bin/sh\necho started >> "$GSAM_ROOT/start-live.log"\nexit 3\n', { mode: 0o755 });
   const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "--skip-preview", "sandbox has no preview", "rc-2026-09-29.1"], box.env);
   assert.notEqual(release.status, 0);
-  assert.match(release.stderr, /^release: the live server did not start on live-\d{4}-\d{2}-\d{2}\.1; see ~\/GSAM\/logs\/live\.log\. Roll back with: scripts\/greatstone-release\.sh --full-restart live-2026-09-01\.1$/m);
+  assert.match(release.stderr, /^release: the live server did not start on live-\d{4}-\d{2}-\d{2}\.1; see ~\/GSAM\/logs\/live\.log\. Roll back with: scripts\/greatstone-release\.sh --full-restart live-2026-09-01\.1 \(database backup: .*\)$/m);
   assert.doesNotMatch(release.stdout, /^Started the live server$/m);
   assert.equal(readFileSync(join(box.root, "start-live.log"), "utf8"), "started\n");
 });
@@ -1025,4 +1028,141 @@ test("--full-restart refuses to run from the app before anything moves", (t) => 
   assert.match(run.stderr, /--full-restart stops the live server, so it cannot run from the app/);
   assert.equal(git(box.dev, "tag", "--list", "live-*"), "live-2026-09-01.1");
   assert.equal(git(box.live, "describe", "--tags"), "live-2026-09-01.1");
+});
+
+// 19 Oct 2026 (John): releases must be fast. The preview restores a copy of
+// the live database to prove the migrations, so a release that changes nothing
+// in the database skips it; db_change_check decides, and says "changes" when
+// it cannot tell.
+function dbChangeRepo(t) {
+  const repo = mkdtempSync(join(tmpdir(), "gs-db-change-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  git(repo, "init", "--quiet");
+  configure(repo);
+  const commit = (files) => {
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(join(repo, path, ".."), { recursive: true });
+      writeFileSync(join(repo, path), body);
+    }
+    git(repo, "add", "-A");
+    git(repo, "commit", "--quiet", "--allow-empty", "-m", "c");
+    return git(repo, "rev-parse", "HEAD");
+  };
+  const check = (live, cand) =>
+    spawnSync("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; db_change_check "$@"`, "_", live, cand], {
+      encoding: "utf8",
+      env: { ...process.env, GSAM_ROOT: repo, GSAM_RELEASE_REPO: repo },
+    });
+  const base = commit({ "packages/db/src/schema/agents.ts": "a\n", "packages/db/src/migrations/meta/_journal.json": "{}\n", "ui/src/App.tsx": "a\n", "server/src/routes/x.ts": "a\n" });
+  return { repo, commit, check, base };
+}
+
+test("db_change_check: a UI, server route or db test change is no database change", (t) => {
+  const { commit, check, base } = dbChangeRepo(t);
+  const cand = commit({ "ui/src/App.tsx": "b\n", "server/src/routes/x.ts": "b\n", "doc/NOTES.md": "b\n", "packages/db/src/client.test.ts": "b\n" });
+  const run = check(base, cand);
+  assert.equal(run.status, 0, run.stdout);
+  assert.equal(run.stdout.trim(), `no database changes between ${base.slice(0, 9)} and ${cand.slice(0, 9)}`);
+});
+
+for (const [name, files] of [
+  ["a migration added", { "packages/db/src/migrations/0379_new.sql": "CREATE TABLE x (id int);\n" }],
+  ["the migration journal changed", { "packages/db/src/migrations/meta/_journal.json": "{ \"entries\": [] }\n" }],
+  ["the schema changed", { "packages/db/src/schema/agents.ts": "b\n" }],
+  ["a plugin migration added", { "packages/plugins/plugin-llm-wiki/migrations/0002_x.sql": "CREATE TABLE x (id int);\n" }],
+  ["a startup backfill changed", { "server/src/services/tool-oauth-legacy-backfill.ts": "b\n" }],
+]) {
+  test(`db_change_check: ${name} is a database change, named`, (t) => {
+    const { commit, check, base } = dbChangeRepo(t);
+    const cand = commit(files);
+    const run = check(base, cand);
+    assert.equal(run.status, 1);
+    assert.equal(run.stdout.trim(), `the database changes between ${base.slice(0, 9)} and ${cand.slice(0, 9)}: ${Object.keys(files)[0]}`);
+  });
+}
+
+test("db_change_check: a removed migration is a database change", (t) => {
+  const { repo, check, base } = dbChangeRepo(t);
+  git(repo, "rm", "--quiet", "packages/db/src/migrations/meta/_journal.json");
+  git(repo, "commit", "--quiet", "-m", "rm");
+  assert.equal(check(base, git(repo, "rev-parse", "HEAD")).status, 1);
+});
+
+test("db_change_check: an unknown or missing live commit counts as a database change", (t) => {
+  const { commit, check } = dbChangeRepo(t);
+  const cand = commit({ "ui/src/App.tsx": "b\n" });
+  const unknown = check("0123456789abcdef0123456789abcdef01234567", cand);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stdout, /^cannot tell whether the database changes between 012345678 and [0-9a-f]{9}: /);
+  const missing = check("", cand);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /^cannot tell whether the database changes: the live commit \(unknown\)/);
+});
+
+test("a release by hand with no database change skips the preview, logs it and goes live", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+  const live = git(box.live, "rev-parse", "HEAD");
+  const commit = git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}");
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { ...box.env(fake.url), GSAM_RELEASE_FROM_APP: "" });
+  assert.equal(release.status, 0, release.stdout + release.stderr);
+  const note = `no database changes between ${live.slice(0, 9)} and ${commit.slice(0, 9)}`;
+  assert.match(release.stdout, new RegExp(`^Preview skipped: ${note} \\(live-2026-09-01\\.1 to rc-2026-09-29\\.1\\)\\. Logged in .*preview-overrides\\.log\\.`, "m"));
+  assert.match(release.stdout, new RegExp(`^Live app at .* is running ${esc(TODAY_TAG)} `, "m"));
+  const [line, ...more] = readFileSync(join(box.root, "preview-overrides.log"), "utf8").trim().split("\n");
+  assert.equal(more.length, 0);
+  const cols = line.split("\t");
+  assert.deepEqual([cols[1], cols[2], cols[4]], ["rc-2026-09-29.1", commit, `preview skipped: ${note}`]);
+});
+
+// A live server that never comes up on the new code: /api/health keeps
+// answering the old commit; on the old commit it is healthy again.
+function fakeStuckOnOld(live, oldCommit) {
+  const seen = { restarts: 0 };
+  const server = http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/api/health/dev-server/restart") {
+      seen.restarts += 1;
+      res.writeHead(409, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "restart_not_required" }));
+      return;
+    }
+    const body = { "/api/health": { status: "ok", commit: oldCommit, serverInfo: { processStartedAt: "2026-09-29T08:00:00.000Z" } }, "/api/companies": [] }[req.url];
+    res.writeHead(body ? 200 : 404, { "content-type": "application/json" });
+    res.end(JSON.stringify(body ?? {}));
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })));
+}
+
+test("a release with no database change that does not come up healthy rolls back to the previous live tag on its own", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const old = git(box.live, "rev-parse", "HEAD");
+  const fake = await fakeStuckOnOld(box.live, old);
+  t.after(() => fake.server.close());
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { ...box.env(fake.url), GSAM_RELEASE_FROM_APP: "" });
+  assert.equal(release.status, 1, release.stdout);
+  assert.match(release.stdout, /^Preview skipped: no database changes /m);
+  assert.match(release.stderr, new RegExp(`^release: the live app did not report ${esc(TODAY_TAG)} within 3 minutes; check the server log\\. This release changes no database, so live rolls back to live-2026-09-01\\.1 on its own\\.$`, "m"));
+  assert.match(release.stderr, new RegExp(`^release: the live app did not report ${esc(TODAY_TAG)} within 3 minutes; check the server log\\. Rolled back automatically to live-2026-09-01\\.1, which runs healthy; rc-2026-09-29\\.1 is not live\\. Database backup: .*before-rc-2026-09-29\\.1\\.sql\\.gz$`, "m"));
+  // The rollback ran inside this release's lock, and its lines are indented so
+  // the queue reads the release's own "Roll back with:" (none here) and not the rollback's.
+  assert.match(release.stdout, /^ {2}rollback: Release lock: held by the release queue \(pid \d+\)\.$/m);
+  assert.match(release.stdout, /^ {2}rollback: Live app at .* is running live-2026-09-01\.1 /m);
+  assert.doesNotMatch(release.stdout, /^Roll back with:/m);
+  assert.equal(git(box.live, "rev-parse", "HEAD"), old);
+  // The version never ran healthy: its live tag is gone and nothing was pushed.
+  assert.equal(git(box.dev, "tag", "--list", TODAY_TAG), "");
+  assert.equal(git(box.origin, "tag", "--list", "rc-*"), "");
+  assert.equal(existsSync(join(box.root, "locks", "release.lock")), false);
+});
+
+test("a release that changes the database and does not come up healthy keeps live there and names the rollback", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: DB_MIGRATION });
+  const fake = await fakeStuckOnOld(box.live, git(box.live, "rev-parse", "HEAD"));
+  t.after(() => fake.server.close());
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--skip-preview", "sandbox has no preview", "rc-2026-09-29.1"], { ...box.env(fake.url), GSAM_RELEASE_FROM_APP: "" });
+  assert.equal(release.status, 1, release.stdout);
+  assert.match(release.stderr, new RegExp(`^release: the live app did not report ${esc(TODAY_TAG)} within 3 minutes; check the server log\\. Roll back with: scripts/greatstone-release\\.sh live-2026-09-01\\.1 \\(database backup: .*\\)$`, "m"));
+  assert.doesNotMatch(release.stdout + release.stderr, /rolls back to .* on its own|rollback:/);
+  assert.equal(git(box.live, "rev-parse", "HEAD"), git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}"));
 });

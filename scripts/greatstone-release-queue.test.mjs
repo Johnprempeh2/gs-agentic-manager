@@ -93,8 +93,14 @@ async function sandbox(t, { running = () => 0 } = {}) {
   const other = join(root, "other");
   git(root, "clone", "--quiet", origin, other);
   for (const [k, v] of [["user.name", "Test"], ["user.email", "test@example.com"]]) git(other, "config", k, v);
-  const merge = (msg) => {
+  // By default a merge changes a migration, so the release needs the preview.
+  const merge = (msg, files = { "packages/db/src/migrations/0001_sandbox.sql": `-- ${msg}\n` }) => {
     git(other, "pull", "--quiet", "--ff-only", "origin", "main");
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(join(other, path, ".."), { recursive: true });
+      writeFileSync(join(other, path), body);
+      git(other, "add", path);
+    }
     git(other, "commit", "--quiet", "--allow-empty", "-m", msg);
     git(other, "push", "--quiet", "origin", "HEAD:main");
     return git(other, "rev-parse", "HEAD");
@@ -397,4 +403,30 @@ test("a release by hand holding the release lock: the worker waits, without paus
   assert.equal(code, 0, out);
   assert.equal(box.state().items[0].status, "released");
   assert.deepEqual(box.fake.events, ["drain", "lift"]);
+});
+
+// 19 Oct 2026 (John): releases must be fast. A release that changes nothing in
+// the database goes gate, candidate, drain, release: no preview.
+test("a release with no database change skips the preview step and says so", async (t) => {
+  const box = await sandbox(t);
+  const head = box.merge("ui only", { "ui/src/App.tsx": "new\n" });
+  const a = enqueue(box, "main", "UI only");
+  const { code, out } = await box.worker().done;
+  assert.equal(code, 0, out);
+  const calls = box.callLines();
+  assert.deepEqual(calls.map((c) => c.split(" ")[0]), ["github", "candidate", "release"], calls.join("\n"));
+  const item = box.state().items.find((i) => i.id === a.id);
+  assert.equal(item.status, "released");
+  const log = readFileSync(item.log, "utf8");
+  assert.match(log, new RegExp(`preview: preview skipped: no database changes between ${box.first.slice(0, 9)} and ${head.slice(0, 9)}`));
+});
+
+test("a release with a database change still runs the preview and its switch tests", async (t) => {
+  const box = await sandbox(t);
+  box.merge("migration");
+  enqueue(box, "main", "Migration");
+  assert.equal((await box.worker().done).code, 0);
+  const calls = box.callLines();
+  assert.deepEqual(calls.map((c) => c.split(" ").slice(0, 2).join(" ")).filter((c) => c.startsWith("preview")), ["preview stop", "preview start", "preview switch-tests"]);
+  assert.match(readFileSync(box.state().items[0].log, "utf8"), /preview: starting rc-\S+ on a copy of the live data \(the database changes between [0-9a-f]{9} and [0-9a-f]{9}: packages\/db\/src\/migrations\/0001_sandbox\.sql\)/);
 });
