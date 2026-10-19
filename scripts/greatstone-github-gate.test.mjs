@@ -94,8 +94,10 @@ test("the CLI: exit 0, 1, 2, and 3 when GitHub cannot be asked", (t) => {
   const gh = join(dir, "gh");
   // Answers like gh: JSON for a known path, "HTTP 404" for others, no network when OFFLINE is set.
   writeFileSync(gh, `#!/usr/bin/env node
-const p = process.argv[3];
+const p = process.argv[process.argv.length - 1];
 if (process.env.OFFLINE) { console.error("error connecting to api.github.com"); process.exit(1); }
+// Like gh 2.102+: output with escape sequences needs --allow-escape-sequences.
+if (process.env.ESCAPES && !process.argv.includes("--allow-escape-sequences")) { console.error("the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway"); process.exit(1); }
 const t = JSON.parse(require("node:fs").readFileSync(process.env.TABLE, "utf8"));
 const k = Object.keys(t).find((k) => p.endsWith(k));
 if (!k) { console.error("gh: Not Found (HTTP 404)"); process.exit(1); }
@@ -105,6 +107,7 @@ console.log(typeof t[k] === "string" ? t[k] : JSON.stringify(t[k]));
   const cli = (extra = {}, ...args) => spawnSync(process.execPath, [join(scriptsDir, "greatstone-github-gate.mjs"), SHA, ...args], { encoding: "utf8", env: { ...process.env, GSAM_GH_BIN: gh, TABLE: tableFile, ...extra } });
   writeFileSync(tableFile, JSON.stringify({ [`runs?head_sha=${SHA}&per_page=50`]: { workflow_runs: [run(1, "push")] }, "runs/1/jobs?filter=latest&per_page=100": { jobs: greenJobs() } }));
   assert.equal(cli().status, 0);
+  assert.equal(cli({ ESCAPES: "1" }).status, 0, "retries with --allow-escape-sequences when gh asks for it");
   writeFileSync(tableFile, JSON.stringify({ [`runs?head_sha=${SHA}&per_page=50`]: { workflow_runs: [run(1, "push")] }, "runs/1/jobs?filter=latest&per_page=100": { jobs: [{ name: "Build", status: "completed", conclusion: "failure" }] } }));
   assert.equal(cli().status, 1);
   writeFileSync(tableFile, JSON.stringify({}));

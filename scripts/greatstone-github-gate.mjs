@@ -37,7 +37,11 @@ class Unreachable extends Error {}
 /** One GitHub API call through gh; null on an HTTP error (GitHub answered), Unreachable otherwise. */
 export function makeApi({ gh = process.env.GSAM_GH_BIN || "gh", repo = process.env.GSAM_GITHUB_REPO || "Johnprempeh2/gs-agentic-manager" } = {}) {
   return (path, { raw = false } = {}) => {
-    const r = spawnSync(gh, ["api", path.replaceAll("{repo}", repo)], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const call = (extra) => spawnSync(gh, ["api", ...extra, path.replaceAll("{repo}", repo)], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    let r = call([]);
+    // Newer gh refuses output with terminal escape sequences (job logs have colour codes) unless
+    // told to allow them; older gh has no such flag, so only ask when gh says it needs it.
+    if (r.status !== 0 && /--allow-escape-sequences/.test(`${r.stderr}${r.stdout}`)) r = call(["--allow-escape-sequences"]);
     if (r.error) throw new Unreachable(`${gh}: ${r.error.message}`);
     if (r.status !== 0) {
       const why = `${r.stderr || r.stdout}`.trim().split("\n")[0] ?? "";
