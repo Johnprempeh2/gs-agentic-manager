@@ -18094,7 +18094,8 @@ export function issueRoutes(
       });
 
       // An accepted "Update live?" card (idempotencyKey live-release:<rc-tag>)
-      // starts the one-click release. Rejecting it never reaches here.
+      // adds the tag to the release queue (gate, preview, then release).
+      // Rejecting it never reaches here.
       if (interaction.kind === "request_confirmation" && interaction.status === "accepted") {
         liveReleaseService(db)
           .onConfirmationAccepted({ issueId: issue.id, interaction, actor })

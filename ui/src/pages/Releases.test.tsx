@@ -4,7 +4,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReleaseProgressState } from "@/api/releases";
+import type { ReleaseProgressState, ReleaseQueueItem, ReleaseQueueView } from "@/api/releases";
 import { ApiError } from "@/api/client";
 import { ConfirmProvider } from "@/context/ConfirmContext";
 import {
@@ -19,7 +19,10 @@ import { Releases, ReleasesView } from "./Releases";
 
 const mockReleasesApi = vi.hoisted(() => ({
   overview: vi.fn(),
+  enqueue: vi.fn(),
   releaseNow: vi.fn(),
+  queue: vi.fn(),
+  cancelQueued: vi.fn(),
   rollback: vi.fn(),
   cancel: vi.fn(),
   override: vi.fn(),
@@ -66,6 +69,30 @@ const signedIn = (membershipRole: string) => ({
   memberships: [{ companyId: "company-1", status: "active", membershipRole }],
 });
 const GATE_TEXT = "Releases are for owners and admins";
+const EMPTY_QUEUE: ReleaseQueueView = { running: null, queued: [], recent: [], main: null, workerSeenAt: new Date().toISOString() };
+function queueItem(over: Partial<ReleaseQueueItem> = {}): ReleaseQueueItem {
+  return {
+    id: "rq-abc123",
+    ref: "main",
+    title: "Release from the app",
+    requestedBy: "user:local-board",
+    requestedAt: "2026-10-18T10:00:00Z",
+    status: "queued",
+    step: null,
+    detail: null,
+    commit: null,
+    tag: null,
+    liveTag: null,
+    reason: null,
+    rollback: null,
+    backupFile: null,
+    mergedInto: null,
+    cancelRequested: false,
+    startedAt: null,
+    finishedAt: null,
+    ...over,
+  };
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -137,7 +164,9 @@ beforeEach(() => {
   document.body.appendChild(container);
   health = { status: "ok" };
   mockReleasesApi.overview.mockResolvedValue(releasesOverviewFixture());
-  mockReleasesApi.releaseNow.mockResolvedValue({ progress: releaseProgressFixture("checking") });
+  mockReleasesApi.queue.mockResolvedValue(EMPTY_QUEUE);
+  mockReleasesApi.enqueue.mockResolvedValue({ item: queueItem(), queue: { ...EMPTY_QUEUE, queued: [queueItem()] } });
+  mockReleasesApi.cancelQueued.mockResolvedValue({ item: queueItem({ status: "cancelled" }), queue: EMPTY_QUEUE });
   mockReleasesApi.rollback.mockResolvedValue({
     progress: releaseProgressFixture("checking", { kind: "rollback", targetTag: "live-2026-09-14.1" }),
   });
@@ -338,7 +367,7 @@ describe("Dev (next version)", () => {
 });
 
 describe("Release now confirm", () => {
-  it("says the tag is cut from origin/main, CI is checked, runs are held and resume", async () => {
+  it("says it joins the queue: gate, preview, then release with runs paused, and they resume", async () => {
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
     await click(buttonByText("Release now"));
 
@@ -347,25 +376,28 @@ describe("Release now confirm", () => {
     expect(dialog?.textContent).toContain("Live moves from Run limits (live-2026-09-21.1) to Release from the app.");
     expect(dialog?.textContent).toContain("Releases page with one-click release and rollback");
     expect(dialog?.textContent).toContain("Fix: Update live card works after the preview is stopped");
-    expect(dialog?.textContent).toContain("The tag is cut from origin/main.");
-    expect(dialog?.textContent).toContain("Fork CI on main is checked first");
-    expect(dialog?.textContent).toContain("New runs are held.");
-    expect(dialog?.textContent).toContain("Running runs are checkpointed and resume after the update");
-    expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
+    expect(dialog?.textContent).toContain("It joins the release queue: it waits for Fork CI's full test matrix to pass on GitHub");
+    expect(dialog?.textContent).toContain("a preview on a copy of the live data, then live.");
+    expect(dialog?.textContent).toContain("new agent runs pause and running runs finish first (at most 10 minutes; nothing is stopped)");
+    expect(dialog?.textContent).toContain("Runs resume on their own afterwards, also if the release fails.");
+    expect(mockReleasesApi.enqueue).not.toHaveBeenCalled();
 
     await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledWith("company-1", undefined);
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledWith("company-1", { ref: "main", title: "Release from the app" }, undefined);
+    // Nothing on the page releases from the server, which would skip the gate and the preview.
+    expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="release-queue-queued"]')?.textContent).toContain("Release from the app (main)");
   });
 
   it("does nothing when the release is cancelled in the dialog", async () => {
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
     await click(buttonByText("Release now"));
     await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Cancel"));
-    expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
+    expect(mockReleasesApi.enqueue).not.toHaveBeenCalled();
   });
 
   it("shows a refusal in plain words", async () => {
-    mockReleasesApi.releaseNow.mockRejectedValue(new Error("Fork CI on main has not passed."));
+    mockReleasesApi.enqueue.mockRejectedValue(new Error("Fork CI on main has not passed."));
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
     await click(buttonByText("Release now"));
     await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
@@ -590,26 +622,30 @@ describe("Password prompt (login mode)", () => {
   }
 
   it("asks for the password on 403 reauth_required and retries with the token header", async () => {
-    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReleasesApi.enqueue.mockRejectedValueOnce(reauthRequired());
     mockReauthApi.confirm.mockResolvedValue({ token: "tok-1", expiresAt: "2026-09-28T23:10:00.000Z" });
     await render(view());
     await confirmRelease();
 
     expect(reauthDialog()?.textContent).toContain("Enter your password");
     expect(reauthDialog()?.textContent).toContain("To release a version");
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledTimes(1);
 
     await typePassword("secret");
     await submitPassword();
 
     expect(mockReauthApi.confirm).toHaveBeenCalledWith("release", "secret");
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(2);
-    expect(mockReleasesApi.releaseNow).toHaveBeenLastCalledWith("company-1", { headers: { "X-GSAM-Reauth": "tok-1" } });
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledTimes(2);
+    expect(mockReleasesApi.enqueue).toHaveBeenLastCalledWith(
+      "company-1",
+      { ref: "main", title: "Release from the app" },
+      { headers: { "X-GSAM-Reauth": "tok-1" } },
+    );
     expect(reauthDialog()).toBeNull();
   });
 
   it("says a wrong password in plain words and keeps the prompt open", async () => {
-    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReleasesApi.enqueue.mockRejectedValueOnce(reauthRequired());
     mockReauthApi.confirm.mockRejectedValue(new ApiError("x", 403, { code: "reauth_invalid_password" }));
     await render(view());
     await confirmRelease();
@@ -617,11 +653,11 @@ describe("Password prompt (login mode)", () => {
     await submitPassword();
 
     expect(reauthDialog()?.textContent).toContain("That password is not right. Try again.");
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("says when too many wrong passwords locked it for 15 minutes", async () => {
-    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReleasesApi.enqueue.mockRejectedValueOnce(reauthRequired());
     mockReauthApi.confirm.mockRejectedValue(new ApiError("x", 429, { code: "reauth_locked" }));
     await render(view());
     await confirmRelease();
@@ -629,30 +665,30 @@ describe("Password prompt (login mode)", () => {
     await submitPassword();
 
     expect(reauthDialog()?.textContent).toContain("Too many wrong passwords. Try again in 15 minutes.");
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("retries with no header when the server says no password is needed", async () => {
-    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReleasesApi.enqueue.mockRejectedValueOnce(reauthRequired());
     mockReauthApi.confirm.mockRejectedValue(new ApiError("x", 409, { code: "reauth_not_needed" }));
     await render(view());
     await confirmRelease();
     await typePassword("secret");
     await submitPassword();
 
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(2);
-    expect(mockReleasesApi.releaseNow).toHaveBeenLastCalledWith("company-1", undefined);
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledTimes(2);
+    expect(mockReleasesApi.enqueue).toHaveBeenLastCalledWith("company-1", { ref: "main", title: "Release from the app" }, undefined);
     expect(reauthDialog()).toBeNull();
   });
 
   it("does not release and shows no error when the prompt is cancelled", async () => {
-    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReleasesApi.enqueue.mockRejectedValueOnce(reauthRequired());
     await render(view());
     await confirmRelease();
     await click([...reauthDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Cancel"));
 
     expect(reauthDialog()).toBeNull();
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+    expect(mockReleasesApi.enqueue).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -756,5 +792,61 @@ describe("Promote to Stable (GRE-127)", () => {
     expect(mockReleasesApi.promote).toHaveBeenLastCalledWith("company-1", "live-2026-09-14.1", "Faster board.", {
       headers: { "X-GSAM-Reauth": "tok-3" },
     });
+  });
+});
+
+describe("Release queue", () => {
+  const running = (over: Partial<ReleaseQueueItem> = {}) => ({
+    ...queueItem({ status: "running", step: "gate", tag: null, commit: "abcdef1234567890", detail: "running the full test suite on abcdef123" }),
+    logTail: ["server-1 pass in 300s", "server-2 pass in 310s"],
+    ...over,
+  });
+
+  it("shows main's gate, the running request with its step and log tail, the waiting requests and the results with their rollback", async () => {
+    mockReleasesApi.queue.mockResolvedValue({
+      running: running(),
+      queued: [queueItem({ id: "rq-bbbbbb", requestedBy: `agent:${KEYSTONE_AGENT_ID}`, title: "Keystone's batch" })],
+      recent: [
+        queueItem({ id: "rq-cccccc", status: "released", tag: "rc-2026-10-18.2", liveTag: "live-2026-10-18.2", rollback: "scripts/greatstone-release.sh live-2026-10-18.1", finishedAt: "2026-10-18T09:00:00Z" }),
+        queueItem({ id: "rq-dddddd", status: "failed", reason: "the switch tests failed on the preview of rc-2026-10-18.1" }),
+      ],
+      main: { commit: "abcdef1234567890", status: "failing", startedAt: null, finishedAt: "2026-10-18T08:00:00Z", summary: ["FAILED: 1 of 13 lanes", "    FAIL  src/a.test.ts > adds up"] },
+      workerSeenAt: new Date().toISOString(),
+    } satisfies ReleaseQueueView);
+    await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
+
+    const card = document.querySelector('[data-testid="release-queue"]')!;
+    expect(card.querySelector('[data-testid="release-queue-main"]')?.textContent).toContain("main at abcdef1 on GitHub: failing");
+    expect(card.querySelector('[data-testid="release-queue-main-failures"]')?.textContent).toContain("FAIL  src/a.test.ts > adds up");
+    const now = card.querySelector('[data-testid="release-queue-running"]')!;
+    expect(now.querySelector('[aria-current="step"]')?.textContent).toBe("Tests on GitHub");
+    expect(now.textContent).toContain("running the full test suite on abcdef123");
+    expect(now.querySelector('[data-testid="release-queue-log"]')?.textContent).toContain("server-2 pass in 310s");
+    expect(card.querySelector('[data-testid="release-queue-paused"]')).toBeNull();
+    expect(card.querySelector('[data-testid="release-queue-queued"]')?.textContent).toContain("Asked by Keystone");
+    const recent = card.querySelector('[data-testid="release-queue-recent"]')!.textContent;
+    expect(recent).toContain("as live-2026-10-18.2");
+    expect(recent).toContain("Roll back: scripts/greatstone-release.sh live-2026-10-18.1");
+    expect(recent).toContain("the switch tests failed on the preview");
+
+    // Cancel a waiting request.
+    const waiting = card.querySelector('[data-testid="release-queue-queued"] button') as HTMLButtonElement;
+    await click(waiting);
+    expect(mockReleasesApi.cancelQueued).toHaveBeenCalledWith("company-1", "rq-bbbbbb");
+  });
+
+  it("says new agent runs are paused while it releases, and the release itself cannot be cancelled", async () => {
+    mockReleasesApi.queue.mockResolvedValue({ ...EMPTY_QUEUE, running: running({ step: "releasing", tag: "rc-2026-10-18.3", detail: "Releasing rc-2026-10-18.3: new agent runs paused" }) });
+    await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
+    expect(document.querySelector('[data-testid="release-queue-paused"]')?.textContent).toBe("Releasing: new agent runs paused");
+    const cancel = document.querySelector('[data-testid="release-queue-running"] button') as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+  });
+
+  it("warns when requests wait and the worker is not running on the host", async () => {
+    mockReleasesApi.queue.mockResolvedValue({ ...EMPTY_QUEUE, queued: [queueItem()], workerSeenAt: null });
+    await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
+    expect(document.querySelector('[data-testid="release-queue-worker-stale"]')?.textContent).toContain("has not run on this host yet");
+    expect(document.body.textContent).toContain("A release of main is queued; another request joins it.");
   });
 });

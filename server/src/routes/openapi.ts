@@ -1567,6 +1567,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/releases/rollback",
   "POST /api/companies/{companyId}/releases/cancel",
   "POST /api/companies/{companyId}/releases/override",
+  "POST /api/companies/{companyId}/releases/queue/{itemId}/cancel",
   "GET /api/companies/{companyId}/ai-connections",
   "POST /api/companies/{companyId}/ai-connections",
   "POST /api/companies/{companyId}/ai-connections/local",
@@ -1894,6 +1895,7 @@ const ACCEPTED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/generated-videos",
   "POST /api/companies/{companyId}/releases/release",
   "POST /api/companies/{companyId}/releases/rollback",
+  "POST /api/companies/{companyId}/releases/queue",
   "POST /api/companies/{companyId}/email/send",
   "POST /api/companies/import",
   "POST /api/health/dev-server/restart",
@@ -3388,7 +3390,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/releases/release",
   tags: ["releases"],
-  summary: "Release live: an rc-* tag, or with no tag cut one from origin/main (Fork CI must be green)",
+  summary: "Ask for a release through the release queue (kept for older callers): an rc-* tag, or main with no tag; answers with the queue item",
   request: {
     params: releaseCompanyParams,
     body: jsonBody(z.object({ tag: z.string().optional(), title: z.string().optional() })),
@@ -3442,6 +3444,36 @@ registry.registerPath({
   summary: "Release without waiting for runs flagged finish-before-update",
   request: { params: releaseCompanyParams },
   responses: { 200: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/releases/queue",
+  tags: ["releases"],
+  summary: "The release queue: the running request with its step and log tail, queued requests, recent results and Fork CI on main as GitHub reports it (board or the release manager agent)",
+  request: { params: releaseCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/queue",
+  tags: ["releases"],
+  summary: "Ask for a release: the PC's worker waits for Fork CI's full test matrix on GitHub for the commit, then runs the preview and the release in order (board owner or admin, or the release manager agent)",
+  request: {
+    params: releaseCompanyParams,
+    body: jsonBody(z.object({ ref: z.string().optional(), title: z.string().optional() })),
+  },
+  responses: { 202: r.ok(), ...releaseResponses, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/queue/{itemId}/cancel",
+  tags: ["releases"],
+  summary: "Cancel a queued release request, or stop a running one before its next step (never during the release itself)",
+  request: { params: z.object({ companyId: z.string(), itemId: z.string() }) },
+  responses: { 200: r.ok(), ...releaseResponses, 404: r.notFound },
 });
 
 registry.registerPath({

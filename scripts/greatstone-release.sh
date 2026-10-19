@@ -6,8 +6,10 @@
 #   scripts/greatstone-release.sh --full-restart <tag>  the same, but stop live completely and start it
 #                                                     again instead of a hot restart (GRE-442)
 #
-# An rc-* tag is released only when scripts/greatstone-test-gate.sh passed the
-# full test suite on its commit (--skip-test-gate "<reason>" in an emergency),
+# An rc-* tag is released only when Fork CI's full test matrix is green on
+# GitHub for its commit (scripts/greatstone-github-gate.mjs; --pc-gate, or
+# GitHub out of reach, uses the PC's scripts/greatstone-test-gate.sh pass
+# marker instead; --skip-test-gate "<reason>" in an emergency),
 # and, by hand, only while the preview runs it and answers
 # (--skip-preview "<reason>" in an emergency).
 #
@@ -32,12 +34,14 @@ die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 # --skip-preview "<reason>": release an rc-* tag by hand when the preview does
 # not run it or does not answer. Emergencies only; the reason goes to
 # $GS_ROOT/preview-overrides.log.
+# --pc-gate: decide by the PC test gate's pass marker, not GitHub.
 FULL_RESTART=0
 SKIP_TEST_GATE=""
 SKIP_PREVIEW=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --full-restart) FULL_RESTART=1; shift ;;
+    --pc-gate) export GSAM_RELEASE_GATE=pc; shift ;;
     --skip-test-gate)
       [ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" ] && case "$2" in rc-* | live-* | --*) false ;; esac \
         || die "--skip-test-gate needs a reason first, for example: --skip-test-gate \"live is down, fix for GRE-123\" rc-YYYY-MM-DD.N"
@@ -53,7 +57,7 @@ TAG="${1:-}"
 case "$TAG" in
   rc-*) MODE=release ;;
   live-*) MODE=rollback ;;
-  *) die "usage: greatstone-release.sh [--full-restart] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
+  *) die "usage: greatstone-release.sh [--full-restart] [--pc-gate] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
 # GSAM_RELEASE_FROM_APP=1: started by the live server (the Releases page, GRE-121).
@@ -63,6 +67,28 @@ esac
 # with Fork CI green, so it need not be the one in the preview.
 FROM_APP="${GSAM_RELEASE_FROM_APP:-}"
 [ "$FULL_RESTART" = 0 ] || [ "$FROM_APP" != 1 ] || die "--full-restart stops the live server, so it cannot run from the app; run it from the dev checkout."
+
+# One release at a time (the "release" lock in $GS_ROOT/locks, like the preview
+# and candidate locks): held from the first check to healthy or failed, so a
+# release by hand and one from the release queue never overlap. On 18 Oct 2026
+# two releases ran at once and made live-2026-10-18.5 and .6 on one commit.
+# The queue worker takes the lock before it pauses new agent runs and starts
+# this script with GSAM_RELEASE_LOCK_INHERITED=1; then the lock is its
+# parent's and is left to it.
+RELEASE_LOCK_DIR="$GS_ROOT/locks/release.lock"
+OWN_RELEASE_LOCK=0
+DROP_LIVE_TAG=0
+on_exit() {
+  [ "$DROP_LIVE_TAG" = 0 ] || drop_unpushed_live_tag "$RELEASE_REPO" "$LIVE_DIR" "$LIVE_TAG"
+  [ "$OWN_RELEASE_LOCK" = 0 ] || rm -rf "$RELEASE_LOCK_DIR"
+}
+trap on_exit EXIT
+if [ "${GSAM_RELEASE_LOCK_INHERITED:-}" = 1 ] && [ "$(sed -n 's/^pid=//p' "$RELEASE_LOCK_DIR/owner" 2>/dev/null)" = "$PPID" ]; then
+  say "Release lock: held by the release queue (pid $PPID)."
+else
+  LOCK_PROBLEM="$(gs_lock release "$TAG")" || die "${LOCK_PROBLEM/another release step runs/another release runs}"
+  OWN_RELEASE_LOCK=1
+fi
 record_release_repo "$RELEASE_REPO"
 KEY_PROBLEM="$(live_board_key_check)" || die "$KEY_PROBLEM"
 
@@ -95,9 +121,10 @@ if [ "$MODE" = release ]; then
     || die "live runs $PREVIOUS ($LIVE_HEAD), which $RELEASE_REPO does not have, so it cannot tell whether $TAG is newer. Fetch it, then release again. Nothing was changed."
   git -C "$RELEASE_REPO" merge-base --is-ancestor "$LIVE_HEAD" "$TARGET" \
     || die "$TAG is older than live ($PREVIOUS); to go back, use the rollback form with a live-* tag. Nothing was changed."
-  # The full test suite must have passed on exactly this commit: Fork CI runs
-  # no tests on pull requests, so this is where failing tests are stopped.
-  if GATE="$(test_gate_check "$TARGET" "$TAG")"; then
+  # The full test suite must have passed on exactly this commit (or on the
+  # pull request run that tested the same files): GitHub's Fork CI matrix, or
+  # the PC test gate with --pc-gate or when GitHub cannot be asked.
+  if GATE="$(release_gate_check "$TARGET" "$TAG")"; then
     say "Test gate: $GATE"
   elif [ -n "$SKIP_TEST_GATE" ]; then
     mkdir -p "$TEST_GATE_DIR"
@@ -168,7 +195,7 @@ if [ "$MODE" = release ]; then
   tag_live_release "$RELEASE_REPO" "$TAG" "$LIVE_TAG" "$TARGET"
   # The live-* tag stays local until live is healthy on it (GRE-239): a failed
   # release deletes it, so History never offers a version that never ran.
-  trap 'drop_unpushed_live_tag "$RELEASE_REPO" "$LIVE_DIR" "$LIVE_TAG"' EXIT
+  DROP_LIVE_TAG=1
   say "Tagged $TAG as $LIVE_TAG: $TITLE"
 else
   LIVE_TAG="$TAG"
@@ -247,7 +274,7 @@ for _ in $(seq 1 90); do
   if [ -n "$STARTED_NOW" ] && { [ "$NEEDS_NEW_PROCESS" = 0 ] || [ "$STARTED_NOW" != "$STARTED_BEFORE" ]; } && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
     say "Live app at $LIVE_URL is running $LIVE_TAG ($TARGET), server started $STARTED_NOW."
     if [ "$MODE" = release ]; then
-      trap - EXIT
+      DROP_LIVE_TAG=0
       GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG" \
         || say "Could not push $TAG and $LIVE_TAG to origin; live runs $LIVE_TAG. Push them with: GSAM_RELEASE=1 git push origin $TAG $LIVE_TAG"
     fi

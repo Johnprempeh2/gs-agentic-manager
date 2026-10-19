@@ -248,3 +248,15 @@ test("a gate that is stopped stops its lanes too, frees its lock and writes no m
   assert.equal(existsSync(join(box.gateDir, "lock")), false);
   assert.equal(existsSync(join(box.gateDir, "passed", commit)), false);
 });
+
+test("a full commit sha is gated like a tag, and its marker is keyed by that commit", (t) => {
+  // The release queue gates each new origin/main commit before any tag is cut.
+  const box = sandbox(t);
+  const commit = box.candidate("rc-2026-10-18.1", "ok: true\n");
+  git(box.dev, "tag", "-d", "rc-2026-10-18.1");
+  const run = box.gate([commit]);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(readFileSync(join(box.gateDir, "passed", commit), "utf8"), new RegExp(`^tag=${commit}$`, "m"));
+  assert.equal(box.gate(["--check", commit]).status, 0);
+  assert.match(box.gate([commit.slice(0, 9)]).stderr, /unknown tag/);
+});

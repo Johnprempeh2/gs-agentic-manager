@@ -126,6 +126,51 @@ export interface ReleasesOverview {
   disabledReason: string | null;
 }
 
+// The release queue on the PC (scripts/greatstone-release-queue.mjs): test
+// gate, preview, then release, one request at a time.
+export type ReleaseQueueStatus = "queued" | "running" | "released" | "failed" | "cancelled" | "merged" | "skipped";
+export type ReleaseQueueStep = "gate" | "candidate" | "preview" | "draining" | "releasing";
+
+export interface ReleaseQueueItem {
+  id: string;
+  /** "main", an rc-* tag or a commit sha. */
+  ref: string;
+  title: string | null;
+  /** "user:<id>", "agent:<id>" or "cli:<name>". */
+  requestedBy: string | null;
+  requestedAt: string;
+  status: ReleaseQueueStatus;
+  step: ReleaseQueueStep | null;
+  detail: string | null;
+  commit: string | null;
+  tag: string | null;
+  liveTag: string | null;
+  reason: string | null;
+  /** The command that moves live back, after a release. */
+  rollback: string | null;
+  backupFile: string | null;
+  /** Released together with this request (main requests that waited side by side). */
+  mergedInto: string | null;
+  cancelRequested: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface ReleaseQueueView {
+  running: (ReleaseQueueItem & { logTail: string[] }) | null;
+  queued: ReleaseQueueItem[];
+  recent: ReleaseQueueItem[];
+  /** The test gate on origin/main. */
+  main: {
+    commit: string;
+    status: "testing" | "passed" | "failing" | "untested";
+    startedAt: string | null;
+    finishedAt: string | null;
+    summary: string[];
+  } | null;
+  workerSeenAt: string | null;
+}
+
 /** The version a client install runs and the client notes of its stable-* tag (GRE-128). */
 export interface ClientVersion {
   label: string | null;
@@ -137,10 +182,19 @@ export interface ClientVersion {
 export const releasesApi = {
   clientVersion: (companyId: string) => api.get<ClientVersion>(`/companies/${companyId}/version`),
   overview: (companyId: string) => api.get<ReleasesOverview>(`/companies/${companyId}/releases`),
-  /** Cuts the next rc-* from origin/main and releases it. */
-  /** `options.headers` carries the one-use `X-GSAM-Reauth` token in login mode. */
+  queue: (companyId: string) => api.get<ReleaseQueueView>(`/companies/${companyId}/releases/queue`),
+  /** Adds a release request to the queue (default: main). In login mode it needs the "release" re-check. */
+  enqueue: (companyId: string, body: { ref?: string; title?: string | null }, options?: RequestOptions) =>
+    api.post<{ item: ReleaseQueueItem; queue: ReleaseQueueView }>(`/companies/${companyId}/releases/queue`, body, options),
+  cancelQueued: (companyId: string, id: string) =>
+    api.post<{ item: ReleaseQueueItem; queue: ReleaseQueueView }>(`/companies/${companyId}/releases/queue/${id}/cancel`, {}),
+  /**
+   * The older release endpoint, kept for compatibility: like `enqueue`, it adds
+   * main (or `tag`) to the release queue and answers with the queue item. The
+   * page uses `enqueue`. `options.headers` carries the `X-GSAM-Reauth` token.
+   */
   releaseNow: (companyId: string, options?: RequestOptions) =>
-    api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/release`, {}, options),
+    api.post<{ item: ReleaseQueueItem; queue: ReleaseQueueView }>(`/companies/${companyId}/releases/release`, {}, options),
   rollback: (companyId: string, tag: string, options?: RequestOptions) =>
     api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/rollback`, { tag }, options),
   /** Tags a live-* release as stable-*; `notes` (the client notes) are the tag message. */

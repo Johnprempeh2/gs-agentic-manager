@@ -9,6 +9,9 @@ import {
   type ReleaseHealth,
   type ReleaseProgress,
   type ReleaseProgressState,
+  type ReleaseQueueItem,
+  type ReleaseQueueStep,
+  type ReleaseQueueView,
   type ReleasesOverview,
   type RestartReport,
 } from "@/api/releases";
@@ -295,6 +298,233 @@ export function ReleaseProgressPanel({
   );
 }
 
+// ── Release queue ───────────────────────────────────────────────────────────
+
+const QUEUE_STEPS: { step: ReleaseQueueStep; label: string }[] = [
+  { step: "gate", label: "Tests on GitHub" },
+  { step: "candidate", label: "Candidate" },
+  { step: "preview", label: "Preview" },
+  { step: "draining", label: "Pausing new runs" },
+  { step: "releasing", label: "Releasing" },
+];
+const MAIN_TONE: Record<NonNullable<ReleaseQueueView["main"]>["status"], ChipTone> = {
+  passed: "done",
+  failing: "blocked",
+  testing: "in_progress",
+  untested: "backlog",
+};
+const RESULT_TONE: Record<ReleaseQueueItem["status"], ChipTone> = {
+  queued: "todo",
+  running: "in_progress",
+  released: "done",
+  failed: "blocked",
+  cancelled: "backlog",
+  merged: "backlog",
+  skipped: "backlog",
+};
+const RESULT_LABEL: Record<ReleaseQueueItem["status"], string> = {
+  queued: "Queued",
+  running: "Running",
+  released: "Released",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  merged: "Released with another",
+  skipped: "Nothing to release",
+};
+/** The worker runs at least every minute; past this it is not running on the host. */
+const WORKER_STALE_MS = 5 * 60 * 1000;
+export const RELEASE_QUEUE_POLL_MS = 3_000;
+
+function queueItemName(item: ReleaseQueueItem): string {
+  const what = item.tag ?? (item.ref === "main" ? "main" : item.ref);
+  return item.title ? `${item.title} (${what})` : what;
+}
+
+function requestedByLabel(by: string | null, agentNames: Map<string, string>): string {
+  if (!by) return "unknown";
+  if (by.startsWith("cli:")) return `${by.slice(4)} over SSH`;
+  return actorLabel(by, agentNames) ?? "unknown";
+}
+
+export function ReleaseQueueCard({
+  queue,
+  agentNames = new Map(),
+  canCancel,
+  onCancel,
+  cancellingId,
+  cancelError,
+}: {
+  queue: ReleaseQueueView;
+  agentNames?: Map<string, string>;
+  canCancel: boolean;
+  onCancel: (id: string) => void;
+  cancellingId: string | null;
+  cancelError: string | null;
+}) {
+  const { running, queued, recent, main, workerSeenAt } = queue;
+  const releasing = running?.step === "draining" || running?.step === "releasing";
+  const stepIndex = running?.step ? QUEUE_STEPS.findIndex((s) => s.step === running.step) : -1;
+  const workerStale = !workerSeenAt || Date.now() - Date.parse(workerSeenAt) > WORKER_STALE_MS;
+  const waiting = running !== null || queued.length > 0;
+
+  return (
+    <Card className="gap-0 py-0" data-testid="release-queue">
+      <CardHeader className="px-5 py-4">
+        <CardTitle className="text-base">Release queue</CardTitle>
+        <CardDescription>
+          Each request needs Fork CI's full test matrix green on GitHub for its commit (it waits while CI runs), then
+          a preview on a copy of the live data, then the release. New agent runs pause only while it releases.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 px-5 pb-5">
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="release-queue-main">
+          {main ? (
+            <>
+              <ReleaseChip tone={MAIN_TONE[main.status]}>
+                {`main at ${shortId(main.commit)} on GitHub: ${main.status === "untested" ? "not tested yet" : main.status}`}
+              </ReleaseChip>
+              {main.finishedAt && main.status !== "testing" ? (
+                <span className="text-xs text-muted-foreground">{formatDateTime(main.finishedAt)}</span>
+              ) : null}
+            </>
+          ) : (
+            <span className="text-muted-foreground">The queue has not checked main on GitHub yet.</span>
+          )}
+        </div>
+        {main?.status === "failing" && main.summary.length > 0 ? (
+          <pre className="max-h-48 overflow-auto rounded-md border border-border p-3 font-mono text-xs whitespace-pre-wrap text-foreground" data-testid="release-queue-main-failures">
+            {main.summary.join("\n")}
+          </pre>
+        ) : null}
+        {workerStale && waiting ? (
+          <p className="text-sm text-destructive" role="status" data-testid="release-queue-worker-stale">
+            {workerSeenAt
+              ? `The queue worker last ran ${formatDateTime(workerSeenAt)}. Requests wait until it runs again on the PC.`
+              : "The queue worker has not run on this host yet, so requests wait. See the release queue in the runbook."}
+          </p>
+        ) : null}
+
+        {running ? (
+          <div className={cn("space-y-3 rounded-md border p-3", running.status === "running" && "border-border")} data-testid="release-queue-running" data-step={running.step ?? ""}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">{queueItemName(running)}</p>
+                <p className="text-xs text-muted-foreground">
+                  Asked by {requestedByLabel(running.requestedBy, agentNames)}, {formatDateTime(running.requestedAt)}
+                  {running.commit ? <> · <span className="font-mono">{shortId(running.commit)}</span></> : null}
+                </p>
+              </div>
+              {canCancel ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={running.step === "releasing" || running.cancelRequested || cancellingId === running.id}
+                  onClick={() => onCancel(running.id)}
+                >
+                  {running.cancelRequested ? "Stopping…" : "Cancel"}
+                </Button>
+              ) : null}
+            </div>
+            {releasing ? (
+              <p role="status" aria-live="polite" className="text-sm font-medium text-foreground" data-testid="release-queue-paused">
+                Releasing: new agent runs paused
+              </p>
+            ) : null}
+            <ol className="flex flex-wrap gap-x-4 gap-y-2">
+              {QUEUE_STEPS.map((s, index) => {
+                const done = index < stepIndex;
+                const current = index === stepIndex;
+                return (
+                  <li
+                    key={s.step}
+                    aria-current={current ? "step" : undefined}
+                    className={cn("flex items-center gap-1.5 text-xs", done || current ? "text-foreground" : "text-muted-foreground", current && "font-medium")}
+                  >
+                    {done ? (
+                      <Check className="size-3.5" aria-hidden />
+                    ) : current ? (
+                      <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+                    ) : (
+                      <span className="size-3.5 rounded-full border border-border" aria-hidden />
+                    )}
+                    {s.label}
+                  </li>
+                );
+              })}
+            </ol>
+            {running.detail ? <p className="text-sm text-foreground">{running.detail}</p> : null}
+            {running.logTail.length > 0 ? (
+              <pre className="max-h-56 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap text-foreground" data-testid="release-queue-log">
+                {running.logTail.join("\n")}
+              </pre>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing is releasing now.</p>
+        )}
+
+        {queued.length > 0 ? (
+          <div className="space-y-1">
+            <p className="text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">
+              {plural(queued.length, "request")} waiting
+            </p>
+            <ul className="divide-y divide-border rounded-md border border-border" data-testid="release-queue-queued">
+              {queued.map((item) => (
+                <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <span className="min-w-0 text-foreground">
+                    {queueItemName(item)}
+                    <span className="block text-xs text-muted-foreground">
+                      Asked by {requestedByLabel(item.requestedBy, agentNames)}, {formatDateTime(item.requestedAt)}
+                    </span>
+                  </span>
+                  {canCancel ? (
+                    <Button size="sm" variant="outline" disabled={cancellingId === item.id} onClick={() => onCancel(item.id)}>
+                      Cancel
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {recent.length > 0 ? (
+          <div className="space-y-1">
+            <p className="text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">Recent</p>
+            <ul className="divide-y divide-border rounded-md border border-border" data-testid="release-queue-recent">
+              {recent.map((item) => (
+                <li key={item.id} className="space-y-1 px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ReleaseChip tone={RESULT_TONE[item.status]}>{RESULT_LABEL[item.status]}</ReleaseChip>
+                    <span className="min-w-0 text-foreground">{queueItemName(item)}</span>
+                    {item.liveTag ? <span className="font-mono text-xs text-muted-foreground">as {item.liveTag}</span> : null}
+                    {item.finishedAt ? <span className="text-xs text-muted-foreground">{formatDateTime(item.finishedAt)}</span> : null}
+                  </div>
+                  {item.reason && item.status !== "merged" ? <p className="text-xs text-foreground">{item.reason}</p> : null}
+                  {item.rollback ? (
+                    <p className="text-xs text-muted-foreground">
+                      Roll back: <code className="font-mono text-foreground">{item.rollback}</code>
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {cancelError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {cancelError}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function isQueueActive(queue: ReleaseQueueView | undefined): boolean {
+  return !!queue && (queue.running !== null || queue.queued.length > 0 || queue.main?.status === "testing");
+}
+
 // ── Finish before update ────────────────────────────────────────────────────
 
 interface RunRow {
@@ -517,9 +747,23 @@ export function ReleasesView({
     void queryClient.invalidateQueries({ queryKey: queryKeys.releases(companyId) });
   };
 
+  // "Release now" asks the release queue: tests on GitHub, preview, then release.
+  const queue = useQuery({
+    queryKey: queryKeys.releaseQueue(companyId),
+    queryFn: () => releasesApi.queue(companyId),
+    retry: false,
+    refetchInterval: (query) => (isQueueActive(query.state.data as ReleaseQueueView | undefined) ? RELEASE_QUEUE_POLL_MS : 30_000),
+  });
+  const setQueue = ({ queue: next }: { queue: ReleaseQueueView }) => {
+    queryClient.setQueryData(queryKeys.releaseQueue(companyId), next);
+  };
   const releaseMutation = useMutation({
-    mutationFn: () => withReauth("release", (options) => releasesApi.releaseNow(companyId, options)),
-    onSuccess: applyProgress,
+    mutationFn: (title: string) => withReauth("release", (options) => releasesApi.enqueue(companyId, { ref: "main", title }, options)),
+    onSuccess: setQueue,
+  });
+  const cancelQueuedMutation = useMutation({
+    mutationFn: (id: string) => releasesApi.cancelQueued(companyId, id),
+    onSuccess: setQueue,
   });
   const rollbackMutation = useMutation({
     mutationFn: (tag: string) => withReauth("rollback", (options) => releasesApi.rollback(companyId, tag, options)),
@@ -543,6 +787,7 @@ export function ReleasesView({
   });
   const actionError = errorText(releaseMutation.error) ?? errorText(rollbackMutation.error);
   const busy = inProgress || releaseMutation.isPending || rollbackMutation.isPending;
+  const queuedMain = (queue.data?.queued ?? []).some((item) => item.ref === "main");
   const off = !!disabledReason;
   const liveName = live ? (live.title ?? live.tag ?? shortId(live.commit)) : null;
   const liveLabel = live ? (live.title && live.tag ? `${live.title} (${live.tag})` : liveName) : null;
@@ -555,8 +800,10 @@ export function ReleasesView({
         ...next.changelog.features.map((item) => `• ${item}`),
         ...next.changelog.fixes.map((item) => `• Fix: ${item}`),
       ].join("\n"),
-      "The tag is cut from origin/main. Fork CI on main is checked first; the release stops if it has not passed.",
-      HOT_RESTART_TEXT,
+      queue.data?.main && queue.data.main.commit === next.commit && queue.data.main.status === "passed"
+        ? "Fork CI's full test matrix already passed on GitHub for this commit, so it goes straight to the preview on a copy of the live data, then live."
+        : "It joins the release queue: it waits for Fork CI's full test matrix to pass on GitHub for this commit, then a preview on a copy of the live data, then live.",
+      "When it reaches the release, new agent runs pause and running runs finish first (at most 10 minutes; nothing is stopped). Runs resume on their own afterwards, also if the release fails.",
     ].filter(Boolean);
     const ok = await confirm({
       title: `Release ${next.proposedTitle}?`,
@@ -565,7 +812,7 @@ export function ReleasesView({
     });
     if (ok) {
       rollbackMutation.reset();
-      releaseMutation.mutate();
+      releaseMutation.mutate(next.proposedTitle);
     }
   }
 
@@ -740,9 +987,12 @@ export function ReleasesView({
         <CardContent className="flex flex-wrap items-center gap-3 px-5">
           <Button onClick={() => void onRelease()} disabled={busy || off || !next}>
             <Rocket aria-hidden />
-            {releaseMutation.isPending ? "Starting…" : "Release now"}
+            {releaseMutation.isPending ? "Adding to the queue…" : "Release now"}
           </Button>
           {inProgress ? <span className="text-xs text-muted-foreground">A release is in progress.</span> : null}
+          {!inProgress && queuedMain ? (
+            <span className="text-xs text-muted-foreground">A release of main is queued; another request joins it.</span>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -750,6 +1000,17 @@ export function ReleasesView({
         <p role="alert" className="text-sm text-destructive">
           {actionError}
         </p>
+      ) : null}
+
+      {queue.data ? (
+        <ReleaseQueueCard
+          queue={queue.data}
+          agentNames={agentNames}
+          canCancel={!off}
+          onCancel={(id) => cancelQueuedMutation.mutate(id)}
+          cancellingId={cancelQueuedMutation.isPending ? (cancelQueuedMutation.variables ?? null) : null}
+          cancelError={errorText(cancelQueuedMutation.error)}
+        />
       ) : null}
 
       <FinishBeforeUpdateCard companyId={companyId} flaggedRuns={flaggedRuns} agentNames={agentNames} disabled={off} />

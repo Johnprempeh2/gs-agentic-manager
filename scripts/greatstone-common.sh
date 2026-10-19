@@ -206,6 +206,33 @@ test_gate_check() {
   return 1
 }
 
+# release_gate_check <commit> <tag>
+# The release gate (GRE: release on GitHub's tests). Passes when Fork CI's full
+# test matrix is green on GitHub for <commit>, or for the pull request run that
+# tested the same files (scripts/greatstone-github-gate.mjs). While it runs, it
+# waits up to GSAM_GITHUB_GATE_WAIT_SECONDS (default 1200). When GitHub cannot
+# be asked, or with GSAM_RELEASE_GATE=pc (greatstone-release.sh --pc-gate), the
+# PC test gate's pass marker decides instead (test_gate_check). Prints the
+# verdict; a note about the fallback goes to stderr.
+release_gate_check() {
+  local out code
+  if [ "${GSAM_RELEASE_GATE:-github}" = pc ]; then
+    test_gate_check "$1" "$2"
+    return
+  fi
+  out="$(node "$GS_SCRIPT_DIR/greatstone-github-gate.mjs" "$1" --wait "${GSAM_GITHUB_GATE_WAIT_SECONDS:-1200}" 2>&1)" && code=0 || code=$?
+  case "$code" in
+    0) say "$out"; return 0 ;;
+    3)
+      say "$out; using the PC test gate instead." >&2
+      test_gate_check "$1" "$2"
+      return ;;
+    2) say "$out after $(( ${GSAM_GITHUB_GATE_WAIT_SECONDS:-1200} / 60 )) min of waiting. Release again when Fork CI has finished on GitHub. Nothing was changed." ;;
+    *) say "$out. Fix it on main first. Only in an emergency: greatstone-release.sh --skip-test-gate \"<reason>\" $2 (logged in $TEST_GATE_DIR/overrides.log). Nothing was changed." ;;
+  esac
+  return 1
+}
+
 # Makes the annotated <live-tag> on <commit> with the message of <rc-tag>: its
 # title and changelog (GRE-120). The one place a live-* tag is made, for a
 # release from the app and a release by hand alike.
@@ -233,7 +260,7 @@ drop_unpushed_live_tag() {
 # origin/main (fetch first). A dev checkout that was not pulled runs an old
 # release script; before GRE-120 that one wrote a generic live tag message
 # with no title or changelog (GRE-178).
-RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh scripts/greatstone-test-gate.sh)
+RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh scripts/greatstone-test-gate.sh scripts/greatstone-github-gate.mjs)
 release_scripts_current() {
   local repo="$1" files
   files="$(git -C "$repo" diff --name-only origin/main -- "${RELEASE_SCRIPT_FILES[@]}" 2>&1)" \

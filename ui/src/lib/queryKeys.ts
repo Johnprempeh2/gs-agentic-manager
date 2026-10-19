@@ -602,6 +602,7 @@ export const queryKeys = {
       ["external-objects", "project-summary", projectId] as const,
   },
   releases: (companyId: string) => ["releases", companyId] as const,
+  releaseQueue: (companyId: string) => ["releases", companyId, "queue"] as const,
   clientVersion: (companyId: string) => ["client-version", companyId] as const,
   agentTeams: {
     list: (companyId: string) => ["agent-teams", companyId] as const,
