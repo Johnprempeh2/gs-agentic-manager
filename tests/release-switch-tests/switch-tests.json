@@ -102,8 +102,7 @@
       "ui/src/lib/team-chats.test.ts"
     ],
     "enableConferenceRoomChat": [
-      "server/src/__tests__/board-chat-route-feature-flag.test.ts",
-      "ui/src/components/ConferenceRoomChatGate.test.tsx"
+      "server/src/__tests__/board-chat-route-feature-flag.test.ts"
     ],
     "enableClassicTaskInterface": [
       "ui/src/components/IssueProperties.test.tsx"
