@@ -4443,9 +4443,20 @@ export function issueThreadInteractionService(
 
       const superseded = rows.filter((row) => {
         if (!isUserCommentSupersedableKind(row.kind)) return false;
-        const interaction = hydrateInteraction(
-          row,
-        ) as UserCommentSupersedableInteraction;
+        // One stored card the current schema rejects must not fail a human
+        // comment post (GRE-1688); leave that card pending.
+        let interaction: UserCommentSupersedableInteraction;
+        try {
+          interaction = hydrateInteraction(
+            row,
+          ) as UserCommentSupersedableInteraction;
+        } catch (error) {
+          console.warn(
+            `[gsam] Skipping unparseable ${row.kind} interaction ${row.id} while superseding by comment`,
+            error instanceof z.ZodError ? error.issues : error,
+          );
+          return false;
+        }
         return (
           shouldSupersedeInteractionOnUserComment(interaction) &&
           isCommentAtOrAfterInteraction({

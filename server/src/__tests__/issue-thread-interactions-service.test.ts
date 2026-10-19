@@ -1169,6 +1169,74 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
     });
   });
 
+  it("creates and lists a confirmation whose custom target key is a long connection key (GRE-1688)", async () => {
+    const { companyId, issueId } = await seedConfirmationIssue("Long target key");
+    // Shape of the Netlify connection card key that made GRE-1683 unreadable.
+    const key = `connection:app-gallery-netlify-${randomUUID()}-17df789a/netlify-${randomUUID().slice(0, 8)}`
+      + `:user:${"u".repeat(32)}`;
+    expect(key.length).toBeGreaterThan(120);
+
+    const created = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation",
+      payload: {
+        version: 1,
+        prompt: "Connect your Netlify to continue",
+        target: { type: "custom", key, revisionId: "state", label: "Connect Netlify" },
+      },
+    }, { userId: "local-board" });
+    expect(created.payload).toMatchObject({ target: { type: "custom", key } });
+
+    const listed = await interactionsSvc.listForIssue(issueId);
+    expect(listed.map((interaction) => interaction.id)).toEqual([created.id]);
+    expect(listed[0]!.payload).toMatchObject({ target: { key } });
+
+    await expect(interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation",
+      payload: {
+        version: 1,
+        prompt: "Too long",
+        target: { type: "custom", key: "k".repeat(1001) },
+      },
+    }, { userId: "local-board" })).rejects.toThrow();
+  });
+
+  it("supersedes valid cards on a human comment even when another stored card no longer parses", async () => {
+    const { companyId, issueId } = await seedConfirmationIssue("Unparseable sibling");
+    const valid = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation",
+      payload: { version: 1, prompt: "Go ahead?", supersedeOnUserComment: true },
+    }, { userId: "local-board" });
+    // A row written outside the create route, beyond the schema's limit.
+    const [poison] = await db.insert(issueThreadInteractions).values({
+      companyId,
+      issueId,
+      kind: "request_confirmation",
+      status: "pending",
+      continuationPolicy: "none",
+      payload: {
+        version: 1,
+        prompt: "Connect",
+        supersedeOnUserComment: true,
+        target: { type: "custom", key: "k".repeat(1001) },
+      },
+    }).returning();
+
+    const expired = await interactionsSvc.expireRequestConfirmationsSupersededByComment(
+      { id: issueId, companyId },
+      {
+        id: randomUUID(),
+        createdAt: new Date(new Date(valid.createdAt).getTime() + 1_000),
+        authorUserId: "local-board",
+      },
+      { userId: "local-board" },
+    );
+
+    expect(expired.map((interaction) => interaction.id)).toEqual([valid.id]);
+    const [poisonAfter] = await db.select().from(issueThreadInteractions)
+      .where(eq(issueThreadInteractions.id, poison!.id));
+    expect(poisonAfter!.status).toBe("pending");
+  });
+
   it("keeps ask_user_questions pending when user-comment supersede is explicitly disabled", async () => {
     const { companyId, issueId } = await seedConfirmationIssue("Question supersede opt-out");
 

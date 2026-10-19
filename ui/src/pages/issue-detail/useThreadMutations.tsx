@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useMutation, type InfiniteData } from "@tanstack/react-query";
 import { issuesApi } from "../../api/issues";
 import { CommentSubmissionUnknownError } from "../../lib/comment-submit-result";
+import { commentSubmitErrorText } from "../../lib/comment-submit-error";
 import { approvalsApi } from "../../api/approvals";
 import { queryKeys } from "../../lib/queryKeys";
 import {
@@ -323,7 +324,7 @@ export function useThreadMutations({
           err instanceof CommentSubmissionUnknownError
             ? "We are not sure your comment was saved"
             : "Your comment was not posted",
-        body: err instanceof Error ? err.message : "Could not post your comment",
+        body: commentSubmitErrorText(err),
         tone: "error",
       });
     },
@@ -721,7 +722,7 @@ export function useThreadMutations({
           err instanceof CommentSubmissionUnknownError
             ? "We are not sure your comment was saved"
             : "Your comment was not posted",
-        body: err instanceof Error ? err.message : "Could not post your comment",
+        body: commentSubmitErrorText(err),
         tone: "error",
       });
     },
