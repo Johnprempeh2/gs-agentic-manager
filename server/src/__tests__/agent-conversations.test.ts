@@ -240,13 +240,9 @@ const support = await getEmbeddedPostgresTestSupport();
       const queuedInterrupt = { queueId: randomUUID(), revision: "queue-revision", targetRunId: randomUUID() };
       expect((await request(appFor(colleague)).post(`/api/issues/${chatId}/queued-comments/interrupt`)
         .send(queuedInterrupt)).status).toBe(403);
-      for (const body of ["Hello", "/new"]) {
-        expect((await request(appFor(colleague)).post(`/api/issues/${chatId}/comments`)
-          .send({ body, clientRequestId: randomUUID() })).status).toBe(403);
-      }
-      expect((await request(appFor(colleague))
-        .post(`/api/companies/${companyId}/issues/${chatId}/attachments`)
-        .attach("file", Buffer.from("foreign upload"), "note.txt")).status).toBe(403);
+      // Colleagues may write in the chat (GRE-1688), but only the owner resets it.
+      expect((await request(appFor(colleague)).post(`/api/issues/${chatId}/comments`)
+        .send({ body: "/new", clientRequestId: randomUUID() })).status).toBe(403);
 
       const [planReview] = await db.insert(issueThreadInteractions).values({
         companyId, issueId: chatId, kind: "request_confirmation", status: "pending",
@@ -287,6 +283,78 @@ const support = await getEmbeddedPostgresTestSupport();
       expect(resolveOff.body.id).toBe(resolved[0].body.id);
       const interruptOff = await request(app).post(`/api/issues/${chatId}/queued-comments/interrupt`).send(queuedInterrupt);
       expect(interruptOff.body).not.toMatchObject({ code: "not_entitled" });
+    });
+    it("lets a board member who did not start it comment on another user's chat and an agent-created task (GRE-1688)", async () => {
+      const appFor = (userId: string) => {
+        const app = express();
+        app.use(express.json());
+        app.use((req, _res, next) => {
+          req.actor = { type: "board", source: "session", userId, companyIds: [companyId] };
+          next();
+        });
+        const storage = {
+          provider: "local_disk",
+          putFile: async (input: { namespace: string; originalFilename?: string; contentType: string; body: Buffer }) => ({
+            provider: "local_disk",
+            objectKey: `${input.namespace}/${input.originalFilename ?? "upload"}`,
+            contentType: input.contentType,
+            byteSize: input.body.length,
+            sha256: "sha256-sample",
+            originalFilename: input.originalFilename,
+          }),
+        };
+        app.use("/api", issueRoutes(db, storage as never));
+        app.use(errorHandler);
+        return app;
+      };
+      const owner = randomUUID();
+      const colleague = randomUUID();
+      for (const userId of [owner, colleague]) {
+        await db.insert(companyMemberships).values({
+          companyId, principalType: "user", principalId: userId, status: "active", membershipRole: "operator",
+        });
+        await ensureHumanRoleDefaultGrants(db, {
+          companyId, principalId: userId, membershipRole: "operator", grantedByUserId: null,
+        });
+      }
+      const colleagueApp = appFor(colleague);
+
+      const chat = await create(owner);
+      const message = await request(colleagueApp).post(`/api/issues/${chat.id}/comments`)
+        .send({ body: "Adding a note to your chat", clientRequestId: randomUUID() });
+      expect(message.status).toBe(201);
+      expect(message.body.authorUserId).toBe(colleague);
+      expect((await request(colleagueApp)
+        .post(`/api/companies/${companyId}/issues/${chat.id}/attachments`)
+        .attach("file", Buffer.from("colleague upload"), "note.txt")).status).toBe(201);
+
+      const task = await issueService(db).create(companyId, {
+        title: "Agent-created task",
+        status: "todo",
+        assigneeAgentId: agentId,
+        createdByAgentId: agentId,
+      });
+      // The stored Netlify card shape that made GRE-1683 unreadable: written
+      // straight to the table with a custom target key over 120 characters.
+      const longKey = `connection:app-gallery-netlify-${randomUUID()}-17df789a/netlify-${randomUUID().slice(0, 8)}`
+        + `:user:${"u".repeat(32)}`;
+      expect(longKey.length).toBeGreaterThan(120);
+      await db.insert(issueThreadInteractions).values({
+        companyId, issueId: task.id, kind: "request_confirmation", status: "pending",
+        continuationPolicy: "none", createdByAgentId: agentId,
+        payload: {
+          version: 1,
+          prompt: "Connect your Netlify to continue",
+          target: { type: "custom", key: longKey, revisionId: "state", label: "Connect Netlify" },
+        },
+      });
+      const listed = await request(colleagueApp).get(`/api/issues/${task.id}/interactions`);
+      expect(listed.status).toBe(200);
+      expect(listed.body[0].payload.target.key).toBe(longKey);
+      const comment = await request(colleagueApp).post(`/api/issues/${task.id}/comments`)
+        .send({ body: "Comment from someone who did not start this" });
+      expect(comment.status).toBe(201);
+      expect(comment.body.authorUserId).toBe(colleague);
     });
     it("deduplicates concurrent message retries and preserves recoverable delivery", async () => {
       const issue = await create();
