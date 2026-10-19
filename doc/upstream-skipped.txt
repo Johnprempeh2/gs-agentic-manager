@@ -14,3 +14,9 @@ d91eceb57 #13471 bump in their Storybook deploy workflow; we do not run it
 806af230b #14928 upstream release notes
 6eaf21892 #14984 their CODEOWNERS for Storybook publishing
 78e003449 #15007 their product eval fixtures; take only if runner-e2e is synced whole
+bfadb6655 #16710 Daytona-only sandbox cleanup; outside this deployment
+10d92eb46 #16760 Daytona-only idle cleanup; outside this deployment
+c9669a6c2 #16722 Grok-only documentation; Grok is outside our beta
+ad9f5edd4 #16798 upstream Honeycomb trace-design guidance; our observability guidance is local
+8de28c12e #16712 upstream test-only evidence; take with its selected execution port if needed
+b85a69b33 #16800 upstream test-only evidence; take with its selected native port if needed
