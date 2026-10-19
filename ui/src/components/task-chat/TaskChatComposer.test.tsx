@@ -17,6 +17,11 @@ import {
   saveDraftSubmission,
 } from "../../lib/composer-draft";
 import { CommentSubmissionUnknownError } from "../../lib/comment-submit-result";
+import {
+  FakeSpeechRecognition,
+  installFakeSpeechRecognition,
+  removeFakeSpeechRecognition,
+} from "../../fixtures/fakeSpeechRecognition";
 
 /**
  * MDXEditor-in-jsdom weight (mirrors MarkdownEditor.test.tsx): the real editor
@@ -290,6 +295,37 @@ function autocompleteOption(matchText: string) {
 }
 
 describe("TaskChatComposer", () => {
+  it("dictates into the draft after typed text and drops late results after send", async () => {
+    installFakeSpeechRecognition();
+    try {
+      const onAdd = vi.fn().mockResolvedValue(undefined);
+      render(<TaskChatComposer onAdd={onAdd} workMode="standard" />);
+      const mic = () => container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-dictation"]')!;
+      typeText("Please");
+      flushSync(() => mic().click());
+      const recognition = FakeSpeechRecognition.last();
+      expect(recognition.started).toBe(true);
+      expect(container.querySelector('[data-testid="task-chat-composer-dictation-interim"]')).toBeTruthy();
+      flushSync(() => recognition.hear("ship it", true));
+      expect(editable().textContent).toBe("Please ship it");
+      pressKey("Enter", { metaKey: true });
+      await flushAsync();
+      expect(onAdd.mock.calls[0]?.[0]).toBe("Please ship it");
+      expect(recognition.aborted).toBe(true);
+      // A final result the browser delivers after send must not refill the box.
+      flushSync(() => recognition.hear("ship it", true));
+      await flushAsync();
+      expect(editable().textContent).toBe("");
+    } finally {
+      removeFakeSpeechRecognition();
+    }
+  });
+
+  it("hides the dictation button without browser speech support", () => {
+    render(<TaskChatComposer onAdd={vi.fn()} workMode="standard" />);
+    expect(container.querySelector('[data-testid="task-chat-composer-dictation"]')).toBeNull();
+  });
+
   it("settles an acknowledged submission after navigating away", async () => {
     const key = "navigate-before-save";
     let resolveSend!: () => void;

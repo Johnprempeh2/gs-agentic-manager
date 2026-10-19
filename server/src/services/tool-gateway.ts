@@ -89,6 +89,7 @@ import type {
   ToolMcpGatewayWithTokens,
   UpdateToolMcpGateway,
 } from "@greatstone/shared";
+import { requestConfirmationPayloadSchema } from "@greatstone/shared";
 import {
   isGitHubConnectorProfileId,
   isGoogleWorkspaceConnectorProfileId,
@@ -4355,6 +4356,9 @@ export function createToolGatewayService(
         href,
       },
     };
+    // This card skips the create route, so hold it to the rule every read
+    // applies; a row the read schema rejects blocks the whole thread (GRE-1688).
+    requestConfirmationPayloadSchema.parse(payload);
     const [existing] = await db
       .select({ id: issueThreadInteractions.id })
       .from(issueThreadInteractions)

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { type MarkdownEditorRef, MarkdownEditor } from "../MarkdownEditor";
 import { ReplySnippetsButton } from "./ReplySnippetsButton";
+import { DictationButton, DictationInterim, useComposerDictation } from "../DictationButton";
 import { InlineEntitySelector } from "../InlineEntitySelector";
 import {
   type HandoffChipResolvers,
@@ -219,6 +220,7 @@ export const IssueChatComposer = forwardRef<
   const reassignTriggerRef = useRef<HTMLButtonElement | null>(null);
   const focusAssigneeOnDialogCloseRef = useRef(false);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  const dictation = useComposerDictation(body, changeBody);
   const composerContainerRef = useRef<HTMLDivElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canAcceptFiles =
@@ -431,6 +433,7 @@ export const IssueChatComposer = forwardRef<
     );
 
     const workModeChanged = pendingWorkMode !== resolvedIssueWorkMode;
+    dictation.cancel();
     if (draftKey) saveDraft(draftKey, trimmed);
     setSubmitting(true);
     bodyRef.current = "";
@@ -884,6 +887,7 @@ export const IssueChatComposer = forwardRef<
         bordered={false}
         contentClassName="max-h-(--sz-28dvh) overflow-y-auto pr-1 pb-2 text-sm scrollbar-auto-hide"
       />
+      <DictationInterim dictation={dictation} testId="issue-chat-composer-dictation-interim" />
 
       {coachVisible && plainNameCandidate ? (
         <div className="mt-2">
@@ -999,6 +1003,11 @@ export const IssueChatComposer = forwardRef<
               </Button>
             </>
           ) : null}
+          <DictationButton
+            dictation={dictation}
+            disabled={!!uncertainSubmission}
+            testId="issue-chat-composer-dictation"
+          />
           <ReplySnippetsButton
             currentBody={body}
             disabled={!!uncertainSubmission}

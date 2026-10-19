@@ -19079,7 +19079,11 @@ export function issueRoutes(
       if (issue.conversationAgentId && req.actor.type === "board") {
         await assertEntitled(instanceSettings, isBoardQuestionChat(issue) ? "enableStrategyBoard" : "enableAgentChat");
         if (!req.actor.userId) throw forbidden("Board user access required");
-        if (req.actor.userId !== issue.conversationUserId) throw forbidden("Only the conversation owner can send messages or start a new session");
+        // Any board member may write in any chat (GRE-1688); only the owner
+        // may reset its session.
+        if (req.body.body.trim() === "/new" && req.actor.userId !== issue.conversationUserId) {
+          throw forbidden("Only the conversation owner can start a new session");
+        }
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
         if (!(await assertAgentIssueCommentAllowed(req, res, issue))) return;
         if (req.body.body.trim() !== "/new" && !(await assertBoardCommentNotPaused(req, res, issue))) return;
@@ -20318,9 +20322,6 @@ export function issueRoutes(
       }
       if (issue.conversationAgentId && req.actor.type === "board") {
         await assertEntitled(instanceSettings, "enableAgentChat");
-      }
-      if (issue.conversationAgentId && req.actor.type === "board" && req.actor.userId !== issue.conversationUserId) {
-        throw forbidden("Only the conversation owner can upload attachments");
       }
       if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
       if (
