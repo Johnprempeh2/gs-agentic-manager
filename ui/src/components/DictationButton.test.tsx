@@ -25,7 +25,16 @@ describe("appendDictatedText", () => {
 
 function Harness({ onSubmit }: { onSubmit: (value: string) => void }) {
   const [value, setValue] = useState("");
-  return <ChatComposer value={value} onChange={setValue} onSubmit={() => onSubmit(value)} />;
+  return (
+    <ChatComposer
+      value={value}
+      onChange={setValue}
+      onSubmit={() => {
+        onSubmit(value);
+        setValue("");
+      }}
+    />
+  );
 }
 
 describe("ChatComposer dictation", () => {
@@ -83,8 +92,25 @@ describe("ChatComposer dictation", () => {
 
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')!.click());
     expect(onSubmit).toHaveBeenCalledWith("Please check the invoice");
-    expect(recognition.stopped).toBe(true);
+    expect(recognition.aborted).toBe(true);
     expect(interim()).toBeNull();
+    expect(mic()!.getAttribute("aria-pressed")).toBe("false");
+
+    // The browser can still deliver a final result after send; it must not refill the box.
+    act(() => recognition.hear("check the invoice", true));
+    expect(input().value).toBe("");
+  });
+
+  it("keeps a final result that arrives after the mic is clicked off", () => {
+    installFakeSpeechRecognition();
+    act(() => root.render(<Harness onSubmit={() => {}} />));
+    act(() => mic()!.click());
+    const recognition = FakeSpeechRecognition.last();
+    act(() => mic()!.click());
+    expect(recognition.stopped).toBe(true);
+    act(() => recognition.hear("last words", true));
+    act(() => recognition.end());
+    expect(input().value).toBe("last words");
     expect(mic()!.getAttribute("aria-pressed")).toBe("false");
   });
 

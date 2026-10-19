@@ -153,7 +153,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
   function send() {
     if (!canSend) return;
-    if (dictation.listening) dictation.stop();
+    dictation.cancel();
     onSubmit();
   }
 

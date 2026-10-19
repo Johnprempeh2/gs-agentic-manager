@@ -19,13 +19,17 @@ export class FakeSpeechRecognition implements BrowserSpeechRecognition {
     this.started = true;
   }
 
+  aborted = false;
+
+  /** Like the browser: stop() only asks; results may still arrive before `end()`. */
   stop() {
     this.stopped = true;
-    this.onend?.();
   }
 
   abort() {
     this.stopped = true;
+    this.aborted = true;
+    this.onend?.();
   }
 
   constructor() {
@@ -34,6 +38,10 @@ export class FakeSpeechRecognition implements BrowserSpeechRecognition {
 
   static last(): FakeSpeechRecognition {
     return FakeSpeechRecognition.instances[FakeSpeechRecognition.instances.length - 1]!;
+  }
+
+  end() {
+    this.onend?.();
   }
 
   hear(transcript: string, isFinal: boolean) {

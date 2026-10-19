@@ -433,7 +433,7 @@ export const IssueChatComposer = forwardRef<
     );
 
     const workModeChanged = pendingWorkMode !== resolvedIssueWorkMode;
-    if (dictation.listening) dictation.stop();
+    dictation.cancel();
     if (draftKey) saveDraft(draftKey, trimmed);
     setSubmitting(true);
     bodyRef.current = "";

@@ -60,6 +60,11 @@ export interface Dictation {
   interim: string;
   start: () => void;
   stop: () => void;
+  /**
+   * Stop and throw away anything not yet final. Use on send: a plain `stop()`
+   * can still deliver a final result after the draft was cleared.
+   */
+  cancel: () => void;
   toggle: () => void;
 }
 
@@ -76,6 +81,18 @@ export function useDictation({ onFinal }: { onFinal: (text: string) => void }): 
     recognitionRef.current?.stop();
   }, []);
 
+  const cancel = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    recognitionRef.current = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    recognition.abort();
+    setInterim("");
+    setListening(false);
+  }, []);
+
   const start = useCallback(() => {
     if (!Recognition || denied || recognitionRef.current) return;
     const recognition = new Recognition();
@@ -83,6 +100,7 @@ export function useDictation({ onFinal }: { onFinal: (text: string) => void }): 
     recognition.interimResults = true;
     recognition.lang = typeof navigator !== "undefined" ? navigator.language || "en-US" : "en-US";
     recognition.onresult = (event) => {
+      if (recognitionRef.current !== recognition) return;
       let pending = "";
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index]!;
@@ -103,6 +121,7 @@ export function useDictation({ onFinal }: { onFinal: (text: string) => void }): 
       }
     };
     recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
       recognitionRef.current = null;
       setInterim("");
       setListening(false);
@@ -130,5 +149,5 @@ export function useDictation({ onFinal }: { onFinal: (text: string) => void }): 
     [],
   );
 
-  return { available: Recognition !== null && !denied, listening, interim, start, stop, toggle };
+  return { available: Recognition !== null && !denied, listening, interim, start, stop, cancel, toggle };
 }

@@ -295,7 +295,7 @@ function autocompleteOption(matchText: string) {
 }
 
 describe("TaskChatComposer", () => {
-  it("dictates into the draft after typed text and stops listening on send", async () => {
+  it("dictates into the draft after typed text and drops late results after send", async () => {
     installFakeSpeechRecognition();
     try {
       const onAdd = vi.fn().mockResolvedValue(undefined);
@@ -311,7 +311,11 @@ describe("TaskChatComposer", () => {
       pressKey("Enter", { metaKey: true });
       await flushAsync();
       expect(onAdd.mock.calls[0]?.[0]).toBe("Please ship it");
-      expect(recognition.stopped).toBe(true);
+      expect(recognition.aborted).toBe(true);
+      // A final result the browser delivers after send must not refill the box.
+      flushSync(() => recognition.hear("ship it", true));
+      await flushAsync();
+      expect(editable().textContent).toBe("");
     } finally {
       removeFakeSpeechRecognition();
     }

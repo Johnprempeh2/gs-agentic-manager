@@ -852,7 +852,7 @@ export function TaskChatComposer({
 
   async function submit() {
     if (disabled || (pause && !canResetPausedConversation)) return;
-    if (dictation.listening) dictation.stop();
+    dictation.cancel();
     const retained =
       draftKey && !queuedEdit ? loadDraftSubmission(draftKey) : null;
     if (retained && !submitting) {
