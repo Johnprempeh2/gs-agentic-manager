@@ -26,8 +26,18 @@ import type { StorageService } from "../storage/types.js";
 import { logActivity } from "./activity-log.js";
 import { applyStudioLook } from "./studio-looks.js";
 import type { GeneratedImageActor } from "./generated-images.js";
-import { resolveVideoGenerationProvider } from "./video-generation/registry.js";
+import { describeVideoGeneration, resolveVideoGenerationProvider } from "./video-generation/registry.js";
+import {
+  assertPlanCanSpend,
+  describeHiggsfieldPlan,
+  higgsfieldPlanResolver,
+  pickStudioProvider,
+  type HiggsfieldPlan,
+  type ResolveHiggsfieldPlan,
+} from "./image-generation/higgsfield-plan.js";
+import { createHiggsfieldPlanVideoProvider, planClipCosts, planVideoParams } from "./video-generation/higgsfield-plan.js";
 import { VideoGenerationError, type VideoGenerationProvider } from "./video-generation/types.js";
+import { localGpuFromEnv, localGpuProgress, type LocalGpu } from "./local-gpu.js";
 
 // Studio clips. As with images, a request is saved as a pending row and
 // answered at once; the clip is made in the background, stored as a company
@@ -42,6 +52,10 @@ type GeneratedVideoRow = typeof generatedVideos.$inferSelect;
 
 export interface GeneratedVideoServiceOptions {
   resolveProvider?: () => VideoGenerationProvider | null;
+  /** This PC's graphics card through ComfyUI; defaults to GSAM_COMFYUI_URL. Null switches it off. */
+  localGpu?: LocalGpu | null;
+  /** The company's connected Higgsfield plan; defaults to looking up its app connection. */
+  resolvePlan?: ResolveHiggsfieldPlan;
   now?: () => Date;
 }
 
@@ -71,6 +85,7 @@ export function toGeneratedVideo(row: GeneratedVideoRow, links?: VideoLinks): Ge
     issue: links?.issue ?? null,
     organisation: links?.organisation ?? null,
     favourite: row.favourite,
+    progress: row.status === "pending" && row.provider === "local" ? localGpuProgress(row.id) : null,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -100,6 +115,8 @@ async function readAll(stream: AsyncIterable<Buffer | Uint8Array>, limit: number
 }
 
 const activeJobs = new Set<string>();
+/** Stops a clip that is waiting or being made, by row id. */
+const jobControllers = new Map<string, AbortController>();
 const queuedJobs: Array<() => Promise<void>> = [];
 let runningJobs = 0;
 
@@ -121,6 +138,8 @@ function drain() {
 
 export function generatedVideoService(db: Db, storage: StorageService, options: GeneratedVideoServiceOptions = {}) {
   const resolveProvider = options.resolveProvider ?? (() => resolveVideoGenerationProvider());
+  const localGpu = options.localGpu === undefined ? localGpuFromEnv() : options.localGpu;
+  const resolvePlan = options.resolvePlan ?? higgsfieldPlanResolver(db);
   const now = options.now ?? (() => new Date());
 
   async function finish(id: string, patch: Partial<typeof generatedVideos.$inferInsert>) {
@@ -149,12 +168,16 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
 
   async function run(row: GeneratedVideoRow, provider: VideoGenerationProvider) {
     activeJobs.add(row.id);
+    const signal = jobControllers.get(row.id)?.signal;
     try {
+      if (signal?.aborted) return;
       const result = await provider.generate({
         prompt: composeVideoPrompt(row.prompt, row.motion, row.camera as StudioCameraSettings | null),
         model: row.model as VideoModelId,
         durationSeconds: row.durationSeconds,
         sourceImage: await loadSourceImage(row),
+        jobId: row.id,
+        signal,
       });
       const stored = await storage.putFile({
         companyId: row.companyId,
@@ -217,6 +240,7 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
       }
     } finally {
       activeJobs.delete(row.id);
+      jobControllers.delete(row.id);
     }
   }
 
@@ -310,7 +334,17 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
   }
 
   return {
-    status: () => resolveProvider(),
+    status: async (companyId: string) => {
+      const envProvider = resolveProvider();
+      const plan = await resolvePlan(companyId).catch((error) => {
+        logger.warn({ err: error, companyId }, "could not read the Higgsfield plan connection");
+        return null;
+      });
+      const local = localGpu ? await localGpu.status() : null;
+      if (!plan) return describeVideoGeneration(envProvider, local);
+      const [described, creditsPerClip] = await Promise.all([describeHiggsfieldPlan(plan), planClipCosts(plan.client)]);
+      return describeVideoGeneration(envProvider, local, { ...described, creditsPerClip });
+    },
 
     create: async (companyId: string, input: CreateGeneratedVideo, actor: GeneratedImageActor) => {
       const parsed = createGeneratedVideoSchema.parse(input);
@@ -320,13 +354,50 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
       const sourceImageId = parsed.sourceImageId ?? null;
-      const provider = resolveProvider();
+      const isAgent = actor.actorType === "agent";
+      let provider: VideoGenerationProvider | null;
+      let picked: { provider: VideoGenerationProvider | null; plan: HiggsfieldPlan | null } = { provider: null, plan: null };
+      if (model.provider === "local") {
+        const local = localGpu ? await localGpu.status() : null;
+        if (!localGpu || !local) {
+          throw unprocessable("This PC's video server is not answering. Check that ComfyUI is running on the PC, then try again.", {
+            code: "local_gpu_unavailable",
+          });
+        }
+        if (!local.videoModels.includes(model.id)) {
+          throw unprocessable(`${model.label} is not installed on this PC.`, { code: "local_video_model_missing" });
+        }
+        provider = localGpu.videoProvider();
+      } else {
+        let envProvider = resolveProvider();
+        // Practice mode stands in for every model; a real service only for its own.
+        if (envProvider && envProvider.id !== "mock" && envProvider.id !== model.provider) envProvider = null;
+        const requested = parsed.provider === "local" ? undefined : parsed.provider;
+        const plan = requested && requested !== "higgsfield_plan" ? null : await resolvePlan(companyId);
+        picked = pickStudioProvider({
+          requested,
+          envProvider,
+          plan,
+          planProvider: (connected) => createHiggsfieldPlanVideoProvider(connected.client),
+          isAgent,
+          kind: "video",
+        });
+        provider = picked.provider;
+        if (!provider && plan && isAgent) await assertPlanCanSpend(plan, isAgent, null);
+      }
       if (!provider) {
         throw unprocessable("Video making is not set up yet. Ask your admin to add the Higgsfield key.", {
           code: "video_generation_not_configured",
         });
       }
       await assertLinksInCompany(companyId, { issueId, organisationId, sourceImageId });
+      if (picked.plan) {
+        const cost = await picked.plan.client.cost("generate_video", {
+          ...planVideoParams(model.id, parsed.duration ?? model.durations[0]),
+          prompt: "price check",
+        });
+        await assertPlanCanSpend(picked.plan, isAgent, cost);
+      }
       await failLostJobs(companyId);
       const [{ pending }] = await db
         .select({ pending: count() })
@@ -382,6 +453,9 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
           organisationId,
         },
       });
+      // Counted as running from now, so a long wait in the queue is not taken for a lost job.
+      activeJobs.add(row!.id);
+      jobControllers.set(row!.id, new AbortController());
       schedule(() => run(row!, provider));
       return withLinks(row!);
     },
@@ -428,6 +502,16 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
         .where(eq(generatedVideos.id, row.id))
         .returning()
         .then((rows) => rows[0] ?? row);
+    },
+
+    /** Stops a clip that is waiting or being made and marks it failed. A finished clip is left alone. */
+    cancel: async (row: GeneratedVideoRow, cancelledBy: string) => {
+      if (row.status !== "pending") {
+        throw unprocessable("Only a clip that is still being made can be cancelled", { code: "generated_video_not_pending" });
+      }
+      const cancelled = await finish(row.id, { status: "failed", error: `Cancelled by ${cancelledBy}.` });
+      jobControllers.get(row.id)?.abort();
+      return cancelled ?? row;
     },
 
     remove: async (id: string) => {

@@ -382,6 +382,84 @@ describe("Images page", () => {
     expect(container.querySelectorAll('[data-testid="generated-image-card"]')).toHaveLength(1);
   });
 
+  it("defaults to the Higgsfield plan, then offers the API key and this PC, with the plan's credits", async () => {
+    imagesApiMock.status.mockResolvedValue({
+      configured: true,
+      provider: "higgsfield_plan",
+      providerLabel: "Higgsfield (your plan)",
+      model: "soul_2",
+      local: { label: "This PC (local GPU)", imageModels: ["flux-schnell"], videoModels: [], queued: 0 },
+      plan: { connectionId: "conn-1", credits: 312.75, planType: "basic", lowCredits: false, agentsMaySpend: false, planUrl: "https://higgsfield.ai/pricing", model: "soul_2", creditsPerImage: 1 },
+      alsoAvailable: { provider: "higgsfield", providerLabel: "Higgsfield" },
+    });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.create.mockResolvedValue(image({ id: "image-7", status: "pending", contentPath: null, assetId: null }));
+    await render();
+    const labels = () => [...container.querySelectorAll('[data-testid="image-model"] [role="radio"]')].map((option) => option.textContent);
+    expect(labels()).toEqual([
+      "Higgsfield (your plan)Uses your Higgsfield plan credits",
+      "HiggsfieldUses Higgsfield credits",
+      "FLUX.1 schnell, This PC (local GPU)Fast and sharp. No cost.",
+    ]);
+    expect(container.textContent).toContain("Using Higgsfield (your plan)");
+    expect(container.querySelector('[data-testid="plan-credits"]')?.textContent).toBe("312.75 credits left on the basic plan");
+    expect(container.querySelector('[data-testid="plan-cost"]')?.textContent).toBe("This uses 1 credit");
+
+    const apiKey = [...container.querySelectorAll('[data-testid="image-model"] [role="radio"]')][1] as HTMLButtonElement;
+    await act(async () => apiKey.click());
+    expect(container.querySelector('[data-testid="plan-credits"]')).toBeNull();
+    await act(async () => setTextarea(container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement, "A red bicycle"));
+    await act(async () => (container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).click());
+    expect(imagesApiMock.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ provider: "higgsfield" }));
+  });
+
+  it("offers this PC's models in the picker only while its ComfyUI answers", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m", local: null });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    await render();
+    expect(container.querySelector('[data-testid="studio-chip-model"]')).toBeNull();
+    expect(container.textContent).not.toContain("This PC");
+    act(() => root.unmount());
+    root = createRoot(container);
+
+    imagesApiMock.status.mockResolvedValue({
+      configured: true,
+      provider: "higgsfield",
+      providerLabel: "Higgsfield",
+      model: "m",
+      local: { label: "This PC (local GPU)", imageModels: ["flux-schnell", "sdxl"], videoModels: [], queued: 0 },
+    });
+    imagesApiMock.create.mockResolvedValue(image({ id: "image-9", status: "pending", contentPath: null, assetId: null }));
+    await render();
+    const options = [...container.querySelectorAll('[data-testid="image-model"] [role="radio"]')].map((option) => option.textContent);
+    expect(options).toEqual([
+      "HiggsfieldUses Higgsfield credits",
+      "FLUX.1 schnell, This PC (local GPU)Fast and sharp. No cost.",
+      "SDXL, This PC (local GPU)Takes words to leave out. No cost.",
+    ]);
+    const sdxl = [...container.querySelectorAll('[data-testid="image-model"] [role="radio"]')][2] as HTMLButtonElement;
+    await act(async () => sdxl.click());
+    expect(container.textContent).toContain("Using This PC (local GPU), no cost");
+    const setInput = (element: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    await act(async () => setInput(container.querySelector('[data-testid="image-seed"]') as HTMLInputElement, "42"));
+    await act(async () => setInput(container.querySelector('[data-testid="image-negative"]') as HTMLInputElement, "text"));
+    await act(async () => setTextarea(container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement, "A red bicycle"));
+    await act(async () => (container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).click());
+    expect(imagesApiMock.create).toHaveBeenCalledWith("company-1", {
+      prompt: "A red bicycle",
+      aspectRatio: "1:1",
+      style: null,
+      organisationId: null,
+      provider: "local",
+      model: "sdxl",
+      seed: 42,
+      negativePrompt: "text",
+    });
+  });
+
   it("opens one composer setting at a time from chips that are keyboard buttons", async () => {
     imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
     imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });

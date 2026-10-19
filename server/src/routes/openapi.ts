@@ -59,6 +59,7 @@ import {
   updateGeneratedImageCoverSchema,
   updateGeneratedImageFavouriteSchema,
   updateGeneratedVideoFavouriteSchema,
+  updateHiggsfieldPlanSettingsSchema,
   generatedImagesQuerySchema,
   generatedVideosQuerySchema,
   createGeneratedVideoSchema,
@@ -1499,6 +1500,7 @@ const BOARD_ONLY_PREFIXES = [
 const BOARD_ONLY_OPERATIONS = new Set([
   "DELETE /api/generated-images/{id}",
   "DELETE /api/generated-videos/{id}",
+  "PATCH /api/companies/{companyId}/higgsfield-plan",
   "POST /api/companies/{companyId}/pause",
   "POST /api/companies/{companyId}/resume",
   "PUT /api/companies/{companyId}/memory/stewards/{scopeId}",
@@ -4630,9 +4632,18 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/image-generation",
   tags: ["assets"],
-  summary: "Whether image generation is set up, and which image service the server uses (Higgsfield, OpenAI or practice mode)",
+  summary: "Whether image generation is set up, and which image service the server uses (Higgsfield, OpenAI, practice mode or local). local lists the models this PC's graphics card (ComfyUI) has ready; it is null when ComfyUI does not answer. When the Higgsfield app is connected, plan describes Higgsfield (your plan): credits left, lowCredits under 50, agentsMaySpend and creditsPerImage, and it is the default; alsoAvailable names the API key service",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/higgsfield-plan",
+  tags: ["assets"],
+  summary: "Board only: allow or stop agents spending the company's Higgsfield plan credits (agentsMaySpend, off by default). People using the studio can always use the plan. 422 code higgsfield_plan_not_connected when the Higgsfield app is not connected",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(updateHiggsfieldPlanSettingsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
 });
 
 registry.registerPath({
@@ -4648,7 +4659,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/generated-images",
   tags: ["assets"],
-  summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). 422 code image_generation_not_configured when no image service key is set; 429 when 6 images are already being made",
+  summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). Left out, provider is Higgsfield (your plan) when its app is connected, then the API key service, then this PC. provider local with model flux-schnell or sdxl makes it on this PC at no cost (seed and negativePrompt apply there). 422 code image_generation_not_configured when no image service is set, local_gpu_unavailable when ComfyUI on the PC does not answer, higgsfield_plan_agents_off when an agent asks for the plan without the board's leave, higgsfield_plan_no_credits (with planUrl) when the plan is out of credits; 429 when 6 images are already being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
 });
@@ -4711,7 +4722,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/video-generation",
   tags: ["assets"],
-  summary: "Say whether studio clips are switched on (configured) and which service makes them (Higgsfield or practice mode)",
+  summary: "Say whether studio clips are switched on (configured) and which service makes them (Higgsfield, practice mode or local). local lists the video models this PC's graphics card has ready; null when ComfyUI does not answer",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -4729,7 +4740,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/generated-videos",
   tags: ["assets"],
-  summary: "Make a short clip from a description, or animate a finished studio image (sourceImageId). Answers 202 with a pending clip; poll GET /api/generated-videos/{id}. 422 code video_generation_not_configured when no service is set; 429 when 3 clips are already being made",
+  summary: "Make a short clip from a description, or animate a finished studio image (sourceImageId). Answers 202 with a pending clip; poll GET /api/generated-videos/{id}, whose progress shows a local clip's place in the queue and percent done. Model wan-2.2-5b runs on this PC at no cost. 422 code video_generation_not_configured when no service is set, local_gpu_unavailable when ComfyUI on the PC does not answer; 429 when 3 clips are already being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedVideoSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
 });
@@ -4741,6 +4752,15 @@ registry.registerPath({
   summary: "Star (favourite true) or unstar a studio clip as a keeper. List starred ones with ?favourite=true. 422 when starring a clip that is not finished",
   request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedVideoFavouriteSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/generated-videos/{id}/cancel",
+  tags: ["assets"],
+  summary: "Stop a clip that is waiting or being made; it is marked failed with a cancelled note. 422 code generated_video_not_pending when it has already finished",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

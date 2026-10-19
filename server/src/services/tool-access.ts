@@ -6775,6 +6775,73 @@ export function toolAccessService(
     return headers;
   }
 
+  /**
+   * Calls one tool on a connected remote MCP app as the board, not as an
+   * agent: the studio spends a person's own Higgsfield plan this way. It
+   * reuses the connection's stored grant, OAuth refresh and egress guard, so
+   * nothing here handles a token. A 401 or an expired MCP session (404) means
+   * the call never ran, so each is retried once.
+   */
+  async function callConnectionTool(input: {
+    companyId: string;
+    connectionId: string;
+    toolName: string;
+    arguments: Record<string, unknown>;
+    actor?: ActorInfo;
+    timeoutMs?: number;
+  }): Promise<unknown> {
+    const connection = await getConnectionRow(input.connectionId, input.companyId);
+    assertSupportedConnection(connection);
+    if (connection.transport !== "mcp_remote" || connection.status !== "active") {
+      throw unprocessable("This app is not connected", { code: "connection_not_active" });
+    }
+    const endpoint = await resolvedRemoteEndpoint(connection, input.actor);
+    const requestId = `paperclip-studio-${randomUUID()}`;
+    const scope = `${connection.id}:studio:${endpoint}`;
+    const signal = AbortSignal.timeout(input.timeoutMs ?? 60_000);
+    const send = (init: RequestInit) => requestRemoteHttpEndpoint(new URL(endpoint), { ...init, signal });
+    const attempt = async (forceRefresh: boolean) => {
+      const headers = {
+        ...projectedConnectionHeaders(connection),
+        ...(await resolveCredentialHeaders(connection, input.actor, { forceRefresh })),
+      };
+      let sessionHeaders: Record<string, string>;
+      try {
+        sessionHeaders = await getMcpHttpSession({ send, headers, scope, requestId });
+      } catch (error) {
+        if (error instanceof McpHttpInitializationError && error.response) return error.response;
+        throw error;
+      }
+      return send({
+        method: "POST",
+        headers: mcpHttpRequestHeaders(sessionHeaders),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: requestId,
+          method: "tools/call",
+          params: { name: input.toolName, arguments: input.arguments },
+        }),
+      });
+    };
+    let response = await attempt(false);
+    if (response.status === 404 || response.status === 401) {
+      forgetMcpHttpSessions(connection.id);
+      await response.body?.cancel().catch(() => undefined);
+      response = await attempt(response.status === 401);
+    }
+    if (!response.ok) {
+      throw new HttpError(502, `Remote app returned HTTP ${response.status}`, { status: response.status });
+    }
+    const payload = asRecord(await readMcpHttpResponse(response, requestId));
+    if (payload.error) {
+      const message = asRecord(payload.error).message;
+      throw new HttpError(502, typeof message === "string" ? message : "Remote app returned an error", {
+        code: "remote_tool_error",
+      });
+    }
+    return payload.result;
+  }
+
   async function remoteTools(
     connection: typeof toolConnections.$inferSelect,
     credentialHeaders?: Record<string, string>,
@@ -17246,6 +17313,7 @@ export function toolAccessService(
 
     completeOAuthCallback,
     refreshOAuthGrantCredentials,
+    callConnectionTool,
     refreshManagedGitHubGrantAccess,
     finalizeOAuthAccess,
 

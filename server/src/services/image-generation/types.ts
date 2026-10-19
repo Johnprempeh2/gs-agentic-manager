@@ -3,6 +3,11 @@ import type { ImageAspectRatio, ImageGenerationProviderId } from "@greatstone/sh
 export interface ImageGenerationInput {
   prompt: string;
   aspectRatio: ImageAspectRatio;
+  /** Only local models use these two. */
+  seed?: number;
+  negativePrompt?: string | null;
+  /** The generated image id, so the local GPU queue can say where it is. */
+  jobId?: string;
   signal?: AbortSignal;
 }
 

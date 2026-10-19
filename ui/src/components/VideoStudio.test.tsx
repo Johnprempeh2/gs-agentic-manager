@@ -16,8 +16,30 @@ const videosApiMock = vi.hoisted(() => ({
   get: vi.fn(),
   remove: vi.fn(),
   setFavourite: vi.fn(),
+  cancel: vi.fn(),
 }));
 vi.mock("../api/videos", () => ({ videosApi: videosApiMock }));
+const imagesApiMock = vi.hoisted(() => ({ setPlanSettings: vi.fn() }));
+vi.mock("@/api/images", () => ({ imagesApi: imagesApiMock }));
+
+function planStatus(credits: number, extra: Record<string, unknown> = {}) {
+  return {
+    configured: true,
+    provider: "higgsfield_plan",
+    providerLabel: "Higgsfield (your plan)",
+    plan: {
+      connectionId: "conn-1",
+      credits,
+      planType: "basic",
+      lowCredits: credits < 50,
+      agentsMaySpend: false,
+      planUrl: "https://higgsfield.ai/pricing",
+      creditsPerClip: { "kling-2.5-turbo-pro": { 5: 7.5, 10: 15 }, "hailuo-2.3": { 6: 6, 10: 6 } },
+    },
+    alsoAvailable: { provider: "higgsfield", providerLabel: "Higgsfield" },
+    ...extra,
+  };
+}
 
 function video(overrides: Partial<GeneratedVideo>): GeneratedVideo {
   return {
@@ -39,6 +61,7 @@ function video(overrides: Partial<GeneratedVideo>): GeneratedVideo {
     issue: null,
     organisation: null,
     favourite: false,
+    progress: null,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,
@@ -180,5 +203,92 @@ describe("VideoStudio", () => {
     await settle();
     expect(videosApiMock.list).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ favourite: true }));
     expect(container.querySelectorAll('[data-testid="generated-video-card"]')).toHaveLength(1);
+  });
+  it("uses the Higgsfield plan by default, shows its credits and price, and can switch to the API key", async () => {
+    videosApiMock.status.mockResolvedValue(planStatus(312.75));
+    videosApiMock.list.mockResolvedValue({ videos: [], total: 0, nextOffset: null });
+    videosApiMock.create.mockResolvedValue(video({ status: "pending", contentPath: null }));
+    imagesApiMock.setPlanSettings.mockResolvedValue({ agentsMaySpend: true });
+    await render();
+
+    expect(container.textContent).toContain("Using Higgsfield (your plan)");
+    expect(container.querySelector('[data-testid="plan-credits"]')?.textContent).toBe("312.75 credits left on the basic plan");
+    expect(container.querySelector('[data-testid="plan-cost"]')?.textContent).toBe("This uses 7.5 credits");
+    expect(container.querySelector('[data-testid="plan-low"]')).toBeNull();
+
+    await act(async () => setTextarea(container.querySelector('[data-testid="video-prompt"]') as HTMLTextAreaElement, "Waves at dusk"));
+    await act(async () => (container.querySelector('[data-testid="make-video"]') as HTMLButtonElement).click());
+    expect(videosApiMock.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ provider: "higgsfield_plan" }));
+
+    const agents = container.querySelector('[data-testid="plan-agents"]') as HTMLButtonElement;
+    expect(agents.getAttribute("aria-checked")).toBe("false");
+    await act(async () => agents.click());
+    expect(imagesApiMock.setPlanSettings).toHaveBeenCalledWith("company-1", { agentsMaySpend: true });
+
+    const service = container.querySelector('[data-testid="studio-provider"]') as HTMLSelectElement;
+    await act(async () => {
+      service.value = "key";
+      service.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="plan-credits"]')).toBeNull();
+    await act(async () => setTextarea(container.querySelector('[data-testid="video-prompt"]') as HTMLTextAreaElement, "Waves at dawn"));
+    await act(async () => (container.querySelector('[data-testid="make-video"]') as HTMLButtonElement).click());
+    expect(videosApiMock.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ provider: "higgsfield" }));
+  });
+
+  it("warns when plan credits are low and stops when they run out, linking to the plan page", async () => {
+    videosApiMock.list.mockResolvedValue({ videos: [], total: 0, nextOffset: null });
+    videosApiMock.status.mockResolvedValue(planStatus(20));
+    await render();
+    expect(container.querySelector('[data-testid="plan-low"]')?.getAttribute("href")).toBe("https://higgsfield.ai/pricing");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    videosApiMock.status.mockResolvedValue(planStatus(0, { alsoAvailable: null }));
+    await render();
+    expect(container.querySelector('[data-testid="studio-provider"]')).toBeNull();
+    expect(container.querySelector('[data-testid="plan-empty"]')?.getAttribute("href")).toBe("https://higgsfield.ai/pricing");
+    await act(async () => setTextarea(container.querySelector('[data-testid="video-prompt"]') as HTMLTextAreaElement, "Waves at dusk"));
+    expect((container.querySelector('[data-testid="make-video"]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("offers the Wan model on this PC only while it answers, and shows the queue with a cancel button", async () => {
+    videosApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", local: null });
+    videosApiMock.list.mockResolvedValue({ videos: [], total: 0, nextOffset: null });
+    await render();
+    const optionValues = () => [...container.querySelectorAll('[data-testid="video-model"] option')].map((option) => (option as HTMLOptionElement).value);
+    expect(optionValues()).not.toContain("wan-2.2-5b");
+    act(() => root.unmount());
+    root = createRoot(container);
+
+    videosApiMock.status.mockResolvedValue({
+      configured: true,
+      provider: "local",
+      providerLabel: "This PC (local GPU)",
+      local: { label: "This PC (local GPU)", imageModels: [], videoModels: ["wan-2.2-5b"], queued: 2 },
+    });
+    videosApiMock.list.mockResolvedValue({
+      videos: [
+        video({ id: "running", status: "pending", contentPath: null, assetId: null, provider: "local", model: "wan-2.2-5b", progress: { queuePosition: 0, percent: 40 } }),
+        video({ id: "waiting", status: "pending", contentPath: null, assetId: null, provider: "local", model: "wan-2.2-5b", progress: { queuePosition: 1, percent: null } }),
+      ],
+      total: 2,
+      nextOffset: null,
+    });
+    videosApiMock.cancel.mockResolvedValue(video({ id: "waiting", status: "failed", error: "Cancelled by a board member." }));
+    videosApiMock.create.mockResolvedValue(video({ id: "new", status: "pending" }));
+    await render();
+    expect(optionValues()).toEqual(["wan-2.2-5b"]);
+    expect(container.textContent).toContain("Using This PC (local GPU), no cost");
+    expect(container.textContent).toContain("Making your video on this PC: 40%");
+    expect(container.textContent).toContain("Waiting for this PC's graphics card (1 ahead)");
+    const cancels = container.querySelectorAll('[data-testid="video-cancel"]');
+    expect(cancels).toHaveLength(2);
+    await act(async () => (cancels[1] as HTMLButtonElement).click());
+    expect(videosApiMock.cancel).toHaveBeenCalledWith("waiting");
+
+    await act(async () => setTextarea(container.querySelector('[data-testid="video-prompt"]') as HTMLTextAreaElement, "Waves on rocks"));
+    await act(async () => (container.querySelector('[data-testid="make-video"]') as HTMLButtonElement).click());
+    expect(videosApiMock.create).toHaveBeenCalledWith("company-1", { prompt: "Waves on rocks", model: "wan-2.2-5b", duration: 3 });
   });
 });

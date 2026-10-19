@@ -20,6 +20,7 @@ export const videosApi = {
   create: (companyId: string, body: CreateGeneratedVideo) => api.post<GeneratedVideo>(`/companies/${companyId}/generated-videos`, body),
   get: (id: string) => api.get<GeneratedVideo>(`/generated-videos/${id}`),
   remove: (id: string) => api.delete<void>(`/generated-videos/${id}`),
+  cancel: (id: string) => api.post<GeneratedVideo>(`/generated-videos/${id}/cancel`, {}),
   setFavourite: (id: string, body: UpdateGeneratedVideoFavourite) =>
     api.patch<GeneratedVideo>(`/generated-videos/${id}/favourite`, body),
 };
