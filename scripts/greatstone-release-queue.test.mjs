@@ -281,7 +281,7 @@ test("with nothing queued it runs no tests and records what GitHub says about ma
   assert.equal(box.state().main.status, "passed");
 });
 
-test("GitHub red refuses with the failing jobs; GitHub out of reach falls back to the PC gate; --pc-gate asks for it", async (t) => {
+test("GitHub red refuses with the failing jobs; GitHub out of reach fails without touching the PC; --pc-gate asks for it", async (t) => {
   const box = await sandbox(t);
   const red = box.merge("red");
   writeFileSync(join(box.root, "gh-gate"), `${red} 1\n`);
@@ -297,10 +297,12 @@ test("GitHub red refuses with the failing jobs; GitHub out of reach falls back t
   const b = enqueue(box, "main", "Offline");
   assert.equal((await box.worker().done).code, 0);
   item = box.state().items.find((i) => i.id === b.id);
-  assert.equal(item.status, "released", JSON.stringify(item));
+  assert.equal(item.status, "failed", JSON.stringify(item));
+  assert.match(item.reason, /GitHub could not be asked, so nothing was released/);
   const calls = box.callLines();
-  assert.ok(calls.includes(`gate ${offline} yield=0`), calls.join("\n"));
-  assert.match(calls.find((c) => c.startsWith("release ")), /^release --pc-gate /, "release.sh decides by the PC marker too");
+  // Never the PC suite on its own (18 Oct: three PC test runs at once corrupted the WSL disk).
+  assert.ok(!calls.includes(`gate ${offline} yield=0`), calls.join("\n"));
+  assert.ok(!calls.some((c) => c.startsWith("release ")), "no release without a gate");
 
   const pcAsked = box.merge("pc asked");
   writeFileSync(join(box.root, "gh-gate"), "");

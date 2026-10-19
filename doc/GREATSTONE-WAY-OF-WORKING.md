@@ -318,10 +318,14 @@ Merging does not change the live app. A version goes live in these steps.
    green). A test that fails only sometimes is a flake: fix its timing, and
    say so. The release task names the gate result.
 
-   **The PC gate is the fallback.** When GitHub cannot be asked (no `gh`, no
-   network), the release falls back to the PC's pass marker by itself and says
-   so. `greatstone-release.sh --pc-gate <rc-tag>` (and
-   `greatstone-release-queue.mjs enqueue --pc-gate ...`) uses it on purpose.
+   **The PC gate is a deliberate, explicit fallback only.** When GitHub cannot
+   be asked (no `gh`, no network), a queued release FAILS and releases nothing;
+   it never starts the full suite on the PC by itself. On 18 Oct 2026 three full
+   test runs on the PC at once corrupted the WSL disk and took live down for
+   eleven hours. Run the PC gate only on purpose, one at a time, never during a
+   release: `greatstone-release.sh --pc-gate <rc-tag>` (or
+   `greatstone-release-queue.mjs enqueue --pc-gate ...`). Agents must not run
+   test suites on the PC at all.
    The PC gate is `scripts/greatstone-test-gate.sh <rc-tag or full sha>`: the
    same lanes in parallel in a clean clone at `~/GSAM/test-gate/code` (about 22
    to 45 minutes on the PC; never on the Mac). A pass writes

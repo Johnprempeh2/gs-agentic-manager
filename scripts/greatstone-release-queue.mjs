@@ -8,7 +8,7 @@
 //              or for the pull request run that tested the same files
 //              (scripts/greatstone-github-gate.mjs); it waits while CI runs.
 //              The PC test gate (scripts/greatstone-test-gate.sh) runs instead
-//              for a request made with --pc-gate, or when GitHub cannot be asked.
+//              only for a request made with --pc-gate (never on its own: 18 Oct crash).
 //   candidate  an rc-* tag with a title and changelog (scripts/greatstone-candidate.mjs)
 //   preview    the candidate on a copy of the live data, then its switch tests
 //   draining   new agent runs are held (the task drain); running runs finish,
@@ -403,8 +403,8 @@ function createWorker(cfg) {
   /**
    * The release gate: Fork CI's full test matrix green on GitHub for `commit`
    * (or for the pull request run that tested the same files), waiting while it
-   * runs (at most githubWaitMs). The PC gate runs instead with --pc-gate, or
-   * when GitHub cannot be asked. Returns "github" or "pc".
+   * runs (at most githubWaitMs). The PC gate runs only with an explicit --pc-gate;
+   * if GitHub cannot be asked the request fails. Returns "github" or "pc".
    */
   const runGate = async (item, commit) => {
     if (!item.pcGate) {
@@ -421,7 +421,9 @@ function createWorker(cfg) {
         return "github";
       }
       if (result.code !== 3) throw new Stop("failed", result.code === 2 ? `${message} after ${Math.round(cfg.githubWaitMs / 60000)} min of waiting` : message);
-      logLine(item.log, `${message}; running the PC test gate instead`);
+      // Never fall back to the PC suite on its own: on 18 Oct three full test runs on the
+      // PC at once corrupted the WSL disk and took live down. Only an explicit --pc-gate runs it.
+      throw new Stop("failed", `${message}; GitHub could not be asked, so nothing was released. Retry later, or enqueue with --pc-gate to run the full suite on the PC (about 30 minutes of heavy load).`);
     }
     await runPcGate(item, commit);
     return "pc";
