@@ -58,6 +58,11 @@ import {
   type MarkdownEditorRef,
 } from "@/components/MarkdownEditor";
 import {
+  DictationButton,
+  DictationInterim,
+  useComposerDictation,
+} from "@/components/DictationButton";
+import {
   nextWorkMode,
   workModeMetaFor,
   workModeMetaList,
@@ -475,6 +480,7 @@ export function TaskChatComposer({
   pendingAssigneeRef.current = pendingAssignee;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  const dictation = useComposerDictation(body, changeBody);
   const bodyRef = useRef(body);
   bodyRef.current = body;
   const pendingDraftRef = useRef<{
@@ -846,6 +852,7 @@ export function TaskChatComposer({
 
   async function submit() {
     if (disabled || (pause && !canResetPausedConversation)) return;
+    if (dictation.listening) dictation.stop();
     const retained =
       draftKey && !queuedEdit ? loadDraftSubmission(draftKey) : null;
     if (retained && !submitting) {
@@ -1337,6 +1344,11 @@ export function TaskChatComposer({
                   : "max-h-(--sz-28dvh) min-h-(--sz-48px) overflow-y-auto px-1 py-1 text-sm scrollbar-auto-hide"
               }
             />
+            <DictationInterim
+              dictation={dictation}
+              className="px-1"
+              testId="task-chat-composer-dictation-interim"
+            />
           </div>
 
           {actionError ? (
@@ -1435,6 +1447,12 @@ export function TaskChatComposer({
                 </button>
               </>
             ) : null}
+            <DictationButton
+              dictation={dictation}
+              disabled={disabled || !!uncertainSubmission}
+              className="h-8 w-8"
+              testId="task-chat-composer-dictation"
+            />
 
             {queuedEdit ? (
               <span className="px-1 text-xs font-medium text-muted-foreground">

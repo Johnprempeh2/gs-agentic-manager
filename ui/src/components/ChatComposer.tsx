@@ -11,6 +11,7 @@ import {
 } from "react";
 import { AlertTriangle, Check, Loader2, PaperclipIcon, Send, X } from "lucide-react";
 import { filesFromPaste } from "../hooks/useFileIntake";
+import { DictationButton, DictationInterim, useComposerDictation } from "./DictationButton";
 import { cn } from "../lib/utils";
 
 /**
@@ -148,6 +149,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
   const isAsk = tone === "ask";
   const isPlanning = tone === "planning";
   const canSend = !disabled && !submitting && value.trim().length > 0;
+  const dictation = useComposerDictation(value, onChange);
+
+  function send() {
+    if (!canSend) return;
+    if (dictation.listening) dictation.stop();
+    onSubmit();
+  }
 
   useImperativeHandle(forwardedRef, () => ({
     focus: () => textareaRef.current?.focus(),
@@ -175,7 +183,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         : !evt.shiftKey && !evt.metaKey && !evt.ctrlKey;
     if (!wantsSubmit) return;
     evt.preventDefault();
-    if (canSend) onSubmit();
+    send();
   }
 
   function triggerFilePicker() {
@@ -291,6 +299,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         )}
       />
 
+      <DictationInterim dictation={dictation} testId="chat-composer-dictation-interim" />
+
       {attachments.length > 0 ? (
         <div
           data-testid="chat-composer-attachments"
@@ -381,11 +391,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
         {trailingTools}
 
+        <DictationButton dictation={dictation} disabled={disabled} testId="chat-composer-dictation" />
+
         <button
           type="button"
-          onClick={() => {
-            if (canSend) onSubmit();
-          }}
+          onClick={send}
           disabled={!canSend}
           aria-label={sendLabel}
           title={sendLabel}
