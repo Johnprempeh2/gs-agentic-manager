@@ -38,6 +38,11 @@ import {
   issueChatLongThreadTranscriptsByRunId,
 } from "../fixtures/issueChatLongThreadFixture";
 import { expiredSecretProposalInteraction } from "../fixtures/issueThreadInteractionFixtures";
+import {
+  FakeSpeechRecognition,
+  installFakeSpeechRecognition,
+  removeFakeSpeechRecognition,
+} from "../fixtures/fakeSpeechRecognition";
 import type {
   IssueChatLinkedRun,
   IssueChatTranscriptEntry,
@@ -3716,6 +3721,58 @@ describe("IssueChatThread", () => {
       expect(localStorage.getItem(key)).toBe("Newer unsent draft");
     },
   );
+
+  it("drops a dictation result that arrives after the comment was sent", async () => {
+    installFakeSpeechRecognition();
+    try {
+      const onAdd = vi.fn().mockResolvedValue(undefined);
+      const root = createRoot(container);
+      await act(async () =>
+        root.render(
+          <MemoryRouter>
+            <IssueChatThread
+              comments={[]}
+              linkedRuns={[]}
+              timelineEvents={[]}
+              liveRuns={[]}
+              onAdd={onAdd}
+              enableLiveTranscriptPolling={false}
+            />
+          </MemoryRouter>,
+        ),
+      );
+      const editor = container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Issue chat editor"]',
+      )!;
+      act(() => {
+        Object.getOwnPropertyDescriptor(
+          window.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(editor, "Please");
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      act(() =>
+        container
+          .querySelector<HTMLButtonElement>('[data-testid="issue-chat-composer-dictation"]')!
+          .click(),
+      );
+      const recognition = FakeSpeechRecognition.last();
+      act(() => recognition.hear("ship it", true));
+      expect(editor.value).toBe("Please ship it");
+      await act(async () =>
+        Array.from(container.querySelectorAll("button"))
+          .find((button) => button.textContent === "Send")!
+          .click(),
+      );
+      expect(onAdd.mock.calls[0]?.[0]).toBe("Please ship it");
+      expect(recognition.aborted).toBe(true);
+      act(() => recognition.hear("ship it", true));
+      expect(editor.value).toBe("");
+      act(() => root.unmount());
+    } finally {
+      removeFakeSpeechRecognition();
+    }
+  });
 
   it("keeps a reassigned legacy comment pending until its actual mutation promise settles", async () => {
     let resolveSend!: () => void;
