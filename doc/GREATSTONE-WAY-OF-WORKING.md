@@ -525,7 +525,39 @@ Merging does not change the live app. A version goes live in these steps.
    ```
 
    Each override is a line in `~/GSAM/preview-overrides.log`. The one-click
-   release from the app checks no preview, as before. When the live checkout
+   release from the app checks no preview, as before.
+
+   **No database change, no preview (19 Oct 2026).** The preview restores a
+   copy of the live database (about 330 MB, 8 to 12 minutes) to prove the
+   migrations on real data. A release that changes nothing in the database
+   needs no preview: the script goes on without one and logs
+   `preview skipped: no database changes between <live> and <candidate>` in
+   its output and in `~/GSAM/preview-overrides.log`. `db_change_check` in
+   `scripts/greatstone-common.sh` decides, from `git diff` between the live
+   commit and the candidate. A database change is any change (added, changed
+   or removed, tests not counted) to:
+
+   - `packages/db/` (the migrations with their meta journal and snapshots,
+     the schema, how migrations apply, the embedded PostgreSQL);
+   - `packages/plugins/**/migrations/` (plugin migrations);
+   - the startup backfills that write data each time the server starts:
+     `server/src/services/principal-access-compatibility.ts`,
+     `tool-oauth-legacy-backfill.ts` and `built-in-agents.ts`.
+
+   When it cannot tell (no live commit, a commit the release repo lacks, a git
+   error) it counts as a change, so the preview is needed. With a database
+   change nothing is different: a healthy preview of the tag is required.
+
+   **Automatic rollback.** Such a release is code only, so when live does not
+   come up on it (no healthy `/api/health` on the new commit within the
+   3 minutes, or `pnpm install`, the UI build or `start-live.sh` fails) the
+   script rolls back to the previous `live-*` tag on its own, inside the same
+   release lock, keeps the backup it took, and ends with
+   `Rolled back automatically to <live-tag>, which runs healthy; <rc-tag> is not live`
+   (or, if the rollback fails too, the command to run by hand). The database
+   is untouched by the code change, so nothing needs restoring. A release that
+   changed the database stops as before, with `Roll back with: ...` for a
+   person to decide. When the live checkout
    has local changes, the refusal names them (`Changed: ?? scripts/...`).
 
    **Full stop and start.** When the release task says so (a fix to the dev
@@ -585,7 +617,11 @@ tests, the database backup before the switch, and the rollback command.
    commit with the title (proposed from the changes when none was given).
 4. **Preview:** stops any preview, starts the candidate on a fresh copy of the
    live data and runs `switch-tests`. A failure ends the request, stops the
-   preview and deletes the unreleased tag.
+   preview and deletes the unreleased tag. A release that changes nothing in
+   the database (`db_change_check`, described under step 6 of the release above) skips this step; it shows
+   `preview skipped: no database changes between <live> and <candidate>`, so a
+   GitHub-green release of code only goes gate, candidate, drain, release,
+   about 4 to 6 minutes when no agent run has to finish.
 5. **Pausing new runs (the drain):** the task drain holds every new agent run
    (queued work stays queued; timers and wakes wait). Running runs finish, for
    at most 10 minutes. Nothing is stopped: if runs still run at the cap, the
@@ -596,7 +632,8 @@ tests, the database backup before the switch, and the rollback command.
    while a release by hand holds it, with no run paused) and keeps it to the
    end, then runs `scripts/greatstone-release.sh <rc-tag>`, the same command
    as by hand: test gate and preview checks, backup, `live-*` tag, switch, hot
-   restart, health check, automatic rollback if live does not come up. Then the
+   restart, health check, and for a release with no database change an
+   automatic rollback if live does not come up. Then the
    drain is lifted, also when the release failed. The result keeps the
    rollback command and the backup file.
 
@@ -609,7 +646,7 @@ worker's last run; it survives restarts) and one log per request in
 `~/GSAM/release-queue/logs/`. The worker writes it under the lock
 `~/GSAM/locks/release-queue-state.lock`; one worker runs at a time
 (`~/GSAM/locks/release-queue-worker.lock`). A request left running by a
-worker that stopped starts again if it was before the preview, and is marked
+worker that stopped starts again if it was before the preview step, and is marked
 failed if it was later, so a person checks live.
 
 **The worker on the PC.** The PC's watchdog (`~/GSAM/autostart.sh --watchdog`,

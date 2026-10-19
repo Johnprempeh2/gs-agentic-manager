@@ -10,7 +10,9 @@
 //              The PC test gate (scripts/greatstone-test-gate.sh) runs instead
 //              only for a request made with --pc-gate (never on its own: 18 Oct crash).
 //   candidate  an rc-* tag with a title and changelog (scripts/greatstone-candidate.mjs)
-//   preview    the candidate on a copy of the live data, then its switch tests
+//   preview    the candidate on a copy of the live data, then its switch tests;
+//              skipped when the release changes nothing in the database
+//              (db_change_check in greatstone-common.sh; when unsure it runs)
 //   draining   new agent runs are held (the task drain); running runs finish,
 //              at most GSAM_RELEASE_DRAIN_CAP_SECONDS (10 min); nothing is killed
 //   releasing  scripts/greatstone-release.sh <rc-tag>: backup, tag, switch, restart.
@@ -287,6 +289,19 @@ function activeRuns(cfg) {
   return r.status === 0 && Number.isInteger(n) ? n : null;
 }
 
+/**
+ * Does releasing `commit` over live's `liveCommit` change the database?
+ * db_change_check in greatstone-common.sh decides, the same check
+ * greatstone-release.sh makes; when it cannot tell, it says it changes.
+ */
+function dbChange(cfg, liveCommit, commit) {
+  const r = spawnSync("bash", ["-c", 'source "$0/greatstone-common.sh" && db_change_check "$1" "$2"', cfg.scripts, liveCommit ?? "", commit], {
+    encoding: "utf8",
+    env: { ...env, GSAM_RELEASE_REPO: cfg.repo },
+  });
+  return { changed: r.status !== 0, note: lastLine(`${r.stdout}\n${r.stderr}`) };
+}
+
 // ── The worker ─────────────────────────────────────────────────────────────
 
 /**
@@ -547,14 +562,22 @@ function createWorker(cfg) {
       } else patchItem(cfg, item.id, { tag });
       checkCancel(item);
 
-      const preview = join(cfg.scripts, "greatstone-preview.sh");
-      step(item, "preview", `starting ${tag} on a copy of the live data`);
-      await run(cfg, "bash", [preview, "stop"], { log: item.log });
-      const started = await runStep(item, "preview", "bash", [preview, "start", tag]);
-      if (started.code !== 0) throw new Stop("failed", `the preview of ${tag} did not start: ${lastLine(started.out, "preview:")}`);
-      step(item, "preview", `running the switch tests on the preview of ${tag}`);
-      const switches = await runStep(item, "preview", "bash", [preview, "switch-tests"]);
-      if (switches.code !== 0) throw new Stop("failed", `the switch tests failed on the preview of ${tag}: ${lastLine(switches.out, "preview:")}`);
+      // The preview (a copy of the live database, 8 to 12 minutes) proves the
+      // migrations; a release that changes nothing in the database skips it,
+      // and greatstone-release.sh rolls it back on its own if live does not come up.
+      const db = dbChange(cfg, liveHead(cfg), commit);
+      if (!db.changed) {
+        step(item, "preview", `preview skipped: ${db.note}`);
+      } else {
+        const preview = join(cfg.scripts, "greatstone-preview.sh");
+        step(item, "preview", `starting ${tag} on a copy of the live data (${db.note})`);
+        await run(cfg, "bash", [preview, "stop"], { log: item.log });
+        const started = await runStep(item, "preview", "bash", [preview, "start", tag]);
+        if (started.code !== 0) throw new Stop("failed", `the preview of ${tag} did not start: ${lastLine(started.out, "preview:")}`);
+        step(item, "preview", `running the switch tests on the preview of ${tag}`);
+        const switches = await runStep(item, "preview", "bash", [preview, "switch-tests"]);
+        if (switches.code !== 0) throw new Stop("failed", `the switch tests failed on the preview of ${tag}: ${lastLine(switches.out, "preview:")}`);
+      }
       checkCancel(item);
 
       const result = await drainAndRelease(item, tag, gateUsed === "pc" ? ["--pc-gate"] : []);

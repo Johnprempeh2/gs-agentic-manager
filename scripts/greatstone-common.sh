@@ -358,6 +358,40 @@ preview_check() {
   say "the preview runs $2 ($1) and answers on $PREVIEW_URL"
 }
 
+# The files whose change alters the live database when a release starts: the
+# migrations (SQL and meta journal and snapshots), the schema and the rest of
+# packages/db (how migrations apply, the embedded PostgreSQL and its version),
+# plugin migrations, and the server's startup backfills that write data on
+# every start (index.ts calls them). Tests are not counted.
+DB_CHANGE_PATHSPECS=(
+  packages/db/
+  ':(glob)packages/plugins/**/migrations/**'
+  server/src/services/principal-access-compatibility.ts
+  server/src/services/tool-oauth-legacy-backfill.ts
+  server/src/services/built-in-agents.ts
+  ':(exclude,glob)**/*.test.ts'
+  ':(exclude,glob)**/__fixtures__/**'
+)
+
+# db_change_check <live-commit> <candidate-commit>
+# Does a release from <live-commit> to <candidate-commit> change the database?
+# Succeeds, saying so, only when git shows no change to DB_CHANGE_PATHSPECS
+# between the two. Fails with the reason on a change, and when it cannot tell
+# (no live commit, a commit the release repo lacks, a git error): then the
+# release needs the preview, which proves the migrations on a copy of live data.
+db_change_check() {
+  local live="$1" cand="$2" files
+  [ -n "$live" ] && [ -n "$cand" ] \
+    || { say "cannot tell whether the database changes: the live commit (${live:-unknown}) or the candidate (${cand:-unknown}) is unknown"; return 1; }
+  files="$(git -C "$RELEASE_REPO" diff --no-renames --name-only "$live" "$cand" -- "${DB_CHANGE_PATHSPECS[@]}" 2>&1)" \
+    || { say "cannot tell whether the database changes between ${live:0:9} and ${cand:0:9}: $(printf '%s' "$files" | head -n 1)"; return 1; }
+  if [ -n "$files" ]; then
+    say "the database changes between ${live:0:9} and ${cand:0:9}: $(printf '%s' "$files" | head -n 5 | paste -sd ',' - | sed 's/,/, /g')$([ "$(printf '%s\n' "$files" | wc -l)" -le 5 ] || printf ' and more')"
+    return 1
+  fi
+  say "no database changes between ${live:0:9} and ${cand:0:9}"
+}
+
 # Prints the PIDs whose command line matches <pattern> (extended regex) and
 # whose working folder is <dir> or inside it. The folder tells live (~/GSAM/live)
 # from the preview (~/GSAM/preview/code) and from sandboxes in worktrees.
