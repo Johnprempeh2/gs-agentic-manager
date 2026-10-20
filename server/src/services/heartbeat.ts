@@ -17911,6 +17911,20 @@ export function heartbeatService(
     return issuesSvc.listDependencyReadiness(companyId, issueIds);
   }
 
+  async function countQueuedRunsForAgent(agentId: string, cutoff: Date | null) {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.agentId, agentId),
+          eq(heartbeatRuns.status, "queued"),
+          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+        ),
+      );
+    return Number(count ?? 0);
+  }
+
   async function countRunningRunsForAgent(agentId: string) {
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)` })
@@ -21587,10 +21601,13 @@ export function heartbeatService(
       const admissionSettings = resolveRunAdmissionSettings(
         await instanceSettings.getGeneral(),
       );
-      const [dbRunningRunIds, memory, disk] = await Promise.all([
+      const [dbRunningRunIds, memory, disk, runningCount, queuedCount] = await Promise.all([
         listRunningRunIdsForAdmission(),
         memoryReader().catch(() => null),
         diskReader().catch(() => null),
+        // Read under this agent's start lock, so only this gate claims its runs.
+        countRunningRunsForAgent(agentId),
+        countQueuedRunsForAgent(agentId, cutoff),
       ]);
       // No await from here until the slots are reserved below.
       const admission = evaluateRunAdmission({
@@ -21624,31 +21641,21 @@ export function heartbeatService(
       }
 
       // Reserve in the same tick as the check so concurrent start gates for
-      // other agents see these slots as taken, then shrink to what the
-      // per-agent limit allows. Never reserve more than the agent may run:
-      // a one-run agent that took every free slot made a concurrent start
-      // for another agent read the cap as full and hold its run (GRE-1605).
+      // other agents see these slots as taken. Reserve only what this agent
+      // can start (its queued runs, within its own limit): reserving every
+      // free slot, even briefly, made a concurrent start for another agent
+      // read the cap as full and hold its run for the 15s re-check (GRE-1605).
       const policy = parseHeartbeatPolicy(agent);
-      let reservedSlots = Math.min(
+      const reservedSlots = Math.min(
         admission.slots,
-        policy.maxConcurrentRuns,
+        Math.max(0, policy.maxConcurrentRuns - runningCount),
+        queuedCount,
         startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
       );
+      if (reservedSlots <= 0) return none;
       runAdmissionReservedSlots += reservedSlots;
       try {
-        const runningCount = await countRunningRunsForAgent(agentId);
-        const availableSlots = Math.min(
-          Math.max(0, policy.maxConcurrentRuns - runningCount),
-          reservedSlots,
-        );
-        runAdmissionReservedSlots -= reservedSlots - availableSlots;
-        reservedSlots = availableSlots;
-        if (availableSlots <= 0) return none;
-        const runs = await claimQueuedRunsForAgent(
-          agent,
-          availableSlots,
-          cutoff,
-        );
+        const runs = await claimQueuedRunsForAgent(agent, reservedSlots, cutoff);
         return { runs, hold: null };
       } finally {
         runAdmissionReservedSlots -= reservedSlots;
