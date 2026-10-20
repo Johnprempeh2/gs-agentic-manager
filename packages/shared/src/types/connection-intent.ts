@@ -31,6 +31,11 @@ export interface ConnectionSearchResultItem {
   }>;
   state: ConnectionAvailabilityState;
   connectionId: string | null;
+  /** API secret this agent already holds for the service; use it instead of a connection. */
+  heldSecret?: {
+    key: string;
+    readEndpoint: string;
+  };
 }
 
 export interface ConnectionsSearchResult {

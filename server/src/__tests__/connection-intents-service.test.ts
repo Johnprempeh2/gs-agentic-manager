@@ -1031,5 +1031,97 @@ describeEmbeddedPostgres("connectionIntentService", () => {
     });
   });
 
+  // GRE-1705: agents holding the shared Netlify token found the Netlify
+  // connection (needs attention), opened a card, and waited on John.
+  describe("a held API secret for the service", () => {
+    async function netlifyAgent(input: { secretAlias?: string; secretKey?: string; secretStatus?: string } = {}) {
+      const companyId = claims.company_id;
+      const agentId = randomUUID();
+      const issueId = randomUUID();
+      const runId = randomUUID();
+      await db.insert(agents).values({ id: agentId, companyId, name: `Deployer ${agentId.slice(0, 8)}`, role: "engineer", status: "active", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {} });
+      await db.insert(issues).values({ id: issueId, companyId, title: "Deploy the site", status: "in_progress", priority: "medium", assigneeAgentId: agentId });
+      await db.insert(heartbeatRuns).values({ id: runId, companyId, agentId, status: "running", responsibleUserId: "responsible-user", contextSnapshot: { issueId } });
+      if (input.secretAlias) {
+        const [secret] = await db.insert(companySecrets).values({
+          companyId, scope: "company", key: input.secretKey ?? `NETLIFY_PAT_${agentId.slice(0, 8).toUpperCase()}`,
+          name: `Netlify token ${agentId}`, status: input.secretStatus ?? "active",
+        }).returning();
+        await db.insert(companySecretBindings).values({ companyId, secretId: secret!.id, targetType: "agent", targetId: agentId, configPath: `access.${input.secretAlias}` });
+      }
+      const agentClaims: RuntimeToolsTokenClaims = { ...claims, sub: agentId, run_id: runId };
+      return { agentId, issueId, claims: agentClaims };
+    }
 
+    let netlifyConnectionAdded = false;
+    async function netlifyConnectionNeedingAttention() {
+      if (netlifyConnectionAdded) return;
+      netlifyConnectionAdded = true;
+      const companyId = claims.company_id;
+      const [application] = await db.insert(toolApplications).values({ companyId, applicationKey: `netlify-${randomUUID()}`, name: "Netlify", type: "mcp_http", status: "active", metadata: { sourceTemplateKey: "netlify" } }).returning();
+      const [connection] = await db.insert(toolConnections).values({ companyId, applicationId: application!.id, name: "Netlify", uid: `netlify/${randomUUID()}`, transport: "mcp_remote", authKind: "oauth", credentialPolicy: "shared", status: "active", enabled: true, healthStatus: "error", lastError: "OAuth authorization has expired.", config: { sourceTemplateKey: "netlify" }, transportConfig: { sourceTemplateKey: "netlify" } }).returning();
+      await db.insert(connectionGrants).values({ companyId, connectionId: connection!.id, kind: "organization", status: "active", isDefault: false });
+    }
+
+    async function cardsFor(issueId: string) {
+      return db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.issueId, issueId));
+    }
+
+    it("search names the secret and its read endpoint instead of a connection card", async () => {
+      await netlifyConnectionNeedingAttention();
+      const agent = await netlifyAgent({ secretAlias: "NETLIFY_PAT", secretKey: "NETLIFY_PAT" });
+      const result = await connectionIntentService(db).search(agent.claims, "netlify");
+      expect(result.results).toEqual([expect.objectContaining({
+        service: "netlify", state: "ready", connectionId: null,
+        heldSecret: { key: "NETLIFY_PAT", readEndpoint: "POST /api/agents/me/secrets/NETLIFY_PAT/value" },
+      })]);
+      expect(result.instruction).toContain("NETLIFY_PAT");
+      expect(result.instruction).toContain("POST /api/agents/me/secrets/NETLIFY_PAT/value");
+      expect(result.instruction).toContain("Do not call connection_request");
+      expect(result.instruction).not.toMatch(/^Call connection_request/);
+      expect(result.providerQuestion).toBeUndefined();
+    });
+
+    it("refuses a connection request with the same pointer and creates no card", async () => {
+      await netlifyConnectionNeedingAttention();
+      const agent = await netlifyAgent({ secretAlias: "NETLIFY_PAT", secretKey: "NETLIFY_DEPLOY_PAT" });
+      const service = connectionIntentService(db);
+      const refused = await service.request(agent.claims, "netlify").then(() => null, (error: unknown) => error);
+      expect(refused).toMatchObject({
+        status: 409,
+        details: { code: "service_secret_held", secretKey: "NETLIFY_DEPLOY_PAT", readEndpoint: "POST /api/agents/me/secrets/NETLIFY_DEPLOY_PAT/value" },
+      });
+      expect((refused as Error).message).toContain("POST /api/agents/me/secrets/NETLIFY_DEPLOY_PAT/value");
+      // Asking twice is refused the same way and still creates nothing.
+      await expect(service.request(agent.claims, "netlify")).rejects.toMatchObject({ status: 409 });
+      expect(await cardsFor(agent.issueId)).toEqual([]);
+    });
+
+    it("matches on the secret key when the alias differs", async () => {
+      const agent = await netlifyAgent({ secretAlias: "DEPLOY_TOKEN", secretKey: `NETLIFY_TOKEN_${randomUUID().slice(0, 8).toUpperCase()}` });
+      const result = await connectionIntentService(db).search(agent.claims, "netlify");
+      expect(result.results[0]?.heldSecret?.key).toMatch(/^NETLIFY_TOKEN_/);
+    });
+
+    it("leaves agents without a matching grant on the connection path", async () => {
+      await netlifyConnectionNeedingAttention();
+      const service = connectionIntentService(db);
+      const cases = [
+        await netlifyAgent(),
+        // A different service's secret, a lookalike prefix, and an archived secret do not count.
+        await netlifyAgent({ secretAlias: "GITHUB_TOKEN", secretKey: `GITHUB_TOKEN_${randomUUID().slice(0, 8).toUpperCase()}` }),
+        await netlifyAgent({ secretAlias: "NETLIFYX_PAT", secretKey: `NETLIFYX_PAT_${randomUUID().slice(0, 8).toUpperCase()}` }),
+        await netlifyAgent({ secretAlias: "NETLIFY_PAT", secretStatus: "archived" }),
+      ];
+      for (const agent of cases) {
+        const result = await service.search(agent.claims, "netlify");
+        expect(result.results).toEqual([expect.objectContaining({ service: "netlify", state: "needs_user_action" })]);
+        expect(result.results[0]?.heldSecret).toBeUndefined();
+        expect(result.instruction).toMatch(/^Call connection_request/);
+        const requested = await service.request(agent.claims, "netlify");
+        expect(requested).toMatchObject({ state: "needs_user_action" });
+        expect(await cardsFor(agent.issueId)).toEqual([expect.objectContaining({ kind: "connection_intent", status: "pending" })]);
+      }
+    });
+  });
 });

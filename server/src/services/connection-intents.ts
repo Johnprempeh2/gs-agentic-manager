@@ -1,10 +1,12 @@
 import { logActivity } from "./activity-log.js";
 import { aiConnectionService } from "./ai-connections.js";
 import { aiConnectionBindingSchema } from "@greatstone/shared";
-import { and, asc, eq, desc, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, desc, isNull, like, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  companySecretBindings,
+  companySecrets,
   toolConnections,
   toolCatalogEntries,
   companyMemberships,
@@ -66,6 +68,35 @@ function sourceSlugForConnection(
   return source && getAppStoreDefinition(source) ? source : `connection:${connection.id}`;
 }
 
+
+const AGENT_ACCESS_CONFIG_PATH_PREFIX = "access.";
+
+type HeldSecret = NonNullable<ConnectionSearchResultItem["heldSecret"]>;
+
+/**
+ * A catalog service matches an API secret granted to the agent when the
+ * binding alias or the secret key is the slug in env form or starts with it,
+ * e.g. `netlify` matches `access.NETLIFY_PAT`.
+ */
+function heldSecretForService(
+  secrets: ReadonlyArray<{ key: string; configPath: string }>,
+  serviceSlug: string,
+): HeldSecret | null {
+  if (serviceSlug.startsWith("connection:")) return null;
+  const prefix = serviceSlug.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  if (!prefix) return null;
+  const matches = (name: string) => name === prefix || name.startsWith(`${prefix}_`);
+  const held = secrets.find((secret) =>
+    matches(secret.configPath.slice(AGENT_ACCESS_CONFIG_PATH_PREFIX.length).toUpperCase())
+    || matches(secret.key.toUpperCase()));
+  return held
+    ? { key: held.key, readEndpoint: `POST /api/agents/me/secrets/${encodeURIComponent(held.key)}/value` }
+    : null;
+}
+
+function heldSecretInstruction(name: string, secret: HeldSecret) {
+  return `This agent already holds ${name} access as the ${secret.key} secret. Read it with ${secret.readEndpoint} and use it as the ${name} API token. Do not call connection_request, open a connection card, or ask a user for ${name} access.`;
+}
 
 function availableToolConnectionMethods(
   app: (typeof CONNECTABLE_APP_DEFINITIONS)[number],
@@ -214,6 +245,24 @@ export function connectionIntentService(db: Db) {
     };
   }
 
+  // The same active company secrets GET /api/agents/me/secrets lists as API
+  // access. The read endpoint still enforces the grant; this only points at it.
+  function agentAccessSecrets(companyId: string, agentId: string) {
+    return db.select({ key: companySecrets.key, configPath: companySecretBindings.configPath })
+      .from(companySecretBindings)
+      .innerJoin(companySecrets, eq(companySecrets.id, companySecretBindings.secretId))
+      .where(and(
+        eq(companySecretBindings.companyId, companyId),
+        eq(companySecretBindings.targetType, "agent"),
+        eq(companySecretBindings.targetId, agentId),
+        like(companySecretBindings.configPath, `${AGENT_ACCESS_CONFIG_PATH_PREFIX}%`),
+        eq(companySecrets.companyId, companyId),
+        eq(companySecrets.scope, "company"),
+        eq(companySecrets.status, "active"),
+      ))
+      .orderBy(asc(companySecrets.key));
+  }
+
   async function managedAgent(companyId: string, agentId: string, serviceSlug: string) {
     const [agent] = await db.select().from(agents).where(and(eq(agents.companyId, companyId), eq(agents.id, agentId)));
     const binding = aiConnectionBindingSchema.safeParse(agent?.runtimeConfig?.aiConnection).data;
@@ -344,7 +393,10 @@ export function connectionIntentService(db: Db) {
     const { run, agent, issue } = await loadRunContext(claims);
     const normalized = query.trim().toLocaleLowerCase();
     const tokens = normalized.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-    const inventory = await connectionInventory(run.companyId);
+    const [inventory, accessSecrets] = await Promise.all([
+      connectionInventory(run.companyId),
+      agentAccessSecrets(run.companyId, agent.id),
+    ]);
     const candidates: Array<{ item: ConnectionSearchResultItem; score: number }> = [];
     const services = [...APP_STORE_DEFINITIONS.filter(app => getAvailableConnectionMethods(app).some(method => method.transport !== "runtime_auth")).map((app) => app.slug),
       ...inventory.connections.filter((connection) =>
@@ -373,6 +425,18 @@ export function connectionIntentService(db: Db) {
       if (!score) continue;
       const ready = await usableConnectionForAgent({ companyId: run.companyId, agentId: agent.id,
         responsibleUserId: run.responsibleUserId!, serviceSlug: service, inventory });
+      // A held API secret is access the agent can use now. A connection card
+      // would only wait on a user for access the agent already has (GRE-1705).
+      const heldSecret = !ready ? heldSecretForService(accessSecrets, service) : null;
+      if (heldSecret) {
+        candidates.push({ score, item: {
+          service, name: app.name, description: app.description ?? null, logoUrl: app.branding.logoUrl ?? null,
+          methods: app.methods, source: app.source, state: "ready",
+          reason: `This agent holds the ${heldSecret.key} secret for this service`,
+          connectionId: null, heldSecret,
+        }});
+        continue;
+      }
       const denied = !ready && matching.length > 0 && await administrativeDenial(run.companyId, agent.id, service, inventory);
       candidates.push({ score, item: {
         service, name: app.name, description: app.description ?? null, logoUrl: app.branding.logoUrl ?? null,
@@ -468,6 +532,7 @@ export function connectionIntentService(db: Db) {
   function directSearchResult(query: string, results: ConnectionSearchResultItem[], suggestions = false): ConnectionsSearchResult {
     return { version: 1, query, results, instruction: !results.length
       ? "No verified connection route was found. Explain that support could not be verified; do not invent a provider route or request unsupported services."
+      : results[0]!.heldSecret ? heldSecretInstruction(results[0]!.name, results[0]!.heldSecret)
       : !suggestions && isRemoteMcpConnectorId(results[0]!.service) && results[0]!.state !== "unavailable"
         ? `${results[0]!.name} is an external service. When the user explicitly names this provider, disclose that it handles the connection and requests to the requested app; no additional provider-choice question is necessary. ${results[0]!.state === "ready" ? aggregatorContinuationInstruction(results[0]!.service, "The requested app") : "Call connection_request with the returned service identifier and follow its instruction. Provider setup does not yet verify underlying app access."}`
       : suggestions ? "These are possible GS Agentic Manager matches, not an exact service match. Clarify the service if ambiguous, then search its exact name. Do not treat unrelated matches as support."
@@ -582,6 +647,14 @@ export function connectionIntentService(db: Db) {
         interactionId: null,
         instruction: isRemoteMcpConnectorId(app.slug) ? aggregatorContinuationInstruction(app.slug, upstreamService?.name ?? "The requested app") : options.purpose === "ai" ? `${app.name} authentication is available for the next execution.` : `${app.name} is connected. Use its installed tools; a native continuation will refresh tools if needed.`,
       };
+    }
+    if (options.purpose !== "ai") {
+      const heldSecret = heldSecretForService(await agentAccessSecrets(context.run.companyId, context.agent.id), app.slug);
+      if (heldSecret) {
+        throw conflict(heldSecretInstruction(app.name, heldSecret), {
+          code: "service_secret_held", secretKey: heldSecret.key, readEndpoint: heldSecret.readEndpoint,
+        });
+      }
     }
     if (options.purpose !== "ai" && await administrativeDenial(context.run.companyId, context.agent.id, app.slug, await connectionInventory(context.run.companyId))) {
       throw forbidden("This agent has no permitted actions for this service. Ask an administrator to review tool permissions; reconnecting will not remove a denial.");
