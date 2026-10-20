@@ -102,11 +102,11 @@ process.exit(0);
   return baseCwd;
 }
 
-function runProvision(baseCwd, { pathPrefix, setupWorktree, existingWorktree } = {}) {
+function runProvision(baseCwd, { pathPrefix, setupWorktree, existingWorktree, paperclipHome: instanceHome } = {}) {
   const worktreeCwd = existingWorktree ?? makeTempDir("paperclip-provision-worktree-");
   setupWorktree?.(worktreeCwd);
   const worktreesHome = makeTempDir("paperclip-provision-home-");
-  const paperclipHome = makeInstanceHome();
+  const paperclipHome = instanceHome ?? makeInstanceHome();
   const result = spawnSync("bash", [script], {
     cwd: worktreeCwd,
     encoding: "utf8",
@@ -228,6 +228,33 @@ test("falls back to an isolated config when the base CLI cannot boot", () => {
     JSON.parse(fs.readFileSync(path.join(worktreeCwd, ".gsam", "seed-manifest.json"), "utf8")).state,
     "pending",
   );
+});
+
+test("writes an isolated config without seeding when the install has no config.json", () => {
+  // An install configured only by environment (GRE-1719): neither the base
+  // workspace nor the instance home has a config.json to seed from.
+  const baseCwd = makeBaseWorkspace({ helpExit: 0, initExit: 0 });
+  const paperclipHome = makeTempDir("paperclip-provision-env-only-home-");
+  fs.mkdirSync(path.join(paperclipHome, "instances", "default"), { recursive: true });
+
+  const { result, worktreeCwd, worktreesHome } = runProvision(baseCwd, { paperclipHome });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /No GS Agentic Manager seed source config/);
+  const config = readWorktreeConfig(worktreeCwd);
+  assert.equal(config.$meta.source, "configure");
+  assert.equal(config.server.deploymentMode, "local_trusted");
+  assert.ok(
+    !path.relative(worktreesHome, config.database.embeddedPostgresDataDir).startsWith(".."),
+    `expected ${config.database.embeddedPostgresDataDir} to live under ${worktreesHome}`,
+  );
+  assert.equal(fs.existsSync(path.join(worktreeCwd, ".gsam", "seed-manifest.json")), false);
+  assert.ok(
+    !readCliInvocations(baseCwd).some((args) => args[0] === "worktree"),
+    "expected no worktree CLI call without a seed source",
+  );
+  // The source instance dir stays untouched.
+  assert.deepEqual(fs.readdirSync(path.join(paperclipHome, "instances", "default")), []);
 });
 
 test("reconciles deployment mode from the registered source when reusing a guest config", () => {
