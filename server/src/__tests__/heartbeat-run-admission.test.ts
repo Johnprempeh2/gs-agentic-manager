@@ -330,6 +330,41 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
     expect([...current.values()]).toEqual(["running", "running"]);
   });
 
+  it("reserves only the runs an agent has queued, so a roomy agent does not hold another's start", async () => {
+    await setAdmission({ maxConcurrentRuns: 2 });
+    const companyId = await seedCompany();
+    // Five runs allowed but one queued: it must reserve one slot, not both.
+    const first = await seedAgent(companyId, 5);
+    const second = await seedAgent(companyId, 5);
+    const t0 = Date.now() - 60_000;
+    const firstRun = await queueRun(companyId, first, new Date(t0));
+    const secondRun = await queueRun(companyId, second, new Date(t0 + 1_000));
+
+    let arrived = 0;
+    let firstReadDone!: () => void;
+    const firstRead = new Promise<void>((resolve) => {
+      firstReadDone = resolve;
+    });
+    beforeMemoryRead = async () => {
+      arrived += 1;
+      if (arrived === 1) {
+        firstReadDone();
+        return;
+      }
+      await firstRead;
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    const [firstStarted, secondStarted] = await Promise.all([
+      heartbeat.startNextQueuedRunForAgent(first),
+      heartbeat.startNextQueuedRunForAgent(second),
+    ]);
+    beforeMemoryRead = null;
+
+    expect(firstStarted.length + secondStarted.length).toBe(2);
+    const current = await statuses([firstRun, secondRun]);
+    expect([...current.values()]).toEqual(["running", "running"]);
+  });
+
   it("keeps runs queued while RAM is below the floor and starts them once it recovers", async () => {
     await setAdmission({ maxConcurrentRuns: 6, minAvailableMemoryMb: 2048 });
     const companyId = await seedCompany();
