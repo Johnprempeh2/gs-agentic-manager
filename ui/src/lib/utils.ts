@@ -87,6 +87,11 @@ export function formatShortDate(date: Date | string): string {
   });
 }
 
+/** The month of a `YYYY-MM-DD` calendar day, e.g. `November 2026`, read in UTC. */
+export function formatCalendarMonth(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 /**
  * A `YYYY-MM-DD` calendar day, e.g. `9 Oct` or `9 Oct 2026`. Read in UTC so
  * the label never shifts a day with the viewer's time zone.

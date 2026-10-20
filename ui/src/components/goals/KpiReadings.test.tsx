@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { GoalKpiReading, KpiStatus } from "@greatstone/shared";
-import { KpiReadingsList, KpiStatusPill, kpiStatusSentence, rollupSummary } from "./KpiReadings";
+import { KpiReadingsList, KpiSparkline, KpiStatusPill, kpiStatusSentence, rollupSummary } from "./KpiReadings";
 import { budgetSummary } from "./KpiPlanForm";
 
 function reading(id: string, overrides: Partial<GoalKpiReading>): GoalKpiReading {
@@ -80,16 +80,29 @@ describe("KPI status text", () => {
     expect(kpiStatusSentence({ ...base, status: null, reason: "no_plan" }, null)).toMatch(/Set a target and a deadline/);
   });
 
-  it("labels the pill with the colour and its meaning", () => {
-    expect(renderToStaticMarkup(<KpiStatusPill status="red" />)).toContain("Red · off track");
+  it("labels the pill in the board's words, not colour names", () => {
+    expect(renderToStaticMarkup(<KpiStatusPill status="red" />)).toContain("Off course");
+    expect(renderToStaticMarkup(<KpiStatusPill status="amber" />)).toContain("Watch");
+    expect(renderToStaticMarkup(<KpiStatusPill status="green" />)).toContain("On course");
     expect(renderToStaticMarkup(<KpiStatusPill status={null} />)).toContain("No status");
   });
 
   it("summarises the KPIs under a goal", () => {
     expect(rollupSummary({ status: "red", red: 1, amber: 1, green: 2, noStatus: 1 })).toBe(
-      "1 red, 1 amber, 2 green, 1 no status of 5 KPIs",
+      "1 off course, 1 watch, 2 on course, 1 no status of 5 KPIs",
     );
     expect(rollupSummary({ status: null, red: 0, amber: 0, green: 0, noStatus: 0 })).toBeNull();
+  });
+});
+
+describe("KpiSparkline", () => {
+  it("draws the trend with its values for screen readers, and nothing for one reading", () => {
+    const html = renderToStaticMarkup(
+      <KpiSparkline unit="%" points={[{ readingDate: "2026-08-01", value: 60 }, { readingDate: "2026-09-01", value: 65 }, { readingDate: "2026-10-01", value: 70 }]} />,
+    );
+    expect(html).toContain('aria-label="Last 3 readings: 60 %, 65 %, 70 %"');
+    expect(html).toContain('d="M2.0 18.0 L32.0 10.0 L62.0 2.0"');
+    expect(renderToStaticMarkup(<KpiSparkline unit={null} points={[{ readingDate: "2026-10-01", value: 1 }]} />)).toBe("");
   });
 });
 

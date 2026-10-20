@@ -50,6 +50,28 @@ export interface StrategyBoardKpi {
    * null when it has one (GRE-1325). Absent in packs made before GRE-1325.
    */
   notMeasuredReason?: string | null;
+  /** Up to the last six readings, oldest first, for a sparkline. Absent in older packs. */
+  trend?: StrategyBoardTrendPoint[];
+}
+
+export interface StrategyBoardTrendPoint {
+  /** "YYYY-MM-DD" */
+  readingDate: string;
+  value: number;
+}
+
+/** A "Why?" request as the board reads it between meetings. */
+export interface StrategyBoardWhyItem {
+  id: string;
+  goalId: string;
+  kpiTitle: string;
+  ownerName: string | null;
+  question: string;
+  answer: string | null;
+  askedAt: string;
+  answeredAt: string | null;
+  /** Days since it was asked. */
+  ageDays: number;
 }
 
 /**
@@ -109,6 +131,19 @@ export interface StrategyBoardSummary {
   unsentAlerts: number;
   /** True when the board has a chair to receive slippage alerts. */
   hasChair: boolean;
+  /** "YYYY-MM-DD" of the next board meeting; null when none is set. The board meets monthly. */
+  nextMeetingDate: string | null;
+  /**
+   * "Why?" requests answered since the last accepted pack (all answers when
+   * there is no pack), newest first, and those still open, oldest first.
+   */
+  whyRequests: { answered: StrategyBoardWhyItem[]; open: StrategyBoardWhyItem[] };
+  viewer: StrategyBoardViewerRights;
+}
+
+/** One KPI as the board sees it, for the KPI page (cheaper than the whole summary). */
+export interface StrategyBoardKpiView {
+  kpi: StrategyBoardKpi | null;
   viewer: StrategyBoardViewerRights;
 }
 

@@ -4,6 +4,7 @@ import type {
   Issue,
   StrategyBoardAgent,
   StrategyBoardEmail,
+  StrategyBoardKpiView,
   StrategyBoardMember,
   StrategyBoardPack,
   StrategyBoardPackListItem,
@@ -16,6 +17,8 @@ import { api } from "./client";
 /** Board control panel (GRE-1135). Every call answers 403 while enableStrategyBoard is off. */
 export const strategyBoardApi = {
   summary: (companyId: string) => api.get<StrategyBoardSummary>(`/companies/${companyId}/strategy-board`),
+  /** One KPI as the board sees it, for the KPI page. */
+  boardKpi: (goalId: string) => api.get<StrategyBoardKpiView>(`/goals/${goalId}/board-kpi`),
   alerts: (companyId: string) => api.get<GoalKpiAlert[]>(`/companies/${companyId}/strategy-board/alerts`),
   members: (companyId: string) => api.get<StrategyBoardMember[]>(`/companies/${companyId}/strategy-board/members`),
   setMembers: (companyId: string, members: Array<{ userId: string; chair: boolean }>) =>

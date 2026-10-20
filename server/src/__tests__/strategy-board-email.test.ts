@@ -226,7 +226,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
     const [alert] = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.goalId, kpi.id));
     expect(sender.sent[0]).toMatchObject({
       companyId,
-      input: { endpointId: inbox.id, to: [chair.email], subject: "KPI turned red: Revenue", parentIssueId: alert.alertIssueId },
+      input: { endpointId: inbox.id, to: [chair.email], subject: "KPI is off course: Revenue", parentIssueId: alert.alertIssueId },
     });
     expect(sender.sent[0].input.text).toContain(`${alert.gapPercent}% behind plan: 100 k against a plan of 150 k`);
     expect(sender.sent[0].input.text).toContain(`https://board.example.test/`);
@@ -584,7 +584,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
     const sender = threadingSender();
     await sweep(sender);
     const reminderThread = sender.sent.find((s) => s.input.subject?.startsWith("Board meeting on"))!;
-    const alertThread = sender.sent.find((s) => s.input.subject === "KPI turned red: Revenue")!;
+    const alertThread = sender.sent.find((s) => s.input.subject === "KPI is off course: Revenue")!;
     const before = await ctx.db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id));
 
     expect((await reply(reminderThread, ama.email!, "Thanks, I will send the numbers on Friday.")).result).toEqual({ stored: "nothing", reason: "no_readings" });

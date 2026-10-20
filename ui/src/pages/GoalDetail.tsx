@@ -35,8 +35,10 @@ import { GoalOwnerPicker } from "../components/goals/GoalOwnerPicker";
 import { goalOwnerName } from "../components/goals/GoalOwner";
 import {
   KpiReadingsList,
+  KpiSparkline,
   KpiStatusPill,
   RecordKpiReadingForm,
+  formatKpiValue,
   kpiStatusSentence,
   rollupSummary,
   type NewKpiReading,
@@ -49,7 +51,15 @@ import { strategyBoardApi } from "../api/strategyBoard";
 import { InitiativeBudgetForm, KpiPlanForm } from "../components/goals/KpiPlanForm";
 import { PackKpiDraftsDialog } from "../components/goals/PackKpiDraftsDialog";
 import { KpiDraftNotice } from "../components/goals/KpiDraftNotice";
-import { GOAL_KIND_LABELS, GOAL_KIND_PARENTS, type StrategyBoardKpi } from "@greatstone/shared";
+import {
+  GOAL_KIND_LABELS,
+  GOAL_KIND_PARENTS,
+  STRATEGY_BOARD_TREND_POINTS,
+  type GoalKpiReading,
+  type GoalWithProgress,
+  type StrategyBoardKpi,
+} from "@greatstone/shared";
+import { canBoardManageRuntime } from "../lib/recovery-reconcile";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, ClipboardList, FileText, Plus, SlidersHorizontal } from "lucide-react";
@@ -142,13 +152,22 @@ export function GoalDetail() {
   });
 
   // GRE-1135: the board's "Why?" questions, while the board control panel is on.
+  // Only this KPI's board view, not the whole board summary.
   const { enabled: strategyBoardOn } = useStrategyBoardEnabled();
-  const { data: boardSummary } = useQuery({
-    queryKey: queryKeys.strategyBoard.summary(selectedCompanyId!),
-    queryFn: () => strategyBoardApi.summary(selectedCompanyId!),
-    enabled: strategyBoardOn && isKpi && !!selectedCompanyId,
+  const { data: boardKpi } = useQuery({
+    queryKey: queryKeys.strategyBoard.boardKpi(goalId!),
+    queryFn: () => strategyBoardApi.boardKpi(goalId!),
+    enabled: strategyBoardOn && isKpi && !!goalId,
   });
   const [askKpi, setAskKpi] = useState<StrategyBoardKpi | null>(null);
+
+  // Viewers (board members among them) read the KPI; they cannot record readings or change the plan.
+  const { data: boardAccess } = useQuery({
+    queryKey: queryKeys.access.currentBoardAccess,
+    queryFn: () => accessApi.getCurrentBoardAccess(),
+    retry: false,
+  });
+  const mayEditKpi = canBoardManageRuntime(goal?.companyId, boardAccess);
 
   const { data: userDirectory } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
@@ -356,6 +375,10 @@ export function GoalDetail() {
         />
       </div>
 
+      {/* A KPI leads with value against target; the task metrics below repeat it in task terms. */}
+      {kind === "kpi" ? <KpiHeadline goal={goal} ownerName={ownerName} readings={readings} /> : null}
+
+      {kind !== "kpi" ? (
       <section
         className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
         aria-label="Goal at a glance"
@@ -375,13 +398,14 @@ export function GoalDetail() {
           value={newestCheckIn ? relativeTime(newestCheckIn.createdAt) : "None yet"}
         />
       </section>
+      ) : null}
 
       {kind === "kpi" && (goal.status === "draft" || goal.benchmarkNote || goal.sourceIssueId) ? (
         <KpiDraftNotice goal={goal} onAccept={() => updateGoal.mutate({ status: "active" })} pending={updateGoal.isPending} />
       ) : null}
 
       {kind === "kpi" ? (
-        <section className="space-y-3" aria-labelledby="kpi-readings-heading">
+        <section className="@container space-y-3" aria-labelledby="kpi-readings-heading">
           <h3 id="kpi-readings-heading" className="text-sm font-semibold">
             Readings
           </h3>
@@ -390,28 +414,34 @@ export function GoalDetail() {
               {kpiStatusSentence(goal.kpiStatus, goal.unit)}
             </p>
           ) : null}
-          <div className="grid items-start gap-4 lg:grid-cols-(--gtc-66)">
+          <div className={cn("grid items-start gap-4", mayEditKpi && "@3xl:grid-cols-(--gtc-66)")}>
             <KpiReadingsList
               readings={readings ?? (goal.latestReading ? [goal.latestReading] : [])}
               unit={goal.unit}
               names={{ agents: agentsById, users: usersById }}
             />
-            <RecordKpiReadingForm onSubmit={(reading) => recordReading.mutate(reading)} pending={recordReading.isPending} />
+            {mayEditKpi ? (
+              <RecordKpiReadingForm onSubmit={(reading) => recordReading.mutate(reading)} pending={recordReading.isPending} />
+            ) : null}
           </div>
-          <h3 className="pt-2 text-sm font-semibold">Plan</h3>
-          <KpiPlanForm key={goal.id} goal={goal} onSave={(patch) => updateGoal.mutate(patch)} pending={updateGoal.isPending} />
+          {mayEditKpi ? (
+            <>
+              <h3 className="pt-2 text-sm font-semibold">Plan</h3>
+              <KpiPlanForm key={goal.id} goal={goal} onSave={(patch) => updateGoal.mutate(patch)} pending={updateGoal.isPending} />
+            </>
+          ) : null}
           {strategyBoardOn ? (
             <>
               <GoalWhyRequestsHeading
-                kpi={boardSummary?.kpis.find((kpi) => kpi.goalId === goal.id) ?? null}
-                mayAskWhy={boardSummary?.viewer.mayAskWhy ?? false}
+                kpi={boardKpi?.kpi ?? null}
+                mayAskWhy={boardKpi?.viewer.mayAskWhy ?? false}
                 onAskWhy={setAskKpi}
               />
               <GoalWhyRequests
                 goalId={goal.id}
                 companyId={goal.companyId}
                 names={{ agents: agentsById, users: usersById }}
-                mayAnswer={boardSummary ? !boardSummary.viewer.isBoardMember : false}
+                mayAnswer={boardKpi ? !boardKpi.viewer.isBoardMember : false}
               />
               <AskWhyDialog companyId={goal.companyId} kpi={askKpi} onClose={() => setAskKpi(null)} />
             </>
@@ -557,6 +587,48 @@ export function daysHint(days: number | null): string | null {
   const n = Math.abs(days);
   const unit = n === 1 ? "day" : "days";
   return days < 0 ? `${n} ${unit} late` : `${n} ${unit} to go`;
+}
+
+/** The last few readings, oldest first, for the KPI trend. */
+export function kpiTrendPoints(readings: readonly Pick<GoalKpiReading, "readingDate" | "value">[] | undefined) {
+  return (readings ?? [])
+    .slice(0, STRATEGY_BOARD_TREND_POINTS)
+    .map((reading) => ({ readingDate: reading.readingDate, value: reading.value }))
+    .reverse();
+}
+
+/**
+ * What the board asks first about a KPI: where it stands against target, in
+ * the board's words, who owns it and which way it is going.
+ */
+export function KpiHeadline({
+  goal,
+  ownerName,
+  readings,
+}: {
+  goal: Pick<GoalWithProgress, "kpiStatus" | "latestReading" | "targetValue" | "targetDate" | "unit">;
+  ownerName: string | null;
+  /** Newest first, as the readings list shows them. */
+  readings: readonly GoalKpiReading[] | undefined;
+}) {
+  const latest = goal.latestReading?.value ?? goal.kpiStatus?.latestValue ?? null;
+  const target = goal.targetValue;
+  return (
+    <section className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border bg-card p-4" aria-label="KPI at a glance" data-testid="kpi-headline">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest against target</p>
+        <p className="mt-1 text-xl font-bold tabular-nums">
+          {latest != null ? formatKpiValue(latest, goal.unit) : "No reading yet"}
+          <span className="text-sm font-normal text-muted-foreground">
+            {` of ${target != null ? formatKpiValue(target, goal.unit) : "no target"}${goal.targetDate ? ` by ${formatTargetDate(goal.targetDate)}` : ""}`}
+          </span>
+        </p>
+      </div>
+      <KpiStatusPill status={goal.kpiStatus?.status ?? null} />
+      <KpiSparkline points={kpiTrendPoints(readings ?? (goal.latestReading ? [goal.latestReading] : []))} unit={goal.unit} className="h-8 w-24" />
+      <p className="text-sm text-muted-foreground">Owner: {ownerName ?? "No owner"}</p>
+    </section>
+  );
 }
 
 function GoalKpi({ label, value, hint }: { label: string; value: string; hint?: string | null }) {

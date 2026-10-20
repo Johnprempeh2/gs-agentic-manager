@@ -6,7 +6,9 @@ import {
   buildStrategyBoardKpis,
   buildStrategyBoardOverdueActions,
   countStrategyBoardKpis,
+  buildStrategyBoardWhyDigest,
   findPlanObjective,
+  isOnCourseOnWeakEvidence,
   kpiAlertAction,
   rankStrategyBoardAttention,
   renderStrategyBoardBrief,
@@ -132,6 +134,32 @@ describe("strategy board KPIs", () => {
     ]);
   });
 
+  it("puts on course KPIs on weak or stale evidence last, and leaves well evidenced ones out", () => {
+    const kpis = boardKpis(null);
+    const stale = { ...kpis[2], goalId: "kpi-stale", title: "Stale green", readingAgeDays: 45 };
+    const selfReported = { ...kpis[2], goalId: "kpi-self", title: "Self reported green", latestReadingSource: "owner_reported" as const };
+    const ranked = rankStrategyBoardAttention([selfReported, kpis[2], stale, kpis[3], kpis[0]]);
+    expect(ranked.map((kpi) => kpi.goalId)).toEqual(["kpi-retention", "kpi-launch", "kpi-self", "kpi-stale"]);
+    expect(isOnCourseOnWeakEvidence(kpis[2])).toBe(false);
+    expect(isOnCourseOnWeakEvidence(stale)).toBe(true);
+  });
+
+  it("carries each KPI's recent readings as its trend", () => {
+    const trend = [{ readingDate: "2026-09-01", value: 60 }, { readingDate: "2026-10-08", value: 70 }];
+    const kpis = buildStrategyBoardKpis({
+      goals: GOALS,
+      statusById: STATUS,
+      latestReadingById: new Map(),
+      snapshotById: null,
+      openWhyById: new Map(),
+      trendById: new Map([["kpi-retention", trend]]),
+      ownerNames: NAMES,
+      today: TODAY,
+    });
+    expect(kpis[0].trend).toEqual(trend);
+    expect(kpis[1].trend).toEqual([]);
+  });
+
   it("gives each KPI its not-measured reason when it is built, and none when it has a status", () => {
     const kpis = boardKpis(null);
     expect(kpis.map((kpi) => kpi.notMeasuredReason)).toEqual([null, null, null, "No reading yet"]);
@@ -159,6 +187,32 @@ describe("strategy board KPIs", () => {
       expect.objectContaining({ goalId: "obj-retain", owner: { type: "user", id: "u-coo", name: "Ama Mensah" } }),
     ]);
     expect(areas[0].objectives[0].rollup).toMatchObject({ status: "red", red: 1, amber: 1 });
+  });
+});
+
+describe("buildStrategyBoardWhyDigest", () => {
+  const base = { question: "Why?", ownerUserId: null, ownerAgentId: null };
+  it("lists answers since the last pack, newest first, and open requests with their age, oldest first", () => {
+    const kpis = boardKpis(null);
+    const digest = buildStrategyBoardWhyDigest({
+      requests: [
+        { ...base, id: "old", goalId: "kpi-retention", status: "answered", answer: "Before the pack", createdAt: new Date("2026-08-01T00:00:00Z"), answeredAt: new Date("2026-08-02T00:00:00Z") },
+        { ...base, id: "a1", goalId: "kpi-retention", status: "answered", answer: "Two leavers", ownerUserId: "u-coo", createdAt: new Date("2026-09-20T00:00:00Z"), answeredAt: new Date("2026-09-21T00:00:00Z") },
+        { ...base, id: "a2", goalId: "kpi-hiring", status: "answered", answer: "Hiring freeze", createdAt: new Date("2026-09-25T00:00:00Z"), answeredAt: new Date("2026-10-01T00:00:00Z") },
+        { ...base, id: "o2", goalId: "kpi-hiring", status: "open", answer: null, createdAt: new Date("2026-10-05T00:00:00Z"), answeredAt: null },
+        { ...base, id: "o1", goalId: "kpi-retention", status: "open", answer: null, createdAt: new Date("2026-09-30T00:00:00Z"), answeredAt: null },
+        { ...base, id: "gone", goalId: "kpi-cancelled", status: "open", answer: null, createdAt: new Date("2026-09-30T00:00:00Z"), answeredAt: null },
+      ],
+      kpis,
+      ownerNames: NAMES,
+      since: new Date("2026-09-01T00:00:00Z"),
+      now: new Date("2026-10-10T12:00:00Z"),
+    });
+    expect(digest.answered.map((item) => [item.id, item.kpiTitle, item.ownerName])).toEqual([
+      ["a2", "Roles filled", "HR evidence agent"],
+      ["a1", "Staff retention", "Ama Mensah"],
+    ]);
+    expect(digest.open.map((item) => [item.id, item.ageDays])).toEqual([["o1", 10], ["o2", 5]]);
   });
 });
 
@@ -235,26 +289,26 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
   it("has the title, period and KPI counts", () => {
     expect(markdown).toContain("# Q3 2026 board pack");
     expect(markdown).toContain("Example Bank · 2026-07-01 to 2026-09-30 · status as of 2026-10-10");
-    expect(markdown).toContain("**KPIs:** 1 red, 1 amber, 1 green, 1 with no status.");
+    expect(markdown).toContain("**KPIs:** 1 off course, 1 watch, 1 on course, 1 with no status.");
   });
 
   it("shows status by area with objectives", () => {
-    expect(markdown).toContain("| Employer of choice (Critical success factor) | Red | 1 red, 1 amber, 1 green |");
-    expect(markdown).toContain("| ↳ Keep our people | Red | Ama Mensah |");
-    expect(markdown).toContain("| Market expansion (Critical success factor) | No status | 0 red, 0 amber, 0 green |");
+    expect(markdown).toContain("| Employer of choice (Critical success factor) | Off course | 1 off course, 1 watch, 1 on course |");
+    expect(markdown).toContain("| ↳ Keep our people | Off course | Ama Mensah |");
+    expect(markdown).toContain("| Market expansion (Critical success factor) | No status | 0 off course, 0 watch, 0 on course |");
   });
 
   it("lists slippages biggest first with source and owner", () => {
-    const red = markdown.indexOf("| Staff retention | Red | 35% | 70 % | 84 % | Agent verified (2 days old) | Ama Mensah |");
-    const amber = markdown.indexOf("| Roles filled | Amber | 12% | 30 | 33 | Owner reported (20 days old) | HR evidence agent |");
+    const red = markdown.indexOf("| Staff retention | Off course | 35% | 70 % | 84 % | Agent verified (2 days old) | Ama Mensah |");
+    const amber = markdown.indexOf("| Roles filled | Watch | 12% | 30 | 33 | Owner reported (20 days old) | HR evidence agent |");
     expect(red).toBeGreaterThan(0);
     expect(amber).toBeGreaterThan(red);
-    expect(markdown).not.toContain("| Training hours | Green");
+    expect(markdown).not.toContain("| Training hours | On course");
   });
 
   it("lists KPIs that are not measured, with the reason and owner (GRE-1325)", () => {
     expect(markdown).toContain("## Not measured");
-    expect(markdown).toContain("1 of 4 KPIs cannot be judged red, amber or green.");
+    expect(markdown).toContain("1 of 4 KPIs cannot be judged on course or off course.");
     expect(markdown).toContain("| Countries live | No reading yet | No owner |");
     const slippages = markdown.slice(markdown.indexOf("## Slippages"), markdown.indexOf("## Not measured"));
     expect(slippages).not.toContain("Countries live");
@@ -281,7 +335,7 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
   it("says when a section is empty", () => {
     const empty = renderStrategyBoardPackMarkdown({ ...pack, areas: [], kpis: [], readings: [], whyRequests: [], counts: { red: 0, amber: 0, green: 0, noStatus: 0 } });
     expect(empty).toContain("No pillars or critical success factors on the plan.");
-    expect(empty).toContain("No KPI is red or amber.");
+    expect(empty).toContain("No KPI is off course or on watch.");
     expect(empty).toContain("Every KPI has a target, a target date and a reading.");
     expect(empty).toContain("No \"Why?\" requests in this period.");
     expect(empty).toContain("No readings dated in this period.");
@@ -300,7 +354,7 @@ describe("renderStrategyBoardBrief (what the board agent answers from, GRE-1186)
   });
 
   it("gives every KPI with a reading its value, source and age", () => {
-    expect(brief).toContain('KPI "Staff retention" [id kpi-retention] under Employer of choice > Keep our people: Red, 35% behind plan; latest 70 % on 2026-10-08 (source: agent-checked; age: 2 days old)');
+    expect(brief).toContain('KPI "Staff retention" [id kpi-retention] under Employer of choice > Keep our people: Off course, 35% behind plan; latest 70 % on 2026-10-08 (source: agent-checked; age: 2 days old)');
     expect(brief).toContain('KPI "Roles filled" [id kpi-hiring]');
     expect(brief).toContain("latest 30 on 2026-09-20 (source: owner-reported; age: 20 days old)");
     expect(brief).toContain("(source: system; age: 9 days old)");

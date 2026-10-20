@@ -1,11 +1,13 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
 import {
   KPI_READING_SOURCE_LABELS,
+  KPI_STATUS_WORDS,
   type GoalKpiReading,
   type GoalRagRollup,
   type KpiRagStatus,
   type KpiReadingSource,
   type KpiStatus,
+  type StrategyBoardTrendPoint,
 } from "@greatstone/shared";
 import { Database, ShieldCheck, UserRound, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,11 +23,8 @@ const RAG_COLOR: Record<KpiRagStatus, string> = {
   red: "var(--status-danger)",
 };
 
-export const RAG_LABEL: Record<KpiRagStatus, string> = {
-  green: "Green · on track",
-  amber: "Amber · slipping",
-  red: "Red · off track",
-};
+/** One vocabulary for the board, everywhere: On course, Watch, Off course. */
+export const RAG_LABEL: Record<KpiRagStatus, string> = KPI_STATUS_WORDS;
 
 const NO_STATUS_COLOR = "var(--status-task-icon-backlog)";
 
@@ -47,14 +46,14 @@ export function KpiStatusPill({ status, className }: { status: KpiRagStatus | nu
   );
 }
 
-/** "1 red, 1 amber, 1 green of 4 KPIs" for a goal above the KPIs. */
+/** "1 off course, 1 watch, 1 on course of 4 KPIs" for a goal above the KPIs. */
 export function rollupSummary(rollup: GoalRagRollup): string | null {
   const total = rollup.red + rollup.amber + rollup.green + rollup.noStatus;
   if (total === 0) return null;
   const parts = [
-    rollup.red ? `${rollup.red} red` : null,
-    rollup.amber ? `${rollup.amber} amber` : null,
-    rollup.green ? `${rollup.green} green` : null,
+    rollup.red ? `${rollup.red} off course` : null,
+    rollup.amber ? `${rollup.amber} watch` : null,
+    rollup.green ? `${rollup.green} on course` : null,
     rollup.noStatus ? `${rollup.noStatus} no status` : null,
   ].filter(Boolean);
   return `${parts.join(", ")} of ${total} KPI${total === 1 ? "" : "s"}`;
@@ -63,6 +62,51 @@ export function rollupSummary(rollup: GoalRagRollup): string | null {
 export function formatKpiValue(value: number, unit: string | null): string {
   const n = formatNumber(value, { maximumFractionDigits: Number.isInteger(value) ? 0 : 2 });
   return unit ? `${n} ${unit}` : n;
+}
+
+/**
+ * A small trend line of the last few readings, oldest on the left. Plain SVG
+ * in the text colour, so no chart library and both themes work. Nothing for
+ * fewer than two readings.
+ */
+export function KpiSparkline({
+  points,
+  unit,
+  className,
+}: {
+  points: readonly StrategyBoardTrendPoint[] | undefined;
+  unit: string | null;
+  className?: string;
+}) {
+  if (!points || points.length < 2) return null;
+  const width = 64;
+  const height = 20;
+  const pad = 2;
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const coords = points.map((point, index) => [
+    pad + (index * (width - 2 * pad)) / (points.length - 1),
+    max === min ? height / 2 : height - pad - ((point.value - min) / (max - min)) * (height - 2 * pad),
+  ] as const);
+  const path = coords.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const [lastX, lastY] = coords[coords.length - 1]!;
+  const label = `Last ${points.length} readings: ${points.map((point) => formatKpiValue(point.value, unit)).join(", ")}`;
+  return (
+    <svg
+      role="img"
+      aria-label={label}
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      className={cn("shrink-0 text-muted-foreground", className)}
+      data-testid="kpi-sparkline"
+    >
+      <title>{label}</title>
+      <path d={path} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lastX} cy={lastY} r={2} className="fill-foreground" />
+    </svg>
+  );
 }
 
 /** One line that says why the KPI has its colour. */
@@ -134,18 +178,18 @@ export function KpiReadingsList({
   return (
     <ol className="divide-y divide-border rounded-lg border border-border" data-testid="kpi-readings">
       {readings.map((reading) => (
-        <li key={reading.id} className="grid gap-x-4 gap-y-1 px-4 py-3 sm:grid-cols-[8rem_1fr_auto]">
-          <div>
+        <li key={reading.id} className="flex flex-wrap items-start gap-x-4 gap-y-1 px-4 py-3">
+          <div className="w-32 shrink-0">
             <p className="font-bold tabular-nums">{formatKpiValue(reading.value, unit)}</p>
             <p className="text-xs text-muted-foreground">{formatShortDate(`${reading.readingDate}T00:00:00`)}</p>
           </div>
-          <div className="min-w-0 text-sm">
+          <div className="min-w-0 flex-1 basis-40 text-sm">
             {reading.note ? <p className="line-clamp-3 whitespace-pre-line">{reading.note}</p> : null}
             <p className="text-xs text-muted-foreground" title={formatDateTime(reading.createdAt)}>
               Recorded by {recorderName(reading, names)}
             </p>
           </div>
-          <div className="sm:text-right">
+          <div className="ml-auto">
             <KpiSourceBadge source={reading.source} />
           </div>
         </li>

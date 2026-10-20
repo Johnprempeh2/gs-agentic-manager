@@ -1,11 +1,11 @@
 import type { CSSProperties } from "react";
-import type { KpiRagStatus, StrategyBoardAction, StrategyBoardArea, StrategyBoardKpi } from "@greatstone/shared";
-import { GOAL_KIND_LABELS } from "@greatstone/shared";
+import type { KpiRagStatus, StrategyBoardAction, StrategyBoardArea, StrategyBoardKpi, StrategyBoardWhyItem } from "@greatstone/shared";
+import { GOAL_KIND_LABELS, KPI_STATUS_WORDS, isOnCourseOnWeakEvidence } from "@greatstone/shared";
 import { ArrowRight, CalendarClock, CircleHelp, ShieldAlert, ShieldCheck, Shield } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { KpiSourceBadge, KpiStatusPill, formatKpiValue, rollupSummary } from "@/components/goals/KpiReadings";
+import { KpiSourceBadge, KpiSparkline, KpiStatusPill, formatKpiValue, rollupSummary } from "@/components/goals/KpiReadings";
 import { ASSURANCE_LABEL, boardAssurance, boardOwnerName, readingAgeText, type BoardAssurance } from "@/lib/strategy-board";
 
 const CHIP = "status-chip inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium";
@@ -30,13 +30,22 @@ export function AssuranceBadge({ kpi }: { kpi: Pick<StrategyBoardKpi, "latestRea
 
 const DOT: Record<KpiRagStatus, string> = { red: "bg-status-danger", amber: "bg-status-warning", green: "bg-status-success" };
 
-const STATUS_WORD: Record<KpiRagStatus, string> = { red: "red", amber: "amber", green: "green" };
+function statusWord(status: KpiRagStatus): string {
+  return KPI_STATUS_WORDS[status].toLowerCase();
+}
 
-/** "Was amber, now red" or "New since the last pack". */
+/** "Was watch, now off course" or "New since the last pack". */
 export function changeText(kpi: StrategyBoardKpi): string | null {
   if (!kpi.changedSinceSnapshot) return null;
-  if (kpi.previousStatus == null) return kpi.status ? `New since the last pack, now ${STATUS_WORD[kpi.status]}` : "New since the last pack";
-  return `Was ${STATUS_WORD[kpi.previousStatus]}, now ${kpi.status ? STATUS_WORD[kpi.status] : "no status"}`;
+  if (kpi.previousStatus == null) return kpi.status ? `New since the last pack, now ${statusWord(kpi.status)}` : "New since the last pack";
+  return `Was ${statusWord(kpi.previousStatus)}, now ${kpi.status ? statusWord(kpi.status) : "no status"}`;
+}
+
+/** "Was 120 k, now 150 k": the number, not only the colour. */
+export function valueChangeText(kpi: Pick<StrategyBoardKpi, "previousValue" | "latestValue" | "unit">): string | null {
+  if (kpi.latestValue == null) return null;
+  const now = formatKpiValue(kpi.latestValue, kpi.unit);
+  return kpi.previousValue == null ? `Now ${now}` : `Was ${formatKpiValue(kpi.previousValue, kpi.unit)}, now ${now}`;
 }
 
 function slipText(kpi: StrategyBoardKpi): string {
@@ -49,24 +58,19 @@ function slipText(kpi: StrategyBoardKpi): string {
   return `${kpi.gapPercent ?? 0}% behind plan: ${latest} against ${plan}`;
 }
 
-export function AttentionQueue({
+function AttentionRows({
   kpis,
+  label,
   canAskWhy,
   onAskWhy,
 }: {
   kpis: readonly StrategyBoardKpi[];
+  label: string;
   canAskWhy: boolean;
   onAskWhy: (kpi: StrategyBoardKpi) => void;
 }) {
-  if (kpis.length === 0) {
-    return (
-      <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-        Every KPI is measured, and none is red or amber. No board action is needed.
-      </p>
-    );
-  }
   return (
-    <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border" aria-label="Needs board attention">
+    <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border" aria-label={label}>
       {kpis.map((kpi, index) => {
         const change = changeText(kpi);
         return (
@@ -81,7 +85,10 @@ export function AttentionQueue({
                 {kpi.areaTitle || kpi.objectiveTitle ? (
                   <p className="text-xs text-muted-foreground">{[kpi.areaTitle, kpi.objectiveTitle].filter(Boolean).join(" · ")}</p>
                 ) : null}
-                <p className="text-sm">{slipText(kpi)}{change ? <span className="text-muted-foreground"> · {change}</span> : null}</p>
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 text-sm">{slipText(kpi)}{change ? <span className="text-muted-foreground"> · {change}</span> : null}</p>
+                  <KpiSparkline points={kpi.trend} unit={kpi.unit} />
+                </div>
                 <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <AssuranceBadge kpi={kpi} />
                   {kpi.latestReadingSource ? <KpiSourceBadge source={kpi.latestReadingSource} /> : null}
@@ -109,6 +116,94 @@ export function AttentionQueue({
         );
       })}
     </ol>
+  );
+}
+
+/**
+ * The board attention queue: slippages and unmeasured KPIs first, then, as
+ * their own group, KPIs that are on course but rest on stale or weak evidence.
+ */
+export function AttentionQueue({
+  kpis,
+  canAskWhy,
+  onAskWhy,
+}: {
+  kpis: readonly StrategyBoardKpi[];
+  canAskWhy: boolean;
+  onAskWhy: (kpi: StrategyBoardKpi) => void;
+}) {
+  const weak = kpis.filter(isOnCourseOnWeakEvidence);
+  const main = kpis.filter((kpi) => !isOnCourseOnWeakEvidence(kpi));
+  return (
+    <div className="space-y-3">
+      {main.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Every KPI is measured, and none is off course or on watch. No board action is needed.
+        </p>
+      ) : (
+        <AttentionRows kpis={main} label="Needs board attention" canAskWhy={canAskWhy} onAskWhy={onAskWhy} />
+      )}
+      {weak.length > 0 ? (
+        <div className="space-y-2" data-testid="attention-weak-evidence">
+          <h3 className="text-sm font-medium">On course, but on weak evidence</h3>
+          <AttentionRows kpis={weak} label="On course, but on weak evidence" canAskWhy={canAskWhy} onAskWhy={onAskWhy} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Why?" requests between meetings: what owners answered since the last
+ * board pack, and what is still waiting, with its age.
+ */
+export function WhyAnswersSinceMeeting({
+  answered,
+  open,
+  hasSnapshot,
+}: {
+  answered: readonly StrategyBoardWhyItem[];
+  open: readonly StrategyBoardWhyItem[];
+  hasSnapshot: boolean;
+}) {
+  if (answered.length === 0 && open.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {hasSnapshot ? "No \"Why?\" request answered or waiting since the last board pack." : "No \"Why?\" requests yet."}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {answered.length > 0 ? (
+        <ul className="divide-y divide-border rounded-lg border border-border" aria-label="Answered">
+          {answered.map((item) => (
+            <li key={item.id} className="space-y-1 px-4 py-3 text-sm" data-testid="why-answered-row">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <Link to={`/goals/${item.goalId}`} className="font-semibold hover:underline">{item.kpiTitle}</Link>
+                <span className="text-xs text-muted-foreground">{item.ownerName ?? "The owner"}</span>
+              </div>
+              <p className="line-clamp-2 whitespace-pre-line">{item.answer}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {open.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Still waiting for an answer</p>
+          <ul className="space-y-1">
+            {open.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm" data-testid="why-open-row">
+                <Link to={`/goals/${item.goalId}`} className="min-w-0 break-words hover:underline">{item.kpiTitle}</Link>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {item.ownerName ?? "The owner"} · asked {item.ageDays === 0 ? "today" : item.ageDays === 1 ? "1 day ago" : `${item.ageDays} days ago`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -212,12 +307,20 @@ export function ChangesSinceSnapshot({ kpis, hasSnapshot }: { kpis: readonly Str
   if (!hasSnapshot) {
     return <p className="text-sm text-muted-foreground">Make the first board pack to start tracking what changes between board meetings.</p>;
   }
-  if (kpis.length === 0) return <p className="text-sm text-muted-foreground">No KPI changed colour since the last board pack.</p>;
+  if (kpis.length === 0) return <p className="text-sm text-muted-foreground">No KPI changed status since the last board pack.</p>;
   return (
     <ul className="space-y-1.5">
       {kpis.map((kpi) => (
         <li key={kpi.goalId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm" data-testid="change-row">
-          <Link to={`/goals/${kpi.goalId}`} className="min-w-0 flex-(--flex-kpi-title) font-medium break-words hover:underline">{kpi.title}</Link>
+          <span className="min-w-0 flex-(--flex-kpi-title)">
+            <Link to={`/goals/${kpi.goalId}`} className="font-medium break-words hover:underline">{kpi.title}</Link>
+            {valueChangeText(kpi) ? (
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                {valueChangeText(kpi)}
+                <KpiSparkline points={kpi.trend} unit={kpi.unit} />
+              </span>
+            ) : null}
+          </span>
           {/* Old and new status move as one unit: beside the title when it fits, else on the next line. */}
           <span className="flex shrink-0 items-center gap-1.5">
             {kpi.previousStatus ? <KpiStatusPill status={kpi.previousStatus} /> : <span className="text-xs text-muted-foreground">new</span>}
