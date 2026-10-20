@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import path6 from "node:path";
 import { runInNewContext } from "node:vm";
 import test from "node:test";
 
@@ -16,6 +17,7 @@ assert.ok(methodStart >= 0 && methodEnd > methodStart, "installed Codex ACP must
 async function turnPolicy(policy, env) {
   const context = {
     process: { env },
+    path6,
     buildPromptItems: (prompt) => prompt,
     addAdditionalDirectoriesToSandboxPolicy: (value) => value,
   };
@@ -60,5 +62,29 @@ test("ACP leaves other sandbox modes and callers without a valid override unchan
   const policy = { type: "workspaceWrite", networkAccess: false };
   for (const value of [undefined, "", "1", "invalid"]) {
     assert.equal((await turnPolicy(policy, { GSAM_CODEX_ACP_NETWORK_ACCESS: value })).sandboxPolicy, policy);
+  }
+});
+
+// GRE-1725: Codex keeps `.git` under every writable root read-only, so
+// `git fetch` failed on FETCH_HEAD in the run's own bound repo.
+test("ACP makes the bound repo's Git metadata writable inside the workspace root", async () => {
+  const policy = { type: "workspaceWrite", writableRoots: [], networkAccess: false };
+  const env = {
+    GSAM_CODEX_ACP_NETWORK_ACCESS: "true",
+    GSAM_GIT_METADATA_ROOTS: JSON.stringify(["/workspace/.git", "/repo/.git/worktrees/run", "/workspace/.git"]),
+  };
+  const result = await turnPolicy(policy, env);
+  assert.deepEqual([...result.sandboxPolicy.writableRoots], ["/workspace/.git", "/repo/.git/worktrees/run"]);
+  assert.equal(result.sandboxPolicy.networkAccess, true);
+  assert.deepEqual(policy.writableRoots, [], "must not mutate the shared mode preset");
+});
+
+test("ACP grants no other Git roots and ignores unsafe or malformed projections", async () => {
+  const policy = { type: "workspaceWrite", writableRoots: ["/extra"], networkAccess: false };
+  for (const roots of [undefined, "", "not-json", "{}", '["relative/.git", "/", 7]']) {
+    assert.equal((await turnPolicy(policy, { GSAM_GIT_METADATA_ROOTS: roots })).sandboxPolicy, policy);
+  }
+  for (const other of [{ type: "readOnly" }, { type: "dangerFullAccess" }]) {
+    assert.equal((await turnPolicy(other, { GSAM_GIT_METADATA_ROOTS: '["/workspace/.git"]' })).sandboxPolicy, other);
   }
 });

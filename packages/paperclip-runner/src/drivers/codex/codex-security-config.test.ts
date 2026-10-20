@@ -74,6 +74,25 @@ describe("Codex security configuration", () => {
     expect(args.match(/"\/legacy\/.config\/gh"="read"/g)).toHaveLength(2);
   });
 
+  // GRE-1725: Codex keeps `.git` under a writable root read-only unless that
+  // exact directory has its own write rule. Checked against codex 0.156 bwrap.
+  it("makes only the bound repo's Git metadata writable when it sits inside the workspace root", () => {
+    const args = createIsolatedCodexAppServerArgs({
+      GSAM_GIT_METADATA_ROOTS: '["/workspace/repo/.git","/main/.git/worktrees/run"]',
+    });
+    const rules = (profile: string) => args.find((arg) => arg.startsWith(`permissions.${profile}.filesystem=`))!;
+    const workspace = rules("paperclip-runner-workspace-only");
+    expect(workspace).toContain('"/workspace/repo/.git"="write"');
+    expect(workspace).toContain('"/main/.git/worktrees/run"="write"');
+    expect(workspace).toContain('":workspace_roots"={"."="write"}');
+    expect(workspace.match(/\.git[^"]*"="write"/g)).toHaveLength(2);
+    const planning = rules("paperclip-runner-workspace-read-only");
+    expect(planning).toContain('"/workspace/repo/.git"="read"');
+    expect(planning).not.toContain('="write"}');
+    expect(planning).not.toContain('.git"="write"');
+    expect(createIsolatedCodexAppServerArgs({ GSAM_GIT_METADATA_ROOTS: '["relative/.git","/"]' }).join("\n")).not.toContain('.git"="write"');
+  });
+
   it("disables host extensions and makes collaboration instructions explicit", () => {
     expect(createSkilllessCodexThreadConfig("/workspace", {}, false)).toEqual({
       "skills.include_instructions": false,
