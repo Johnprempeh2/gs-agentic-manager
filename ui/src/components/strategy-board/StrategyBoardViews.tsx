@@ -145,8 +145,8 @@ export function AttentionQueue({
       )}
       {weak.length > 0 ? (
         <div className="space-y-2" data-testid="attention-weak-evidence">
-          <h3 className="text-sm font-medium">On course, but evidence is stale</h3>
-          <AttentionRows kpis={weak} label="On course, but evidence is stale" canAskWhy={canAskWhy} onAskWhy={onAskWhy} />
+          <h3 className="text-sm font-medium">On course, but on weak evidence</h3>
+          <AttentionRows kpis={weak} label="On course, but on weak evidence" canAskWhy={canAskWhy} onAskWhy={onAskWhy} />
         </div>
       ) : null}
     </div>

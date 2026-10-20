@@ -375,6 +375,10 @@ export function GoalDetail() {
         />
       </div>
 
+      {/* A KPI leads with value against target; the task metrics below repeat it in task terms. */}
+      {kind === "kpi" ? <KpiHeadline goal={goal} ownerName={ownerName} readings={readings} /> : null}
+
+      {kind !== "kpi" ? (
       <section
         className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
         aria-label="Goal at a glance"
@@ -394,15 +398,14 @@ export function GoalDetail() {
           value={newestCheckIn ? relativeTime(newestCheckIn.createdAt) : "None yet"}
         />
       </section>
-
-      {kind === "kpi" ? <KpiHeadline goal={goal} ownerName={ownerName} readings={readings} /> : null}
+      ) : null}
 
       {kind === "kpi" && (goal.status === "draft" || goal.benchmarkNote || goal.sourceIssueId) ? (
         <KpiDraftNotice goal={goal} onAccept={() => updateGoal.mutate({ status: "active" })} pending={updateGoal.isPending} />
       ) : null}
 
       {kind === "kpi" ? (
-        <section className="space-y-3" aria-labelledby="kpi-readings-heading">
+        <section className="@container space-y-3" aria-labelledby="kpi-readings-heading">
           <h3 id="kpi-readings-heading" className="text-sm font-semibold">
             Readings
           </h3>
@@ -411,7 +414,7 @@ export function GoalDetail() {
               {kpiStatusSentence(goal.kpiStatus, goal.unit)}
             </p>
           ) : null}
-          <div className={cn("grid items-start gap-4", mayEditKpi && "lg:grid-cols-(--gtc-66)")}>
+          <div className={cn("grid items-start gap-4", mayEditKpi && "@3xl:grid-cols-(--gtc-66)")}>
             <KpiReadingsList
               readings={readings ?? (goal.latestReading ? [goal.latestReading] : [])}
               unit={goal.unit}

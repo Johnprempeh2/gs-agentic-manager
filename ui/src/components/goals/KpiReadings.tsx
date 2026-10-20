@@ -178,18 +178,18 @@ export function KpiReadingsList({
   return (
     <ol className="divide-y divide-border rounded-lg border border-border" data-testid="kpi-readings">
       {readings.map((reading) => (
-        <li key={reading.id} className="grid gap-x-4 gap-y-1 px-4 py-3 sm:grid-cols-[8rem_1fr_auto]">
-          <div>
+        <li key={reading.id} className="flex flex-wrap items-start gap-x-4 gap-y-1 px-4 py-3">
+          <div className="w-32 shrink-0">
             <p className="font-bold tabular-nums">{formatKpiValue(reading.value, unit)}</p>
             <p className="text-xs text-muted-foreground">{formatShortDate(`${reading.readingDate}T00:00:00`)}</p>
           </div>
-          <div className="min-w-0 text-sm">
+          <div className="min-w-0 flex-1 basis-40 text-sm">
             {reading.note ? <p className="line-clamp-3 whitespace-pre-line">{reading.note}</p> : null}
             <p className="text-xs text-muted-foreground" title={formatDateTime(reading.createdAt)}>
               Recorded by {recorderName(reading, names)}
             </p>
           </div>
-          <div className="sm:text-right">
+          <div className="ml-auto">
             <KpiSourceBadge source={reading.source} />
           </div>
         </li>

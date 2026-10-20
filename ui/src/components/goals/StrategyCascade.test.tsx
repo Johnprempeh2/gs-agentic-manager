@@ -115,7 +115,7 @@ describe("CascadeStatus (GRE-1163)", () => {
       />,
     );
     expect(html).toContain('data-rag="red"');
-    expect(html).toContain("1 red, 2 green of 3 KPIs");
+    expect(html).toContain("1 off course, 2 on course of 3 KPIs");
     expect(html).not.toContain("data-health");
   });
 

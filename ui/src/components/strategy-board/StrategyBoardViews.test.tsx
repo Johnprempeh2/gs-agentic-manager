@@ -89,14 +89,14 @@ describe("AttentionQueue", () => {
       trend: [{ readingDate: "2026-08-01", value: 60 }, { readingDate: "2026-09-01", value: 70 }],
     });
     const html = renderToStaticMarkup(<AttentionQueue kpis={[RETENTION, stale]} canAskWhy onAskWhy={() => {}} />);
-    expect(html).toContain("On course, but evidence is stale");
-    expect(html.indexOf("Staff retention")).toBeLessThan(html.indexOf("On course, but evidence is stale"));
-    expect(html.indexOf("On course, but evidence is stale")).toBeLessThan(html.indexOf("Training hours"));
+    expect(html).toContain("On course, but on weak evidence");
+    expect(html.indexOf("Staff retention")).toBeLessThan(html.indexOf("On course, but on weak evidence"));
+    expect(html.indexOf("On course, but on weak evidence")).toBeLessThan(html.indexOf("Training hours"));
     expect(html).toContain('aria-label="Last 2 readings: 60, 70"');
     // Only stale greens: no slippage, but the group still shows.
     const onlyStale = renderToStaticMarkup(<AttentionQueue kpis={[stale]} canAskWhy onAskWhy={() => {}} />);
     expect(onlyStale).toContain("No board action is needed");
-    expect(onlyStale).toContain("On course, but evidence is stale");
+    expect(onlyStale).toContain("On course, but on weak evidence");
   });
 
   it("says when nothing needs the board", () => {
