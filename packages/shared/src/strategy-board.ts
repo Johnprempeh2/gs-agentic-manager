@@ -7,6 +7,8 @@ import type {
   StrategyBoardKpi,
   StrategyBoardOwner,
   StrategyBoardPackSnapshot,
+  StrategyBoardTrendPoint,
+  StrategyBoardWhyItem,
 } from "./types/strategy-board.js";
 
 /**
@@ -34,6 +36,8 @@ export interface StrategyBoardKpiInput {
   /** KPI status and value in the last board pack; null when there is no pack. */
   snapshotById: ReadonlyMap<string, { status: KpiRagStatus | null; latestValue: number | null }> | null;
   openWhyById: ReadonlyMap<string, number>;
+  /** Recent readings by KPI, oldest first, for the trend; optional. */
+  trendById?: ReadonlyMap<string, StrategyBoardTrendPoint[]>;
   ownerNames: { users: ReadonlyMap<string, string | null>; agents: ReadonlyMap<string, string | null> };
   /** "YYYY-MM-DD" */
   today: string;
@@ -107,6 +111,7 @@ export function buildStrategyBoardKpis(input: StrategyBoardKpiInput): StrategyBo
       previousValue: previous?.latestValue ?? null,
       changedSinceSnapshot: input.snapshotById != null && (previous == null || previous.status !== rag),
       openWhyRequests: input.openWhyById.get(goal.id) ?? 0,
+      trend: input.trendById?.get(goal.id) ?? [],
     };
     kpi.notMeasuredReason = strategyBoardNotMeasuredReason(kpi);
     out.push(kpi);
@@ -196,6 +201,43 @@ export function buildStrategyBoardOverdueActions(input: {
     || a.title.localeCompare(b.title));
 }
 
+/** How many readings a KPI trend shows. */
+export const STRATEGY_BOARD_TREND_POINTS = 6;
+
+/**
+ * The words the board reads for a status, everywhere: one vocabulary, never
+ * colour names.
+ */
+export const KPI_STATUS_WORDS: Record<KpiRagStatus, string> = {
+  green: "On course",
+  amber: "Watch",
+  red: "Off course",
+};
+
+/**
+ * How far the board can trust a KPI's number, apart from its colour
+ * (GRE-1134): a green KPI may rest on weak evidence.
+ * - strong: checked by an agent or taken from a system, and at most 14 days old
+ * - weak: reported by the owner only, or older than 30 days, or no reading
+ * - moderate: anything in between
+ */
+export type BoardAssurance = "strong" | "moderate" | "weak";
+
+export const ASSURANCE_FRESH_DAYS = 14;
+export const ASSURANCE_STALE_DAYS = 30;
+
+export function boardAssurance(kpi: Pick<StrategyBoardKpi, "latestReadingSource" | "readingAgeDays">): BoardAssurance {
+  if (!kpi.latestReadingSource || kpi.readingAgeDays == null) return "weak";
+  if (kpi.readingAgeDays > ASSURANCE_STALE_DAYS) return "weak";
+  if (kpi.latestReadingSource === "owner_reported") return "weak";
+  return kpi.readingAgeDays <= ASSURANCE_FRESH_DAYS ? "strong" : "moderate";
+}
+
+/** On course, but the number behind it is stale or only self-reported. */
+export function isOnCourseOnWeakEvidence(kpi: StrategyBoardKpi): boolean {
+  return kpi.status === "green" && boardAssurance(kpi) === "weak";
+}
+
 const STATUS_WEIGHT: Record<KpiRagStatus, number> = { red: 0, amber: 1, green: 2 };
 
 /**
@@ -222,7 +264,9 @@ function isSlipping(kpi: StrategyBoardKpi): boolean {
  * The board attention queue: red before amber, then the biggest slippage,
  * then a KPI that got worse since the last pack, then by title. After them
  * come the KPIs that are not measured (GRE-1325), by title, so a plan with no
- * targets never reads as "all clear". Green KPIs are not in it.
+ * targets never reads as "all clear". Last come the green KPIs whose
+ * evidence is weak (stale or owner-reported only), by title. Other green
+ * KPIs are not in it.
  */
 export function rankStrategyBoardAttention(kpis: readonly StrategyBoardKpi[]): StrategyBoardKpi[] {
   const slipping = kpis
@@ -236,7 +280,61 @@ export function rankStrategyBoardAttention(kpis: readonly StrategyBoardKpi[]): S
     .filter((kpi) => kpi.status == null)
     .map((kpi) => ({ ...kpi, notMeasuredReason: strategyBoardNotMeasuredReason(kpi) }))
     .sort((a, b) => a.title.localeCompare(b.title));
-  return [...slipping, ...notMeasured];
+  const weakGreen = kpis.filter(isOnCourseOnWeakEvidence).sort((a, b) => a.title.localeCompare(b.title));
+  return [...slipping, ...notMeasured, ...weakGreen];
+}
+
+/**
+ * The "Why?" requests the board reads between meetings: those answered since
+ * `since` (the last accepted pack; null = every answer), newest first, and
+ * those still open, oldest first. Requests on KPIs no longer on the board are
+ * left out.
+ */
+export function buildStrategyBoardWhyDigest(input: {
+  requests: ReadonlyArray<{
+    id: string;
+    goalId: string;
+    question: string;
+    status: string;
+    answer: string | null;
+    ownerUserId: string | null;
+    ownerAgentId: string | null;
+    createdAt: Date;
+    answeredAt: Date | null;
+  }>;
+  kpis: readonly Pick<StrategyBoardKpi, "goalId" | "title" | "owner">[];
+  ownerNames: StrategyBoardKpiInput["ownerNames"];
+  since: Date | null;
+  now: Date;
+}): { answered: StrategyBoardWhyItem[]; open: StrategyBoardWhyItem[] } {
+  const kpis = new Map(input.kpis.map((kpi) => [kpi.goalId, kpi]));
+  const answered: StrategyBoardWhyItem[] = [];
+  const open: StrategyBoardWhyItem[] = [];
+  for (const row of input.requests) {
+    const kpi = kpis.get(row.goalId);
+    if (!kpi) continue;
+    const ownerName =
+      (row.ownerUserId ? input.ownerNames.users.get(row.ownerUserId) : null)
+      ?? (row.ownerAgentId ? input.ownerNames.agents.get(row.ownerAgentId) : null)
+      ?? kpi.owner?.name
+      ?? null;
+    const item: StrategyBoardWhyItem = {
+      id: row.id,
+      goalId: row.goalId,
+      kpiTitle: kpi.title,
+      ownerName,
+      question: row.question,
+      answer: row.answer,
+      askedAt: row.createdAt.toISOString(),
+      answeredAt: row.answeredAt?.toISOString() ?? null,
+      ageDays: Math.max(0, Math.floor((input.now.getTime() - row.createdAt.getTime()) / DAY_MS)),
+    };
+    if (row.status === "open") open.push(item);
+    else if (row.answeredAt && (!input.since || row.answeredAt >= input.since)) answered.push(item);
+  }
+  answered.sort((a, b) => b.answeredAt!.localeCompare(a.answeredAt!));
+  open.sort((a, b) => a.askedAt.localeCompare(b.askedAt));
+  return { answered, open };
 }
 
 /** Pillars and CSFs with their objectives, in plan order (as created). */
@@ -284,10 +382,12 @@ export function kpiAlertAction(status: KpiRagStatus | null, hasOpenAlert: boolea
   return hasOpenAlert ? "clear" : "none";
 }
 
-const RAG_WORD: Record<KpiRagStatus, string> = { red: "Red", amber: "Amber", green: "Green" };
-
 function ragWord(status: KpiRagStatus | null): string {
-  return status ? RAG_WORD[status] : "No status";
+  return status ? KPI_STATUS_WORDS[status] : "No status";
+}
+
+function countWords(r: { red: number; amber: number; green: number }): string {
+  return `${r.red} off course, ${r.amber} watch, ${r.green} on course`;
 }
 
 function num(value: number | null, unit: string | null): string {
@@ -320,7 +420,7 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
   lines.push(`# ${pack.title}`, "");
   lines.push(`${pack.companyName} · ${pack.periodStart} to ${pack.periodEnd} · status as of ${pack.asOf}`, "");
   lines.push(
-    `**KPIs:** ${counts.red} red, ${counts.amber} amber, ${counts.green} green, ${counts.noStatus} with no status.`,
+    `**KPIs:** ${countWords(counts)}, ${counts.noStatus} with no status.`,
     "",
   );
 
@@ -331,7 +431,7 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
     lines.push("| Area | Status | KPIs |", "| --- | --- | --- |");
     for (const area of pack.areas) {
       const r = area.rollup;
-      lines.push(`| ${cell(`${area.title} (${GOAL_KIND_LABELS[area.kind]})`)} | ${ragWord(r.status)} | ${r.red} red, ${r.amber} amber, ${r.green} green |`);
+      lines.push(`| ${cell(`${area.title} (${GOAL_KIND_LABELS[area.kind]})`)} | ${ragWord(r.status)} | ${countWords(r)} |`);
       for (const objective of area.objectives) {
         lines.push(`| ${cell(`↳ ${objective.title}`)} | ${ragWord(objective.rollup.status)} | ${cell(ownerName(objective.owner))} |`);
       }
@@ -344,7 +444,7 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
   const notMeasured = attention.filter((kpi) => kpi.status == null);
   lines.push("## Slippages", "");
   if (slippages.length === 0) {
-    lines.push("No KPI is red or amber.", "");
+    lines.push("No KPI is off course or on watch.", "");
   } else {
     lines.push("| KPI | Status | Behind plan | Latest | Plan | Source | Owner |", "| --- | --- | --- | --- | --- | --- | --- |");
     for (const kpi of slippages) {
@@ -361,7 +461,7 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
     lines.push("Every KPI has a target, a target date and a reading.", "");
   } else {
     lines.push(
-      `${notMeasured.length} of ${pack.kpis.length} KPIs cannot be judged red, amber or green.`,
+      `${notMeasured.length} of ${pack.kpis.length} KPIs cannot be judged on course or off course.`,
       "",
       "| KPI | Reason | Owner |",
       "| --- | --- | --- |",

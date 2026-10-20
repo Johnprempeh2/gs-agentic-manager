@@ -624,6 +624,7 @@ export const queryKeys = {
     packs: (companyId: string) => ["strategy-board", companyId, "packs"] as const,
     pack: (id: string) => ["strategy-board", "pack", id] as const,
     whyRequests: (goalId: string) => ["strategy-board", "why-requests", goalId] as const,
+    boardKpi: (goalId: string) => ["strategy-board", "board-kpi", goalId] as const,
     agents: (companyId: string) => ["strategy-board", companyId, "agents"] as const,
     chat: (companyId: string, agentId: string) => ["strategy-board", companyId, "chat", agentId] as const,
   },

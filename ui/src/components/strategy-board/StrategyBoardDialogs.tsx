@@ -6,7 +6,7 @@ import { agentsApi } from "@/api/agents";
 import { strategyBoardApi } from "@/api/strategyBoard";
 import { useToastActions } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { downloadMarkdown, boardOwnerName, packFileName, previousQuarter } from "@/lib/strategy-board";
+import { defaultPackPeriod, downloadMarkdown, boardOwnerName, packFileName } from "@/lib/strategy-board";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -83,24 +83,35 @@ export function AskWhyDialog({
   );
 }
 
-/** One click with a period (default: last full quarter) makes a frozen board pack. */
+/**
+ * One click with a period makes a frozen board pack. The board meets monthly,
+ * so the default runs from the end of the last accepted pack (or one month
+ * back) to the next meeting.
+ */
 export function MakeBoardPackDialog({
   companyId,
   open,
+  lastPackEnd,
+  nextMeetingDate,
+  today,
   onClose,
   onCreated,
 }: {
   companyId: string;
   open: boolean;
+  lastPackEnd: string | null;
+  nextMeetingDate: string | null;
+  /** "YYYY-MM-DD", the board's as-of day. */
+  today: string;
   onClose: () => void;
   onCreated: (pack: StrategyBoardPack) => void;
 }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
-  const quarter = previousQuarter();
-  const [periodStart, setPeriodStart] = useState(quarter.periodStart);
-  const [periodEnd, setPeriodEnd] = useState(quarter.periodEnd);
-  const [title, setTitle] = useState(`${quarter.label} board pack`);
+  const [period] = useState(() => defaultPackPeriod({ lastPackEnd, nextMeetingDate, today }));
+  const [periodStart, setPeriodStart] = useState(period.periodStart);
+  const [periodEnd, setPeriodEnd] = useState(period.periodEnd);
+  const [title, setTitle] = useState(period.title);
   const make = useMutation({
     mutationFn: () => strategyBoardApi.createPack(companyId, { periodStart, periodEnd, title: title.trim() || undefined }),
     onSuccess: (pack) => {

@@ -31,6 +31,7 @@ export const STRATEGY_BOARD_ROUTE_PREFIXES = [
   "/companies/:companyId/strategy-board",
   "/strategy-board",
   "/goals/:id/why-requests",
+  "/goals/:id/board-kpi",
   "/why-requests",
 ];
 
@@ -336,6 +337,13 @@ export function strategyBoardRoutes(db: Db) {
     const pack = await getAccessibleResource(req, res, svc.getPack(req.params.id as string), "Board pack not found");
     if (!pack) return;
     res.json(pack);
+  });
+
+  /** The KPI page's board view: one KPI and what the viewer may do, without the whole board. */
+  router.get("/goals/:id/board-kpi", async (req, res) => {
+    const goal = await getAccessibleResource(req, res, goals.getById(req.params.id as string), "Goal not found");
+    if (!goal) return;
+    res.json(await svc.kpiView(goal.companyId, goal.id, await viewerRights(req, goal.companyId)));
   });
 
   router.get("/goals/:id/why-requests", async (req, res) => {

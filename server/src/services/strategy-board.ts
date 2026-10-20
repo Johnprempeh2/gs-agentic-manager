@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import {
   agents,
   authUsers,
@@ -11,16 +11,19 @@ import {
   issues,
   principalPermissionGrants,
   strategyBoardPacks,
+  strategyBoardSettings,
   type Db,
 } from "@greatstone/db";
 import {
   buildStrategyBoardAreas,
   buildStrategyBoardKpis,
   buildStrategyBoardOverdueActions,
+  buildStrategyBoardWhyDigest,
   countStrategyBoardKpis,
   kpiAlertAction,
   rankStrategyBoardAttention,
   renderStrategyBoardPackMarkdown,
+  STRATEGY_BOARD_TREND_POINTS,
   type CreateStrategyBoardPack,
   type GoalKpiAlert,
   type GoalWhyRequest,
@@ -30,12 +33,14 @@ import {
   type KpiStatus,
   type SetStrategyBoardMembers,
   type StrategyBoardActionTask,
+  type StrategyBoardKpiView,
   type StrategyBoardMember,
   type StrategyBoardPack,
   type StrategyBoardPackListItem,
   type StrategyBoardPackSnapshot,
   type StrategyBoardPackStatus,
   type StrategyBoardSummary,
+  type StrategyBoardTrendPoint,
   type StrategyBoardViewerRights,
 } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
@@ -199,14 +204,46 @@ export function strategyBoardService(db: Db) {
       .then((rows) => rows[0] ?? null);
   }
 
-  async function openWhyCounts(companyId: string): Promise<Map<string, number>> {
-    const rows = await db
-      .select({ goalId: goalWhyRequests.goalId })
+  /** When the last accepted pack became the meeting's pack; "since the last meeting" starts here. */
+  function packAcceptedAt(pack: PackRow | null): Date | null {
+    return pack ? pack.acceptedAt ?? pack.createdAt : null;
+  }
+
+  /** Open "Why?" requests, and those answered since `since` (every answer when null). */
+  async function whyRows(companyId: string, since: Date | null): Promise<WhyRequestRow[]> {
+    const answered = since
+      ? and(eq(goalWhyRequests.status, "answered"), gte(goalWhyRequests.answeredAt, since))
+      : eq(goalWhyRequests.status, "answered");
+    return db
+      .select()
       .from(goalWhyRequests)
-      .where(and(eq(goalWhyRequests.companyId, companyId), eq(goalWhyRequests.status, "open")));
-    const counts = new Map<string, number>();
-    for (const row of rows) counts.set(row.goalId, (counts.get(row.goalId) ?? 0) + 1);
-    return counts;
+      .where(and(eq(goalWhyRequests.companyId, companyId), or(eq(goalWhyRequests.status, "open"), answered)));
+  }
+
+  /** The last few readings of each KPI, oldest first, for the trend sparkline. */
+  async function trendsByKpi(companyId: string): Promise<Map<string, StrategyBoardTrendPoint[]>> {
+    const ranked = db
+      .select({
+        goalId: goalKpiReadings.goalId,
+        value: goalKpiReadings.value,
+        readingDate: goalKpiReadings.readingDate,
+        rank: sql<number>`row_number() over (partition by ${goalKpiReadings.goalId} order by ${goalKpiReadings.readingDate} desc, ${goalKpiReadings.createdAt} desc)`.as("rank"),
+      })
+      .from(goalKpiReadings)
+      .where(eq(goalKpiReadings.companyId, companyId))
+      .as("ranked");
+    const rows = await db
+      .select({ goalId: ranked.goalId, value: ranked.value, readingDate: ranked.readingDate })
+      .from(ranked)
+      .where(lte(ranked.rank, STRATEGY_BOARD_TREND_POINTS))
+      .orderBy(asc(ranked.goalId), asc(ranked.readingDate), desc(ranked.rank));
+    const out = new Map<string, StrategyBoardTrendPoint[]>();
+    for (const row of rows) {
+      const points = out.get(row.goalId) ?? [];
+      points.push({ readingDate: row.readingDate, value: row.value });
+      out.set(row.goalId, points);
+    }
+    return out;
   }
 
   /** Open, visible tasks with a due date before `today` (GRE-1188); the builder keeps those on the plan. */
@@ -237,10 +274,10 @@ export function strategyBoardService(db: Db) {
   /** The board's picture of the plan today, compared with the last board pack. */
   async function buildBoard(companyId: string, today = todayIso()) {
     const [companyGoals, dueTasks] = await Promise.all([goalsSvc.listWithProgress(companyId), pastDueTasks(companyId, today)]);
-    const [ownerNames, lastPack, openWhy, unsentAlerts] = await Promise.all([
+    const [ownerNames, { lastPack, whyRequests }, trendById, unsentAlerts] = await Promise.all([
       loadOwnerNames(companyGoals, dueTasks),
-      latestPackRow(companyId),
-      openWhyCounts(companyId),
+      latestPackRow(companyId).then(async (pack) => ({ lastPack: pack, whyRequests: await whyRows(companyId, packAcceptedAt(pack)) })),
+      trendsByKpi(companyId),
       db
         .select({ id: goalKpiAlerts.id })
         .from(goalKpiAlerts)
@@ -254,6 +291,10 @@ export function strategyBoardService(db: Db) {
       if (goal.kpiStatus) statusById.set(goal.id, goal.kpiStatus);
       if (goal.latestReading) latestReadingById.set(goal.id, { readingDate: goal.latestReading.readingDate, source: goal.latestReading.source });
     }
+    const openWhy = new Map<string, number>();
+    for (const row of whyRequests) {
+      if (row.status === "open") openWhy.set(row.goalId, (openWhy.get(row.goalId) ?? 0) + 1);
+    }
     const lastSnapshot = lastPack ? toPack(lastPack).snapshot : null;
     const snapshotById = lastSnapshot
       ? new Map(lastSnapshot.kpis.map((kpi) => [kpi.goalId, { status: kpi.status, latestValue: kpi.latestValue }]))
@@ -264,6 +305,7 @@ export function strategyBoardService(db: Db) {
       latestReadingById,
       snapshotById,
       openWhyById: openWhy,
+      trendById,
       ownerNames,
       today,
     });
@@ -272,6 +314,7 @@ export function strategyBoardService(db: Db) {
       overdueActions: buildStrategyBoardOverdueActions({ goals: companyGoals, tasks: dueTasks, ownerNames, today }),
       areas: buildStrategyBoardAreas(companyGoals, rollup, ownerNames),
       lastPack,
+      whyRequests,
       unsentAlerts,
       ownerNames,
     };
@@ -279,7 +322,15 @@ export function strategyBoardService(db: Db) {
 
   async function summary(companyId: string, viewer: StrategyBoardViewerRights): Promise<StrategyBoardSummary> {
     const today = todayIso();
-    const [board, chairUserId] = await Promise.all([buildBoard(companyId, today), findChairUserId(companyId)]);
+    const [board, chairUserId, nextMeetingDate] = await Promise.all([
+      buildBoard(companyId, today),
+      findChairUserId(companyId),
+      db
+        .select({ date: strategyBoardSettings.nextMeetingDate })
+        .from(strategyBoardSettings)
+        .where(eq(strategyBoardSettings.companyId, companyId))
+        .then((rows) => rows[0]?.date ?? null),
+    ]);
     return {
       companyId,
       asOf: today,
@@ -300,8 +351,22 @@ export function strategyBoardService(db: Db) {
       kpis: board.kpis,
       unsentAlerts: board.unsentAlerts,
       hasChair: chairUserId != null,
+      nextMeetingDate,
+      whyRequests: buildStrategyBoardWhyDigest({
+        requests: board.whyRequests,
+        kpis: board.kpis,
+        ownerNames: board.ownerNames,
+        since: packAcceptedAt(board.lastPack),
+        now: new Date(),
+      }),
       viewer,
     };
+  }
+
+  /** One KPI as the board sees it, for the KPI page. */
+  async function kpiView(companyId: string, goalId: string, viewer: StrategyBoardViewerRights): Promise<StrategyBoardKpiView> {
+    const board = await buildBoard(companyId);
+    return { kpi: board.kpis.find((kpi) => kpi.goalId === goalId) ?? null, viewer };
   }
 
   async function companyLink(companyId: string) {
@@ -376,9 +441,9 @@ export function strategyBoardService(db: Db) {
         const s = kpi.kpiStatus!;
         const unit = kpi.unit ? ` ${kpi.unit}` : "";
         const issue = await issuesSvc.create(companyId, {
-          title: `KPI turned red: ${kpi.title}`,
+          title: `KPI is off course: ${kpi.title}`,
           description: [
-            `**${kpi.title}** is off track.`,
+            `**${kpi.title}** is off course.`,
             "",
             s.reason === "deadline_missed"
               ? `The deadline has passed and the target is not met: ${s.latestValue}${unit} against a target of ${s.plannedValue}${unit}.`
@@ -690,6 +755,7 @@ export function strategyBoardService(db: Db) {
     buildBoard,
     companyLink,
     summary,
+    kpiView,
     evaluateAlerts,
     listAlerts,
     createWhyRequest,

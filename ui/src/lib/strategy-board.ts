@@ -1,24 +1,15 @@
-import type { StrategyBoardKpi, StrategyBoardOwner, StrategyBoardPackListItem, StrategyBoardSummary } from "@greatstone/shared";
+import {
+  KPI_STATUS_WORDS,
+  boardAssurance,
+  type BoardAssurance,
+  type StrategyBoardOwner,
+  type StrategyBoardPackListItem,
+  type StrategyBoardSummary,
+} from "@greatstone/shared";
 import { formatCalendarDay } from "./utils";
 
-/**
- * How far the board can trust a KPI's number, shown apart from its colour
- * (Mikey's design view, GRE-1134): a green KPI may rest on weak evidence.
- * - strong: checked by an agent or taken from a system, and at most 14 days old
- * - weak: reported by the owner only, or older than 30 days, or no reading
- * - moderate: anything in between
- */
-export type BoardAssurance = "strong" | "moderate" | "weak";
-
-export const ASSURANCE_FRESH_DAYS = 14;
-export const ASSURANCE_STALE_DAYS = 30;
-
-export function boardAssurance(kpi: Pick<StrategyBoardKpi, "latestReadingSource" | "readingAgeDays">): BoardAssurance {
-  if (!kpi.latestReadingSource || kpi.readingAgeDays == null) return "weak";
-  if (kpi.readingAgeDays > ASSURANCE_STALE_DAYS) return "weak";
-  if (kpi.latestReadingSource === "owner_reported") return "weak";
-  return kpi.readingAgeDays <= ASSURANCE_FRESH_DAYS ? "strong" : "moderate";
-}
+// Evidence strength lives in shared, so the server's attention queue uses the same rule (GRE-1134).
+export { ASSURANCE_FRESH_DAYS, ASSURANCE_STALE_DAYS, boardAssurance, type BoardAssurance } from "@greatstone/shared";
 
 export const ASSURANCE_LABEL: Record<BoardAssurance, string> = {
   strong: "Strong evidence",
@@ -38,16 +29,47 @@ export function boardOwnerName(owner: StrategyBoardOwner | null): string {
   return owner.name ?? (owner.type === "agent" ? "An agent" : "A person");
 }
 
-/** The last full calendar quarter before `today`, as the default board pack period. */
-export function previousQuarter(today: Date = new Date()): { periodStart: string; periodEnd: string; label: string } {
-  const year = today.getUTCFullYear();
-  const quarter = Math.floor(today.getUTCMonth() / 3); // 0-based current quarter
-  const prevQuarter = (quarter + 3) % 4;
-  const prevYear = quarter === 0 ? year - 1 : year;
-  const start = new Date(Date.UTC(prevYear, prevQuarter * 3, 1));
-  const end = new Date(Date.UTC(prevYear, prevQuarter * 3 + 3, 0));
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { periodStart: iso(start), periodEnd: iso(end), label: `Q${prevQuarter + 1} ${prevYear}` };
+const DAY_MS = 86_400_000;
+
+function dayNumber(date: string): number {
+  return Math.floor(Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / DAY_MS);
+}
+
+function isoDay(day: number): string {
+  return new Date(day * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The same day one month earlier, clamped to the month's end ("2026-03-31" gives "2026-02-28"). */
+function oneMonthBefore(date: string): string {
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number) as [number, number, number];
+  const lastDay = new Date(Date.UTC(y, m - 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 2, Math.min(d, lastDay))).toISOString().slice(0, 10);
+}
+
+/**
+ * The default board pack period for a monthly board: from the day after the
+ * last accepted pack ended (or one month back) to the next meeting (or
+ * today). Falls back to one month when the last pack ends after the meeting.
+ */
+export function defaultPackPeriod(input: {
+  lastPackEnd: string | null;
+  nextMeetingDate: string | null;
+  today: string;
+}): { periodStart: string; periodEnd: string; title: string } {
+  const periodEnd = input.nextMeetingDate ?? input.today;
+  const afterLast = input.lastPackEnd ? isoDay(dayNumber(input.lastPackEnd) + 1) : null;
+  const periodStart = afterLast && afterLast <= periodEnd ? afterLast : oneMonthBefore(periodEnd);
+  const month = new Date(`${periodEnd}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  return { periodStart, periodEnd, title: `${month} board pack` };
+}
+
+/** "Next board meeting: 12 Nov (in 3 days)"; null when none is set or the date has passed. */
+export function nextMeetingText(nextMeetingDate: string | null, today: string): string | null {
+  if (!nextMeetingDate) return null;
+  const days = dayNumber(nextMeetingDate) - dayNumber(today);
+  if (days < 0) return null;
+  const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  return `Next board meeting: ${formatCalendarDay(nextMeetingDate)} (${when})`;
 }
 
 /** Saves a board pack as a Markdown file the board can open or print. */
@@ -81,8 +103,6 @@ export function meetingPackId(packs: readonly Pick<StrategyBoardPackListItem, "i
   return best?.id ?? null;
 }
 
-const RAG_WORDS: Record<string, string> = { red: "Off course", amber: "Watch", green: "On course" };
-
 /**
  * "Copy as an update" on the board panel: the headline, then what needs the
  * board and the overdue actions, ready to paste into an email to the board.
@@ -96,7 +116,7 @@ export function boardUpdateText(
     lines.push("", "Needs board attention");
     for (const kpi of board.attention) {
       const parts = [
-        kpi.status ? RAG_WORDS[kpi.status] : `Not measured${kpi.notMeasuredReason ? ` (${kpi.notMeasuredReason.toLowerCase()})` : ""}`,
+        kpi.status ? KPI_STATUS_WORDS[kpi.status] : `Not measured${kpi.notMeasuredReason ? ` (${kpi.notMeasuredReason.toLowerCase()})` : ""}`,
         kpi.gapPercent ? `${Math.round(kpi.gapPercent)}% behind plan` : null,
         boardOwnerName(kpi.owner),
       ].filter(Boolean);

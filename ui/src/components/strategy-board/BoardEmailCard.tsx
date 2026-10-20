@@ -66,6 +66,8 @@ export function BoardEmailCard({ companyId }: { companyId: string }) {
       }),
     onSuccess: (next) => {
       queryClient.setQueryData(queryKeys.strategyBoard.settings(companyId), next);
+      // The board header shows the next meeting.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.strategyBoard.summary(companyId), exact: true });
       pushToast({ title: "Board email saved", tone: "success" });
     },
     onError: (err: Error) => pushToast({ title: "Board email not saved", body: err.message, tone: "error" }),

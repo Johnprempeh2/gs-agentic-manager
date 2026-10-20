@@ -14,6 +14,7 @@ import {
   issues,
   principalPermissionGrants,
   strategyBoardPacks,
+  strategyBoardSettings,
 } from "@greatstone/db";
 import type { GoalWhyRequest, StrategyBoardMember, StrategyBoardPack, StrategyBoardSummary } from "@greatstone/shared";
 import { beforeEach, expect, it } from "vitest";
@@ -44,6 +45,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     resetEach: async (db) => {
       await db.delete(activityLog);
       await db.delete(strategyBoardPacks);
+      await db.delete(strategyBoardSettings);
       await db.delete(goalKpiAlerts);
       await db.delete(goalWhyRequests);
       await db.delete(goalKpiReadings);
@@ -162,7 +164,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     let tasks = await alertIssues(companyId);
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({ assigneeUserId: chair.userId, assigneeAgentId: null, status: "todo", goalId: kpi.id });
-    expect(tasks[0].title).toBe("KPI turned red: Revenue");
+    expect(tasks[0].title).toBe("KPI is off course: Revenue");
     const [spell] = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.goalId, kpi.id));
     expect(spell).toMatchObject({ recipientUserId: chair.userId, readingId: red.id, clearedAt: null, alertIssueId: tasks[0].id });
 
@@ -373,6 +375,11 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect(before.areas).toEqual([expect.objectContaining({ title: "Grow revenue", rollup: expect.objectContaining({ status: "red", red: 1, amber: 1 }) })]);
     expect(before.lastSnapshot).toBeNull();
     expect(before.changes).toEqual([]);
+    // With no pack yet, every answer counts as "since the last meeting".
+    expect(before.whyRequests.answered.map((w) => [w.kpiTitle, w.answer, w.ownerName])).toEqual([["Revenue", "A large client left.", null]]);
+    expect(before.whyRequests.open).toEqual([]);
+    expect(before.kpis.find((k) => k.title === "Revenue")?.trend).toEqual([{ readingDate: dayOffset(-2), value: 120 }]);
+    expect(before.nextMeetingDate).toBeNull();
 
     const created = await request(app(owner))
       .post(`/api/companies/${companyId}/strategy-board/packs`)
@@ -383,7 +390,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect(pack.snapshot.readings).toHaveLength(2);
     expect(pack.body).toContain("# Q4 board pack");
     // Reading two days old: the plan on its date is 149, so 29% behind.
-    expect(pack.body).toContain("| Revenue | Red | 29% | 120 k | 149 k | Owner reported (2 days old) |");
+    expect(pack.body).toContain("| Revenue | Off course | 29% | 120 k | 149 k | Owner reported (2 days old) |");
     expect(pack.body).toContain("> A large client left.");
     expect(pack.body).toContain("2 readings: 0 checked by an agent or taken from a system, 2 reported by the owner.");
 
@@ -394,12 +401,30 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     const after = (await request(app(owner)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary;
     expect(after.lastSnapshot).toMatchObject({ packId: pack.id, title: "Q4 board pack" });
     expect(after.changes.map((k) => [k.title, k.previousStatus, k.status])).toEqual([["Revenue", "red", "green"]]);
+    expect(after.changes[0]).toMatchObject({ previousValue: 120, latestValue: 150 });
+    expect(after.changes[0].trend?.map((point) => point.value)).toEqual([120, 150]);
+    // Answered before the pack, so not new since the last meeting.
+    expect(after.whyRequests.answered).toEqual([]);
+    // On course, but only on the owner's word: still in front of the board.
+    expect(after.attention.map((k) => [k.title, k.status])).toEqual([["Margin", "amber"], ["Revenue", "green"]]);
+
+    // The next monthly meeting shows on the board once an owner sets it.
+    const meeting = dayOffset(20);
+    expect((await request(app(owner)).patch(`/api/companies/${companyId}/strategy-board/settings`).send({ nextMeetingDate: meeting })).status).toBe(200);
+    expect(((await request(app(owner)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary).nextMeetingDate).toBe(meeting);
+
+    // The KPI page reads one KPI without the whole board.
+    const one = await request(app(owner)).get(`/api/goals/${kpi.id}/board-kpi`);
+    expect(one.status).toBe(200);
+    expect(one.body.kpi).toMatchObject({ goalId: kpi.id, status: "green", latestValue: 150 });
+    expect(one.body.viewer).toMatchObject({ mayAskWhy: true });
 
     // Another company cannot read it.
     const other = await seedCompanyWithBoardAccess(ctx.db, "Other");
     expect((await request(app(other.actor)).get(`/api/strategy-board/packs/${pack.id}`)).status).toBe(404);
     expect((await request(app(other.actor)).get(`/api/companies/${companyId}/strategy-board`)).status).toBe(403);
     expect((await request(app(other.actor)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "?" })).status).toBe(404);
+    expect((await request(app(other.actor)).get(`/api/goals/${kpi.id}/board-kpi`)).status).toBe(404);
   });
 
   it("KPIs with no target or no target date show as not measured on the board and in the pack (GRE-1325)", async () => {
@@ -432,7 +457,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
       board.attention.map((k) => [k.title, k.notMeasuredReason]),
     );
     expect(pack.body).toContain("## Not measured");
-    expect(pack.body).toContain("3 of 4 KPIs cannot be judged red, amber or green.");
+    expect(pack.body).toContain("3 of 4 KPIs cannot be judged on course or off course.");
     expect(pack.body).toContain("| App rating | No target date | No owner |");
     expect(pack.body).toContain("| Brand trust | No target or target date | No owner |");
     expect(pack.body).toContain("| Cost to serve | No target | No owner |");

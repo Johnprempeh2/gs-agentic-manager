@@ -7,14 +7,20 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
-import { boardAssurance, boardUpdateText, meetingPackId } from "@/lib/strategy-board";
+import { boardAssurance, boardUpdateText, meetingPackId, nextMeetingText } from "@/lib/strategy-board";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { AttentionQueue, ChangesSinceSnapshot, OverdueActions, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
+import {
+  AttentionQueue,
+  ChangesSinceSnapshot,
+  OverdueActions,
+  StrategyAtAGlance,
+  WhyAnswersSinceMeeting,
+} from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
 import { BoardEmailCard } from "@/components/strategy-board/BoardEmailCard";
 import { FeatureTour } from "@/components/FeatureTour";
@@ -41,9 +47,9 @@ export function boardLede(counts: { red: number; amber: number; green: number; n
 export function unsentAlertText(count: number, hasChair: boolean, mayManageMembers: boolean): string {
   const kpis = count === 1 ? "1 KPI" : `${count} KPIs`;
   if (hasChair) {
-    return `${kpis} turned red before the board had a chair, so no alert was sent for ${count === 1 ? "it" : "them"}. New red KPIs alert the chair.`;
+    return `${kpis} went off course before the board had a chair, so no alert was sent for ${count === 1 ? "it" : "them"}. New off course KPIs alert the chair.`;
   }
-  return `${kpis} ${count === 1 ? "is" : "are"} red and the board has no chair, so no alert was sent. ${
+  return `${kpis} ${count === 1 ? "is" : "are"} off course and the board has no chair, so no alert was sent. ${
     mayManageMembers ? "Choose a chair below." : "Ask a company owner to choose a chair."
   }`;
 }
@@ -141,6 +147,7 @@ export function StrategyBoard() {
 
   const rights = board.viewer;
   const meetingPack = packs ? meetingPackId(packs) : null;
+  const meetingText = nextMeetingText(board.nextMeetingDate, board.asOf);
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -151,6 +158,13 @@ export function StrategyBoard() {
             As of {board.asOf}
             {board.lastSnapshot ? ` · compared with “${board.lastSnapshot.title}”` : ""} · {boardLede(board.counts, board.kpis)}
           </p>
+          {meetingText ? (
+            <p className="mt-1 text-sm font-medium" data-testid="next-meeting">{meetingText}</p>
+          ) : rights.mayManageMembers ? (
+            <p className="mt-1 text-sm text-muted-foreground" data-testid="next-meeting">
+              No next board meeting set. <a href="#board-email-heading" className="underline underline-offset-2">Set the date under Board email</a>.
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <FeatureTour tour={STRATEGY_BOARD_TOUR} />
@@ -189,6 +203,15 @@ export function StrategyBoard() {
       <section className="space-y-2" aria-labelledby="attention-heading" data-tour="board-attention">
         <SectionHeading id="attention-heading">Needs board attention</SectionHeading>
         <AttentionQueue kpis={board.attention} canAskWhy={rights.mayAskWhy} onAskWhy={setAskKpi} />
+      </section>
+
+      <section className="space-y-2" aria-labelledby="answers-heading">
+        <SectionHeading id="answers-heading">Answers since the last meeting</SectionHeading>
+        <WhyAnswersSinceMeeting
+          answered={board.whyRequests.answered}
+          open={board.whyRequests.open}
+          hasSnapshot={board.lastSnapshot != null}
+        />
       </section>
 
       <section className="space-y-2" aria-labelledby="overdue-heading">
@@ -273,6 +296,9 @@ export function StrategyBoard() {
         <MakeBoardPackDialog
           companyId={selectedCompanyId!}
           open={makingPack}
+          lastPackEnd={board.lastSnapshot?.periodEnd ?? null}
+          nextMeetingDate={board.nextMeetingDate}
+          today={board.asOf}
           onClose={() => setMakingPack(false)}
           onCreated={(pack) => {
             setMakingPack(false);

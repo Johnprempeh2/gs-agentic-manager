@@ -23,6 +23,7 @@ import type {
   StrategyBoardSettings,
   UpdateStrategyBoardSettings,
 } from "@greatstone/shared";
+import { KPI_STATUS_WORDS } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
@@ -107,7 +108,7 @@ function kpiLine(code: string, kpi: GoalWithProgress): string {
   const latest = kpi.latestReading
     ? `latest ${round(kpi.latestReading.value)}${unit} on ${kpi.latestReading.readingDate}`
     : "no reading yet";
-  const status = s?.status ? `, ${s.status}${s.status !== "green" && s.gapPercent ? ` (${s.gapPercent}% behind plan)` : ""}` : "";
+  const status = s?.status ? `, ${KPI_STATUS_WORDS[s.status].toLowerCase()}${s.status !== "green" && s.gapPercent ? ` (${s.gapPercent}% behind plan)` : ""}` : "";
   const target = kpi.targetValue != null ? ` Target ${round(kpi.targetValue)}${unit}${kpi.targetDate ? ` by ${kpi.targetDate}` : ""}.` : "";
   return `- ${code} ${kpi.title}: ${latest}${status}.${target}`;
 }
@@ -148,10 +149,10 @@ export function renderSlippageAlert(input: { kpi: GoalWithProgress; gapPercent: 
   const detail = s?.reason === "deadline_missed"
     ? `The deadline has passed and the target is not met: ${round(input.latestValue ?? s?.latestValue)}${unit} against a target of ${round(kpi.targetValue)}${unit}.`
     : `${round(input.gapPercent ?? s?.gapPercent)}% behind plan: ${round(input.latestValue ?? s?.latestValue)}${unit} against a plan of ${round(s?.plannedValue)}${unit}${s?.latestDate ? ` on ${s.latestDate}` : ""}.`;
-  const lines = [`${kpi.title} is off track.`, "", detail];
+  const lines = [`${kpi.title} is off course.`, "", detail];
   if (input.goalUrl) lines.push("", `See the readings and ask the owner "Why?": ${input.goalUrl}`);
-  lines.push("", "You get this email once each time the KPI turns red.", "", "Board secretary");
-  return { subject: `KPI turned red: ${kpi.title}`, text: lines.join("\n") };
+  lines.push("", "You get this email once each time the KPI goes off course.", "", "Board secretary");
+  return { subject: `KPI is off course: ${kpi.title}`, text: lines.join("\n") };
 }
 
 export function renderWhyRequest(input: { ownerName: string | null; kpiTitle: string; question: string; goalUrl: string | null }) {

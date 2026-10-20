@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardAssurance, meetingPackId, packFileName, previousQuarter, readingAgeText, boardUpdateText } from "./strategy-board";
+import { boardAssurance, defaultPackPeriod, meetingPackId, nextMeetingText, packFileName, readingAgeText, boardUpdateText } from "./strategy-board";
 
 describe("boardAssurance", () => {
   it("is strong only for a fresh checked or system reading", () => {
@@ -15,10 +15,36 @@ describe("boardAssurance", () => {
   });
 });
 
-describe("previousQuarter", () => {
-  it("gives the last full quarter, across a year end", () => {
-    expect(previousQuarter(new Date("2026-10-10T12:00:00Z"))).toEqual({ periodStart: "2026-07-01", periodEnd: "2026-09-30", label: "Q3 2026" });
-    expect(previousQuarter(new Date("2026-02-01T12:00:00Z"))).toEqual({ periodStart: "2025-10-01", periodEnd: "2025-12-31", label: "Q4 2025" });
+describe("defaultPackPeriod (monthly board)", () => {
+  it("runs from the day after the last pack to the next meeting", () => {
+    expect(defaultPackPeriod({ lastPackEnd: "2026-10-12", nextMeetingDate: "2026-11-09", today: "2026-10-20" })).toEqual({
+      periodStart: "2026-10-13",
+      periodEnd: "2026-11-09",
+      title: "November 2026 board pack",
+    });
+  });
+
+  it("goes one month back with no pack, and ends today with no meeting set", () => {
+    expect(defaultPackPeriod({ lastPackEnd: null, nextMeetingDate: null, today: "2026-03-31" })).toEqual({
+      periodStart: "2026-02-28",
+      periodEnd: "2026-03-31",
+      title: "March 2026 board pack",
+    });
+    expect(defaultPackPeriod({ lastPackEnd: null, nextMeetingDate: "2026-01-15", today: "2026-01-02" }).periodStart).toBe("2025-12-15");
+  });
+
+  it("falls back to one month when the last pack ends after the meeting", () => {
+    expect(defaultPackPeriod({ lastPackEnd: "2026-11-20", nextMeetingDate: "2026-11-09", today: "2026-10-20" }).periodStart).toBe("2026-10-09");
+  });
+});
+
+describe("nextMeetingText", () => {
+  it("counts the days to the next meeting, and is null when none is set or it has passed", () => {
+    expect(nextMeetingText("2026-11-09", "2026-10-20")).toBe("Next board meeting: 9 Nov (in 20 days)");
+    expect(nextMeetingText("2026-10-21", "2026-10-20")).toBe("Next board meeting: 21 Oct (tomorrow)");
+    expect(nextMeetingText("2026-10-20", "2026-10-20")).toBe("Next board meeting: 20 Oct (today)");
+    expect(nextMeetingText("2026-10-01", "2026-10-20")).toBeNull();
+    expect(nextMeetingText(null, "2026-10-20")).toBeNull();
   });
 });
 
