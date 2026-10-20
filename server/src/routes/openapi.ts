@@ -6515,6 +6515,15 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/goals/{id}/board-kpi",
+  tags: ["goals"],
+  summary: "One KPI as the Strategy Board shows it (status, trend, owner) and what the viewer may do. 404 when the goal is not a board KPI.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/goals/{id}/readings",
   tags: ["goals"],
   summary: "List a KPI's readings, newest first, with source and who recorded each. 403 not_entitled while enableStrategy is off.",

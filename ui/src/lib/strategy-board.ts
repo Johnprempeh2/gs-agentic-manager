@@ -6,7 +6,7 @@ import {
   type StrategyBoardPackListItem,
   type StrategyBoardSummary,
 } from "@greatstone/shared";
-import { formatCalendarDay } from "./utils";
+import { formatCalendarDay, formatCalendarMonth } from "./utils";
 
 // Evidence strength lives in shared, so the server's attention queue uses the same rule (GRE-1134).
 export { ASSURANCE_FRESH_DAYS, ASSURANCE_STALE_DAYS, boardAssurance, type BoardAssurance } from "@greatstone/shared";
@@ -59,7 +59,7 @@ export function defaultPackPeriod(input: {
   const periodEnd = input.nextMeetingDate ?? input.today;
   const afterLast = input.lastPackEnd ? isoDay(dayNumber(input.lastPackEnd) + 1) : null;
   const periodStart = afterLast && afterLast <= periodEnd ? afterLast : oneMonthBefore(periodEnd);
-  const month = new Date(`${periodEnd}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const month = formatCalendarMonth(periodEnd);
   return { periodStart, periodEnd, title: `${month} board pack` };
 }
 
