@@ -54,16 +54,27 @@ if [[ ! -e "$source_config_path" && ! -L "$source_config_path" ]]; then
   # state this workspace cannot rewrite.
   source_config_path="${GSAM_CONFIG:-$paperclip_home/instances/$paperclip_instance_id/config.json}"
 fi
-if [[ ! -f "$source_config_path" || -L "$source_config_path" ]]; then
+source_config_present=1
+if [[ ! -e "$source_config_path" && ! -L "$source_config_path" ]]; then
+  # An install configured only by environment has no config.json to seed from.
+  # Give the worktree its own isolated config instead of failing, and never
+  # write a config into the source instance dir: the live server would read it
+  # on its next restart. (GRE-1719)
+  echo "No GS Agentic Manager seed source config at $source_config_path (env-configured install); writing an isolated worktree config without DB seeding." >&2
+  source_config_present=0
+  source_config_path=""
+  source_env_path=""
+elif [[ ! -f "$source_config_path" || -L "$source_config_path" ]]; then
   echo "Registered GS Agentic Manager seed source config is missing or is not a canonical file: $source_config_path" >&2
   exit 1
+else
+  canonical_source_dir="$(cd "$(dirname "$source_config_path")" && pwd -P)"
+  if [[ "$canonical_source_dir/config.json" != "$source_config_path" ]]; then
+    echo "Registered GS Agentic Manager seed source config uses a symlink alias: $source_config_path" >&2
+    exit 1
+  fi
+  source_env_path="$(dirname "$source_config_path")/.env"
 fi
-canonical_source_dir="$(cd "$(dirname "$source_config_path")" && pwd -P)"
-if [[ "$canonical_source_dir/config.json" != "$source_config_path" ]]; then
-  echo "Registered GS Agentic Manager seed source config uses a symlink alias: $source_config_path" >&2
-  exit 1
-fi
-source_env_path="$(dirname "$source_config_path")/.env"
 
 mkdir -p "$paperclip_dir"
 
@@ -623,7 +634,11 @@ else
   if [[ -e "$worktree_config_path" || -e "$worktree_env_path" ]]; then
     echo "Existing isolated GS Agentic Manager worktree config is stale for this host; regenerating." >&2
   fi
-  if paperclipai_command_available; then
+  if [[ "$source_config_present" -eq 0 ]]; then
+    # `worktree init` needs --from-config; with no source the fallback writer
+    # builds the same isolated layout from defaults.
+    write_fallback_worktree_config
+  elif paperclipai_command_available; then
     if run_isolated_worktree_init; then
       :
     else
@@ -651,9 +666,13 @@ fi
 # source, and older/fallback CLI writers may default this field independently.
 # Reconcile it after either create or reuse so the final guest config always
 # carries the source's deployment/auth contract without replacing its database.
-reconcile_worktree_deployment_mode
+if [[ "$source_config_present" -eq 1 ]]; then
+  reconcile_worktree_deployment_mode
+fi
 
-if [[ "$created_worktree_config" -eq 1 && ! -e "$seed_manifest_path" && ! -e "$seed_pending_marker_path" && ! -e "$seed_complete_marker_path" ]]; then
+# A pending seed manifest names its source; with no source there is nothing to
+# seed from, so leave the worktree database empty instead.
+if [[ "$source_config_present" -eq 1 && "$created_worktree_config" -eq 1 && ! -e "$seed_manifest_path" && ! -e "$seed_pending_marker_path" && ! -e "$seed_complete_marker_path" ]]; then
   write_seed_pending_manifest
 fi
 
