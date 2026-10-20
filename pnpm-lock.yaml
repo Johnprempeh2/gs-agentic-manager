@@ -19,7 +19,7 @@ patchedDependencies:
     hash: wuunzrihtai2xiogmj4k6rb5ni
     path: patches/@agentclientprotocol__claude-agent-acp@0.73.0.patch
   '@agentclientprotocol/codex-acp@1.6.2':
-    hash: qkkhsyx5kshjsbs75vv2lcz7oq
+    hash: xrmxn3isz6idgenlgjg7pieofq
     path: patches/@agentclientprotocol__codex-acp@1.6.2.patch
   '@chat-adapter/discord@4.39.0':
     hash: euv2i4udspprmtstbqikwzcxlm
@@ -199,7 +199,7 @@ importers:
     dependencies:
       '@agentclientprotocol/codex-acp':
         specifier: ^1.6.2
-        version: 1.6.2(patch_hash=qkkhsyx5kshjsbs75vv2lcz7oq)
+        version: 1.6.2(patch_hash=xrmxn3isz6idgenlgjg7pieofq)
       '@greatstone/adapter-utils':
         specifier: workspace:*
         version: link:../../adapter-utils
@@ -502,7 +502,7 @@ importers:
         version: 0.73.0(patch_hash=wuunzrihtai2xiogmj4k6rb5ni)(@anthropic-ai/sdk@0.121.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))
       '@agentclientprotocol/codex-acp':
         specifier: 1.6.2
-        version: 1.6.2(patch_hash=qkkhsyx5kshjsbs75vv2lcz7oq)
+        version: 1.6.2(patch_hash=xrmxn3isz6idgenlgjg7pieofq)
       '@openai/codex':
         specifier: 0.156.0
         version: 0.156.0
@@ -9315,7 +9315,7 @@ snapshots:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
-  '@agentclientprotocol/codex-acp@1.6.2(patch_hash=qkkhsyx5kshjsbs75vv2lcz7oq)':
+  '@agentclientprotocol/codex-acp@1.6.2(patch_hash=xrmxn3isz6idgenlgjg7pieofq)':
     dependencies:
       '@agentclientprotocol/sdk': 1.4.0(zod@4.4.3)
       '@openai/codex': 0.156.0

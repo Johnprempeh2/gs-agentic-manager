@@ -32,7 +32,7 @@ diff --git a/dist/index.js b/dist/index.js
                // content: [messageContent],   — omitted: already rendered via item/started
 -              // rawInput: { ... }            — omitted: same reason
              },
-@@ -26988,4 +26988,18 @@
+@@ -26988,4 +26988,36 @@
  };
 +function paperclipBaseInstructions(request) {
 +  if (process.env.GSAM_ACPX_ISOLATED_CONTEXT !== "1") return void 0;
@@ -44,14 +44,32 @@ diff --git a/dist/index.js b/dist/index.js
 +  return void 0;
 +}
 +function paperclipSandboxPolicy(sandboxPolicy) {
++  if (sandboxPolicy.type !== "workspaceWrite") return sandboxPolicy;
++  let policy = sandboxPolicy;
 +  const networkAccess = process.env.GSAM_CODEX_ACP_NETWORK_ACCESS;
-+  if (sandboxPolicy.type !== "workspaceWrite" || !["true", "false"].includes(networkAccess)) return sandboxPolicy;
-+  return { ...sandboxPolicy, networkAccess: networkAccess === "true" && process.env.GSAM_RUNNER_NETWORK_ACCESS !== "disabled" };
++  if (["true", "false"].includes(networkAccess)) {
++    policy = { ...policy, networkAccess: networkAccess === "true" && process.env.GSAM_RUNNER_NETWORK_ACCESS !== "disabled" };
++  }
++  // Codex keeps `.git` under every writable root read-only. The controller
++  // projects only the bound repo's own Git dirs; make exactly those writable.
++  const writableRoots = policy.writableRoots ?? [];
++  const gitRoots = paperclipGitMetadataRoots().filter((root) => !writableRoots.includes(root));
++  if (gitRoots.length > 0) policy = { ...policy, writableRoots: [...writableRoots, ...gitRoots] };
++  return policy;
++}
++function paperclipGitMetadataRoots() {
++  try {
++    const roots = JSON.parse(process.env.GSAM_GIT_METADATA_ROOTS ?? "[]");
++    if (!Array.isArray(roots)) return [];
++    return [...new Set(roots.filter((root) => typeof root === "string" && path6.isAbsolute(root)).map((root) => path6.resolve(root)).filter((root) => path6.dirname(root) !== root))];
++  } catch {
++    return [];
++  }
 +}
  var CodexAcpClient = class {
    codexClient;
    config;
-@@ -27288,6 +27297,7 @@
+@@ -27288,6 +27315,7 @@
      const response = await this.codexClient.threadResume({
        config: await this.createSessionConfig(request.cwd, additionalDirectories, request.mcpServers ?? []),
        cwd: request.cwd,
@@ -59,7 +77,7 @@ diff --git a/dist/index.js b/dist/index.js
        modelProvider: await this.getResumeModelProvider(),
        threadId: request.sessionId
      });
-@@ -27310,6 +27320,7 @@
+@@ -27310,6 +27338,7 @@
      const response = await this.codexClient.threadResume({
        config: await this.createSessionConfig(request.cwd, additionalDirectories, request.mcpServers ?? []),
        cwd: request.cwd,
@@ -67,14 +85,14 @@ diff --git a/dist/index.js b/dist/index.js
        modelProvider: await this.getResumeModelProvider(),
        threadId: request.sessionId
      });
-@@ -27337,5 +27348,6 @@
+@@ -27337,5 +27366,6 @@
      const response = await this.codexClient.threadStart({
        config: await this.createSessionConfig(request.cwd, additionalDirectories, request.mcpServers),
        modelProvider: this.getModelProvider(),
 +      baseInstructions: paperclipBaseInstructions(request),
        cwd: request.cwd
      });
-@@ -27437,5 +27449,12 @@
+@@ -27437,5 +27467,12 @@
      const mergedConfig = {
        ...mergeGatewayConfig(this.config, this.gatewayConfig),
 +      ...(process.env.GSAM_ACPX_ISOLATED_CONTEXT === "1" ? {
@@ -87,7 +105,7 @@ diff --git a/dist/index.js b/dist/index.js
        projects: Object.fromEntries(sessionRoots.map((root) => [root, {
          trust_level: "trusted"
        }]))
-@@ -27449,7 +27468,7 @@
+@@ -27449,7 +27486,7 @@
        server: mcp
      }));
      let serversToConfigure = requestedServers;
@@ -96,7 +114,7 @@ diff --git a/dist/index.js b/dist/index.js
        const existingNames = await this.getConfigMcpServerNames(projectPath);
        serversToConfigure = requestedServers.filter((mcp) => !existingNames.has(mcp.name));
      }
-@@ -27483,14 +27502,15 @@
+@@ -27483,14 +27520,15 @@
    async refreshSkills(cwd, additionalRoots) {
      if (!cwd) {
        return;
@@ -114,7 +132,7 @@ diff --git a/dist/index.js b/dist/index.js
        forceReload: true
      });
    }
-@@ -27600,7 +27624,7 @@
+@@ -27600,7 +27642,7 @@
        threadId: request.sessionId,
        input,
        approvalPolicy: agentMode.approvalPolicy,
@@ -123,7 +141,7 @@ diff --git a/dist/index.js b/dist/index.js
        summary: disableSummary ? "none" : "auto",
        effort,
        model: modelId.model,
-@@ -30595,6 +30614,9 @@
+@@ -30595,6 +30632,9 @@
                updatedGoal
              );
            }
