@@ -87,7 +87,7 @@ describe("durable inbound chat scheduler receipts", () => {
         testedAt: new Date(0).toISOString(),
       }),
     });
-  }, 30_000);
+  });
   afterEach(async () => {
     execute.mockClear();
     for (const unregister of unregisterAuthorities.splice(0)) unregister();

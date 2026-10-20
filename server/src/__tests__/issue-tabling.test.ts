@@ -79,7 +79,7 @@ describeEmbeddedPostgres("issue tabling (Not now)", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-tabling-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     // Routes own their heartbeat instance, so wait on the table, not on one

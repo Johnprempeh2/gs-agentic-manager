@@ -26,7 +26,7 @@ describeEmbeddedPostgres("recovery holds route", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-recovery-holds-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueRecoveryActions);

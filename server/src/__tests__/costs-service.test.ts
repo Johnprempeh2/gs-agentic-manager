@@ -540,7 +540,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     db = createDb(tempDb.connectionString);
     costs = costService(db);
     finance = financeService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(financeEvents);
@@ -1468,7 +1468,7 @@ describeEmbeddedPostgres("monthly cost ledger", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-cost-ledger-");
     db = createDb(tempDb.connectionString);
     ledger = costLedgerService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(costEvents);

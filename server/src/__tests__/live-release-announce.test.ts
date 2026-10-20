@@ -50,7 +50,7 @@ describeEmbeddedPostgres("live release announcement (GRE-50)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-live-release-announce-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     const heartbeat = heartbeatService(db);

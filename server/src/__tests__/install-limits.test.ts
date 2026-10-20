@@ -68,7 +68,7 @@ describeEmbeddedPostgres("install limits on a client install (GRE-141)", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("install-limits-");
     db = createDb(tempDb.connectionString);
     process.env[INSTALL_LIMITS_ENV_KEY] = RAW;
-  }, 30_000);
+  });
 
   afterEach(() => {
     process.env[INSTALL_LIMITS_ENV_KEY] = RAW;

@@ -75,7 +75,7 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-queued-comments-");
     db = createDb(tempDb.connectionString);
     singleConnectionDb = createDb(tempDb.connectionString, { maxConnections: 1 });
-  }, 30_000);
+  });
 
   const testProcesses = new Map<string, ChildProcess>();
 

@@ -33,7 +33,7 @@ describeEmbeddedPostgres("request_draft_review interactions", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-draft-review-");
     db = createDb(tempDb.connectionString);
     interactionsSvc = issueThreadInteractionService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueThreadInteractions);

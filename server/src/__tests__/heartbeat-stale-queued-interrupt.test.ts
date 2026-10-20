@@ -95,14 +95,13 @@ describeEmbeddedPostgres("heartbeat: a spent queued-message interrupt", () => {
     });
     await db.update(agentWakeupRequests).set({ runId }).where(eq(agentWakeupRequests.id, wakeupRequestId));
 
-    // The pass keeps admission follow-ups alive, so watch the run, not the promise.
-    void heartbeatService(db).resumeQueuedRuns().catch(() => undefined);
-    let run: typeof heartbeatRuns.$inferSelect | undefined;
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
-      if (run?.status !== "queued") break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    // The pass must settle: discarding the run used to wait on the agent start
+    // lock the pass itself held, for its 30s stale timeout. A test that only
+    // watched the run then cleaned up under the pass's late run-event writes.
+    const heartbeat = heartbeatService(db);
+    await heartbeat.resumeQueuedRuns();
+    await heartbeat.drainActiveRunExecutions();
+    const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
     expect(run).toMatchObject({
       status: "cancelled",
       error: "Cancelled because its queued messages were already delivered",
@@ -183,12 +182,13 @@ describeEmbeddedPostgres("heartbeat: a spent queued-message interrupt", () => {
 
     const heartbeat = heartbeatService(db);
     let run: typeof heartbeatRuns.$inferSelect | undefined;
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      void heartbeat.resumeQueuedRuns().catch(() => undefined);
-      await new Promise((resolve) => setTimeout(resolve, 150));
+    // One awaited pass per claim attempt; the fifth refusal discards the run.
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await heartbeat.resumeQueuedRuns();
       [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
       if (run?.status !== "queued") break;
     }
+    await heartbeat.drainActiveRunExecutions();
     expect(run).toMatchObject({ status: "cancelled", errorCode: "claim_failed" });
     expect(run?.error).toContain("could not start after 5 tries: Manual wake requires an authenticated user");
   });

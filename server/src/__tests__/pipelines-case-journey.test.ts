@@ -41,7 +41,7 @@ describeEmbeddedPostgres("client journey by stage", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipeline-case-journey-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(async () => {
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });

@@ -862,7 +862,7 @@ describeEmbeddedPostgres(
       // External Objects is off (GRE-1090), which would hide the scope check
       // this suite proves.
       await instanceSettingsService(db).updateExperimental({ enableExternalObjects: true });
-    }, 20_000);
+    });
 
     afterEach(async () => {
       // Await every in-flight background heartbeat run to quiescence before the

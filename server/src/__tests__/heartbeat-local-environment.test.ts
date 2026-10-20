@@ -115,7 +115,7 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-local-environment-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     stopLeftoverFromTest();

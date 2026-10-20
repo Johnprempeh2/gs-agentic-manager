@@ -18,6 +18,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { drainHeartbeatRunsToQuiescence } from "./helpers/drain-heartbeat-runs.js";
 import { heartbeatService } from "../services/heartbeat.ts";
 import { instanceSettingsService } from "../services/instance-settings.ts";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.ts";
@@ -64,9 +65,14 @@ describeEmbeddedPostgres("heartbeat plugin environments", () => {
     const started = await startEmbeddedPostgresTestDatabase("heartbeat-plugin-environment");
     stopDb = started.stop;
     db = createDb(started.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
+    // Each test wakes agents through its own heartbeat service and plugin worker
+    // manager, but queued runs and the admission re-check are process-wide: a
+    // run left over from one test started under the next test's manager, whose
+    // worker list lacks its plugin, and failed on lease acquisition.
+    await drainHeartbeatRunsToQuiescence(db, heartbeatService(db));
     adapterExecute.mockClear();
     while (tempRoots.length > 0) {
       const root = tempRoots.pop();

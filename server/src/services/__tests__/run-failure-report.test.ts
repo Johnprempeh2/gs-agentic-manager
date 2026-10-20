@@ -38,7 +38,7 @@ describeEmbeddedPostgres("reportRunFailure", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-run-failure-report-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     vi.clearAllMocks();

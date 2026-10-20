@@ -48,7 +48,7 @@ describeEmbeddedPostgres("agent done needs a result in the run (GRE-573)", () =>
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-done-guard-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueWorkProducts);

@@ -44,7 +44,10 @@ describePostgres("agent action audit routes", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-action-audit-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+    // Pay the cold route import here, under the hook timeout, not inside the
+    // first test's: it ran past 30s under gate load.
+    await import("../routes/activity.js");
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

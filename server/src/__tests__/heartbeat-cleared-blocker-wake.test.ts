@@ -69,7 +69,7 @@ describeEmbeddedPostgres("wake when blockers are cleared", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("gsam-cleared-blocker-wake-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await heartbeatService(db).drainActiveRunExecutions();
@@ -92,7 +92,7 @@ describeEmbeddedPostgres("wake when blockers are cleared", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   async function seed(opts: { blockers?: number; blockerStatus?: string } = {}) {
     const companyId = randomUUID();

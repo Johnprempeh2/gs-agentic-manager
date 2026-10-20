@@ -39,7 +39,7 @@ describeEmbeddedPostgres("organisation global CRM fields (GRE-1539)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-organisation-crm-fields-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(async () => {
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });

@@ -112,7 +112,7 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
       },
       diskReader: async () => disk,
     });
-  }, 20_000);
+  });
 
   afterEach(async () => {
     // Lift the guard so held runs drain and finish before the tables reset.

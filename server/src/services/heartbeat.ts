@@ -18367,7 +18367,10 @@ export function heartbeatService(
       // the agent's queue, so it is discarded like any spent queued message.
       const code = err instanceof HttpError ? (err.details as { code?: unknown } | undefined)?.code : undefined;
       if (code !== QUEUED_INTERRUPT_SPENT) throw err;
-      await cancelRunInternal(run.id, "Cancelled because its queued messages were already delivered", { errorCode: QUEUED_INTERRUPT_SPENT });
+      await cancelRunInternal(run.id, "Cancelled because its queued messages were already delivered", {
+        errorCode: QUEUED_INTERRUPT_SPENT,
+        deferNextQueuedRunStart: true,
+      });
       logger.warn({ runId: run.id }, "claimQueuedRun: discarded a spent queued-message interrupt");
       return null;
     }
@@ -21543,6 +21546,15 @@ export function heartbeatService(
     return (await startQueuedRunsForAgent(agentId)).runs;
   }
 
+  // Tracked with the wakeups, so drainActiveRunExecutions() also awaits it.
+  function deferNextQueuedRunStart(agentId: string) {
+    const start = startNextQueuedRunForAgent(agentId).catch((err) => {
+      logger.error({ err, agentId }, "deferred queued-run start failed");
+    });
+    activeWakeupPromises.add(start);
+    void start.finally(() => activeWakeupPromises.delete(start));
+  }
+
   async function startQueuedRunsForAgent(
     agentId: string,
     startOptions: { maxToStart?: number } = {},
@@ -21766,7 +21778,7 @@ export function heartbeatService(
           await cancelRunInternal(
             queuedRun.id,
             `Cancelled because it could not start after ${CLAIM_FAILURE_LIMIT} tries: ${err.message}`,
-            { errorCode: "claim_failed" },
+            { errorCode: "claim_failed", deferNextQueuedRunStart: true },
           ).catch((cancelErr) => logger.error({ err: cancelErr, runId: queuedRun.id }, "claimQueuedRunsForAgent: could not cancel a run that keeps failing to claim"));
           continue;
         }
@@ -31872,6 +31884,13 @@ export function heartbeatService(
     suppressImmediateRecovery?: boolean;
     /** "Stop and cancel monitor": do not give back the monitor that started this run. */
     cancelMonitor?: boolean;
+    /**
+     * The caller may hold this agent's start lock (a cancel during a queued-run
+     * claim). Awaiting the next start there waits on the caller's own lock until
+     * its 30s stale timeout, which stalled every recovery pass and the agent's
+     * queue for 30s per discarded run. Start the next run once the lock is free.
+     */
+    deferNextQueuedRunStart?: boolean;
   };
 
   /** GRE-100: how long a given-back monitor waits before it fires again. */
@@ -32326,7 +32345,8 @@ export function heartbeatService(
         await finalizeAgentStatus(run.agentId, "cancelled", undefined, {
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
         });
-        await startNextQueuedRunForAgent(run.agentId);
+        if (options.deferNextQueuedRunStart) deferNextQueuedRunStart(run.agentId);
+        else await startNextQueuedRunForAgent(run.agentId);
       }
       return cancelled;
     } finally {

@@ -19,7 +19,7 @@ describeEmbeddedPostgres("tour dismissal routes", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("gsam-tour-dismissals-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
   afterEach(async () => { await db.delete(userTourDismissals); });
   afterAll(async () => { await tempDb?.cleanup(); });
 

@@ -108,7 +108,7 @@ describe.skip("smoke lab service pack and results API", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-smoke-lab-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     vi.unstubAllEnvs();
@@ -426,7 +426,7 @@ describeEmbeddedPostgres("smoke lab retired flag (GRE-196)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-smoke-lab-retired-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();

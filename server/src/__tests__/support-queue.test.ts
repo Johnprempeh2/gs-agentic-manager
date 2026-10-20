@@ -54,7 +54,7 @@ describeEmbeddedPostgres("client support queue", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-support-queue-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(emailMessages);

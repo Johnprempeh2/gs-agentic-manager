@@ -96,7 +96,7 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
       }
       return baseExecute();
     });
-  }, 20_000);
+  });
 
   afterEach(async () => {
     mockAdapterExecute.mockClear();

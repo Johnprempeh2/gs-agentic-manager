@@ -81,7 +81,7 @@ describeEmbeddedPostgres("waits on John or the board: 24h limit (GRE-500)", () =
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-human-wait-deadline-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await heartbeatService(db).drainActiveRunExecutions();
@@ -103,7 +103,7 @@ describeEmbeddedPostgres("waits on John or the board: 24h limit (GRE-500)", () =
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   async function seedWait(opts: {
     ageMs: number;

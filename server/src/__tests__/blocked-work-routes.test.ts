@@ -26,7 +26,7 @@ describeEmbeddedPostgres("blocked work overview route", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-blocked-work-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueRelations);

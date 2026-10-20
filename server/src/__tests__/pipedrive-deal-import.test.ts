@@ -266,7 +266,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipedrive-deals-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(async () => {
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });

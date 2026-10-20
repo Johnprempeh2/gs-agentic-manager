@@ -7829,7 +7829,11 @@ async function startRuntimeServicesForWorkspaceControlUnlocked(
     await persistRuntimeServiceRecord(persistenceDb, started.record);
     refs.push(toRuntimeServiceRef(started.record));
 
-    if (options?.deferReadiness && started.record.status === "starting" && !started.record.reused) {
+    // Not gated on status "starting": readiness can settle while the record is persisted
+    // above. Under load a bind collision found in that window had already moved the record
+    // to "stopped", so the start skipped the wait, returned a stopped service as started and
+    // left the collision unhandled instead of trying the next port.
+    if (options?.deferReadiness && !started.record.reused) {
       // Attach a rejection handler immediately; the caller awaits the same promise after
       // the DB transaction commits, but transaction failures may skip that wait path.
       started.readiness.catch(() => undefined);

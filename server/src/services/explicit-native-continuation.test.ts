@@ -23,7 +23,7 @@ const support = await getEmbeddedPostgresTestSupport();
 (support.supported ? describe : describe.skip)("explicit native conversation continuation", () => {
   let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
   let db: ReturnType<typeof createDb>;
-  beforeAll(async () => { database = await startEmbeddedPostgresTestDatabase("explicit-native-message-"); db = createDb(database.connectionString); }, 30000);
+  beforeAll(async () => { database = await startEmbeddedPostgresTestDatabase("explicit-native-message-"); db = createDb(database.connectionString); });
   afterAll(async () => { await database?.cleanup(); });
   async function seed() {
     const companyId = randomUUID(), agentId = randomUUID(), issueId = randomUUID();

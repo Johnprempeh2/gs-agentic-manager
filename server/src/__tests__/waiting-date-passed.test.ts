@@ -123,7 +123,7 @@ describeEmbeddedPostgres("waiting on someone outside until a date: sweep", () =>
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-waiting-date-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await heartbeatService(db).drainActiveRunExecutions();
@@ -145,7 +145,7 @@ describeEmbeddedPostgres("waiting on someone outside until a date: sweep", () =>
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   async function seedCompany() {
     const companyId = randomUUID();

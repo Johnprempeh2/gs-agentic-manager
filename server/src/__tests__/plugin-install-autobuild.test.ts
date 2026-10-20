@@ -291,7 +291,7 @@ describeEmbeddedPostgres("plugin install auto-build route", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-autobuild-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     vi.clearAllMocks();
@@ -305,7 +305,7 @@ describeEmbeddedPostgres("plugin install auto-build route", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   it("auto-builds bundled local plugins during POST /api/plugins/install when dist is missing", async () => {
     const fixture = await createBundledPluginFixture("success");

@@ -37,7 +37,7 @@ describeEmbeddedPostgres("emitAgentTaskRun", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-task-run-telemetry-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     vi.clearAllMocks();

@@ -83,7 +83,7 @@ describeEmbeddedPostgres("deliverables", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-deliverables-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

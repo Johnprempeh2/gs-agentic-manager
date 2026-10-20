@@ -52,7 +52,7 @@ describeEmbeddedPostgres("connection agent check (GRE-341)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-connection-agent-check-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(toolAccessAuditEvents);

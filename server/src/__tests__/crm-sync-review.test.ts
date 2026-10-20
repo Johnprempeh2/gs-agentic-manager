@@ -154,7 +154,7 @@ describeEmbeddedPostgres("CRM sync review queue and write-back", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-crm-sync-review-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(async () => {
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });

@@ -354,13 +354,23 @@ async function listenOnPort(port: number) {
   return server;
 }
 
+// Test service ports come from below the ephemeral ranges (Linux 32768+, macOS
+// 49152+). A port from listen(0) is ephemeral: once closed here, another gate
+// lane's supertest server (listen(0)) could take it before the service under
+// test bound it, and readiness then reached that server ("received HTTP 404",
+// or a never-ready service read as ready). Nothing picks these ports by itself.
+const TEST_SERVICE_PORT_MIN = 20_000;
+const TEST_SERVICE_PORT_MAX = 32_000;
+
 async function findFreePort() {
-  const server = await listenOnPort(0);
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : null;
-  await closeNetServer(server);
-  if (!port) throw new Error("Failed to find a free test port");
-  return port;
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const port = TEST_SERVICE_PORT_MIN + Math.floor(Math.random() * (TEST_SERVICE_PORT_MAX - TEST_SERVICE_PORT_MIN));
+    const server = await listenOnPort(port).catch(() => null);
+    if (!server) continue;
+    await closeNetServer(server);
+    return port;
+  }
+  throw new Error("Failed to find a free test port");
 }
 
 async function reserveContiguousPorts(count: number) {
@@ -5962,7 +5972,7 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-workspace-dirty-quarantine-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();
@@ -6656,7 +6666,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-workspace-runtime-control-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();
@@ -6731,7 +6741,10 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
               command: `${JSON.stringify(process.execPath)} -e "process.exit(1)"`,
               cwd: ".",
               port: { type: "auto" },
-              readiness: { type: "http", urlTemplate: "http://127.0.0.1:{{port}}", timeoutSec: 5, intervalMs: 100 },
+              // A path no other server answers with 2xx. The auto port comes from a
+              // closed listen(0) probe, so under gate load another lane's test server
+              // could hold it, and a probe of "/" there passed readiness.
+              readiness: { type: "http", urlTemplate: "http://127.0.0.1:{{port}}/gre-1002-never-ready", timeoutSec: 5, intervalMs: 100 },
               lifecycle: "shared",
               stopPolicy: { type: "manual" },
             }],
@@ -6837,7 +6850,10 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
       }
       throw new Error("Timed out waiting for runtime service process marker");
     };
-    const waitForPersistedStatus = async (status: string) => {
+    const waitForPersistedStatus = async (
+      status: string,
+      ready: (row: typeof workspaceRuntimeServices.$inferSelect) => boolean = () => true,
+    ) => {
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
         const row = await db
@@ -6845,7 +6861,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
           .from(workspaceRuntimeServices)
           .where(eq(workspaceRuntimeServices.executionWorkspaceId, executionWorkspaceId))
           .then((rows) => rows[0] ?? null);
-        if (row?.status === status) return row;
+        if (row?.status === status && ready(row)) return row;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       throw new Error(`Timed out waiting for persisted runtime service status ${status}`);
@@ -6912,7 +6928,9 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
       expect(existsSync(markerPath)).toBe(false);
 
       await waitForMarker(markerPath);
-      const startingRow = await waitForPersistedStatus("starting");
+      // The provisioning row turns "starting" before the spawn and gets its pid
+      // in a second write; the child can write its marker between the two.
+      const startingRow = await waitForPersistedStatus("starting", (row) => row.providerRef !== null);
       expect(startingRow).toMatchObject({
         companyId,
         projectId,
@@ -7771,7 +7789,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-workspace-runtime-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();

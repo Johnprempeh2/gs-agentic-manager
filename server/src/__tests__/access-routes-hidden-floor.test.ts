@@ -57,7 +57,7 @@ describe("operator-hidden access admin floor", () => {
   // cost is not charged to the first test's timeout on slow CI runners.
   beforeAll(async () => {
     app = await createApp();
-  }, 30_000);
+  });
 
   afterEach(() => {
     delete process.env.GSAM_HIDDEN_SETTINGS;

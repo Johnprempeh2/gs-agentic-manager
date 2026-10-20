@@ -43,7 +43,7 @@ describeEmbeddedPostgres("Pipedrive from Apps feeds the organisation import", ()
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipedrive-app-");
     db = createDb(tempDb.connectionString);
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
-  }, 20_000);
+  });
 
   afterEach(() => {
     vi.unstubAllGlobals();

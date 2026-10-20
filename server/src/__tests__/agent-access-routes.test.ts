@@ -56,7 +56,7 @@ describeEmbeddedPostgres("GET /companies/:companyId/tools/agent-access", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-access-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(connectionGrants);

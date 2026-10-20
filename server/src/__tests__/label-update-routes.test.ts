@@ -27,7 +27,7 @@ describeEmbeddedPostgres("label update (routes + postgres)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-label-update-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

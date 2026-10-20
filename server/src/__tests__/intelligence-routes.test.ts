@@ -51,7 +51,7 @@ describePostgres("intelligence routes", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("gsam-intelligence-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await db.delete(intelligenceRecommendations);

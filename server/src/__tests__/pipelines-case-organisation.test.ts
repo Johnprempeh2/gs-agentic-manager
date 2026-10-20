@@ -45,7 +45,7 @@ describeEmbeddedPostgres("pipeline cases link to an organisation (GRE-1478)", ()
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipeline-case-organisation-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(async () => {
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });

@@ -82,7 +82,7 @@ describeEmbeddedPostgres("stale-run cancel drains deferred wakes", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-stale-run-cancel-drain-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await waitForCondition(async () => {

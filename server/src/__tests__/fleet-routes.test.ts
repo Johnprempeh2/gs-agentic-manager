@@ -105,7 +105,7 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-fleet-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(() => {
     process.env.GSAM_FLEET_HUB = "true";

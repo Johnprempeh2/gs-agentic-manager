@@ -126,6 +126,10 @@ export class CapturedOutputTailer {
     try {
       for (;;) {
         if (this.stopRequested) return;
+        // EOF counts as the end only for a read that began after drainToEnd():
+        // a read already in flight when the child exits can return 0 for bytes
+        // written just before the exit, and the tail of the output was lost.
+        const drainingBeforeRead = this.finalDrain;
         const { bytesRead } = await handle.read(buf, 0, buf.length, this.offset);
         if (bytesRead > 0) {
           this.offset += bytesRead;
@@ -139,6 +143,7 @@ export class CapturedOutputTailer {
           continue;
         }
         if (this.finalDrain) {
+          if (!drainingBeforeRead) continue;
           if (this.carry.length > 0) {
             const tail = this.carry;
             this.carry = Buffer.alloc(0);

@@ -89,7 +89,7 @@ describeEmbeddedPostgres("scheduler dispatch in a dark wake (GRE-317)", () => {
     process.env.GSAM_IN_WORKTREE = "false";
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-dark-wake-dispatch-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     for (let attempt = 1; ; attempt += 1) {

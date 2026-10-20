@@ -36,6 +36,10 @@ const PATTERNS: Array<[type: string, pattern: RegExp]> = [
 ];
 
 // 13 to 19 digits, in groups split by single spaces or dashes; Luhn-checked below.
+// UUIDs are removed first: about 1 in 460 random UUIDs has digit-only groups that
+// pass Luhn (e.g. bfbf8483-5871-4799-8095-...), and contributions carry issue ids
+// as sourceId, so a plain issue link was refused as a card number.
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const CARD_CANDIDATE = /(?<![\d.])\d(?:[ -]?\d){12,18}(?![\d]|\.\d)/g;
 
 function isLuhnCard(candidate: string) {
@@ -60,7 +64,7 @@ export function detectSensitiveContent(text: string): string[] {
     pattern.lastIndex = 0;
     if (pattern.test(text)) found.add(type);
   }
-  for (const match of text.matchAll(CARD_CANDIDATE)) {
+  for (const match of text.replace(UUID, " ").matchAll(CARD_CANDIDATE)) {
     if (isLuhnCard(match[0])) {
       found.add("card_number");
       break;

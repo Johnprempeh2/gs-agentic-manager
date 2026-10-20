@@ -51,7 +51,7 @@ describeEmbeddedPostgres("heartbeat setup repair (GRE-395)", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-setup-repair-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await drainHeartbeatRunsToQuiescence(db, heartbeat);

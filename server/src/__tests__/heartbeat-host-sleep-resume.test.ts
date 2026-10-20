@@ -142,7 +142,7 @@ describeEmbeddedPostgres("terminal run recovery after host sleep (GRE-200)", () 
     process.env.GSAM_IN_WORKTREE = "false";
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-host-sleep-resume-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     for (let attempt = 1; ; attempt += 1) {

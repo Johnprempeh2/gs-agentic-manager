@@ -545,7 +545,7 @@ describe.skipIf(!onLinux || !embeddedPostgresSupport.supported)("sweepLeftoverRu
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("run-process-cleanup-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();
