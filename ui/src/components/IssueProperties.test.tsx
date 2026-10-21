@@ -818,7 +818,7 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("hides the Priority property row while priority UI is off (PAP-411)", async () => {
+  it("shows the Priority property row now priority UI is on (PAP-411 flag)", async () => {
     const root = renderProperties(container, {
       issue: createIssue({ priority: "high" }),
       childIssues: [],
@@ -830,8 +830,8 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => {
       // The Triage section still renders the Status row...
       expect(container.querySelector('[data-property-label="Status"]')).not.toBeNull();
-      // ...but the Priority row is gated behind SHOW_TASK_PRIORITY_UI (off).
-      expect(container.querySelector('[data-property-label="Priority"]')).toBeNull();
+      // ...and the Priority row beside it, now SHOW_TASK_PRIORITY_UI is on.
+      expect(container.querySelector('[data-property-label="Priority"]')).not.toBeNull();
     });
 
     act(() => root.unmount());

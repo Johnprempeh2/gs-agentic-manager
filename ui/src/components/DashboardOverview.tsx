@@ -7,13 +7,11 @@ import { AgentIdentity } from "./AgentIdentity";
 import { AgentAvatar } from "./AgentAvatar";
 import { AgentStatusBadge, sentenceCaseStatus } from "./StatusBadge";
 import { IssueRow } from "./IssueRow";
-import { PriorityIcon } from "./PriorityIcon";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { StatusIcon } from "./StatusIcon";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { agentUrl, cn } from "../lib/utils";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
-import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { timeAgo } from "../lib/timeAgo";
 import type { LiveAgent } from "../hooks/useLiveAgents";
 
@@ -338,7 +336,6 @@ export function DashboardOverview({
                   ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={userLabels} />}
                   metadata={(
                     <span className="flex items-center gap-2">
-                      {SHOW_TASK_PRIORITY_UI ? <PriorityIcon priority={issue.priority} /> : null}
                       {assignee ? <AgentIdentity agent={assignee} size="xs" className="max-w-32" /> : null}
                     </span>
                   )}

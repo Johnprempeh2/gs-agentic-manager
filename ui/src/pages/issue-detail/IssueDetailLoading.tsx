@@ -150,9 +150,9 @@ export function IssueDetailLoadingState({
                 status={headerSeed.status}
                 blockerAttention={headerSeed.blockerAttention}
               />
-              {/* PAP-411: priority UI hidden behind SHOW_TASK_PRIORITY_UI. */}
+              {/* PAP-411 flag: matches the loaded header (labelled priority). */}
               {SHOW_TASK_PRIORITY_UI && (
-                <PriorityIcon priority={headerSeed.priority} />
+                <PriorityIcon priority={headerSeed.priority} showLabel />
               )}
               {identifier ? (
                 <span className="text-sm font-mono text-muted-foreground shrink-0">

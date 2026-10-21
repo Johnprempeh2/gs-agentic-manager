@@ -1,4 +1,10 @@
-import type { ExecutionReconciliation, IssueWorkFilter } from "@greatstone/shared";
+import type {
+  ExecutionReconciliation,
+  IssueFollowState,
+  IssueFollowWithRollup,
+  IssueWorkFilter,
+  RecentlyOpenedIssue,
+} from "@greatstone/shared";
 import type { OpenChildSummary } from "../lib/open-children-warning";
 import type {
   AcceptedPlanDecompositionSummary,
@@ -254,6 +260,13 @@ export const issuesApi = {
     api.put<IssueWatchdog>(`/issues/${id}/watchdog`, data),
   deleteWatchdog: (id: string) =>
     api.delete<{ ok: true }>(`/issues/${id}/watchdog`),
+  listFollows: (companyId: string) =>
+    api.get<IssueFollowWithRollup[]>(`/companies/${companyId}/issue-follows`),
+  follow: (id: string) => api.put<IssueFollowState>(`/issues/${id}/follow`, {}),
+  unfollow: (id: string) => api.delete<IssueFollowState>(`/issues/${id}/follow`),
+  listRecentlyOpened: (companyId: string) =>
+    api.get<RecentlyOpenedIssue[]>(`/companies/${companyId}/recent-issues`),
+  recordOpened: (id: string) => api.post<void>(`/issues/${id}/recent-view`, {}),
   markRead: (id: string) =>
     api.post<{ id: string; lastReadAt: Date }>(`/issues/${id}/read`, {}),
   markUnread: (id: string) =>

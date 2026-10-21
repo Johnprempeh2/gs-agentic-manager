@@ -843,6 +843,9 @@ export const queryKeys = {
   userProfile: (companyId: string, userSlug: string) =>
     ["user-profile", companyId, userSlug] as const,
   sidebarBadges: (companyId: string) => ["sidebar-badges", companyId] as const,
+  /** Desk: tasks the user follows (with rollups), and the tasks they opened lately. */
+  issueFollows: (companyId: string) => ["issue-follows", companyId] as const,
+  recentIssues: (companyId: string) => ["recent-issues", companyId] as const,
   inboxDismissals: (companyId: string) =>
     ["inbox-dismissals", companyId] as const,
   activity: (companyId: string) => ["activity", companyId] as const,

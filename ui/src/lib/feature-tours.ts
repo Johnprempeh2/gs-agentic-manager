@@ -400,20 +400,24 @@ export const DECISIONS_TOUR: TourDefinition = {
 
 export const MY_TASKS_TOUR: TourDefinition = {
   id: "my-tasks",
-  title: "My tasks",
-  description: "Work assigned to you rather than to an agent.",
-  version: 1,
+  title: "Desk",
+  description: "What needs you, the tasks you follow, and the tasks you opened lately.",
+  version: 2,
   autoStart: false,
-  route: { match: /^\/my-tasks\/?$/, path: "/my-tasks" },
-  label: "My tasks",
+  route: { match: /^\/(desk|my-tasks)\/?$/, path: "/desk" },
+  label: "Desk",
   steps: [
     {
-      title: "Tasks that are yours",
-      body: "Work assigned to you, not to an agent. Questions from agents live in Decisions; this list is the work only you can do.",
+      title: "Needs me",
+      body: "Decisions, reviews and tasks assigned to you, most urgent first. Routine chores stay hidden until you switch on Show routine tasks.",
     },
     {
-      title: "Hand it over",
-      body: "Open a task to finish it, comment on it or assign it to an agent. Once an agent has it, it leaves this list.",
+      title: "Following",
+      body: "Star a task on its page to follow it and everything under it. You see how much is done, what waits on you and the latest updates.",
+    },
+    {
+      title: "Recently opened",
+      body: "The last tasks you opened, on any device. They are also in the sidebar and at the top of the search box.",
     },
   ],
 };

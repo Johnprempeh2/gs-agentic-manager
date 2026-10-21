@@ -215,6 +215,19 @@ describe("IssueRow", () => {
     act(() => root.unmount());
   });
 
+  it("marks a chosen priority on the row, but not the medium default", () => {
+    const root = createRoot(container);
+    for (const presentation of ["task", "legacy"] as const) {
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ priority: "high" })} />));
+      expect(container.querySelector("[data-testid='issue-row-priority'] [role='img']")?.getAttribute("aria-label")).toBe("High priority");
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ priority: "critical" })} />));
+      expect(container.querySelector("[data-testid='issue-row-priority'] [role='img']")?.getAttribute("aria-label")).toBe("Critical priority");
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ priority: "medium" })} />));
+      expect(container.querySelector("[data-testid='issue-row-priority']")).toBeNull();
+    }
+    act(() => root.unmount());
+  });
+
   it("shows the Strategic badge only for work linked to an objective or initiative", () => {
     const root = createRoot(container);
     for (const presentation of ["task", "legacy"] as const) {

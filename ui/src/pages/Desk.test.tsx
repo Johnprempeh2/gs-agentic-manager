@@ -4,11 +4,11 @@ import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@greatstone/shared";
+import type { Issue, IssueFollowWithRollup, RecentlyOpenedIssue } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToastInput } from "../context/ToastContext";
 import type { IssuesCustomGrouping } from "../components/IssuesList";
-import { MyTasks } from "./MyTasks";
+import { Desk } from "./Desk";
 
 const ME = "user-john";
 
@@ -18,6 +18,8 @@ const addCommentMock = vi.fn<(id: string, body: string, ...rest: unknown[]) => P
 const pushToastMock = vi.fn<(input: ToastInput) => string | null>();
 const listCommentsMock = vi.fn<(id: string, filters?: Record<string, unknown>) => Promise<unknown[]>>();
 const markReadMock = vi.fn<(id: string) => Promise<unknown>>();
+let follows: IssueFollowWithRollup[] = [];
+let recent: RecentlyOpenedIssue[] = [];
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; children: ReactNode }) => (
@@ -29,7 +31,10 @@ vi.mock("@/lib/router", () => ({
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("../context/DialogContext", () => ({ useDialogActions: () => ({ openNewIssue: vi.fn() }) }));
-vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: pushToastMock }) }));
+vi.mock("../context/ToastContext", () => ({
+  useToastActions: () => ({ pushToast: pushToastMock }),
+  useOptionalToastActions: () => ({ pushToast: pushToastMock }),
+}));
 vi.mock("../api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: ME } }) } }));
 vi.mock("../api/attention", () => ({ attentionApi: { list: async () => ({ items: [] }) } }));
 vi.mock("../api/projects", () => ({ projectsApi: { list: async () => [] } }));
@@ -50,6 +55,10 @@ vi.mock("../api/issues", () => ({
     addComment: (id: string, body: string, ...rest: unknown[]) => addCommentMock(id, body, ...rest),
     listComments: (id: string, filters?: Record<string, unknown>) => listCommentsMock(id, filters),
     markRead: (id: string) => markReadMock(id),
+    listFollows: async () => follows,
+    listRecentlyOpened: async () => recent,
+    follow: vi.fn(),
+    unfollow: vi.fn(),
   },
 }));
 vi.mock("../hooks/useStandardMarkdownMentionOptions", () => ({ useStandardMarkdownMentionOptions: () => [] }));
@@ -141,7 +150,7 @@ async function renderPage() {
   flushSync(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <MyTasks />
+        <Desk />
       </QueryClientProvider>,
     );
   });
@@ -168,6 +177,9 @@ function typeInto(input: HTMLInputElement, value: string) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
+  follows = [];
+  recent = [];
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -441,5 +453,89 @@ describe("MyTasks Discuss panel (GRE-620)", () => {
     await flush();
     expect(markReadMock).toHaveBeenCalledWith("1");
     expect(container.querySelector('[data-row="1"] [data-ask-state="answered"]')).toBeNull();
+  });
+});
+
+function summary(id: string, overrides: Partial<RecentlyOpenedIssue["issue"]> = {}): RecentlyOpenedIssue["issue"] {
+  return {
+    id,
+    identifier: `GRE-${id}`,
+    title: `Task ${id}`,
+    status: "in_progress",
+    priority: "medium",
+    originKind: "manual",
+    updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function section(id: string) {
+  return container.querySelector(`[data-desk-section="${id}"]`);
+}
+
+describe("Desk sections", () => {
+  it("shows Needs me, Following with its rollup, and Recently opened", async () => {
+    openIssues = [makeIssue("1")];
+    follows = [{
+      issueId: "p1",
+      followedAt: new Date("2026-10-20T00:00:00.000Z"),
+      issue: summary("p1", { title: "Indago portal" }),
+      counts: { total: 5, done: 2, inProgress: 1, waitingOnYou: 1, blocked: 1 },
+      latestUpdates: [{
+        kind: "comment",
+        issueId: "c1",
+        issueIdentifier: "GRE-c1",
+        issueTitle: "DNS",
+        summary: "DNS is still pending at the registrar",
+        at: new Date(),
+      }],
+    }];
+    recent = [{ issueId: "r1", viewedAt: new Date(), issue: summary("r1", { title: "Opened lately" }) }];
+    await renderPage();
+
+    const headings = [...container.querySelectorAll("h2")].map((heading) => heading.textContent);
+    expect(headings).toEqual(["Needs me", "Following", "Recently opened"]);
+    expect(section("desk-needs-me")?.querySelector('[data-row="1"]')).not.toBeNull();
+    const following = section("desk-following");
+    expect(following?.textContent).toContain("Indago portal");
+    expect(following?.textContent).toContain("2 of 5 done");
+    expect(following?.textContent).toContain("1 waiting on you");
+    expect(following?.textContent).toContain("1 blocked");
+    expect(following?.textContent).toContain("DNS is still pending at the registrar");
+    expect(following?.querySelector('[aria-label="Stop following GRE-p1"]')).not.toBeNull();
+    expect(section("desk-recent")?.textContent).toContain("Opened lately");
+  });
+
+  it("says how to follow a task when nothing is followed", async () => {
+    await renderPage();
+    expect(section("desk-following")?.textContent).toContain("Follow a task with the star");
+    expect(section("desk-recent")?.textContent).toContain("Tasks you open show up here");
+  });
+
+  it("hides routine tasks until Show routine tasks is on", async () => {
+    openIssues = [
+      makeIssue("1", { title: "Sign off the Q3 pack" }),
+      makeIssue("2", { title: "Loose ends", originKind: "routine_execution" }),
+      makeIssue("3", { title: "Daily digest", originKind: "agent_daily_digest" }),
+    ];
+    recent = [{ issueId: "r2", viewedAt: new Date(), issue: summary("r2", { title: "Daily release candidate", originKind: "routine_execution" }) }];
+    await renderPage();
+
+    expect(container.querySelector('[data-row="1"]')).not.toBeNull();
+    expect(container.querySelector('[data-row="2"]')).toBeNull();
+    expect(container.querySelector('[data-row="3"]')).toBeNull();
+    expect(section("desk-recent")?.textContent).not.toContain("Daily release candidate");
+    expect(container.querySelector("[data-desk-routine-hidden]")?.textContent).toBe("2 hidden");
+
+    const toggle = container.querySelector<HTMLButtonElement>("[data-desk-routine-toggle]");
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    click(toggle);
+    await flush();
+
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector('[data-row="2"]')).not.toBeNull();
+    expect(container.querySelector('[data-row="3"]')).not.toBeNull();
+    expect(section("desk-recent")?.textContent).toContain("Daily release candidate");
+    expect(window.localStorage.getItem("paperclip:desk-show-routine")).toBe("true");
   });
 });

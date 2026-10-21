@@ -1501,22 +1501,47 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
-  it("hides the priority chip and mobile priority option (PAP-411)", async () => {
+  it("lets you choose a priority when creating a task (PAP-411 flag on)", async () => {
+    dialogState.newIssueDefaults = {
+      title: "Ship the Indago portal",
+    };
     const { root } = renderDialog(container);
     await flush();
 
-    // PAP-411: priority UI is hidden behind SHOW_TASK_PRIORITY_UI (off). Neither the
-    // desktop priority chip nor the mobile overflow priority option should render.
-    const priorityChip = container.querySelector('[data-testid="new-issue-priority-chip"]');
-    expect(priorityChip).toBeNull();
+    const priorityChip = container.querySelector<HTMLButtonElement>('[data-testid="new-issue-priority-chip"]');
+    expect(priorityChip).not.toBeNull();
+    expect(priorityChip?.textContent).toContain("Priority");
+    await act(async () => {
+      priorityChip!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    const high = document.body.querySelector<HTMLButtonElement>('[data-testid="new-issue-priority-high"]');
+    expect(high).not.toBeNull();
+    await act(async () => {
+      high!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    expect(container.querySelector('[data-testid="new-issue-priority-chip"]')?.textContent).toContain("High");
 
-    const highPriorityOption = container.querySelector('[data-testid="new-issue-more-priority-high"]');
-    expect(highPriorityOption).toBeNull();
+    const submitButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Create Task"));
+    await vi.waitFor(() => {
+      expect(submitButton?.hasAttribute("disabled")).toBe(false);
+    });
+    await act(async () => {
+      submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(mockIssuesApi.create).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({ title: "Ship the Indago portal", priority: "high" }),
+    );
 
     act(() => root.unmount());
   });
 
-  it("still submits the default priority when the priority UI is hidden (PAP-411)", async () => {
+  it("submits the default priority when none is chosen (PAP-411)", async () => {
     dialogState.newIssueDefaults = {
       title: "Priority default persists",
     };
@@ -1536,7 +1561,7 @@ describe("NewIssueDialog", () => {
     });
     await flush();
 
-    // PAP-411: the priority control is hidden, but the data-model default must survive.
+    // No choice made: the data-model default must survive.
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({

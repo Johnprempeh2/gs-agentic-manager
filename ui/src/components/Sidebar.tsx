@@ -81,6 +81,7 @@ import { SidebarAgentChats } from "./SidebarAgentChats";
 import { SidebarTeamChats } from "./SidebarTeamChats";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
+import { SidebarFollowing } from "./SidebarFollowing";
 import { SidebarRecentTasks } from "./SidebarRecentTasks";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -359,7 +360,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showIntelligence = experimentalSettings?.enableIntelligence === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
-  // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
+  // Tasks assigned to the user count on the Desk, not Decisions (GRE-586).
   const myTasksCount = useMyTasksCount(selectedCompanyId);
   // GRE-1633: Status Cards ignores the stored switch, but a client plan can still turn it off.
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
@@ -389,7 +390,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     // The executive's one page: everything waiting on you, grouped by what to do.
     needed: link("/needed", "Needed from you", HandHelping),
     decisions: link("/decisions", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions" }),
-    "my-tasks": link("/my-tasks", "My tasks", UserCheck, { badge: myTasksCount, badgeLabel: "open" }),
+    // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.
+    "my-tasks": link("/desk", "Desk", UserCheck, { badge: myTasksCount, badgeLabel: "open" }),
     inbox: link("/inbox", "Inbox", Inbox, {
       badge: inboxBadge.inbox,
       badgeLabel: "unread",
@@ -710,6 +712,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
 
         {children}
 
+        <SidebarFollowing companyId={selectedCompanyId} />
         <SidebarRecentTasks companyId={selectedCompanyId} liveIssueIds={liveIssueIds} />
 
         <PluginSlotOutlet

@@ -496,7 +496,7 @@ describe("Sidebar", () => {
     });
   });
 
-  it("counts assigned tasks on My tasks, not on Decisions (GRE-586)", async () => {
+  it("counts assigned tasks on the Desk, not on Decisions (GRE-586)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     mockDecisionsFeedApi.needsMe.mockResolvedValue({
       companyId: "company-1",
@@ -512,7 +512,7 @@ describe("Sidebar", () => {
 
     const link = (href: string) =>
       [...container.querySelectorAll("nav a")].find((anchor) => anchor.getAttribute("href") === href);
-    expect(link("/my-tasks")?.textContent?.trim()).toBe("My tasks2");
+    expect(link("/desk")?.textContent?.trim()).toBe("Desk2");
     expect(link("/decisions")?.textContent?.trim()).toBe("Decisions");
 
     flushSync(() => {
@@ -526,7 +526,7 @@ describe("Sidebar", () => {
     );
     const root = await renderSidebar();
 
-    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
+    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Desk", "Inbox", "Calendar"]);
 
     flushSync(() => {
       root.unmount();
@@ -675,7 +675,7 @@ describe("Sidebar", () => {
       expect(button("Unpin Agents")).not.toBeNull();
 
       await click(textButton("Done"));
-      expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Inbox", "My tasks", "Calendar"]);
+      expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Inbox", "Desk", "Calendar"]);
       expect(sectionLabels("Pinned")).toEqual(["Agents"]);
       // Pinned items move to the top group; they are not listed twice.
       expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
@@ -794,7 +794,7 @@ describe("Sidebar", () => {
       .map((section) => section.getAttribute("data-sidebar-section"));
     expect(headings).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
     expect(sectionLabels("Help")).toEqual(["What's newNew", "Tutorials"]);
-    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
+    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Desk", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);

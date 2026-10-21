@@ -21,6 +21,8 @@ import {
   type RecoveryLivenessContext,
 } from "../lib/recovery-lineage";
 import { StatusIcon, blockedAttentionLabel } from "./StatusIcon";
+import { PriorityIcon } from "./PriorityIcon";
+import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { ExternalObjectStatusSummary } from "./ExternalObjectStatusSummary";
@@ -299,6 +301,13 @@ export function IssueRow({
     </Badge>
   ) : null;
 
+  // Medium is the default, so only a priority someone chose is marked on the row.
+  const priorityMarker = SHOW_TASK_PRIORITY_UI && issue.priority && issue.priority !== "medium" ? (
+    <span data-testid="issue-row-priority" className="inline-flex shrink-0 items-center">
+      <PriorityIcon priority={issue.priority} />
+    </span>
+  ) : null;
+
   const strategicBadge = isStrategicWorkGoalKind(issue.goalKind) ? (
     <Badge variant="outline"
       data-testid="issue-row-strategic"
@@ -412,6 +421,7 @@ export function IssueRow({
               {issue.title}{titleSuffix}
             </span>
             {ownerLabel}
+            {priorityMarker}
             {strategicBadge}
             {overdueBadge}
             {/* In a narrow card (the dashboard column) these notes crowd the title out;
@@ -516,6 +526,7 @@ export function IssueRow({
             {issue.title}{titleSuffix}
           </span>
           {ownerLabel}
+          {priorityMarker}
           {strategicBadge}
           {overdueBadge}
           {blockedNote}

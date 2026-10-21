@@ -16,7 +16,7 @@ import { readIssueDetailBreadcrumb } from "../../lib/issueDetailBreadcrumb";
 import { taskPollInterval, shouldTrackIssueActiveRun } from "../../lib/issueActiveRun";
 import { usePageVisibility } from "../../lib/page-visibility";
 import { useProjectOrder } from "../../hooks/useProjectOrder";
-import { recordRecentTask } from "../../lib/recent-tasks";
+import { useRecordIssueOpened } from "../../hooks/useIssueFollows";
 import { usePluginSlots } from "@/plugins/slots";
 import type { Issue } from "@greatstone/shared";
 import { EMPTY_ISSUES, canBoardResolveRecoveryAction } from "./helpers";
@@ -238,10 +238,7 @@ export function useIssueDetailQueries({
     enabled: !!selectedCompanyId,
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
-  useEffect(() => {
-    if (!issue || !sessionResolved) return;
-    recordRecentTask(issue, currentUserId);
-  }, [issue, currentUserId, sessionResolved]);
+  useRecordIssueOpened(sessionResolved ? issue : null);
   const { data: boardAccess } = useQuery({
     queryKey: queryKeys.access.currentBoardAccess,
     queryFn: () => accessApi.getCurrentBoardAccess(),

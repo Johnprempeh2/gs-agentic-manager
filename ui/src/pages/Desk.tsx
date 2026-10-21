@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { buildAgentMentionHref, type Agent, type AttentionItem, type Issue, type IssueStatus } from "@greatstone/shared";
-import { Check, CheckCircle2, CircleDot, ClipboardList } from "lucide-react";
+import {
+  buildAgentMentionHref,
+  isRoutineIssueOriginKind,
+  type Agent,
+  type AttentionItem,
+  type Issue,
+  type IssueFollowWithRollup,
+  type IssueStatus,
+  type RecentlyOpenedIssue,
+} from "@greatstone/shared";
+import { Check, CheckCircle2, CircleDot, ClipboardList, Star } from "lucide-react";
 import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
 import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { myTasksListText } from "../lib/my-tasks-text";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -49,6 +59,12 @@ import {
   MyTasksTickBox,
 } from "../components/MyTasksRowControls";
 import { MyTasksDiscussPanel, useMyTasksDiscussOverlay } from "../components/MyTasksDiscussPanel";
+import { FollowRollupSummary, FollowTaskToggle } from "../components/FollowTask";
+import { StatusIcon } from "../components/StatusIcon";
+import { PriorityIcon } from "../components/PriorityIcon";
+import { useIssueFollows, useRecentlyOpenedIssues } from "../hooks/useIssueFollows";
+import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
+import { relativeTime } from "../lib/utils";
 
 /** Tasks behind decisions are fetched one by one; the Decisions page holds the rest. */
 const DECISION_ISSUE_FETCH_LIMIT = 50;
@@ -59,6 +75,23 @@ const HANDED_OFF_FETCH_LIMIT = 200;
 const UNDO_TOAST_MS = 5000;
 
 const askBoxId = (issueId: string) => `my-tasks-ask-${issueId}`;
+const SHOW_ROUTINE_STORAGE_KEY = "paperclip:desk-show-routine";
+
+function readShowRoutine(): boolean {
+  try {
+    return window.localStorage.getItem(SHOW_ROUTINE_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeShowRoutine(value: boolean) {
+  try {
+    window.localStorage.setItem(SHOW_ROUTINE_STORAGE_KEY, String(value));
+  } catch {
+    // The toggle still works for this visit without browser storage.
+  }
+}
 const DISCUSS_PANEL_ID = "my-tasks-discuss-panel";
 
 /** The visible copy of a row control: phone and laptop layouts each render one. */
@@ -83,7 +116,12 @@ function nextTickTarget(issueId: string): string | null {
   return next?.dataset.myTasksTick ?? null;
 }
 
-export function MyTasks() {
+/**
+ * Desk (was My tasks): what needs you, the tasks you follow with how far they
+ * have got, and the tasks you opened lately. Routine chores made by schedules
+ * and the system stay out of the way until you ask for them.
+ */
+export function Desk() {
   const { openNewIssue } = useDialogActions();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -95,9 +133,16 @@ export function MyTasks() {
   const discussOverlay = useMyTasksDiscussOverlay();
   const companyPrefix = useActiveCompanyPrefix();
   const listCopy = useCopyAction();
+  const [showRoutine, setShowRoutineState] = useState(readShowRoutine);
+  const setShowRoutine = (value: boolean) => {
+    setShowRoutineState(value);
+    writeShowRoutine(value);
+  };
+  const { follows, isLoading: followsLoading } = useIssueFollows(selectedCompanyId);
+  const recentlyOpened = useRecentlyOpenedIssues(selectedCompanyId);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "My tasks" }]);
+    setBreadcrumbs([{ label: "Your desk" }]);
   }, [setBreadcrumbs]);
 
   const { data: session } = useQuery({
@@ -234,6 +279,22 @@ export function MyTasks() {
     return [...byId.values()];
   }, [merged.issues, touchedIssues, doneIssues, currentUserId]);
 
+  // Routine chores (schedules, digests, self-checks) stay hidden unless asked for.
+  const routineCount = useMemo(
+    () => listedIssues.filter((issue) => isRoutineIssueOriginKind(issue.originKind)).length,
+    [listedIssues],
+  );
+  const visibleIssues = useMemo(
+    () => (showRoutine ? listedIssues : listedIssues.filter((issue) => !isRoutineIssueOriginKind(issue.originKind))),
+    [listedIssues, showRoutine],
+  );
+  const visibleRecent = useMemo(
+    () => (showRoutine
+      ? recentlyOpened
+      : recentlyOpened.filter(({ issue }) => !isRoutineIssueOriginKind(issue.originKind))),
+    [recentlyOpened, showRoutine],
+  );
+
   const leadAgent = useMemo(() => resolveLeadAgent(agents ?? []), [agents]);
   const leadAgentId = leadAgent?.id ?? null;
   const handOffAgents = useMemo(() => handOffAgentChoices(agents ?? [], leadAgentId), [agents, leadAgentId]);
@@ -260,7 +321,7 @@ export function MyTasks() {
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
-        "My tasks",
+        "Your desk",
         `${location.pathname}${location.search}${location.hash}`,
         "issues",
       ),
@@ -368,7 +429,7 @@ export function MyTasks() {
         // A backlog task does not wake its assignee; Todo does.
         ...(issue.status === "backlog" ? { status: "todo" } : {}),
         // Always a comment: the agent reads it, and it marks the task as waiting on them.
-        comment: instruction || `Handed to ${agent.name} from My tasks.`,
+        comment: instruction || `Handed to ${agent.name} from the Desk.`,
       }),
     onMutate: ({ issue, agent }) => {
       patchIssueLocally(issue, {
@@ -538,7 +599,7 @@ export function MyTasks() {
     return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
-  const nothingNeedsYou = listedIssues.length === 0 && merged.decisionsWithoutIssue.length === 0;
+  const nothingNeedsYou = visibleIssues.length === 0 && merged.decisionsWithoutIssue.length === 0;
   const discussIssue = discussId ? listedIssues.find((issue) => issue.id === discussId) ?? null : null;
   const discussPanel = discussIssue ? (
     <MyTasksDiscussPanel
@@ -555,7 +616,7 @@ export function MyTasks() {
   ) : null;
 
   const page = (
-    <div className="min-w-0 flex-1 space-y-6">
+    <div className="min-w-0 flex-1 space-y-8">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {attentionError && (
         <ErrorState
@@ -567,60 +628,91 @@ export function MyTasks() {
         />
       )}
 
-      {nothingNeedsYou && !attentionError ? (
-        <EmptyState
-          icon={CheckCircle2}
-          message="Nothing needs you right now."
-          description="Tasks assigned to you show up here. Questions and approvals from agents are in Decisions."
-          action="Create task"
-          onAction={() => openNewIssue()}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="inline-flex items-center gap-2 text-sm">
+          <ToggleSwitch
+            checked={showRoutine}
+            onCheckedChange={setShowRoutine}
+            aria-label="Show routine tasks"
+            data-desk-routine-toggle
+          />
+          <span>Show routine tasks</span>
+          {!showRoutine && routineCount > 0 ? (
+            <span className="text-xs text-muted-foreground" data-desk-routine-hidden>
+              {routineCount} hidden
+            </span>
+          ) : null}
+        </label>
+        {visibleIssues.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            title="Copy your tasks as a list with links, grouped by who acts next, ready to paste into a message"
+            onClick={() =>
+              void listCopy.copy(
+                myTasksListText(
+                  visibleIssues,
+                  (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
+                  (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
+                ),
+              )
+            }
+          >
+            {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+            {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+          </Button>
+        )}
+      </div>
+
+      <DeskSection id="desk-needs-me" title="Needs me">
+        {nothingNeedsYou && !attentionError ? (
+          <EmptyState
+            icon={CheckCircle2}
+            message="Nothing needs you right now."
+            description="Decisions, reviews and tasks assigned to you show up here."
+            action="Create task"
+            onAction={() => openNewIssue()}
+          />
+        ) : (
+          <>
+            {visibleIssues.length > 0 && (
+              <IssuesList
+                issues={visibleIssues}
+                agents={agents}
+                projects={projects}
+                viewStateKey="paperclip:desk-view"
+                defaultSortField={SHOW_TASK_PRIORITY_UI ? "priority" : "due"}
+                rowPresentation={ISSUES_ROW_PRESENTATION}
+                toolbarPresentation={ISSUES_TOOLBAR_PRESENTATION}
+                issueLinkState={issueLinkState}
+                searchWithinLoadedIssues
+                customGrouping={groupGrouping}
+                issueTagsById={issueTagsById}
+                renderRowLeading={renderRowLeading}
+                renderRowActions={renderRowActions}
+                renderRowFooter={renderRowFooter}
+                onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+              />
+            )}
+            {merged.decisionsWithoutIssue.length > 0 && (
+              <DecisionsWithoutIssue items={merged.decisionsWithoutIssue} />
+            )}
+          </>
+        )}
+      </DeskSection>
+
+      <DeskSection id="desk-following" title="Following">
+        <DeskFollowing
+          companyId={selectedCompanyId}
+          follows={follows}
+          loading={followsLoading}
+          issueLinkState={issueLinkState}
         />
-      ) : (
-        <>
-          {listedIssues.length > 0 && (
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                title="Copy your tasks as a list with links, grouped by who acts next, ready to paste into a message"
-                onClick={() =>
-                  void listCopy.copy(
-                    myTasksListText(
-                      listedIssues,
-                      (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
-                      (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
-                    ),
-                  )
-                }
-              >
-                {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-                {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
-              </Button>
-            </div>
-          )}
-          {listedIssues.length > 0 && (
-            <IssuesList
-              issues={listedIssues}
-              agents={agents}
-              projects={projects}
-              viewStateKey="paperclip:my-tasks-view"
-              rowPresentation={ISSUES_ROW_PRESENTATION}
-              toolbarPresentation={ISSUES_TOOLBAR_PRESENTATION}
-              issueLinkState={issueLinkState}
-              searchWithinLoadedIssues
-              customGrouping={groupGrouping}
-              issueTagsById={issueTagsById}
-              renderRowLeading={renderRowLeading}
-              renderRowActions={renderRowActions}
-              renderRowFooter={renderRowFooter}
-              onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
-            />
-          )}
-          {merged.decisionsWithoutIssue.length > 0 && (
-            <DecisionsWithoutIssue items={merged.decisionsWithoutIssue} />
-          )}
-        </>
-      )}
+      </DeskSection>
+
+      <DeskSection id="desk-recent" title="Recently opened">
+        <DeskRecent entries={visibleRecent} />
+      </DeskSection>
     </div>
   );
 
@@ -654,5 +746,83 @@ function DecisionsWithoutIssue({ items }: { items: AttentionItem[] }) {
         />
       ))}
     </section>
+  );
+}
+
+function DeskSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return (
+    <section aria-labelledby={id} className="space-y-3" data-desk-section={id}>
+      <h2 id={id} className="text-base font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function DeskFollowing({
+  companyId,
+  follows,
+  loading,
+  issueLinkState,
+}: {
+  companyId: string;
+  follows: IssueFollowWithRollup[];
+  loading: boolean;
+  issueLinkState: unknown;
+}) {
+  if (loading) return null;
+  if (follows.length === 0) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Star className="size-4 shrink-0" aria-hidden="true" />
+        Follow a task with the star on its page to see how it and everything under it is getting on.
+      </p>
+    );
+  }
+  return (
+    <ul className="grid gap-3 lg:grid-cols-2">
+      {follows.map(({ issueId, issue, counts, latestUpdates }) => (
+        <li key={issueId} className="min-w-0 rounded-lg border border-border p-3" data-desk-follow={issueId}>
+          <div className="mb-2 flex min-w-0 items-center gap-2">
+            <StatusIcon status={issue.status} size="md" />
+            {SHOW_TASK_PRIORITY_UI && issue.priority !== "medium" ? <PriorityIcon priority={issue.priority} /> : null}
+            <Link
+              to={`/issues/${issue.identifier ?? issueId}`}
+              state={issueLinkState}
+              className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+            >
+              {issue.title}
+            </Link>
+            {issue.identifier ? (
+              <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">{issue.identifier}</span>
+            ) : null}
+            <FollowTaskToggle
+              variant="icon"
+              issue={{ id: issueId, companyId, identifier: issue.identifier, title: issue.title }}
+            />
+          </div>
+          <FollowRollupSummary counts={counts} latestUpdates={latestUpdates} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DeskRecent({ entries }: { entries: RecentlyOpenedIssue[] }) {
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground">Tasks you open show up here, on any device.</p>;
+  }
+  return (
+    <div>
+      {entries.map(({ issueId, issue, viewedAt }) => (
+        <EntityRow
+          key={issueId}
+          to={`/issues/${issue.identifier ?? issueId}`}
+          leading={<StatusIcon status={issue.status} size="md" />}
+          identifier={issue.identifier ?? undefined}
+          title={issue.title}
+          trailing={<span className="shrink-0 text-xs text-muted-foreground">{relativeTime(viewedAt)}</span>}
+        />
+      ))}
+    </div>
   );
 }

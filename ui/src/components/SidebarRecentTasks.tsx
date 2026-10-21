@@ -5,13 +5,9 @@ import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
-import { useRecentTasks } from "@/hooks/useRecentTasks";
+import { useRecentlyOpenedIssues } from "@/hooks/useIssueFollows";
 import { useSidebar } from "@/context/SidebarContext";
 import { useOptionalToastActions } from "@/context/ToastContext";
-import {
-  updateRecentTaskSnapshots,
-  type RecentTaskEntry,
-} from "@/lib/recent-tasks";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -63,6 +59,13 @@ function setRestartWakeRetryPending(storageKey: string | null, issueId: string, 
   }
 }
 
+/** A task in the Recent list: the last tasks this user opened, on any device. */
+interface RecentTaskEntry {
+  id: string;
+  title: string;
+  identifier: string | null;
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
@@ -107,7 +110,12 @@ function RecentTasksList({
   liveIssueIds: ReadonlySet<string>;
   rail: boolean;
 }) {
-  const { entries, storageKey } = useRecentTasks({ companyId, userId });
+  const recent = useRecentlyOpenedIssues(companyId);
+  const entries: RecentTaskEntry[] = recent.map(({ issueId, issue }) => ({
+    id: issueId,
+    title: issue.title,
+    identifier: issue.identifier,
+  }));
   const queryClient = useQueryClient();
   const toastActions = useOptionalToastActions();
   const [renameEntry, setRenameEntry] = useState<RecentTaskEntry | null>(null);
@@ -122,6 +130,7 @@ function RecentTasksList({
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.recentIssues(companyId) }),
     ]);
   };
 
@@ -142,7 +151,6 @@ function RecentTasksList({
     try {
       const updated = await issuesApi.update(renameEntry.id, { title: nextTitle });
       queryClient.setQueryData(queryKeys.issues.detail(renameEntry.id), updated);
-      if (storageKey) updateRecentTaskSnapshots(storageKey, companyId, [updated]);
       await refreshIssueQueries(renameEntry.id);
       setRenameEntry(null);
       toastActions?.pushToast({ title: "Task renamed", tone: "success" });
@@ -272,15 +280,12 @@ function RecentTasksList({
 
   return (
     <>
-      <SidebarSection label="Recent Tasks">
+      <SidebarSection label="Recent">
         {entries.map((entry) => (
           <div key={entry.id} className="sidebar-action-row group/recent-task relative">
             <SidebarNavItem
               to={`/issues/${entry.identifier ?? entry.id}`}
               label={entry.title}
-              trailing={entry.status === "in_review" && entry.externalConversationState === "waiting"
-                ? <span className="text-xs text-muted-foreground">Idle</span> : undefined}
-              trailingLabel={entry.status === "in_review" && entry.externalConversationState === "waiting" ? "Idle" : undefined}
               className={rail ? undefined : "sidebar-action-link pointer-coarse:pr-8"}
               liveCount={liveIssueIds.has(entry.id) ? 1 : undefined}
             />

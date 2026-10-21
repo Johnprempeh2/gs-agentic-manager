@@ -30,6 +30,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "decisions",
   "deep-dive",
   "my-tasks",
+  "desk",
   "needed",
   "inbox",
   "board-chat",

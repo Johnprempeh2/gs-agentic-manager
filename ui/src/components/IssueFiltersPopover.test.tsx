@@ -84,7 +84,7 @@ describe("IssueFiltersPopover", () => {
     expect(popoverContent?.textContent).toContain("Only tasks being worked on now");
   });
 
-  it("hides the Priority filter section while priority UI is off (PAP-411)", () => {
+  it("shows the Priority filter section now priority UI is on (PAP-411 flag)", () => {
     const root = createRoot(container);
 
     act(() => {
@@ -105,9 +105,9 @@ describe("IssueFiltersPopover", () => {
 
     const popoverContent = container.querySelector("[data-testid='popover-content']");
     expect(popoverContent).not.toBeNull();
-    // Status section still renders, Priority section is gated off (PAP-411).
+    // Priority is on screen again (Desk); the section sits beside Status.
     expect(popoverContent?.textContent).toContain("Status");
-    expect(popoverContent?.textContent).not.toContain("Priority");
+    expect(popoverContent?.textContent).toContain("Priority");
   });
 
   it("searches long option lists while the popover remains the only scroll owner", () => {

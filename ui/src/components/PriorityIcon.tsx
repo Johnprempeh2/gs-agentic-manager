@@ -39,7 +39,15 @@ export function PriorityIcon({ priority, onChange, className, showLabel }: Prior
     </span>
   );
 
-  if (!onChange) return showLabel ? <span className="inline-flex items-center gap-1.5">{icon}<span className="text-sm">{config.label}</span></span> : icon;
+  if (!onChange) {
+    if (showLabel) return <span className="inline-flex items-center gap-1.5">{icon}<span className="text-sm">{config.label}</span></span>;
+    // A bare glyph still needs a name for screen readers and a hover hint.
+    return (
+      <span role="img" aria-label={`${config.label} priority`} title={`${config.label} priority`} className="inline-flex">
+        {icon}
+      </span>
+    );
+  }
 
   const trigger = showLabel ? (
     <button

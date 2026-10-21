@@ -73,14 +73,14 @@ const GROUP_COPY: Record<NeededGroupId, Omit<NeededGroup, "id" | "items">> = {
   overdue: {
     title: "Waiting on you for over a day",
     explain: "Tasks an agent handed back to you more than 24 hours ago. They stay still until you act.",
-    allHref: "/my-tasks",
-    allLabel: "Open my tasks",
+    allHref: "/desk",
+    allLabel: "Open your desk",
   },
   tasks: {
     title: "Tasks only you can do",
     explain: "Work assigned to you rather than to an agent.",
-    allHref: "/my-tasks",
-    allLabel: "Open my tasks",
+    allHref: "/desk",
+    allLabel: "Open your desk",
   },
   clients: {
     title: "Clients waiting on you",

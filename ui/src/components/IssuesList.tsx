@@ -68,6 +68,8 @@ import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
+import { FollowTaskButton } from "./FollowTask";
+import { useFollowIssue, useIssueFollows } from "../hooks/useIssueFollows";
 import { TeamBadge } from "./TeamBadge";
 import { agentTeamsApi } from "../api/agentTeams";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
@@ -307,7 +309,9 @@ function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
       case "status":
         return dir * (issueStatusOrder.indexOf(a.status) - issueStatusOrder.indexOf(b.status));
       case "priority":
-        return dir * (issuePriorityOrder.indexOf(a.priority) - issuePriorityOrder.indexOf(b.priority));
+        // Same priority: the sooner due date first (the Desk's order).
+        return dir * (issuePriorityOrder.indexOf(a.priority) - issuePriorityOrder.indexOf(b.priority))
+          || compareIssueDueDates(a, b, 1);
       case "title":
         return dir * a.title.localeCompare(b.title);
       case "created":
@@ -846,6 +850,11 @@ export function IssuesList({
   }, []);
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewIssue } = useDialogActions();
+  // One query and one mutation for every row's follow star.
+  const { followedIds: followedIssueIds } = useIssueFollows(selectedCompanyId);
+  const followMutation = useFollowIssue(selectedCompanyId);
+  const rowFollowPending = (issueId: string) =>
+    followMutation.isPending && followMutation.variables?.issueId === issueId;
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -2525,8 +2534,15 @@ export function IssuesList({
                           && availableIssueColumnSet.has("updated")
                           ? issueActivityTimestamp(issue)
                           : undefined}
-                        desktopTrailing={(
-                          visibleTrailingIssueColumns.length > 0 ? (
+                        desktopTrailing={(<>
+                          <FollowTaskButton
+                            variant="icon"
+                            taskName={issue.identifier ?? issue.title}
+                            following={rowFollowPending(issue.id) ? followMutation.variables!.follow : followedIssueIds.has(issue.id)}
+                            pending={rowFollowPending(issue.id)}
+                            onToggle={(follow) => followMutation.mutate({ issueId: issue.id, follow, title: issue.identifier ?? issue.title })}
+                          />
+                          {visibleTrailingIssueColumns.length > 0 ? (
                             <InboxIssueTrailingColumns
                               issue={issue}
                               columns={visibleTrailingIssueColumns}
@@ -2652,8 +2668,8 @@ export function IssuesList({
                                 </Popover>
                               )}
                             />
-                          ) : undefined
-                        )}
+                          ) : null}
+                        </>)}
                       />
                       {rowFooter}
                     </div>

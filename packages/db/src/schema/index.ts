@@ -147,6 +147,7 @@ export {
 } from "./decision_queues.js";
 export { feedbackExports } from "./feedback_exports.js";
 export { issueReadStates } from "./issue_read_states.js";
+export { issueFollows, issueRecentViews } from "./issue_follows.js";
 export { assets } from "./assets.js";
 export { assetTexts } from "./asset_texts.js";
 export { generatedImages } from "./generated_images.js";

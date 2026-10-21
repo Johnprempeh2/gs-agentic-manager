@@ -8574,6 +8574,62 @@ registry.registerPath({
   responses: { 204: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
+// ─── Following and recently opened tasks (Desk) ─────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/issue-follows",
+  tags: ["issues"],
+  summary: "List the tasks the current user follows, each with a rollup of its subtree",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/follow",
+  tags: ["issues"],
+  summary: "Whether the current user follows a task",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/issues/{id}/follow",
+  tags: ["issues"],
+  summary: "Follow a task and everything under it",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/issues/{id}/follow",
+  tags: ["issues"],
+  summary: "Stop following a task",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/recent-issues",
+  tags: ["issues"],
+  summary: "List the tasks the current user opened most recently",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/recent-view",
+  tags: ["issues"],
+  summary: "Record that the current user opened a task",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
 // ─── Instance settings ────────────────────────────────────────────────────────
 
 registry.registerPath({
