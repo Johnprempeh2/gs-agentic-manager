@@ -1426,7 +1426,9 @@ function buildCard(input: {
       ? `${shared.tasks.length} tasks of ${sharedAgent?.name ?? "one agent"} wait on it.`
       : waiting && taskLabel
         ? `${waiting.name} cannot carry on with ${taskLabel} until this is decided.`
-        : reason;
+        : taskLabel
+          ? `${taskLabel} cannot move on until this is decided.`
+          : reason;
   const links: Array<{ label: string; href: string }> = [];
   if (taskHref && taskLabel) links.push({ label: `Open ${task!.identifier ?? "the task"}`, href: taskHref });
   for (const item of items) {

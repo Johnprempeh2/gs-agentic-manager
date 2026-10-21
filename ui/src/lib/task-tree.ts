@@ -21,6 +21,8 @@ export interface TaskTreeIndex {
   external: Map<string, IssueTreeExternalBlocker>;
   truncated: boolean;
   limits: IssueTree["limits"];
+  /** Finished tasks the server counted but did not send, by the task they sit under. */
+  hiddenDone: ReadonlyMap<string, number>;
 }
 
 const keyCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -29,7 +31,10 @@ function compareNodes(a: IssueTreeNode, b: IssueTreeNode) {
   return keyCollator.compare(a.identifier ?? a.title, b.identifier ?? b.title) || keyCollator.compare(a.title, b.title);
 }
 
-export function indexTaskTree(tree: IssueTree): TaskTreeIndex | null {
+export function indexTaskTree(
+  tree: IssueTree,
+  hiddenDone: ReadonlyMap<string, number> = new Map(),
+): TaskTreeIndex | null {
   const byId = new Map(tree.nodes.map((node) => [node.id, node]));
   const root = byId.get(tree.rootId);
   if (!root) return null;
@@ -48,6 +53,7 @@ export function indexTaskTree(tree: IssueTree): TaskTreeIndex | null {
     external: new Map(tree.externalBlockers.map((blocker) => [blocker.id, blocker])),
     truncated: tree.truncated,
     limits: tree.limits,
+    hiddenDone,
   };
 }
 
@@ -55,6 +61,13 @@ export function indexTaskTree(tree: IssueTree): TaskTreeIndex | null {
 export function descendantCount(index: TaskTreeIndex, id: string): number {
   let count = 0;
   for (const child of index.children.get(id) ?? []) count += 1 + descendantCount(index, child.id);
+  return count;
+}
+
+/** Finished tasks counted but not sent, under `id` and its sub-tasks. */
+function hiddenDoneUnder(index: TaskTreeIndex, id: string): number {
+  let count = index.hiddenDone.get(id) ?? 0;
+  for (const child of index.children.get(id) ?? []) count += hiddenDoneUnder(index, child.id);
   return count;
 }
 
@@ -111,20 +124,21 @@ export function visibleTaskTree(
 ): VisibleTaskItem {
   const build = (node: IssueTreeNode): VisibleTaskItem => {
     const all = index.children.get(node.id) ?? [];
-    const collapsed = options.collapsed.has(node.id) && all.length > 0;
+    const descendants = descendantCount(index, node.id) + hiddenDoneUnder(index, node.id);
+    const collapsed = options.collapsed.has(node.id) && descendants > 0;
     const children: VisibleItem[] = [];
     if (!collapsed) {
-      let folded = 0;
+      let folded = index.hiddenDone.get(node.id) ?? 0;
       for (const child of all) {
         if (!options.showFinished && wholeBranchFinished(index, child)) {
-          folded += 1 + descendantCount(index, child.id);
+          folded += 1 + descendantCount(index, child.id) + hiddenDoneUnder(index, child.id);
         } else {
           children.push(build(child));
         }
       }
       if (folded > 0) children.push({ kind: "done", id: doneItemId(node.id), parentId: node.id, count: folded });
     }
-    return { kind: "task", id: node.id, node, children, collapsed, descendants: descendantCount(index, node.id) };
+    return { kind: "task", id: node.id, node, children, collapsed, descendants };
   };
   return build(index.root);
 }

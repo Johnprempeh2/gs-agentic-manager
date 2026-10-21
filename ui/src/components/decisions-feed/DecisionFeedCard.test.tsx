@@ -167,7 +167,9 @@ describe("DecisionFeedCard rendering per kind", () => {
     const text = container.textContent ?? "";
     expect(text).toContain(kindLabel);
     expect(text).toContain(card.title);
-    expect(container.querySelector("[data-decision-sentence]")?.textContent).toBe(card.decision);
+    // A question answered on the card shows its question once, in the question box, not twice.
+    if (card.kind === "question") expect(container.querySelector("[data-decision-sentence]")).toBeNull();
+    else expect(container.querySelector("[data-decision-sentence]")?.textContent).toBe(card.decision);
     expect(container.querySelector("[data-decision-why]")?.textContent).toContain(card.why.text);
     expect(container.querySelector("[data-decision-why]")?.textContent).toMatch(/Waiting for \d+ days\./);
     // On a review the agent did the work; the board is the one waited on (GRE-1421).

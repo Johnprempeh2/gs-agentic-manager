@@ -4490,7 +4490,7 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Update an issue",
   description:
-    "When posting a comment, attachmentIds selects up to 20 unique uploaded attachments from this exact task and company. The comment, attachment binding, and issue update commit atomically. attachmentIds without a comment is rejected; Markdown links alone do not bind uploads. reviewOverride with a non-empty overrideReason lets the company owner, or a person granted reviews:override, approve (status done) or request changes (status in_progress) on a review that waits on someone else; the decision, an activity entry and a system comment record who decided and why. Agents and agent keys are refused with 403.",
+    "When posting a comment, attachmentIds selects up to 20 unique uploaded attachments from this exact task and company. The comment, attachment binding, and issue update commit atomically. attachmentIds without a comment is rejected; Markdown links alone do not bind uploads. reviewOverride with a non-empty overrideReason lets the company owner, or a person granted reviews:override, approve (status done) or request changes (status in_progress) on a review that waits on someone else; the decision, an activity entry and a system comment record who decided and why. Agents and agent keys are refused with 403. keyTask true marks the task as a key task of its project (one of the 3 to 7 tasks that drive it; it becomes a branch of the project tree) and false clears it; send a comment with it to record why. Placing a task in the project tree is setting parentId to the key task or task it serves.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(updateIssueSchema.partial().merge(issueReviewOverrideFieldsSchema)),
@@ -8628,6 +8628,31 @@ registry.registerPath({
     "Accepts a task id or key. Returns the root first, then its sub-tasks breadth first: status, priority, owner, parent, blocking task ids, direct sub-task counts and last update. Branches the actor cannot read are left out. Capped at 300 tasks and 12 levels; truncated is true when the tree was cut.",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{id}/tree",
+  tags: ["projects"],
+  summary: "A project as a tree: its key tasks and their open work, and the unsorted work",
+  description:
+    "keyTaskIds are the project's key tasks (each a branch); unsortedIds are open tasks at the top of the project under no key task. nodes holds open work, the tasks above it up to its branch, and every key task; finished work is counted in hiddenDoneByParent, keyTaskProgress and counts instead of sent, unless finished=1. project.lead is the project's lead agent, or the company lead covering (covering true) when it has none. openTidyTaskId is the open tidy task, if any. Capped at 300 tasks and 12 levels; truncated is true when cut.",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({ finished: z.enum(["0", "1", "true", "false"]).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{id}/tidy",
+  tags: ["projects"],
+  summary: "Ask the project lead to place the project's unsorted tasks",
+  description:
+    "Creates one task for the project lead (or the company lead when the project has none) listing the open tasks with no parent that are not key tasks, and wakes it. 409 while a tidy task for the project is open (taskId says which), when nothing is unsorted, or when there is no lead to ask.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

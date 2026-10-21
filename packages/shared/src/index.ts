@@ -1582,6 +1582,8 @@ export type {
   IssueTree,
   IssueTreeExternalBlocker,
   IssueTreeNode,
+  ProjectTree,
+  ProjectTreeLead,
   AccessUserProfile,
   CompanyMemberRecord,
   CompanyMembersResponse,

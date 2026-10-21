@@ -1,0 +1,1 @@
+ALTER TABLE "issues" ADD COLUMN "key_task_at" timestamp with time zone;

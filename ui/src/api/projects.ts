@@ -1,5 +1,6 @@
 import type {
   Project,
+  ProjectTree,
   ProjectRepositoryOptions,
   ProjectWorkspace,
   ProjectWorkspaceCheckoutHead,
@@ -29,6 +30,11 @@ export const projectsApi = {
     return api.get<Project[]>("/companies/" + encodeURIComponent(companyId) + "/projects" + (query ? "?" + query : ""));
   },
   get: (id: string, companyId?: string) => api.get<Project>(projectPath(id, companyId)),
+  /** The project tree; `finished` sends finished work too. */
+  getTree: (id: string, finished = false) =>
+    api.get<ProjectTree>(projectPath(id, undefined, `/tree${finished ? "?finished=1" : ""}`)),
+  /** Ask the project lead to place the unsorted tasks. */
+  tidy: (id: string) => api.post<{ status: "created"; taskId: string; agentId: string }>(projectPath(id, undefined, "/tidy"), {}),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Project>(`/companies/${companyId}/projects`, data),
   update: (id: string, data: Record<string, unknown>, companyId?: string) =>

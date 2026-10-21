@@ -210,8 +210,9 @@ export function DecisionFeedCard({
   const answersInPlace = questionItem !== null;
   const decisionItems = hideInlineResolver ? [] : card.items.filter((item) => item.sourceKind === "decision");
   const reviewItem = decisionCardReviewItem(card);
-  // The question box shows the question itself; the decision line would repeat it.
-  const decisionShown = !(answersInPlace && card.questions.length === 1 && card.decision === card.questions[0]!.prompt);
+  // The question box shows the question itself (a yes/no confirmation or one question); the
+  // decision line would repeat it.
+  const decisionShown = !(answersInPlace && card.questions.length <= 1);
 
   const runAction = (action: DecisionCardAction) => {
     if (action.type === "link" || busy || action.disabledReason) return;
