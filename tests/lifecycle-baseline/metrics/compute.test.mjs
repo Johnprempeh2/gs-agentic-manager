@@ -190,6 +190,39 @@ test("R1: a hold on a subtree covers the issues beneath it only", () => {
   assert.deepEqual(r1.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["OTHER"]);
 });
 
+test("R1: a chain behind a blocker a person parked in backlog is parked, not stranded", () => {
+  // GRE-1784: John tabled GRE-1452, GRE-1463 and GRE-1612; the blocked chains
+  // behind them wait on his decision, not on a lost wake.
+  const issues = [
+    issue("parked", { status: "backlog" }),
+    issue("mid", { status: "blocked" }),
+    // The parent waits on its child, which waits on the chain.
+    issue("leaf", { status: "in_progress" }),
+    issue("leafChild", { parentId: "leaf", status: "blocked" }),
+  ];
+  const relations = [{ blockerIssueId: "parked", blockedIssueId: "mid" }, { blockerIssueId: "mid", blockedIssueId: "leafChild" }];
+  // Nobody vouches for the backlog move: the chain is stranded, as before.
+  assert.equal(computeStrandedTrees(base({ issues, relations })).total, 2);
+
+  const byPerson = {
+    tabled: { issues: issues.map((entry) => (entry.id === "parked" ? { ...entry, tabledByUserId: "u1" } : entry)) },
+    movedByUser: { backlogParkers: [{ issueId: "parked", actorType: "user" }] },
+  };
+  for (const [name, extra] of Object.entries(byPerson)) {
+    const r1 = computeStrandedTrees(base({ issues, relations, ...extra }));
+    assert.equal(r1.total, 0, name);
+    assert.equal(r1.parked, 2, name);
+    assert.deepEqual(r1.parkedTrees.map((tree) => [tree.rootIdentifier, tree.parkedBy]), [["MID", ["PARKED"]], ["LEAF", ["PARKED"]]], name);
+  }
+  // An agent's backlog move is not a person's decision: still stranded.
+  assert.equal(computeStrandedTrees(base({ issues, relations, backlogParkers: [{ issueId: "parked", actorType: "agent" }] })).total, 2);
+  // A dead issue beside the parked chain keeps its tree stranded.
+  const withDead = [...issues, issue("dead", { parentId: "leaf", status: "todo" })];
+  const r1 = computeStrandedTrees(base({ issues: withDead, relations, backlogParkers: [{ issueId: "parked", actorType: "user" }] }));
+  assert.deepEqual(r1.stranded.map((tree) => tree.uncoveredIssues.map((entry) => entry.identifier)), [["DEAD"]]);
+  assert.equal(r1.parked, 1);
+});
+
 test("R2: failure rate excludes cancellations; recovery is split by human intervention", () => {
   const runs = [
     { id: "ok", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
