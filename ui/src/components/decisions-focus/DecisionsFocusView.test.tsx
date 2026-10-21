@@ -20,20 +20,22 @@ vi.mock("@tanstack/react-query", () => ({
     isLoading: false,
     error: null,
   }),
-  // Enough of useMutation for the shared answer hook and the card: run, then onSuccess.
+  // Enough of useMutation for the shared answer hook and the card: run, then onSuccess and onSettled.
   useMutation: ({
     mutationFn,
     onSuccess,
+    onSettled,
   }: {
     mutationFn: (input: unknown) => Promise<unknown>;
     onSuccess?: (result: unknown, input: unknown) => void;
+    onSettled?: () => void;
   }) => ({
     isPending: false,
     error: null,
     variables: undefined,
     reset: vi.fn(),
     mutate: (input: unknown) => {
-      void mutationFn(input).then((result) => onSuccess?.(result, input));
+      void mutationFn(input).then((result) => onSuccess?.(result, input)).finally(() => onSettled?.());
     },
     mutateAsync: async (input: unknown) => {
       const result = await mutationFn(input);
@@ -264,10 +266,10 @@ describe("DecisionsFocusView", () => {
     const card = container.querySelector("article")!;
     expect(card.textContent).toContain("When a run is stuck, should I restart it?");
     expect(card.querySelector("[data-decision-card='task:issue-44']")).not.toBeNull();
-    expect(card.textContent).toContain("It is also blocked by GRE-58");
     // The question is answered once, not repeated under it.
     expect(card.querySelectorAll("[role='radiogroup']")).toHaveLength(1);
-    for (const label of ["Submit & next", "Reassign GRE-58", "Instruct GRE-58", "Reassign", "Give an instruction", "Cancel the task", "Ask for clarity"]) {
+    // A question is answered, not reassigned: the blocker keeps its own options.
+    for (const label of ["Submit & next", "Reassign GRE-58", "Instruct GRE-58", "Cancel the task", "Not now"]) {
       expect(card.contains(button(label)), label).toBe(true);
     }
   });

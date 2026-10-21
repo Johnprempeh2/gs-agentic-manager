@@ -50,6 +50,7 @@ vi.mock("../services/heartbeat.js", async (importOriginal) => {
 const { errorHandler } = await import("../middleware/index.js");
 const { issueRoutes } = await import("../routes/issues.js");
 const { inboxDismissalRoutes } = await import("../routes/inbox-dismissals.js");
+const { issueTablingRoutes } = await import("../routes/issue-tabling.js");
 const { decisionsFeedRoutes } = await import("../routes/decisions-feed.js");
 const { sidebarBadgeRoutes } = await import("../routes/sidebar-badges.js");
 const { decisionsFeedService, taskIdOf } = await import("../services/decisions-feed.js");
@@ -222,6 +223,20 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     return decisionsFeedService(db).build(companyId, { userId: USER_ID });
   }
 
+  /** The stall router handed this task to the lead agent at `at`. */
+  async function routedToLead(companyId: string, issueId: string, at: Date) {
+    await db.insert(activityLog).values({
+      companyId,
+      actorType: "system",
+      actorId: "decisions_stall_router",
+      action: "issue.stall_routed_to_lead",
+      entityType: "issue",
+      entityId: issueId,
+      details: {},
+      createdAt: at,
+    });
+  }
+
   function cardFor(feed: DecisionsFeed, issueId: string) {
     return feed.cards.find((card) => card.task?.id === issueId) ?? null;
   }
@@ -243,6 +258,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     testApp.use("/api", decisionsFeedRoutes(db));
     testApp.use("/api", inboxDismissalRoutes(db));
     testApp.use("/api", sidebarBadgeRoutes(db));
+    testApp.use("/api", issueTablingRoutes(db));
     testApp.use("/api", issueRoutes(db, {} as any, {}));
     testApp.use(errorHandler);
     return testApp;
@@ -378,7 +394,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(cardFor(feed, seeded.gre138)).toBeNull();
   });
 
-  it("gives a stalled blocker real actions: reassign, instruct, cancel", async () => {
+  it("gives a stalled blocker real actions: reassign and cancel, and no instruction while no agent owns it", async () => {
     const seeded = await seedLiveScenario();
     await reconnect(seeded.connectionId, new Date(seeded.failedAt.getTime() + HOUR));
     const blocker = randomUUID();
@@ -389,12 +405,16 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     ]);
     await db.insert(issueRelations).values({ companyId: seeded.companyId, issueId: blocker, relatedIssueId: blocked, type: "blocks" });
 
+    // An agent-side stall goes to the lead first; a day later it reaches the board.
+    expect(cardFor(await build(seeded.companyId), blocker)).toBeNull();
+    await routedToLead(seeded.companyId, blocker, new Date(Date.now() - 25 * HOUR));
     const card = cardFor(await build(seeded.companyId), blocker)!;
 
     expect(card).toMatchObject({ kind: "blocked", title: "GRE-158 Pick a ledger owner", waiting: { name: "Worker" } });
     expect(card.reason).toContain("blocks 1 task");
     expect(card.nextStep).toContain("1 blocked task waits");
-    expect(card.actions.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["reassign", "instruct", "cancel_task"]));
+    expect(card.actions.map((candidate) => candidate.id)).toEqual(["reassign", "ask_clarity", "cancel_task", "not_now"]);
+    expect(action(card, "ask_clarity").disabledReason).toBe("No agent owns this task, so there is no one to ask. Reassign it first.");
     expect(action(card, "cancel_task").description).toContain("The task waiting on it stops waiting");
 
     // Cancel works on a task that blocks another: the waiting task stops waiting on it.
@@ -500,11 +520,16 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(card).toMatchObject({ id: `task:${seeded.blocked}`, kind: "question", kinds: ["question", "blocked"], title: "GRE-159 Ledger export" });
     expect(card.items.map((item) => item.sourceKind).sort()).toEqual(["blocker_attention", "issue_thread_interaction"]);
     expect(card.nextStep).toContain("blocked by GRE-158");
-    expect(card.actions.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["reassign_blocker", "instruct_blocker", "reassign", "instruct", "cancel_task"]));
+    // A question is answered, not reassigned or instructed (a comment would
+    // close it unanswered); the blocker keeps its own way forward.
+    expect(card.actions.map((candidate) => candidate.id)).toEqual(["open", "reassign_blocker", "instruct_blocker", "cancel_task", "not_now"]);
+    expect(card.decision).toBe("Which month?");
+    expect(card.questions).toEqual([{ prompt: "Which month?", options: [{ id: "sep", label: "September", description: null, recommended: false }] }]);
+    expect(card.facts.blockerChain.map((ref) => ref.identifier)).toEqual(["GRE-158"]);
     // The blocker's actions act on the blocker; the task's own act on the task.
     expect(action(card, "reassign_blocker").requests[0]!.path).toBe(`/api/issues/${seeded.blocker}`);
     expect(action(card, "instruct_blocker").requests[0]!.path).toBe(`/api/issues/${seeded.blocker}/comments`);
-    expect(action(card, "reassign").requests[0]!.path).toBe(`/api/issues/${seeded.blocked}`);
+    expect(action(card, "cancel_task").requests[0]!.path).toBe(`/api/issues/${seeded.blocked}`);
     await expectBadge(seeded.companyId, 1);
 
     await run(app(seeded.companyId), action(card, "reassign_blocker"), seeded.workerId);
@@ -514,6 +539,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
 
   it("keeps a stalled blocker on its own card when the blocked task has nothing else", async () => {
     const seeded = await seedBlockedPair();
+    await routedToLead(seeded.companyId, seeded.blocker, new Date(Date.now() - 25 * HOUR));
 
     const feed = await build(seeded.companyId);
 
@@ -556,10 +582,8 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     const [instruction] = await db.select().from(issueComments).where(eq(issueComments.issueId, seeded.gre241));
     expect(instruction?.body).toBe("Use the main branch.");
 
-    // Reassign to a named agent.
-    await run(testApp, action(cardFor(feed, seeded.gre241), "reassign"), seeded.peerId);
-    const [reassigned] = await db.select().from(issues).where(eq(issues.id, seeded.gre241));
-    expect(reassigned?.assigneeAgentId).toBe(seeded.peerId);
+    // A connection is fixed by connecting it: no reassign or cancel on its card.
+    expect(cardFor(feed, seeded.gre241)!.actions.map((candidate) => candidate.id)).toEqual(["reconnect", "instruct", "ask_clarity", "not_now"]);
 
     // Retry: the recovery closes and the task goes back to its owner.
     await run(testApp, action(cardFor(feed, seeded.gre138), "retry"));
@@ -574,10 +598,10 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     await run(testApp, action(alert, "dismiss"));
     expect((await build(seeded.companyId)).cards.find((card) => card.id === alert.id)).toBeUndefined();
 
-    // Cancel the task.
-    await run(testApp, action(cardFor(feed, seeded.gre241), "cancel_task"));
-    const [cancelled] = await db.select().from(issues).where(eq(issues.id, seeded.gre241));
-    expect(cancelled?.status).toBe("cancelled");
+    // Not now: the task is tabled and its card leaves.
+    await run(testApp, action(cardFor(feed, seeded.gre241), "not_now"));
+    const [tabled] = await db.select().from(issues).where(eq(issues.id, seeded.gre241));
+    expect(tabled?.tabledAt).not.toBeNull();
     expect(cardFor(await build(seeded.companyId), seeded.gre241)).toBeNull();
   });
 
@@ -1401,6 +1425,251 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       const card = cardFor(await build(seeded.companyId), seeded.issueId);
       expect(card?.actions.map((candidate) => candidate.id) ?? []).not.toContain("approve");
       expect(card?.actions.map((candidate) => candidate.id) ?? []).not.toContain("request_changes");
+    });
+  });
+
+  /**
+   * 21 Oct: John's Decisions held agent stalls with generic copy, a chat
+   * thread's old Google Drive card with Cancel and Reassign on it, and
+   * questions that showed only a title. Each kind below is one of those.
+   */
+  describe("decision cards that are real decisions (21 Oct)", () => {
+    afterEach(async () => {
+      await db.delete(activityLog);
+      await db.delete(authUsers).where(eq(authUsers.id, USER_ID));
+    });
+
+    async function seedKinds(prefix = "GRE") {
+      const companyId = randomUUID();
+      const [everestId, flintId, lintelId] = [randomUUID(), randomUUID(), randomUUID()];
+      const now = new Date();
+      await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: prefix, requireBoardApprovalForNewAgents: false });
+      await db.insert(agents).values([[everestId, "Everest", "ceo"], [flintId, "Flint", "engineer"], [lintelId, "Lintel", "engineer"]].map(([id, name, role]) => ({
+        id: id!, companyId, name: name!, role: role!, status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+      })));
+      await db.insert(authUsers).values({ id: USER_ID, name: "John Prempeh", email: "john@example.com", createdAt: now, updatedAt: now });
+      await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner" });
+      const ids = { stall: randomUUID(), dep1: randomUUID(), dep2: randomUUID(), question: randomUUID(), review: randomUUID(), chat: randomUUID() };
+      const stageId = randomUUID();
+      await db.insert(issues).values([
+        { id: ids.stall, companyId, identifier: `${prefix}-1770`, issueNumber: 1770, title: "Review guarded first-member invitation route", status: "blocked", priority: "high", assigneeAgentId: flintId },
+        { id: ids.dep1, companyId, identifier: `${prefix}-1771`, issueNumber: 1771, title: "Ship member invitations", status: "blocked", priority: "high", assigneeAgentId: lintelId },
+        { id: ids.dep2, companyId, identifier: `${prefix}-1772`, issueNumber: 1772, title: "Invitation docs", status: "blocked", priority: "high", assigneeAgentId: lintelId },
+        { id: ids.question, companyId, identifier: `${prefix}-1237`, issueNumber: 1237, title: "Pick the launch month", status: "in_progress", priority: "medium", assigneeAgentId: flintId },
+        {
+          id: ids.review, companyId, identifier: `${prefix}-800`, issueNumber: 800, title: "Homepage copy", status: "in_review", priority: "medium",
+          assigneeUserId: USER_ID,
+          executionPolicy: { mode: "normal", commentRequired: true, stages: [{ id: stageId, type: "review", approvalsNeeded: 1, participants: [{ id: randomUUID(), type: "user", userId: USER_ID, agentId: null }] }] },
+          executionState: {
+            status: "pending", currentStageId: stageId, currentStageIndex: 0, currentStageType: "review",
+            currentParticipant: { type: "user", userId: USER_ID, agentId: null },
+            returnAssignee: { type: "agent", agentId: flintId, userId: null },
+            completedStageIds: [], lastDecisionId: null, lastDecisionOutcome: null, changesRequestedCount: 0,
+          },
+        },
+        {
+          id: ids.chat, companyId, identifier: `${prefix}-296`, issueNumber: 296, title: "Chat with Everest", status: "in_review", priority: "medium",
+          assigneeAgentId: everestId, conversationAgentId: everestId, conversationUserId: USER_ID, conversationState: "waiting",
+        },
+      ]);
+      await db.insert(issueRelations).values([ids.dep1, ids.dep2].map((relatedIssueId) => ({ companyId, issueId: ids.stall, relatedIssueId, type: "blocks" as const })));
+      await db.insert(issueThreadInteractions).values([
+        {
+          companyId, issueId: ids.question, kind: "ask_user_questions", status: "pending", title: "Questions need answers", createdByAgentId: flintId,
+          payload: {
+            version: 1,
+            recommendation: "November: the holiday slowdown starts in December.",
+            questions: [{ id: "month", prompt: "Which month should we launch?", selectionMode: "single", options: [{ id: "nov", label: "November" }, { id: "dec", label: "December" }] }],
+          },
+        },
+        {
+          companyId, issueId: ids.chat, kind: "connection_intent", status: "pending", title: "Connect Google Drive",
+          addresseeUserId: USER_ID, createdByAgentId: everestId,
+          payload: { version: 1, purpose: "tool", serviceSlug: "google-drive", serviceName: "Google Drive", requestingAgentId: everestId, requestingAgentName: "Everest", phase: "requested" },
+        },
+      ]);
+      return { companyId, everestId, flintId, lintelId, ...ids };
+    }
+
+    /** Runs an action as the UI does, with a fresh clientRequestId where the request asks for one. */
+    async function press(testApp: express.Express, found: DecisionCardAction, value?: string) {
+      for (const call of found.requests) {
+        const body = {
+          ...call.body,
+          ...(found.input && value !== undefined ? { [found.input.field]: value } : {}),
+          ...(call.clientRequestId ? { clientRequestId: randomUUID() } : {}),
+        };
+        const agent = request(testApp);
+        const response = call.method === "PATCH" ? await agent.patch(call.path).send(body) : await agent.post(call.path).send(body);
+        expect(response.status, `${found.id} ${call.method} ${call.path}: ${JSON.stringify(response.body)}`).toBeLessThan(300);
+      }
+    }
+
+    it("hands an agent-side stall to the lead agent first, and shows it a day later with the lead's summary", async () => {
+      const seeded = await seedKinds();
+      const { stallRecoveryService } = await import("../services/stall-recovery.js");
+
+      let feed = await build(seeded.companyId);
+      expect(cardFor(feed, seeded.stall)).toBeNull();
+      expect(feed.routedToLead).toEqual([expect.objectContaining({ taskId: seeded.stall, lead: { id: seeded.everestId, name: "Everest" } })]);
+
+      // The router gives Everest one recovery task and does not repeat itself.
+      expect(await stallRecoveryService(db).routeCompany(seeded.companyId)).toEqual({ routed: 1 });
+      expect(await stallRecoveryService(db).routeCompany(seeded.companyId)).toEqual({ routed: 0 });
+      const recovery = await db.select().from(issues).where(eq(issues.originKind, "decision_stall_recovery"));
+      expect(recovery).toHaveLength(1);
+      expect(recovery[0]).toMatchObject({ assigneeAgentId: seeded.everestId, status: "todo" });
+      expect(recovery[0]!.description).toContain("GRE-1770 Review guarded first-member invitation route (holds up 2 tasks)");
+      expect(recovery[0]!.description).not.toMatch(/[–—]/);
+      // Routed just now: still the lead's.
+      expect(cardFor(await build(seeded.companyId), seeded.stall)).toBeNull();
+
+      // A day on, it reaches the person with Everest's summary and a real ask.
+      await db.update(activityLog).set({ createdAt: new Date(Date.now() - 25 * HOUR) }).where(eq(activityLog.action, "issue.stall_routed_to_lead"));
+      await db.insert(issueComments).values([
+        { companyId: seeded.companyId, issueId: seeded.stall, authorAgentId: seeded.flintId, body: "The staging key is rejected.\n\nRecommendation: reassign it to Lintel, who has the key.", createdAt: new Date(Date.now() - 2 * HOUR) },
+        { companyId: seeded.companyId, issueId: seeded.stall, authorAgentId: seeded.everestId, body: "Flint is stuck on the staging key; Lintel has it.", createdAt: new Date(Date.now() - HOUR) },
+      ]);
+      feed = await build(seeded.companyId);
+      const card = cardFor(feed, seeded.stall)!;
+      expect(card.escalation).toEqual({ reason: "stall_threshold", lead: { id: seeded.everestId, name: "Everest" }, summary: "Flint is stuck on the staging key; Lintel has it." });
+      expect(card.decision).toBe("GRE-1770 Review guarded first-member invitation route has not moved for over a day and Everest could not get it going: choose who takes it on, tell Flint what to do, or cancel it.");
+      expect(card.why.text).toBe("It holds up GRE-1771 Ship member invitations and GRE-1772 Invitation docs.");
+      expect(card.why.holdsUp.map((ref) => ref.href)).toEqual(["/GRE/issues/GRE-1771", "/GRE/issues/GRE-1772"]);
+      // The latest agent comment is Everest's; Flint's recommendation is read from Flint's own latest comment.
+      expect(card.facts.latestComment).toMatchObject({ agent: { name: "Everest" }, excerpt: "Flint is stuck on the staging key; Lintel has it." });
+      expect(card.recommendation).toMatchObject({ by: { name: "Flint" }, text: "reassign it to Lintel, who has the key.", actionId: "reassign" });
+      expect(action(card, "reassign").recommended).toBe(true);
+      expect(card.actions.map((candidate) => candidate.id)).toEqual(["reassign", "instruct", "ask_clarity", "cancel_task", "not_now"]);
+      expect(action(card, "reassign").description).toBe("Give it to another agent. The task goes back to To do and the new owner starts now.");
+      expect(feed.count).toBe(4);
+      for (const text of [card.decision, card.why.text, ...card.actions.map((candidate) => candidate.description)]) {
+        expect(text).not.toMatch(/[–—]/);
+      }
+    });
+
+    it("reads the recommendation from the owning agent's latest comment and marks that option", async () => {
+      const seeded = await seedKinds();
+      await db.insert(activityLog).values({ companyId: seeded.companyId, actorType: "system", actorId: "x", action: "issue.stall_routed_to_lead", entityType: "issue", entityId: seeded.stall, createdAt: new Date(Date.now() - 25 * HOUR) });
+      await db.insert(issueComments).values({ companyId: seeded.companyId, issueId: seeded.stall, authorAgentId: seeded.flintId, body: "The staging key is rejected.\n\n**Recommendation:** reassign it to Lintel, who has the key." });
+      const card = cardFor(await build(seeded.companyId), seeded.stall)!;
+      expect(card.recommendation).toEqual({ by: { id: seeded.flintId, name: "Flint" }, text: "reassign it to Lintel, who has the key.", actionId: "reassign", source: "comment" });
+      expect(card.actions.filter((candidate) => candidate.recommended).map((candidate) => candidate.id)).toEqual(["reassign"]);
+    });
+
+    it("shows a stall to the person at once when the agent's latest comment names them and an action (GRE-1799)", async () => {
+      const seeded = await seedKinds();
+      await db.insert(issueComments).values({
+        companyId: seeded.companyId, issueId: seeded.stall, authorAgentId: seeded.lintelId,
+        body: "I sent a test email. Waiting for John to reply \"Received\" to the test email in his inbox before I continue.",
+      });
+      const card = cardFor(await build(seeded.companyId), seeded.stall)!;
+      expect(card.escalation?.reason).toBe("named_in_comment");
+      expect(card.decision).toBe("Lintel is waiting on you. In Lintel's words: Waiting for John to reply \"Received\" to the test email in his inbox before I continue.");
+    });
+
+    it("puts the question itself on a question card, with its options and the agent's recommendation", async () => {
+      const seeded = await seedKinds();
+      const card = cardFor(await build(seeded.companyId), seeded.question)!;
+      expect(card.decision).toBe("Which month should we launch?");
+      expect(card.questions).toEqual([{
+        prompt: "Which month should we launch?",
+        options: [
+          { id: "nov", label: "November", description: null, recommended: false },
+          { id: "dec", label: "December", description: null, recommended: false },
+        ],
+      }]);
+      expect(card.recommendation).toEqual({ by: { id: seeded.flintId, name: "Flint" }, text: "November: the holiday slowdown starts in December.", actionId: null, source: "interaction" });
+      expect(card.why.text).toBe("Flint cannot carry on with GRE-1237 Pick the launch month until this is decided.");
+      expect(card.actions.map((candidate) => candidate.id)).toEqual(["open", "cancel_task", "not_now"]);
+    });
+
+    it("stores an agent's recommendation set on the interaction through the API", async () => {
+      const seeded = await seedKinds();
+      const response = await request(app(seeded.companyId)).post(`/api/issues/${seeded.review}/interactions`).send({
+        kind: "request_confirmation",
+        recommendation: "Approve: the copy matches the brief.",
+        payload: { version: 1, prompt: "Publish the homepage copy?" },
+      });
+      expect(response.status).toBeLessThan(300);
+      const [row] = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, response.body.id));
+      expect((row!.payload as Record<string, unknown>).recommendation).toBe("Approve: the copy matches the brief.");
+      const card = cardFor(await build(seeded.companyId), seeded.review)!;
+      expect(card.recommendation).toMatchObject({ text: "Approve: the copy matches the brief.", actionId: "approve", source: "interaction" });
+    });
+
+    it("gives a chat thread's connection card the connection fix, never Cancel or Reassign, and clears it once the chat moved on", async () => {
+      const seeded = await seedKinds();
+      const card = cardFor(await build(seeded.companyId), seeded.chat)!;
+      expect(card.kind).toBe("connection");
+      expect(card.decision).toBe("Connect Google Drive so Everest can carry on with GRE-296 Chat with Everest, or tell Everest to do without it.");
+      expect(card.actions.map((candidate) => candidate.id)).toEqual(["reconnect", "instruct", "ask_clarity", "not_now"]);
+      expect(action(card, "reconnect")).toMatchObject({ label: "Connect", description: expect.stringContaining("connect Google Drive"), href: expect.stringMatching(/^\/GRE\/issues\/GRE-296#interaction-/) });
+      expect(card.task).toMatchObject({ id: seeded.chat, href: "/GRE/issues/GRE-296" });
+
+      // John answered in the chat after the ask (Greatstone uses OneDrive): the card clears.
+      await db.insert(issueComments).values({ companyId: seeded.companyId, issueId: seeded.chat, authorUserId: USER_ID, body: "We use OneDrive now." });
+      expect(cardFor(await build(seeded.companyId), seeded.chat)).toBeNull();
+    });
+
+    it("clears a tool connection card once a working connection by that name changed after the ask", async () => {
+      const seeded = await seedKinds();
+      await db.update(issues).set({ conversationAgentId: null, conversationUserId: null, conversationState: null }).where(eq(issues.id, seeded.chat));
+      expect(cardFor(await build(seeded.companyId), seeded.chat)).not.toBeNull();
+      const [application] = await db.insert(toolApplications).values({ companyId: seeded.companyId, name: "Google Drive", type: "mcp_http" }).returning();
+      const connectionId = randomUUID();
+      await db.insert(toolConnections).values({
+        id: connectionId, companyId: seeded.companyId, applicationId: application!.id, name: "Google Drive", uid: "google-drive-main",
+        connectionPurpose: "tool", transport: "mcp_remote", status: "active", enabled: true, healthStatus: "ok", config: {}, updatedAt: new Date(Date.now() + 1000),
+      });
+      expect(cardFor(await build(seeded.companyId), seeded.chat)).toBeNull();
+    });
+
+    it("drops every card of a done task, a question included", async () => {
+      const seeded = await seedKinds();
+      await db.update(issues).set({ status: "done" }).where(eq(issues.id, seeded.question));
+      expect(cardFor(await build(seeded.companyId), seeded.question)).toBeNull();
+    });
+
+    it("never shows a tabled task", async () => {
+      const seeded = await seedKinds();
+      await request(app(seeded.companyId)).post(`/api/issues/${seeded.question}/table`).send({ returnAt: null }).expect(200);
+      expect(cardFor(await build(seeded.companyId), seeded.question)).toBeNull();
+    });
+
+    // "Sometimes it doesn't work": every option on every card kind, pressed
+    // as the UI presses it, on a fresh company each time.
+    const MATRIX: Array<[string, "stall" | "question" | "review" | "chat"]> = [
+      ["a stall that reached the person", "stall"],
+      ["a question", "question"],
+      ["a review", "review"],
+      ["a chat thread's connection request", "chat"],
+    ];
+    it.each(MATRIX)("every option on %s works", async (_name, kind) => {
+      let round = 0;
+      const probe = await seedKinds(`M${round++}`);
+      if (kind === "stall") await routedToLead(probe.companyId, probe.stall, new Date(Date.now() - 25 * HOUR));
+      const actionIds = cardFor(await build(probe.companyId), probe[kind])!.actions
+        .filter((candidate) => candidate.type === "request" && !candidate.disabledReason)
+        .map((candidate) => candidate.id);
+      expect(actionIds.length).toBeGreaterThan(0);
+      await db.delete(authUsers).where(eq(authUsers.id, USER_ID));
+      for (const actionId of actionIds) {
+        const seeded = await seedKinds(`M${round++}`);
+        if (kind === "stall") await routedToLead(seeded.companyId, seeded.stall, new Date(Date.now() - 25 * HOUR));
+        const card = cardFor(await build(seeded.companyId), seeded[kind])!;
+        const found = action(card, actionId);
+        const value = found.input?.type === "agent" ? seeded.lintelId : found.input?.type === "choice" ? found.input.options![0]!.value : found.input ? "Carry on with the main branch." : undefined;
+        await press(app(seeded.companyId), found, value);
+        // Something moved: the card left, or the task changed.
+        const after = cardFor(await build(seeded.companyId), seeded[kind]);
+        const [task] = await db.select().from(issues).where(eq(issues.id, seeded[kind]));
+        const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, seeded[kind]));
+        expect(after === null || task!.updatedAt > new Date(Date.now() - 60_000) || comments.length > 0, `${kind} ${actionId}`).toBe(true);
+        if (kind === "stall" && actionId === "reassign") expect(task).toMatchObject({ assigneeAgentId: seeded.lintelId, status: "todo" });
+        await db.delete(activityLog);
+        await db.delete(authUsers).where(eq(authUsers.id, USER_ID));
+      }
     });
   });
 });

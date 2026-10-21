@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, ExternalLink, Loader2, MessageCircleQuestion, MoreHorizontal } from "lucide-react";
+import { ArrowUpRight, ExternalLink, Loader2, MessageCircleQuestion } from "lucide-react";
 import type {
   Agent,
   AttentionDetailDeliverable,
@@ -17,18 +17,16 @@ import { decisionsFeedApi, runDecisionCardAction } from "../../api/decisionsFeed
 import { attentionDetailDeliverables, attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
 import { focusItemIssueId, focusItemKind, isFocusItem } from "../../lib/focus-items";
 import { queryKeys } from "../../lib/queryKeys";
-import { cn, relativeTime } from "../../lib/utils";
+import { cn, formatDateTime, relativeTime } from "../../lib/utils";
 import { AttentionInteractionResolver } from "../AttentionInteractionResolver";
 import { DecisionResolver } from "../DecisionResolver";
 import { ImageGalleryModal, type GalleryMediaItem } from "../ImageGalleryModal";
 import { MarkdownBody } from "../MarkdownBody";
 import { Button } from "../ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { NotNowButton } from "./NotNowButton";
 import { AtDeskPanel } from "./AtDeskPanel";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
 import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
@@ -102,11 +100,12 @@ export function reviewChoiceActions(card: DecisionCard): DecisionCardAction[] {
   return card.actions.filter((action) => VERDICT_ACTION_IDS.has(action.id));
 }
 
-/** Card buttons, minus the ones the card renders in its own way. */
+/** The card's options, minus the ones the card renders in its own way. */
 export function visibleCardActions(card: DecisionCard): DecisionCardAction[] {
   const answersInPlace = decisionCardQuestionItem(card) !== null;
   return card.actions.filter((action) => {
-    if (action.id === "ask_clarity") return false;
+    // Ask for clarity and Not now sit under the options as quieter buttons.
+    if (action.id === "ask_clarity" || action.id === "not_now") return false;
     // Done sits in the "At your desk" panel, next to the command (GRE-450).
     if (action.id === "done") return false;
     // A question is answered on the card, so its "Answer" link is not needed.
@@ -135,10 +134,23 @@ export interface DecisionFeedCardProps {
   className?: string;
 }
 
+/** "for 3 hours", "for 2 days": how long a decision has waited. */
+export function waitedFor(since: string, now = Date.now()): string {
+  const hours = Math.floor((now - new Date(since).getTime()) / 3_600_000);
+  if (!Number.isFinite(hours) || hours < 1) return "for under an hour";
+  if (hours < 48) return `for ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.floor(hours / 24);
+  return `for ${days} days`;
+}
+
+/** Kinds whose `reason` is a real cause worth showing beside the decision. */
+const CAUSE_KINDS = new Set<DecisionCardKind>(["recovery", "failed_run", "agent_error", "budget", "outage"]);
+
 /**
- * One Decisions card (GRE-264): what is blocked, why, who is waiting and what
- * happens next, with the real actions as buttons, Ask for clarity and Not now.
- * List and Focus both render it, so John can act without opening the chat.
+ * One Decisions card (GRE-264): the decision asked of you, why it matters,
+ * the facts behind it, and each option with what it leads to. The server
+ * decides which options a card has; the card renders what it is given.
+ * List, Focus and the Desk all render it.
  */
 export function DecisionFeedCard({
   card,
@@ -160,12 +172,13 @@ export function DecisionFeedCard({
   const severity = severityStyle(card.severity);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [clarityOpen, setClarityOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const isPhone = useIsPhone();
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) });
+    // The Desk lists the same tasks; an action can move one between its groups.
+    queryClient.invalidateQueries({ queryKey: ["issues"] });
     onActed?.();
   };
 
@@ -174,12 +187,17 @@ export function DecisionFeedCard({
       runDecisionCardAction(action, value),
     onSuccess: (_result, { action }) => {
       setOpenActionId(null);
-      refresh();
       if (!quietSuccess) pushToast({ title: `${action.label}: done`, body: card.title, tone: "success" });
     },
+    // A multi-request action can fail half way: refresh either way, so the
+    // card shows what really happened instead of its state before the press.
+    onSettled: refresh,
   });
+  // One action at a time on a card: a second press while one runs is ignored.
+  const busy = actionMutation.isPending;
 
   const clarityAction = card.actions.find((action) => action.id === "ask_clarity") ?? null;
+  const notNowAction = card.actions.find((action) => action.id === "not_now") ?? null;
   const actions = visibleCardActions(card);
   const openAction = actions.find((action) => action.id === openActionId) ?? null;
   const doneAction = card.actions.find((action) => action.id === "done") ?? null;
@@ -189,25 +207,14 @@ export function DecisionFeedCard({
     : doneAction
       ? card.items.find((item) => isFocusItem(item) && focusItemKind(item) !== "request_confirmation") ?? null
       : decisionCardQuestionItem(card);
-  // A card answered in place has its main action (Approve, Submit) in the
-  // question itself; the card's own actions are then the rare ones and fold
-  // into a menu, so the answer sits higher (GRE-360).
   const answersInPlace = questionItem !== null;
   const decisionItems = hideInlineResolver ? [] : card.items.filter((item) => item.sourceKind === "decision");
   const reviewItem = decisionCardReviewItem(card);
-  // A review's verdicts sit in "Your choices", each with what it does
-  // (GRE-1421); the action row keeps only the other buttons.
-  const choices = answersInPlace ? [] : reviewChoiceActions(card);
-  const rowActions = actions.filter((action) => !choices.includes(action));
-  // Phone: one main action up front, the rest in the More sheet. A review's
-  // verdicts are already on the card, so nothing else is promoted.
-  const phonePrimary = choices.length > 0
-    ? null
-    : rowActions.find(isPrimaryCardAction) ?? (answersInPlace ? null : rowActions[0]) ?? null;
-  const phoneMore = rowActions.filter((action) => action !== phonePrimary);
+  // The question box shows the question itself; the decision line would repeat it.
+  const decisionShown = !(answersInPlace && card.questions.length === 1 && card.decision === card.questions[0]!.prompt);
 
   const runAction = (action: DecisionCardAction) => {
-    if (action.type === "link") return;
+    if (action.type === "link" || busy || action.disabledReason) return;
     if (action.input || action.id === "cancel_task") {
       actionMutation.reset();
       setOpenActionId((current) => (current === action.id ? null : action.id));
@@ -248,7 +255,7 @@ export function DecisionFeedCard({
           ))}
           <span className="sr-only">Severity: {severity.label}</span>
         </div>
-        <span className="shrink-0 text-xs text-muted-foreground" title={new Date(card.activityAt).toLocaleString()}>
+        <span className="shrink-0 text-xs text-muted-foreground" title={formatDateTime(card.activityAt)}>
           {relativeTime(card.activityAt)}
         </span>
       </div>
@@ -265,21 +272,53 @@ export function DecisionFeedCard({
         )}
       </h3>
 
+      {/* The decision: what exactly is asked of you, in one sentence. */}
+      {decisionShown ? (
+        <p className="text-sm font-medium leading-snug" data-decision-sentence>
+          {card.decision}
+        </p>
+      ) : null}
+
+      {card.escalation ? <EscalationNote escalation={card.escalation} /> : null}
+
       <dl className="grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-(--gtc-16)">
-        {/* The question box below already shows these words; say them once. */}
-        {questionItem && card.kind === "question" && card.reason === questionItem.subject.title ? null : (
-          <CardFact label="Why">{card.reason}</CardFact>
-        )}
+        <CardFact label="Why">
+          <span data-decision-why>
+            {card.why.text} Waiting {waitedFor(card.why.waitingSince)}.
+          </span>
+        </CardFact>
+        {CAUSE_KINDS.has(card.kind) && card.reason && card.reason !== card.decision ? (
+          <CardFact label="Cause">{card.reason}</CardFact>
+        ) : null}
         {card.reviewer ? (
           <CardFact label="Reviewer">{card.reviewer.isYou ? `You (${card.reviewer.name})` : card.reviewer.name}</CardFact>
         ) : null}
         {card.waiting || !card.reviewer ? (
           // On a review the board is the one waited on; the agent did the work.
-          <CardFact label={card.kind === "review" ? "Work by" : "Waiting"}>
+          <CardFact label={card.kind === "review" ? "Work by" : "Owner"}>
             {card.waiting ? card.waiting.name : <span className="text-muted-foreground">No agent owns this yet.</span>}
           </CardFact>
         ) : null}
-        <CardFact label="Next">{card.nextStep}</CardFact>
+        {card.facts.latestComment ? (
+          <CardFact label="Latest">
+            <span data-decision-latest-comment>
+              <span className="text-muted-foreground">
+                {card.facts.latestComment.agent?.name ?? "The agent"}, {relativeTime(card.facts.latestComment.at)}:
+              </span>{" "}
+              {card.facts.latestComment.excerpt}
+            </span>
+          </CardFact>
+        ) : null}
+        {card.facts.blockerChain.length > 0 ? (
+          <CardFact label="Waits on">
+            <TaskRefLinks refs={card.facts.blockerChain} />
+          </CardFact>
+        ) : null}
+        {card.why.holdsUp.length > 0 ? (
+          <CardFact label="Holds up">
+            <TaskRefLinks refs={card.why.holdsUp} />
+          </CardFact>
+        ) : null}
         {card.setup ? <SetupFacts setup={card.setup} showTasks={!card.task} /> : null}
       </dl>
 
@@ -323,144 +362,52 @@ export function DecisionFeedCard({
 
       {card.clarity ? <ClarityThread clarity={card.clarity} /> : null}
 
-      {choices.length > 0 ? (
-        <ReviewChoices
-          actions={choices}
-          isPhone={isPhone}
-          pendingId={actionMutation.isPending ? actionMutation.variables?.action.id ?? null : null}
+      {card.recommendation ? (
+        <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm" data-decision-recommendation>
+          <span className="font-medium">{card.recommendation.by?.name ?? "The agent"} recommends: </span>
+          {card.recommendation.text}
+        </p>
+      ) : null}
+
+      {actions.length > 0 ? (
+        <CardOptions
+          title={answersInPlace ? "Other options" : "Your options"}
+          actions={actions}
+          size={isPhone ? "lg" : "sm"}
+          busy={busy}
+          pendingId={busy ? actionMutation.variables?.action.id ?? null : null}
           openId={openActionId}
           onRun={runAction}
         />
       ) : null}
 
-      {isPhone ? (
-        // Phone: the main action, Not now, and More (a sheet with the rest as
-        // big full-width rows), instead of a wrap of small buttons.
-        <div className="flex items-center gap-2">
-          {phonePrimary ? (
-            <CardActionButton
-              action={phonePrimary}
-              size="sm"
-              pending={actionMutation.isPending && actionMutation.variables?.action.id === phonePrimary.id}
-              open={openActionId === phonePrimary.id}
-              onRun={() => runAction(phonePrimary)}
-            />
-          ) : null}
-          {taskId ? (
-            <NotNowButton companyId={companyId} issueId={taskId} issueLabel={taskIdentifier} onTabled={onActed} />
-          ) : null}
-          {phoneMore.length > 0 || taskId ? (
+      {clarityAction || (notNowAction && taskId) || card.task?.href ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {clarityAction ? (
             <Button
               type="button"
-              size="sm"
-              variant="outline"
-              className="ml-auto"
-              aria-label="More actions"
-              onClick={() => setMoreOpen(true)}
+              size={isPhone ? "sm" : "xs"}
+              variant="ghost"
+              aria-expanded={clarityOpen}
+              aria-describedby={clarityAction.disabledReason ? `clarity-reason-${card.id}` : undefined}
+              disabled={Boolean(clarityAction.disabledReason) || busy}
+              title={clarityAction.disabledReason ?? clarityAction.description}
+              onClick={() => setClarityOpen((open) => !open)}
             >
-              <MoreHorizontal />
-              More
+              <MessageCircleQuestion />
+              Ask for clarity
             </Button>
           ) : null}
-          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-            <SheetContent side="bottom" className="rounded-t-xl pb-(--sz-safe-bottom)">
-              <SheetHeader>
-                <SheetTitle className="line-clamp-2 text-left">{card.title}</SheetTitle>
-                <SheetDescription className="sr-only">More actions for this decision</SheetDescription>
-              </SheetHeader>
-              <div className="flex flex-col gap-2 px-4 pb-4">
-                {phoneMore.map((action) => (
-                  <CardActionButton
-                    key={action.id}
-                    action={action}
-                    size="lg"
-                    block
-                    pending={actionMutation.isPending && actionMutation.variables?.action.id === action.id}
-                    open={openActionId === action.id}
-                    onRun={() => {
-                      setMoreOpen(false);
-                      runAction(action);
-                    }}
-                  />
-                ))}
-                {taskId ? (
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant="outline"
-                    className="w-full justify-start"
-                    disabled={!clarityAction}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setClarityOpen(true);
-                    }}
-                  >
-                    <MessageCircleQuestion />
-                    Ask for clarity
-                  </Button>
-                ) : null}
-              </div>
-            </SheetContent>
-          </Sheet>
+          {notNowAction && taskId ? (
+            <NotNowButton companyId={companyId} issueId={taskId} issueLabel={taskIdentifier} onTabled={onActed} />
+          ) : null}
+          {clarityAction?.disabledReason ? (
+            <span id={`clarity-reason-${card.id}`} className="text-xs text-muted-foreground">
+              {clarityAction.disabledReason}
+            </span>
+          ) : null}
         </div>
-      ) : (
-      <div className="flex flex-wrap items-center gap-1.5">
-        {!answersInPlace && rowActions.map((action) => (
-          <CardActionButton
-            key={action.id}
-            action={action}
-            pending={actionMutation.isPending && actionMutation.variables?.action.id === action.id}
-            open={openActionId === action.id}
-            onRun={() => runAction(action)}
-          />
-        ))}
-        {taskId ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            aria-expanded={clarityOpen}
-            disabled={!clarityAction}
-            title={clarityAction ? clarityAction.description : "No agent owns this task. Reassign it first."}
-            onClick={() => setClarityOpen((open) => !open)}
-          >
-            <MessageCircleQuestion />
-            Ask for clarity
-          </Button>
-        ) : null}
-        {taskId ? (
-          <NotNowButton companyId={companyId} issueId={taskId} issueLabel={taskIdentifier} onTabled={onActed} />
-        ) : null}
-        {answersInPlace && actions.length > 0 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="xs" variant="ghost" aria-label="More actions">
-                <MoreHorizontal />
-                More
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {actions.map((action) =>
-                action.type === "link" && action.href ? (
-                  <DropdownMenuItem key={action.id} asChild>
-                    <Link to={action.href}>{action.label}</Link>
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem
-                    key={action.id}
-                    variant={action.id === "cancel_task" ? "destructive" : "default"}
-                    disabled={actionMutation.isPending}
-                    onSelect={() => runAction(action)}
-                  >
-                    {action.label}
-                  </DropdownMenuItem>
-                ),
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </div>
-      )}
+      ) : null}
 
       {openAction ? (
         <ActionInputPanel
@@ -478,7 +425,7 @@ export function DecisionFeedCard({
         </p>
       ) : null}
 
-      {clarityOpen && taskId ? (
+      {clarityOpen && taskId && clarityAction && !clarityAction.disabledReason ? (
         <AskForClarityForm
           companyId={companyId}
           cardId={card.id}
@@ -494,46 +441,87 @@ export function DecisionFeedCard({
   );
 }
 
+/** Why an agent-side stall now reaches you, with the lead agent's summary. */
+function EscalationNote({ escalation }: { escalation: NonNullable<DecisionCard["escalation"]> }) {
+  const lead = escalation.lead?.name ?? "The lead agent";
+  const why = escalation.reason === "stall_threshold"
+    ? `${lead} had it for a day and could not get it moving, so it comes to you.`
+    : escalation.reason === "lead_asked"
+      ? `${lead} looked at it and asked you.`
+      : "The owning agent named you in its latest comment.";
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm" data-decision-escalation={escalation.reason}>
+      <p>{why}</p>
+      {escalation.reason !== "named_in_comment" ? (
+        <p className="mt-1">
+          <span className="font-medium">{lead}'s summary: </span>
+          {escalation.summary ?? <span className="text-muted-foreground">{lead} has not written one.</span>}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskRefLinks({ refs }: { refs: DecisionCard["why"]["holdsUp"] }) {
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-1">
+      {refs.map((ref) => (
+        <Link key={ref.id} to={ref.href} className="hover:underline" title={ref.title}>
+          {ref.identifier ? <span className="font-mono text-xs text-muted-foreground">{ref.identifier} </span> : null}
+          {ref.title}
+        </Link>
+      ))}
+    </span>
+  );
+}
+
 /**
- * A review's verdicts (GRE-1421): each button with one line on what it does,
- * so the result is read at the point of choice. Always on the card, also on
- * a phone, so all three choices stay in view.
+ * The card's options (GRE-1421, now every kind): each button with one line on
+ * what it leads to, so the consequence is read at the point of choice. The
+ * owning agent's recommended option is marked.
  */
-function ReviewChoices({
+function CardOptions({
+  title,
   actions,
-  isPhone,
+  size,
+  busy,
   pendingId,
   openId,
   onRun,
 }: {
+  title: string;
   actions: DecisionCardAction[];
-  isPhone: boolean;
+  size: "sm" | "lg";
+  busy: boolean;
   pendingId: string | null;
   openId: string | null;
   onRun: (action: DecisionCardAction) => void;
 }) {
-  const hintIdPrefix = `review-choice-${useId()}`;
+  const hintIdPrefix = `card-option-${useId()}`;
   return (
-    <section className="flex flex-col gap-1.5" aria-label="Your choices" data-review-choices>
-      <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
+    <section className="flex flex-col gap-1.5" aria-label={title} data-card-options>
+      <h4 className="text-xs font-medium text-muted-foreground">{title}</h4>
       <ul className="flex flex-col gap-2">
         {actions.map((action) => (
           <li
             key={action.id}
             className="flex flex-col gap-1 sm:grid sm:grid-cols-(--gtc-41) sm:items-center sm:gap-3"
-            data-review-choice={action.id}
+            data-card-option={action.id}
+            data-review-choice={VERDICT_ACTION_IDS.has(action.id) ? action.id : undefined}
           >
             <CardActionButton
               action={action}
-              size={isPhone ? "lg" : "sm"}
+              size={size}
               block
               describedBy={`${hintIdPrefix}-${action.id}`}
               pending={pendingId === action.id}
+              disabled={busy || Boolean(action.disabledReason)}
               open={openId === action.id}
               onRun={() => onRun(action)}
             />
             <p id={`${hintIdPrefix}-${action.id}`} className="text-sm text-muted-foreground">
-              {action.description}
+              {action.recommended ? <span className="mr-1.5 font-medium text-foreground">Recommended.</span> : null}
+              {action.disabledReason ?? action.description}
             </p>
           </li>
         ))}
@@ -558,7 +546,7 @@ function SetupFacts({ setup, showTasks }: { setup: NonNullable<DecisionCard["set
       <CardFact label="Seen">
         <span data-setup-count>
           {setup.failureCount} {setup.failureCount === 1 ? "failure" : "failures"}, last{" "}
-          <span title={new Date(setup.lastSeenAt).toLocaleString()}>{relativeTime(setup.lastSeenAt)}</span>
+          <span title={formatDateTime(setup.lastSeenAt)}>{relativeTime(setup.lastSeenAt)}</span>
         </span>
       </CardFact>
       {showTasks && setup.tasks.length > 0 ? (
@@ -584,6 +572,7 @@ function isPrimaryCardAction(action: DecisionCardAction): boolean {
 function CardActionButton({
   action,
   pending,
+  disabled = false,
   open,
   onRun,
   size = "xs",
@@ -592,6 +581,8 @@ function CardActionButton({
 }: {
   action: DecisionCardAction;
   pending: boolean;
+  /** Another action on the card is running, or the option cannot be used. */
+  disabled?: boolean;
   open: boolean;
   onRun: () => void;
   size?: "xs" | "sm" | "lg";
@@ -620,7 +611,7 @@ function CardActionButton({
       title={describedBy ? undefined : action.description}
       aria-describedby={describedBy}
       aria-expanded={action.input || action.id === "cancel_task" ? open : undefined}
-      disabled={pending}
+      disabled={pending || disabled}
       className={cn(block && "w-full justify-start", action.id === "cancel_task" && "text-destructive hover:text-destructive")}
       onClick={onRun}
     >

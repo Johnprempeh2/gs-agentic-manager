@@ -104,6 +104,7 @@ import {
   workspaceOperationService,
 } from "./services/index.js";
 import { websiteService } from "./services/website/index.js";
+import { stallRecoveryService } from "./services/stall-recovery.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -1644,6 +1645,15 @@ async function startServerWithDatabaseTeardown(
         })
         .catch((err) => {
           logger.error({ err }, "looks finished check failed");
+        }));
+      // Decisions: agent-side stalls go to the lead agent before a person.
+      trackHeartbeatSchedulerWork(stallRecoveryService(db, { heartbeat })
+        .sweep()
+        .then((result) => {
+          if (result.routed > 0) logger.info(result, "stalled work handed to the lead agent");
+        })
+        .catch((err) => {
+          logger.error({ err }, "stall recovery routing failed");
         }));
     };
     // Opt-in (GSAM_UNRECORDED_WORKTREE_IDLE_DAYS), at most once an hour: remove

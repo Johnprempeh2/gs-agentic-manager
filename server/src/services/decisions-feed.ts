@@ -5,10 +5,12 @@ import {
   activityLog,
   agents,
   authUsers,
+  companies,
   connectionGrants,
   heartbeatRuns,
   issueComments,
   issueRecoveryActions,
+  issueRelations,
   issueThreadInteractions,
   issues,
   toolConnections,
@@ -28,11 +30,24 @@ import type {
   DecisionCardAgentRef,
   DecisionCardClarity,
   DecisionCardKind,
+  DecisionCardQuestion,
+  DecisionCardRecommendation,
   DecisionCardReviewer,
   DecisionCardSetup,
+  DecisionCardTaskRef,
   DecisionsFeed,
 } from "@greatstone/shared";
 import { attentionService, type AttentionServiceOptions } from "./attention.js";
+import {
+  STALL_ESCALATION_MS,
+  commentExcerpt,
+  listTasks,
+  namedAskSentence,
+  recommendationFromComment,
+  recommendedActionId,
+  viewerNames,
+} from "./decision-card-content.js";
+import { findLeadAgentId } from "./looks-finished.js";
 import { principalIdsInclude, viewerPrincipalUserIds } from "./board-identity.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { isExplicitResumeCapableStatus } from "./issue-comment-wakeup.js";
@@ -41,6 +56,8 @@ import { isReleaseTask } from "./release-task.js";
 
 /** activity_log.details.source on the comment a clarity question writes. */
 export const DECISIONS_CLARITY_SOURCE = "decisions_clarity";
+/** activity_log.action written when an agent stall is handed to the lead agent. */
+export const STALL_ROUTED_ACTION = "issue.stall_routed_to_lead";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 const SEVERITY_RANK: Record<AttentionSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -58,7 +75,36 @@ type TaskRow = {
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
   executionState: unknown;
+  /** Set on a chat thread: no reassign or cancel there (conversation identity is fixed). */
+  conversationAgentId: string | null;
+  updatedAt: Date;
 };
+
+/** What the card builder needs beyond the rows: names, comments and links between tasks. */
+type CardContext = {
+  prefix: string;
+  lead: DecisionCardAgentRef | null;
+  names: string[];
+  latestAgentComment: Map<string, { agentId: string; body: string; at: Date }>;
+  latestLeadComment: Map<string, { body: string; at: Date }>;
+  /** Newest comment per task per agent, keyed "<issueId>:<agentId>". */
+  latestCommentBy: Map<string, { agentId: string; body: string; at: Date }>;
+  holdsUp: Map<string, DecisionCardTaskRef[]>;
+  blockerChain: Map<string, DecisionCardTaskRef[]>;
+  interactionCreatedBy: Map<string, string | null>;
+  interactionPayload: Map<string, Record<string, unknown>>;
+  /** Newest comment a person wrote on each task. */
+  latestPersonComment: Map<string, Date>;
+  /** Working tool connections: a squashed name/uid and when they last changed. */
+  workingTools: Array<{ key: string; at: number }>;
+  /** When each stalled task was last handed to the lead agent. */
+  routedAt: Map<string, Date>;
+};
+
+/** "Google Drive", "google-drive" and "googledrive" all read "googledrive". */
+function squash(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
 
 /** A task's pending review stage: who reviews it and who gets it back (GRE-870). */
 type PendingReview = {
@@ -139,6 +185,15 @@ function blockedTaskIdOf(item: AttentionItem) {
   if (item.sourceKind !== "blocker_attention" || item.subject.kind !== "issue") return null;
   const blockedId = item.relatedIssue?.id;
   return blockedId && blockedId !== item.subject.id ? blockedId : null;
+}
+
+/**
+ * A card that is only a stalled blocker with no live next step. Nothing on
+ * it asks a person, so it is the agent side's to recover first.
+ */
+function isAgentStall(group: { items: AttentionItem[] }) {
+  return group.items.length > 0
+    && group.items.every((item) => item.sourceKind === "blocker_attention" && item.dedupKey.startsWith("blocker:"));
 }
 
 function clip(text: string) {
@@ -254,6 +309,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
             assigneeAgentId: issues.assigneeAgentId,
             assigneeUserId: issues.assigneeUserId,
             executionState: issues.executionState,
+            conversationAgentId: issues.conversationAgentId,
+            updatedAt: issues.updatedAt,
           })
           .from(issues)
           .where(and(eq(issues.companyId, companyId), inArray(issues.id, taskIds))),
@@ -280,6 +337,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
             kind: issueThreadInteractions.kind,
             payload: issueThreadInteractions.payload,
             createdAt: issueThreadInteractions.createdAt,
+            createdByAgentId: issueThreadInteractions.createdByAgentId,
           })
           .from(issueThreadInteractions)
           .where(and(eq(issueThreadInteractions.companyId, companyId), inArray(issueThreadInteractions.id, interactionIds))),
@@ -287,6 +345,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       ]);
       const taskById = new Map(taskRows.map((row) => [row.id, row]));
       const agentById = new Map(agentRows.map((row) => [row.id, row]));
+      const context = await loadCardContext(companyId, viewerUserIds, taskRows, intentRows);
       const recoveryById = new Map(recoveryRows.map((row) => [row.id, row]));
       const intentById = new Map(intentRows.map((row) => [row.id, row]));
       const deskById = new Map<string, DeskAsk>();
@@ -422,16 +481,39 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         return null;
       };
 
-      /** A row whose cause is gone. Pending questions and approvals never go stale here. */
+      /**
+       * A row on a done or cancelled task: nothing is left to decide. An
+       * approval can govern more than its task, so it stays until decided.
+       */
       const isClosedTaskRow = (item: AttentionItem) => {
-        if (!["recovery_action", "failed_run", "blocker_attention"].includes(item.sourceKind)
-          && cardKind(item) !== "connection") return false;
+        if (item.sourceKind === "approval") return false;
         const task = taskById.get(taskIdOf(item) ?? "");
         return task ? CLOSED_ISSUE_STATUSES.has(task.status) : false;
       };
       const blocksNothing = (item: AttentionItem) =>
         item.sourceKind === "blocker_attention"
         && (item.detail as { blockedTaskCount?: unknown } | null)?.blockedTaskCount === 0;
+      /**
+       * A tool connection request whose cause is gone: the tool now works (a
+       * working connection by that name changed after the ask), or the chat it
+       * was asked in moved on (the person wrote after it, as when Greatstone
+       * chose OneDrive over Google Drive). AI connections clear through
+       * `aiRepairedAt` instead.
+       */
+      const connectionSuperseded = (item: AttentionItem) => {
+        if (item.sourceKind !== "issue_thread_interaction" || cardKind(item) !== "connection") return false;
+        const intent = intentById.get(item.subject.id);
+        const payload = (intent?.payload ?? {}) as Record<string, unknown>;
+        if (!intent || payload.purpose === "ai") return false;
+        const askedAt = timeOf(intent.createdAt);
+        const service = squash(readString(payload, "serviceSlug") ?? readString(payload, "serviceName") ?? "");
+        // ponytail: matches a connection by name, add a service slug column if names drift.
+        if (service && context.workingTools.some((tool) => tool.at > askedAt && tool.key.includes(service))) return true;
+        const task = taskById.get(intent.issueId);
+        const spokeAt = context.latestPersonComment.get(intent.issueId);
+        return Boolean(task?.conversationAgentId && spokeAt && spokeAt.getTime() > askedAt);
+      };
+      const isGoneRow = (item: AttentionItem) => isClosedTaskRow(item) || blocksNothing(item) || connectionSuperseded(item);
 
       /**
        * One agent waiting on one missing tool connection across several tasks
@@ -449,7 +531,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         return `connection:${agentId}:${service}:${upstream}`;
       };
       const isOpenRow = (item: AttentionItem) =>
-        !isClosedTaskRow(item) && !blocksNothing(item) && aiRepairedAt(item) === null && setupFixedAt(item) === null;
+        !isGoneRow(item) && aiRepairedAt(item) === null && setupFixedAt(item) === null;
       const sharedTasks = new Map<string, Set<string>>();
       for (const item of rawItems) {
         const key = sharedConnectionKey(item);
@@ -492,7 +574,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         && ((intentById.get(item.subject.id)?.payload ?? {}) as Record<string, unknown>).purpose === "ai";
       const unitSetup = new Map<string, { keys: Set<string>; other: boolean }>();
       for (const item of rawItems) {
-        if (isClosedTaskRow(item) || blocksNothing(item)) continue;
+        if (isGoneRow(item)) continue;
         const unit = baseKeyOf(item);
         const entry = unitSetup.get(unit) ?? { keys: new Set<string>(), other: false };
         const identity = setupIdentityOf(item);
@@ -566,7 +648,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           };
         }
         groups.set(key, group);
-        if (isClosedTaskRow(item) || blocksNothing(item)) {
+        if (isGoneRow(item)) {
           staleCleared += 1;
           continue;
         }
@@ -625,8 +707,39 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         .map((agent) => ({ id: agent.id, name: agent.name }));
 
       const cards: DecisionCard[] = [];
+      const routedToLead: NonNullable<DecisionsFeed["routedToLead"]> = [];
       for (const group of groups.values()) {
         const task = group.taskId ? taskById.get(group.taskId) ?? null : null;
+        // The gate: a card shows only to someone who can move it. A stall on
+        // the agent side (a stalled blocker owned by an agent, or by nobody,
+        // and no ask of a person) goes to the lead agent first. It reaches a
+        // person when the owning agent's latest comment names them and an
+        // action, or when it outlives STALL_ESCALATION_MS with the lead.
+        let escalation: DecisionCard["escalation"] = null;
+        if (task && isAgentStall(group)) {
+          if (task.assigneeUserId) {
+            if (!principalIdsInclude(viewerUserIds, task.assigneeUserId)) continue;
+          } else {
+            const latest = context.latestAgentComment.get(task.id);
+            const routedAt = context.routedAt.get(task.id) ?? null;
+            const leadSummary = context.latestLeadComment.get(task.id);
+            const summary = leadSummary ? commentExcerpt(leadSummary.body) : null;
+            if (namedAskSentence(latest?.body, context.names)) {
+              escalation = { reason: "named_in_comment", lead: context.lead, summary };
+            } else if (routedAt && now - routedAt.getTime() >= STALL_ESCALATION_MS) {
+              escalation = { reason: "stall_threshold", lead: context.lead, summary };
+            } else {
+              routedToLead.push({
+                taskId: task.id,
+                identifier: task.identifier,
+                title: task.title,
+                lead: context.lead,
+                routedAt: routedAt?.toISOString() ?? null,
+              });
+              continue;
+            }
+          }
+        }
         // A fixed AI connection or setup clears its cards. A task it left
         // blocked keeps one card so it is not stranded: it still needs a retry.
         const leftBlocked = task
@@ -648,6 +761,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           agentRef,
           recoveryById,
           deskById,
+          context,
+          escalation,
         }));
       }
       cards.sort((left, right) =>
@@ -670,9 +785,129 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         staleCleared,
         assignableAgents,
         cards,
+        routedToLead,
       };
     },
   };
+
+  /** Names, comments and task links the cards need, in one round of queries. */
+  async function loadCardContext(
+    companyId: string,
+    viewerUserIds: string[],
+    taskRows: TaskRow[],
+    intentRows: Array<{ id: string; payload: unknown; createdByAgentId: string | null }>,
+  ): Promise<CardContext> {
+    const taskIds = taskRows.map((row) => row.id);
+    const none = Promise.resolve([] as never[]);
+    const [company, leadId, viewerRows, agentComments, personComments, blocksRows, blockedByRows, toolRows, routedRows] = await Promise.all([
+      db.select({ prefix: companies.issuePrefix }).from(companies).where(eq(companies.id, companyId)).then((rows) => rows[0] ?? null),
+      findLeadAgentId(db, companyId),
+      db.select({ id: authUsers.id, name: authUsers.name }).from(authUsers).where(inArray(authUsers.id, viewerUserIds)),
+      // Newest agent comment per task, and newest per task per agent for the lead.
+      taskIds.length === 0 ? none : db
+        .selectDistinctOn([issueComments.issueId, issueComments.authorAgentId], {
+          issueId: issueComments.issueId,
+          agentId: issueComments.authorAgentId,
+          body: issueComments.body,
+          at: issueComments.createdAt,
+        })
+        .from(issueComments)
+        .where(and(
+          eq(issueComments.companyId, companyId),
+          inArray(issueComments.issueId, taskIds),
+          sql`${issueComments.authorAgentId} is not null`,
+          sql`${issueComments.deletedAt} is null`,
+        ))
+        .orderBy(issueComments.issueId, issueComments.authorAgentId, desc(issueComments.createdAt)),
+      taskIds.length === 0 ? none : db
+        .select({ issueId: issueComments.issueId, at: sql<Date>`max(${issueComments.createdAt})` })
+        .from(issueComments)
+        .where(and(
+          eq(issueComments.companyId, companyId),
+          inArray(issueComments.issueId, taskIds),
+          sql`${issueComments.authorUserId} is not null`,
+          sql`${issueComments.deletedAt} is null`,
+        ))
+        .groupBy(issueComments.issueId),
+      // What each task holds up, and what it waits on.
+      taskIds.length === 0 ? none : db
+        .select({ from: issueRelations.issueId, id: issues.id, identifier: issues.identifier, title: issues.title, status: issues.status })
+        .from(issueRelations)
+        .innerJoin(issues, eq(issues.id, issueRelations.relatedIssueId))
+        .where(and(eq(issueRelations.companyId, companyId), eq(issueRelations.type, "blocks"), inArray(issueRelations.issueId, taskIds))),
+      taskIds.length === 0 ? none : db
+        .select({ to: issueRelations.relatedIssueId, id: issues.id, identifier: issues.identifier, title: issues.title, status: issues.status })
+        .from(issueRelations)
+        .innerJoin(issues, eq(issues.id, issueRelations.issueId))
+        .where(and(eq(issueRelations.companyId, companyId), eq(issueRelations.type, "blocks"), inArray(issueRelations.relatedIssueId, taskIds))),
+      db
+        .select({ name: toolConnections.name, uid: toolConnections.uid, updatedAt: toolConnections.updatedAt })
+        .from(toolConnections)
+        .where(and(
+          eq(toolConnections.companyId, companyId),
+          eq(toolConnections.connectionPurpose, "tool"),
+          eq(toolConnections.enabled, true),
+          eq(toolConnections.status, "active"),
+          sql`${toolConnections.healthStatus} <> 'error'`,
+        )),
+      taskIds.length === 0 ? none : db
+        .select({ issueId: activityLog.entityId, at: sql<Date>`max(${activityLog.createdAt})` })
+        .from(activityLog)
+        .where(and(
+          eq(activityLog.companyId, companyId),
+          eq(activityLog.action, STALL_ROUTED_ACTION),
+          inArray(activityLog.entityId, taskIds),
+        ))
+        .groupBy(activityLog.entityId),
+    ]);
+    const prefix = company?.prefix ?? "";
+    const leadRow = leadId
+      ? await db.select({ id: agents.id, name: agents.name }).from(agents).where(eq(agents.id, leadId)).then((rows) => rows[0] ?? null)
+      : null;
+    const taskRef = (row: { id: string; identifier: string | null; title: string; status: string }): DecisionCardTaskRef => ({
+      id: row.id,
+      identifier: row.identifier,
+      title: row.title,
+      status: row.status,
+      href: `/${prefix}/issues/${row.identifier ?? row.id}`,
+    });
+    const latestAgentComment = new Map<string, { agentId: string; body: string; at: Date }>();
+    const latestLeadComment = new Map<string, { body: string; at: Date }>();
+    const latestCommentBy = new Map<string, { agentId: string; body: string; at: Date }>();
+    for (const row of agentComments as Array<{ issueId: string; agentId: string | null; body: string; at: Date }>) {
+      if (!row.agentId) continue;
+      const at = new Date(row.at);
+      const current = latestAgentComment.get(row.issueId);
+      if (!current || current.at < at) latestAgentComment.set(row.issueId, { agentId: row.agentId, body: row.body, at });
+      if (row.agentId === leadId) latestLeadComment.set(row.issueId, { body: row.body, at });
+      latestCommentBy.set(`${row.issueId}:${row.agentId}`, { agentId: row.agentId, body: row.body, at });
+    }
+    type RefRow = { key: string; id: string; identifier: string | null; title: string; status: string };
+    const openRefsBy = (rows: RefRow[]) => {
+      const map = new Map<string, DecisionCardTaskRef[]>();
+      const sorted = [...rows].sort((left, right) =>
+        (left.identifier ?? left.id).localeCompare(right.identifier ?? right.id, undefined, { numeric: true }));
+      for (const row of sorted) {
+        if (!CLOSED_ISSUE_STATUSES.has(row.status)) map.set(row.key, [...(map.get(row.key) ?? []), taskRef(row)]);
+      }
+      return map;
+    };
+    return {
+      prefix,
+      lead: leadRow ? { id: leadRow.id, name: leadRow.name } : null,
+      names: viewerRows.flatMap((row) => viewerNames(row.name)).concat(viewerRows.length === 0 ? viewerNames(null) : []),
+      latestAgentComment,
+      latestLeadComment,
+      latestCommentBy,
+      holdsUp: openRefsBy(blocksRows.map((row) => ({ ...row, key: row.from }))),
+      blockerChain: openRefsBy(blockedByRows.map((row) => ({ ...row, key: row.to }))),
+      interactionCreatedBy: new Map(intentRows.map((row) => [row.id, row.createdByAgentId])),
+      interactionPayload: new Map(intentRows.map((row) => [row.id, (row.payload ?? {}) as Record<string, unknown>])),
+      latestPersonComment: new Map((personComments as Array<{ issueId: string; at: Date }>).map((row) => [row.issueId, new Date(row.at)])),
+      workingTools: toolRows.map((row) => ({ key: squash(`${row.name} ${row.uid}`), at: timeOf(row.updatedAt) })),
+      routedAt: new Map((routedRows as Array<{ issueId: string; at: Date }>).map((row) => [row.issueId, new Date(row.at)])),
+    };
+  }
 
   /** The newest clarity question per task, with the owning agent's first answer. */
   async function loadClarity(companyId: string, taskIds: string[]) {
@@ -763,8 +998,10 @@ function buildCard(input: {
   agentRef: (agentId: string | null | undefined) => DecisionCardAgentRef | null;
   recoveryById: Map<string, { id: string; evidence: unknown; nextAction: string }>;
   deskById: Map<string, DeskAsk>;
+  context: CardContext;
+  escalation: DecisionCard["escalation"];
 }): DecisionCard {
-  const { companyId, group, task, readyToRetry, clarity, review, agentRef } = input;
+  const { companyId, group, task, readyToRetry, clarity, review, agentRef, context } = input;
   const items = [...group.items].sort((left, right) =>
     (KIND_RANK.get(cardKind(left)) ?? 99) - (KIND_RANK.get(cardKind(right)) ?? 99)
     || timeOf(right.activityAt) - timeOf(left.activityAt));
@@ -775,6 +1012,10 @@ function buildCard(input: {
   const byKind = (wanted: DecisionCardKind) => items.find((item) => cardKind(item) === wanted) ?? null;
 
   const taskLabel = task ? `${task.identifier ?? task.id.slice(0, 8)} ${task.title}` : null;
+  // A chat thread is not an execution task, so its rows carry no link: build it.
+  const taskHref = task ? `/${context.prefix}/issues/${task.identifier ?? task.id}` : null;
+  const interactionHref = (item: AttentionItem) => item.subject.href
+    ?? (taskHref && item.sourceKind === "issue_thread_interaction" ? `${taskHref}#interaction-${item.subject.id}` : null);
   const shared = group.shared;
   const sharedAgent = shared ? agentRef(shared.agentId) : null;
   const sharedTaskList = shared?.tasks.map((row) => row.identifier ?? row.id.slice(0, 8)).sort().join(", ");
@@ -943,12 +1184,16 @@ function buildCard(input: {
         requestAction("approve", approve?.label ?? "Approve", approve?.description ?? "Approve the request.", [request("POST", `/api/approvals/${item.subject.id}/approve`)]),
         requestAction("reject", reject?.label ?? "Reject", reject?.description ?? "Reject the request.", [request("POST", `/api/approvals/${item.subject.id}/reject`)]),
       );
-    } else if (item.sourceKind === "issue_thread_interaction" && cardKind(item) === "question" && item.subject.href) {
-      actions.push(linkAction("open", "Answer", "Open the question on the task.", item.subject.href));
-    } else if (cardKind(item) === "connection" && item.subject.href && !actions.some((action) => action.id === "reconnect")) {
+    } else if (item.sourceKind === "issue_thread_interaction" && cardKind(item) === "question" && interactionHref(item)) {
+      actions.push(linkAction("open", "Answer", "Open the question on the task and answer it there.", interactionHref(item)!));
+    } else if (cardKind(item) === "connection" && interactionHref(item) && !actions.some((action) => action.id === "reconnect")) {
+      const payload = context.interactionPayload.get(item.subject.id) ?? {};
+      const service = readString(payload, "serviceName") ?? readString(payload, "serviceSlug");
       actions.push(shared
-        ? linkAction("reconnect", "Connect", `Open the request and connect ${shared.serviceName}. Every waiting task continues.`, item.subject.href)
-        : linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it.", item.subject.href));
+        ? linkAction("reconnect", "Connect", `Open the request and connect ${shared.serviceName}. Every waiting task continues.`, interactionHref(item)!)
+        : payload.purpose === "ai" || !service
+          ? linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it. The task can then be retried.", interactionHref(item)!)
+          : linkAction("reconnect", "Connect", `Open the request and connect ${service}. ${waiting?.name ?? "The agent"} carries on once it works.`, interactionHref(item)!));
     }
   }
 
@@ -1040,22 +1285,45 @@ function buildCard(input: {
         request("PATCH", issuePath, { status: "todo" }),
       ]));
     }
-    actions.push(requestAction(
-      "reassign",
-      "Reassign",
-      "Give the task to another agent. The new owner is woken.",
-      [request("PATCH", issuePath, { assigneeUserId: null })],
-      { field: "assigneeAgentId", type: "agent", label: "New owner", required: true },
-    ));
-    actions.push(requestAction(
-      "instruct",
-      "Give an instruction",
-      "Post an instruction on the task and wake its owner.",
-      // in_review and backlog refuse resume intent; a plain comment there still
-      // wakes the owner and leaves the status (and any review) alone. GRE-320.
-      [request("POST", `${issuePath}/comments`, isExplicitResumeCapableStatus(task.status) ? { resume: true } : {})],
-      { field: "body", type: "text", label: "Instruction", required: true },
-    ));
+    // What makes sense differs by kind (one place): an agent's own question or
+    // approval is answered, not reassigned or instructed (a comment would
+    // close the question unanswered); a chat thread keeps its agent and is
+    // never cancelled; a connection is fixed by connecting, not by moving work.
+    const answersAsk = kind === "question" || kind === "approval" || kind === "decision";
+    const chatThread = Boolean(task.conversationAgentId);
+    const movesOwner = !answersAsk && !chatThread && kind !== "connection" && kind !== "review";
+    const owner = agentRef(task.assigneeAgentId)?.name ?? null;
+    if (movesOwner) {
+      // A blocked task with nothing open before it goes back to To do, so the
+      // new owner starts at once instead of inheriting a dead stop.
+      const restart = task.status === "blocked" && (context.blockerChain.get(task.id) ?? []).length === 0;
+      actions.push(requestAction(
+        "reassign",
+        "Reassign",
+        restart
+          ? "Give it to another agent. The task goes back to To do and the new owner starts now."
+          : "Give it to another agent. The new owner is woken and starts now.",
+        [request("PATCH", issuePath, restart ? { assigneeUserId: null, status: "todo" } : { assigneeUserId: null })],
+        { field: "assigneeAgentId", type: "agent", label: "New owner", required: true },
+      ));
+    }
+    // An instruction needs an agent to wake; with none, Reassign is the way.
+    if (!answersAsk && owner) {
+      actions.push(requestAction(
+        "instruct",
+        "Give an instruction",
+        `Post your instruction on the task and wake ${owner}, who carries on with it now.`,
+        // Every instruction wakes the owner. Blocked, todo and in-progress tasks
+        // resume; in_review and backlog refuse resume intent with a 409, and a
+        // plain comment there still wakes the owner and leaves the status (and
+        // any review) alone (GRE-320). A chat thread needs a clientRequestId.
+        [{
+          ...request("POST", `${issuePath}/comments`, isExplicitResumeCapableStatus(task.status) ? { resume: true } : {}),
+          clientRequestId: true,
+        }],
+        { field: "body", type: "text", label: "Instruction", required: true },
+      ));
+    }
     if (recoveryItem) {
       actions.push(requestAction(
         "resolve",
@@ -1085,25 +1353,36 @@ function buildCard(input: {
     } else if (items.length > 0 && items.every((item) => item.sourceKind === "failed_run")) {
       actions.push(dismissAction(companyId, items, "Mark resolved"));
     }
-    if (task.assigneeAgentId) {
-      actions.push(requestAction(
-        "ask_clarity",
-        "Ask for clarity",
-        "Send a short question to the owning agent and wake it. The answer shows on this card.",
-        [request("POST", `/api/companies/${companyId}/decisions-feed/cards/${encodeURIComponent(group.key)}/clarity`)],
-        { field: "question", type: "text", label: "Your question", required: true },
-      ));
+    if (!answersAsk) {
+      actions.push({
+        ...requestAction(
+          "ask_clarity",
+          "Ask for clarity",
+          `Ask ${owner ?? "the owning agent"} a short question. It is woken and the answer shows on this card.`,
+          [request("POST", `/api/companies/${companyId}/decisions-feed/cards/${encodeURIComponent(group.key)}/clarity`)],
+          { field: "question", type: "text", label: "Your question", required: true },
+        ),
+        disabledReason: task.assigneeAgentId ? null : "No agent owns this task, so there is no one to ask. Reassign it first.",
+      });
     }
-    // A cancelled blocker never resolves, so the close must say what happens to
-    // the tasks that wait on it; without it the PATCH is refused with 409.
-    const waitingNote = typeof blockedCount === "number" && blockedCount > 0
-      ? blockedCount === 1
-        ? " The task waiting on it stops waiting and can move on."
-        : ` The ${blockedCount} tasks waiting on it stop waiting and can move on.`
-      : " Any task waiting on it stops waiting and can move on.";
-    actions.push(requestAction("cancel_task", "Cancel the task", `Stop the task for good.${waitingNote}`, [
-      request("PATCH", issuePath, { status: "cancelled", blockedDependents: { action: "remove" } }),
-    ]));
+    if (!chatThread && kind !== "connection") {
+      // A cancelled blocker never resolves, so the close must say what happens to
+      // the tasks that wait on it; without it the PATCH is refused with 409.
+      const waitingNote = typeof blockedCount === "number" && blockedCount > 0
+        ? blockedCount === 1
+          ? " The task waiting on it stops waiting and can move on."
+          : ` The ${blockedCount} tasks waiting on it stop waiting and can move on.`
+        : " Any task waiting on it stops waiting and can move on.";
+      actions.push(requestAction("cancel_task", "Cancel the task", `Stop the task for good.${waitingNote}`, [
+        request("PATCH", issuePath, { status: "cancelled", blockedDependents: { action: "remove" } }),
+      ]));
+    }
+    actions.push(requestAction(
+      "not_now",
+      "Not now",
+      "Set the task aside. It leaves your Decisions and no agent works on it until it comes back on the day you choose.",
+      [request("POST", `${issuePath}/table`, { returnAt: null })],
+    ));
   } else if (setupCard) {
     actions.push(...setupRetryActions(companyId, group));
   } else if (!task && main) {
@@ -1122,13 +1401,97 @@ function buildCard(input: {
   const activityAt = newest?.activityAt ?? new Date(group.aiRepairedAt ?? 0).toISOString();
   const createdAt = items.reduce((oldest, item) => (item.createdAt < oldest ? item.createdAt : oldest), activityAt);
 
+  // ── What the person reads: the decision, why it matters, the facts, the
+  // options with their consequences, and what the owning agent recommends.
+  const questionItems = items.filter((item) => item.sourceKind === "issue_thread_interaction" && cardKind(item) === "question");
+  const questions = questionItems.flatMap((item) => questionsOf(context.interactionPayload.get(item.subject.id) ?? {}, item));
+  const latestComment = task ? context.latestAgentComment.get(task.id) ?? null : null;
+  const recommendation = recommendationOf({
+    items: questionItems.concat(items.filter((item) => cardKind(item) === "connection")),
+    questions,
+    context,
+    // The owning agent recommends, even when the lead commented after it.
+    latestComment: (task?.assigneeAgentId ? context.latestCommentBy.get(`${task.id}:${task.assigneeAgentId}`) : null) ?? latestComment,
+    agentRef,
+  });
+  if (recommendation?.actionId) {
+    const target = actions.find((action) => action.id === recommendation.actionId);
+    if (target) target.recommended = true;
+  }
+  const holdsUp = task ? context.holdsUp.get(task.id) ?? [] : [];
+  const blockerChain = task ? context.blockerChain.get(task.id) ?? [] : [];
+  const holdsUpText = holdsUp.length > 0
+    ? `It holds up ${listTasks(holdsUp.map((ref) => `${ref.identifier ?? ""} ${ref.title}`.trim()))}.`
+    : shared
+      ? `${shared.tasks.length} tasks of ${sharedAgent?.name ?? "one agent"} wait on it.`
+      : waiting && taskLabel
+        ? `${waiting.name} cannot carry on with ${taskLabel} until this is decided.`
+        : reason;
+  const links: Array<{ label: string; href: string }> = [];
+  if (taskHref && taskLabel) links.push({ label: `Open ${task!.identifier ?? "the task"}`, href: taskHref });
+  for (const item of items) {
+    const href = item.sourceKind === "issue_thread_interaction" ? interactionHref(item) : null;
+    if (href && !links.some((link) => link.href === href)) links.push({ label: "Open the request", href });
+  }
+
   return {
     id: group.key,
     kind,
     kinds,
     ...(setup ? { setup } : {}),
-    task: input.taskSubject,
+    task: input.taskSubject ?? (task && taskHref ? {
+      kind: "issue",
+      id: task.id,
+      companyId,
+      title: task.title,
+      identifier: task.identifier,
+      status: task.status,
+      href: taskHref,
+    } : null),
     title,
+    decision: clip(decisionSentence({
+      kind,
+      main,
+      task,
+      taskLabel,
+      waiting,
+      review,
+      stalledReview,
+      questions,
+      shared,
+      setupCard,
+      setupAgentName,
+      setupCause: setup?.cause ?? null,
+      readyToRetry,
+      escalation: input.escalation,
+      latestComment,
+      commentAuthor: agentRef(latestComment?.agentId)?.name ?? null,
+      context,
+      reason,
+    })),
+    why: {
+      text: holdsUpText,
+      holdsUp,
+      // A stall is measured from the task's last movement; everything else from the ask.
+      waitingSince: kind === "blocked" ? activityAt : createdAt,
+    },
+    facts: {
+      latestComment: latestComment
+        ? { agent: agentRef(latestComment.agentId), excerpt: commentExcerpt(latestComment.body), at: latestComment.at.toISOString() }
+        : null,
+      blockerChain,
+      links,
+    },
+    recommendation,
+    questions,
+    escalation: input.escalation ?? (items.some((item) => cardKind(item) === "blocked")
+      && context.lead && items.some((item) => context.interactionCreatedBy.get(item.subject.id) === context.lead!.id)
+      ? {
+        reason: "lead_asked" as const,
+        lead: context.lead,
+        summary: task && context.latestLeadComment.get(task.id) ? commentExcerpt(context.latestLeadComment.get(task.id)!.body) : null,
+      }
+      : null),
     reason: clip(reason),
     waiting,
     reviewer: review?.reviewer ?? null,
@@ -1141,6 +1504,179 @@ function buildCard(input: {
     items,
     atDesk,
   };
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+/** A question card's questions and options, read from the interaction payload. */
+function questionsOf(payload: Record<string, unknown>, item: AttentionItem): DecisionCardQuestion[] {
+  const kind = item.subject.metadata?.kind;
+  if (kind === "ask_user_questions") {
+    const recommended = new Set<string>();
+    for (const question of Array.isArray(readRecord(payload.questionSet).questions) ? readRecord(payload.questionSet).questions as unknown[] : []) {
+      for (const option of Array.isArray(readRecord(question).options) ? readRecord(question).options as unknown[] : []) {
+        const record = readRecord(option);
+        if (record.recommended === true && typeof record.id === "string") recommended.add(`${readRecord(question).id}:${record.id}`);
+      }
+    }
+    return (Array.isArray(payload.questions) ? payload.questions : []).map((raw) => {
+      const question = readRecord(raw);
+      return {
+        prompt: readString(question, "prompt") ?? item.subject.title ?? "",
+        options: (Array.isArray(question.options) ? question.options : []).map((rawOption) => {
+          const option = readRecord(rawOption);
+          const id = readString(option, "id") ?? "";
+          return {
+            id,
+            label: readString(option, "label") ?? id,
+            description: readString(option, "description"),
+            recommended: recommended.has(`${question.id}:${id}`),
+          };
+        }),
+      };
+    }).filter((question) => question.prompt);
+  }
+  if (kind === "request_confirmation" || kind === "request_checkbox_confirmation") {
+    const prompt = readString(payload, "prompt") ?? item.subject.title;
+    if (!prompt) return [];
+    const options = kind === "request_confirmation"
+      ? [
+        { id: "accept", label: readString(payload, "acceptLabel") ?? "Confirm", description: null, recommended: false },
+        { id: "reject", label: readString(payload, "rejectLabel") ?? "Decline", description: null, recommended: false },
+      ]
+      : (Array.isArray(payload.options) ? payload.options : []).map((rawOption) => {
+        const option = readRecord(rawOption);
+        return { id: readString(option, "id") ?? "", label: readString(option, "label") ?? "", description: readString(option, "description"), recommended: false };
+      });
+    return [{ prompt, options }];
+  }
+  return [];
+}
+
+/**
+ * What the owning agent recommends, best source first: the interaction's own
+ * `recommendation`, a recommended question option, then a "Recommendation:"
+ * line in its latest comment.
+ */
+function recommendationOf(input: {
+  items: AttentionItem[];
+  questions: DecisionCardQuestion[];
+  context: CardContext;
+  latestComment: { agentId: string; body: string } | null;
+  agentRef: (agentId: string | null | undefined) => DecisionCardAgentRef | null;
+}): DecisionCardRecommendation | null {
+  for (const item of input.items) {
+    const text = readString(input.context.interactionPayload.get(item.subject.id), "recommendation");
+    if (text) {
+      return {
+        by: input.agentRef(input.context.interactionCreatedBy.get(item.subject.id)),
+        text: clip(text),
+        actionId: recommendedActionId(text),
+        source: "interaction",
+      };
+    }
+  }
+  const asker = input.items[0] ? input.agentRef(input.context.interactionCreatedBy.get(input.items[0].subject.id)) : null;
+  for (const question of input.questions) {
+    const option = question.options.find((candidate) => candidate.recommended);
+    if (option) {
+      return { by: asker, text: `${asker?.name ?? "The agent"} recommends ${option.label}.`, actionId: null, source: "interaction" };
+    }
+  }
+  const fromComment = recommendationFromComment(input.latestComment?.body);
+  return fromComment
+    ? { by: input.agentRef(input.latestComment!.agentId), text: fromComment, actionId: recommendedActionId(fromComment), source: "comment" }
+    : null;
+}
+
+/** The decision in one sentence: exactly what is asked of the person. */
+function decisionSentence(input: {
+  kind: DecisionCardKind;
+  main: AttentionItem | null;
+  task: TaskRow | null;
+  taskLabel: string | null;
+  waiting: DecisionCardAgentRef | null;
+  review: PendingReview | null;
+  stalledReview: boolean;
+  questions: DecisionCardQuestion[];
+  shared: SharedConnection | undefined;
+  setupCard: boolean;
+  setupAgentName: string;
+  setupCause: string | null;
+  readyToRetry: boolean;
+  escalation: DecisionCard["escalation"];
+  latestComment: { agentId: string; body: string } | null;
+  commentAuthor: string | null;
+  context: CardContext;
+  reason: string;
+}): string {
+  const { kind, main, task, taskLabel, waiting, review, questions, context } = input;
+  const agent = waiting?.name ?? "The agent";
+  const label = taskLabel ?? "this task";
+  const named = namedAskSentence(input.latestComment?.body, context.names);
+  if (named && (kind === "blocked" || input.escalation?.reason === "named_in_comment")) {
+    const author = input.commentAuthor ?? agent;
+    return `${author} is waiting on you. In ${author}'s words: ${named}`;
+  }
+  if (input.setupCard) {
+    return input.readyToRetry
+      ? `${input.setupAgentName}'s setup works again: retry the stopped work.`
+      : `Fix ${input.setupAgentName}'s setup so it can start: ${input.setupCause ?? "setup is not complete"}.`;
+  }
+  if (input.readyToRetry) return `The connection works again: retry ${label} so ${agent} carries on.`;
+  switch (kind) {
+    case "question": {
+      if (questions.length === 1) return questions[0]!.prompt;
+      if (questions.length > 1) return `Answer ${agent}'s ${questions.length} questions: ${main?.subject.title ?? label}.`;
+      if (main?.subject.metadata?.kind === "suggest_tasks") return `Choose which of ${agent}'s suggested tasks to create for ${label}.`;
+      return main?.subject.title ?? `Answer ${agent} on ${label}.`;
+    }
+    case "approval":
+      return main?.subject.metadata?.type === "permission_grant"
+        ? `Grant or deny ${agent}'s request: ${main.subject.title ?? "a permission"}.`
+        : `Approve or reject: ${main?.subject.title ?? label}.`;
+    case "decision":
+      return main?.subject.title ?? `Decide for ${agent}: ${label}.`;
+    case "connection": {
+      if (input.shared) return `Connect ${input.shared.serviceName} so ${agent} can carry on with ${input.shared.tasks.length} tasks.`;
+      const payload = main ? context.interactionPayload.get(main.subject.id) ?? {} : {};
+      const service = readString(payload, "serviceName") ?? readString(payload, "serviceSlug");
+      if (main?.sourceKind === "ai_connection_alert" || payload.purpose === "ai" || !service) {
+        return task ? `Reconnect the AI account so ${agent} can carry on with ${label}.` : `Reconnect the AI account: ${input.reason}`;
+      }
+      return `Connect ${service} so ${agent} can carry on with ${label}, or tell ${agent} to do without it.`;
+    }
+    case "review":
+      if (input.stalledReview) return `Check ${agent}'s finished work on ${label}, then approve it, ask for changes or send it back.`;
+      return review && !review.reviewer.isYou
+        ? `${review.reviewer.name} reviews ${agent}'s work on ${label}; step in only if it must move without them.`
+        : `Review ${agent}'s work on ${label}: approve it or ask for changes.`;
+    case "blocked": {
+      if (main?.dedupKey.startsWith("blocked-owner:")) return `${agent} needs you to unblock ${label}: ${main.whyNow}`;
+      const owner = task?.assigneeAgentId ? agent : "No agent";
+      const lead = input.escalation?.lead?.name ?? context.lead?.name ?? "The lead agent";
+      if (input.escalation?.reason === "stall_threshold") {
+        return `${label} has not moved for over a day and ${lead} could not get it going: choose who takes it on, tell ${owner === "No agent" ? "an agent" : owner} what to do, or cancel it.`;
+      }
+      return `${label} has no live next step: choose who takes it on, give an instruction, or cancel it.`;
+    }
+    case "recovery":
+      return `${label} stopped: retry it, give it to another agent, or cancel it.`;
+    case "failed_run":
+      return `${label} failed and its automatic retries are used up: retry it or give it to another agent.`;
+    case "budget":
+      return `Raise the budget or leave the work paused: ${main?.subject.title ?? input.reason}`;
+    case "agent_error":
+      return `Fix ${agent}'s error so it can take work again: ${input.reason}`;
+    case "join_request":
+      return `Approve or reject the request to join: ${main?.subject.title ?? input.reason}`;
+    case "outage":
+      return "Nothing to decide: retry the failed runs if their tasks still matter, then dismiss this.";
+    default:
+      return input.reason;
+  }
 }
 
 /**

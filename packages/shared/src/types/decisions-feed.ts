@@ -39,7 +39,8 @@ export type DecisionCardActionId =
   | "dismiss"
   | "done"
   | "open"
-  | "fix_setup";
+  | "fix_setup"
+  | "not_now";
 
 /** One HTTP call. `path` is absolute from the server root (starts with /api). */
 export interface DecisionCardRequest {
@@ -47,6 +48,11 @@ export interface DecisionCardRequest {
   path: string;
   /** Fixed body fields. The UI adds the field named by the action `input`. */
   body: Record<string, unknown>;
+  /**
+   * The UI adds one fresh `clientRequestId` per press to this request's body,
+   * so a double press posts once and a chat thread accepts the message.
+   */
+  clientRequestId?: boolean;
 }
 
 export interface DecisionCardActionInput {
@@ -62,7 +68,12 @@ export interface DecisionCardActionInput {
 export interface DecisionCardAction {
   id: DecisionCardActionId;
   label: string;
+  /** What happens if the person picks it, in one sentence: the consequence. */
   description: string;
+  /** The owning agent recommends this option. */
+  recommended?: boolean;
+  /** Set when the option is shown but cannot be used, with the plain reason. */
+  disabledReason?: string | null;
   /** `request`: run `requests` in order. `link`: open `href` in the app. */
   type: "request" | "link";
   requests: DecisionCardRequest[];
@@ -123,6 +134,60 @@ export interface DecisionCardSetup {
   fixedAt: string | null;
 }
 
+/** A task named on a card: what it holds up, or what it waits on. */
+export interface DecisionCardTaskRef {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  href: string;
+}
+
+/** Why the decision matters: what it holds up and how long it has waited. */
+export interface DecisionCardWhy {
+  /** One plain sentence, for example "It holds up GRE-12 Ship invitations." */
+  text: string;
+  holdsUp: DecisionCardTaskRef[];
+  /** When the wait began; the UI shows it as "waiting 2 days". */
+  waitingSince: string;
+}
+
+/** The facts behind the decision, so it can be made on the card. */
+export interface DecisionCardFacts {
+  /** The latest comment from the owning agent on the task, shortened. */
+  latestComment: { agent: DecisionCardAgentRef | null; excerpt: string; at: string } | null;
+  /** Open tasks this task waits on. */
+  blockerChain: DecisionCardTaskRef[];
+  links: Array<{ label: string; href: string }>;
+}
+
+/** What the owning agent recommends, from the interaction or its latest comment. */
+export interface DecisionCardRecommendation {
+  by: DecisionCardAgentRef | null;
+  text: string;
+  /** The card option it points at, when it names one. */
+  actionId: DecisionCardActionId | null;
+  source: "interaction" | "comment";
+}
+
+/** One question of a question card, with its options, so it reads on the card. */
+export interface DecisionCardQuestion {
+  prompt: string;
+  options: Array<{ id: string; label: string; description: string | null; recommended: boolean }>;
+}
+
+/**
+ * Why a stall that started on the agent side now reaches a person: the lead
+ * agent asked them, the stall outlived the threshold, or the owning agent's
+ * latest comment names them and an action.
+ */
+export interface DecisionCardEscalation {
+  reason: "lead_asked" | "stall_threshold" | "named_in_comment";
+  lead: DecisionCardAgentRef | null;
+  /** The lead agent's latest comment on the task, shortened. Null when it has said nothing. */
+  summary: string | null;
+}
+
 export interface DecisionCard {
   /**
    * `task:<issueId>` for task cards, `item:<dedupKey>` for company-level cards,
@@ -137,6 +202,14 @@ export interface DecisionCard {
   task: AttentionSubject | null;
   /** What is blocked. */
   title: string;
+  /** The decision: one sentence saying exactly what is asked of the viewer. */
+  decision: string;
+  why: DecisionCardWhy;
+  facts: DecisionCardFacts;
+  recommendation: DecisionCardRecommendation | null;
+  /** A question card's questions with their options. Empty for other kinds. */
+  questions: DecisionCardQuestion[];
+  escalation?: DecisionCardEscalation | null;
   /** The real reason or error. */
   reason: string;
   /** The agent whose work waits on the board. */
@@ -173,6 +246,17 @@ export interface DecisionsFeed {
   staleCleared: number;
   assignableAgents: DecisionCardAgentRef[];
   cards: DecisionCard[];
+  /**
+   * Agent-side stalls with no ask of a person: handed to the lead agent first
+   * and not shown as cards. Not in `count`.
+   */
+  routedToLead?: Array<{
+    taskId: string;
+    identifier: string | null;
+    title: string;
+    lead: DecisionCardAgentRef | null;
+    routedAt: string | null;
+  }>;
 }
 
 export interface DecisionsFeedCount {
