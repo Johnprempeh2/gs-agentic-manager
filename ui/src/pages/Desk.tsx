@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   buildAgentMentionHref,
   isRoutineIssueOriginKind,
   type Agent,
-  type AttentionItem,
   type Issue,
   type IssueFollowWithRollup,
   type IssueStatus,
@@ -20,11 +19,13 @@ import { myTasksListText } from "../lib/my-tasks-text";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
-import { attentionApi } from "../api/attention";
 import { authApi } from "../api/auth";
 import { accessApi } from "../api/access";
 import { canOverrideReviews } from "../components/issue-properties/ReviewOverrideActions";
 import { WaitingOutsideButton } from "../components/decisions-feed/WaitingOutsideButton";
+import { DecisionFeedCard, decisionCardTaskId } from "../components/decisions-feed/DecisionFeedCard";
+import { NeedsMeList } from "../components/NeedsMeList";
+import { decisionsCountOf, useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -35,7 +36,6 @@ import {
   MY_TASKS_OPEN_STATUSES,
   MY_TASKS_REASON_LABELS,
   askTargetAgentId,
-  decisionIssueId,
   handOffAgentChoices,
   isGoneQuiet,
   lastWorkAt,
@@ -46,7 +46,6 @@ import {
   selectHandedOffTasks,
 } from "../lib/myTasks";
 import { IssuesList, type IssuesCustomGrouping } from "../components/IssuesList";
-import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -72,8 +71,8 @@ import { useIssueFollows, useRecentlyOpenedIssues } from "../hooks/useIssueFollo
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { relativeTime } from "../lib/utils";
 
-/** Tasks behind decisions are fetched one by one; the Decisions page holds the rest. */
-const DECISION_ISSUE_FETCH_LIMIT = 50;
+/** Desk rows carry no decision rows of their own: decisions are cards. */
+const NO_DECISION_ISSUES: ReadonlyMap<string, Issue | null> = new Map();
 /** Done today and handed-off tasks are read from the most recently active. */
 const DONE_TODAY_FETCH_LIMIT = 50;
 const HANDED_OFF_FETCH_LIMIT = 200;
@@ -220,19 +219,27 @@ export function Desk() {
     refetchOnWindowFocus: true,
   });
 
-  // Same query as the sidebar Decisions badge, so the two share one cache entry.
+  // Decisions live here (Needs me): the same feed and count as the sidebar badge.
   const {
-    data: attentionFeed,
-    isLoading: attentionLoading,
-    error: attentionError,
-    refetch: refetchAttention,
-    isFetching: attentionFetching,
-  } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
-  const decisions = useMemo(() => attentionFeed?.items ?? [], [attentionFeed]);
+    data: decisionsFeed,
+    isLoading: decisionsLoading,
+    error: decisionsError,
+    refetch: refetchDecisions,
+    isFetching: decisionsFetching,
+  } = useDecisionsFeed(selectedCompanyId);
+  const { data: needsMe } = useNeedsMe(selectedCompanyId);
+  const decisionCards = useMemo(() => decisionsFeed?.cards ?? [], [decisionsFeed]);
+  const cardTaskIds = useMemo(
+    () => new Set(decisionCards.map(decisionCardTaskId).filter((id): id is string => Boolean(id))),
+    [decisionCards],
+  );
+  // The Decisions links land on #desk-needs-me: scroll there once it has rendered.
+  const deskLoaded = !isLoading && !decisionsLoading;
+  useEffect(() => {
+    if (deskLoaded && location.hash === "#desk-needs-me") {
+      document.getElementById("desk-needs-me")?.scrollIntoView({ block: "start" });
+    }
+  }, [deskLoaded, location.hash]);
 
   const { data: boardAccess } = useQuery({
     queryKey: queryKeys.access.currentBoardAccess,
@@ -252,42 +259,10 @@ export function Desk() {
     enabled: !!selectedCompanyId,
   });
 
-  // Decision tasks are usually assigned to an agent, so they are not in the list above.
-  const decisionIssueIds = useMemo(() => {
-    const assignedIds = new Set((issues ?? []).map((issue) => issue.id));
-    const ids = new Set<string>();
-    for (const item of decisions) {
-      const id = decisionIssueId(item);
-      if (id && !assignedIds.has(id)) ids.add(id);
-    }
-    return [...ids].slice(0, DECISION_ISSUE_FETCH_LIMIT);
-  }, [decisions, issues]);
-  const combineDecisionIssues = useCallback(
-    (results: UseQueryResult<Issue>[]) => {
-      const map = new Map<string, Issue | null>();
-      results.forEach((result, index) => {
-        const id = decisionIssueIds[index];
-        if (!id) return;
-        if (result.data) map.set(id, result.data);
-        else if (result.isError) map.set(id, null);
-      });
-      return map;
-    },
-    [decisionIssueIds],
-  );
-  const decisionIssues = useQueries({
-    queries: decisionIssueIds.map((id) => ({
-      queryKey: queryKeys.issues.detail(id),
-      queryFn: () => issuesApi.get(id),
-      enabled: !!selectedCompanyId && !isLoading,
-      retry: false,
-    })),
-    combine: combineDecisionIssues,
-  });
-
+  // Rows are the tasks assigned to you; what needs a decision is a card above them.
   const merged = useMemo(
-    () => mergeMyTasks({ issues: issues ?? [], decisions, decisionIssues, currentUserId }),
-    [issues, decisions, decisionIssues, currentUserId],
+    () => mergeMyTasks({ issues: issues ?? [], decisions: [], decisionIssues: NO_DECISION_ISSUES, currentUserId }),
+    [issues, currentUserId],
   );
 
   // Everything the Desk lists, pinned included; the Pinned cards reuse these rows' actions.
@@ -301,10 +276,11 @@ export function Desk() {
     }
     return byId;
   }, [merged.issues, touchedIssues, doneIssues, currentUserId]);
-  // Pinned tasks already sit at the top; they do not show twice.
+  // Pinned tasks already sit at the top, and a task with a decision card is
+  // that card: neither shows again as a row.
   const listedIssues = useMemo(
-    () => [...deskIssueById.values()].filter((issue) => !pinnedIds.has(issue.id)),
-    [deskIssueById, pinnedIds],
+    () => [...deskIssueById.values()].filter((issue) => !pinnedIds.has(issue.id) && !cardTaskIds.has(issue.id)),
+    [deskIssueById, pinnedIds, cardTaskIds],
   );
 
   // Routine chores (schedules, digests, self-checks) stay hidden unless asked for.
@@ -730,7 +706,7 @@ export function Desk() {
   if (!selectedCompanyId) {
     return <EmptyState icon={CircleDot} message="Choose an organisation to view your tasks." />;
   }
-  if (isLoading || attentionLoading) {
+  if (isLoading || decisionsLoading) {
     return <PageSkeleton variant="list" />;
   }
 
@@ -738,7 +714,10 @@ export function Desk() {
     return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
-  const nothingNeedsYou = visibleIssues.length === 0 && merged.decisionsWithoutIssue.length === 0;
+  const waits = needsMe && ((needsMe.overdueWaits?.length ?? 0) > 0 || (needsMe.expiredCards?.length ?? 0) > 0)
+    ? needsMe
+    : null;
+  const nothingNeedsYou = visibleIssues.length === 0 && decisionCards.length === 0 && !waits;
   const discussIssue = discussId ? listedIssues.find((issue) => issue.id === discussId) ?? null : null;
   const discussPanel = discussIssue ? (
     <MyTasksDiscussPanel
@@ -757,13 +736,13 @@ export function Desk() {
   const page = (
     <div className="min-w-0 flex-1 space-y-8">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
-      {attentionError && (
+      {decisionsError && (
         <ErrorState
           compact
-          error={attentionError}
-          title="Questions and approvals did not load"
-          onRetry={() => void refetchAttention()}
-          retrying={attentionFetching}
+          error={decisionsError}
+          title="Decisions did not load"
+          onRetry={() => void refetchDecisions()}
+          retrying={decisionsFetching}
         />
       )}
 
@@ -821,8 +800,17 @@ export function Desk() {
         </DeskSection>
       ) : null}
 
-      <DeskSection id="desk-needs-me" title="Needs me">
-        {nothingNeedsYou && !attentionError ? (
+      <DeskSection
+        id="desk-needs-me"
+        title="Needs me"
+        count={needsMe ? decisionsCountOf(needsMe) : decisionsFeed?.count}
+        trailing={
+          <Link to="/decisions/focus" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+            Focus and history
+          </Link>
+        }
+      >
+        {nothingNeedsYou && !decisionsError ? (
           <EmptyState
             icon={CheckCircle2}
             message="Nothing needs you right now."
@@ -832,6 +820,22 @@ export function Desk() {
           />
         ) : (
           <>
+            {waits ? <NeedsMeList needsMe={waits} includeAssigned={false} /> : null}
+            {/* Everything that needs a decision, most urgent first (the feed's order). */}
+            {decisionCards.length > 0 ? (
+              <div className="space-y-4" data-desk-decisions>
+                {decisionCards.map((card) => (
+                  <DecisionFeedCard
+                    key={card.id}
+                    card={card}
+                    companyId={selectedCompanyId}
+                    assignableAgents={decisionsFeed?.assignableAgents ?? []}
+                    agentMap={agentById}
+                    currentUserId={currentUserId}
+                  />
+                ))}
+              </div>
+            ) : null}
             {liveIssues.length > 0 && (
               <IssuesList
                 issues={liveIssues}
@@ -852,9 +856,6 @@ export function Desk() {
                 onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
               />
             )}
-            {merged.decisionsWithoutIssue.length > 0 && (
-              <DecisionsWithoutIssue items={merged.decisionsWithoutIssue} />
-            )}
             {quietIssues.length > 0 && <DeskGoneQuiet issues={quietIssues} />}
           </>
         )}
@@ -873,29 +874,6 @@ export function Desk() {
       {page}
       {discussPanel}
     </div>
-  );
-}
-
-function DecisionsWithoutIssue({ items }: { items: AttentionItem[] }) {
-  return (
-    <section aria-label="Decisions not tied to a task">
-      <IssueGroupHeader
-        label="Decisions not tied to a task"
-        trailing={
-          <Link to="/decisions" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
-            Open decisions
-          </Link>
-        }
-      />
-      {items.map((item) => (
-        <EntityRow
-          key={item.id}
-          to="/decisions"
-          title={item.subject.title ?? item.subject.identifier ?? item.whyNow}
-          trailing={<span className="max-w-64 truncate text-xs text-muted-foreground">{item.whyNow}</span>}
-        />
-      ))}
-    </section>
   );
 }
 
@@ -929,10 +907,32 @@ function DeskGoneQuiet({ issues }: { issues: Issue[] }) {
   );
 }
 
-function DeskSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+function DeskSection({
+  id,
+  title,
+  count,
+  trailing,
+  children,
+}: {
+  id: string;
+  title: string;
+  count?: number;
+  trailing?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section aria-labelledby={id} className="space-y-3" data-desk-section={id}>
-      <h2 id={id} className="text-base font-semibold">{title}</h2>
+    <section aria-labelledby={id} className="scroll-mt-4 space-y-3" data-desk-section={id}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id={id} className="text-base font-semibold">
+          {title}
+          {count ? (
+            <span className="ml-2 text-sm font-semibold tabular-nums text-muted-foreground" data-desk-section-count>
+              {count}
+            </span>
+          ) : null}
+        </h2>
+        {trailing}
+      </div>
       {children}
     </section>
   );

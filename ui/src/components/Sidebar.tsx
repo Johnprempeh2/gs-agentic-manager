@@ -88,7 +88,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
+import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
@@ -358,10 +358,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showIntelligence = experimentalSettings?.enableIntelligence === true;
-  // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
+  // The one Decisions count (GRE-263): the Desk and Decisions badges show the same number.
   const attentionCount = useDecisionsCount(selectedCompanyId);
-  // Tasks assigned to the user count on the Desk, not Decisions (GRE-586).
-  const myTasksCount = useMyTasksCount(selectedCompanyId);
   // GRE-1633: Status Cards ignores the stored switch, but a client plan can still turn it off.
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // GRE-1622: Cases ignores the stored switch, but a client plan can still turn it off.
@@ -389,9 +387,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     // Decisions (attention home, PAP-13481) graduated out of Experimental (GRE-66): always shown.
     // The executive's one page: everything waiting on you, grouped by what to do.
     needed: link("/needed", "Needed from you", HandHelping),
-    decisions: link("/decisions", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions" }),
+    // Decisions live in the Desk's "Needs me" section: one list, one count.
+    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions" }),
     // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.
-    "my-tasks": link("/desk", "Desk", UserCheck, { badge: myTasksCount, badgeLabel: "open" }),
+    "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions" }),
     inbox: link("/inbox", "Inbox", Inbox, {
       badge: inboxBadge.inbox,
       badgeLabel: "unread",

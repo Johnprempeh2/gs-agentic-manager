@@ -44,9 +44,3 @@ export function useDecisionsCount(companyId: string | null | undefined): number 
   const { data } = useNeedsMe(companyId);
   return data ? decisionsCountOf(data) : 0;
 }
-
-/** Open tasks assigned to the user that are not already a decision (GRE-586). */
-export function useMyTasksCount(companyId: string | null | undefined): number {
-  const { data } = useNeedsMe(companyId);
-  return data?.assignedTaskCount ?? 0;
-}

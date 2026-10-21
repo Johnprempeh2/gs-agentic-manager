@@ -94,7 +94,7 @@ describe("MobileBottomNav", () => {
     const decisionsLink = [...container.querySelectorAll("a")].find(
       (anchor) => anchor.textContent?.includes("Decisions"),
     );
-    expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
+    expect(decisionsLink?.getAttribute("href")).toBe("/desk#desk-needs-me");
     expect(decisionsLink?.textContent).toContain("2");
     expect(decisionsLink?.textContent).not.toContain("3");
     expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");

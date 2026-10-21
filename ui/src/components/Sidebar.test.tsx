@@ -496,13 +496,13 @@ describe("Sidebar", () => {
     });
   });
 
-  it("counts assigned tasks on the Desk, not on Decisions (GRE-586)", async () => {
+  it("shows one count on Desk and Decisions, the decisions count, not assigned tasks", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     mockDecisionsFeedApi.needsMe.mockResolvedValue({
       companyId: "company-1",
       generatedAt: "2026-10-04T00:00:00.000Z",
-      count: 2,
-      decisionCount: 0,
+      count: 3,
+      decisionCount: 1,
       assignedTaskCount: 2,
       decisions: [],
       assignedTasks: [],
@@ -512,8 +512,8 @@ describe("Sidebar", () => {
 
     const link = (href: string) =>
       [...container.querySelectorAll("nav a")].find((anchor) => anchor.getAttribute("href") === href);
-    expect(link("/desk")?.textContent?.trim()).toBe("Desk2");
-    expect(link("/decisions")?.textContent?.trim()).toBe("Decisions");
+    expect(link("/desk")?.textContent?.trim()).toBe("Desk1");
+    expect(link("/desk#desk-needs-me")?.textContent?.trim()).toBe("Decisions1");
 
     flushSync(() => {
       root.unmount();
@@ -537,7 +537,7 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
     const root = await renderSidebar();
 
-    const decisionsLink = container.querySelector('a[href="/decisions"]');
+    const decisionsLink = container.querySelector('a[href="/desk#desk-needs-me"]');
     expect(decisionsLink?.textContent?.trim()).toBe("Decisions");
     expect(sectionLabels("Today")).toContain("Decisions");
     expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");

@@ -64,7 +64,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       // acts from; Agents stays one tap away in the sidebar drawer.
       {
         type: "link",
-        to: "/decisions",
+        to: "/desk#desk-needs-me",
         label: "Decisions",
         icon: ListChecks,
         badge: attentionCount,
