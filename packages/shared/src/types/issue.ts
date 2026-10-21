@@ -897,6 +897,8 @@ export interface Issue {
   looksFinishedAt?: Date | null;
   /** Why the check thinks the task is finished, one sentence each. */
   looksFinishedReasons?: string[] | null;
+  /** Set when the project lead marks this task as one that drives the project. */
+  keyTaskAt?: Date | null;
   /**
    * Deadline "YYYY-MM-DD" of a plan action (GRE-1188). Only tasks under a
    * plan objective carry one; the board lists the overdue ones.

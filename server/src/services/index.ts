@@ -55,6 +55,7 @@ export {
   returnDueTabledIssues,
 } from "./issue-tabling.js";
 export { looksFinishedService, LOOKS_FINISHED_SWEEP_INTERVAL_MS } from "./looks-finished.js";
+export { projectTreeService } from "./project-tree.js";
 export { issueApprovalService } from "./issue-approvals.js";
 export { issueReferenceService } from "./issue-references.js";
 export { issueRecoveryActionService } from "./issue-recovery-actions.js";

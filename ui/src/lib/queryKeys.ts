@@ -847,6 +847,8 @@ export const queryKeys = {
   issueFollows: (companyId: string) => ["issue-follows", companyId] as const,
   /** Tree view: a task and its whole subtree. */
   issueTree: (issueKey: string) => ["issue-tree", issueKey] as const,
+  /** Project tree: key tasks, their open work and the unsorted work. */
+  projectTree: (projectId: string, finished: boolean) => ["project-tree", projectId, finished] as const,
   recentIssues: (companyId: string) => ["recent-issues", companyId] as const,
   inboxDismissals: (companyId: string) =>
     ["inbox-dismissals", companyId] as const,

@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { issueRelations, issues } from "@greatstone/db";
+import { issueRelations, issues, projects } from "@greatstone/db";
 import type {
   IssuePriority,
   IssueStatus,
@@ -18,7 +18,8 @@ export const ISSUE_TREE_MAX_DEPTH = 12;
 
 const TERMINAL = new Set(["done", "cancelled"]);
 
-const nodeColumns = {
+/** The columns a tree node is built from. */
+export const treeNodeColumns = {
   id: issues.id,
   companyId: issues.companyId,
   projectId: issues.projectId,
@@ -31,16 +32,130 @@ const nodeColumns = {
   assigneeUserId: issues.assigneeUserId,
   executionRunId: issues.executionRunId,
   unblockDescriptor: issues.unblockDescriptor,
+  keyTaskAt: issues.keyTaskAt,
   updatedAt: issues.updatedAt,
 };
 
-function rowsOf(result: unknown): Record<string, unknown>[] {
+export type TreeRow = Pick<typeof issues.$inferSelect, keyof typeof treeNodeColumns>;
+
+export function rowsOf(result: unknown): Record<string, unknown>[] {
   return Array.isArray(result) ? (result as Record<string, unknown>[]) : [];
 }
 
-export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NODES, maxDepth: ISSUE_TREE_MAX_DEPTH }) {
-  const issuesSvc = issueService(db);
+/**
+ * Tree nodes for tasks already chosen and read-checked: sub-task counts,
+ * blockers (an outside one named only while open and readable), and what a
+ * blocked task needs. Shared by the task tree and the project tree.
+ */
+export async function buildTreeNodes(
+  db: Db,
+  companyId: string,
+  kept: TreeRow[],
+  options: {
+    depthOf: (row: TreeRow) => number;
+    parentIdOf: (row: TreeRow) => string | null;
+    canRead?: CanReadIssue;
+  },
+): Promise<{ nodes: IssueTreeNode[]; externalBlockers: IssueTreeExternalBlocker[] }> {
+  const { canRead } = options;
+  const keptIds = new Set(kept.map((row) => row.id));
+  const ids = [...keptIds];
+  if (ids.length === 0) return { nodes: [], externalBlockers: [] };
 
+  const [childCounts, relations, attention] = await Promise.all([
+    db
+      .select({
+        parentId: issues.parentId,
+        total: sql<number>`count(*) FILTER (WHERE ${issues.status} <> 'cancelled')::int`,
+        done: sql<number>`count(*) FILTER (WHERE ${issues.status} = 'done')::int`,
+      })
+      .from(issues)
+      .where(and(eq(issues.companyId, companyId), inArray(issues.parentId, ids), isNull(issues.hiddenAt)))
+      .groupBy(issues.parentId),
+    db
+      .select({
+        blockedId: issueRelations.relatedIssueId,
+        blocker: {
+          id: issues.id,
+          companyId: issues.companyId,
+          projectId: issues.projectId,
+          parentId: issues.parentId,
+          identifier: issues.identifier,
+          title: issues.title,
+          status: issues.status,
+          assigneeAgentId: issues.assigneeAgentId,
+          assigneeUserId: issues.assigneeUserId,
+          hiddenAt: issues.hiddenAt,
+        },
+      })
+      .from(issueRelations)
+      .innerJoin(issues, eq(issueRelations.issueId, issues.id))
+      .where(
+        and(
+          eq(issueRelations.companyId, companyId),
+          eq(issueRelations.type, "blocks"),
+          inArray(issueRelations.relatedIssueId, ids),
+          eq(issues.companyId, companyId),
+        ),
+      ),
+    issueService(db).listBlockerAttention(
+      companyId,
+      kept.filter((row) => row.status === "blocked"),
+    ),
+  ]);
+
+  const counts = new Map(childCounts.map((row) => [row.parentId!, row]));
+  const blockedBy = new Map<string, string[]>();
+  const external = new Map<string, IssueTreeExternalBlocker>();
+  for (const { blockedId, blocker } of relations) {
+    if (blocker.hiddenAt) continue;
+    if (!keptIds.has(blocker.id)) {
+      // A blocker outside the tree is named only while it is open and the
+      // viewer may read it.
+      if (TERMINAL.has(blocker.status)) continue;
+      if (canRead && !(await canRead(blocker))) continue;
+      external.set(blocker.id, {
+        id: blocker.id,
+        identifier: blocker.identifier,
+        title: blocker.title,
+        status: blocker.status as IssueStatus,
+        assigneeAgentId: blocker.assigneeAgentId,
+        assigneeUserId: blocker.assigneeUserId,
+      });
+    }
+    const list = blockedBy.get(blockedId) ?? [];
+    list.push(blocker.id);
+    blockedBy.set(blockedId, list);
+  }
+
+  const nodes: IssueTreeNode[] = kept.map((row) => {
+    const terminalBlockerId = attention.get(row.id)?.terminalBlockerIssueId ?? null;
+    return {
+      id: row.id,
+      identifier: row.identifier,
+      title: row.title,
+      status: row.status as IssueStatus,
+      priority: row.priority as IssuePriority,
+      assigneeAgentId: row.assigneeAgentId,
+      assigneeUserId: row.assigneeUserId,
+      parentId: options.parentIdOf(row),
+      depth: options.depthOf(row),
+      blockedByIds: (blockedBy.get(row.id) ?? []).sort(),
+      childCount: counts.get(row.id)?.total ?? 0,
+      doneChildCount: counts.get(row.id)?.done ?? 0,
+      terminalBlockerId:
+        terminalBlockerId && (keptIds.has(terminalBlockerId) || external.has(terminalBlockerId))
+          ? terminalBlockerId
+          : null,
+      unblockAction: row.status === "blocked" ? row.unblockDescriptor?.action?.trim() || null : null,
+      isKeyTask: row.keyTaskAt != null,
+      updatedAt: row.updatedAt,
+    };
+  });
+  return { nodes, externalBlockers: [...external.values()] };
+}
+
+export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NODES, maxDepth: ISSUE_TREE_MAX_DEPTH }) {
   /** The root and everything under it, breadth first, cut at the limits. */
   async function subtreeIds(companyId: string, rootId: string) {
     const result = await db.execute(sql`
@@ -72,7 +187,7 @@ export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NOD
       if (idRows.length === 0) return null;
       const depthById = new Map(idRows.map((row) => [row.id, row.depth]));
       const loaded = await db
-        .select(nodeColumns)
+        .select(treeNodeColumns)
         .from(issues)
         .where(and(eq(issues.companyId, companyId), inArray(issues.id, [...depthById.keys()])));
       const byId = new Map(loaded.map((row) => [row.id, row]));
@@ -90,104 +205,30 @@ export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NOD
         keptIds.add(row.id);
       });
       if (!keptIds.has(rootId)) return null;
-      const ids = [...keptIds];
 
-      const [childCounts, relations, attention] = await Promise.all([
-        db
-          .select({
-            parentId: issues.parentId,
-            total: sql<number>`count(*) FILTER (WHERE ${issues.status} <> 'cancelled')::int`,
-            done: sql<number>`count(*) FILTER (WHERE ${issues.status} = 'done')::int`,
-          })
-          .from(issues)
-          .where(and(eq(issues.companyId, companyId), inArray(issues.parentId, ids), isNull(issues.hiddenAt)))
-          .groupBy(issues.parentId),
-        db
-          .select({
-            blockedId: issueRelations.relatedIssueId,
-            blocker: {
-              id: issues.id,
-              companyId: issues.companyId,
-              projectId: issues.projectId,
-              parentId: issues.parentId,
-              identifier: issues.identifier,
-              title: issues.title,
-              status: issues.status,
-              assigneeAgentId: issues.assigneeAgentId,
-              assigneeUserId: issues.assigneeUserId,
-              hiddenAt: issues.hiddenAt,
-            },
-          })
-          .from(issueRelations)
-          .innerJoin(issues, eq(issueRelations.issueId, issues.id))
-          .where(
-            and(
-              eq(issueRelations.companyId, companyId),
-              eq(issueRelations.type, "blocks"),
-              inArray(issueRelations.relatedIssueId, ids),
-              eq(issues.companyId, companyId),
-            ),
-          ),
-        issuesSvc.listBlockerAttention(
-          companyId,
-          kept.filter((row) => row.status === "blocked"),
-        ),
+      const root = byId.get(rootId)!;
+      const [{ nodes, externalBlockers }, project] = await Promise.all([
+        buildTreeNodes(db, companyId, kept, {
+          depthOf: (row) => depthById.get(row.id) ?? 0,
+          parentIdOf: (row) => (row.id === rootId ? null : row.parentId),
+          canRead,
+        }),
+        root.projectId
+          ? db
+              .select({ id: projects.id, name: projects.name })
+              .from(projects)
+              .where(and(eq(projects.companyId, companyId), eq(projects.id, root.projectId)))
+              .then((rows) => rows[0] ?? null)
+          : null,
       ]);
-
-      const counts = new Map(childCounts.map((row) => [row.parentId!, row]));
-      const blockedBy = new Map<string, string[]>();
-      const external = new Map<string, IssueTreeExternalBlocker>();
-      for (const { blockedId, blocker } of relations) {
-        if (blocker.hiddenAt) continue;
-        if (!keptIds.has(blocker.id)) {
-          // A blocker outside the tree is named only while it is open and the
-          // viewer may read it.
-          if (TERMINAL.has(blocker.status)) continue;
-          if (canRead && !(await canRead(blocker))) continue;
-          external.set(blocker.id, {
-            id: blocker.id,
-            identifier: blocker.identifier,
-            title: blocker.title,
-            status: blocker.status as IssueStatus,
-            assigneeAgentId: blocker.assigneeAgentId,
-            assigneeUserId: blocker.assigneeUserId,
-          });
-        }
-        const list = blockedBy.get(blockedId) ?? [];
-        list.push(blocker.id);
-        blockedBy.set(blockedId, list);
-      }
-
-      const nodes: IssueTreeNode[] = kept.map((row) => {
-        const terminalBlockerId = attention.get(row.id)?.terminalBlockerIssueId ?? null;
-        return {
-          id: row.id,
-          identifier: row.identifier,
-          title: row.title,
-          status: row.status as IssueStatus,
-          priority: row.priority as IssuePriority,
-          assigneeAgentId: row.assigneeAgentId,
-          assigneeUserId: row.assigneeUserId,
-          parentId: row.id === rootId ? null : row.parentId,
-          depth: depthById.get(row.id) ?? 0,
-          blockedByIds: (blockedBy.get(row.id) ?? []).sort(),
-          childCount: counts.get(row.id)?.total ?? 0,
-          doneChildCount: counts.get(row.id)?.done ?? 0,
-          terminalBlockerId:
-            terminalBlockerId && (keptIds.has(terminalBlockerId) || external.has(terminalBlockerId))
-              ? terminalBlockerId
-              : null,
-          unblockAction: row.status === "blocked" ? row.unblockDescriptor?.action?.trim() || null : null,
-          updatedAt: row.updatedAt,
-        };
-      });
 
       return {
         rootId,
         nodes,
-        externalBlockers: [...external.values()],
+        externalBlockers,
         truncated: cut,
         limits: { ...limits },
+        project,
       };
     },
   };

@@ -1,9 +1,12 @@
+import type { ReactNode } from "react";
+import type { IssueTreeNode } from "@greatstone/shared";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Link } from "@/lib/router";
 import { StatusIcon } from "@/components/StatusIcon";
 import type { BlockedTrace, VisibleItem, VisibleTaskItem } from "@/lib/task-tree";
 import { cn } from "@/lib/utils";
 import { ProgressRing } from "./ProgressRing";
+import { KeyTaskMark } from "./TaskTreeCard";
 import { TaskTreeOwner, type TaskTreePeople } from "./TaskTreeOwner";
 
 export interface TaskTreeOutlineProps {
@@ -16,6 +19,8 @@ export interface TaskTreeOutlineProps {
   onShowFinished: () => void;
   /** Row to bring into view and highlight. */
   highlightId?: string | null;
+  /** A control at the end of a row. */
+  actionFor?: (node: IssueTreeNode) => ReactNode;
   className?: string;
 }
 
@@ -32,6 +37,7 @@ export function TaskTreeOutline({
   onToggleCollapsed,
   onShowFinished,
   highlightId,
+  actionFor,
   className,
 }: TaskTreeOutlineProps) {
   const row = (item: VisibleItem, depth: number) => {
@@ -94,6 +100,7 @@ export function TaskTreeOutline({
             <span className={cn("line-clamp-2 text-foreground", depth === 0 ? "font-semibold" : "font-medium")}>{node.title}</span>
             <span className="mt-0.5 flex min-w-0 items-center gap-2">
               {node.identifier ? <span className="font-mono text-xs text-muted-foreground">{node.identifier}</span> : null}
+              {node.isKeyTask ? <KeyTaskMark /> : null}
               <TaskTreeOwner people={people} owner={node} className="min-w-0" />
             </span>
             {isRootBlocker || waitingOn ? (
@@ -102,6 +109,7 @@ export function TaskTreeOutline({
               </span>
             ) : null}
           </Link>
+          {actionFor?.(node)}
           {node.childCount > 0 ? <ProgressRing done={node.doneChildCount} total={node.childCount} /> : null}
         </div>
         {item.children.length > 0 ? (

@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, KeyRound } from "lucide-react";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { StatusIcon } from "@/components/StatusIcon";
 import { issueStatusAccent, issueStatusAccentDefault } from "@/lib/status-colors";
@@ -25,7 +26,26 @@ export interface TaskTreeCardProps {
   descendants?: number;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  /** A control in the card's footer, such as the project tree's Tidy button. */
+  action?: ReactNode;
   className?: string;
+}
+
+/** Marks a task that drives its project. */
+export function KeyTaskMark({ className }: { className?: string }) {
+  return (
+    <span
+      data-key-task=""
+      title="Key task: drives the project"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 text-xs font-medium text-foreground",
+        className,
+      )}
+    >
+      <KeyRound className="size-3 text-primary" aria-hidden="true" />
+      Key
+    </span>
+  );
 }
 
 /**
@@ -43,6 +63,7 @@ export function TaskTreeCard({
   descendants = 0,
   collapsed = false,
   onToggleCollapsed,
+  action,
   className,
 }: TaskTreeCardProps) {
   const showPriority = SHOW_TASK_PRIORITY_UI && node.priority !== "medium";
@@ -72,6 +93,7 @@ export function TaskTreeCard({
           {node.identifier ? (
             <span className="truncate font-mono text-xs text-muted-foreground">{node.identifier}</span>
           ) : null}
+          {node.isKeyTask ? <KeyTaskMark /> : null}
           {showPriority ? <PriorityIcon priority={node.priority} /> : null}
           {node.childCount > 0 ? (
             <ProgressRing done={node.doneChildCount} total={node.childCount} className="ml-auto" />
@@ -91,6 +113,7 @@ export function TaskTreeCard({
               Waiting on {waitingOn}
             </span>
           ) : null}
+          {action}
         </div>
       </div>
       {descendants > 0 && onToggleCollapsed ? (
