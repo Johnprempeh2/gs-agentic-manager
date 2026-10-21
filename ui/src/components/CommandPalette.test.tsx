@@ -33,6 +33,7 @@ const sidebarState = vi.hoisted(() => ({
 
 const mockIssuesApi = vi.hoisted(() => ({
   list: vi.fn(),
+  listRecentlyOpened: vi.fn(),
   listLabels: vi.fn(),
   update: vi.fn(),
   create: vi.fn(),
@@ -239,6 +240,8 @@ describe("CommandPalette", () => {
     locationState.location.search = "";
     locationState.location.hash = "";
     mockIssuesApi.list.mockResolvedValue([]);
+    mockIssuesApi.listRecentlyOpened.mockReset();
+    mockIssuesApi.listRecentlyOpened.mockResolvedValue([]);
     mockIssuesApi.listLabels.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);
     mockProjectsApi.list.mockResolvedValue([]);
@@ -576,6 +579,56 @@ describe("CommandPalette", () => {
     await waitForAssertion(() => {
       expect(mockIssuesApi.update).toHaveBeenCalledWith("issue-1", { assigneeAgentId: "agent-1", assigneeUserId: null });
     });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("puts recently opened tasks first, and narrows them as you type", async () => {
+    const summary = (id: string, identifier: string, title: string) => ({
+      issueId: id,
+      viewedAt: new Date(),
+      issue: { id, identifier, title, status: "in_progress", priority: "medium", originKind: "manual", updatedAt: new Date() },
+    });
+    mockIssuesApi.listRecentlyOpened.mockResolvedValue([
+      summary("i-1", "GRE-1681", "Indago portal"),
+      summary("i-2", "GRE-1700", "Board pack"),
+    ]);
+    const { root } = renderWithQueryClient(<CommandPalette />, container);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+    // Query results land on a timer, so let a few macrotasks run.
+    for (let index = 0; index < 5; index += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    expect(mockIssuesApi.listRecentlyOpened).toHaveBeenCalledWith("company-1");
+    expect(container.querySelectorAll('[data-testid="command-recent-task"]')).toHaveLength(2);
+    expect(mockIssuesApi.listRecentlyOpened).toHaveBeenCalledWith("company-1");
+    // Recent leads: nothing else is rendered before it.
+    const firstButton = container.querySelector("button[data-testid]");
+    expect(firstButton?.getAttribute("data-testid")).toBe("command-recent-task");
+
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Command search"]')!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "indago");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitForAssertion(() => {
+      const recents = container.querySelectorAll('[data-testid="command-recent-task"]');
+      expect(recents).toHaveLength(1);
+      expect(recents[0]?.textContent).toContain("Indago portal");
+    });
+    act(() => {
+      container.querySelector('[data-testid="command-recent-task"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigateState.navigate).toHaveBeenCalledWith("/issues/GRE-1681");
     act(() => {
       root.unmount();
     });

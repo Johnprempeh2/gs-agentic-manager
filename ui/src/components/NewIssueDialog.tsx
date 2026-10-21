@@ -30,7 +30,6 @@ import { useProjectOrder } from "../hooks/useProjectOrder";
 import { quickCreateProjectLabel, useQuickCreateProject } from "../hooks/useQuickCreateProject";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
-import { recordRecentTask } from "../lib/recent-tasks";
 import { buildExecutionPolicy } from "../lib/issue-execution-policy";
 import { isIssueWorkMode, nextWorkMode, workModeMetaFor, workModeMetaList } from "../lib/work-mode-meta";
 import { useToastActions } from "../context/ToastContext";
@@ -698,7 +697,11 @@ export function NewIssueDialog() {
       return { issue, companyId, failures };
     },
     onSuccess: ({ issue, companyId, failures }) => {
-      recordRecentTask(issue, currentUserId);
+      // A task you just made counts as opened, so it is in Recent.
+      void Promise.resolve()
+        .then(() => issuesApi.recordOpened(issue.id))
+        .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.recentIssues(companyId) }))
+        .catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listMineByMe(companyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listTouchedByMe(companyId) });
@@ -2291,7 +2294,7 @@ export function NewIssueDialog() {
             </PopoverContent>
           </Popover>
 
-          {/* Priority chip — PAP-411: hidden behind SHOW_TASK_PRIORITY_UI. */}
+          {/* Priority chip (PAP-411 flag, on again for the Desk). */}
           {SHOW_TASK_PRIORITY_UI && (
           <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
             <PopoverTrigger asChild>
@@ -2316,7 +2319,10 @@ export function NewIssueDialog() {
             <PopoverContent className="w-64 p-1" align="start">
               {priorities.map((p) => (
                 <button
+                  type="button"
                   key={p.value}
+                  data-testid={`new-issue-priority-${p.value}`}
+                  aria-pressed={p.value === priority}
                   className={cn(
                     "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
                     p.value === priority && "bg-accent"

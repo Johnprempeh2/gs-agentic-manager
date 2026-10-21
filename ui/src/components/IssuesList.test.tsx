@@ -484,7 +484,8 @@ describe("IssuesList", () => {
       expect(row?.getAttribute("data-show-identifier")).toBe("true");
       expect(row?.getAttribute("data-trailing-meta")).toMatch(/\S/);
       expect(row?.getAttribute("data-trailing-meta")).not.toContain("Updated");
-      expect(row?.getAttribute("data-has-desktop-trailing")).toBe("false");
+      // No trailing columns; the desktop slot now carries only the follow star.
+      expect(row?.getAttribute("data-has-desktop-trailing")).toBe("true");
       expect(row?.querySelector('[data-slot="task-row-disclosure-spacer"]')).not.toBeNull();
     });
 
@@ -1038,7 +1039,7 @@ describe("IssuesList", () => {
     });
   });
 
-  it("hides the Priority option from the Sort and Group menus while priority UI is off (PAP-411)", async () => {
+  it("offers Priority in the Sort and Group menus now priority UI is on (PAP-411 flag)", async () => {
     const { root } = renderWithQueryClient(
       <IssuesList
         issues={[createIssue({ id: "issue-1", identifier: "PAP-1", title: "Task one" })]}
@@ -1064,9 +1065,9 @@ describe("IssuesList", () => {
     });
     await waitForAssertion(() => {
       const labels = Array.from(document.body.querySelectorAll("button")).map((b) => b.textContent ?? "");
-      // Status sort option renders, but the Priority option is gated off (PAP-411).
+      // Status and Priority sort options both render (PAP-411 flag on).
       expect(labels.some((text) => text.includes("Status"))).toBe(true);
-      expect(labels.some((text) => text.includes("Priority"))).toBe(false);
+      expect(labels.some((text) => text.includes("Priority"))).toBe(true);
     });
 
     const groupButton = Array.from(container.querySelectorAll("button")).find(
@@ -1079,7 +1080,7 @@ describe("IssuesList", () => {
     await waitForAssertion(() => {
       const labels = Array.from(document.body.querySelectorAll("button")).map((b) => b.textContent ?? "");
       expect(labels.some((text) => text.includes("Status"))).toBe(true);
-      expect(labels.some((text) => text.includes("Priority"))).toBe(false);
+      expect(labels.some((text) => text.includes("Priority"))).toBe(true);
     });
 
     act(() => {

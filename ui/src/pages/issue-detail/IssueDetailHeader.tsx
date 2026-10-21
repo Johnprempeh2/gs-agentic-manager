@@ -35,6 +35,7 @@ import { SidePanelToggleButton } from "../../components/side-panel";
 import { TaskTreeControlMenuItems } from "../../components/TaskTreeControls";
 import type { MentionOption } from "../../components/MarkdownEditor";
 import { PriorityIcon } from "../../components/PriorityIcon";
+import { FollowTaskToggle } from "../../components/FollowTask";
 import { SHOW_TASK_PRIORITY_UI } from "../../lib/ui-flags";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -220,13 +221,16 @@ export function IssueDetailHeader({
           </span>
         ) : null}
         {!streamlinedTaskDetailEnabled ? issueStatusControl : null}
-        {/* PAP-411: priority UI hidden behind SHOW_TASK_PRIORITY_UI. */}
+        {/* PAP-411 flag: priority is on screen again, named so it reads at a glance. */}
         {SHOW_TASK_PRIORITY_UI && (
           <PriorityIcon
             priority={issue.priority}
+            showLabel
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
         )}
+        {/* Desk: follow this task and everything under it. */}
+        <FollowTaskToggle issue={issue} />
         {!streamlinedTaskDetailEnabled ? (
           <span className="shrink-0 font-mono text-sm text-muted-foreground">
             {issue.identifier ?? issue.id.slice(0, 8)}

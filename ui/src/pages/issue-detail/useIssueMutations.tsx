@@ -22,7 +22,6 @@ import {
   applyOptimisticIssueFieldUpdate,
   applyOptimisticIssueFieldUpdateToCollection,
 } from "../../lib/optimistic-issue-comments";
-import { recordRecentTask } from "../../lib/recent-tasks";
 import type { IssueChatComposerHandle } from "../../components/IssueChatThread";
 import { IssuesList } from "../../components/IssuesList";
 import { waitForStoppedRuns } from "../../lib/wait-for-stopped-runs";
@@ -54,7 +53,6 @@ export type UseIssueMutationsInput = {
   commentComposerRef: RefObject<IssueChatComposerHandle | null>;
   selectedCompanyId: string | null;
   pushToast: (input: ToastInput) => string | null;
-  sessionResolved: boolean;
   currentUserId: string | null;
   runStateIssueId: string | undefined;
   setTreeControlWakeWarning: Dispatch<SetStateAction<string | null>>;
@@ -81,7 +79,6 @@ export function useIssueMutations({
   commentComposerRef,
   selectedCompanyId,
   pushToast,
-  sessionResolved,
   currentUserId,
   runStateIssueId,
   setTreeControlWakeWarning,
@@ -395,9 +392,6 @@ export function useIssueMutations({
       mergeIssueResponseIntoCaches(issueRefs, nextIssue);
       const openChildrenNotice = openChildrenWarning(openChildren);
       if (openChildrenNotice) pushToast({ ...openChildrenNotice, tone: "warn" });
-      if (sessionResolved) {
-        recordRecentTask(nextIssue, currentUserId);
-      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.issues.activity(issueId!),
       });

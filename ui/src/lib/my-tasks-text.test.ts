@@ -11,7 +11,7 @@ describe("myTasksListText", () => {
     const text = myTasksListText(tasks, (task) => task.group, (href) => `https://app${href}`, new Date(2026, 9, 16));
     expect(text).toBe(
       [
-        "My tasks, 16 Oct",
+        "Your desk, 16 Oct",
         "3 tasks: 2 need you, 1 waiting on an agent.",
         "",
         "Needs you",

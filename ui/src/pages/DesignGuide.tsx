@@ -219,6 +219,7 @@ import {
   warnTeam,
 } from "@/pages/TeamCatalog.fixtures";
 import type { IssueWorkProduct } from "@greatstone/shared";
+import { FollowRollupSummary, FollowTaskButton } from "@/components/FollowTask";
 
 /* ------------------------------------------------------------------ */
 /*  Sample data for the Issue Output surface showcase                  */
@@ -580,6 +581,7 @@ export function DesignGuide() {
                 "InlineBanner", "BuiltInAgentGate", "BuiltInLifecycleChip", "CollectionToolbar",
                 "IssueRow", "ContextualSidebarFrame", "BrandMark", "BrandLockup", "BrandLoading",
                 "BrandTideHero", "DashboardHero", "SidebarBrandSignature",
+                "FollowTaskButton", "FollowRollupSummary", "SidebarFollowing",
               ].map((name) => (
                 <Badge key={name} variant="ghost" className="font-mono text-(length:--text-nano)">
                   {name}
@@ -1730,6 +1732,13 @@ export function DesignGuide() {
       </Section>
 
       {/* ============================================================ */}
+      {/*  FOLLOWING A TASK (Desk)                                      */}
+      {/* ============================================================ */}
+      <Section title="Following a task">
+        <FollowTaskShowcase />
+      </Section>
+
+      {/* ============================================================ */}
       {/*  PROGRESS BARS                                                */}
       {/* ============================================================ */}
       <Section title="Progress Bars (Budget)">
@@ -2643,6 +2652,55 @@ export function DesignGuide() {
           pending-approval / paused / ready states of a feature that depends on a built-in agent.
         </p>
       </Section>
+    </div>
+  );
+}
+
+/** Follow star and subtree progress, as used on the task page, task rows, the Desk and the sidebar. */
+function FollowTaskShowcase() {
+  const [following, setFollowing] = useState(false);
+  const counts = { total: 12, done: 8, inProgress: 2, waitingOnYou: 1, blocked: 1 };
+  return (
+    <div className="space-y-6">
+      <SubSection title="Follow button (task page)">
+        <div className="flex flex-wrap items-center gap-3">
+          <FollowTaskButton taskName="GRE-1681" following={following} onToggle={setFollowing} />
+          <FollowTaskButton taskName="GRE-1681" following onToggle={() => {}} />
+          <FollowTaskButton taskName="GRE-1681" following={false} pending onToggle={() => {}} />
+        </div>
+      </SubSection>
+      <SubSection title="Follow star (task rows: shows on hover or focus until followed)">
+        <div className="group flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-accent/50">
+          <span className="flex-1 text-sm">Indago portal</span>
+          <FollowTaskButton variant="icon" taskName="GRE-1681" following={following} onToggle={setFollowing} />
+          <FollowTaskButton variant="icon" taskName="GRE-1700" following onToggle={() => {}} />
+        </div>
+      </SubSection>
+      <SubSection title="Progress (Desk; the sidebar shows done/total)">
+        <div className="max-w-xl rounded-lg border border-border p-3">
+          <FollowRollupSummary
+            counts={counts}
+            latestUpdates={[
+              {
+                kind: "comment",
+                issueId: "c1",
+                issueIdentifier: "GRE-1690",
+                issueTitle: "DNS",
+                summary: "DNS is still pending at the registrar",
+                at: new Date(Date.now() - 20 * 60 * 1000),
+              },
+              {
+                kind: "status",
+                issueId: "c2",
+                issueIdentifier: "GRE-1688",
+                issueTitle: "Login page",
+                summary: "done",
+                at: new Date(Date.now() - 3 * 60 * 60 * 1000),
+              },
+            ]}
+          />
+        </div>
+      </SubSection>
     </div>
   );
 }

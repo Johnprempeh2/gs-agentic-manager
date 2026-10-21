@@ -42,12 +42,12 @@ import {
   armIssueDetailInboxQuickArchive,
   createIssueDetailLocationState,
 } from "../lib/issueDetailBreadcrumb";
-import { getRecentTasksStorageKey, readRecentTasks } from "../lib/recent-tasks";
 import { ApiError } from "../api/client";
 import type { issuesApi } from "../api/issues";
 
 const mockIssuesApi = vi.hoisted(() => ({
   get: vi.fn(),
+  recordOpened: vi.fn(),
   list: vi.fn(),
   listAll: vi.fn(),
   listAcceptedPlanDecompositions: vi.fn(),
@@ -1909,18 +1909,15 @@ describe("IssueDetail", () => {
     ).toBe(true);
   });
 
-  it("uses task activity for recency and ignores passive revisits", async () => {
+  it("records the open on the server once the session is known, for Recent", async () => {
     const authRequest = createDeferred<{
       session: { userId: string };
       user: { id: string };
     }>();
-    const issue = createIssue({
-      title: "Initial recent title",
-      status: "todo",
-      updatedAt: new Date(100),
-    });
+    mockIssuesApi.recordOpened.mockReset();
+    mockIssuesApi.recordOpened.mockResolvedValue(undefined);
     mockAuthApi.getSession.mockReturnValue(authRequest.promise);
-    mockIssuesApi.get.mockResolvedValue(issue);
+    mockIssuesApi.get.mockResolvedValue(createIssue({ title: "Opened task" }));
 
     await act(async () => {
       root.render(
@@ -1931,10 +1928,7 @@ describe("IssueDetail", () => {
     });
     await flushReact();
     await flushReact();
-
-    expect(
-      readRecentTasks(getRecentTasksStorageKey("company-1", null), "company-1"),
-    ).toEqual([]);
+    expect(mockIssuesApi.recordOpened).not.toHaveBeenCalled();
 
     await act(async () => {
       authRequest.resolve({
@@ -1943,41 +1937,9 @@ describe("IssueDetail", () => {
       });
     });
     await waitForAssertion(() => {
-      expect(
-        readRecentTasks(
-          getRecentTasksStorageKey("company-1", "user-1"),
-          "company-1",
-        ),
-      ).toEqual([
-        expect.objectContaining({
-          id: "issue-1",
-          title: "Initial recent title",
-          status: "todo",
-          recordedAt: 100,
-        }),
-      ]);
+      expect(mockIssuesApi.recordOpened).toHaveBeenCalledWith("issue-1");
     });
-
-    act(() => {
-      queryClient.setQueryData(queryKeys.issues.detail("PAP-1"), {
-        ...issue,
-        title: "Snapshot refresh title",
-        status: "in_progress",
-        updatedAt: new Date(200),
-      });
-    });
-    await flushReact();
-
-    expect(
-      readRecentTasks(
-        getRecentTasksStorageKey("company-1", "user-1"),
-        "company-1",
-      )[0],
-    ).toMatchObject({
-      title: "Snapshot refresh title",
-      status: "in_progress",
-      recordedAt: 200,
-    });
+    expect(mockIssuesApi.recordOpened).toHaveBeenCalledTimes(1);
   });
 
   it("opens a closed desktop pane and routes an ordinary document to its own tab on direct load", async () => {
@@ -2508,7 +2470,7 @@ describe("IssueDetail", () => {
     expect(mockDecisionsApi.list).not.toHaveBeenCalled();
   });
 
-  it("updates status from the task header control and hides the priority control (PAP-411)", async () => {
+  it("updates status from the task header control and shows the priority control (PAP-411 flag)", async () => {
     const issue = createIssue({ status: "todo", priority: "medium" });
     mockIssuesApi.get.mockResolvedValue(issue);
     mockIssuesApi.update.mockImplementation(
@@ -2535,9 +2497,9 @@ describe("IssueDetail", () => {
       'button[aria-label="Change priority (current: medium)"]',
     );
     expect(statusButton).not.toBeNull();
-    // PAP-411: priority UI is hidden behind SHOW_TASK_PRIORITY_UI (off), so the header
-    // priority control must not render.
-    expect(priorityButton).toBeNull();
+    // PAP-411 flag on: the header names the priority and lets you change it.
+    expect(priorityButton).not.toBeNull();
+    expect(priorityButton?.textContent).toContain("medium");
 
     await act(async () => {
       statusButton!.dispatchEvent(
@@ -4197,16 +4159,6 @@ describe("IssueDetail", () => {
       );
     });
     await flushReact();
-
-    expect(
-      readRecentTasks(
-        getRecentTasksStorageKey("company-1", null),
-        "company-1",
-      )[0],
-    ).toMatchObject({
-      id: "issue-1",
-      recordedAt: postedAt.getTime(),
-    });
   });
 
   // GRE-1633: the server ignores a stored off, so this reads off only when a

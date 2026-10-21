@@ -49,6 +49,7 @@ import {
   CalendarDays,
   Gauge,
   Image as ImageIcon,
+  Clock,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { openShortcutsSheet } from "./KeyboardShortcutsCheatsheet";
@@ -74,7 +75,9 @@ import {
   OPEN_COMMAND_PALETTE_EVENT,
   isOpenTaskStatus,
   plainTaskStatus,
+  scoreTextMatch,
 } from "../lib/global-search";
+import { useRecentlyOpenedIssues } from "../hooks/useIssueFollows";
 import { GlobalSearchSources } from "./search/GlobalSearchSources";
 import { GlobalSearchEmptyState } from "./search/GlobalSearchEmptyState";
 import { pushRecentSearch } from "../lib/recent-searches";
@@ -255,6 +258,15 @@ export function CommandPalette() {
     queryFn: () => issuesApi.list(selectedCompanyId!, { q: quickSearchQuery, limit: 10, includeRoutineExecutions: true }),
     enabled: !!selectedCompanyId && open && quickSearchQuery.length > 0,
   });
+
+  // Recently opened tasks lead the palette; typing narrows them first.
+  const recentlyOpened = useRecentlyOpenedIssues(selectedCompanyId, { enabled: open });
+  const recentMatches = useMemo(
+    () => (quickSearchQuery.length === 0
+      ? recentlyOpened
+      : recentlyOpened.filter(({ issue }) => scoreTextMatch(quickSearchQuery, [issue.identifier, issue.title]) !== null)),
+    [recentlyOpened, quickSearchQuery],
+  );
 
   const updateIssue = useMutation({
     mutationFn: ({ issue, patch }: { issue: Issue; patch: Record<string, unknown>; doneLabel: string }) =>
@@ -473,6 +485,31 @@ export function CommandPalette() {
           )}
         </CommandEmpty>
 
+        {recentMatches.length > 0 ? (
+          <>
+            <CommandGroup heading="Recent">
+              {recentMatches.map(({ issueId, issue }) => (
+                <CommandItem
+                  key={issueId}
+                  value={`${searchQuery} recent-task ${issueId} ${issue.identifier ?? ""} ${issue.title}`}
+                  onSelect={() => go(`/issues/${issue.identifier ?? issueId}`)}
+                  data-testid="command-recent-task"
+                >
+                  <Clock className="mr-2 h-4 w-4 shrink-0" />
+                  {issue.identifier ? (
+                    <span className="mr-2 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+                  <span className="ml-2 hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                    {plainTaskStatus(issue.status)}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        ) : null}
+
         {typedCommand ? (
           <CommandSuggestion
             command={typedCommand}
@@ -540,7 +577,6 @@ export function CommandPalette() {
         {!showSearchAll && selectedCompanyId ? (
           <GlobalSearchEmptyState
             companyId={selectedCompanyId}
-            userId={currentUserId}
             leadName={leadAgent?.name ?? null}
             saved={savedItems}
             onRemoveSaved={removeItem}

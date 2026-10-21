@@ -1069,6 +1069,14 @@ export type {
 export { RESOURCE_MEMBERSHIP_STATES } from "./resource-memberships.js";
 export type { InboxDismissal, InboxDismissalKind } from "./inbox-dismissal.js";
 export type {
+  IssueFollowTaskSummary,
+  IssueFollowRollupCounts,
+  IssueFollowRollupUpdate,
+  IssueFollowWithRollup,
+  IssueFollowState,
+  RecentlyOpenedIssue,
+} from "./issue-follow.js";
+export type {
   DecisionEffectStaleness,
   DecisionOptionStyle,
   DecisionInput,

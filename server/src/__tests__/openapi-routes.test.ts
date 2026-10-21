@@ -88,6 +88,7 @@ const apiPrefixes: Record<string, string> = {
   "health.ts": "/api/health",
   "inbox-agent-policy.ts": "/api",
   "inbox-dismissals.ts": "/api",
+  "issue-follows.ts": "/api",
   "legacy-board.ts": "/api",
   "member-handover.ts": "/api",
   "instance-database-backups.ts": "/api",

@@ -134,6 +134,8 @@ describe("company routes", () => {
     expect(isBoardPathWithoutPrefix("/my-tasks")).toBe(true);
     expect(extractCompanyPrefixFromPath("/my-tasks")).toBeNull();
     expect(applyCompanyPrefix("/my-tasks", "GRE")).toBe("/GRE/my-tasks");
+    expect(isBoardPathWithoutPrefix("/desk")).toBe(true);
+    expect(applyCompanyPrefix("/desk", "GRE")).toBe("/GRE/desk");
   });
 
   it("treats /timeline as a board route that needs a company prefix", () => {

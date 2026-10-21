@@ -27,7 +27,6 @@ import {
   takeOptimisticIssueComment,
   type OptimisticIssueComment,
 } from "../../lib/optimistic-issue-comments";
-import { recordRecentTask } from "../../lib/recent-tasks";
 import { buildIssueThreadInteractionSummary } from "../../lib/issue-thread-interactions";
 import type {
   Issue,
@@ -72,7 +71,6 @@ export type UseThreadMutationsInput = {
   invalidateIssueThreadLazily: () => void;
   setLocallyQueuedCommentRunIds: Dispatch<SetStateAction<Map<string, string>>>;
   commentRenderKeys: RefObject<Map<string, string>>;
-  sessionResolved: boolean;
   issueCacheRefs: string[];
   invalidateIssueRunState: () => void;
   upsertInteractionInCache: (interaction: IssueThreadInteraction) => void;
@@ -107,7 +105,6 @@ export function useThreadMutations({
   invalidateIssueThreadLazily,
   setLocallyQueuedCommentRunIds,
   commentRenderKeys,
-  sessionResolved,
   issueCacheRefs,
   invalidateIssueRunState,
   upsertInteractionInCache,
@@ -295,13 +292,6 @@ export function useThreadMutations({
           current.filter(
             (entry) => entry.clientId !== context.optimisticCommentId,
           ),
-        );
-      }
-      if (issue && sessionResolved) {
-        recordRecentTask(
-          issue,
-          currentUserId,
-          new Date(comment.createdAt).getTime(),
         );
       }
     },

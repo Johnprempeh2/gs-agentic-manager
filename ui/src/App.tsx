@@ -109,7 +109,7 @@ const Images = lazyPage(() => import("./pages/Images"), "Images");
 const NotificationSettings = lazyPage(() => import("./pages/NotificationSettings"), "NotificationSettings");
 const MorningSummary = lazyPage(() => import("./pages/MorningSummary"), "MorningSummary");
 const AuditHub = lazyPage(() => import("./pages/audit/AuditHub"), "AuditHub");
-const MyTasks = lazyPage(() => import("./pages/MyTasks"), "MyTasks");
+const Desk = lazyPage(() => import("./pages/Desk"), "Desk");
 const DecisionQueuePage = lazyPage(() => import("./pages/DecisionQueuePage"), "DecisionQueuePage");
 const BoardChat = lazyPage(() => import("./pages/BoardChat"), "BoardChat");
 const CompanySettings = lazyPage(() => import("./pages/CompanySettings"), "CompanySettings");
@@ -472,7 +472,9 @@ function boardRoutes() {
       ) : null}
       <Route path="needed" element={<NeededFromYou />} />
       <Route path="decisions" element={<WhatNeedsMe />} />
-      <Route path="my-tasks" element={<MyTasks />} />
+      <Route path="desk" element={<Desk />} />
+      {/* The old address keeps working for bookmarks and links in messages. */}
+      <Route path="my-tasks" element={<Desk />} />
       <Route path="decisions/queues/:key" element={<DecisionQueuePage />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/mine" element={<Inbox />} />
@@ -889,6 +891,7 @@ export function App() {
           <Route path="costs" element={<UnprefixedBoardRedirect />} />
           <Route path="budgets" element={<UnprefixedBoardRedirect />} />
           <Route path="decisions" element={<UnprefixedBoardRedirect />} />
+          <Route path="desk" element={<UnprefixedBoardRedirect />} />
           <Route path="my-tasks" element={<UnprefixedBoardRedirect />} />
           <Route path="u/:userSlug" element={<UnprefixedBoardRedirect />} />
           <Route path="skills/studio" element={<UnprefixedBoardRedirect />} />

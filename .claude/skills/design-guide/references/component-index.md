@@ -86,7 +86,19 @@ Supports: backlog, todo, in_progress, in_review, done, cancelled, blocked. Use i
 <PriorityIcon priority="high" onChange={setPriority} />
 ```
 
-Supports: critical, high, medium, low. Use alongside StatusIcon in entity row leading slots.
+Supports: critical, high, medium, low. Use alongside StatusIcon in entity row leading slots. A bare glyph (no `onChange`, no `showLabel`) is named "High priority" for screen readers. Task rows (`IssueRow`) mark only a chosen priority, never the medium default.
+
+### FollowTaskButton / FollowTaskToggle
+
+**File:** `FollowTask.tsx`
+**Props:** `following`, `taskName`, `onToggle(next)`, `pending?`, `variant?: "button" | "icon"`. `FollowTaskToggle` takes `issue` and wires it to the signed-in user's follows.
+**Usage:** Follow a task and everything under it. `"button"` is the labelled outline button on the task page; `"icon"` is the quiet row star, shown on hover or focus until followed.
+
+### FollowRollupSummary
+
+**File:** `FollowTask.tsx`
+**Props:** `counts` (total, done, inProgress, waitingOnYou, blocked), `latestUpdates?`
+**Usage:** How far a followed task and its subtree have got (Desk): done of total with a bar, counts by state, and the latest comments or status changes. `SidebarFollowing` lists followed tasks with `done/total` and a dot when something waits on you.
 
 ### EntityRow
 

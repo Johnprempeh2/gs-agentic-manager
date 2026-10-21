@@ -147,6 +147,7 @@ import { tourDismissalRoutes } from "./routes/tour-dismissals.js";
 import { serverVersion } from "./version.js";
 import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
+import { issueFollowRoutes } from "./routes/issue-follows.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { billingAccountRoutes } from "./routes/billing-account.js";
 import { runAdmissionRecommendationRoutes } from "./routes/run-admission-recommendation.js";
@@ -943,6 +944,7 @@ export async function createApp(
   api.use(tourDismissalRoutes(db));
   api.use(resourceMembershipRoutes(db));
   api.use(inboxDismissalRoutes(db));
+  api.use(issueFollowRoutes(db));
   api.use(instanceSettingsRoutes(db));
   api.use(billingAccountRoutes(db));
   api.use(runAdmissionRecommendationRoutes(db));

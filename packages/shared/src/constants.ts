@@ -456,6 +456,30 @@ export function isPluginOperationIssueOriginKind(originKind: string | null | und
   return typeof originKind === "string" && /^plugin:[^:]+:operation(?::|$)/.test(originKind);
 }
 
+/**
+ * Origins of tasks the system or a schedule makes on its own: routine runs
+ * (daily "Loose ends", "Daily release candidate"), the daily digest, goal
+ * check-ins, watchdog self-checks and recovery chores. The Desk hides these by
+ * default; a person can still show them.
+ */
+export const ROUTINE_ISSUE_ORIGIN_KINDS = [
+  "routine_execution",
+  "agent_daily_digest",
+  "goal_check_in",
+  "stale_active_run_evaluation",
+  "harness_liveness_escalation",
+  "issue_productivity_review",
+  "stranded_issue_recovery",
+  "task_watchdog",
+  "memory_steward_grant_renewal",
+] as const;
+
+export function isRoutineIssueOriginKind(originKind: string | null | undefined): boolean {
+  if (!originKind) return false;
+  return (ROUTINE_ISSUE_ORIGIN_KINDS as readonly string[]).includes(originKind)
+    || isPluginOperationIssueOriginKind(originKind);
+}
+
 export const ISSUE_RELATION_TYPES = ["blocks"] as const;
 export type IssueRelationType = (typeof ISSUE_RELATION_TYPES)[number];
 
