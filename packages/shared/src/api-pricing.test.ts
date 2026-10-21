@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  API_PRICE_TABLE,
   API_PRICE_TABLE_CHECKED_AT,
   computeApiEquivalentCents,
+  forecastDatedUsage,
   normalizeModelForPricing,
   resolveApiPrice,
 } from "./api-pricing.js";
@@ -9,6 +11,44 @@ import {
 describe("api pricing", () => {
   it("records the date the price table was checked", () => {
     expect(API_PRICE_TABLE_CHECKED_AT).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("every price has a source and a valid effective date range", () => {
+    for (const provider of Object.values(API_PRICE_TABLE)) {
+      for (const rows of Object.values(provider.models)) {
+        for (const row of rows) {
+          expect(row.effectiveFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+          expect(row.sourceUrl).toMatch(/^https:\/\//);
+          if (row.effectiveUntil) expect(row.effectiveUntil > row.effectiveFrom).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("switches Argon from the introductory price on December 1", () => {
+    const usage = { provider: "google", model: "gemini-4-argon", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 1_000_000 };
+    expect(computeApiEquivalentCents(usage, "2026-11-30")).toBe(1200);
+    expect(computeApiEquivalentCents(usage, "2026-12-01")).toBe(2400);
+    expect(resolveApiPrice("google", "gemini-4-argon", "2026-11-30")?.effectiveUntil).toBe("2026-12-01");
+  });
+
+  it("continues to price existing Claude usage before the legacy check date", () => {
+    const usage = { provider: "anthropic", model: "claude-opus-4-8", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 };
+    expect(computeApiEquivalentCents(usage, "2026-04-10")).toBe(500);
+    expect(computeApiEquivalentCents(usage, "2026-09-27")).toBe(500);
+  });
+
+  it("blends a forecast across a rate change, and reports missing future prices", () => {
+    const usage = [{ provider: "google", model: "gemini-4-argon", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 }];
+    expect(forecastDatedUsage(usage, new Date("2026-11-30"), new Date("2026-12-02"))).toEqual({ cents: 600, unpriced: [] });
+    API_PRICE_TABLE.google.models["temporary"] = [{ inputPerMTok: 1, cachedInputPerMTok: 0, outputPerMTok: 1, effectiveFrom: "2026-11-01", effectiveUntil: "2026-12-01", sourceUrl: "https://example.com" }];
+    try {
+      const result = forecastDatedUsage([{ ...usage[0], model: "temporary" }], new Date("2026-11-30"), new Date("2026-12-02"));
+      expect(result.cents).toBe(100);
+      expect(result.unpriced).toEqual([{ provider: "google", model: "temporary", day: "2026-12-01" }]);
+    } finally {
+      delete API_PRICE_TABLE.google.models["temporary"];
+    }
   });
 
   it("prices Anthropic input, cache reads and output separately", () => {

@@ -17,6 +17,7 @@ import {
   type BillingModuleSelection,
 } from "./billing-account.js";
 import { INSTANCE_FEATURE_KEYS } from "./feature-catalog.js";
+import { API_PRICE_TABLE } from "./api-pricing.js";
 
 const pick = (...keys: BillingModuleSelection["key"][]): BillingModuleSelection[] =>
   keys.map((key) => (BILLING_MODULES[key].needsScope ? { key, feeCents: null, scope: "agreed scope" } : { key, feeCents: null }));
@@ -202,6 +203,23 @@ describe("billing usage (GRE-1389, GRE-1395)", () => {
   it("forecasts on a straight line, as cents and as a percent, and floors remaining at zero", () => {
     const usage = billingUsageOn(new Date("2026-10-10T12:00:00Z"), { ...base, usedCents: 30_000 });
     expect(usage).toMatchObject({ forecastCents: 93_000, forecastPercent: 372, remainingCents: 0, usedPercent: 120, warning: true });
+  });
+
+  it("uses each future day's model price and reports missing successor days", () => {
+    API_PRICE_TABLE.google.models["forecast-test"] = [
+      { inputPerMTok: 1, cachedInputPerMTok: 0, outputPerMTok: 1, effectiveFrom: "2026-10-01", effectiveUntil: "2026-10-20", sourceUrl: "https://example.com/intro" },
+      { inputPerMTok: 2, cachedInputPerMTok: 0, outputPerMTok: 2, effectiveFrom: "2026-10-20", effectiveUntil: "2026-10-22", sourceUrl: "https://example.com/list" },
+    ];
+    try {
+      const forecastModels = [{ provider: "google", model: "forecast-test", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 }];
+      const usage = billingUsageOn(new Date("2026-10-18T12:00:00Z"), { ...base, usedCents: 0, apiEquivalentCents: 1_800, forecastModels });
+      // October 19: $1; October 20 and 21: $2 each; later days unpriced.
+      expect(usage.forecastCents).toBe(2_300);
+      expect(usage.forecastUnpriced).toHaveLength(10);
+      expect(usage.forecastUnpriced?.[0]).toMatchObject({ day: "2026-10-22" });
+    } finally {
+      delete API_PRICE_TABLE.google.models["forecast-test"];
+    }
   });
 
   it("measures metered and subscription-included usage together against the allowance", () => {

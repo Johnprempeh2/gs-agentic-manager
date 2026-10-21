@@ -60,6 +60,7 @@ export interface IssueCostModelRow {
   costCents: number;
   /** null when the model has no published price in the price table */
   apiEquivalentCents: number | null;
+  priceRows?: PriceRowSource[];
 }
 
 export interface CostByAgent {
@@ -198,6 +199,13 @@ export interface ApiEquivalentModelRow {
   actualApiSpendCents: number;
   /** null when the model has no published price in the price table */
   apiEquivalentCents: number | null;
+  priceRows?: PriceRowSource[];
+}
+
+export interface PriceRowSource {
+  effectiveFrom: string;
+  effectiveUntil?: string;
+  sourceUrl: string;
 }
 
 export interface ApiEquivalentProviderRow {
@@ -280,6 +288,7 @@ export interface CostLedgerLine {
   ledgerCents: number;
   /** tokens on seat-plan lines whose model has no published price */
   unpricedTokens: number;
+  priceRows?: PriceRowSource[];
 }
 
 export interface CostLedgerTotal {

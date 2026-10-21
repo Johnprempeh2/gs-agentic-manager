@@ -236,7 +236,7 @@ function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; acc
           <Figure
             label="Forecast to month end"
             value={formatPercent(usage.forecastPercent)}
-            note="Straight line from usage so far"
+            note={usage.forecastUnpriced?.length ? `Partial estimate: ${usage.forecastUnpriced.length} future model-days have no published price` : "Based on daily usage and published rates"}
             testId="billing-forecast"
           />
           <Figure

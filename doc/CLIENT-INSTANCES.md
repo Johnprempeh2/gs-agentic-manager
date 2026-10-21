@@ -388,7 +388,19 @@ curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: appl
   allowance is in API-equivalent US cents; usage measured against it is
   `consumedCents` = `usedCents` (recorded cost) + `apiEquivalentCents`
   (subscription-included runs at API price), so the percent is USD against
-  USD for every account currency.
+  USD for every account currency. API-equivalent usage uses the published
+  per-model price that applies on each UTC usage day. Actual `costCents` is
+  never changed by this price table. The month-end forecast projects each
+  model's observed daily token rate onto each remaining UTC day and applies
+  that day's price. When a future day has no published price, its cost is
+  omitted and `forecastUnpriced` lists the model and day; the UI labels the
+  result as a partial estimate.
+- **Price provenance.** Cost ledger lines and API-equivalent model rows include
+  `priceRows` with `effectiveFrom`, optional exclusive `effectiveUntil`, and
+  `sourceUrl`. The monthly ledger CSV has matching date and source columns.
+  Existing Anthropic and OpenAI rows use 1 January 1970 as a compatibility
+  start, so earlier usage keeps its API-equivalent price. This is not a
+  publication date; those legacy prices were checked on 28 September 2026.
 - **What the client sees.** The response has `audience: "client"` for anyone
   but the operator: `usedPercent`, `forecastPercent`, the warn level, and
   `extraUsage` (usage past 100%) in the account currency. No allowance amount,

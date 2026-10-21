@@ -903,6 +903,13 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
           apiEquivalentCents: computeApiEquivalentCents({
             provider: "openai", model: "gpt-5", inputTokens: 60, cachedInputTokens: 6, outputTokens: 12,
           }),
+          priceRows: [{
+            inputPerMTok: 1.25,
+            cachedInputPerMTok: 0.125,
+            outputPerMTok: 10,
+            effectiveFrom: "1970-01-01",
+            sourceUrl: "https://openai.com/api/pricing",
+          }],
         },
       ],
     });
@@ -1513,6 +1520,27 @@ describeEmbeddedPostgres("monthly cost ledger", () => {
     await db.insert(heartbeatRuns).values({ id, companyId, agentId, invocationSource: "on_demand", status: "succeeded" });
     return id;
   }
+
+  it("prices dated Argon usage while preserving provider billed cents", async () => {
+    const companyId = await seedCompany();
+    const agentId = await seedAgent(companyId, "Argon Agent", "gemini_local");
+    await db.insert(costEvents).values([
+      { companyId, agentId, provider: "google", biller: "google", billingType: "metered_api", model: "gemini-4-argon", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0, costCents: 777, occurredAt: new Date("2026-11-30T12:00:00Z") },
+      { companyId, agentId, provider: "google", biller: "google", billingType: "metered_api", model: "gemini-4-argon", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0, costCents: 888, occurredAt: new Date("2026-12-01T12:00:00Z") },
+    ]);
+    const november = await ledger.monthly(companyId, parseLedgerMonth("2026-11"));
+    const december = await ledger.monthly(companyId, parseLedgerMonth("2026-12"));
+    expect(november.lines[0]).toMatchObject({ billedCents: 777, ledgerCents: 777, apiEquivalentCents: 200 });
+    expect(december.lines[0]).toMatchObject({ billedCents: 888, ledgerCents: 888, apiEquivalentCents: 400 });
+    expect(november.lines[0]?.priceRows?.[0]).toMatchObject({ effectiveUntil: "2026-12-01" });
+    expect(december.lines[0]?.priceRows?.[0]).toMatchObject({ effectiveFrom: "2026-12-01" });
+    const summary = await costService(db).apiEquivalent(companyId, {
+      from: new Date("2026-11-30T00:00:00Z"), to: new Date("2026-12-02T00:00:00Z"),
+    }, new Date("2026-12-02T00:00:00Z"));
+    expect(summary.actualApiSpendCents).toBe(1665);
+    expect(summary.apiEquivalentCents).toBe(600);
+    expect(summary.byModel[0]?.priceRows).toHaveLength(2);
+  });
 
   it("reconciles monthly totals per agent, provider and tool with the recorded runs", async () => {
     const companyId = await seedCompany();
