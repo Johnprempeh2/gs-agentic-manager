@@ -1175,6 +1175,9 @@ export const PERMISSION_KEYS = [
   "strategy:board_chair",
   // Intelligence page: write daily reports, board snapshots and recommendations.
   "intelligence:write",
+  // Approve or send back a review that waits on someone else. People only:
+  // owners hold it implicitly, anyone else needs a grant.
+  "reviews:override",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

@@ -301,6 +301,8 @@ export type CurrentBoardAccess = {
   }>;
   source: string;
   keyId: string | null;
+  /** Companies where this person was granted reviews:override (owners hold it without a grant). */
+  reviewOverrideCompanyIds?: string[];
 };
 
 function buildInviteListQuery(options: {

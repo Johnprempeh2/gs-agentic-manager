@@ -341,6 +341,11 @@ import {
 } from "../services/issue-execution-policy.js";
 import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
 import { userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
+import {
+  authorizeReviewOverride,
+  describeReviewOverride,
+  issueReviewOverrideFieldsSchema,
+} from "../services/review-override.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -407,7 +412,7 @@ import {
 const MAX_ISSUE_COMMENT_LIMIT = 500;
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
-});
+}).merge(issueReviewOverrideFieldsSchema);
 const queuedCommentMutationTargetSchema = z.object({
   queueId: z.string().min(1),
   revision: z.string().min(1),
@@ -14102,6 +14107,8 @@ export function issueRoutes(
         onBehalfOfUserId: _requestedOnBehalfOfUserId,
         duplicateOfIssueId,
         blockedDependents: blockedDependentsRequest,
+        reviewOverride: reviewOverrideRequested,
+        overrideReason,
         ...updateFields
       } = req.body;
       const closingToStatus =
@@ -14561,6 +14568,19 @@ export function issueRoutes(
         actor,
         existing.executionState,
       );
+      // Owner, or a person granted reviews:override, decides a review that
+      // waits on someone else. Only when asked for explicitly, with a reason.
+      const reviewOverride = reviewOverrideRequested === true
+        ? await authorizeReviewOverride({
+            db,
+            access,
+            actor: req.actor,
+            companyId: existing.companyId,
+            executionState: existing.executionState,
+            requestedStatus: updateFields.status,
+            reason: overrideReason,
+          })
+        : null;
       const transition = withStageRefusalCommentNote(Boolean(commentBody), () => applyIssueExecutionPolicyTransition({
         issue: existing,
         policy: nextExecutionPolicy,
@@ -14581,13 +14601,20 @@ export function issueRoutes(
           userId: actor.actorType === "user" ? actor.actorId : null,
         },
         allowBoardOverride: req.actor.type === "board",
-        commentBody,
+        commentBody: reviewOverride ? (commentBody || reviewOverride.reason) : commentBody,
         reviewEscalationUserId,
         actorUserIdAliases,
+        reviewOverride: Boolean(reviewOverride),
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
         monitorExplicitlyUpdated:
           req.body.executionPolicy !== undefined && monitorChanged,
       }));
+      if (reviewOverride) {
+        if (!transition.decision) {
+          throw unprocessable("The review override did not reach a decision. Nothing was changed.");
+        }
+        transition.decision.body = await describeReviewOverride(db, reviewOverride);
+      }
       const decisionId = transition.decision ? randomUUID() : null;
       if (decisionId) {
         const nextExecutionState = transition.patch.executionState;
@@ -15149,6 +15176,34 @@ export function issueRoutes(
                 body: decision.body,
                 createdByRunId: actor.runId ?? null,
               });
+              if (reviewOverride) {
+                // The waiting reviewer sees who decided for them and why.
+                await svc.addComment(updated.id, decision.body, {}, { authorType: "system" }, tx);
+                await logActivity(
+                  tx as unknown as Db,
+                  {
+                    companyId: updated.companyId,
+                    actorType: actor.actorType,
+                    actorId: actor.actorId,
+                    agentId: actor.agentId,
+                    runId: actor.runId,
+                    action: "issue.review_overridden",
+                    entityType: "issue",
+                    entityId: updated.id,
+                    details: {
+                      identifier: updated.identifier,
+                      decisionId,
+                      stageId: decision.stageId,
+                      stageType: decision.stageType,
+                      outcome: decision.outcome,
+                      reviewer: reviewOverride.reviewer,
+                      reason: reviewOverride.reason,
+                      summary: decision.body,
+                    },
+                  },
+                  postCommitActivityPublications,
+                );
+              }
             }
 
             if (shouldRelayStop) {
