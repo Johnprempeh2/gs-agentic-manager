@@ -474,7 +474,11 @@ function boardRoutes() {
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
       <Route path="needed" element={<NeededFromYou />} />
-      <Route path="decisions" element={<WhatNeedsMe />} />
+      {/* Decisions live in the Desk's "Needs me" section. Focus mode and the
+          history curtains (Tabled, Dismissed, Decided, Expired) live only on
+          the old page, so it stays at decisions/focus. */}
+      <Route path="decisions" element={<Navigate to="/desk#desk-needs-me" replace />} />
+      <Route path="decisions/focus" element={<WhatNeedsMe />} />
       <Route path="desk" element={<Desk />} />
       {/* The old address keeps working for bookmarks and links in messages. */}
       <Route path="my-tasks" element={<Desk />} />

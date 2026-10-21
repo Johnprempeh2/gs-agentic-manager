@@ -38,7 +38,24 @@ vi.mock("../context/ToastContext", () => ({
   useOptionalToastActions: () => ({ pushToast: pushToastMock }),
 }));
 vi.mock("../api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: ME } }) } }));
-vi.mock("../api/attention", () => ({ attentionApi: { list: async () => ({ items: [] }) } }));
+// Decisions now live in Needs me: the feed and the one count.
+let decisionCards: Array<{ id: string; task: { id: string } | null; decision: string; severity: string }> = [];
+vi.mock("../api/decisionsFeed", () => ({
+  decisionsFeedApi: {
+    get: async () => ({ companyId: "company-1", count: decisionCards.length, cards: decisionCards, assignableAgents: [] }),
+    needsMe: async () => ({
+      companyId: "company-1", count: decisionCards.length, decisionCount: decisionCards.length, assignedTaskCount: 0,
+      decisions: decisionCards, assignedTasks: [], overdueWaits: [], expiredCards: [],
+    }),
+  },
+}));
+// The card has its own tests; here it only has to appear, in feed order.
+vi.mock("../components/decisions-feed/DecisionFeedCard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../components/decisions-feed/DecisionFeedCard")>()),
+  DecisionFeedCard: ({ card }: { card: { id: string; decision: string } }) => (
+    <article data-decision-card={card.id}>{card.decision}</article>
+  ),
+}));
 vi.mock("../api/projects", () => ({ projectsApi: { list: async () => [] } }));
 vi.mock("../api/access", () => ({ accessApi: { getCurrentBoardAccess: async () => boardAccess } }));
 vi.mock("../api/agents", () => ({
@@ -182,6 +199,7 @@ function typeInto(input: HTMLInputElement, value: string) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  decisionCards = [];
   follows = [];
   recent = [];
   container = document.createElement("div");
@@ -514,6 +532,26 @@ describe("Desk sections", () => {
     expect(pinned?.querySelector('[aria-label="Unpin GRE-p1"]')).not.toBeNull();
     expect(pinned?.querySelector('[data-desk-follow-tree="p1"]')?.getAttribute("href")).toBe("/issues/GRE-p1/tree");
     expect(section("desk-recent")?.textContent).toContain("Opened lately");
+  });
+
+  it("shows decision cards first in Needs me, in feed order, with one count, and the plain rows below", async () => {
+    openIssues = [makeIssue("1"), makeIssue("7", { title: "Pick the launch month" })];
+    decisionCards = [
+      { id: "task:7", task: { id: "7" }, decision: "Which month should we launch?", severity: "high" },
+      { id: "item:budget", task: null, decision: "Raise the budget or leave the work paused.", severity: "medium" },
+    ];
+    await renderPage();
+
+    const needsMe = section("desk-needs-me")!;
+    expect([...needsMe.querySelectorAll("[data-decision-card]")].map((card) => card.getAttribute("data-decision-card")))
+      .toEqual(["task:7", "item:budget"]);
+    expect(needsMe.querySelector("[data-desk-section-count]")?.textContent).toBe("2");
+    // A task with a card is that card, not a second row.
+    expect(needsMe.querySelector('[data-row="7"]')).toBeNull();
+    const row = needsMe.querySelector('[data-row="1"]')!;
+    expect(needsMe.querySelector("[data-desk-decisions]")!.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect([...needsMe.querySelectorAll("a")].find((a) => a.textContent === "Focus and history")?.getAttribute("href")).toBe("/decisions/focus");
+    expect(container.textContent).not.toContain("Nothing needs you right now.");
   });
 
   it("shows a pinned task only in Pinned, and leaves finished pins out", async () => {
