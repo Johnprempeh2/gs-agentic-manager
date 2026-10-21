@@ -8842,6 +8842,9 @@ export function issueRoutes(
       includeBlocks:
         req.query.includeBlocks === "true" ||
         req.query.includeBlocks === "1",
+      excludeParked:
+        req.query.excludeParked === "true" ||
+        req.query.excludeParked === "1",
       includeBlockedInboxAttention:
         req.query.includeBlockedInboxAttention === "true" ||
         req.query.includeBlockedInboxAttention === "1",

@@ -10,7 +10,7 @@ import {
   type IssueStatus,
   type RecentlyOpenedIssue,
 } from "@greatstone/shared";
-import { Check, CheckCircle2, CircleDot, ClipboardList, Network, Star } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, Network, RotateCcw, Star } from "lucide-react";
 import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
 import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
@@ -22,6 +22,9 @@ import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { attentionApi } from "../api/attention";
 import { authApi } from "../api/auth";
+import { accessApi } from "../api/access";
+import { canOverrideReviews } from "../components/issue-properties/ReviewOverrideActions";
+import { WaitingOutsideButton } from "../components/decisions-feed/WaitingOutsideButton";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -34,6 +37,8 @@ import {
   askTargetAgentId,
   decisionIssueId,
   handOffAgentChoices,
+  isGoneQuiet,
+  lastWorkAt,
   mergeMyTasks,
   myTasksAskState,
   myTasksGroupOf,
@@ -170,6 +175,7 @@ export function Desk() {
         touchedByUserId: "me",
         status: MY_TASKS_OPEN_STATUSES.join(","),
         includeBlocks: true,
+        excludeParked: true,
       }),
     enabled: !!selectedCompanyId,
     refetchOnWindowFocus: true,
@@ -185,6 +191,7 @@ export function Desk() {
         sortField: "updated",
         sortDir: "desc",
         limit: DONE_TODAY_FETCH_LIMIT,
+        excludeParked: true,
       }),
     enabled: !!selectedCompanyId,
     refetchOnWindowFocus: true,
@@ -200,6 +207,7 @@ export function Desk() {
         sortField: "updated",
         sortDir: "desc",
         limit: HANDED_OFF_FETCH_LIMIT,
+        excludeParked: true,
       }),
     enabled: !!selectedCompanyId,
     refetchOnWindowFocus: true,
@@ -218,6 +226,12 @@ export function Desk() {
     enabled: !!selectedCompanyId,
   });
   const decisions = useMemo(() => attentionFeed?.items ?? [], [attentionFeed]);
+
+  const { data: boardAccess } = useQuery({
+    queryKey: queryKeys.access.currentBoardAccess,
+    queryFn: () => accessApi.getCurrentBoardAccess(),
+  });
+  const mayOverrideReviews = selectedCompanyId ? canOverrideReviews(selectedCompanyId, boardAccess) : false;
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -289,6 +303,14 @@ export function Desk() {
     () => (showRoutine ? listedIssues : listedIssues.filter((issue) => !isRoutineIssueOriginKind(issue.originKind))),
     [listedIssues, showRoutine],
   );
+  // Tidy desk: a week without work moves a task to "Gone quiet" at the bottom.
+  const [liveIssues, quietIssues] = useMemo(() => {
+    const now = Date.now();
+    const live: Issue[] = [];
+    const quiet: Issue[] = [];
+    for (const issue of visibleIssues) (isGoneQuiet(issue, now) ? quiet : live).push(issue);
+    return [live, quiet];
+  }, [visibleIssues]);
   const visibleRecent = useMemo(
     () => (showRoutine
       ? recentlyOpened
@@ -422,6 +444,45 @@ export function Desk() {
     }
   };
 
+  // Tidy desk: a task the hourly check flagged as looking finished.
+  // A review waiting on you is one of your decisions; any other review is
+  // someone else's, and closing it needs reviews:override (the server checks).
+  const reviewByOther = (issue: Issue) =>
+    issue.status === "in_review" && !(merged.reasonsById.get(issue.id) ?? []).includes("decision");
+  const closeFinished = (issue: Issue) => {
+    if (!reviewByOther(issue)) {
+      tick(issue, true);
+      return;
+    }
+    updateIssue.mutate({
+      id: issue.id,
+      data: {
+        status: "done",
+        reviewOverride: true,
+        overrideReason: `Looks finished. ${(issue.looksFinishedReasons ?? []).join(" ")}`.trim(),
+      },
+    });
+  };
+
+  const notFinished = useMutation({
+    mutationFn: (issue: Issue) => issuesApi.dismissLooksFinished(issue.id),
+    onMutate: (issue) => patchIssueLocally(issue, { looksFinishedAt: null, looksFinishedReasons: null }),
+    onError: (err, issue) => {
+      patchIssueLocally(issue, issue);
+      pushToast({
+        title: "Could not update the task",
+        body: err instanceof Error ? err.message : undefined,
+        tone: "error",
+      });
+    },
+    onSettled: (_data, _err, issue) => refreshMyTasks(issue.id),
+  });
+
+  // The server clears the flag when a closed task opens again.
+  const reopen = (issue: Issue) => {
+    setStatus.mutate({ issue: { ...issue, looksFinishedAt: null }, status: "todo", previous: issue });
+  };
+
   const handOff = useMutation({
     mutationFn: ({ issue, agent, instruction }: { issue: Issue; agent: Agent; instruction: string }) =>
       issuesApi.update(issue.id, {
@@ -551,7 +612,57 @@ export function Desk() {
   );
 
   const renderRowActions = (issue: Issue) => {
-    if (issue.status === "done") return renderDiscuss(issue);
+    if (issue.status === "done") {
+      if (!issue.looksFinishedAt) return renderDiscuss(issue);
+      return (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size={compactActions ? "icon-xs" : "xs"}
+            data-desk-reopen={issue.id}
+            aria-label={`Reopen ${issue.identifier ?? issue.title}`}
+            title={compactActions ? "Reopen" : undefined}
+            onClick={() => reopen(issue)}
+          >
+            <RotateCcw aria-hidden />
+            {compactActions ? null : "Reopen"}
+          </Button>
+          {renderDiscuss(issue)}
+        </>
+      );
+    }
+    if (issue.looksFinishedAt) {
+      const mayClose = !reviewByOther(issue) || mayOverrideReviews;
+      return (
+        <>
+          {mayClose ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              data-desk-close-finished={issue.id}
+              aria-label={`Close ${issue.identifier ?? issue.title}`}
+              onClick={() => closeFinished(issue)}
+            >
+              <Check aria-hidden />
+              Close
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            data-desk-not-finished={issue.id}
+            aria-label={`Not finished: ${issue.identifier ?? issue.title}`}
+            onClick={() => notFinished.mutate(issue)}
+          >
+            Not finished
+          </Button>
+          {renderDiscuss(issue)}
+        </>
+      );
+    }
     const askState = myTasksAskState(issue);
     return (
       <>
@@ -570,13 +681,26 @@ export function Desk() {
           compact={compactActions}
           onToggle={() => (askOpenId === issue.id ? closeAsk(issue.id) : setAskOpenId(issue.id))}
         />
+        <WaitingOutsideButton
+          companyId={issue.companyId}
+          issueId={issue.id}
+          issueLabel={issue.identifier}
+          compact
+        />
         {renderDiscuss(issue)}
       </>
     );
   };
 
   const renderRowFooter = (issue: Issue) => {
-    if (askOpenId !== issue.id) return null;
+    if (askOpenId !== issue.id) {
+      const reasons = issue.status !== "done" ? issue.looksFinishedReasons : null;
+      return reasons && reasons.length > 0 ? (
+        <p className="px-3 pb-2 text-xs text-muted-foreground" data-desk-finished-reasons={issue.id}>
+          {reasons.join(" ")}
+        </p>
+      ) : null;
+    }
     const target = askTargetOf(issue);
     return (
       <MyTasksAskBox
@@ -678,9 +802,9 @@ export function Desk() {
           />
         ) : (
           <>
-            {visibleIssues.length > 0 && (
+            {liveIssues.length > 0 && (
               <IssuesList
-                issues={visibleIssues}
+                issues={liveIssues}
                 agents={agents}
                 projects={projects}
                 viewStateKey="paperclip:desk-view"
@@ -701,6 +825,7 @@ export function Desk() {
             {merged.decisionsWithoutIssue.length > 0 && (
               <DecisionsWithoutIssue items={merged.decisionsWithoutIssue} />
             )}
+            {quietIssues.length > 0 && <DeskGoneQuiet issues={quietIssues} />}
           </>
         )}
       </DeskSection>
@@ -750,6 +875,36 @@ function DecisionsWithoutIssue({ items }: { items: AttentionItem[] }) {
         />
       ))}
     </section>
+  );
+}
+
+/** Open tasks with no work for a week: out of the way, one click to look. */
+function DeskGoneQuiet({ issues }: { issues: Issue[] }) {
+  return (
+    <details className="group" data-desk-gone-quiet>
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+        <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
+        Gone quiet ({issues.length})
+        <span className="text-xs">No comment, status change, run or document edit for a week.</span>
+      </summary>
+      <div>
+        {issues.map((issue) => {
+          const last = lastWorkAt(issue);
+          return (
+            <EntityRow
+              key={issue.id}
+              to={`/issues/${issue.identifier ?? issue.id}`}
+              leading={<StatusIcon status={issue.status} size="md" />}
+              identifier={issue.identifier ?? undefined}
+              title={issue.title}
+              trailing={last ? (
+                <span className="shrink-0 text-xs text-muted-foreground">Last work {relativeTime(new Date(last))}</span>
+              ) : null}
+            />
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

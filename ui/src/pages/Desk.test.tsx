@@ -18,6 +18,8 @@ const addCommentMock = vi.fn<(id: string, body: string, ...rest: unknown[]) => P
 const pushToastMock = vi.fn<(input: ToastInput) => string | null>();
 const listCommentsMock = vi.fn<(id: string, filters?: Record<string, unknown>) => Promise<unknown[]>>();
 const markReadMock = vi.fn<(id: string) => Promise<unknown>>();
+const dismissLooksFinishedMock = vi.fn<(id: string) => Promise<unknown>>();
+let boardAccess: Record<string, unknown> = { source: "session", memberships: [] };
 let follows: IssueFollowWithRollup[] = [];
 let recent: RecentlyOpenedIssue[] = [];
 
@@ -38,6 +40,7 @@ vi.mock("../context/ToastContext", () => ({
 vi.mock("../api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: ME } }) } }));
 vi.mock("../api/attention", () => ({ attentionApi: { list: async () => ({ items: [] }) } }));
 vi.mock("../api/projects", () => ({ projectsApi: { list: async () => [] } }));
+vi.mock("../api/access", () => ({ accessApi: { getCurrentBoardAccess: async () => boardAccess } }));
 vi.mock("../api/agents", () => ({
   agentsApi: {
     list: async () => [
@@ -55,6 +58,7 @@ vi.mock("../api/issues", () => ({
     addComment: (id: string, body: string, ...rest: unknown[]) => addCommentMock(id, body, ...rest),
     listComments: (id: string, filters?: Record<string, unknown>) => listCommentsMock(id, filters),
     markRead: (id: string) => markReadMock(id),
+    dismissLooksFinished: (id: string) => dismissLooksFinishedMock(id),
     listFollows: async () => follows,
     listRecentlyOpened: async () => recent,
     follow: vi.fn(),
@@ -214,6 +218,11 @@ beforeEach(() => {
   ]);
   markReadMock.mockReset().mockImplementation(async (id) => {
     openIssues = openIssues.map((issue) => (issue.id === id ? { ...issue, myLastReadAt: new Date() } : issue));
+    return { id };
+  });
+  boardAccess = { source: "session", memberships: [] };
+  dismissLooksFinishedMock.mockReset().mockImplementation(async (id) => {
+    openIssues = openIssues.map((issue) => (issue.id === id ? { ...issue, looksFinishedAt: null, looksFinishedReasons: null } : issue));
     return { id };
   });
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0));
@@ -538,5 +547,102 @@ describe("Desk sections", () => {
     expect(container.querySelector('[data-row="3"]')).not.toBeNull();
     expect(section("desk-recent")?.textContent).toContain("Daily release candidate");
     expect(window.localStorage.getItem("paperclip:desk-show-routine")).toBe("true");
+  });
+});
+
+describe("Tidy desk", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const flagged = (id: string, overrides: Partial<Issue> = {}) =>
+    makeIssue(id, {
+      status: "blocked",
+      looksFinishedAt: new Date(),
+      looksFinishedReasons: ["Every task blocking it is closed (GRE-9) and nothing has happened on it since."],
+      ...overrides,
+    });
+
+  it("asks the server to leave parked work out of every Desk list", async () => {
+    await renderPage();
+    const calls = issuesListMock.mock.calls.map(([, filters]) => filters);
+    expect(calls.length).toBe(3);
+    for (const filters of calls) expect(filters?.excludeParked).toBe(true);
+  });
+
+  it("moves flagged tasks into Looks finished with the reasons, Close and Not finished", async () => {
+    openIssues = [makeIssue("1"), flagged("2")];
+    await renderPage();
+
+    expect(groupOf("1")).toBe("needs_you");
+    expect(groupOf("2")).toBe("looks_finished");
+    expect(container.querySelector('[data-desk-finished-reasons="2"]')?.textContent).toContain("Every task blocking it is closed");
+
+    click(container.querySelector('[data-desk-close-finished="2"]'));
+    await flush();
+    expect(issuesUpdateMock).toHaveBeenCalledWith("2", { status: "done" });
+    expect(groupOf("2")).toBe("done_today");
+  });
+
+  it("Not finished clears the flag and the task goes back to live work", async () => {
+    openIssues = [flagged("2")];
+    await renderPage();
+
+    click(container.querySelector('[data-desk-not-finished="2"]'));
+    await flush();
+    expect(dismissLooksFinishedMock).toHaveBeenCalledWith("2");
+    expect(groupOf("2")).toBe("needs_you");
+  });
+
+  it("a task closed from Looks finished can be reopened in one click", async () => {
+    doneIssues = [makeIssue("3", { status: "done", completedAt: new Date(), looksFinishedAt: new Date() })];
+    await renderPage();
+
+    expect(groupOf("3")).toBe("done_today");
+    click(container.querySelector('[data-desk-reopen="3"]'));
+    await flush();
+    expect(issuesUpdateMock).toHaveBeenCalledWith("3", { status: "todo" });
+  });
+
+  it("only people who may override reviews see Close on a task in someone else's review", async () => {
+    // Assigned to me, but the review waits on someone else (no decision of mine).
+    openIssues = [flagged("4", { status: "in_review" })];
+    await renderPage();
+    expect(groupOf("4")).toBe("looks_finished");
+    expect(container.querySelector('[data-desk-close-finished="4"]')).toBeNull();
+    expect(container.querySelector('[data-desk-not-finished="4"]')).not.toBeNull();
+
+    flushSync(() => root.unmount());
+    root = createRoot(container);
+    // Owners and reviews:override holders close through the review override.
+    boardAccess = {
+      source: "session",
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
+      reviewOverrideCompanyIds: ["company-1"],
+    };
+    await renderPage();
+    click(container.querySelector('[data-desk-close-finished="4"]'));
+    await flush();
+    expect(issuesUpdateMock).toHaveBeenCalledWith("4", expect.objectContaining({ status: "done", reviewOverride: true }));
+  });
+
+  it("puts tasks with no work for a week in a collapsed Gone quiet group at the bottom", async () => {
+    const now = Date.now();
+    openIssues = [
+      makeIssue("5", { title: "Live work", lastActivityAt: new Date(now - DAY) }),
+      makeIssue("6", { title: "When a client is near", lastActivityAt: new Date(now - 9 * DAY) }),
+      // A recent run is work too.
+      makeIssue("7", {
+        title: "Ran yesterday",
+        lastActivityAt: new Date(now - 9 * DAY),
+        latestRun: { status: "succeeded", errorCode: null, finishedAt: new Date(now - DAY) },
+      }),
+    ];
+    await renderPage();
+
+    expect(groupOf("5")).toBe("needs_you");
+    expect(groupOf("7")).toBe("needs_you");
+    expect(container.querySelector('[data-row="6"]')).toBeNull();
+    const quiet = container.querySelector<HTMLDetailsElement>("[data-desk-gone-quiet]");
+    expect(quiet?.open).toBe(false);
+    expect(quiet?.querySelector("summary")?.textContent).toContain("Gone quiet (1)");
+    expect(quiet?.textContent).toContain("When a client is near");
   });
 });

@@ -181,14 +181,40 @@ export function mergeMyTasks<TItem extends DecisionItem>(input: {
  * the list already returns with a user context (touchedByUserId=me).
  */
 
-export const MY_TASKS_GROUPS = ["needs_you", "waiting", "done_today"] as const;
+export const MY_TASKS_GROUPS = ["needs_you", "looks_finished", "waiting", "done_today"] as const;
 export type MyTasksGroup = (typeof MY_TASKS_GROUPS)[number];
 
 export const MY_TASKS_GROUP_LABELS: Record<MyTasksGroup, string> = {
   needs_you: "Needs you",
+  looks_finished: "Looks finished",
   waiting: "Waiting on an agent",
   done_today: "Done today",
 };
+
+/** Open tasks with no work this long sit in "Gone quiet" on the Desk. */
+export const GONE_QUIET_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * When work last happened on a task: a comment, a status change or a
+ * document edit (all in lastActivityAt, which lists carry), or a run. Null
+ * when the list did not say, so a task never looks quiet by accident.
+ */
+export function lastWorkAt(issue: Pick<Issue, "lastActivityAt" | "latestRun">): number | null {
+  const activity = toTime(issue.lastActivityAt);
+  if (activity === null) return null;
+  const run = toTime(issue.latestRun?.finishedAt);
+  return run === null ? activity : Math.max(activity, run);
+}
+
+/** Open, not flagged as looking finished, and nothing has happened for a week. */
+export function isGoneQuiet(
+  issue: Pick<Issue, "status" | "lastActivityAt" | "latestRun"> & Partial<Pick<Issue, "looksFinishedAt">>,
+  now: number = Date.now(),
+): boolean {
+  if (issue.status === "done" || issue.status === "cancelled" || issue.looksFinishedAt) return false;
+  const last = lastWorkAt(issue);
+  return last !== null && now - last >= GONE_QUIET_AFTER_MS;
+}
 
 export type MyTasksAskState = "waiting" | "answered";
 
@@ -236,11 +262,12 @@ export function isDoneToday(issue: Pick<Issue, "status" | "completedAt">, now: D
  * you. A question still open, or a task handed to an agent, waits.
  */
 export function myTasksGroupOf(
-  issue: AskStateIssue & Pick<Issue, "status" | "assigneeAgentId">,
+  issue: AskStateIssue & Pick<Issue, "status" | "assigneeAgentId"> & Partial<Pick<Issue, "looksFinishedAt">>,
   reasons: readonly MyTasksReason[],
   now: number = Date.now(),
 ): MyTasksGroup {
   if (issue.status === "done") return "done_today";
+  if (issue.looksFinishedAt) return "looks_finished";
   if (reasons.includes("blocking") || reasons.includes("decision")) return "needs_you";
   const ask = myTasksAskState(issue, now);
   if (ask === "answered") return "needs_you";

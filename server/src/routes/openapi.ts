@@ -10285,6 +10285,11 @@ registry.registerPath({
   path: "/api/issues/{id}/table",
   tags: ["issues"],
   summary: "Table a task (Not now): park it in backlog with an optional return date; no agent wakes until it returns",
+  description: [
+    "Board users can table any task. To wait on someone outside the company, send `waitingOn` (who, free text) and `returnAt`:",
+    "the task is tabled until that date, the note is recorded as a comment, and the task comes back by itself on the date.",
+    "Agents may call this only for a task assigned to them, and only with both `waitingOn` and `returnAt`.",
+  ].join(" "),
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(tableIssueSchema),
@@ -10299,6 +10304,15 @@ registry.registerPath({
   summary: "Bring a tabled task back to the status it had before it was tabled",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/looks-finished/dismiss",
+  tags: ["issues"],
+  summary: "Not finished: clear the hourly check's looks-finished flag; it is not set again until new work happens on the task",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

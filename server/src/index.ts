@@ -97,6 +97,8 @@ import {
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
   returnDueTabledIssues,
+  looksFinishedService,
+  LOOKS_FINISHED_SWEEP_INTERVAL_MS,
   statusCardService,
   toolAccessService,
   workspaceOperationService,
@@ -1626,6 +1628,24 @@ async function startServerWithDatabaseTeardown(
           logger.error({ err }, "terminal issue workspace reaper failed");
         }));
     };
+    // Tidy desk, at most once an hour: flag open work that looks finished and
+    // give the lead agent one review task a day. It never changes a status.
+    let lastLooksFinishedSweepAt = 0;
+    const scheduleLooksFinishedSweep = () => {
+      if (heartbeatSchedulerStopped) return;
+      if (Date.now() - lastLooksFinishedSweepAt < LOOKS_FINISHED_SWEEP_INTERVAL_MS) return;
+      lastLooksFinishedSweepAt = Date.now();
+      trackHeartbeatSchedulerWork(looksFinishedService(db, { heartbeat })
+        .sweep()
+        .then((result) => {
+          if (result.flagged > 0 || result.cleared > 0 || result.reviews > 0) {
+            logger.info(result, "looks finished check changed flags");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "looks finished check failed");
+        }));
+    };
     // Opt-in (GSAM_UNRECORDED_WORKTREE_IDLE_DAYS), at most once an hour: remove
     // idle git worktrees that agents made by hand and nothing records.
     let lastUnrecordedWorktreeSweepAt = 0;
@@ -2019,6 +2039,7 @@ async function startServerWithDatabaseTeardown(
         scheduleBudgetHoldReleaseSweep();
         scheduleDeliverableLinkCheck();
         scheduleUnrecordedWorktreeSweep();
+        scheduleLooksFinishedSweep();
         scheduleRunProcessSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();

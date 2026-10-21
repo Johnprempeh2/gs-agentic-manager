@@ -23,8 +23,9 @@ export const decisionsFeedApi = {
       `/companies/${companyId}/decisions-feed/cards/${encodeURIComponent(cardId)}/clarity`,
       input,
     ),
-  table: (issueId: string, returnAt: string | null) =>
-    api.post<Issue>(`/issues/${issueId}/table`, { returnAt }),
+  /** With `waitingOn`: "Waiting on someone outside", recorded as a comment on the task. */
+  table: (issueId: string, returnAt: string | null, waitingOn?: string) =>
+    api.post<Issue>(`/issues/${issueId}/table`, waitingOn ? { returnAt, waitingOn } : { returnAt }),
   bringBack: (issueId: string) => api.post<Issue>(`/issues/${issueId}/bring-back`, {}),
   listTabled: (companyId: string) => api.get<Issue[]>(`/companies/${companyId}/tabled-issues`),
 };

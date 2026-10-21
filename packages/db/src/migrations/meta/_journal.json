@@ -2647,6 +2647,13 @@
       "when": 1792541425620,
       "tag": "0379_issue_follows_and_recent_views",
       "breakpoints": true
+    },
+    {
+      "idx": 380,
+      "version": "7",
+      "when": 1792574727280,
+      "tag": "0380_issue_looks_finished",
+      "breakpoints": true
     }
   ]
 }

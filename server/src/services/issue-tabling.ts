@@ -64,6 +64,31 @@ export async function tabledIssueIdSet(db: Db, companyId: string) {
   return new Set(rows.map((row) => row.id));
 }
 
+/**
+ * SQL subquery: ids of the company's tabled tasks and every task under them.
+ * Parked work stays parked all the way down (Tidy desk).
+ */
+export function parkedIssueIdsSubquery(companyId: string) {
+  return sql`
+    WITH RECURSIVE parked(id) AS (
+      SELECT ${issues.id} FROM ${issues}
+      WHERE ${issues.companyId} = ${companyId} AND ${issues.tabledAt} IS NOT NULL
+      UNION
+      SELECT child.id FROM ${issues} child
+      JOIN parked ON child.parent_id = parked.id
+      WHERE child.company_id = ${companyId}
+    )
+    SELECT id FROM parked
+  `;
+}
+
+/** Ids of the company's tabled tasks and their whole subtrees. */
+export async function parkedIssueIdSet(db: Db, companyId: string) {
+  const rows = await db.execute<{ id: string }>(parkedIssueIdsSubquery(companyId));
+  const list = Array.isArray(rows) ? rows : (rows as { rows?: Array<{ id: string }> }).rows ?? [];
+  return new Set(list.map((row) => row.id));
+}
+
 export function issueTablingService(db: Db, options: { now?: () => Date } = {}) {
   const now = () => options.now?.() ?? new Date();
 
