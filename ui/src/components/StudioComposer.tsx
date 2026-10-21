@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface StudioComposerChip {
@@ -38,8 +38,10 @@ interface StudioComposerProps {
 /**
  * The studio's floating prompt bar: the prompt, a row of compact setting chips
  * and one bright Generate action. Each chip opens its settings above the
- * prompt, one at a time. On a phone the bar docks at the bottom of the screen
- * (its parent must be a flex column) and the chips scroll sideways inside it.
+ * prompt, one at a time. On a phone the bar docks at the bottom of the screen,
+ * above the nav and the keyboard, with the chips on their own sideways-scrolling
+ * row and the action full width under them. Its parent must be a flex column
+ * that starts at the top of the page, or the bar cannot rise when it grows.
  */
 export function StudioComposer({
   title,
@@ -65,9 +67,16 @@ export function StudioComposer({
       data-testid="studio-composer"
       className={cn(
         "gs-glass-card space-y-3 rounded-xl border bg-card p-3 shadow-sm transition-colors focus-within:border-ring sm:p-4",
-        "max-md:sticky max-md:bottom-(--tc-composer-bottom) max-md:z-sticky max-md:order-last",
+        // The dock class keeps the bar above the mobile nav and the iPhone keyboard.
+        "studio-composer-dock-bottom max-md:sticky max-md:z-sticky max-md:order-last",
         className,
       )}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          onOpenChipChange(null);
+        }
+      }}
     >
       <div className="flex items-center gap-2">
         <h2 id={titleId} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -83,14 +92,24 @@ export function StudioComposer({
           role="group"
           aria-label={chip.label}
           hidden={chip.id !== open?.id}
-          className="space-y-3 rounded-lg border border-border bg-background p-3 max-md:max-h-(--sz-50vh) max-md:overflow-y-auto"
+          className="space-y-3 rounded-lg border border-border bg-background p-3 max-md:max-h-(--sz-35dvh) max-md:overflow-y-auto"
           data-testid={`studio-panel-${chip.id}`}
         >
+          <button
+            type="button"
+            aria-label={`Close ${chip.label}`}
+            title="Close"
+            onClick={() => onOpenChipChange(null)}
+            className="float-right -mr-2 -mt-2 ml-2 grid size-10 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+            data-testid={`studio-panel-close-${chip.id}`}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
           {chip.panel}
         </div>
       ))}
       {children}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-md:flex-col max-md:items-stretch">
         <div
           className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scrollbar-none"
           role="toolbar"
@@ -110,7 +129,7 @@ export function StudioComposer({
                 title={chip.value ? `${chip.label}: ${chip.value}` : chip.label}
                 onClick={() => onOpenChipChange(expanded ? null : chip.id)}
                 className={cn(
-                  "inline-flex h-8 max-w-48 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors outline-none",
+                  "inline-flex h-8 max-w-48 shrink-0 max-md:h-10 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors outline-none",
                   "focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
                   expanded
                     ? "border-ring bg-accent text-accent-foreground"
@@ -128,7 +147,7 @@ export function StudioComposer({
             );
           })}
         </div>
-        <div className="shrink-0">{action}</div>
+        <div className="shrink-0 max-md:*:w-full">{action}</div>
       </div>
       {footnote ? <p className="text-xs text-muted-foreground max-md:hidden">{footnote}</p> : null}
     </section>

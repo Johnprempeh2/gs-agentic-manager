@@ -319,7 +319,8 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   ];
 
   return (
-    <div className="space-y-6">
+    // display: contents on a phone, so the docked composer belongs to the page column (see Images).
+    <div className="flex flex-col gap-6 max-md:contents">
       {!configured && statusQuery.isSuccess ? (
         <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm" data-testid="videos-not-set-up">
           <p className="font-medium text-foreground">Video making is not switched on yet</p>
@@ -329,7 +330,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6 max-md:contents">
         <StudioComposer
           title={sourceImage ? "Bring an image to life" : "Make a video"}
           aside={
