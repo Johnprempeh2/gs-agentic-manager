@@ -19,6 +19,16 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ErrorState } from "@/components/ErrorState";
 import { BoardSecretarySetting } from "@/components/strategy-board/BoardSecretarySetting";
 
@@ -184,6 +194,9 @@ export function InstanceExperimentalSettings() {
     ]);
   }, [setBreadcrumbs]);
 
+  // GRE-1743: model checks spend money, so turning them on asks first.
+  const [confirmPromptInjectionSpend, setConfirmPromptInjectionSpend] = useState(false);
+
   const experimentalQuery = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -264,6 +277,7 @@ export function InstanceExperimentalSettings() {
   const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
   const enableIntelligence = experimentalQuery.data?.enableIntelligence === true;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
+  const enablePromptInjectionModelChecks = experimentalQuery.data?.enablePromptInjectionModelChecks === true;
   const enableDeepDive = experimentalQuery.data?.enableDeepDive === true;
   // GRE-1382: the Board add-on needs the Strategy module.
   const enableStrategy = experimentalQuery.data?.enableStrategy === true;
@@ -396,6 +410,46 @@ export function InstanceExperimentalSettings() {
           managed={managedKeys.enableIntelligence}
           ariaLabel="Toggle intelligence experimental setting"
         />
+
+        <ExperimentalToggleCard
+          title="Prompt injection model checks"
+          description="Check each tool result for prompt injection with a model before an agent reads it. Without it, only the built-in pattern check runs."
+          footnote="Paid: every check is one OpenRouter call, billed to the company's shared OpenRouter connection and shown in Costs. Without that connection, or when a check fails, the built-in pattern check is used."
+          checked={enablePromptInjectionModelChecks}
+          onCheckedChange={(checked) =>
+            checked
+              ? setConfirmPromptInjectionSpend(true)
+              : toggleMutation.mutate({ enablePromptInjectionModelChecks: false })
+          }
+          disabled={toggleMutation.isPending}
+          settingKey="enablePromptInjectionModelChecks"
+          managed={managedKeys.enablePromptInjectionModelChecks}
+          ariaLabel="Toggle prompt injection model checks experimental setting"
+        />
+
+        <AlertDialog open={confirmPromptInjectionSpend} onOpenChange={setConfirmPromptInjectionSpend}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Turn on paid model checks?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Every tool result an agent gets is sent, with secrets removed, to OpenRouter for one model check.
+                Each check costs money. It is billed to the company's shared OpenRouter connection and shows in
+                Costs under the agent that called the tool. No check runs until you turn this on.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmPromptInjectionSpend(false);
+                  toggleMutation.mutate({ enablePromptInjectionModelChecks: true });
+                }}
+              >
+                Turn on paid checks
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
 
 
