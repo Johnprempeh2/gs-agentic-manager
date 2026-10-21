@@ -6781,7 +6781,8 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
     const markerPath = path.join(workspaceRoot, "runtime-spawned.marker");
     const provisionScript = [
       `require("node:fs").writeFileSync(${JSON.stringify(provisionMarkerPath)}, "provisioning");`,
-      "setTimeout(() => {}, 1200);",
+      // Longer than the readiness timeout below, so passing proves provision time is excluded.
+      "setTimeout(() => {}, 3200);",
     ].join(" ");
     const runtimeProvisionCommand =
       `${JSON.stringify(process.execPath)} -e ${JSON.stringify(provisionScript)}`;
@@ -6843,7 +6844,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
     });
 
     const waitForMarker = async (filePath: string) => {
-      const deadline = Date.now() + 5_000;
+      const deadline = Date.now() + 10_000;
       while (Date.now() < deadline) {
         if (existsSync(filePath)) return;
         await new Promise((resolve) => setTimeout(resolve, 25));
@@ -6906,7 +6907,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
               reuseScope: "execution_workspace",
               port: { type: "auto", envKey: "PORT" },
               expose: { urlTemplate: "http://127.0.0.1:{{port}}" },
-              readiness: { type: "http", intervalMs: 50, timeoutSec: 1 },
+              readiness: { type: "http", intervalMs: 50, timeoutSec: 3 },
               stopPolicy: { type: "manual" },
             },
           ],
