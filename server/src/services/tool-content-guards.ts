@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import type { PromptInjectionDetectorMetadata, PromptInjectionModelOutcome } from "@greatstone/shared";
 import { redactEventPayload, redactSensitiveText, REDACTED_EVENT_VALUE } from "../redaction.js";
 
 export class ToolContentValidationError extends Error {
@@ -6,6 +7,7 @@ export class ToolContentValidationError extends Error {
     message: string,
     public readonly reasonCode: string,
     public readonly findings: string[],
+    public readonly detectorMetadata?: PromptInjectionDetectorMetadata,
   ) {
     super(message);
   }
@@ -255,4 +257,76 @@ export function validateToolContent(input: {
     summary: redactedSummary,
     findings,
   };
+}
+
+/** Classifies one secret-redacted, serialized tool result. Never throws for provider failures. */
+export type ToolResultClassifier = (content: string) => Promise<PromptInjectionModelOutcome>;
+
+/**
+ * Greatstone (GRE-1743): the result check with an optional model classifier.
+ * With no classifier (the switch is off) it returns exactly what
+ * `validateToolContent` returns. A valid model verdict replaces the regex
+ * verdict; any unavailable or failed check falls back to the regex over the
+ * complete original result. Return values and summary hashes never change.
+ */
+export async function validateToolResultContent(input: {
+  value: unknown;
+  sensitiveMode?: "redact" | "block";
+  promptInjectionMode?: "redact" | "block";
+  classifier?: ToolResultClassifier;
+}) {
+  const promptInjectionMode = input.promptInjectionMode ?? "block";
+  // Sensitive-value handling and the summary stay on the existing path.
+  const base = validateToolContent({
+    value: input.value,
+    direction: "result",
+    sensitiveMode: input.sensitiveMode,
+    promptInjectionMode: "ignore",
+  });
+  const findings = [...base.findings];
+  let promptFindings: string[];
+  // Undefined when the switch is off, so audit rows stay as they were.
+  let detectorMetadata: PromptInjectionDetectorMetadata | undefined;
+  if (!input.classifier) {
+    promptFindings = scanPromptInjection(input.value);
+  } else {
+    // Wrapping lets the recursive redactor handle root arrays and strings.
+    const outbound = redactSensitiveText(stableSerialize(redactEventPayload({ value: input.value })?.value));
+    // A verdict cannot cover text hidden from the model but still returned to
+    // the caller, so a secret-named field cannot conceal instructions behind a
+    // safe verdict. Fall back before any provider call (and any spend).
+    const outcome: PromptInjectionModelOutcome =
+      outbound !== stableSerialize(base.value)
+        ? { status: "unavailable", reason: "input_redaction_mismatch" }
+        : await input.classifier(outbound);
+    if (outcome.status === "classified") {
+      promptFindings = outcome.findings;
+      detectorMetadata = {
+        detector: "model",
+        model: outcome.model,
+        policyVersion: outcome.policyVersion,
+        ...(outcome.costEventId ? { costEventId: outcome.costEventId } : {}),
+      };
+    } else {
+      promptFindings = scanPromptInjection(input.value);
+      detectorMetadata = {
+        detector: "regex",
+        fallbackReason: outcome.reason,
+        ...(outcome.model ? { model: outcome.model } : {}),
+        ...(outcome.costEventId ? { costEventId: outcome.costEventId } : {}),
+      };
+    }
+  }
+  if (promptFindings.length > 0) {
+    findings.push(...promptFindings);
+    if (promptInjectionMode === "block") {
+      throw new ToolContentValidationError(
+        "Tool result contained prompt-injection instructions and was blocked",
+        "prompt_injection_blocked",
+        promptFindings,
+        detectorMetadata,
+      );
+    }
+  }
+  return { ...base, findings, detectorMetadata };
 }

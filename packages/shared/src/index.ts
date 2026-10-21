@@ -63,6 +63,7 @@ export {
 } from "./strategy-board.js";
 export * from "./team-chat.js";
 export * from "./unblock-waiting.js";
+export * from "./prompt-injection-prevention.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   REQUIRED_CAPABILITIES_CONFIG_KEY,

@@ -191,6 +191,13 @@
     ],
     "enableFirstTaskPlanProposal": [
       "server/src/__tests__/issue-onboarding-first-task-routes.test.ts"
+    ],
+    "enablePromptInjectionModelChecks": [
+      "server/src/__tests__/prompt-injection-gateway.test.ts",
+      "server/src/__tests__/prompt-injection-classifier.test.ts",
+      "server/src/__tests__/tool-content-guards.test.ts",
+      "server/src/__tests__/instance-settings-service.test.ts",
+      "ui/src/pages/InstanceExperimentalSettings.test.tsx"
     ]
   }
 }
