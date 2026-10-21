@@ -172,6 +172,12 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableWorktreeRunExecution: z.boolean().default(false),
   worktreeRunExecutionActivatedAt: z.string().datetime().nullable().default(null),
   worktreeRunExecutionActivationInstanceId: z.string().min(1).nullable().default(null),
+  // Greatstone (GRE-1743): model-backed prompt-injection checks on tool
+  // results. Each check is a paid OpenRouter call, so the switch alone never
+  // spends: the server also needs the cutoff below, which it records only when
+  // a person turns the switch on through Settings > Experimental.
+  enablePromptInjectionModelChecks: z.boolean().default(false),
+  promptInjectionModelChecksEnabledAt: z.string().datetime().nullable().default(null),
 }).strict();
 
 export const patchInstanceExperimentalSettingsSchema = z
@@ -181,6 +187,7 @@ export const patchInstanceExperimentalSettingsSchema = z
         .omit({
           worktreeRunExecutionActivatedAt: true,
           worktreeRunExecutionActivationInstanceId: true,
+          promptInjectionModelChecksEnabledAt: true,
         })
         .shape,
     ),
@@ -221,7 +228,9 @@ export type InstanceExperimentalSettings = z.infer<typeof instanceExperimentalSe
 export type PatchInstanceExperimentalSettings = Partial<
   Omit<
     InstanceExperimentalSettings,
-    "worktreeRunExecutionActivatedAt" | "worktreeRunExecutionActivationInstanceId"
+    | "worktreeRunExecutionActivatedAt"
+    | "worktreeRunExecutionActivationInstanceId"
+    | "promptInjectionModelChecksEnabledAt"
   >
 >;
 export type PatchInstanceSettings = z.infer<typeof patchInstanceSettingsSchema>;
