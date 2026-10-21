@@ -830,7 +830,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 1,
         outputTokens: 2,
         costCents: 100,
-        occurredAt: new Date("2026-10-10T00:00:00.000Z"),
+        occurredAt: new Date("2026-04-10T00:00:00.000Z"),
       },
       {
         companyId,
@@ -844,7 +844,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 2,
         outputTokens: 4,
         costCents: 200,
-        occurredAt: new Date("2026-10-10T00:01:00.000Z"),
+        occurredAt: new Date("2026-04-10T00:01:00.000Z"),
       },
       {
         companyId,
@@ -858,7 +858,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 3,
         outputTokens: 6,
         costCents: 300,
-        occurredAt: new Date("2026-10-10T00:02:00.000Z"),
+        occurredAt: new Date("2026-04-10T00:02:00.000Z"),
       },
       {
         companyId,
@@ -872,13 +872,13 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 4,
         outputTokens: 8,
         costCents: 400,
-        occurredAt: new Date("2026-10-10T00:03:00.000Z"),
+        occurredAt: new Date("2026-04-10T00:03:00.000Z"),
       },
     ]);
 
     const summary = await costs.issueTreeSummary(companyId, rootIssueId);
 
-    expect(summary).toMatchObject({
+    expect(summary).toEqual({
       issueId: rootIssueId,
       issueCount: 3,
       includeDescendants: true,
@@ -903,6 +903,13 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
           apiEquivalentCents: computeApiEquivalentCents({
             provider: "openai", model: "gpt-5", inputTokens: 60, cachedInputTokens: 6, outputTokens: 12,
           }),
+          priceRows: [{
+            inputPerMTok: 1.25,
+            cachedInputPerMTok: 0.125,
+            outputPerMTok: 10,
+            effectiveFrom: "1970-01-01",
+            sourceUrl: "https://openai.com/api/pricing",
+          }],
         },
       ],
     });
@@ -1309,7 +1316,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 2_000_000,
         outputTokens: 100_000,
         costCents: 0,
-        occurredAt: new Date("2026-10-05T00:00:00.000Z"),
+        occurredAt: new Date("2026-04-05T00:00:00.000Z"),
       },
       {
         // metered API: billed $3.00, API-equivalent 1M in @ $3 = $3.00
@@ -1322,7 +1329,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 0,
         outputTokens: 0,
         costCents: 300,
-        occurredAt: new Date("2026-10-06T00:00:00.000Z"),
+        occurredAt: new Date("2026-04-06T00:00:00.000Z"),
       },
       {
         // subscription, cached inside input: 200k @ $1.25 + 800k @ $0.125 + 50k out @ $10 = $0.85
@@ -1335,7 +1342,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 800_000,
         outputTokens: 50_000,
         costCents: 0,
-        occurredAt: new Date("2026-10-07T00:00:00.000Z"),
+        occurredAt: new Date("2026-04-07T00:00:00.000Z"),
       },
       {
         // unknown model: tokens counted, price not guessed
@@ -1348,7 +1355,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 0,
         outputTokens: 500,
         costCents: 0,
-        occurredAt: new Date("2026-10-08T00:00:00.000Z"),
+        occurredAt: new Date("2026-04-08T00:00:00.000Z"),
       },
       {
         // outside the period
@@ -1361,7 +1368,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
         cachedInputTokens: 0,
         outputTokens: 0,
         costCents: 2_500,
-        occurredAt: new Date("2026-09-20T00:00:00.000Z"),
+        occurredAt: new Date("2026-03-20T00:00:00.000Z"),
       },
     ]);
 
@@ -1393,16 +1400,16 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
       adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
     });
     await db.insert(heartbeatRuns).values([
-      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-10-09T00:00:00.000Z"), finishedAt: new Date("2026-10-09T00:30:00.000Z") },
-      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-10-10T00:00:00.000Z"), finishedAt: new Date("2026-10-10T01:30:00.000Z") },
-      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-09-10T00:00:00.000Z"), finishedAt: new Date("2026-09-10T05:00:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-09T00:00:00.000Z"), finishedAt: new Date("2026-04-09T00:30:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-10T00:00:00.000Z"), finishedAt: new Date("2026-04-10T01:30:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-03-10T00:00:00.000Z"), finishedAt: new Date("2026-03-10T05:00:00.000Z") },
       { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "queued" },
     ]);
 
     const summary = await costs.apiEquivalent(
       companyId,
-      { from: new Date("2026-10-01T00:00:00.000Z"), to: new Date("2026-11-01T00:00:00.000Z") },
-      new Date("2026-11-10T00:00:00.000Z"),
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
     );
 
     expect(summary.actualApiSpendCents).toBe(300);
@@ -1442,8 +1449,8 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     await db.update(companies).set({ minimumWageHourlyCents: 1_250 }).where(eq(companies.id, companyId));
     const withRate = await costs.apiEquivalent(
       companyId,
-      { from: new Date("2026-10-01T00:00:00.000Z"), to: new Date("2026-11-01T00:00:00.000Z") },
-      new Date("2026-11-10T00:00:00.000Z"),
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
     );
     expect(withRate.minimumWageHourlyCents).toBe(1_250);
     expect(withRate.minimumWageEquivalentCents).toBe(2_500);
@@ -1451,8 +1458,8 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     await costs.deleteSubscription(companyId, anthropicPlan.id);
     const afterDelete = await costs.apiEquivalent(
       companyId,
-      { from: new Date("2026-10-01T00:00:00.000Z"), to: new Date("2026-11-01T00:00:00.000Z") },
-      new Date("2026-11-10T00:00:00.000Z"),
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
     );
     expect(afterDelete.subscriptionCostCents).toBeCloseTo(20_000, 6);
     await expect(costs.deleteSubscription(companyId, "not-a-uuid")).rejects.toThrow("Subscription not found");
@@ -1558,14 +1565,14 @@ describeEmbeddedPostgres("monthly cost ledger", () => {
       cachedInputTokens: 0,
       outputTokens: 0,
       costCents: 0,
-      occurredAt: new Date("2026-10-10T00:00:00.000Z"),
+      occurredAt: new Date("2026-04-10T00:00:00.000Z"),
       ...over,
     });
     await db.insert(costEvents).values([
       // seat-plan run with two models: one run, two lines
-      event({ heartbeatRunId: seatRunA, inputTokens: 200_000, cachedInputTokens: 1_000_000, outputTokens: 40_000, occurredAt: new Date("2026-10-01T00:00:00.000Z") }),
+      event({ heartbeatRunId: seatRunA, inputTokens: 200_000, cachedInputTokens: 1_000_000, outputTokens: 40_000, occurredAt: new Date("2026-04-01T00:00:00.000Z") }),
       event({ heartbeatRunId: seatRunA, model: "claude-sonnet-4-5-20250929", inputTokens: 300_000, outputTokens: 10_000 }),
-      event({ heartbeatRunId: seatRunB, inputTokens: 100_000, outputTokens: 5_000, occurredAt: new Date("2026-10-30T23:59:59.999Z") }),
+      event({ heartbeatRunId: seatRunB, inputTokens: 100_000, outputTokens: 5_000, occurredAt: new Date("2026-04-30T23:59:59.999Z") }),
       // seat-plan run on a model with no published price
       event({ heartbeatRunId: seatRunB, model: "claude-unreleased-9", inputTokens: 7_000, outputTokens: 1_000 }),
       // metered API runs record what was billed
@@ -1574,12 +1581,12 @@ describeEmbeddedPostgres("monthly cost ledger", () => {
       // cost reported without a run
       event({ agentId: apiAgent, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 1_000, costCents: 11 }),
       // outside the month or the company
-      event({ agentId: apiAgent, heartbeatRunId: marchRun, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 9_000_000, costCents: 9_999, occurredAt: new Date("2026-09-30T23:59:59.999Z") }),
-      event({ heartbeatRunId: seatRunB, inputTokens: 9_000_000, occurredAt: new Date("2026-11-01T00:00:00.000Z") }),
+      event({ agentId: apiAgent, heartbeatRunId: marchRun, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 9_000_000, costCents: 9_999, occurredAt: new Date("2026-03-31T23:59:59.999Z") }),
+      event({ heartbeatRunId: seatRunB, inputTokens: 9_000_000, occurredAt: new Date("2026-05-01T00:00:00.000Z") }),
       event({ companyId: otherCompanyId, agentId: otherAgent, heartbeatRunId: otherRun, inputTokens: 9_000_000, costCents: 9_999 }),
     ]);
 
-    const month = parseLedgerMonth("2026-10");
+    const month = parseLedgerMonth("2026-04");
     const result = await ledger.monthly(companyId, month);
 
     // Independent reference: raw sums straight from the run records.
@@ -1603,7 +1610,7 @@ describeEmbeddedPostgres("monthly cost ledger", () => {
       .filter((row) => row.billingType === "subscription_included")
       .reduce((total, row) => total + (computeApiEquivalentCents(row) ?? 0), 0);
 
-    expect(result.month).toBe("2026-10");
+    expect(result.month).toBe("2026-04");
     expect(result.totals).toMatchObject({
       eventCount: 7,
       runCount: 3,
@@ -1664,7 +1671,7 @@ describeEmbeddedPostgres("monthly cost ledger", () => {
     expect(csvSeat).toHaveLength(3);
     expect(csvSeat.every((row) => row[col("cost_basis")] === "api_equivalent")).toBe(true);
     const monthTotal = body.find((row) => row[col("row_type")] === "month_total")!;
-    expect(monthTotal[col("month")]).toBe("2026-10");
+    expect(monthTotal[col("month")]).toBe("2026-04");
     expect(monthTotal[col("cost_basis")]).toBe("mixed");
     expect(Number(monthTotal[col("billed_cents")])).toBe(331);
     expect(Number(monthTotal[col("ledger_cents")])).toBeCloseTo(result.totals.ledgerCents, 2);

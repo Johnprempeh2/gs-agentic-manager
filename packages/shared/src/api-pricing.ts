@@ -1,8 +1,8 @@
 /**
  * Published API-equivalent prices. Dates are UTC days; until is exclusive.
- * Existing Anthropic and OpenAI prices start on their last verified date.
- * Earlier usage remains unpriced because the old table did not prove when
- * those rates first applied.
+ * Existing Anthropic and OpenAI prices retain the old undated table's coverage
+ * for historical usage. Their effective start is a compatibility boundary,
+ * not a claim that these prices were published on that date.
  */
 /** Legacy table check date. Each dated row carries its own source. */
 export const API_PRICE_TABLE_CHECKED_AT = "2026-09-28";
@@ -29,8 +29,9 @@ const ARGON_SOURCE = "https://cloud.google.com/blog/products/ai-machine-learning
 function price(input: number, cached: number, output: number, effectiveFrom: string, sourceUrl: string, effectiveUntil?: string): ApiModelPrice {
   return { inputPerMTok: input, cachedInputPerMTok: cached, outputPerMTok: output, effectiveFrom, ...(effectiveUntil ? { effectiveUntil } : {}), sourceUrl };
 }
-const anthropic = (input: number, cached: number, output: number) => [price(input, cached, output, "2026-09-28", ANTHROPIC_SOURCE)];
-const openai = (input: number, cached: number, output: number) => [price(input, cached, output, "2026-09-28", OPENAI_SOURCE)];
+const LEGACY_EFFECTIVE_FROM = "1970-01-01";
+const anthropic = (input: number, cached: number, output: number) => [price(input, cached, output, LEGACY_EFFECTIVE_FROM, ANTHROPIC_SOURCE)];
+const openai = (input: number, cached: number, output: number) => [price(input, cached, output, LEGACY_EFFECTIVE_FROM, OPENAI_SOURCE)];
 
 export const API_PRICE_TABLE: Record<string, ProviderPriceTable> = {
   anthropic: {

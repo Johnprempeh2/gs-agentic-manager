@@ -32,6 +32,12 @@ describe("api pricing", () => {
     expect(resolveApiPrice("google", "gemini-4-argon", "2026-11-30")?.effectiveUntil).toBe("2026-12-01");
   });
 
+  it("continues to price existing Claude usage before the legacy check date", () => {
+    const usage = { provider: "anthropic", model: "claude-opus-4-8", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 };
+    expect(computeApiEquivalentCents(usage, "2026-04-10")).toBe(500);
+    expect(computeApiEquivalentCents(usage, "2026-09-27")).toBe(500);
+  });
+
   it("blends a forecast across a rate change, and reports missing future prices", () => {
     const usage = [{ provider: "google", model: "gemini-4-argon", inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 }];
     expect(forecastDatedUsage(usage, new Date("2026-11-30"), new Date("2026-12-02"))).toEqual({ cents: 600, unpriced: [] });
