@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { issues } from "@greatstone/db";
+import { normalizeIssueIdentifier } from "@greatstone/shared";
 import { accessService, issueFollowService } from "../services/index.js";
 import type { IssueAccessFields } from "../services/issue-follows.js";
 import { assertCompanyAccess, getAccessibleResource } from "./authz.js";
@@ -56,9 +57,14 @@ export function issueFollowRoutes(db: Db) {
     return decision.allowed;
   };
 
+  // Accepts a task id or its key (GRE-123), like the other /issues/:id routes.
   async function loadReadableIssue(req: Request, res: Response) {
     const id = req.params.id as string;
-    const issue = UUID_RE.test(id)
+    const identifier = normalizeIssueIdentifier(id);
+    const match = UUID_RE.test(id)
+      ? eq(issues.id, id)
+      : identifier ? eq(issues.identifier, identifier) : null;
+    const issue = match
       ? await db
         .select({
           id: issues.id,
@@ -70,7 +76,7 @@ export function issueFollowRoutes(db: Db) {
           status: issues.status,
         })
         .from(issues)
-        .where(and(eq(issues.id, id), isNull(issues.hiddenAt)))
+        .where(and(match, isNull(issues.hiddenAt)))
         .then((rows) => rows[0] ?? null)
       : null;
     const accessible = await getAccessibleResource(req, res, issue, "Issue not found");
