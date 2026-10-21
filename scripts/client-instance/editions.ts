@@ -66,6 +66,9 @@ export const MANAGED_FEATURES_OFF = [
   // it on Managed plus (Harbor's edition doc on GRE-1136, section 5). Needs
   // enableStrategy (D2 rule 1 on GRE-1354).
   "enableStrategyBoard",
+  // GRE-1743: paid model checks on tool results. Off in client installs until
+  // Beacon's beta scorecard passes it; the operator owns the spend decision.
+  "enablePromptInjectionModelChecks",
 ] as const satisfies readonly InstanceFeatureKey[];
 
 /**

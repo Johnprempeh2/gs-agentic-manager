@@ -231,6 +231,10 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
   enableSandboxDuplexBridge: { kind: "runtime", reason: "Read per run before the sandbox transport is chosen." },
   enableRunnerPreviewIngress: { kind: "runtime", reason: "Deprecated: runner ingress follows enableNativeRunner." },
   enableWorktreeRunExecution: { kind: "runtime", reason: "The scheduler reads it per run." },
+  enablePromptInjectionModelChecks: {
+    kind: "runtime",
+    reason: "The tool gateway reads it per tool result; off keeps the built-in pattern check.",
+  },
   enableStreamlinedLeftNavigation: { kind: "preference" },
   enableStreamlinedUi: { kind: "preference" },
   enableClassicTaskInterface: { kind: "preference" },
