@@ -2983,13 +2983,30 @@ function renderPaperclipWakePromptBody(
   }
 
   if (executionStage) {
+    const isDecisionWake =
+      executionStage.wakeRole === "reviewer" ||
+      executionStage.wakeRole === "approver";
     lines.push(
       `- execution wake role: ${executionStage.wakeRole ?? "unknown"}`,
       `- execution stage: ${executionStage.stageType ?? "unknown"}`,
       `- execution participant: ${principalLabel(executionStage.currentParticipant)}`,
       `- execution return assignee: ${principalLabel(executionStage.returnAssignee)}`,
-      `- last decision outcome: ${executionStage.lastDecisionOutcome ?? "none"}`,
     );
+    if (!isDecisionWake) {
+      lines.push(
+        `- last decision outcome: ${executionStage.lastDecisionOutcome ?? "none"}`,
+      );
+    } else if (executionStage.lastDecisionOutcome === "changes_requested") {
+      // A resubmit returns to the stage that asked for changes, so this
+      // outcome is this stage's earlier round.
+      lines.push(
+        "- last decision on this stage: changes_requested (an earlier round; this round has no decision yet)",
+      );
+    } else {
+      // Approving a stage moves the workflow past it, so an "approved"
+      // outcome on a pending stage is an earlier stage's (GRE-1781).
+      lines.push("- decision on this stage: none recorded yet");
+    }
     if (executionStage.allowedActions.length > 0) {
       lines.push(
         `- allowed actions: ${executionStage.allowedActions.join(", ")}`,
@@ -3003,15 +3020,15 @@ function renderPaperclipWakePromptBody(
       );
     }
     lines.push("");
-    if (
-      executionStage.wakeRole === "reviewer" ||
-      executionStage.wakeRole === "approver"
-    ) {
+    if (isDecisionWake) {
+      const issueId = normalized.issue?.id ?? "{issueId}";
       lines.push(
         `You are waking as the active ${executionStage.wakeRole} for this issue.`,
         "Do not execute the task itself or continue executor work.",
-        "Review the issue and choose one of the allowed actions above.",
-        "If you request changes, the workflow routes back to the stored return assignee.",
+        "Review the issue, then record your decision with one PATCH. A comment alone does not record a decision, and earlier comments do not count.",
+        `- approve: \`PATCH /api/issues/${issueId}\` with \`{"status": "done", "comment": "<why you approve>"}\`. The workflow moves to the next stage, or closes the issue when this is the last stage.`,
+        `- request changes: \`PATCH /api/issues/${issueId}\` with \`{"status": "in_progress", "comment": "<what must change>"}\`. The workflow routes back to the stored return assignee.`,
+        "Put the decision comment in the same PATCH request. Setting status `blocked` is not a decision: you keep the stage.",
         "",
       );
     } else if (executionStage.wakeRole === "executor") {

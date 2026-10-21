@@ -3023,6 +3023,9 @@ describe("renderPaperclipWakePrompt", () => {
     expect(prompt).toContain(
       "You are waking as the active reviewer for this issue.",
     );
+    expect(prompt).toContain(
+      '`PATCH /api/issues/issue-1` with `{"status": "done", "comment": ',
+    );
   });
 
   it("delivers typed disposition repair instructions without liveness classification", () => {
