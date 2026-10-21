@@ -25,7 +25,7 @@ const LAYOUT = { siblingGap: 28, levelGap: 72, padding: 48 };
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2;
 /** "Fit to screen" never shrinks cards below this; past it, the root stays in view instead. */
-const MIN_READABLE_ZOOM = 0.7;
+const MIN_READABLE_ZOOM = 0.6;
 const FIT_MARGIN = 32;
 const DRAG_THRESHOLD = 4;
 const GRID = 20;
@@ -153,11 +153,21 @@ export function TaskTreeCanvas({
       setView({ k: whole, x: (width - layout.width * whole) / 2, y: Math.max(FIT_MARGIN, (height - layout.height * whole) / 2) });
       return;
     }
-    // Too big to fit and still read: keep the cards legible, root at the top centre.
-    const rootBox = layout.boxes.find((box) => box.depth === 0);
+    // Too big to fit and still read: keep the cards legible, top of the tree in view,
+    // centred on the whole tree's width (centring on the root cut off a wide branch).
+    // Too big to fit and still read: keep the cards legible, the top of the tree in
+    // view, and centre on the span from the root to the first root blocker, so the
+    // task holding everything up is on screen when the tree opens.
     const k = MIN_READABLE_ZOOM;
-    setView({ k, x: width / 2 - ((rootBox?.x ?? 0) + (rootBox?.width ?? 0) / 2) * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k });
-  }, [layout]);
+    const rootBox = layout.boxes.find((box) => box.depth === 0);
+    const blockerBox = trace.rootBlockers
+      .map((blocker) => layout.byId.get(blocker.anchorId))
+      .find((box) => box !== undefined);
+    const span = [rootBox, blockerBox].filter((box): box is NonNullable<typeof box> => box !== undefined);
+    const left = span.length ? Math.min(...span.map((box) => box.x)) : 0;
+    const right = span.length ? Math.max(...span.map((box) => box.x + box.width)) : layout.width;
+    setView({ k, x: width / 2 - ((left + right) / 2) * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k });
+  }, [layout, trace]);
 
   const fittedOnce = useRef(false);
   useLayoutEffect(() => {
