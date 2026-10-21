@@ -151,6 +151,24 @@ describeEmbeddedPostgres("issue follows and recently opened", () => {
     await request(appFor("ben", [companyA])).put(`/api/issues/not-a-uuid/follow`).expect(404);
   });
 
+  it("accepts a task key (GRE-123) wherever it accepts a task id", async () => {
+    const companyA = await company("GRE");
+    const companyB = await company("BBB");
+    const taskA = await task(companyA, { issueNumber: 123, identifier: "GRE-123" });
+    await task(companyB, { issueNumber: 9, identifier: "BBB-9" });
+    const ben = appFor("ben", [companyA]);
+
+    await request(ben).put("/api/issues/GRE-123/follow").expect(200, { issueId: taskA, following: true });
+    await request(ben).get("/api/issues/gre-123/follow").expect(200, { issueId: taskA, following: true });
+    await request(ben).delete("/api/issues/GRE-123/follow").expect(200, { issueId: taskA, following: false });
+    await request(ben).post("/api/issues/GRE-123/recent-view").expect(204);
+    expect(await db.select().from(issueRecentViews)).toMatchObject([{ issueId: taskA }]);
+
+    // A key from a company the user cannot reach, or no task at all, looks missing.
+    await request(ben).put("/api/issues/BBB-9/follow").expect(404);
+    await request(ben).put("/api/issues/GRE-999/follow").expect(404);
+  });
+
   it("keeps the last ten opened tasks, newest first, per user", async () => {
     const companyId = await company("GRE");
     const ids: string[] = [];
