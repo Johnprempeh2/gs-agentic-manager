@@ -2,6 +2,7 @@
 # Read by scripts/upstream-pending.sh. Add a line when the daily check or a
 # sync skips a commit; the reason must say why (see the Upstream log on GRE-82).
 # Format: <upstream sha> <reason>
+813e808af #16963 removes filesystem-history auth from the #15749 task-workspace model (deferred, GRE-1505); our tree never had the gate. Revisit together with #15749.
 1d23cb696 #14394 their CI Rust cache paths; our CI is fork-owned
 3166e93a7 #14461 lockfile refresh; we regenerate our own lockfile at sync
 d1f3e7bb0 #14741 upstream README and roadmap; ours is rebranded
