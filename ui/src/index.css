@@ -2763,6 +2763,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   bottom: max(var(--tc-composer-bottom), calc(var(--vv-bottom-inset) + 0.25rem));
 }
 
+/* GS Studio composer: the same dock, phones only. Wider screens keep the bar
+   in the page flow, where an offset would nudge the relative glass card. */
+@media (width < 48rem) {
+  .studio-composer-dock-bottom {
+    bottom: max(var(--tc-composer-bottom), calc(var(--vv-bottom-inset) + 0.25rem));
+  }
+}
+
 /* Status chip/fill helpers.
    Each consumer sets a local `--sc` to the status' base hue (e.g.
    `--sc: var(--status-task-in_progress)`); these rules derive the rendered
@@ -3012,6 +3020,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-70vh: 70vh; /* Extracted from ui/src/components/IssueChatThread.test.tsx (max-h-[70vh]). */
   --sz-calc-7: calc(100% - 0.5rem); /* Extracted from ui/src/components/IssueChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
   --sz-28dvh: 28dvh; /* Extracted from ui/src/components/IssueChatThread.test.tsx (max-h-[28dvh]). */
+  --sz-35dvh: 35dvh; /* GS Studio settings panel on a phone, so the docked composer leaves room for the page. */
   --sz-72px: 72px; /* Extracted from ui/src/components/IssueChatThread.test.tsx (min-h-[72px]). */
   --sz-15px: 15px; /* Extracted from ui/src/components/IssueChatThread.test.tsx (p-[15px]). */
   --sz-calc-8: calc(env(safe-area-inset-bottom) + 20px); /* Extracted from ui/src/components/IssueChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */

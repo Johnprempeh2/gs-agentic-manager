@@ -742,7 +742,7 @@ export function CommandPalette() {
           </CommandItem>
           <CommandItem onSelect={() => go("/images")}>
             <ImageIcon className="mr-2 h-4 w-4" />
-            Images
+            GS Studio
           </CommandItem>
         </CommandGroup>
 

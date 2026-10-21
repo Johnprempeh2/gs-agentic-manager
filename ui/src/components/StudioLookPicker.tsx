@@ -96,10 +96,12 @@ export function StudioLookPicker({ companyId, idPrefix, lookId, onPick, current,
   return (
     <div className="space-y-2" data-testid={`${idPrefix}-house-look`}>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="min-w-0 flex-1 space-y-1 text-sm font-medium" htmlFor={`${idPrefix}-house-look`}>
+        <label className="min-w-0 grow basis-64 space-y-1 text-sm font-medium" htmlFor={`${idPrefix}-house-look`}>
           <span className="flex items-center gap-2">
             <Bookmark className="h-4 w-4 text-primary" aria-hidden="true" />
-            House look <span className="font-normal text-muted-foreground">(optional)</span>
+            <span>
+              House look <span className="font-normal text-muted-foreground">(optional)</span>
+            </span>
           </span>
           <NativeSelect
             id={`${idPrefix}-house-look`}

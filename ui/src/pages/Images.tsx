@@ -294,7 +294,7 @@ export function Images() {
   const [animateImage, setAnimateImage] = useState<GeneratedImage | null>(null);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Images" }]);
+    setBreadcrumbs([{ label: "GS Studio" }]);
   }, [setBreadcrumbs]);
 
   useEffect(() => {
@@ -776,9 +776,11 @@ export function Images() {
   ];
 
   return (
-    <div className="w-full max-w-7xl space-y-6">
+    // On a phone the wrappers below use display: contents, so the composer's
+    // sticky dock sits in this column and can rise as far as the page top.
+    <div className="flex w-full max-w-7xl flex-col gap-6">
       <header className="space-y-2">
-        <h1 className="text-2xl font-extrabold uppercase tracking-tight">{tab === "videos" ? "Video studio" : "Image studio"}</h1>
+        <h1 className="text-2xl font-extrabold uppercase tracking-tight">GS Studio</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
           Describe a picture or a short video and GSAM makes it for you. Your agents can make them for their tasks too.
         </p>
@@ -810,7 +812,7 @@ export function Images() {
       ) : (
         <>
           {!configured ? <NotSetUp provider={statusQuery.data?.provider} /> : null}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 max-md:contents">
             <StudioComposer
               title="Make an image"
               aside={
@@ -1046,7 +1048,7 @@ export function Images() {
           <DialogHeader>
             <DialogTitle>Delete this image?</DialogTitle>
             <DialogDescription>
-              It will be removed from Images for everyone. Copies already attached to tasks stay where they are.
+              It will be removed from GS Studio for everyone. Copies already attached to tasks stay where they are.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

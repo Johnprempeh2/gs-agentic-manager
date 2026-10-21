@@ -1,14 +1,14 @@
 import type { TourDefinition } from "./feature-tours";
 
-/** Images: describe a picture, pick a look, and find it again later. */
+/** GS Studio: describe a picture, pick a look, and find it again later. */
 export const IMAGES_TOUR: TourDefinition = {
   id: "images",
-  title: "Images",
+  title: "GS Studio",
   description: "Make a picture from a few words, pick a look, and find it again by client or task.",
   version: 1,
   autoStart: false,
   route: { match: /^\/images\/?$/, path: "/images" },
-  label: "Images",
+  label: "GS Studio",
   steps: [
     {
       title: "Pictures from plain words",

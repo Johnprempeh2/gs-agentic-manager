@@ -604,7 +604,7 @@ describe("Sidebar", () => {
     const chats = container.querySelector('[data-sidebar-section="chats"]');
     expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
-    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables", "GS Studio"]);
 
     flushSync(() => {
       root.unmount();
@@ -795,7 +795,7 @@ describe("Sidebar", () => {
     expect(headings).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
     expect(sectionLabels("Help")).toEqual(["What's newNew", "Tutorials"]);
     expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Desk", "Inbox", "Calendar"]);
-    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
+    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "GS Studio"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
     expect(sectionLabels("Admin")).toEqual([
@@ -836,7 +836,7 @@ describe("Sidebar", () => {
     expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
     expect(button("Expand Admin")).not.toBeNull();
     // Pipelines and Deep Dive are off, so Clients holds only Deliverables.
-    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables", "GS Studio"]);
     // Agent Chat reads off here (as in a client plan, GRE-1633), so Chats has nothing to show.
     expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
@@ -848,7 +848,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive in Clients only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "Images"]);
+    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "GS Studio"]);
     flushSync(() => {
       root.unmount();
     });

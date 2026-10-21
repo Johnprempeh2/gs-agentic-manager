@@ -92,7 +92,7 @@ export function StudioMediaCard({
 }
 
 const ACTION_CLASS =
-  "grid size-8 place-items-center rounded-full bg-background/80 text-foreground shadow-sm outline-none backdrop-blur-sm transition-colors hover:bg-background focus-visible:ring-(length:--rad-3) focus-visible:ring-ring disabled:pointer-events-none disabled:text-subtle-foreground";
+  "grid size-8 pointer-coarse:size-10 place-items-center rounded-full bg-background/80 text-foreground shadow-sm outline-none backdrop-blur-sm transition-colors hover:bg-background focus-visible:ring-(length:--rad-3) focus-visible:ring-ring disabled:pointer-events-none disabled:text-subtle-foreground";
 
 /** A round icon action for a media card overlay: a button, or a link when given an href. */
 export function StudioMediaAction({
@@ -170,7 +170,7 @@ export function StudioEmptyGallery({
         {["aspect-square", "aspect-video", "aspect-3/4", "aspect-4/3"].map((shape, index) => (
           <div
             key={shape}
-            className={cn("grid place-items-center rounded-xl bg-muted", shape, index > 1 && "max-sm:hidden")}
+            className={cn("grid place-items-center rounded-xl bg-muted max-sm:aspect-4/3", shape, index > 1 && "max-sm:hidden")}
           >
             <Icon className="h-6 w-6 text-muted-foreground" />
           </div>
