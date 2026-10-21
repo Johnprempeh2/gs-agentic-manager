@@ -287,6 +287,18 @@ export interface InstanceExperimentalSettings {
    * from another instance fail closed.
    */
   worktreeRunExecutionActivationInstanceId: string | null;
+  /**
+   * Greatstone (GRE-1743): check tool results for prompt injection with a
+   * paid model call (the company's shared OpenRouter connection) before the
+   * built-in regex. Off by default.
+   */
+  enablePromptInjectionModelChecks: boolean;
+  /**
+   * Server-managed: set when a person turns model checks on in Settings >
+   * Experimental after the spend notice; cleared when they are turned off.
+   * Without it no model call runs, even with the switch on.
+   */
+  promptInjectionModelChecksEnabledAt: string | null;
 }
 
 /**

@@ -91,6 +91,8 @@ describe("instance settings service", () => {
       enableWorktreeRunExecution: false,
       worktreeRunExecutionActivatedAt: null,
       worktreeRunExecutionActivationInstanceId: null,
+      enablePromptInjectionModelChecks: false,
+      promptInjectionModelChecksEnabledAt: null,
     });
   });
 
@@ -474,4 +476,49 @@ describe("instance settings service", () => {
     expect(getExperimental).not.toHaveBeenCalled();
   });
 
+});
+
+// GRE-1743: no paid model check runs unless a person turned it on in Settings.
+describe("prompt injection model checks spend cutoff", () => {
+  const now = () => new Date("2026-10-21T09:00:00.000Z");
+
+  it("is off with no cutoff by default", () => {
+    const settings = normalizeExperimentalSettings({});
+    expect(settings.enablePromptInjectionModelChecks).toBe(false);
+    expect(settings.promptInjectionModelChecksEnabledAt).toBeNull();
+  });
+
+  it("records the cutoff when a person turns the switch on and clears it when they turn it off", () => {
+    const on = applyExperimentalSettingsPatch({}, { enablePromptInjectionModelChecks: true }, { now });
+    expect(on.enablePromptInjectionModelChecks).toBe(true);
+    expect(on.promptInjectionModelChecksEnabledAt).toBe("2026-10-21T09:00:00.000Z");
+
+    const unrelated = applyExperimentalSettingsPatch(on, { enableDeepDive: true }, { now: () => new Date(0) });
+    expect(unrelated.promptInjectionModelChecksEnabledAt).toBe("2026-10-21T09:00:00.000Z");
+
+    const off = applyExperimentalSettingsPatch(on, { enablePromptInjectionModelChecks: false }, { now });
+    expect(off.enablePromptInjectionModelChecks).toBe(false);
+    expect(off.promptInjectionModelChecksEnabledAt).toBeNull();
+  });
+
+  it("a managed-config on sets no cutoff, so it cannot start paid checks alone", () => {
+    const { experimental } = applyManagedExperimentalOverlay(
+      normalizeExperimentalSettings({}),
+      { features: { enablePromptInjectionModelChecks: true } } as unknown as Parameters<
+        typeof applyManagedExperimentalOverlay
+      >[1],
+    );
+    expect(experimental.enablePromptInjectionModelChecks).toBe(true);
+    expect(experimental.promptInjectionModelChecksEnabledAt).toBeNull();
+  });
+
+  it("ignores a client-sent cutoff", () => {
+    const next = applyExperimentalSettingsPatch(
+      {},
+      { promptInjectionModelChecksEnabledAt: "2026-01-01T00:00:00.000Z" } as Record<string, unknown>,
+      { now },
+    );
+    expect(next.enablePromptInjectionModelChecks).toBe(false);
+    expect(next.promptInjectionModelChecksEnabledAt).toBeNull();
+  });
 });

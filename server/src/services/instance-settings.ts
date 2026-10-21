@@ -89,6 +89,7 @@ function stripServerManagedExperimentalPatchFields(
   const {
     worktreeRunExecutionActivatedAt: _ignoredActivatedAt,
     worktreeRunExecutionActivationInstanceId: _ignoredActivationInstanceId,
+    promptInjectionModelChecksEnabledAt: _ignoredPromptInjectionEnabledAt,
     ...patchable
   } = patch as Record<string, unknown>;
   return patchable as PatchInstanceExperimentalSettings;
@@ -101,10 +102,15 @@ export function applyExperimentalSettingsPatch(
 ): InstanceExperimentalSettings {
   const previousExperimental = normalizeExperimentalSettings(current);
   const patchable = stripServerManagedExperimentalPatchFields(patch);
-  const nextExperimental = normalizeExperimentalSettings({
-    ...previousExperimental,
-    ...patchable,
-  });
+  const nextExperimental = applyPromptInjectionModelChecksPatch(
+    previousExperimental,
+    normalizeExperimentalSettings({
+      ...previousExperimental,
+      ...patchable,
+    }),
+    patchable,
+    options,
+  );
   const hasWorktreeRunExecutionPatch = Object.prototype.hasOwnProperty.call(
     patchable,
     "enableWorktreeRunExecution",
@@ -135,6 +141,31 @@ export function applyExperimentalSettingsPatch(
     ...nextExperimental,
     worktreeRunExecutionActivatedAt: (options.now ?? (() => new Date()))().toISOString(),
     worktreeRunExecutionActivationInstanceId: getRuntimeInstanceId(runtimeEnv),
+  };
+}
+
+/**
+ * Greatstone (GRE-1743): a person turning model checks on through this patch
+ * (Settings > Experimental shows the spend notice first) records the cutoff;
+ * turning them off clears it. A managed-config "on" never reaches this path,
+ * so it cannot start paid model calls by itself.
+ */
+function applyPromptInjectionModelChecksPatch(
+  previous: InstanceExperimentalSettings,
+  next: InstanceExperimentalSettings,
+  patchable: PatchInstanceExperimentalSettings,
+  options: InstanceSettingsServiceOptions,
+): InstanceExperimentalSettings {
+  if (!Object.prototype.hasOwnProperty.call(patchable, "enablePromptInjectionModelChecks")) return next;
+  if (next.enablePromptInjectionModelChecks !== true) {
+    return { ...next, promptInjectionModelChecksEnabledAt: null };
+  }
+  if (previous.enablePromptInjectionModelChecks === true && previous.promptInjectionModelChecksEnabledAt) {
+    return next;
+  }
+  return {
+    ...next,
+    promptInjectionModelChecksEnabledAt: (options.now ?? (() => new Date()))().toISOString(),
   };
 }
 
@@ -337,6 +368,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       worktreeRunExecutionActivatedAt: parsed.data.worktreeRunExecutionActivatedAt ?? null,
       worktreeRunExecutionActivationInstanceId:
         parsed.data.worktreeRunExecutionActivationInstanceId ?? null,
+      enablePromptInjectionModelChecks: parsed.data.enablePromptInjectionModelChecks ?? false,
+      promptInjectionModelChecksEnabledAt: parsed.data.promptInjectionModelChecksEnabledAt ?? null,
     };
   }
   return {
@@ -386,6 +419,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableWorktreeRunExecution: false,
     worktreeRunExecutionActivatedAt: null,
     worktreeRunExecutionActivationInstanceId: null,
+    enablePromptInjectionModelChecks: false,
+    promptInjectionModelChecksEnabledAt: null,
   };
 }
 

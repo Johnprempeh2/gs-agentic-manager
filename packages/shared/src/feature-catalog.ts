@@ -386,6 +386,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enablePromptInjectionModelChecks: {
+    title: "Prompt injection model checks",
+    description:
+      "Check each tool result for prompt injection with a model before an agent reads it. Paid: every check is one OpenRouter call billed to the company's shared OpenRouter connection and shown in Costs. Without that connection, or when a check fails, the built-in pattern check is used.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
 };
 
 export const INSTANCE_FEATURE_KEYS = Object.keys(INSTANCE_FEATURE_CATALOG).sort() as InstanceFeatureKey[];
