@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeIssueExecutionPolicy } from "../services/issue-execution-policy.ts";
 
 const mockIssueService = vi.hoisted(() => ({
@@ -1221,5 +1221,191 @@ describe("issue execution policy routes", () => {
         details: expect.not.objectContaining({ externalRef: expect.anything() }),
       }),
     );
+  });
+
+  describe("review override", () => {
+    const ISSUE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const STAGE_ID = "11111111-1111-4111-8111-111111111111";
+    const REVIEWER_AGENT_ID = "33333333-3333-4333-8333-333333333333";
+    const RETURN_AGENT_ID = "44444444-4444-4444-8444-444444444444";
+    const owners = new Set(["john-user"]);
+    const granted = new Set<string>();
+    const txInsertValues = vi.fn(async () => undefined);
+
+    function escalatedIssue() {
+      return {
+        id: ISSUE_ID,
+        companyId: "company-1",
+        status: "in_review",
+        assigneeAgentId: null,
+        assigneeUserId: "ben-user",
+        createdByUserId: "john-user",
+        identifier: "GRE-1538",
+        title: "Waits on Ben",
+        executionPolicy: normalizeIssueExecutionPolicy({
+          stages: [{ id: STAGE_ID, type: "review", participants: [{ type: "agent", agentId: REVIEWER_AGENT_ID }] }],
+        }),
+        executionState: {
+          status: "pending",
+          currentStageId: STAGE_ID,
+          currentStageIndex: 0,
+          currentStageType: "review",
+          // Escalated: agents used up their rounds, so Ben holds the stage.
+          currentParticipant: { type: "user", userId: "ben-user" },
+          returnAssignee: { type: "agent", agentId: RETURN_AGENT_ID },
+          completedStageIds: [],
+          lastDecisionId: null,
+          lastDecisionOutcome: null,
+          changesRequestedCount: 3,
+        },
+      };
+    }
+
+    function personActor(userId: string, membershipRole: string) {
+      return {
+        type: "board",
+        userId,
+        companyIds: ["company-1"],
+        memberships: [{ companyId: "company-1", membershipRole, status: "active" }],
+        source: "session",
+        isInstanceAdmin: false,
+      } as unknown as TestActor;
+    }
+
+    beforeEach(() => {
+      granted.clear();
+      txInsertValues.mockClear();
+      vi.doMock("../services/board-identity.js", async () => ({
+        ...(await vi.importActual<typeof import("../services/board-identity.js")>("../services/board-identity.js")),
+        isActiveCompanyOwner: vi.fn(async (_db: unknown, _companyId: string, userId: string) => owners.has(userId)),
+      }));
+      vi.doMock("../services/review-override.js", async () => {
+        const actual = await vi.importActual<typeof import("../services/review-override.js")>("../services/review-override.js");
+        const names: Record<string, string> = { "john-user": "John Prempeh", "ben-user": "Ben Kafui Mensah", "admin-user": "Ada Admin" };
+        return {
+          ...actual,
+          describeReviewOverride: vi.fn(async (_db: unknown, override: { actorUserId: string; reviewer: { userId?: string | null }; outcome: "approved" | "changes_requested"; reason: string }) =>
+            actual.reviewOverrideText({
+              outcome: override.outcome,
+              actorName: names[override.actorUserId] ?? override.actorUserId,
+              reviewerName: names[override.reviewer.userId ?? ""] ?? "someone",
+              reason: override.reason,
+            })),
+        };
+      });
+      mockAccessService.canUser.mockResolvedValue(true);
+      mockAccessService.hasPermission.mockImplementation(async (...args: unknown[]) =>
+        args[3] === "reviews:override" && granted.has(String(args[2])));
+      mockDb.transaction.mockImplementation(async (callback: (tx: any) => Promise<unknown>) =>
+        callback({ select: mockDbSelect, insert: () => ({ values: txInsertValues }) }));
+      mockIssueService.addComment.mockResolvedValue({ id: "comment-1" });
+      const issue = escalatedIssue();
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockIssueService.update.mockImplementation(async (_id: string, patch: Record<string, unknown>) => ({
+        ...issue,
+        ...patch,
+        updatedAt: new Date(),
+      }));
+    });
+
+    afterEach(() => {
+      vi.doUnmock("../services/board-identity.js");
+      vi.doUnmock("../services/review-override.js");
+      mockDb.transaction.mockImplementation(async (callback: (tx: any) => Promise<unknown>) =>
+        callback({ select: mockDbSelect }));
+      mockAccessService.hasPermission.mockReset();
+    });
+
+    it("still refuses the owner without the override flag", async () => {
+      const res = await request(await createApp(personActor("john-user", "owner")))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ status: "done", comment: "Looks good" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.details).toMatchObject({ code: "review_stage_change_refused" });
+      expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
+
+    it("lets the owner approve on the escalated reviewer's behalf and records who and why", async () => {
+      const res = await request(await createApp(personActor("john-user", "owner")))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ status: "done", reviewOverride: true, overrideReason: "I checked it with Ben on the call" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      const text = "Approved by John Prempeh (review override, reviewer was Ben Kafui Mensah): I checked it with Ben on the call";
+      const updatePatch = mockIssueService.update.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(updatePatch.status).toBe("done");
+      expect(updatePatch.executionState).toMatchObject({ status: "completed", lastDecisionOutcome: "approved" });
+      expect(txInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: "approved",
+        actorUserId: "john-user",
+        body: text,
+      }));
+      expect(mockIssueService.addComment).toHaveBeenCalledWith(ISSUE_ID, text, {}, { authorType: "system" }, expect.anything());
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: "issue.review_overridden",
+          actorId: "john-user",
+          details: expect.objectContaining({
+            outcome: "approved",
+            reviewer: { type: "user", userId: "ben-user" },
+            reason: "I checked it with Ben on the call",
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it("lets a granted admin request changes on someone else's behalf", async () => {
+      granted.add("admin-user");
+      const res = await request(await createApp(personActor("admin-user", "admin")))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ status: "in_progress", reviewOverride: true, overrideReason: "Tests are missing" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      const updatePatch = mockIssueService.update.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(updatePatch.status).toBe("in_progress");
+      expect(updatePatch.assigneeAgentId).toBe(RETURN_AGENT_ID);
+      expect(txInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: "changes_requested",
+        body: "Changes requested by Ada Admin (review override, reviewer was Ben Kafui Mensah): Tests are missing",
+      }));
+    });
+
+    it("refuses an override without a reason", async () => {
+      const res = await request(await createApp(personActor("john-user", "owner")))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ status: "done", reviewOverride: true, overrideReason: "   " });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toContain("reason");
+      expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses an admin who was not granted the override", async () => {
+      const res = await request(await createApp(personActor("admin-user", "admin")))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ status: "done", reviewOverride: true, overrideReason: "Ship it" });
+
+      expect(res.status).toBe(403);
+      expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses agents, even ones holding the grant", async () => {
+      granted.add(REVIEWER_AGENT_ID);
+      const res = await request(await createApp({
+        type: "agent",
+        agentId: REVIEWER_AGENT_ID,
+        companyId: "company-1",
+        runId: "55555555-5555-4555-8555-555555555555",
+      }))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ status: "done", reviewOverride: true, overrideReason: "Ship it" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Agents cannot");
+      expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
   });
 });

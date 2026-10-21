@@ -118,6 +118,7 @@ import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
 import { taskTimeLine } from "../../lib/time-to-done";
 import { IssueDueDateRow } from "./IssueDueDateRow";
+import { ReviewOverrideActions } from "./ReviewOverrideActions";
 import {
   buildWorkspaceSelectionUpdate,
   currentWorkspaceSelection,
@@ -2813,6 +2814,18 @@ export function IssueProperties({
         {currentExecutionLabel && (
           <PropertyRow label="Execution">
             <span className="text-sm truncate min-w-0" title={currentExecutionLabel}>{currentExecutionLabel}</span>
+          </PropertyRow>
+        )}
+        {issue.executionState?.status === "pending" && issue.executionState.currentParticipant && (
+          <PropertyRow label="">
+            <ReviewOverrideActions
+              issue={issue}
+              currentUserId={currentUserId}
+              reviewerLabel={issue.executionState.currentParticipant.type === "agent"
+                ? agentName(issue.executionState.currentParticipant.agentId ?? null)
+                : userLabel(issue.executionState.currentParticipant.userId ?? null)}
+              onUpdate={onUpdate}
+            />
           </PropertyRow>
         )}
 

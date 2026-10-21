@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
@@ -87,6 +88,7 @@ export function CompanyAccess() {
   const [resettingTwoStepMember, setResettingTwoStepMember] = useState<CompanyMember | null>(null);
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
+  const [draftReviewOverride, setDraftReviewOverride] = useState(false);
 
   useEffect(() => {
     setBreadcrumbs([
@@ -131,10 +133,20 @@ export function CompanyAccess() {
   };
 
   const updateMemberMutation = useMutation({
-    mutationFn: async (input: { memberId: string; membershipRole: CompanyMember["membershipRole"]; status: EditableMemberStatus }) => {
-      return accessApi.updateMember(selectedCompanyId!, input.memberId, {
+    mutationFn: async (input: {
+      memberId: string;
+      membershipRole: CompanyMember["membershipRole"];
+      status: EditableMemberStatus;
+      /** Set only when the review override grant changes. */
+      grants?: CompanyMember["grants"];
+    }) => {
+      const updated = await accessApi.updateMember(selectedCompanyId!, input.memberId, {
         membershipRole: input.membershipRole,
         status: input.status,
+      });
+      if (!input.grants) return updated;
+      return accessApi.updateMemberPermissions(selectedCompanyId!, input.memberId, {
+        grants: input.grants.map((grant) => ({ permissionKey: grant.permissionKey, scope: grant.scope })),
       });
     },
     onSuccess: async () => {
@@ -234,6 +246,7 @@ export function CompanyAccess() {
     if (!editingMember) return;
     setDraftRole(editingMember.membershipRole);
     setDraftStatus(isEditableMemberStatus(editingMember.status) ? editingMember.status : "suspended");
+    setDraftReviewOverride(memberHasReviewOverrideGrant(editingMember));
   }, [editingMember]);
 
   if (!selectedCompanyId) {
@@ -519,6 +532,24 @@ export function CompanyAccess() {
                   </select>
                 </label>
               </div>
+              {access?.canManageMembers ? (
+                <label className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    checked={draftRole === "owner" || draftReviewOverride}
+                    disabled={draftRole === "owner"}
+                    onCheckedChange={(checked) => setDraftReviewOverride(checked === true)}
+                    aria-label={REVIEW_OVERRIDE_LABEL}
+                  />
+                  <span className="space-y-0.5">
+                    <span className="block font-medium">{REVIEW_OVERRIDE_LABEL}</span>
+                    <span className="block text-muted-foreground">
+                      {draftRole === "owner"
+                        ? "Owners always have this."
+                        : "They can approve or send back a task that waits on another reviewer. They must give a reason, and the reviewer sees it."}
+                    </span>
+                  </span>
+                </label>
+              ) : null}
             </div>
           )}
           <DialogFooter>
@@ -528,10 +559,14 @@ export function CompanyAccess() {
             <Button
               onClick={() => {
                 if (!editingMember) return;
+                const reviewOverrideChanged = draftReviewOverride !== memberHasReviewOverrideGrant(editingMember);
                 updateMemberMutation.mutate({
                   memberId: editingMember.id,
                   membershipRole: draftRole,
                   status: draftStatus,
+                  grants: reviewOverrideChanged
+                    ? withReviewOverrideGrant(editingMember.grants, draftReviewOverride)
+                    : undefined,
                 });
               }}
               disabled={updateMemberMutation.isPending}
@@ -647,6 +682,19 @@ export function CompanyAccessLegacyRoute() {
       </div>
     </div>
   );
+}
+
+const REVIEW_OVERRIDE_LABEL = "Approve or send back reviews on someone else's behalf";
+
+function memberHasReviewOverrideGrant(member: CompanyMember) {
+  return member.grants.some((grant) => grant.permissionKey === "reviews:override");
+}
+
+/** The member's grants with reviews:override added or removed; the route replaces the whole set. */
+export function withReviewOverrideGrant(grants: CompanyMember["grants"], enabled: boolean): CompanyMember["grants"] {
+  const others = grants.filter((grant) => grant.permissionKey !== "reviews:override");
+  if (!enabled) return others;
+  return [...others, { permissionKey: "reviews:override", scope: null } as CompanyMember["grants"][number]];
 }
 
 function memberDisplayName(member: CompanyMember | null) {

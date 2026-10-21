@@ -53,8 +53,10 @@ import {
   notFound,
   unauthorized,
   badRequest,
-  tooManyRequests
+  tooManyRequests,
+  unprocessable,
 } from "../errors.js";
+import { REVIEW_OVERRIDE_PERMISSION } from "../services/review-override.js";
 import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
 
@@ -2917,12 +2919,24 @@ export function accessRoutes(
       throw unauthorized("Board authentication required");
     }
     const accessSnapshot = await boardAuth.resolveBoardAccess(req.actor.userId);
+    // Companies where this person holds an explicit reviews:override grant.
+    // Owners hold it implicitly; the UI reads that from memberships.
+    const reviewOverrideCompanyIds = await db
+      .select({ companyId: principalPermissionGrants.companyId })
+      .from(principalPermissionGrants)
+      .where(and(
+        eq(principalPermissionGrants.principalType, "user"),
+        eq(principalPermissionGrants.principalId, req.actor.userId),
+        eq(principalPermissionGrants.permissionKey, REVIEW_OVERRIDE_PERMISSION),
+      ))
+      .then((rows) => rows.map((row) => row.companyId));
     res.json({
       user: accessSnapshot.user,
       userId: req.actor.userId,
       isInstanceAdmin: accessSnapshot.isInstanceAdmin,
       companyIds: accessSnapshot.companyIds,
       memberships: accessSnapshot.memberships,
+      reviewOverrideCompanyIds,
       source: req.actor.source ?? "none",
       keyId: req.actor.source === "board_key" ? req.actor.keyId ?? null : null,
     });
@@ -3014,6 +3028,44 @@ export function accessRoutes(
     });
     res.json({ revoked: true, keyId: key.id });
   });
+
+  // reviews:override is for people only; its grant and revoke get their own log line.
+  async function memberHoldsReviewOverrideGrant(
+    companyId: string,
+    member: { principalType: string; principalId: string },
+  ) {
+    const grants = await access.listPrincipalGrants(companyId, member.principalType as "user" | "agent", member.principalId);
+    return grants.some((grant) => grant.permissionKey === REVIEW_OVERRIDE_PERMISSION);
+  }
+
+  function assertReviewOverrideGrantTarget(
+    member: { principalType: string },
+    grants: Array<{ permissionKey: string }>,
+  ) {
+    if (member.principalType !== "user" && grants.some((grant) => grant.permissionKey === REVIEW_OVERRIDE_PERMISSION)) {
+      throw unprocessable("Only people can be given the right to decide reviews on someone else's behalf");
+    }
+  }
+
+  async function logReviewOverrideGrantChange(
+    req: Request,
+    companyId: string,
+    member: { id: string; principalId: string },
+    before: boolean,
+    grants: Array<{ permissionKey: string }>,
+  ) {
+    const after = grants.some((grant) => grant.permissionKey === REVIEW_OVERRIDE_PERMISSION);
+    if (before === after) return;
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: after ? "company_member.review_override_granted" : "company_member.review_override_revoked",
+      entityType: "company_membership",
+      entityId: member.id,
+      details: { principalId: member.principalId, permissionKey: REVIEW_OVERRIDE_PERMISSION },
+    });
+  }
 
   async function assertCompanyPermission(
     req: Request,
@@ -4568,6 +4620,8 @@ export function accessRoutes(
       const memberToUpdate = await access.getMemberById(companyId, memberId);
       if (!memberToUpdate) throw notFound("Member not found");
       await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
+      const reviewOverrideBefore = await memberHoldsReviewOverrideGrant(companyId, memberToUpdate);
+      assertReviewOverrideGrantTarget(memberToUpdate, req.body.grants ?? []);
 
       const updated = await access.updateMemberAndPermissions(
         companyId,
@@ -4594,6 +4648,7 @@ export function accessRoutes(
           grantCount: req.body.grants?.length ?? 0,
         },
       });
+      await logReviewOverrideGrantChange(req, companyId, memberToUpdate, reviewOverrideBefore, req.body.grants ?? []);
 
       const member = (await loadCompanyMemberRecords(db, companyId)).find(
         (entry) => entry.id === memberId,
@@ -4681,6 +4736,8 @@ export function accessRoutes(
       const memberToUpdate = await access.getMemberById(companyId, memberId);
       if (!memberToUpdate) throw notFound("Member not found");
       await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
+      const reviewOverrideBefore = await memberHoldsReviewOverrideGrant(companyId, memberToUpdate);
+      assertReviewOverrideGrantTarget(memberToUpdate, req.body.grants ?? []);
       const updated = await access.setMemberPermissions(
         companyId,
         memberId,
@@ -4699,6 +4756,7 @@ export function accessRoutes(
           grantCount: req.body.grants?.length ?? 0,
         },
       });
+      await logReviewOverrideGrantChange(req, companyId, memberToUpdate, reviewOverrideBefore, req.body.grants ?? []);
       const member = (await loadCompanyMemberRecords(db, companyId)).find(
         (entry) => entry.id === memberId,
       );
