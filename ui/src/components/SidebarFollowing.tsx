@@ -4,15 +4,15 @@ import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSection } from "./SidebarSection";
 
 /**
- * "Following" in the sidebar: each followed task with how far its whole
- * subtree has got, one click away. Hidden until the user follows something.
+ * "Pinned" in the sidebar (follows in the API): each pinned task with how far
+ * its whole subtree has got, one click away. Hidden until the user pins one.
  */
 export function SidebarFollowing({ companyId }: { companyId: string | null | undefined }) {
   const { follows } = useIssueFollows(companyId);
   if (follows.length === 0) return null;
 
   return (
-    <SidebarSection label="Following">
+    <SidebarSection label="Pinned">
       {follows.map(({ issueId, issue, counts }) => {
         const progress = followProgressLabel(counts);
         const waiting = counts.waitingOnYou > 0 ? `, ${counts.waitingOnYou} waiting on you` : "";

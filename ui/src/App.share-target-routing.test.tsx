@@ -60,6 +60,9 @@ vi.mock("./context/DialogContext", () => ({
 
 vi.mock("./pages/Issues", () => ({ Issues: () => <div>ISSUES_PAGE</div> }));
 vi.mock("./pages/IssueDetail", () => ({ IssueDetail: () => <div>ISSUE_DETAIL_PAGE</div> }));
+// Tree-or-task choice has its own tests (TaskDefaultView.test.tsx); here the
+// route only has to reach the task page.
+vi.mock("./pages/TaskDefaultView", () => ({ TaskDefaultView: ({ task }: { task: ReactNode }) => task }));
 
 vi.mock("./components/CloudAccessGate", async () => {
   const { Outlet } = await import("react-router-dom");

@@ -327,6 +327,16 @@ function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
   return sorted;
 }
 
+/**
+ * Pinned tasks lead, each side keeping the chosen sort; grouping keeps this
+ * order, so pinned tasks come first within every group. The workflow sort is
+ * left alone: its order is what blocks what.
+ */
+export function pinnedFirst(issues: Issue[], pinnedIds: ReadonlySet<string>, state: Pick<IssueViewState, "sortField">): Issue[] {
+  if (pinnedIds.size === 0 || state.sortField === "workflow") return issues;
+  return [...issues.filter((issue) => pinnedIds.has(issue.id)), ...issues.filter((issue) => !pinnedIds.has(issue.id))];
+}
+
 // Only recency sorts (newest first) get date separators — for any other
 // sort/direction the boundaries would be meaningless.
 function issueDateSeparatorField(state: IssueViewState): "createdAt" | "updatedAt" | null {
@@ -1307,9 +1317,10 @@ export function IssuesList({
       liveIssueIds,
       issueFilterContext,
     );
-    return sortIssues(filteredByControls, viewState);
+    return pinnedFirst(sortIssues(filteredByControls, viewState), followedIssueIds, viewState);
   }, [
     searchScopedIssues,
+    followedIssueIds,
     viewState,
     currentUserId,
     enableRoutineVisibilityFilter,

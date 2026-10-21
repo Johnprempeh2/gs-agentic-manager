@@ -10,7 +10,7 @@ import {
   type IssueStatus,
   type RecentlyOpenedIssue,
 } from "@greatstone/shared";
-import { Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, Network, RotateCcw, Star } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, Network, RotateCcw } from "lucide-react";
 import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
 import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
@@ -123,8 +123,9 @@ function nextTickTarget(issueId: string): string | null {
 }
 
 /**
- * Desk (was My tasks): what needs you, the tasks you follow with how far they
- * have got, and the tasks you opened lately. Routine chores made by schedules
+ * Desk (was My tasks): the tasks you pinned with how far they have got, what
+ * needs you, and the tasks you opened lately. A pinned task shows only in
+ * Pinned, at the top. Routine chores made by schedules
  * and the system stay out of the way until you ask for them.
  */
 export function Desk() {
@@ -144,7 +145,13 @@ export function Desk() {
     setShowRoutineState(value);
     writeShowRoutine(value);
   };
-  const { follows, isLoading: followsLoading } = useIssueFollows(selectedCompanyId);
+  // Pinned = followed in the API. Open ones only; a finished task leaves the top.
+  const { follows } = useIssueFollows(selectedCompanyId);
+  const pinned = useMemo(
+    () => follows.filter(({ issue }) => issue.status !== "done" && issue.status !== "cancelled"),
+    [follows],
+  );
+  const pinnedIds = useMemo(() => new Set(pinned.map(({ issueId }) => issueId)), [pinned]);
   const recentlyOpened = useRecentlyOpenedIssues(selectedCompanyId);
 
   useEffect(() => {
@@ -291,8 +298,9 @@ export function Desk() {
     for (const issue of selectDoneToday(doneIssues ?? [])) {
       if (!byId.has(issue.id)) byId.set(issue.id, issue);
     }
-    return [...byId.values()];
-  }, [merged.issues, touchedIssues, doneIssues, currentUserId]);
+    // Pinned tasks already sit at the top; they do not show twice.
+    return [...byId.values()].filter((issue) => !pinnedIds.has(issue.id));
+  }, [merged.issues, touchedIssues, doneIssues, currentUserId, pinnedIds]);
 
   // Routine chores (schedules, digests, self-checks) stay hidden unless asked for.
   const routineCount = useMemo(
@@ -312,10 +320,9 @@ export function Desk() {
     return [live, quiet];
   }, [visibleIssues]);
   const visibleRecent = useMemo(
-    () => (showRoutine
-      ? recentlyOpened
-      : recentlyOpened.filter(({ issue }) => !isRoutineIssueOriginKind(issue.originKind))),
-    [recentlyOpened, showRoutine],
+    () => recentlyOpened.filter(({ issueId, issue }) =>
+      !pinnedIds.has(issueId) && (showRoutine || !isRoutineIssueOriginKind(issue.originKind))),
+    [recentlyOpened, showRoutine, pinnedIds],
   );
 
   const leadAgent = useMemo(() => resolveLeadAgent(agents ?? []), [agents]);
@@ -791,6 +798,12 @@ export function Desk() {
         )}
       </div>
 
+      {pinned.length > 0 ? (
+        <DeskSection id="desk-pinned" title="Pinned">
+          <DeskPinned companyId={selectedCompanyId} pinned={pinned} issueLinkState={issueLinkState} />
+        </DeskSection>
+      ) : null}
+
       <DeskSection id="desk-needs-me" title="Needs me">
         {nothingNeedsYou && !attentionError ? (
           <EmptyState
@@ -828,15 +841,6 @@ export function Desk() {
             {quietIssues.length > 0 && <DeskGoneQuiet issues={quietIssues} />}
           </>
         )}
-      </DeskSection>
-
-      <DeskSection id="desk-following" title="Following">
-        <DeskFollowing
-          companyId={selectedCompanyId}
-          follows={follows}
-          loading={followsLoading}
-          issueLinkState={issueLinkState}
-        />
       </DeskSection>
 
       <DeskSection id="desk-recent" title="Recently opened">
@@ -917,29 +921,18 @@ function DeskSection({ id, title, children }: { id: string; title: string; child
   );
 }
 
-function DeskFollowing({
+function DeskPinned({
   companyId,
-  follows,
-  loading,
+  pinned,
   issueLinkState,
 }: {
   companyId: string;
-  follows: IssueFollowWithRollup[];
-  loading: boolean;
+  pinned: IssueFollowWithRollup[];
   issueLinkState: unknown;
 }) {
-  if (loading) return null;
-  if (follows.length === 0) {
-    return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Star className="size-4 shrink-0" aria-hidden="true" />
-        Follow a task with the star on its page to see how it and everything under it is getting on.
-      </p>
-    );
-  }
   return (
     <ul className="grid gap-3 lg:grid-cols-2">
-      {follows.map(({ issueId, issue, counts, latestUpdates }) => (
+      {pinned.map(({ issueId, issue, counts, latestUpdates }) => (
         <li key={issueId} className="min-w-0 rounded-lg border border-border p-3" data-desk-follow={issueId}>
           <div className="mb-2 flex min-w-0 items-center gap-2">
             <StatusIcon status={issue.status} size="md" />

@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { Loader2, Star } from "lucide-react";
+import { Loader2, Pin } from "lucide-react";
 import type { IssueFollowRollupCounts, IssueFollowRollupUpdate } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
@@ -14,14 +14,14 @@ export interface FollowTaskButtonProps {
   pending?: boolean;
   /**
    * "button": labelled outline button for the task page.
-   * "icon": quiet star for task rows; shown on hover or focus until followed.
+   * "icon": quiet pin for task rows; shown on hover or focus until pinned.
    */
   variant?: "button" | "icon";
   onToggle: (nextFollowing: boolean) => void;
   className?: string;
 }
 
-/** A star that follows a task and everything under it. */
+/** Pins a task (API name: follow): it and everything under it sit at the top of the Desk. */
 export function FollowTaskButton({
   following,
   taskName,
@@ -30,9 +30,9 @@ export function FollowTaskButton({
   onToggle,
   className,
 }: FollowTaskButtonProps) {
-  const Icon = pending ? Loader2 : Star;
+  const Icon = pending ? Loader2 : Pin;
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
-    // Rows sit under a full-row link; the star must not open the task.
+    // Rows sit under a full-row link; the pin must not open the task.
     event.preventDefault();
     event.stopPropagation();
     if (!pending) onToggle(!following);
@@ -55,9 +55,9 @@ export function FollowTaskButton({
         variant="ghost"
         size="icon-xs"
         data-follow-task
-        aria-label={following ? `Stop following ${taskName}` : `Follow ${taskName}`}
+        aria-label={following ? `Unpin ${taskName}` : `Pin ${taskName}`}
         aria-pressed={following}
-        title={following ? "Following: in your sidebar and on your Desk" : "Follow this task and everything under it"}
+        title={following ? "Pinned: in your sidebar and at the top of your Desk" : "Pin this task to the top of your Desk"}
         disabled={pending}
         onClick={handleClick}
         className={cn(
@@ -78,19 +78,19 @@ export function FollowTaskButton({
       size="xs"
       data-follow-task
       aria-pressed={following}
-      aria-label={following ? `Stop following ${taskName}` : `Follow ${taskName}`}
-      title="Followed tasks show their progress in your sidebar and on your Desk"
+      aria-label={following ? `Unpin ${taskName}` : `Pin ${taskName}`}
+      title="Pinned tasks show their progress in your sidebar and at the top of your Desk"
       disabled={pending}
       onClick={handleClick}
       className={cn("shrink-0", className)}
     >
       {icon}
-      {following ? "Following" : "Follow"}
+      {following ? "Pinned" : "Pin"}
     </Button>
   );
 }
 
-/** FollowTaskButton wired to the signed-in user's follows. */
+/** FollowTaskButton wired to the signed-in user's pins (follows in the API). */
 export function FollowTaskToggle({
   issue,
   variant = "button",
@@ -134,7 +134,7 @@ export function followProgressLabel(counts: IssueFollowRollupCounts): string {
 }
 
 /**
- * Progress of a followed task and everything under it (Desk): how much is
+ * Progress of a pinned task and everything under it (Desk): how much is
  * done, counts by state, and the latest comments or status changes.
  */
 export function FollowRollupSummary({

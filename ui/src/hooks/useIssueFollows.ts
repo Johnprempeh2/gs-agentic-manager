@@ -42,7 +42,7 @@ export function useFollowIssue(companyId: string | null | undefined) {
     onError: (error, { follow, title }, context) => {
       if (context?.previous) queryClient.setQueryData(key, context.previous);
       toast?.pushToast({
-        title: follow ? `Could not follow ${title}` : `Could not stop following ${title}`,
+        title: follow ? `Could not pin ${title}` : `Could not unpin ${title}`,
         body: error instanceof Error ? error.message : "Try again in a moment.",
         tone: "error",
       });
