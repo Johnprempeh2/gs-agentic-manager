@@ -115,6 +115,8 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableWorktreeRunExecution: false,
     worktreeRunExecutionActivatedAt: null,
     worktreeRunExecutionActivationInstanceId: null,
+    enablePromptInjectionModelChecks: false,
+    promptInjectionModelChecksEnabledAt: null,
   };
 }
 
@@ -946,5 +948,85 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
 
     expect(container.textContent).toContain("Team Chat");
     expect(container.textContent).toContain("Website view");
+  });
+});
+
+// GRE-1743: paid model checks ask before the first call can happen.
+describe("InstanceExperimentalSettings — prompt injection model checks", () => {
+  const TOGGLE = 'button[aria-label="Toggle prompt injection model checks experimental setting"]';
+  let container: HTMLDivElement;
+  let root: Root | null = null;
+
+  async function renderPage(settings: InstanceExperimentalSettingsWithManaged) {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ ...settings });
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    flushSync(() => {
+      root!.render(
+        <QueryClientProvider client={queryClient}>
+          <InstanceExperimentalSettings />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+  }
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    mockInstanceSettingsApi.updateExperimental.mockImplementation(async (patch) => ({
+      ...defaultExperimentalSettings(),
+      ...patch,
+    }));
+  });
+
+  afterEach(() => {
+    flushSync(() => {
+      root?.unmount();
+    });
+    root = null;
+    container.remove();
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+  });
+
+  it("is off by default and says it is paid", async () => {
+    await renderPage(defaultExperimentalSettings());
+    const toggle = container.querySelector<HTMLButtonElement>(TOGGLE);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).toContain("Prompt injection model checks");
+    expect(container.textContent).toContain("Paid: every check is one OpenRouter call");
+  });
+
+  it("shows the spend notice first and saves only after the person confirms", async () => {
+    await renderPage(defaultExperimentalSettings());
+    await act(() => container.querySelector<HTMLButtonElement>(TOGGLE)?.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Turn on paid model checks?");
+
+    const confirm = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Turn on paid checks",
+    );
+    await act(() => confirm?.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enablePromptInjectionModelChecks: true });
+  });
+
+  it("cancel saves nothing", async () => {
+    await renderPage(defaultExperimentalSettings());
+    await act(() => container.querySelector<HTMLButtonElement>(TOGGLE)?.click());
+    await flushReact();
+    const cancel = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Cancel");
+    await act(() => cancel?.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+  });
+
+  it("turns off at once, with no dialog", async () => {
+    await renderPage({ ...defaultExperimentalSettings(), enablePromptInjectionModelChecks: true });
+    await act(() => container.querySelector<HTMLButtonElement>(TOGGLE)?.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enablePromptInjectionModelChecks: false });
   });
 });
