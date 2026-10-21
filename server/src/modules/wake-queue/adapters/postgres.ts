@@ -134,6 +134,14 @@ function toRunSummary(row: HeartbeatRunRow): RunSummary {
   };
 }
 
+// The issues route stops a run that handed its own task over once its grace
+// period ends (scheduleSelfHandoffGraceStop). No operator asked for this stop.
+function isSelfHandoffGraceStop(run: HeartbeatRunRow): boolean {
+  return run.status === "cancelled" &&
+    run.errorCode === "issue_reassigned" &&
+    parseObject(run.resultJson).handoffGraceExpired === true;
+}
+
 function toDeferredWakeCandidate(row: typeof agentWakeupRequests.$inferSelect): DeferredWakeCandidate {
   const payload = parseObject(row.payload);
   const queuedCommentIds = queuedCommentIdsFromWakePayload(payload);
@@ -1145,12 +1153,14 @@ export function createPostgresWakeQueueAdapter(db: Db, deps: WakeQueuePostgresAd
           legacyExecutionNeedsReconciliation: legacyExecutionNeedsReconciliation(run),
           // An operator stop never promotes old queued work by itself. The
           // next explicit wake adopts those messages atomically when it
-          // queues a run.
-          executionCancellationAcknowledged:
+          // queues a run. A self-handoff grace stop (GRE-36) is not an
+          // operator stop: the new assignee's wake waits behind that run and
+          // has no other sender (GRE-1668), so it releases like a finished run.
+          executionCancellationAcknowledged: !isSelfHandoffGraceStop(run) && (
             isAcknowledgedNativeReassignmentStop(run) ||
             (run.status === "cancelled" &&
             (parseObject(run.resultJson?.executionCancellation).state === "acknowledged" || isAcknowledgedNativeStop(run)) &&
-            !interruptedQueue),
+            !interruptedQueue)),
         };
         const preDrain = decidePreDrain(preDrainFacts);
 
