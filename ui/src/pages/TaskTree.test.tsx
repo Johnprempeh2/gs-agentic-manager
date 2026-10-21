@@ -20,6 +20,7 @@ vi.mock("@/lib/router", () => ({
   ),
   useNavigate: () => navigateMock,
   useParams: () => ({ issueId: "GRE-1" }),
+  useLocation: () => ({ pathname: "/issues/GRE-1/tree", search: "", hash: "", state: null }),
 }));
 vi.mock("../hooks/useIsPhone", () => ({ useIsPhone: () => phone }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
@@ -121,9 +122,15 @@ describe("Task tree page", () => {
     expect(chips[0]!.textContent).toContain("Needs a review");
     expect(setBreadcrumbsMock).toHaveBeenLastCalledWith([
       { label: "Tasks", href: "/issues" },
-      { label: "GRE-1", href: "/issues/GRE-1" },
+      { label: "GRE-1", href: "/issues/GRE-1?view=task" },
       { label: "Tree" },
     ]);
+  });
+
+  it("opens the full task page with ?view=task, so the way out never bounces back to the tree", async () => {
+    await renderPage();
+    const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Open task page");
+    expect(link?.getAttribute("href")).toBe("/issues/GRE-1?view=task");
   });
 
   it("draws the tree on a canvas with the blocked path and the root blocker marked", async () => {
@@ -174,7 +181,7 @@ describe("Task tree page", () => {
     await flush();
     expect(document.activeElement?.getAttribute("data-tree-node")).toBe("3");
     flushSync(() => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
-    expect(navigateMock).toHaveBeenCalledWith("/issues/GRE-3");
+    expect(navigateMock).toHaveBeenCalledWith("/issues/GRE-3?view=task");
   });
 
   it("shows an indented outline with the red rail on a phone", async () => {
@@ -190,7 +197,7 @@ describe("Task tree page", () => {
     expect(outline.querySelector('[data-outline-node="4"]')?.hasAttribute("data-on-blocked-path")).toBe(true);
     expect(outline.querySelector('[data-outline-node="3"]')?.hasAttribute("data-on-blocked-path")).toBe(false);
     expect(outline.querySelector('[data-outline-node="4"]')?.textContent).toContain("Root blocker");
-    expect(outline.querySelector('[data-outline-node="3"] a')?.getAttribute("href")).toBe("/issues/GRE-3");
+    expect(outline.querySelector('[data-outline-node="3"] a')?.getAttribute("href")).toBe("/issues/GRE-3?view=task");
     expect(outline.textContent).toContain("+2 done");
   });
 

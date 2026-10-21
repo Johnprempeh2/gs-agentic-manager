@@ -46,6 +46,7 @@ import { useCloudInstance } from "./hooks/useCloudInstance";
 import { useIsPhone } from "./hooks/useIsPhone";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
 import { navigateTopLevel } from "@/lib/browserNavigation";
+import { TaskDefaultView } from "./pages/TaskDefaultView";
 
 const TaskChatLab = lazyPage(() => import("./pages/TaskChatLab"), "TaskChatLab");
 const Cases = lazyPage(() => import("./pages/Cases"), "Cases");
@@ -328,7 +329,7 @@ function boardRoutes() {
       <Route path="chats/:agentRef" element={<AgentChat />} />
       <Route path="messages/:chatId" element={<TeamChat />} />
       <Route path="issues/new" element={<NewTaskRoute />} />
-      <Route path="issues/:issueId" element={<IssueDetail />} />
+      <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} />} />
       <Route path="issues/:issueId/tree" element={<TaskTree />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />

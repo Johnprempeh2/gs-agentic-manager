@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { ArrowLeft } from "lucide-react";
-import { Link, useNavigate, useParams } from "@/lib/router";
+import { FileText } from "lucide-react";
+import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { issuesApi } from "../api/issues";
@@ -22,6 +22,7 @@ import {
   type RootBlocker,
   type VisibleTaskItem,
 } from "../lib/task-tree";
+import { TASK_PAGE_QUERY } from "./TaskDefaultView";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ErrorState } from "../components/ErrorState";
 import { TaskTreeCanvas } from "../components/task-tree/TaskTreeCanvas";
@@ -32,8 +33,9 @@ import type { TaskTreePeople } from "../components/task-tree/TaskTreeOwner";
 /** The tree refreshes on its own so statuses stay current. */
 const TREE_REFETCH_MS = 60_000;
 
+/** From the tree, a task opens its full page: the reader already sees its branch. */
 export function taskHref(node: Pick<IssueTreeNode, "id" | "identifier">) {
-  return `/issues/${node.identifier ?? node.id}`;
+  return `/issues/${node.identifier ?? node.id}${TASK_PAGE_QUERY}`;
 }
 
 /**
@@ -46,6 +48,7 @@ export function TaskTree() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const location = useLocation();
   const isPhone = useIsPhone();
 
   const treeQuery = useQuery({
@@ -107,7 +110,7 @@ export function TaskTree() {
   useEffect(() => {
     setBreadcrumbs([
       { label: "Tasks", href: "/issues" },
-      { label: root?.identifier ?? root?.title ?? "Task", href: `/issues/${issueId}` },
+      { label: root?.identifier ?? root?.title ?? "Task", href: `/issues/${issueId}${TASK_PAGE_QUERY}` },
       { label: "Tree" },
     ]);
   }, [setBreadcrumbs, issueId, root?.identifier, root?.title]);
@@ -167,9 +170,9 @@ export function TaskTree() {
         <span>Show finished work</span>
       </label>
       <Button asChild variant="outline" size="sm">
-        <Link to={`/issues/${issueId}`}>
-          <ArrowLeft />
-          Back to task
+        <Link to={`/issues/${issueId}${TASK_PAGE_QUERY}`} state={location.state}>
+          <FileText />
+          Open task page
         </Link>
       </Button>
     </>

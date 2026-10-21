@@ -84,7 +84,7 @@ describe("SidebarFollowing", () => {
     ]);
     await render();
 
-    expect(container.textContent).toContain("Following");
+    expect(container.textContent).toContain("Pinned");
     const link = container.querySelector('a[href="/issues/GRE-1681"]');
     expect(link?.textContent).toContain("Indago portal");
     expect(link?.querySelector("[data-sidebar-follow-progress]")?.textContent).toContain("8/12");

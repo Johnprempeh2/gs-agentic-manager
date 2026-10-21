@@ -401,19 +401,19 @@ export const DECISIONS_TOUR: TourDefinition = {
 export const MY_TASKS_TOUR: TourDefinition = {
   id: "my-tasks",
   title: "Desk",
-  description: "What needs you, the tasks you follow, and the tasks you opened lately.",
+  description: "The tasks you pinned, what needs you, and the tasks you opened lately.",
   version: 2,
   autoStart: false,
   route: { match: /^\/(desk|my-tasks)\/?$/, path: "/desk" },
   label: "Desk",
   steps: [
     {
-      title: "Needs me",
-      body: "Decisions, reviews and tasks assigned to you, most urgent first. Routine chores stay hidden until you switch on Show routine tasks.",
+      title: "Pinned",
+      body: "Pin a task on its page and it sits at the top, with everything under it. You see how much is done, what waits on you and the latest updates.",
     },
     {
-      title: "Following",
-      body: "Star a task on its page to follow it and everything under it. You see how much is done, what waits on you and the latest updates.",
+      title: "Needs me",
+      body: "Decisions, reviews and tasks assigned to you, most urgent first. Routine chores stay hidden until you switch on Show routine tasks.",
     },
     {
       title: "Recently opened",

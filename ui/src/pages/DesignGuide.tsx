@@ -1733,9 +1733,9 @@ export function DesignGuide() {
       </Section>
 
       {/* ============================================================ */}
-      {/*  FOLLOWING A TASK (Desk)                                      */}
+      {/*  PINNING A TASK (Desk; "follow" in the API)                   */}
       {/* ============================================================ */}
-      <Section title="Following a task">
+      <Section title="Pinning a task">
         <FollowTaskShowcase />
       </Section>
 
@@ -2667,20 +2667,20 @@ export function DesignGuide() {
   );
 }
 
-/** Follow star and subtree progress, as used on the task page, task rows, the Desk and the sidebar. */
+/** Pin button and subtree progress, as used on the task page, task rows, the Desk and the sidebar. */
 function FollowTaskShowcase() {
   const [following, setFollowing] = useState(false);
   const counts = { total: 12, done: 8, inProgress: 2, waitingOnYou: 1, blocked: 1 };
   return (
     <div className="space-y-6">
-      <SubSection title="Follow button (task page)">
+      <SubSection title="Pin button (task page)">
         <div className="flex flex-wrap items-center gap-3">
           <FollowTaskButton taskName="GRE-1681" following={following} onToggle={setFollowing} />
           <FollowTaskButton taskName="GRE-1681" following onToggle={() => {}} />
           <FollowTaskButton taskName="GRE-1681" following={false} pending onToggle={() => {}} />
         </div>
       </SubSection>
-      <SubSection title="Follow star (task rows: shows on hover or focus until followed)">
+      <SubSection title="Pin icon (task rows: shows on hover or focus until pinned)">
         <div className="group flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-accent/50">
           <span className="flex-1 text-sm">Indago portal</span>
           <FollowTaskButton variant="icon" taskName="GRE-1681" following={following} onToggle={setFollowing} />

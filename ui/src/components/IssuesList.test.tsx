@@ -13,6 +13,7 @@ import {
   issueAgeBucket,
   issueAgeBucketsCrossed,
   issueAgeSeparatorLabel,
+  pinnedFirst,
 } from "./IssuesList";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { taskCollectionPreferencesStorageKey } from "../lib/task-collection-preferences";
@@ -2556,6 +2557,20 @@ describe("legacy issue age separators", () => {
     expect(issueAgeSeparatorLabel(1)).toBe("Older than a day");
     expect(issueAgeSeparatorLabel(2)).toBe("Older than a week");
     expect(issueAgeBucketsCrossed(0, 2)).toEqual([1, 2]);
+  });
+});
+
+describe("pinnedFirst", () => {
+  const ids = (issues: Issue[]) => issues.map((issue) => issue.id);
+  const sorted = ["a", "b", "c", "d"].map((id) => createIssue({ id }));
+
+  it("puts pinned tasks first, each side keeping the chosen sort", () => {
+    expect(ids(pinnedFirst(sorted, new Set(["d", "b"]), { sortField: "updated" }))).toEqual(["b", "d", "a", "c"]);
+  });
+
+  it("leaves the workflow order alone, and the list as is with nothing pinned", () => {
+    expect(ids(pinnedFirst(sorted, new Set(["d"]), { sortField: "workflow" }))).toEqual(["a", "b", "c", "d"]);
+    expect(pinnedFirst(sorted, new Set(), { sortField: "updated" })).toBe(sorted);
   });
 });
 

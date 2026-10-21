@@ -483,7 +483,7 @@ function section(id: string) {
 }
 
 describe("Desk sections", () => {
-  it("shows Needs me, Following with its rollup, and Recently opened", async () => {
+  it("shows Pinned on top with its rollup, then Needs me and Recently opened", async () => {
     openIssues = [makeIssue("1")];
     follows = [{
       issueId: "p1",
@@ -503,22 +503,49 @@ describe("Desk sections", () => {
     await renderPage();
 
     const headings = [...container.querySelectorAll("h2")].map((heading) => heading.textContent);
-    expect(headings).toEqual(["Needs me", "Following", "Recently opened"]);
+    expect(headings).toEqual(["Pinned", "Needs me", "Recently opened"]);
     expect(section("desk-needs-me")?.querySelector('[data-row="1"]')).not.toBeNull();
-    const following = section("desk-following");
-    expect(following?.textContent).toContain("Indago portal");
-    expect(following?.textContent).toContain("2 of 5 done");
-    expect(following?.textContent).toContain("1 waiting on you");
-    expect(following?.textContent).toContain("1 blocked");
-    expect(following?.textContent).toContain("DNS is still pending at the registrar");
-    expect(following?.querySelector('[aria-label="Stop following GRE-p1"]')).not.toBeNull();
-    expect(following?.querySelector('[data-desk-follow-tree="p1"]')?.getAttribute("href")).toBe("/issues/GRE-p1/tree");
+    const pinned = section("desk-pinned");
+    expect(pinned?.textContent).toContain("Indago portal");
+    expect(pinned?.textContent).toContain("2 of 5 done");
+    expect(pinned?.textContent).toContain("1 waiting on you");
+    expect(pinned?.textContent).toContain("1 blocked");
+    expect(pinned?.textContent).toContain("DNS is still pending at the registrar");
+    expect(pinned?.querySelector('[aria-label="Unpin GRE-p1"]')).not.toBeNull();
+    expect(pinned?.querySelector('[data-desk-follow-tree="p1"]')?.getAttribute("href")).toBe("/issues/GRE-p1/tree");
     expect(section("desk-recent")?.textContent).toContain("Opened lately");
   });
 
-  it("says how to follow a task when nothing is followed", async () => {
+  it("shows a pinned task only in Pinned, and leaves finished pins out", async () => {
+    openIssues = [makeIssue("1"), makeIssue("2")];
+    const rollup = { total: 1, done: 0, inProgress: 1, waitingOnYou: 0, blocked: 0 };
+    follows = [
+      { issueId: "1", followedAt: new Date(), issue: summary("1", { title: "Pinned and mine" }), counts: rollup, latestUpdates: [] },
+      { issueId: "d", followedAt: new Date(), issue: summary("d", { title: "Pinned but done", status: "done" }), counts: rollup, latestUpdates: [] },
+    ];
+    recent = [{ issueId: "1", viewedAt: new Date(), issue: summary("1", { title: "Pinned and mine" }) }];
     await renderPage();
-    expect(section("desk-following")?.textContent).toContain("Follow a task with the star");
+
+    expect(section("desk-pinned")?.querySelector('[data-desk-follow="1"]')).not.toBeNull();
+    expect(section("desk-pinned")?.querySelector('[data-desk-follow="d"]')).toBeNull();
+    expect(container.querySelector('[data-row="1"]')).toBeNull();
+    expect(container.querySelector('[data-row="2"]')).not.toBeNull();
+    expect(section("desk-recent")?.textContent).not.toContain("Pinned and mine");
+  });
+
+  it("keeps a pinned task's actions on its card, so pinning never hides them", async () => {
+    openIssues = [makeIssue("1")];
+    const rollup = { total: 1, done: 0, inProgress: 1, waitingOnYou: 0, blocked: 0 };
+    follows = [{ issueId: "1", followedAt: new Date(), issue: summary("1"), counts: rollup, latestUpdates: [] }];
+    await renderPage();
+
+    const actions = section("desk-pinned")?.querySelector('[data-desk-pinned-actions="1"]');
+    expect(actions?.querySelector('[aria-label="Hand GRE-1: Task 1 to an agent"]')).not.toBeNull();
+  });
+
+  it("leaves Pinned out until something is pinned", async () => {
+    await renderPage();
+    expect(section("desk-pinned")).toBeNull();
     expect(section("desk-recent")?.textContent).toContain("Tasks you open show up here");
   });
 
