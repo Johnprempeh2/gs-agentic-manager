@@ -54,6 +54,8 @@ export const lanes = {
       "server/src/services/reassignment-handover-payload.test.ts",
       // GRE-750: a parked hand-off wake on a task with no live run is restarted.
       `${server}parked-handoff-wake-restart.test.ts`,
+      // GRE-1668: a self-handoff grace stop still wakes the new assignee.
+      `${server}self-handoff-grace-stop-wake.test.ts`,
       // GRE-753: a repair give-up wakes the assignee's manager once, then the board.
       `${server}disposition-repair-manager-escalation.test.ts`,
       // GRE-1371: an approved top-up lifts the budget stop; the hold release wakes each held task once.
