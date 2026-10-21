@@ -162,20 +162,62 @@ describe("DecisionFeedCard rendering per kind", () => {
     ["failed run", failedRunCard(), "Stopped with an error"],
     ["review", reviewCard(), "Review"],
     ["merged GRE-138", mergedCard(), "Stopped"],
-  ])("a %s card says what is blocked, why, who waits and what happens next", (_name, card, kindLabel) => {
+  ])("a %s card says the decision, why it matters, who owns it, and the options", (_name, card, kindLabel) => {
     render(card);
     const text = container.textContent ?? "";
     expect(text).toContain(kindLabel);
     expect(text).toContain(card.title);
-    expect(text).toContain("Why");
-    expect(text).toContain(card.reason);
+    // A question answered on the card shows its question once, in the question box, not twice.
+    if (card.kind === "question") expect(container.querySelector("[data-decision-sentence]")).toBeNull();
+    else expect(container.querySelector("[data-decision-sentence]")?.textContent).toBe(card.decision);
+    expect(container.querySelector("[data-decision-why]")?.textContent).toContain(card.why.text);
+    expect(container.querySelector("[data-decision-why]")?.textContent).toMatch(/Waiting for \d+ days\./);
     // On a review the agent did the work; the board is the one waited on (GRE-1421).
-    expect(text).toContain(card.kind === "review" ? "Work by" : "Waiting");
+    expect(text).toContain(card.kind === "review" ? "Work by" : "Owner");
     expect(text).toContain(card.waiting!.name);
-    expect(text).toContain("Next");
-    expect(text).toContain(card.nextStep);
-    expect(hasButton("Ask for clarity")).toBe(true);
+    // Every option the server sent shows with its consequence.
+    for (const action of visibleCardActions(card)) {
+      const row = container.querySelector(`[data-card-option="${action.id}"]`);
+      expect(row?.textContent).toContain(action.label);
+      expect(row?.textContent).toContain(action.description);
+    }
     expect(hasButton("Not now")).toBe(true);
+  });
+
+  it("shows the facts, what it holds up, the recommendation and the escalation", () => {
+    const card = blockedCard();
+    card.facts = {
+      latestComment: { agent: { id: "agent-summit", name: "Summit" }, excerpt: "The folder share is read only.", at: "2026-09-29T21:00:00.000Z" },
+      blockerChain: [{ id: "issue-9", identifier: "GRE-9", title: "Grant folder access", status: "todo", href: "/GRE/issues/GRE-9" }],
+      links: [],
+    };
+    card.why = {
+      text: "It holds up GRE-202 Archive old invoices.",
+      holdsUp: [{ id: "issue-202", identifier: "GRE-202", title: "Archive old invoices", status: "blocked", href: "/GRE/issues/GRE-202" }],
+      waitingSince: "2026-09-28T22:00:00.000Z",
+    };
+    card.recommendation = { by: { id: "agent-summit", name: "Summit" }, text: "Reassign it to Mica, who has access.", actionId: "reassign", source: "comment" };
+    card.actions = card.actions.map((action) => (action.id === "reassign" ? { ...action, recommended: true } : action));
+    card.escalation = { reason: "stall_threshold", lead: { id: "agent-everest", name: "Everest" }, summary: "Summit cannot get access; Mica can." };
+    render(card);
+    expect(container.querySelector("[data-decision-latest-comment]")?.textContent).toContain("The folder share is read only.");
+    expect(container.querySelector("a[href='/GRE/issues/GRE-9']")?.textContent).toContain("Grant folder access");
+    expect(container.querySelector("a[href='/GRE/issues/GRE-202']")?.textContent).toContain("Archive old invoices");
+    expect(container.querySelector("[data-decision-recommendation]")?.textContent).toBe("Summit recommends: Reassign it to Mica, who has access.");
+    expect(container.querySelector("[data-card-option='reassign']")?.textContent).toContain("Recommended.");
+    expect(container.querySelector("[data-card-option='instruct']")?.textContent).not.toContain("Recommended.");
+    const escalation = container.querySelector("[data-decision-escalation='stall_threshold']")?.textContent ?? "";
+    expect(escalation).toContain("Everest had it for a day and could not get it moving");
+    expect(escalation).toContain("Summit cannot get access; Mica can.");
+  });
+
+  it("shows only the options the server sent: no Not now or Ask for clarity unless sent", () => {
+    const card = blockedCard();
+    card.actions = card.actions.filter((action) => action.id !== "not_now" && action.id !== "ask_clarity" && action.id !== "cancel_task");
+    render(card);
+    expect(hasButton("Not now")).toBe(false);
+    expect(hasButton("Ask for clarity")).toBe(false);
+    expect(hasButton("Cancel the task")).toBe(false);
   });
 
   it("shows every merged kind on one card", () => {
@@ -196,7 +238,6 @@ describe("DecisionFeedCard rendering per kind", () => {
     const chips = [...container.querySelectorAll("[data-decision-card] span.rounded-full")].map((el) => el.textContent);
     expect(chips).toEqual(["Confirmation"]);
     expect(container.textContent).not.toContain("Question");
-    expect(container.textContent?.split("Confirmation requested").length).toBe(2);
     expect(container.querySelector("[data-testid='inline-question']")?.getAttribute("data-embedded")).toBe("true");
   });
 
@@ -215,28 +256,26 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(decisionKindLabel(card, "question")).toBe("Access needed");
   });
 
-  it("folds the task actions into More when the card is answered in place", async () => {
+  it("puts the question first and the rest under Other options when the card is answered in place", async () => {
     render(questionCard());
+    // A question is answered, not reassigned or instructed: the server sends neither.
     expect(hasButton("Reassign")).toBe(false);
     expect(hasButton("Give an instruction")).toBe(false);
-    expect(hasButton("Cancel the task")).toBe(false);
-    expect(hasButton("Ask for clarity")).toBe(true);
+    expect(hasButton("Ask for clarity")).toBe(false);
     expect(hasButton("Not now")).toBe(true);
-    const more = button("More actions");
-    await act(async () => {
-      more.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
-    });
-    const items = [...document.querySelectorAll("[role='menuitem']")].map((el) => el.textContent?.trim());
-    expect(items).toEqual(["Reassign", "Give an instruction", "Cancel the task"]);
-    await click(document.querySelector("[role='menuitem']:last-child") as HTMLElement);
+    const options = container.querySelector("[data-card-options]")!;
+    expect(options.getAttribute("aria-label")).toBe("Other options");
+    const question = container.querySelector("[data-testid='inline-question']")!;
+    expect(question.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await click(button("Cancel the task"));
     await click(button("Yes, cancel the task"));
     expect(api.patch).toHaveBeenCalledWith("/issues/issue-44", { status: "cancelled" });
   });
 
-  it("keeps a blocked card's actions as buttons", () => {
+  it("keeps a blocked card's options as buttons, each with its consequence", () => {
     render(blockedCard());
     expect(hasButton("Reassign")).toBe(true);
-    expect(hasButton("More actions")).toBe(false);
+    expect(container.querySelector("[data-card-options]")?.getAttribute("aria-label")).toBe("Your options");
   });
 
   it("a company-level card has no Not now or Ask for clarity", () => {
@@ -421,6 +460,56 @@ describe("DecisionFeedCard actions", () => {
     await click(button("Retry"));
     expect(container.querySelector("[role='alert']")?.textContent).toBe("Agent is paused");
   });
+
+  // "Sometimes it doesn't work" (21 Oct): a chat thread refused an instruction
+  // with no clientRequestId, and a double press posted twice.
+  it("adds one fresh clientRequestId per press when the request asks for it", async () => {
+    const card = blockedCard();
+    card.actions = card.actions.map((action) => (action.id === "instruct"
+      ? { ...action, requests: action.requests.map((call) => ({ ...call, clientRequestId: true })) }
+      : action));
+    render(card);
+    for (const text of ["First.", "Second."]) {
+      await click(button("Give an instruction"));
+      typeInto(container.querySelector("textarea[aria-label='Instruction']") as HTMLTextAreaElement, text);
+      await click(container.querySelector("form button[type='submit']") as HTMLButtonElement);
+    }
+    const ids = api.post.mock.calls.map(([, body]) => (body as { clientRequestId?: string }).clientRequestId);
+    expect(ids).toHaveLength(2);
+    expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
+    expect(ids[0]).not.toBe(ids[1]);
+    // A request that does not ask for one gets none.
+    api.post.mockClear();
+    render(failedRunCard());
+    await click(button("Retry"));
+    expect(api.post.mock.calls[0]![1]).not.toHaveProperty("clientRequestId");
+  });
+
+  it("runs one option at a time: every option is disabled while one runs", async () => {
+    let finish!: () => void;
+    api.post.mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({}); }));
+    render(failedRunCard());
+    await click(button("Retry"));
+    expect(button("Reassign").disabled).toBe(true);
+    expect(button("Cancel the task").disabled).toBe(true);
+    await click(button("Retry"));
+    expect(api.post).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    await click(document.body);
+    expect(button("Reassign").disabled).toBe(false);
+  });
+
+  it("refreshes the card even when an action fails half way", async () => {
+    api.post.mockRejectedValueOnce(new Error("Conflict"));
+    render(failedRunCard());
+    await click(button("Retry"));
+    expect(onActed).toHaveBeenCalled();
+  });
+
+  it("shows why Ask for clarity cannot be used when no agent owns the task", () => {
+    render(noOwnerCard());
+    expect(container.textContent).toContain("No agent owns this task, so there is no one to ask. Reassign it first.");
+  });
 });
 
 describe("Ask for clarity", () => {
@@ -479,21 +568,18 @@ describe("DecisionFeedCard on a phone", () => {
     window.matchMedia = originalMatchMedia;
   });
 
-  it("shows the main action and Not now up front, the rest in More, and Cancel still confirms", async () => {
+  it("shows every option as a full-width row with its consequence, and Cancel still confirms", async () => {
     render(blockedCard());
-    expect(hasButton("More actions")).toBe(true);
-    expect(hasButton("Cancel the task")).toBe(false);
-    await click(button("More actions"));
-    const sheet = document.querySelector("[role='dialog']");
-    expect(sheet?.textContent).toContain("Cancel the task");
-    expect(sheet?.textContent).toContain("Ask for clarity");
+    const rows = Array.from(container.querySelectorAll("[data-card-option]"));
+    expect(rows.map((row) => row.getAttribute("data-card-option"))).toEqual(["reassign", "instruct", "cancel_task"]);
+    expect(rows.every((row) => row.querySelector("button")?.className.includes("w-full"))).toBe(true);
     await click(button("Cancel the task"));
     expect(api.patch).not.toHaveBeenCalled();
     await click(button("Yes, cancel the task"));
     expect(api.patch).toHaveBeenCalledWith("/issues/issue-201", { status: "cancelled" });
   });
 
-  it("keeps all three review choices and their results on the card, not in More (GRE-1421)", () => {
+  it("keeps all three review choices and their results on the card (GRE-1421)", () => {
     render(stalledReviewCard());
     const choices = Array.from(container.querySelectorAll("[data-review-choice]"));
     expect(choices.map((li) => li.querySelector("button")?.textContent?.trim())).toEqual([
@@ -502,16 +588,13 @@ describe("DecisionFeedCard on a phone", () => {
       "Send back to work",
     ]);
     expect(choices.every((li) => (li.querySelector("p")?.textContent ?? "").length > 0)).toBe(true);
-    const actionRow = button("More actions").parentElement!;
-    const labels = [...actionRow.querySelectorAll("button")].map((entry) => entry.textContent?.trim());
-    expect(labels).toEqual(["Not now", "More"]);
   });
 
-  it("puts no task action in front of a confirmation's own Approve", () => {
+  it("puts no task option in front of a confirmation's own answer", () => {
     render(confirmationCard());
-    const actionRow = button("More actions").parentElement!;
-    const labels = [...actionRow.querySelectorAll("button")].map((entry) => entry.textContent?.trim());
-    expect(labels).toEqual(["Not now", "More"]);
+    const question = container.querySelector("[data-testid='inline-question']")!;
+    const options = container.querySelector("[data-card-options]")!;
+    expect(question.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -562,12 +645,11 @@ describe("review card with no reviewer (GRE-1421)", () => {
     render(stalledReviewCard());
     const text = container.textContent ?? "";
     expect(text).toContain("Ridge says the work is finished. No reviewer is set, so the task waits for you.");
-    expect(text).toContain("Check the result. Then approve it, ask for changes, or send it back to work.");
     expect(container.querySelector("[data-testid='review-last-update']")?.textContent).toContain("PR #525 is open.");
     expect(container.querySelector("[data-testid='review-last-update']")?.textContent).toContain("Summary from Ridge");
     // The board is the one waited on; Ridge did the work.
     expect(text).toContain("Work by");
-    expect(text).not.toContain("Waiting");
+    expect(text).not.toContain("Owner");
     const pr = container.querySelector("[data-testid='review-work-product']");
     expect(pr?.getAttribute("href")).toBe("https://github.com/Johnprempeh2/gs-agentic-manager/pull/525");
     const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");

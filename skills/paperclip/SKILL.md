@@ -743,3 +743,5 @@ for open work under no key task.
   the key task or task it serves; add `blockedByIssueIds` where it obviously waits on another task;
   or, only if it is genuinely a new driver, mark it a key task. Then leave a one-line comment on it
   saying where it went and why. Do not check it out or start the work unless it is assigned to you.
+
+**Asking a person.** Ask with an interaction, never only in a comment. When a person must do something before you can continue (reply "Received" to a test email, sign in, choose between options, approve a spend), create an interaction for it (`request_confirmation` for one yes/no, `ask_user_questions` for a choice), not just a comment that says "waiting for John". The interaction becomes a card in their Decisions with your question and its options; a comment alone reaches them only as a quoted line, late. Set `recommendation` (up to 1000 characters) on the interaction to say what you recommend and why; the card shows it beside the options. A stall with no ask of a person goes to the lead agent first, as one "Stuck work to recover" task, and reaches a person only if the lead asks them this way or it stays stuck for a day.

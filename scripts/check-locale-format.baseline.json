@@ -22,7 +22,6 @@
   "ui/src/components/SystemNotice.tsx": 1,
   "ui/src/components/access/InvitesSection.tsx": 1,
   "ui/src/components/ai-connections/model.ts": 1,
-  "ui/src/components/decisions-feed/DecisionFeedCard.tsx": 2,
   "ui/src/components/decisions-feed/DecisionLog.tsx": 1,
   "ui/src/components/decisions-feed/NotNowButton.tsx": 1,
   "ui/src/components/decisions-feed/TabledList.tsx": 1,

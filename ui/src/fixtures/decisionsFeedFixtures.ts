@@ -92,23 +92,31 @@ function taskActions(issueId: string, cardId: string, opts: { retry?: boolean; r
       },
     });
   }
-  if (opts.clarity !== false) {
-    actions.push({
-      id: "ask_clarity",
-      label: "Ask for clarity",
-      description: "Send a short question to the owning agent and wake it. The answer shows on this card.",
-      type: "request",
-      requests: [request("POST", `/api/companies/${FIXTURE_COMPANY_ID}/decisions-feed/cards/${cardId}/clarity`)],
-      href: null,
-      input: { field: "question", type: "text", label: "Your question", required: true },
-    });
-  }
+  // The server always sends Ask for clarity on a task card; with no agent owner it is disabled with the reason.
+  actions.push({
+    id: "ask_clarity",
+    label: "Ask for clarity",
+    description: "Send a short question to the owning agent and wake it. The answer shows on this card.",
+    type: "request",
+    requests: [request("POST", `/api/companies/${FIXTURE_COMPANY_ID}/decisions-feed/cards/${cardId}/clarity`)],
+    href: null,
+    input: { field: "question", type: "text", label: "Your question", required: true },
+    disabledReason: opts.clarity === false ? "No agent owns this task, so there is no one to ask. Reassign it first." : null,
+  });
   actions.push({
     id: "cancel_task",
     label: "Cancel the task",
     description: "Stop the task for good.",
     type: "request",
     requests: [request("PATCH", path, { status: "cancelled" })],
+    href: null,
+    input: null,
+  }, {
+    id: "not_now",
+    label: "Not now",
+    description: "Set the task aside. It leaves your Decisions and no agent works on it until it comes back on the day you choose.",
+    type: "request",
+    requests: [request("POST", `${path}/table`, { returnAt: null })],
     href: null,
     input: null,
   });
@@ -120,6 +128,11 @@ function card(input: Partial<DecisionCard> & { id: string; kind: DecisionCardKin
     kinds: [input.kind],
     task: null,
     reason: "",
+    decision: input.reason ?? input.title,
+    why: { text: `${input.waiting?.name ?? "The agent"} cannot carry on until this is decided.`, holdsUp: [], waitingSince: NOW },
+    facts: { latestComment: null, blockerChain: [], links: [] },
+    recommendation: null,
+    questions: [],
     waiting: null,
     nextStep: "",
     severity: "medium",
@@ -160,9 +173,10 @@ export function questionCard(interactionId = "int-1", issueId = "issue-44", iden
     reason: "When a run is stuck, should I restart it?",
     waiting: { id: "agent-ridge", name: "Ridge" },
     nextStep: "Ridge waits for your answer, then continues.",
+    // A question is answered, so the server sends no reassign, instruction or clarity.
     actions: [
       { id: "open", label: "Answer", description: "Open the question on the task.", type: "link", requests: [], href: `/issues/${identifier}`, input: null },
-      ...taskActions(issueId, id),
+      ...taskActions(issueId, id).filter((action) => action.id === "cancel_task" || action.id === "not_now"),
     ],
     items: [questionItem(interactionId, issueId, identifier)],
   });

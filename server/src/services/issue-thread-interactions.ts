@@ -3788,7 +3788,11 @@ export function issueThreadInteractionService(
               addresseeAgentId: data.addresseeAgentId ?? null,
               addresseeUserId: data.addresseeUserId ?? null,
               createdByUserId: actor.userId ?? null,
-              payload: data.payload,
+              // The decision card reads it from the stored payload; the kind's
+              // payload schema strips it on every other read.
+              payload: (data.recommendation
+                ? { ...data.payload, recommendation: data.recommendation }
+                : data.payload) as typeof data.payload,
             })
             .returning();
 

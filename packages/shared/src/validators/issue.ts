@@ -2011,6 +2011,8 @@ const createIssueThreadInteractionCommon = {
   resolverPolicy: issueThreadInteractionResolverPolicySchema.optional(),
   addresseeAgentId: z.string().guid().nullable().optional(),
   addresseeUserId: z.string().trim().min(1).nullable().optional(),
+  /** What the asking agent recommends and why, shown on the person's decision card. */
+  recommendation: z.string().trim().min(1).max(1000).nullable().optional(),
 };
 
 // Validate dual representations on creation, not when reading historical rows.

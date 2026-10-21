@@ -400,6 +400,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "agent_daily_digest",
   // Tidy desk: the lead's daily list of tasks that look finished. originId: "<companyId>:<YYYY-MM-DD>".
   "looks_finished_review",
+  // Decisions: the lead agent's list of agent-side stalls to recover before a person sees them. originId: the company id.
+  "decision_stall_recovery",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -475,6 +477,7 @@ export const ROUTINE_ISSUE_ORIGIN_KINDS = [
   "task_watchdog",
   "memory_steward_grant_renewal",
   "looks_finished_review",
+  "decision_stall_recovery",
 ] as const;
 
 export function isRoutineIssueOriginKind(originKind: string | null | undefined): boolean {

@@ -7695,6 +7695,8 @@ registry.registerPath({
   path: "/api/companies/{companyId}/decisions-feed",
   tags: ["inbox"],
   summary: "List the one Decisions feed: one card per task, stale cards cleared, with actions",
+  description:
+    "Only cards the viewer can move. Each card carries `decision` (what is asked), `why` (what it holds up, since when), `facts` (latest agent comment, blocker chain, links), `recommendation` (from the interaction's `recommendation` field, a recommended question option, or a `Recommendation:` line in the owning agent's latest comment) and `actions`, each with its consequence in `description`. Agent-side stalls go to the lead agent first (`routedToLead`) and reach a person only when the lead asks them, the owning agent's latest comment names them and an action, or the stall outlives 24 hours.",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -10124,7 +10126,7 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Create an issue thread interaction",
   description:
-    "Resolver policy defaults to canonical `anyone` for every interaction kind. `not_creator` and `human_only` are opt-in restrictions; deprecated `board_or_agents` and `board_only` inputs are accepted as compatibility aliases.",
+    "Resolver policy defaults to canonical `anyone` for every interaction kind. `not_creator` and `human_only` are opt-in restrictions; deprecated `board_or_agents` and `board_only` inputs are accepted as compatibility aliases. Optional `recommendation` (up to 1000 characters) is what the asking agent recommends and why; the person's decision card shows it beside the options. When a person must act (reply to an email, sign in, choose), ask through an interaction like this one rather than only in a comment, so the ask reaches their Decisions as a structured card.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(createIssueThreadInteractionSchema),

@@ -40,9 +40,13 @@ export function stripApiPrefix(path: string): string {
  * value goes into `body[input.field]` on every request (the server contract).
  */
 export async function runDecisionCardAction(action: DecisionCardAction, value?: string | null): Promise<void> {
+  // One id per press: the server keeps the first post of a repeated press,
+  // and a chat thread refuses a message without one.
+  const clientRequestId = crypto.randomUUID();
   for (const request of action.requests) {
     const body: Record<string, unknown> = { ...request.body };
     if (action.input && value != null && value !== "") body[action.input.field] = value;
+    if (request.clientRequestId) body.clientRequestId = clientRequestId;
     const path = stripApiPrefix(request.path);
     if (request.method === "PATCH") await api.patch(path, body);
     else await api.post(path, body);
