@@ -398,9 +398,9 @@ curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: appl
 - **Price provenance.** Cost ledger lines and API-equivalent model rows include
   `priceRows` with `effectiveFrom`, optional exclusive `effectiveUntil`, and
   `sourceUrl`. The monthly ledger CSV has matching date and source columns.
-  Existing Anthropic and OpenAI rows begin on 28 September 2026, the date
-  those legacy prices were last verified. Earlier usage is unpriced rather
-  than assigned an unverified historical rate.
+  Existing Anthropic and OpenAI rows use 1 January 1970 as a compatibility
+  start, so earlier usage keeps its API-equivalent price. This is not a
+  publication date; those legacy prices were checked on 28 September 2026.
 - **What the client sees.** The response has `audience: "client"` for anyone
   but the operator: `usedPercent`, `forecastPercent`, the warn level, and
   `extraUsage` (usage past 100%) in the account currency. No allowance amount,
