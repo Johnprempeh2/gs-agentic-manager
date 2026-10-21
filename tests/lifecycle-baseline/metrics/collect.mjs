@@ -41,8 +41,16 @@ const snapshot = await sql.begin("read only", async (tx) => {
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
       conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
-      execution_run_id as "executionRunId", execution_policy as "executionPolicy", updated_at as "updatedAt", completed_at as "completedAt"
+      execution_run_id as "executionRunId", execution_policy as "executionPolicy", updated_at as "updatedAt", completed_at as "completedAt",
+      tabled_by_user_id as "tabledByUserId"
     from issues where true ${scope("company_id")}`;
+  // Who last put each backlog issue there: tabling, a status change or creation.
+  const backlogParkers = await tx`
+    select distinct on (a.entity_id) a.entity_id as "issueId", a.actor_type as "actorType"
+    from activity_log a join issues i on i.id::text = a.entity_id
+    where a.entity_type = 'issue' and i.status = 'backlog'
+      and (a.action = 'issue.tabled' or a.details->>'status' = 'backlog') ${scope("i.company_id")}
+    order by a.entity_id, a.created_at desc`;
   const runs = await tx`
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
       r.context_snapshot->>'issueId' as "issueId", r.context_snapshot->>'taskId' as "taskId",
@@ -112,7 +120,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       payload->'heartbeatSkip'->>'requestedReason' as "requestedReason"
     from agent_wakeup_requests
     where status = 'skipped' and reason = 'issue_rewake_throttled' and requested_at >= ${since} ${scope("company_id")}`;
-  return { now, issues, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents, repairEscalations, repairRuns, throttledWakes };
+  return { now, issues, backlogParkers, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents, repairEscalations, repairRuns, throttledWakes };
 });
 await sql.end();
 
@@ -137,7 +145,7 @@ const markdown = [
   "",
   "| # | Number | Value | Sample |",
   "|---|---|---:|---|",
-  `| R1 | Stranded task trees stopped in window | ${metrics.r1.weekly} | ${metrics.r1.treesWithOpenWork} trees with open work; ${metrics.r1.total} stranded in total |`,
+  `| R1 | Stranded task trees stopped in window | ${metrics.r1.weekly} | ${metrics.r1.treesWithOpenWork} trees with open work; ${metrics.r1.total} stranded in total; ${metrics.r1.parked} parked behind a person's backlog decision |`,
   `| R1 | Parked wakes on an issue with no live run, older than ${metrics.parkedWakes.minAgeMinutes} min | ${metrics.parkedWakes.total} | ${metrics.parkedWakes.byReason.length ? `top reasons: ${metrics.parkedWakes.byReason.slice(0, 5).map((entry) => `${entry.reason} ${entry.count}`).join(", ")}` : "none"} |`,
   `| R1 | Throttled rewakes (skipped, ${windowDays} days) | ${metrics.throttledRewakes.total} | ${metrics.throttledRewakes.issues} issue/agent pairs; highest streak ${metrics.throttledRewakes.maxStreak} |`,
   `| R2 | Platform failure rate | ${pct(metrics.r2.platformFailureRate)} | ${metrics.r2.platformFailed} failed / ${metrics.r2.platformFinished} finished, rejected logins and account refusals left out (all-in ${pct(metrics.r2.failureRate)}; ${metrics.r2.cancelled} cancelled, excluded) |`,
@@ -187,6 +195,12 @@ const markdown = [
   "",
   ...(metrics.r1.stranded.length
     ? metrics.r1.stranded.map((tree) => `- ${tree.rootIdentifier ?? tree.rootIssueId}: uncovered ${tree.uncoveredIssues.map((issue) => `${issue.identifier} (${issue.status})`).join(", ")} of ${tree.openIssues.length} open; last activity ${tree.lastActivityAt}`)
+    : ["None."]),
+  "",
+  "## Parked trees (not counted in R1)",
+  "",
+  ...(metrics.r1.parkedTrees.length
+    ? metrics.r1.parkedTrees.map((tree) => `- ${tree.rootIdentifier ?? tree.rootIssueId}: ${tree.parkedIssues.map((issue) => `${issue.identifier} (${issue.status})`).join(", ")} wait on ${tree.parkedBy.join(", ")} (backlog, parked by a person)`)
     : ["None."]),
   "",
 ].join("\n");

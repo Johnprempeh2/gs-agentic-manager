@@ -62,6 +62,16 @@ grace period). A monitor re-claim bumps `issues.updated_at` every 5 minutes
 without doing anything, so when that claim is an issue's last write, its
 activity time is the moment the monitor fell due.
 
+An open issue that is not covered is **parked**, not stranded, when it waits
+(as a blocked issue, or as a parent through its open children) on a `backlog`
+blocker that a person parked there: the blocker is tabled
+(`tabled_by_user_id`), or the last activity that put it in backlog (tabling, a
+status change or creation) was a user's. The chain waits on that person's
+decision, not on a lost wake (GRE-1784). An agent's backlog move gets no such
+pass. A tree is parked when every open issue in it is covered or parked;
+parked trees are listed in the report and not counted in R1. A dead issue
+beside a parked chain still strands its tree.
+
 An agent assignee alone is **not** a live path: agents act only when woken. The
 weekly number counts stranded trees whose last activity falls in the window,
 i.e. trees that stopped this week. The report also lists every stranded tree

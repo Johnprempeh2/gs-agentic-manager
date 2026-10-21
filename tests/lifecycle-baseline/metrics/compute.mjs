@@ -160,6 +160,17 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     if (!openBlockers.has(relation.blockedIssueId)) openBlockers.set(relation.blockedIssueId, []);
     openBlockers.get(relation.blockedIssueId).push(relation.blockerIssueId);
   }
+  // A backlog blocker a person parked (tabled, or last moved to backlog by a
+  // user) waits on that person's decision. What it blocks is parked, not
+  // stranded; an agent's backlog move gets no such pass.
+  const parkedByUser = new Set((snapshot.backlogParkers ?? []).filter((entry) => entry.actorType === "user").map((entry) => entry.issueId));
+  const isParkedByPerson = (issue) => issue?.status === "backlog" && (Boolean(issue.tabledByUserId) || parkedByUser.has(issue.id));
+  const parkedBlockers = new Map();
+  for (const relation of snapshot.relations ?? []) {
+    if (!isParkedByPerson(byId.get(relation.blockerIssueId))) continue;
+    if (!parkedBlockers.has(relation.blockedIssueId)) parkedBlockers.set(relation.blockedIssueId, []);
+    parkedBlockers.get(relation.blockedIssueId).push(relation.blockerIssueId);
+  }
   // An agent chat in `waiting` is on its user's turn, so the user owns it.
   const waitsOnUser = (issue) => Boolean(issue.conversationUserId) && issue.conversationState === "waiting";
   const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || waitsOnUser(issue) || isHeld(issue)).map((issue) => issue.id));
@@ -172,6 +183,24 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
       const waitsOn = [...(openChildren.get(issue.id) ?? []), ...(openBlockers.get(issue.id) ?? [])];
       if (waitsOn.some((id) => covered.has(id))) {
         covered.add(issue.id);
+        changed = true;
+      }
+    }
+  }
+  // Parked: not covered, but waits on a person-parked blocker, or on an open
+  // child or blocker that is itself parked. `parkedBy` keeps the backlog roots.
+  const parkedBy = new Map();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const issue of open) {
+      if (covered.has(issue.id)) continue;
+      const roots = new Set(parkedBlockers.get(issue.id) ?? []);
+      for (const id of [...(openChildren.get(issue.id) ?? []), ...(openBlockers.get(issue.id) ?? [])]) {
+        for (const root of parkedBy.get(id) ?? []) roots.add(root);
+      }
+      // Root sets only grow, so this settles.
+      if (roots.size > (parkedBy.get(issue.id)?.size ?? 0)) {
+        parkedBy.set(issue.id, roots);
         changed = true;
       }
     }
@@ -207,9 +236,23 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
 
   const summary = (issue) => ({ id: issue.id, identifier: issue.identifier, status: issue.status, assigneeAgentId: issue.assigneeAgentId ?? null });
   const stranded = [];
+  const parkedTrees = [];
   for (const { root, open: treeOpen } of trees.values()) {
-    const uncovered = treeOpen.filter((issue) => !covered.has(issue.id));
-    if (uncovered.length === 0) continue;
+    const uncovered = treeOpen.filter((issue) => !covered.has(issue.id) && !parkedBy.has(issue.id));
+    const parked = treeOpen.filter((issue) => parkedBy.has(issue.id));
+    if (uncovered.length === 0) {
+      if (parked.length > 0) {
+        const roots = new Set(parked.flatMap((issue) => [...parkedBy.get(issue.id)]));
+        parkedTrees.push({
+          rootIssueId: root.id,
+          rootIdentifier: root.identifier,
+          companyId: root.companyId,
+          parkedIssues: parked.map(summary),
+          parkedBy: [...roots].map((id) => byId.get(id)?.identifier ?? id),
+        });
+      }
+      continue;
+    }
     const last = lastActivity.get(root.id) ?? 0;
     if (nowMs - last < graceMs) continue;
     stranded.push({
@@ -230,6 +273,8 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     weekly: stranded.filter((tree) => tree.stoppedInWindow).length,
     total: stranded.length,
     stranded,
+    parked: parkedTrees.length,
+    parkedTrees,
   };
 }
 
