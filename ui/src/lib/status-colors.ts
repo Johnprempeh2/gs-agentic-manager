@@ -44,6 +44,19 @@ export const issueStatusText: Record<string, string> = {
 
 export const issueStatusTextDefault = "text-muted-foreground";
 
+/** Solid fill in the status hue: accent edges, progress bars, rings (task tree). */
+export const issueStatusAccent: Record<string, string> = {
+  backlog: "bg-muted-foreground",
+  todo: "bg-status-warning",
+  in_progress: "bg-status-running",
+  in_review: "bg-status-review",
+  done: "bg-status-success",
+  cancelled: "bg-status-neutral",
+  blocked: "bg-status-danger",
+};
+
+export const issueStatusAccentDefault = "bg-muted-foreground";
+
 // ---------------------------------------------------------------------------
 // Brand `.task-chip` status palette (PAP-75 / status-reference.html)
 //

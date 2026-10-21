@@ -8616,6 +8616,17 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/issues/{id}/tree",
+  tags: ["issues"],
+  summary: "A task and everything under it, with what blocks what",
+  description:
+    "Accepts a task id or key. Returns the root first, then its sub-tasks breadth first: status, priority, owner, parent, blocking task ids, direct sub-task counts and last update. Branches the actor cannot read are left out. Capped at 300 tasks and 12 levels; truncated is true when the tree was cut.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/recent-issues",
   tags: ["issues"],
   summary: "List the tasks the current user opened most recently",

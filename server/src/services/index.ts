@@ -129,6 +129,7 @@ export { sidebarPreferenceService } from "./sidebar-preferences.js";
 export { resourceMembershipService, type ResourceMembershipPolicyHook } from "./resource-memberships.js";
 export { inboxDismissalService } from "./inbox-dismissals.js";
 export { issueFollowService } from "./issue-follows.js";
+export { issueTreeService } from "./issue-tree.js";
 export { accessService } from "./access.js";
 export {
   backfillPrincipalAccessCompatibility,

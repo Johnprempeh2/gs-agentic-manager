@@ -45,6 +45,7 @@ export { tourDismissalRoutes } from "./tour-dismissals.js";
 export { resourceMembershipRoutes } from "./resource-memberships.js";
 export { inboxDismissalRoutes } from "./inbox-dismissals.js";
 export { issueFollowRoutes } from "./issue-follows.js";
+export { issueTreeRoutes } from "./issue-tree.js";
 export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";

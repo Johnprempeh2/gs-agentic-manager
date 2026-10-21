@@ -3722,3 +3722,35 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
     break-after: avoid;
   }
 }
+
+/* ── Task tree (Tree view) ─────────────────────────────────────────────────
+   The canvas carries a quiet dot grid that pans and zooms with the tree.
+   The blocked path carries light pulses flowing from the root towards the
+   root blocker; reduced motion keeps the path and stops the flow. Cards
+   glide between layouts for --motion-task-tree-glide (read by the canvas). */
+:root {
+  --motion-task-tree-flow: 1.6s;
+  --motion-task-tree-glide: var(--motion-duration-base);
+}
+
+.task-tree-canvas {
+  background-color: var(--background);
+  background-image: radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+}
+
+.task-tree-flow {
+  stroke-dasharray: 2 14;
+  animation: task-tree-flow var(--motion-task-tree-flow) linear infinite;
+}
+
+@keyframes task-tree-flow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-tree-flow {
+    animation: none;
+  }
+}

@@ -22,14 +22,10 @@ function requireBoardUser(req: Request, res: Response) {
 }
 
 /**
- * Following a task and the recently opened list (Desk). Both are personal
- * preferences of the signed-in board user, kept per company, so they are not
- * written to the activity log. Every task they name must be readable by the
- * user; another user's follows and opens are never returned.
+ * Read access for routes that take a task id or key (GRE-123): the same
+ * issue:read decision as the task page, inside the actor's companies.
  */
-export function issueFollowRoutes(db: Db) {
-  const router = Router();
-  const svc = issueFollowService(db);
+export function issueReadAccess(db: Db) {
   const access = accessService(db);
 
   const canRead = (req: Request) => async (issue: IssueAccessFields) => {
@@ -87,6 +83,20 @@ export function issueFollowRoutes(db: Db) {
     }
     return accessible;
   }
+
+  return { canRead, loadReadableIssue };
+}
+
+/**
+ * Following a task and the recently opened list (Desk). Both are personal
+ * preferences of the signed-in board user, kept per company, so they are not
+ * written to the activity log. Every task they name must be readable by the
+ * user; another user's follows and opens are never returned.
+ */
+export function issueFollowRoutes(db: Db) {
+  const router = Router();
+  const svc = issueFollowService(db);
+  const { canRead, loadReadableIssue } = issueReadAccess(db);
 
   router.get("/companies/:companyId/issue-follows", async (req, res) => {
     const companyId = req.params.companyId as string;
