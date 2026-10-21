@@ -274,6 +274,8 @@ vi.mock("../realtime/live-events-ws.js", () => ({
 }));
 
 vi.mock("../services/index.js", () => ({
+  looksFinishedService: vi.fn(() => ({ sweep: vi.fn(async () => ({ flagged: 0, cleared: 0, reviews: 0 })) })),
+  LOOKS_FINISHED_SWEEP_INTERVAL_MS: 60 * 60 * 1000,
   returnDueTabledIssues: vi.fn(async () => ({ returned: 0 })),
   backfillLegacyToolOAuthTokens: vi.fn(async () => ({
     scannedConnections: 0,
