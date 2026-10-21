@@ -34,6 +34,7 @@ import { projectRouteRef } from "../lib/utils";
 import { PROJECT_ICONS } from "../lib/project-icons";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { Button } from "@/components/ui/button";
+import { Network } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -706,7 +707,11 @@ export function ProjectDetail() {
     if (isProjectPluginTab(cachedTab)) {
       return <Navigate to={`/projects/${canonicalProjectRef}?tab=${encodeURIComponent(cachedTab)}`} replace />;
     }
-    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
+    if (cachedTab === "list") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
+    }
+    // A project opens on its tree, the way a task opens on its own.
+    return <Navigate to={`/projects/${canonicalProjectRef}/tree`} replace />;
   }
 
   if (isLoading) return <PageSkeleton variant="detail" />;
@@ -822,6 +827,12 @@ export function ProjectDetail() {
           />
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/projects/${canonicalProjectRef}/tree`} data-project-tree-link="">
+              <Network />
+              Project tree
+            </Link>
+          </Button>
           <StarToggle
             size="button"
             starred={projectStarred}

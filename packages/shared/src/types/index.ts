@@ -1076,7 +1076,7 @@ export type {
   IssueFollowState,
   RecentlyOpenedIssue,
 } from "./issue-follow.js";
-export type { IssueTree, IssueTreeExternalBlocker, IssueTreeNode } from "./issue-tree.js";
+export type { IssueTree, IssueTreeExternalBlocker, IssueTreeNode, ProjectTree, ProjectTreeLead } from "./issue-tree.js";
 export type {
   DecisionEffectStaleness,
   DecisionOptionStyle,

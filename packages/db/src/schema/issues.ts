@@ -104,6 +104,9 @@ export const issues = pgTable(
     looksFinishedAt: timestamp("looks_finished_at", { withTimezone: true }),
     looksFinishedReasons: jsonb("looks_finished_reasons").$type<string[] | null>(),
     looksFinishedDismissedAt: timestamp("looks_finished_dismissed_at", { withTimezone: true }),
+    // Project tree: a key task drives its project. The project lead marks the
+    // few that do; null means an ordinary task.
+    keyTaskAt: timestamp("key_task_at", { withTimezone: true }),
     // Deadline of a plan action (GRE-1188): only tasks under a plan objective
     // carry one, so the board can list the overdue ones.
     dueDate: date("due_date", { mode: "string" }),

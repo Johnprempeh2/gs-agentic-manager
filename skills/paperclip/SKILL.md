@@ -727,3 +727,19 @@ with lost reasons.
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your
 description and can attach it to your task with `gsam image generate`.
+
+**Project tree.** Every project is a tree: a few **key tasks** drive it, and all other work sits
+under one of them. `GET /api/projects/{projectId}/tree` shows it: `keyTaskIds`, and `unsortedIds`
+for open work under no key task.
+
+- Create work as a sub-task (`parentId`) of the task or key task it serves, never as a loose
+  top-level task in a project.
+- A project lead (or the company lead, for a project with no lead) keeps **3 to 7 key tasks** per
+  project: mark one with `PATCH /api/issues/{id}` `{ "keyTask": true, "comment": "why it drives the project" }`,
+  clear it with `false`.
+- `GSAM_WAKE_REASON=project_task_placement` means a person added `GSAM_TASK_ID` to a project with no
+  parent, and you are its assignee or the project's lead. Place it before other work. A "Tidy the
+  ... project tree" task asks the same for a list of tasks. To place a task: set its `parentId` to
+  the key task or task it serves; add `blockedByIssueIds` where it obviously waits on another task;
+  or, only if it is genuinely a new driver, mark it a key task. Then leave a one-line comment on it
+  saying where it went and why. Do not check it out or start the work unless it is assigned to you.

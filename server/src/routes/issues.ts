@@ -195,6 +195,7 @@ import {
   logActivity,
   publishActivity,
   projectService,
+  projectTreeService,
   routineService,
   workProductService,
 } from "../services/index.js";
@@ -13311,6 +13312,15 @@ export function issueRoutes(
           requestedByActorType: actor.actorType,
           requestedByActorId: actor.actorId,
         });
+        // Project tree: a person's new top-level task in a project wakes one
+        // agent to place it. Agents create sub-tasks in place, so not theirs.
+        if (actor.actorType === "user" && issue.projectId && !issue.parentId) {
+          try {
+            await projectTreeService(db, { heartbeat }).requestPlacement(issue, actor.actorId);
+          } catch (err) {
+            logger.warn({ err, issueId: issue.id }, "failed to request project tree placement");
+          }
+        }
       }
       await queueTaskWatchdogEvaluation(issue, actor.runId);
 
@@ -14107,6 +14117,7 @@ export function issueRoutes(
         interrupt: interruptRequested,
         deferWakeForGoal,
         hiddenAt: hiddenAtRaw,
+        keyTask: keyTaskRequested,
         onBehalfOfUserId: _requestedOnBehalfOfUserId,
         duplicateOfIssueId,
         blockedDependents: blockedDependentsRequest,
@@ -14506,6 +14517,12 @@ export function issueRoutes(
 
       if (hiddenAtRaw !== undefined) {
         updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
+      }
+      // Project tree: mark or clear a key task. Marking again keeps the date.
+      const keyTaskChanged =
+        keyTaskRequested !== undefined && keyTaskRequested !== (existing.keyTaskAt != null);
+      if (keyTaskChanged) {
+        updateFields.keyTaskAt = keyTaskRequested ? new Date() : null;
       }
       if (
         commentBody &&
@@ -15476,6 +15493,25 @@ export function issueRoutes(
           ...issueResponse,
           activeRecoveryAction: null,
         };
+      }
+      if (keyTaskChanged) {
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          agentApiKeyId: actor.agentApiKeyId,
+          action: keyTaskRequested ? "issue.key_task_marked" : "issue.key_task_cleared",
+          entityType: "issue",
+          entityId: issue.id,
+          issueId: issue.id,
+          details: {
+            identifier: issue.identifier,
+            projectId: issue.projectId,
+            reason: typeof commentBody === "string" ? commentBody.slice(0, 500) : null,
+          },
+        });
       }
       if (!persistReviewActivityTransactionally)
         await logActivity(db, {

@@ -5195,6 +5195,7 @@ const issueListSelect = {
   looksFinishedAt: issues.looksFinishedAt,
   looksFinishedReasons: issues.looksFinishedReasons,
   looksFinishedDismissedAt: issues.looksFinishedDismissedAt,
+  keyTaskAt: issues.keyTaskAt,
   dueDate: issues.dueDate,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,

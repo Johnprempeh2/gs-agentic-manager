@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import type { IssueTreeNode } from "@greatstone/shared";
+import { Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { indexTaskTree, traceBlockedPaths, visibleTaskTree } from "@/lib/task-tree";
 import { ProgressRing } from "./ProgressRing";
 import { TaskTreeCanvas } from "./TaskTreeCanvas";
@@ -104,6 +106,23 @@ export function TaskTreeDesignExamples() {
           </div>
           <div style={cardStyle}>
             <TaskTreeCard node={node("106")} people={PEOPLE} waitingOn="OPS-14" />
+          </div>
+          <div style={cardStyle}>
+            {/* Project tree: a key task, its ring counting the whole branch. */}
+            <TaskTreeCard node={{ ...node("104"), isKeyTask: true, childCount: 12, doneChildCount: 7 }} people={PEOPLE} />
+          </div>
+          <div style={cardStyle}>
+            {/* Project tree: the Unsorted card carries the Tidy button. */}
+            <TaskTreeCard
+              node={{ ...node("108"), id: "unsorted", identifier: null, title: "Unsorted: 4 open tasks under no key task" }}
+              people={PEOPLE}
+              action={
+                <Button type="button" variant="outline" size="xs" className="ml-auto shrink-0">
+                  <Sparkles />
+                  Tidy
+                </Button>
+              }
+            />
           </div>
         </div>
       </div>
