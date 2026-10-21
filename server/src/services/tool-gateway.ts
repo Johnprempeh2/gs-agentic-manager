@@ -1,4 +1,5 @@
 import { COGNEE_STDIO_TEMPLATE, cogneeCloudUrl, callCogneeCloud } from "./cognee-connection.js";
+import { promptInjectionClassifierService } from "./prompt-injection-classifier.js";
 import { HttpError } from "../errors.js";
 import { claimSlackRateLimitRetry } from "./connectors/slack-retry.js";
 import { resolveSlackTaskAuthority } from "./connectors/slack-authority.js";
@@ -162,6 +163,7 @@ import {
   ToolActionSigningSecretMissingError,
   ToolContentValidationError,
   validateToolContent,
+  validateToolResultContent,
   verifyToolArgumentsSignature,
 } from "./tool-content-guards.js";
 import { sealToolResultProxyPaths } from "./tool-result-sealed-values.js";
@@ -1057,6 +1059,8 @@ export function createToolGatewayService(
   db: Db,
   options: {
     pluginToolDispatcher?: PluginToolDispatcher;
+    /** Internal test seam for model-backed prompt-injection checks; never taken from tool inputs. */
+    promptInjectionClassifier?: ReturnType<typeof promptInjectionClassifierService>;
     deploymentMode?: DeploymentMode;
     deploymentExposure?: DeploymentExposure;
     trustedLocalStdioRuntimeHost?: string | null;
@@ -1129,6 +1133,23 @@ export function createToolGatewayService(
   const interactions = issueThreadInteractionService(db);
   const policyService = toolAccessPolicyService(db);
   const secrets = secretService(db);
+  const promptInjectionClassifier = options.promptInjectionClassifier ?? promptInjectionClassifierService(db);
+  /**
+   * Greatstone (GRE-1743): the existing result guard, plus a model check when
+   * `enablePromptInjectionModelChecks` is on. Off runs the regex alone.
+   */
+  async function validateToolResult(session: ToolGatewaySession, tool: ToolGatewayDescriptor, value: unknown) {
+    const classifier = await promptInjectionClassifier.forToolResult({
+      companyId: session.companyId,
+      agentId: session.agentId,
+      responsibleUserId: session.responsibleUserId ?? null,
+      issueId: session.issueId,
+      projectId: session.projectId,
+      toolName: tool.name,
+      toolType: tool.providerType,
+    });
+    return validateToolResultContent({ value, sensitiveMode: "redact", promptInjectionMode: "block", classifier });
+  }
   // Authentication produces a new session object for every operation. Keep
   // credential acquisition scoped to that object and out of persisted inputs.
   const githubOperationCredentials = new WeakMap<
@@ -7327,12 +7348,7 @@ export function createToolGatewayService(
         );
       }
       const result = connectedMcpExecution.result;
-      const resultValidation = validateToolContent({
-        value: result,
-        direction: "result",
-        sensitiveMode: "redact",
-        promptInjectionMode: "block",
-      });
+      const resultValidation = await validateToolResult(args.session, args.tool, result);
       const providerResult = asRecord(resultValidation.value);
       if (providerResult?.error) {
         throw new ToolGatewayHttpError(502, String(providerResult.content || providerResult.error),
@@ -7386,6 +7402,7 @@ export function createToolGatewayService(
           argumentsSummary: args.argumentsSummary,
           result: summarizeResult(resultValidation.value),
           resultSummary: resultValidation.summary,
+          promptInjection: resultValidation.detectorMetadata,
           headerSummary: connectedMcpExecution.headerSummary ?? undefined,
           execution: connectedMcpExecution.execution,
         },
@@ -7436,7 +7453,7 @@ export function createToolGatewayService(
         metadata: {
           source: "test",
           ...(err instanceof ToolContentValidationError
-            ? { findings: err.findings }
+            ? { findings: err.findings, promptInjection: err.detectorMetadata }
             : {}),
           ...(executionAuditFromError(err)
             ? { execution: executionAuditFromError(err) }
@@ -8181,12 +8198,7 @@ export function createToolGatewayService(
           String(resultRecord.content || resultRecord.error),
           "tool_execution_failed",
         );
-      const resultValidation = validateToolContent({
-        value: result,
-        direction: "result",
-        sensitiveMode: "redact",
-        promptInjectionMode: "block",
-      });
+      const resultValidation = await validateToolResult(session, tool, result);
       const now = new Date();
       await db
         .update(toolInvocations)
@@ -10020,12 +10032,7 @@ export function createToolGatewayService(
           session,
           requestedParameters,
         );
-        const resultValidation = validateToolContent({
-          value: result,
-          direction: "result",
-          sensitiveMode: "redact",
-          promptInjectionMode: "block",
-        });
+        const resultValidation = await validateToolResult(session, tool, result);
         const [invocation] = await db
           .insert(toolInvocations)
           .values({
@@ -10087,6 +10094,7 @@ export function createToolGatewayService(
             argumentsSummary: argumentValidation.summary,
             result: summarizeResult(resultValidation.value),
             resultSummary: resultValidation.summary,
+            promptInjection: resultValidation.detectorMetadata,
           },
         });
         return {
@@ -10694,14 +10702,13 @@ export function createToolGatewayService(
                 executionTimeoutMs,
               );
 
-        const resultValidation = validateToolContent({
-          value: connectedMcpExecution
+        const resultValidation = await validateToolResult(
+          session,
+          tool,
+          connectedMcpExecution
             ? await sealToolResultProxyPaths(result, { runId: session.runId })
             : result,
-          direction: "result",
-          sensitiveMode: "redact",
-          promptInjectionMode: "block",
-        });
+        );
         const completedAt = new Date();
         const validatedMcpResult = connectedMcpExecution
           ? asRecord(resultValidation.value)
@@ -10791,6 +10798,7 @@ export function createToolGatewayService(
             argumentsSummary: effectiveArgumentsSummary,
             result: summarizeResult(resultValidation.value),
             resultSummary: resultValidation.summary,
+            promptInjection: resultValidation.detectorMetadata,
             headerSummary: connectedMcpExecution?.headerSummary ?? undefined,
             execution: connectedMcpExecution?.execution ?? undefined,
           },
@@ -10895,7 +10903,7 @@ export function createToolGatewayService(
               ? { virtualToolName, targetToolName: tool.name }
               : {}),
             ...(normalizedError instanceof ToolContentValidationError
-              ? { findings: normalizedError.findings }
+              ? { findings: normalizedError.findings, promptInjection: normalizedError.detectorMetadata }
               : {}),
             ...(executionAuditFromError(normalizedError)
               ? { execution: executionAuditFromError(normalizedError) }
@@ -11105,12 +11113,7 @@ export function createToolGatewayService(
           requestedParameters,
           input.runContext,
         );
-        const resultValidation = validateToolContent({
-          value: result,
-          direction: "result",
-          sensitiveMode: "redact",
-          promptInjectionMode: "block",
-        });
+        const resultValidation = await validateToolResult(sessionLike, tool, result);
         await db
           .update(toolInvocations)
           .set({
@@ -11190,7 +11193,7 @@ export function createToolGatewayService(
           argumentsSummary: argumentValidation.summary,
           metadata:
             err instanceof ToolContentValidationError
-              ? { findings: err.findings }
+              ? { findings: err.findings, promptInjection: err.detectorMetadata }
               : null,
           tool,
         });
