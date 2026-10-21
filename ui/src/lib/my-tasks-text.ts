@@ -8,7 +8,7 @@ type TaskLike = Pick<Issue, "id" | "identifier" | "title">;
  * "Copy as a list" on My tasks: the tasks grouped by who acts next, one line
  * per task with a link, ready to paste into a message.
  *
- *   My tasks, 16 Oct
+ *   Your desk, 16 Oct
  *   3 tasks: 2 need you, 1 waiting on an agent.
  *
  *   Needs you
@@ -30,7 +30,7 @@ export function myTasksListText<T extends TaskLike>(
   });
   const total = tasks.length;
   const lines = [
-    `My tasks, ${formatShortDate(now)}`,
+    `Your desk, ${formatShortDate(now)}`,
     `${total} ${total === 1 ? "task" : "tasks"}${counts.length > 0 ? `: ${counts.join(", ")}` : ""}.`,
   ];
   for (const group of MY_TASKS_GROUPS) {

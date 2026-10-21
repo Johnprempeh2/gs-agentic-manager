@@ -501,6 +501,8 @@ interface IssuesListProps {
   initialSearch?: string;
   searchFilters?: Omit<IssueListRequestFilters, "q" | "projectId" | "limit" | "includeRoutineExecutions">;
   searchWithinLoadedIssues?: boolean;
+  /** On a page that only lists the viewer's own work, "Your task" on every row is noise. */
+  hideOwnTaskLabel?: boolean;
   baseCreateIssueDefaults?: Record<string, unknown>;
   createIssueLabel?: string;
   defaultSortField?: IssueSortField;
@@ -793,6 +795,7 @@ export function IssuesList({
   initialSearch,
   searchFilters,
   searchWithinLoadedIssues = false,
+  hideOwnTaskLabel = false,
   baseCreateIssueDefaults,
   createIssueLabel,
   defaultSortField,
@@ -2406,7 +2409,7 @@ export function IssuesList({
                         checklistDependencyChips={checklistDependencyChips}
                         checklistRowId={checklistRowId}
                         titleClassName={doneRowTitleClass}
-                        ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
+                        ownerLabel={hideOwnTaskLabel && currentUserId && issue.assigneeUserId === currentUserId ? null : <TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
                         stopReasonContext={stopReasonContext}
                         externalObjectSummary={externalObjectSummaryByIssueId.get(issue.id) ?? null}
                         titleSuffix={(

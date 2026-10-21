@@ -59,6 +59,7 @@ import {
   MyTasksTickBox,
 } from "../components/MyTasksRowControls";
 import { MyTasksDiscussPanel, useMyTasksDiscussOverlay } from "../components/MyTasksDiscussPanel";
+import { useIsWideScreen } from "../hooks/useIsWideScreen";
 import { FollowRollupSummary, FollowTaskToggle } from "../components/FollowTask";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
@@ -535,7 +536,9 @@ export function Desk() {
   );
 
   // The docked panel narrows the list: actions go icon only so titles keep their room.
-  const compactActions = discussId !== null && !discussOverlay;
+  const wideScreen = useIsWideScreen();
+  // Icons only when the Discuss panel takes the side, or the screen is not wide: the title keeps the room.
+  const compactActions = (discussId !== null && !discussOverlay) || !wideScreen;
 
   const renderDiscuss = (issue: Issue) => (
     <MyTasksDiscussButton
@@ -686,6 +689,7 @@ export function Desk() {
                 toolbarPresentation={ISSUES_TOOLBAR_PRESENTATION}
                 issueLinkState={issueLinkState}
                 searchWithinLoadedIssues
+                hideOwnTaskLabel
                 customGrouping={groupGrouping}
                 issueTagsById={issueTagsById}
                 renderRowLeading={renderRowLeading}
