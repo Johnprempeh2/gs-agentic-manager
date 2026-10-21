@@ -9,7 +9,7 @@ import { AgentPermissionGrantsList } from "./AgentPermissionGrantsList";
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Pipeline keys have their own control (GRE-1072), so the read-only list skips them.
-const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:") && !key.startsWith("strategy:"));
+const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:") && !key.startsWith("strategy:") && !key.startsWith("reviews:"));
 
 describe("AgentPermissionGrantsList", () => {
   let container: HTMLDivElement;

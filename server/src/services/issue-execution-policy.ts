@@ -69,6 +69,12 @@ type TransitionInput = {
    * Omitted: the actor matches only its own id.
    */
   actorUserIdAliases?: readonly string[];
+  /**
+   * The caller checked a review override (owner or `reviews:override`, see
+   * `review-override.ts`): the actor decides the pending stage as if they
+   * were its current participant.
+   */
+  reviewOverride?: boolean;
 };
 
 type TransitionResult = {
@@ -786,7 +792,8 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       currentParticipant.type === "user" &&
       !stageHasParticipant(activeStage, currentParticipant) &&
       (existingState?.changesRequestedCount ?? 0) >= resolveMaxReviewRounds(input.policy);
-    const actorIsCurrentParticipant = actorIsParticipant(currentParticipant, actor, input.actorUserIdAliases);
+    const actorIsCurrentParticipant =
+      Boolean(input.reviewOverride) || actorIsParticipant(currentParticipant, actor, input.actorUserIdAliases);
     if (escalatedHold && !actorIsCurrentParticipant) {
       // An empty patch would not override the caller's own requested fields,
       // so a status or assignee change from a non-escalated actor must be

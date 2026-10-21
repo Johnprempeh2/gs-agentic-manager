@@ -261,4 +261,47 @@ describeEmbeddedPostgres("access routes permissions upgrade compatibility", () =
     expect(await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant.id)))
       .toEqual([expect.objectContaining({ status: "revoked" })]);
   });
+
+  it("logs granting and revoking the review override for a member", async () => {
+    const { company, owner } = await createCompanyWithOwner(db);
+    const member = await db.insert(companyMemberships).values({
+      companyId: company.id,
+      principalType: "user",
+      principalId: `admin-${randomUUID()}`,
+      status: "active",
+      membershipRole: "admin",
+    }).returning().then((rows) => rows[0]!);
+    const app = await createApp(db, company.id, owner.principalId);
+    const holdsGrant = async () => (await db.select().from(principalPermissionGrants).where(and(
+      eq(principalPermissionGrants.principalId, member.principalId),
+      eq(principalPermissionGrants.permissionKey, "reviews:override"),
+    ))).length > 0;
+    const overrideLogs = async () => (await db.select().from(activityLog).where(eq(activityLog.entityId, member.id)))
+      .map((row) => row.action)
+      .filter((action) => action.startsWith("company_member.review_override_"));
+
+    const grant = await request(app)
+      .patch(`/api/companies/${company.id}/members/${member.id}/permissions`)
+      .send({ grants: [{ permissionKey: "reviews:override" }] });
+    expect(grant.status, JSON.stringify(grant.body)).toBe(200);
+    expect(await holdsGrant()).toBe(true);
+    expect(await overrideLogs()).toEqual(["company_member.review_override_granted"]);
+
+    // Saving again without a change writes no second override entry.
+    await request(app)
+      .patch(`/api/companies/${company.id}/members/${member.id}/permissions`)
+      .send({ grants: [{ permissionKey: "reviews:override" }] })
+      .expect(200);
+    expect(await overrideLogs()).toEqual(["company_member.review_override_granted"]);
+
+    const revoke = await request(app)
+      .patch(`/api/companies/${company.id}/members/${member.id}/permissions`)
+      .send({ grants: [] });
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
+    expect(await holdsGrant()).toBe(false);
+    expect((await overrideLogs()).sort()).toEqual([
+      "company_member.review_override_granted",
+      "company_member.review_override_revoked",
+    ]);
+  });
 });

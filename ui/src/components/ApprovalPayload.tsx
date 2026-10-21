@@ -180,6 +180,7 @@ const PERMISSION_KEY_LABELS: Record<PermissionKey, string> = {
   "strategy:board_member": "See the strategy as a board member",
   "strategy:board_chair": "Chair the board",
   "intelligence:write": "Write intelligence reports",
+  "reviews:override": "Approve or send back reviews on someone else's behalf",
 };
 
 /** Plain words for a permission key, e.g. "tasks:assign" becomes "Assign tasks". */

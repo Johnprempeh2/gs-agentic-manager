@@ -5,6 +5,7 @@ import {
 } from "./experimental-api-paths.js";
 import { Router } from "express";
 import { markTourSeenSchema } from "./tour-dismissals.js";
+import { issueReviewOverrideFieldsSchema } from "../services/review-override.js";
 import { z } from "zod";
 import {
   createAiConnectionSchema,
@@ -4488,15 +4489,16 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Update an issue",
   description:
-    "When posting a comment, attachmentIds selects up to 20 unique uploaded attachments from this exact task and company. The comment, attachment binding, and issue update commit atomically. attachmentIds without a comment is rejected; Markdown links alone do not bind uploads.",
+    "When posting a comment, attachmentIds selects up to 20 unique uploaded attachments from this exact task and company. The comment, attachment binding, and issue update commit atomically. attachmentIds without a comment is rejected; Markdown links alone do not bind uploads. reviewOverride with a non-empty overrideReason lets the company owner, or a person granted reviews:override, approve (status done) or request changes (status in_progress) on a review that waits on someone else; the decision, an activity entry and a system comment record who decided and why. Agents and agent keys are refused with 403.",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(updateIssueSchema.partial()),
+    body: jsonBody(updateIssueSchema.partial().merge(issueReviewOverrideFieldsSchema)),
   },
   responses: {
     200: r.ok(),
     400: r.badRequest,
     401: r.unauthorized,
+    403: r.forbidden,
     404: r.notFound,
     422: r.unprocessable,
   },
