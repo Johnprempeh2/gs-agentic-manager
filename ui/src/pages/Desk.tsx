@@ -290,7 +290,8 @@ export function Desk() {
     [issues, decisions, decisionIssues, currentUserId],
   );
 
-  const listedIssues = useMemo(() => {
+  // Everything the Desk lists, pinned included; the Pinned cards reuse these rows' actions.
+  const deskIssueById = useMemo(() => {
     const byId = new Map(merged.issues.map((issue) => [issue.id, issue]));
     for (const issue of selectHandedOffTasks(touchedIssues ?? [], currentUserId)) {
       if (!byId.has(issue.id)) byId.set(issue.id, issue);
@@ -298,9 +299,13 @@ export function Desk() {
     for (const issue of selectDoneToday(doneIssues ?? [])) {
       if (!byId.has(issue.id)) byId.set(issue.id, issue);
     }
-    // Pinned tasks already sit at the top; they do not show twice.
-    return [...byId.values()].filter((issue) => !pinnedIds.has(issue.id));
-  }, [merged.issues, touchedIssues, doneIssues, currentUserId, pinnedIds]);
+    return byId;
+  }, [merged.issues, touchedIssues, doneIssues, currentUserId]);
+  // Pinned tasks already sit at the top; they do not show twice.
+  const listedIssues = useMemo(
+    () => [...deskIssueById.values()].filter((issue) => !pinnedIds.has(issue.id)),
+    [deskIssueById, pinnedIds],
+  );
 
   // Routine chores (schedules, digests, self-checks) stay hidden unless asked for.
   const routineCount = useMemo(
@@ -800,7 +805,19 @@ export function Desk() {
 
       {pinned.length > 0 ? (
         <DeskSection id="desk-pinned" title="Pinned">
-          <DeskPinned companyId={selectedCompanyId} pinned={pinned} issueLinkState={issueLinkState} />
+          <DeskPinned
+            companyId={selectedCompanyId}
+            pinned={pinned}
+            issueLinkState={issueLinkState}
+            renderActions={(issueId) => {
+              const issue = deskIssueById.get(issueId);
+              return issue ? renderRowActions(issue) : null;
+            }}
+            renderFooter={(issueId) => {
+              const issue = deskIssueById.get(issueId);
+              return issue ? renderRowFooter(issue) : null;
+            }}
+          />
         </DeskSection>
       ) : null}
 
@@ -925,10 +942,15 @@ function DeskPinned({
   companyId,
   pinned,
   issueLinkState,
+  renderActions,
+  renderFooter,
 }: {
   companyId: string;
   pinned: IssueFollowWithRollup[];
   issueLinkState: unknown;
+  /** Row actions for a pinned task that also needs you, so pinning never hides them. */
+  renderActions: (issueId: string) => ReactNode;
+  renderFooter: (issueId: string) => ReactNode;
 }) {
   return (
     <ul className="grid gap-3 lg:grid-cols-2">
@@ -953,6 +975,13 @@ function DeskPinned({
             />
           </div>
           <FollowRollupSummary counts={counts} latestUpdates={latestUpdates} />
+          {(() => {
+            const actions = renderActions(issueId);
+            return actions ? (
+              <div className="mt-2 flex flex-wrap items-center gap-1" data-desk-pinned-actions={issueId}>{actions}</div>
+            ) : null;
+          })()}
+          {renderFooter(issueId)}
           {counts.total > 1 ? (
             <Link
               to={`/issues/${issue.identifier ?? issueId}/tree`}

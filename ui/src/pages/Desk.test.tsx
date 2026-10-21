@@ -533,6 +533,16 @@ describe("Desk sections", () => {
     expect(section("desk-recent")?.textContent).not.toContain("Pinned and mine");
   });
 
+  it("keeps a pinned task's actions on its card, so pinning never hides them", async () => {
+    openIssues = [makeIssue("1")];
+    const rollup = { total: 1, done: 0, inProgress: 1, waitingOnYou: 0, blocked: 0 };
+    follows = [{ issueId: "1", followedAt: new Date(), issue: summary("1"), counts: rollup, latestUpdates: [] }];
+    await renderPage();
+
+    const actions = section("desk-pinned")?.querySelector('[data-desk-pinned-actions="1"]');
+    expect(actions?.querySelector('[aria-label="Hand GRE-1: Task 1 to an agent"]')).not.toBeNull();
+  });
+
   it("leaves Pinned out until something is pinned", async () => {
     await renderPage();
     expect(section("desk-pinned")).toBeNull();
