@@ -82,7 +82,7 @@ import { parseIssueExecutionState } from "./issue-execution-policy.js";
 import { isProspectiveBlockedTransition } from "./routable-blocked.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { canonicalizeStoredResolverPolicy } from "./issue-thread-interaction-resolution.js";
-import { tabledIssueIdSet } from "./issue-tabling.js";
+import { parkedIssueIdSet } from "./issue-tabling.js";
 import { decisionQueueService } from "./decision-queues.js";
 import {
   decisionRetentionService,
@@ -1193,7 +1193,14 @@ type BlockedWorkEdge = {
  * Per-root visited sets make corrupt cycles harmless; the blocker analyzer's
  * existing traversal caps bound unusually large graphs.
  */
-async function blockedWorkCountMap(db: Db, companyId: string, blockerIssueIds: string[]) {
+async function blockedWorkCountMap(
+  db: Db,
+  companyId: string,
+  blockerIssueIds: string[],
+  parkedIssueIds: ReadonlySet<string> = new Set(),
+  options: { excludeBacklog?: boolean } = {},
+) {
+  const closedStatuses = options.excludeBacklog ? ["done", "cancelled", "backlog"] : ["done", "cancelled"];
   const rootIds = [...new Set(blockerIssueIds)];
   const seenByRoot = new Map(rootIds.map((rootId) => [rootId, new Set<string>()]));
   if (rootIds.length === 0) return new Map<string, number>();
@@ -1214,7 +1221,7 @@ async function blockedWorkCountMap(db: Db, companyId: string, blockerIssueIds: s
           inArray(issueRelations.issueId, chunk),
           eq(issues.companyId, companyId),
           isNull(issues.hiddenAt),
-          notInArray(issues.status, ["done", "cancelled"]),
+          notInArray(issues.status, closedStatuses),
         ));
       const childRowsPromise: Promise<BlockedWorkEdge[]> = includeChildren
         ? db
@@ -1227,7 +1234,7 @@ async function blockedWorkCountMap(db: Db, companyId: string, blockerIssueIds: s
             eq(issues.companyId, companyId),
             inArray(issues.parentId, chunk),
             isNull(issues.hiddenAt),
-            notInArray(issues.status, ["done", "cancelled"]),
+            notInArray(issues.status, closedStatuses),
           ))
         : Promise.resolve([]);
       const [dependentRows, childRows] = await Promise.all([dependentRowsPromise, childRowsPromise]);
@@ -1239,6 +1246,7 @@ async function blockedWorkCountMap(db: Db, companyId: string, blockerIssueIds: s
   let rootsByFrontierId = new Map<string, Set<string>>();
   for (const edge of await loadEdges(rootIds, false)) {
     if (!edge.fromIssueId || edge.issueId === edge.fromIssueId) continue;
+    if (parkedIssueIds.has(edge.issueId)) continue;
     const seen = seenByRoot.get(edge.fromIssueId);
     if (!seen || seen.size >= BLOCKER_ATTENTION_MAX_NODES || seen.has(edge.issueId)) continue;
     seen.add(edge.issueId);
@@ -1251,7 +1259,7 @@ async function blockedWorkCountMap(db: Db, companyId: string, blockerIssueIds: s
     const nextRootsByFrontierId = new Map<string, Set<string>>();
     const edges = await loadEdges([...rootsByFrontierId.keys()], true);
     for (const edge of edges) {
-      if (!edge.fromIssueId) continue;
+      if (!edge.fromIssueId || parkedIssueIds.has(edge.issueId)) continue;
       const roots = rootsByFrontierId.get(edge.fromIssueId);
       if (!roots) continue;
       for (const rootId of roots) {
@@ -1306,6 +1314,8 @@ function attentionItemIssueIds(item: AttentionItem): string[] {
   const metadataIssueId = item.subject.metadata?.issueId;
   if (typeof metadataIssueId === "string") ids.push(metadataIssueId);
   if (item.relatedIssue?.id) ids.push(item.relatedIssue.id);
+  // A parked task never counts as the blocker that needs a human (Tidy desk).
+  if (item.detail?.kind === "blocker" && item.detail.blockingIssue?.id) ids.push(item.detail.blockingIssue.id);
   return ids;
 }
 
@@ -1319,19 +1329,19 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       if (options.all && !options.queue && !options.allowUnscopedAll) {
         throw badRequest("all requires a queue filter");
       }
-      const [prefix, dismissals, tabledIssueIds] = await Promise.all([
+      const [prefix, dismissals, parkedIssueIds] = await Promise.all([
         companyPrefix(db, companyId),
         dismissalByKey(db, companyId, options.userId),
-        tabledIssueIdSet(db, companyId),
+        parkedIssueIdSet(db, companyId),
       ]);
       const includeDismissed = options.includeDismissed === true;
       const now = serviceOptions.now?.() ?? Date.now();
       const collected: AttentionItem[] = [];
 
       const add = (item: AttentionItem) => {
-        // "Not now" (GRE-262): every card of a tabled task leaves the feed and
-        // its counts until the task comes back.
-        if (tabledIssueIds.size > 0 && attentionItemIssueIds(item).some((id) => tabledIssueIds.has(id))) return;
+        // "Not now" (GRE-262): every card of a tabled task, and of every task
+        // under it (Tidy desk), leaves the feed and its counts until it comes back.
+        if (parkedIssueIds.size > 0 && attentionItemIssueIds(item).some((id) => parkedIssueIds.has(id))) return;
         const dismissal = activeDismissalState(dismissals, item.dismissalKey, item.activityAt, now);
         if (!includeDismissed && dismissal?.isActive) return;
         collected.push({ ...item, dismissal });
@@ -1781,6 +1791,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         }
         const blockerAttention = issue.blockerAttention;
         if (blockerAttention?.state !== "stalled" && blockerAttention?.state !== "needs_attention") continue;
+        // Parked work blocks nothing that needs a human.
+        if (parkedIssueIds.has(issue.id)) continue;
         if (blockerAttention.blockingTreeLive) continue;
         const issueSummary = blockedIssueSummaries.get(issue.id) ?? null;
         const terminalIssueId = blockerAttention.terminalBlockerIssueId ?? issue.id;
@@ -1798,8 +1810,17 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         }
       }
 
-      const blockedWorkCounts = await blockedWorkCountMap(db, companyId, [...terminalCandidates.keys()]);
+      const backlogTerminalIds = [...terminalCandidates]
+        .filter(([, candidate]) => candidate.terminalSummary.status === "backlog")
+        .map(([terminalIssueId]) => terminalIssueId);
+      const [blockedWorkCounts, liveWorkBehindBacklog] = await Promise.all([
+        blockedWorkCountMap(db, companyId, [...terminalCandidates.keys()], parkedIssueIds),
+        blockedWorkCountMap(db, companyId, backlogTerminalIds, parkedIssueIds, { excludeBacklog: true }),
+      ]);
       for (const [terminalIssueId, candidate] of terminalCandidates) {
+        // A backlog blocker needs a human only while live work (not backlog,
+        // not parked, not closed) still waits on it (Tidy desk).
+        if (candidate.terminalSummary.status === "backlog" && !liveWorkBehindBacklog.get(terminalIssueId)) continue;
         const blockedTaskCount = blockedWorkCounts.get(terminalIssueId) ?? 0;
         const taskLabel = blockedTaskCount === 1 ? "task" : "tasks";
         const dedupKey = `blocker:${terminalIssueId}`;

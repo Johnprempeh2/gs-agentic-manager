@@ -112,6 +112,8 @@ export type IssueListFilters = {
   includeRoutineExecutions?: boolean;
   includeBlockedBy?: boolean;
   includeBlocks?: boolean;
+  /** Leave out tabled tasks and everything under them. */
+  excludeParked?: boolean;
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
@@ -156,6 +158,7 @@ function issueListSearchParams(filters?: IssueListFilters) {
     params.set("includeRoutineExecutions", "true");
   if (filters?.includeBlockedBy) params.set("includeBlockedBy", "true");
   if (filters?.includeBlocks) params.set("includeBlocks", "true");
+  if (filters?.excludeParked) params.set("excludeParked", "true");
   if (filters?.includeBlockedInboxAttention)
     params.set("includeBlockedInboxAttention", "true");
   if (filters?.includeLiveDescendantSummary)
@@ -267,6 +270,9 @@ export const issuesApi = {
   listRecentlyOpened: (companyId: string) =>
     api.get<RecentlyOpenedIssue[]>(`/companies/${companyId}/recent-issues`),
   recordOpened: (id: string) => api.post<void>(`/issues/${id}/recent-view`, {}),
+  /** "Not finished": clears the hourly check's looks-finished flag. */
+  dismissLooksFinished: (id: string) =>
+    api.post<Issue>(`/issues/${id}/looks-finished/dismiss`, {}),
   markRead: (id: string) =>
     api.post<{ id: string; lastReadAt: Date }>(`/issues/${id}/read`, {}),
   markUnread: (id: string) =>

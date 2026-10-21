@@ -893,6 +893,10 @@ export interface Issue {
   tabledByUserId?: string | null;
   /** Status the task returns to when it comes back. */
   tabledFromStatus?: IssueStatus | null;
+  /** Set by the hourly "looks finished" check; the task's status is unchanged. */
+  looksFinishedAt?: Date | null;
+  /** Why the check thinks the task is finished, one sentence each. */
+  looksFinishedReasons?: string[] | null;
   /**
    * Deadline "YYYY-MM-DD" of a plan action (GRE-1188). Only tasks under a
    * plan objective carry one; the board lists the overdue ones.

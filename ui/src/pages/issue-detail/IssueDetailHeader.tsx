@@ -30,6 +30,7 @@ import { InlineEditor } from "../../components/InlineEditor";
 import { workModeMetaFor } from "../../lib/work-mode-meta";
 import { IssueMonitorBanner } from "../../components/IssueMonitorBanner";
 import { NotNowButton } from "../../components/decisions-feed/NotNowButton";
+import { WaitingOutsideButton } from "../../components/decisions-feed/WaitingOutsideButton";
 import { TabledBanner } from "../../components/decisions-feed/TabledBanner";
 import { SidePanelToggleButton } from "../../components/side-panel";
 import { TaskTreeControlMenuItems } from "../../components/TaskTreeControls";
@@ -410,11 +411,18 @@ export function IssueDetailHeader({
             </Button>
           )}
           {!issue.tabledAt && !isTerminalIssue ? (
-            <NotNowButton
-              companyId={issue.companyId}
-              issueId={issue.id}
-              issueLabel={issue.identifier}
-            />
+            <>
+              <NotNowButton
+                companyId={issue.companyId}
+                issueId={issue.id}
+                issueLabel={issue.identifier}
+              />
+              <WaitingOutsideButton
+                companyId={issue.companyId}
+                issueId={issue.id}
+                issueLabel={issue.identifier}
+              />
+            </>
           ) : null}
           {fileViewerEnabled ? (
             <Button

@@ -1,4 +1,5 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
+import { parkedIssueIdsSubquery } from "./issue-tabling.js";
 import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion, wakeMakersOfExpiredCards } from "./closed-card-wake.js";
 import type { IssueThreadInteraction } from "@greatstone/shared";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
@@ -1946,6 +1947,8 @@ export interface IssueFilters {
   touchedByUserId?: string;
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
+  /** Leave out tabled tasks and every task under them (the Desk). */
+  excludeParked?: boolean;
   projectId?: string;
   workspaceId?: string;
   executionWorkspaceId?: string;
@@ -5189,6 +5192,9 @@ const issueListSelect = {
   tabledUntil: issues.tabledUntil,
   tabledByUserId: issues.tabledByUserId,
   tabledFromStatus: issues.tabledFromStatus,
+  looksFinishedAt: issues.looksFinishedAt,
+  looksFinishedReasons: issues.looksFinishedReasons,
+  looksFinishedDismissedAt: issues.looksFinishedDismissedAt,
   dueDate: issues.dueDate,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
@@ -8298,6 +8304,9 @@ export function issueService(db: Db) {
       if (filters?.createdFromIssueId) {
         conditions.push(createdFromIssueCondition(companyId, filters.createdFromIssueId));
       }
+      if (filters?.excludeParked) {
+        conditions.push(sql<boolean>`${issues.id} NOT IN (${parkedIssueIdsSubquery(companyId)})`);
+      }
       if (filters?.descendantOf) {
         conditions.push(sql<boolean>`
           ${issues.id} IN (
@@ -11145,6 +11154,20 @@ export function issueService(db: Db) {
         patch.tabledUntil = null;
         patch.tabledByUserId = null;
         patch.tabledFromStatus = null;
+      }
+      // Tidy desk: a "looks finished" flag stays on a closed task (it marks
+      // what Reopen undoes). Moving it to another open status settles it, and
+      // the check waits for new work before flagging it again.
+      if (
+        existing.looksFinishedAt &&
+        issueData.status &&
+        issueData.status !== existing.status &&
+        issueData.status !== "done" &&
+        issueData.status !== "cancelled"
+      ) {
+        patch.looksFinishedAt = null;
+        patch.looksFinishedReasons = null;
+        patch.looksFinishedDismissedAt = patch.updatedAt;
       }
       if (issueData.requestDepth !== undefined) {
         patch.requestDepth = clampIssueRequestDepth(issueData.requestDepth);

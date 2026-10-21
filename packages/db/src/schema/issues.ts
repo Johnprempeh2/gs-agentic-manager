@@ -97,6 +97,13 @@ export const issues = pgTable(
     tabledUntil: timestamp("tabled_until", { withTimezone: true }),
     tabledByUserId: text("tabled_by_user_id"),
     tabledFromStatus: text("tabled_from_status"),
+    // Tidy desk: the hourly check flags open work that looks finished (it
+    // never changes status). Reasons are short sentences shown on the Desk.
+    // "Not finished" clears the flag and remembers when, so the check waits
+    // for new activity before flagging the task again.
+    looksFinishedAt: timestamp("looks_finished_at", { withTimezone: true }),
+    looksFinishedReasons: jsonb("looks_finished_reasons").$type<string[] | null>(),
+    looksFinishedDismissedAt: timestamp("looks_finished_dismissed_at", { withTimezone: true }),
     // Deadline of a plan action (GRE-1188): only tasks under a plan objective
     // carry one, so the board can list the overdue ones.
     dueDate: date("due_date", { mode: "string" }),

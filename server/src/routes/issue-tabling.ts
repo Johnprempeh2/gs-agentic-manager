@@ -11,10 +11,14 @@ import {
   logActivity,
 } from "../services/index.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { forbidden, unprocessable } from "../errors.js";
+import { looksFinishedService } from "../services/looks-finished.js";
+import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
 
-// "Not now" (GRE-262): board-only routes to table a task, bring it back, and
-// list tabled tasks for the "Tabled" list.
+// "Not now" (GRE-262): routes to table a task, bring it back, and list tabled
+// tasks for the "Tabled" list. Tabling is board-only, except "Waiting on
+// someone outside" (Tidy desk): the assigned agent may table its own task
+// when it names who it waits on and when the task comes back.
 
 export function issueTablingRoutes(
   db: Db,
@@ -26,11 +30,20 @@ export function issueTablingRoutes(
   const heartbeat = heartbeatService(db, { pluginWorkerManager: options.pluginWorkerManager });
 
   router.post("/issues/:id/table", validate(tableIssueSchema), async (req, res) => {
-    assertBoard(req);
+    assertBoardOrAgent(req);
     const issue = await getAccessibleResource(req, res, issuesSvc.getById(req.params.id as string), "Issue not found");
     if (!issue) return;
     const actor = getActorInfo(req);
     const returnAt = req.body.returnAt ? new Date(req.body.returnAt) : null;
+    const waitingOn: string | null = req.body.waitingOn ?? null;
+    if (actor.actorType === "agent") {
+      if (issue.assigneeAgentId !== actor.agentId) {
+        throw forbidden("Only the assigned agent can set its task to wait on someone outside");
+      }
+      if (!waitingOn || !returnAt) {
+        throw unprocessable("Agents table a task only to wait on someone outside: send waitingOn and returnAt");
+      }
+    }
     const result = await tablingSvc.table(issue.id, {
       until: returnAt,
       userId: req.actor.userId ?? actor.actorId,
@@ -51,8 +64,19 @@ export function issueTablingRoutes(
         tabledFromStatus: result.issue.tabledFromStatus,
         retabled: result.wasAlreadyTabled,
         interruptedRunIds: result.activeRunIds,
+        ...(waitingOn ? { waitingOn } : {}),
       },
     });
+    if (waitingOn) {
+      const back = returnAt ? ` It comes back on ${returnAt.toISOString().slice(0, 10)}.` : "";
+      await issuesSvc.addComment(
+        issue.id,
+        `Waiting on someone outside: ${waitingOn}.${back}`,
+        actor.actorType === "agent"
+          ? { agentId: actor.agentId ?? undefined, runId: actor.runId }
+          : { userId: req.actor.userId ?? actor.actorId },
+      );
+    }
     // A tabled task keeps no live work. Stop what is already running; the
     // wake gates stop anything new.
     for (const runId of result.activeRunIds) {
@@ -85,6 +109,29 @@ export function issueTablingRoutes(
       return;
     }
     res.json(result.issue);
+  });
+
+  // "Not finished" on the Desk: clears the looks-finished flag until new work.
+  router.post("/issues/:id/looks-finished/dismiss", async (req, res) => {
+    assertBoardOrAgent(req);
+    const issue = await getAccessibleResource(req, res, issuesSvc.getById(req.params.id as string), "Issue not found");
+    if (!issue) return;
+    const actor = getActorInfo(req);
+    const updated = await looksFinishedService(db).dismiss(issue.id);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.looks_finished_dismissed",
+      entityType: "issue",
+      entityId: issue.id,
+      issueId: issue.id,
+      details: { reasons: issue.looksFinishedReasons ?? null },
+    });
+    res.json(updated);
   });
 
   router.get("/companies/:companyId/tabled-issues", async (req, res) => {
