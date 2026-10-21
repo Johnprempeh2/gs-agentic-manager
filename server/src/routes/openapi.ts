@@ -1648,6 +1648,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/secrets/{id}/access-events",
   "POST /api/health/dev-server/restart",
   "POST /api/issues/{issueId}/file-resources/availability",
+  "POST /api/issues/{id}/stalled-review-decision",
   "GET /api/issues/{issueId}/file-resources/content",
   "GET /api/issues/{issueId}/file-resources/list",
   "GET /api/issues/{issueId}/file-resources/resolve",
@@ -4508,7 +4509,9 @@ registry.registerPath({
   method: "post",
   path: "/api/issues/{id}/stalled-review-decision",
   tags: ["issues"],
-  summary: "Resolve a stalled issue review",
+  summary: "Resolve a stalled issue review (board only)",
+  description:
+    "Board only: agents get 403. An agent reviewer records its own decision with PATCH /api/issues/{id} (status done to approve, or another status to request changes) and the decision comment in the same request.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(stalledReviewDecisionSchema),
