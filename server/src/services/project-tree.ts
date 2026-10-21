@@ -309,25 +309,45 @@ export function projectTreeService(
         requestedByUserId,
       },
     });
-    await deps.heartbeat
-      ?.wakeup(agentId, {
-        source: "automation",
-        triggerDetail: "system",
+    // A plain wake on the new task would read as "do this task". A small
+    // placement task carries the instruction to any agent, skill or not.
+    const placement = await issueService(db).create(issue.companyId, {
+      title: `Place ${label(issue)} in the ${project.name} project tree`,
+      description: [
+        `A person added ${label(issue)} to the ${project.name} project with no parent. Do not start that task here; only place it.`,
+        "",
+        "Set its parent (parentId) to the key task or task it serves; add blocker links if it obviously waits on another task; or, if it is genuinely a new driver of the project, mark it a key task (keyTask: true). Leave a one-line comment on it saying where it went and why, then close this task.",
+      ].join("\n"),
+      status: "todo",
+      priority: "low",
+      assigneeAgentId: agentId,
+      originKind: PROJECT_TASK_PLACEMENT_REASON,
+      originId: issue.id,
+    });
+    if (deps.heartbeat) {
+      await queueIssueAssignmentWakeup({
+        heartbeat: deps.heartbeat,
+        issue: placement,
         reason: PROJECT_TASK_PLACEMENT_REASON,
-        payload: { issueId: issue.id, projectId: project.id, mutation: "placement" },
-        idempotencyKey: `project-task-placement:${issue.id}`,
+        mutation: "create",
+        contextSource: "project.task_placement",
         requestedByActorType: "system",
         requestedByActorId: "project_tree",
-        contextSnapshot: {
-          issueId: issue.id,
-          taskId: issue.id,
-          projectId: project.id,
-          wakeReason: PROJECT_TASK_PLACEMENT_REASON,
-          source: "project.task_placement",
-        },
-      })
-      .catch(() => null);
+      });
+    }
     return { agentId, via };
+  }
+
+  async function closePlacementTasks(companyId: string, issueId: string) {
+    await db
+      .update(issues)
+      .set({ status: "done", completedAt: new Date(), updatedAt: new Date() })
+      .where(and(
+        eq(issues.companyId, companyId),
+        eq(issues.originKind, PROJECT_TASK_PLACEMENT_REASON),
+        eq(issues.originId, issueId),
+        notInArray(issues.status, CLOSED),
+      ));
   }
 
   async function listUnplaced(companyId: string, projectId: string) {
@@ -488,5 +508,5 @@ export function projectTreeService(
     return created;
   }
 
-  return { getTree, resolveLead, requestPlacement, requestTidy, ensureLeadProposalTask, ensureLeadProposalTasks };
+  return { getTree, resolveLead, requestPlacement, closePlacementTasks, requestTidy, ensureLeadProposalTask, ensureLeadProposalTasks };
 }

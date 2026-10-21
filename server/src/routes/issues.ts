@@ -15513,6 +15513,10 @@ export function issueRoutes(
           },
         });
       }
+      // Placed by hand (a parent or a key mark): its "place this task" job has nothing left to do.
+      if ((issue.parentId && !existing.parentId) || (issue.keyTaskAt && !existing.keyTaskAt)) {
+        await projectTreeService(db, { heartbeat }).closePlacementTasks(issue.companyId, issue.id);
+      }
       if (!persistReviewActivityTransactionally)
         await logActivity(db, {
           companyId: issue.companyId,

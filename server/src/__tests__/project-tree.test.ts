@@ -140,10 +140,11 @@ describeEmbeddedPostgres("project tree", () => {
     return id;
   }
 
-  let issueNumber = 0;
   async function task(companyId: string, values: Partial<typeof issues.$inferInsert> = {}) {
     const id = randomUUID();
-    issueNumber += 1;
+    // Next free number, so tasks the service itself creates never clash.
+    const issueNumber = (await db.select({ n: issues.issueNumber }).from(issues))
+      .reduce((max, row) => Math.max(max, row.n ?? 0), 0) + 1;
     await db.insert(issues).values({
       id,
       companyId,
@@ -256,7 +257,11 @@ describeEmbeddedPostgres("project tree", () => {
       );
       expect(placementWakes).toHaveLength(1);
       expect(placementWakes[0]![0]).toBe(worker);
-      expect(placementWakes[0]![1]).toMatchObject({ contextSnapshot: { issueId: res.body.id, wakeReason: PROJECT_TASK_PLACEMENT_REASON } });
+      // The wake is on a placement task that carries the instruction, not on the new task itself.
+      const [placement] = await db.select().from(issues).where(eq(issues.originId, res.body.id));
+      expect(placement).toMatchObject({ originKind: PROJECT_TASK_PLACEMENT_REASON, assigneeAgentId: worker, projectId: null });
+      expect(placement!.description).toContain("Do not start that task here");
+      expect(placementWakes[0]![1]).toMatchObject({ contextSnapshot: { issueId: placement!.id } });
       const logged = await db
         .select()
         .from(activityLog)
@@ -271,6 +276,18 @@ describeEmbeddedPostgres("project tree", () => {
       );
       expect(again).toBeNull();
       expect(wakeup.mock.calls.filter((call) => ((call as unknown[])[1] as { reason?: string }).reason === PROJECT_TASK_PLACEMENT_REASON)).toHaveLength(1);
+    });
+
+    it("closes the placement job once the task is placed or marked key", async () => {
+      const s = await seedPlatform();
+      const res = await request(app(s.companyId))
+        .post(`/api/companies/${s.companyId}/issues`)
+        .send({ title: "Write the welcome email", status: "todo", projectId: s.projectId });
+      expect(res.body.id, JSON.stringify(res.body).slice(0, 300)).toBeTruthy();
+      const job = async () => (await db.select().from(issues).where(eq(issues.originId, res.body.id)))[0]!;
+      expect((await job()).status).toBe("todo");
+      await request(app(s.companyId)).patch(`/api/issues/${res.body.id}`).send({ parentId: s.k1 }).expect(200);
+      expect((await job()).status).toBe("done");
     });
 
     it("falls back to the project lead, then the company lead", async () => {
