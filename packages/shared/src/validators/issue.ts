@@ -910,6 +910,8 @@ export const updateIssueSchema = objectWithoutDefaults(
     /** Assignment-only handoff; the following structured goal action owns the wake. */
     deferWakeForGoal: z.boolean().optional(),
     hiddenAt: z.string().datetime().nullable().optional(),
+    /** Mark (true) or clear (false) the task as a key task of its project. */
+    keyTask: z.boolean().optional(),
     /** Only valid when closing: the kept task that open dependents move to. */
     duplicateOfIssueId: z.string().guid().optional(),
     /** Only valid when closing: what happens to open tasks this task blocks. */

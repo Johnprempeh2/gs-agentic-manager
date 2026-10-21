@@ -201,6 +201,19 @@ describe("Task tree page", () => {
     expect(outline.textContent).toContain("+2 done");
   });
 
+  it("leads back up to its project tree", async () => {
+    tree = { ...tree, project: { id: "project-1", name: "Platform" } };
+    await renderPage();
+    expect(setBreadcrumbsMock).toHaveBeenLastCalledWith([
+      { label: "Projects", href: "/projects" },
+      { label: "Platform", href: "/projects/project-1/tree" },
+      { label: "GRE-1", href: "/issues/GRE-1?view=task" },
+      { label: "Tree" },
+    ]);
+    const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Project tree");
+    expect(link?.getAttribute("href")).toBe("/projects/project-1/tree");
+  });
+
   it("says so when the tree was cut short", async () => {
     tree = { ...tree, truncated: true, limits: { maxNodes: 300, maxDepth: 12 } };
     await renderPage();

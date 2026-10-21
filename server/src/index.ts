@@ -99,6 +99,7 @@ import {
   returnDueTabledIssues,
   looksFinishedService,
   LOOKS_FINISHED_SWEEP_INTERVAL_MS,
+  projectTreeService,
   statusCardService,
   toolAccessService,
   workspaceOperationService,
@@ -1638,10 +1639,14 @@ async function startServerWithDatabaseTeardown(
       lastLooksFinishedSweepAt = Date.now();
       trackHeartbeatSchedulerWork(looksFinishedService(db, { heartbeat })
         .sweep()
-        .then((result) => {
+        .then(async (result) => {
           if (result.flagged > 0 || result.cleared > 0 || result.reviews > 0) {
             logger.info(result, "looks finished check changed flags");
           }
+          // Projects with no lead: the company lead gets one task, once, to
+          // propose a lead for each.
+          const proposals = await projectTreeService(db, { heartbeat }).ensureLeadProposalTasks();
+          if (proposals > 0) logger.info({ proposals }, "asked the company lead to propose project leads");
         })
         .catch((err) => {
           logger.error({ err }, "looks finished check failed");

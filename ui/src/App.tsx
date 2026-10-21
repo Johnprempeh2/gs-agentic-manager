@@ -158,6 +158,7 @@ const JoinRequestQueue = lazyPage(() => import("./pages/JoinRequestQueue"), "Joi
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
 const IssueDetail = lazyPage(() => import("./pages/IssueDetail"), "IssueDetail");
 const TaskTree = lazyPage(() => import("./pages/TaskTree"), "TaskTree");
+const ProjectTree = lazyPage(() => import("./pages/ProjectTree"), "ProjectTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
 const WhatNeedsMe = lazyPage(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
 const NeededFromYou = lazyPage(() => import("./pages/NeededFromYou"), "NeededFromYou");
@@ -306,6 +307,7 @@ function boardRoutes() {
       <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
       <Route path="projects" element={<Projects />} />
       <Route path="projects/:projectId" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/tree" element={<ProjectTree />} />
       <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
@@ -916,6 +918,7 @@ export function App() {
           <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/tree" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />

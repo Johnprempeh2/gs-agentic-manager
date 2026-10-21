@@ -2533,6 +2533,17 @@ export function IssueProperties({
           onUpdate={onUpdate}
         />
 
+        {issue.projectId ? (
+          <PropertyRow label="Key task">
+            <ToggleSwitch
+              checked={issue.keyTaskAt != null}
+              onCheckedChange={(next) => onUpdate({ keyTask: next })}
+              aria-label="Key task: drives its project"
+            />
+            <span className="text-xs text-muted-foreground">Drives the project</span>
+          </PropertyRow>
+        ) : null}
+
         {issueTeam ? (
           <PropertyRow label="Team">
             <TeamBadge team={issueTeam} />

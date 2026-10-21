@@ -41,6 +41,8 @@ export interface TaskTreeHeaderProps {
   onSelectBlocker?: (blocker: RootBlocker) => void;
   /** Shown when the tree was cut short. */
   truncatedNote?: string | null;
+  /** A line under the title, such as who leads the project. */
+  subtitle?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }
@@ -57,6 +59,7 @@ export function TaskTreeHeader({
   people,
   onSelectBlocker,
   truncatedNote,
+  subtitle,
   actions,
   className,
 }: TaskTreeHeaderProps) {
@@ -74,6 +77,7 @@ export function TaskTreeHeader({
             {root.identifier ? <span className="font-mono text-xs text-muted-foreground">{root.identifier}</span> : null}
           </div>
           <h1 className="text-xl font-bold leading-tight text-foreground">{root.title}</h1>
+          {subtitle ? <div className="text-sm text-muted-foreground">{subtitle}</div> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>

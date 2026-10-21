@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { IssueTreeNode } from "@greatstone/shared";
 import { Maximize, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,8 @@ export interface TaskTreeCanvasProps {
   onShowFinished: () => void;
   /** Pan to this item; bump `nonce` to pan again to the same one. */
   focusRequest?: { id: string; nonce: number } | null;
+  /** A control for a card's footer. */
+  actionFor?: (node: IssueTreeNode) => ReactNode;
   className?: string;
 }
 
@@ -112,6 +114,7 @@ export function TaskTreeCanvas({
   onToggleCollapsed,
   onShowFinished,
   focusRequest,
+  actionFor,
   className,
 }: TaskTreeCanvasProps) {
   const reduced = usePrefersReducedMotion();
@@ -468,6 +471,7 @@ export function TaskTreeCanvas({
                 descendants={item.descendants}
                 collapsed={item.collapsed}
                 onToggleCollapsed={() => onToggleCollapsed(node.id)}
+                action={actionFor?.(node)}
               />
             </div>
           );
