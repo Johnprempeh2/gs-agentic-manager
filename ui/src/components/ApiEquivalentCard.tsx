@@ -88,7 +88,7 @@ export function ApiEquivalentCard({ summary }: { summary: ApiEquivalentSummary }
           </table>
         </div>
 
-        <p className="text-xs text-muted-foreground">Prices checked {summary.priceTableCheckedAt}.</p>
+        <p className="text-xs text-muted-foreground">Legacy rates verified {summary.priceTableCheckedAt}; each model row links its price source.</p>
       </CardContent>
     </Card>
   );
@@ -114,7 +114,14 @@ function ProviderRows({ row, models: allModels }: { row: ApiEquivalentProviderRo
       </tr>
       {models.map((model) => (
         <tr key={`${model.provider}/${model.model}`} className="border-b border-border/60 text-muted-foreground">
-          <td className="py-1.5 pr-3 pl-4 font-mono text-xs">{model.model}</td>
+          <td className="py-1.5 pr-3 pl-4 font-mono text-xs">
+            {model.model}
+            {model.priceRows?.map((price) => (
+              <a key={`${price.effectiveFrom}/${price.sourceUrl}`} href={price.sourceUrl} target="_blank" rel="noreferrer" className="block underline">
+                Rate from {price.effectiveFrom}{price.effectiveUntil ? ` to ${price.effectiveUntil}` : " onward"} · source
+              </a>
+            ))}
+          </td>
           <td className="py-1.5 pr-3 text-right font-mono text-xs tabular-nums">{tokenTriple(model)}</td>
           <td className="py-1.5 pr-3 text-right tabular-nums">{formatCents(Math.round(model.actualApiSpendCents))}</td>
           <td className="py-1.5 pr-3 text-right" />

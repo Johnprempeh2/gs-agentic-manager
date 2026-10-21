@@ -57,6 +57,7 @@ const summary: ApiEquivalentSummary = {
       subscriptionTokens: 1_850_000,
       actualApiSpendCents: 0,
       apiEquivalentCents: 85,
+      priceRows: [{ effectiveFrom: "2026-09-28", sourceUrl: "https://openai.com/api/pricing" }],
     },
     {
       provider: "openai",
@@ -94,6 +95,7 @@ describe("ApiEquivalentCard", () => {
     expect(text).toContain("Would cost under API billing$12.35");
     expect(text).toContain("unknown");
     expect(text).toContain("openai/gpt-5.6-terra");
+    expect(container.querySelector('a[href="https://openai.com/api/pricing"]')?.textContent).toContain("2026-09-28");
     expect(container.querySelector("[data-testid='api-equivalent-difference']")?.textContent).toBe(
       "Extra $390.65: we paid $403.00, API billing would have cost $12.35.",
     );

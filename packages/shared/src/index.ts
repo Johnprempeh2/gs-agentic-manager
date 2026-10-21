@@ -3144,10 +3144,13 @@ export {
   API_PRICE_TABLE,
   API_PRICE_TABLE_CHECKED_AT,
   computeApiEquivalentCents,
+  forecastDatedUsage,
   normalizeModelForPricing,
+  priceDatedUsage,
   resolveApiPrice,
   type ApiEquivalentInput,
   type ApiModelPrice,
+  type DatedUsage,
 } from "./api-pricing.js";
 export { agentWorkHours, minimumWageEquivalentCents } from "./agent-hours.js";
 export type { ExecutionContinuationEnvelope } from "./types/execution-continuation.js";

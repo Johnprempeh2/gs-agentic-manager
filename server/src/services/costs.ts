@@ -1,7 +1,7 @@
 import {
   API_PRICE_TABLE_CHECKED_AT,
   agentAvatarUrl,
-  computeApiEquivalentCents,
+  priceDatedUsage,
   minimumWageEquivalentCents,
   resolveAgentAppearance,
   type ApiEquivalentModelRow,
@@ -196,6 +196,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       // Callers must resolve and authorize a visible root issue before invoking this.
       // The route does that so zero counts are not mistaken for a missing root.
       const childIssues = alias(issues, "child");
+      const usageDay = sql<string>`to_char(${costEvents.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
 
       // The seed of the recursive CTE: when excludeRoot is true, start from
       // the direct children so the root issue itself is not counted.
@@ -284,7 +285,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       // Run cost-event aggregation and run-duration aggregation in parallel.
       // They're separate queries because cost_events fan out per-event and
       // joining heartbeat_runs through them would double-count run durations.
-      const [costRowResult, runRowResult, modelRows] = await Promise.all([
+      const [costRowResult, runRowResult, modelRows, datedEvents] = await Promise.all([
         db
           .select({
             issueCount: sql<number>`count(distinct ${issues.id})::int`,
@@ -337,6 +338,17 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           )
           .groupBy(costEvents.provider, costEvents.model)
           .orderBy(costEvents.provider, costEvents.model),
+        db.select({
+          provider: costEvents.provider,
+          model: costEvents.model,
+          occurredAt: usageDay,
+          inputTokens: sumAsNumber(costEvents.inputTokens),
+          cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+          outputTokens: sumAsNumber(costEvents.outputTokens),
+        }).from(issues).innerJoin(costEvents, and(
+          eq(costEvents.companyId, companyId), eq(costEvents.issueId, issues.id),
+        )).where(and(eq(issues.companyId, companyId), visibleIssueCondition(), issueTreeCondition))
+          .groupBy(costEvents.provider, costEvents.model, usageDay),
       ]);
 
       const costRow = costRowResult[0];
@@ -344,7 +356,17 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         ? (runRowResult[0] as { runCount?: number | string | null; runtimeMs?: number | string | null } | undefined)
         : undefined;
 
+      const eventsByModel = new Map<string, typeof datedEvents>();
+      for (const event of datedEvents) {
+        const key = JSON.stringify([event.provider, event.model]);
+        const events = eventsByModel.get(key) ?? [];
+        events.push(event);
+        eventsByModel.set(key, events);
+      }
+      const pricedByModel = new Map([...eventsByModel].map(([key, events]) => [key, priceDatedUsage(events)]));
+
       const byModel: IssueCostModelRow[] = modelRows.map((row) => {
+        const priced = pricedByModel.get(JSON.stringify([row.provider, row.model]))!;
         const usage = {
           inputTokens: Number(row.inputTokens),
           cachedInputTokens: Number(row.cachedInputTokens),
@@ -355,15 +377,15 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           model: row.model,
           ...usage,
           costCents: Number(row.costCents),
-          apiEquivalentCents: computeApiEquivalentCents({ provider: row.provider, model: row.model, ...usage }),
+          apiEquivalentCents: priced.priceRows.length ? priced.cents : null,
+          priceRows: priced.priceRows,
         };
       });
       let apiEquivalentCents = 0;
       let unpricedTokens = 0;
       for (const row of byModel) {
-        if (row.apiEquivalentCents === null) {
-          unpricedTokens += row.inputTokens + row.cachedInputTokens + row.outputTokens;
-        } else {
+        unpricedTokens += pricedByModel.get(JSON.stringify([row.provider, row.model]))!.unpricedTokens;
+        if (row.apiEquivalentCents !== null) {
           apiEquivalentCents += row.apiEquivalentCents;
         }
       }
@@ -677,6 +699,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
      */
     apiEquivalent: async (companyId: string, range?: CostDateRange, now = new Date()): Promise<ApiEquivalentSummary> => {
       const monthWindow = currentUtcMonthWindow(now);
+      const usageDay = sql<string>`to_char(${costEvents.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
       const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
       if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
       if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
@@ -685,7 +708,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       const runConditions = [eq(heartbeatRuns.companyId, companyId), isNotNull(heartbeatRuns.startedAt)];
       if (range?.from) runConditions.push(gte(heartbeatRuns.startedAt, range.from));
       if (range?.to) runConditions.push(lte(heartbeatRuns.startedAt, range.to));
-      const [usageRows, subscriptions, agentRows, firstEvent, agentRunRows, company] = await Promise.all([
+      const [usageRows, subscriptions, agentRows, firstEvent, agentRunRows, company, datedEvents] = await Promise.all([
         db
           .select({
             provider: costEvents.provider,
@@ -736,6 +759,15 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           .from(companies)
           .where(eq(companies.id, companyId))
           .then((rows) => rows[0] ?? null),
+        db.select({
+          agentId: costEvents.agentId,
+          provider: costEvents.provider,
+          model: costEvents.model,
+          occurredAt: usageDay,
+          inputTokens: sumAsNumber(costEvents.inputTokens),
+          cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+          outputTokens: sumAsNumber(costEvents.outputTokens),
+        }).from(costEvents).where(and(...conditions)).groupBy(costEvents.agentId, costEvents.provider, costEvents.model, usageDay),
       ]);
 
       // Period used to prorate subscriptions: the requested range; an open
@@ -743,7 +775,22 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       const periodFrom = range?.from ?? (firstEvent ? new Date(firstEvent) : monthWindow.start);
       const periodTo = range?.to && range.to.getTime() < now.getTime() ? range.to : now;
 
+      const eventsByModel = new Map<string, typeof datedEvents>();
+      const eventsByAgentModel = new Map<string, typeof datedEvents>();
+      for (const event of datedEvents) {
+        const modelKey = JSON.stringify([event.provider, event.model]);
+        const agentKey = JSON.stringify([event.agentId, event.provider, event.model]);
+        const modelEvents = eventsByModel.get(modelKey) ?? [];
+        modelEvents.push(event);
+        eventsByModel.set(modelKey, modelEvents);
+        const agentEvents = eventsByAgentModel.get(agentKey) ?? [];
+        agentEvents.push(event);
+        eventsByAgentModel.set(agentKey, agentEvents);
+      }
+      const pricedByModel = new Map([...eventsByModel].map(([key, events]) => [key, priceDatedUsage(events)]));
+
       const byModel: ApiEquivalentModelRow[] = usageRows.map((row) => {
+        const priced = pricedByModel.get(JSON.stringify([row.provider, row.model]))!;
         const usage = {
           inputTokens: Number(row.inputTokens),
           cachedInputTokens: Number(row.cachedInputTokens),
@@ -755,7 +802,8 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           ...usage,
           subscriptionTokens: Number(row.subscriptionTokens),
           actualApiSpendCents: Number(row.costCents),
-          apiEquivalentCents: computeApiEquivalentCents({ provider: row.provider, model: row.model, ...usage }),
+          apiEquivalentCents: priced.priceRows.length ? priced.cents : null,
+          priceRows: priced.priceRows,
         };
       });
 
@@ -786,13 +834,12 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         entry.cachedInputTokens += row.cachedInputTokens;
         entry.outputTokens += row.outputTokens;
         entry.actualApiSpendCents += row.actualApiSpendCents;
-        const tokens = row.inputTokens + row.cachedInputTokens + row.outputTokens;
-        if (row.apiEquivalentCents === null) {
-          entry.unpricedTokens += tokens;
-          if (tokens > 0) unpricedModels.add(`${row.provider}/${row.model}`);
-        } else {
-          entry.apiEquivalentCents += row.apiEquivalentCents;
+        const priced = pricedByModel.get(JSON.stringify([row.provider, row.model]))!;
+        if (priced.unpricedTokens > 0) {
+          entry.unpricedTokens += priced.unpricedTokens;
+          unpricedModels.add(`${row.provider}/${row.model}`);
         }
+        entry.apiEquivalentCents += row.apiEquivalentCents ?? 0;
       }
       for (const subscription of subscriptions) {
         providerRow(subscription.provider).subscriptionCostCents += proratedSubscriptionCents(
@@ -805,13 +852,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       const agentsById = new Map<string, ApiEquivalentAgentRow>();
       for (const row of agentRows) {
         const entry = agentsById.get(row.agentId) ?? { agentId: row.agentId, apiEquivalentCents: 0, runCount: 0 };
-        entry.apiEquivalentCents += computeApiEquivalentCents({
-          provider: row.provider,
-          model: row.model,
-          inputTokens: Number(row.inputTokens),
-          cachedInputTokens: Number(row.cachedInputTokens),
-          outputTokens: Number(row.outputTokens),
-        }) ?? 0;
+        entry.apiEquivalentCents += priceDatedUsage(eventsByAgentModel.get(JSON.stringify([row.agentId, row.provider, row.model])) ?? []).cents;
         agentsById.set(row.agentId, entry);
       }
       for (const row of agentRunRows) {

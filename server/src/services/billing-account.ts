@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { billingAccounts, billingInvoices, budgetPolicies, companies, costEvents } from "@greatstone/db";
-import { computeApiEquivalentCents, DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
+import { priceDatedUsage, DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
 import { logActivity } from "./activity-log.js";
 import { appliedTopUpCents } from "./budgets.js";
 import {
@@ -130,37 +130,45 @@ export function billingAccountService(db: Db) {
    * usage, in [start, end). Subscription-included events record no charge, so
    * they add to the equivalent only.
    */
-  async function usageSums(companyId: string, start: Date, end: Date) {
+  async function usageSums(companyId: string, start: Date, end: Date, now: Date) {
     const inWindow = and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, start), lt(costEvents.occurredAt, end));
+    const usageDay = sql<string>`to_char(${costEvents.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
     const [used] = await db
       .select({ total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::double precision` })
       .from(costEvents)
       .where(inWindow);
-    // Pricing is linear in tokens, so pricing each model's total equals the sum per event.
     const included = await db
       .select({
         provider: costEvents.provider,
         model: costEvents.model,
-        inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::double precision`,
-        cachedInputTokens: sql<number>`coalesce(sum(${costEvents.cachedInputTokens}), 0)::double precision`,
-        outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::double precision`,
+        occurredAt: usageDay,
+        inputTokens: sql<number>`sum(${costEvents.inputTokens})::double precision`,
+        cachedInputTokens: sql<number>`sum(${costEvents.cachedInputTokens})::double precision`,
+        outputTokens: sql<number>`sum(${costEvents.outputTokens})::double precision`,
       })
       .from(costEvents)
       .where(and(inWindow, eq(costEvents.billingType, "subscription_included")))
-      .groupBy(costEvents.provider, costEvents.model);
-    const apiEquivalent = included.reduce(
-      (sum, row) =>
-        sum +
-        (computeApiEquivalentCents({
-          provider: row.provider,
-          model: row.model,
-          inputTokens: Number(row.inputTokens),
-          cachedInputTokens: Number(row.cachedInputTokens),
-          outputTokens: Number(row.outputTokens),
-        }) ?? 0),
-      0,
-    );
-    return { usedCents: Number(used?.total ?? 0), apiEquivalentCents: Math.round(apiEquivalent) };
+      .groupBy(costEvents.provider, costEvents.model, usageDay);
+    const apiEquivalent = priceDatedUsage(included).cents;
+    const elapsedDays = Math.max(1, Math.floor((now.getTime() - start.getTime()) / 86_400_000) + 1);
+    const models = new Map<string, { provider: string; model: string; inputTokens: number; cachedInputTokens: number; outputTokens: number }>();
+    for (const row of included) {
+      const key = JSON.stringify([row.provider, row.model]);
+      const entry = models.get(key) ?? { provider: row.provider, model: row.model, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+      entry.inputTokens += row.inputTokens;
+      entry.cachedInputTokens += row.cachedInputTokens;
+      entry.outputTokens += row.outputTokens;
+      models.set(key, entry);
+    }
+    return {
+      usedCents: Number(used?.total ?? 0),
+      apiEquivalentCents: Math.round(apiEquivalent),
+      forecastModels: [...models.values()].map((row) => ({ ...row,
+        inputTokens: row.inputTokens / elapsedDays,
+        cachedInputTokens: row.cachedInputTokens / elapsedDays,
+        outputTokens: row.outputTokens / elapsedDays,
+      })),
+    };
   }
 
   /**
@@ -172,7 +180,7 @@ export function billingAccountService(db: Db) {
     if (!company) return null;
     const window = billingUsageWindowOn(now);
     const [sums, warnPercent, topUpCents] = await Promise.all([
-      usageSums(company.id, window.start, window.end),
+      usageSums(company.id, window.start, window.end, now),
       warnPercentFor(company.id),
       appliedTopUpCents(db, company.id, now),
     ]);

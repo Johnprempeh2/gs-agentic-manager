@@ -1,6 +1,6 @@
 import {
   API_PRICE_TABLE_CHECKED_AT,
-  computeApiEquivalentCents,
+  priceDatedUsage,
   type CostLedger,
   type CostLedgerLine,
   type CostLedgerTotal,
@@ -100,9 +100,10 @@ export function costLedgerService(db: Db) {
   return {
     monthly: async (companyId: string, month: LedgerMonth): Promise<CostLedger> => {
       const tool = sql<string>`coalesce(${agents.adapterType}, 'unknown')`;
+      const usageDay = sql<string>`to_char(${costEvents.occurredAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
       // One row per run within each ledger line, so run counts stay distinct
       // when lines are rolled up into agent, provider and tool totals.
-      const rows = await db
+      const [rows, datedEvents] = await Promise.all([db
         .select({
           agentId: costEvents.agentId,
           agentName: agents.name,
@@ -136,8 +137,29 @@ export function costLedgerService(db: Db) {
           costEvents.model,
           costEvents.billingType,
           costEvents.heartbeatRunId,
-        );
+        ), db.select({
+          agentId: costEvents.agentId,
+          provider: costEvents.provider,
+          biller: costEvents.biller,
+          model: costEvents.model,
+          billingType: costEvents.billingType,
+          occurredAt: usageDay,
+          inputTokens: sql<number>`sum(${costEvents.inputTokens})::double precision`,
+          cachedInputTokens: sql<number>`sum(${costEvents.cachedInputTokens})::double precision`,
+          outputTokens: sql<number>`sum(${costEvents.outputTokens})::double precision`,
+        }).from(costEvents).where(and(
+          eq(costEvents.companyId, companyId),
+          gte(costEvents.occurredAt, month.start),
+          lt(costEvents.occurredAt, month.end),
+        )).groupBy(costEvents.agentId, costEvents.provider, costEvents.biller, costEvents.model, costEvents.billingType, usageDay)]);
 
+      const eventsByLine = new Map<string, typeof datedEvents>();
+      for (const event of datedEvents) {
+        const key = JSON.stringify([event.agentId, event.provider, event.biller, event.model, event.billingType]);
+        const events = eventsByLine.get(key) ?? [];
+        events.push(event);
+        eventsByLine.set(key, events);
+      }
       const lineMap = new Map<string, { line: CostLedgerLine; runs: Set<string> }>();
       for (const row of rows) {
         const key = JSON.stringify([row.agentId, row.provider, row.biller, row.tool, row.model, row.billingType]);
@@ -182,12 +204,14 @@ export function costLedgerService(db: Db) {
       const lineRuns = new Map<CostLedgerLine, Set<string>>();
       for (const { line, runs } of lineMap.values()) {
         line.runCount = runs.size;
-        // Pricing is linear in tokens, so pricing the line total equals the sum per event.
-        line.apiEquivalentCents = computeApiEquivalentCents(line);
+        const key = JSON.stringify([line.agentId, line.provider, line.biller, line.model, line.billingType]);
+        const priced = priceDatedUsage(eventsByLine.get(key) ?? []);
+        line.apiEquivalentCents = priced.priceRows.length ? priced.cents : null;
+        line.priceRows = priced.priceRows;
         const tokens = line.inputTokens + line.cachedInputTokens + line.outputTokens;
         if (line.seatPlan) {
           line.ledgerCents = line.apiEquivalentCents ?? 0;
-          if (line.apiEquivalentCents === null) line.unpricedTokens = tokens;
+          line.unpricedTokens = priced.unpricedTokens;
         } else {
           line.ledgerCents = line.billedCents;
         }
@@ -261,6 +285,9 @@ export const COST_LEDGER_CSV_COLUMNS = [
   "ledger_cents",
   "unpriced_tokens",
   "price_table_checked_at",
+  "price_effective_from",
+  "price_effective_until",
+  "price_source_url",
 ] as const;
 
 const CSV_FORMULA_CHARS = /^[=+\-@\t\r]/;
@@ -311,6 +338,9 @@ export function costLedgerToCsv(ledger: CostLedger): string {
       csvCents(line.ledgerCents),
       String(line.unpricedTokens),
       ledger.priceTableCheckedAt,
+      csvText(line.priceRows?.map((row) => row.effectiveFrom).join(";")),
+      csvText(line.priceRows?.map((row) => row.effectiveUntil ?? "").join(";")),
+      csvText(line.priceRows?.map((row) => row.sourceUrl).join(";")),
     ].join(","));
   }
 
@@ -339,6 +369,9 @@ export function costLedgerToCsv(ledger: CostLedger): string {
       csvCents(total.ledgerCents),
       String(total.unpricedTokens),
       ledger.priceTableCheckedAt,
+      "",
+      "",
+      "",
     ].join(","));
   };
 

@@ -10,6 +10,7 @@
 // (names and boundaries, not prices) and the date rules.
 
 import { z } from "zod";
+import { forecastDatedUsage, type ApiEquivalentInput } from "./api-pricing.js";
 import type { InstanceFeatureKey } from "./feature-catalog.js";
 
 /**
@@ -393,9 +394,11 @@ export interface BillingUsage {
   /** Days in the window up to and including today. */
   daysElapsed: number;
   daysInWindow: number;
+  /** Future model-days with no published price; the forecast excludes their cost. */
+  forecastUnpriced?: { provider: string; model: string; day: string }[];
   /** consumed / allowance * 100, two decimals; 0 when the allowance is 0. May pass 100. */
   usedPercent: number;
-  /** Straight-line month-end forecast as a percent of the allowance, two decimals. */
+  /** Month-end forecast as a percent of the allowance, two decimals. */
   forecastPercent: number;
   /** The warn level: the company budget policy's, else the budget default. */
   warnPercent: number;
@@ -420,7 +423,7 @@ export interface OperatorBillingUsage extends BillingUsage {
   allowanceCents: number;
   /** max(0, allowance - consumed). */
   remainingCents: number;
-  /** Straight line: consumedCents / daysElapsed * daysInWindow, rounded. */
+  /** Observed usage plus daily projected billed and model-priced use, rounded. */
   forecastCents: number;
   extraUsage: OperatorBillingExtraUsage;
 }
@@ -607,6 +610,8 @@ export function billingUsageOn(
   input: {
     usedCents: number;
     apiEquivalentCents: number;
+    forecastModels?: ApiEquivalentInput[];
+    forecastUnpriced?: { provider: string; model: string; day: string }[];
     warnPercent: number;
     pausedSince: string | null;
     account: Pick<BillingAccount, "allowanceMonthlyCents" | "estimateMonthlyCents" | "currency" | "usageFxRate" | "usageFxRateSetOn">;
@@ -616,12 +621,22 @@ export function billingUsageOn(
   const { usedCents, apiEquivalentCents, warnPercent, account } = input;
   const allowanceCents = account.allowanceMonthlyCents;
   const consumedCents = usedCents + apiEquivalentCents;
-  const forecastCents = Math.round((consumedCents / window.daysElapsed) * window.daysInWindow);
+  const futureDays = window.daysInWindow - window.daysElapsed;
+  const forecastStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const forecastEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const future = input.forecastModels
+    ? forecastDatedUsage(input.forecastModels, forecastStart, forecastEnd)
+    : null;
+  const forecastCents = future
+    ? Math.round(consumedCents + (usedCents / window.daysElapsed) * futureDays + future.cents)
+    : Math.round((consumedCents / window.daysElapsed) * window.daysInWindow);
+  const forecastUnpriced = future?.unpriced ?? input.forecastUnpriced ?? [];
   return {
     windowStart: window.windowStart,
     windowEnd: window.windowEnd,
     daysElapsed: window.daysElapsed,
     daysInWindow: window.daysInWindow,
+    forecastUnpriced,
     usedPercent: percentOf(consumedCents, allowanceCents),
     forecastPercent: percentOf(forecastCents, allowanceCents),
     warnPercent,
@@ -648,6 +663,7 @@ export function clientBillingUsage(usage: OperatorBillingUsage): BillingUsage {
     windowEnd: usage.windowEnd,
     daysElapsed: usage.daysElapsed,
     daysInWindow: usage.daysInWindow,
+    forecastUnpriced: usage.forecastUnpriced,
     usedPercent: usage.usedPercent,
     forecastPercent: usage.forecastPercent,
     warnPercent: usage.warnPercent,
