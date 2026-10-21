@@ -402,3 +402,16 @@ import { cn } from "@/lib/utils";
 
 **File:** `ui/src/lib/groupBy.ts`
 **Usage:** Generic array grouping utility.
+
+### Task tree (`task-tree/`)
+
+**Files:** `task-tree/ProgressRing.tsx`, `TaskTreeCard.tsx`, `TaskTreeHeader.tsx`, `TaskTreeCanvas.tsx`, `TaskTreeOutline.tsx`, `TaskTreeOwner.tsx`; layout and blocked-path logic in `lib/task-tree.ts`.
+**Usage:** The Tree view (`pages/TaskTree.tsx`, route `/issues/:key/tree`).
+
+- `ProgressRing` (`done`, `total`, `size?`, `showLabel?`): small ring with "5/7"; use for sub-task progress anywhere.
+- `TaskTreeCard`: fixed-size card (status edge, key, two-line title, owner, progress ring, priority, "Root blocker" pill, collapse toggle).
+- `TaskTreeHeader`: title, segmented progress bar ("18 of 24 done") and "What is holding this up" chips, viewer first.
+- `TaskTreeCanvas`: SVG connectors under HTML cards; pan, zoom, fit, arrow keys, Enter opens, Space folds.
+- `TaskTreeOutline`: the phone layout, an indented outline with a red rail on the blocked path.
+
+Lay out with `layoutTidyTree`, fold with `visibleTaskTree`, trace blockers with `traceBlockedPaths`; never position cards by hand.

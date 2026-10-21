@@ -16,6 +16,7 @@ import { TaskChatProjectCreatedCard } from "@/components/task-chat/TaskChatProje
 import { AnnouncementCard } from "@/components/AnnouncementCard";
 import { announcementPreview, announcementAnimationPreview, announcementAnimationPreviewSrc } from "@/lib/announcement-preview";
 import { TaskDetailTasksPanel } from "@/components/task-detail/TaskDetailTasksPanel";
+import { TaskTreeDesignExamples } from "@/components/task-tree/TaskTreeDesignExamples";
 import { AiConnectionDesignExamples } from "@/components/ai-connections/AiConnectionDesignExamples";
 import { StrategyBoardDesignExamples } from "@/components/strategy-board/StrategyBoardDesignExamples";
 import { IntelligenceDesignExamples } from "@/components/intelligence/IntelligenceDesignExamples";
@@ -2370,6 +2371,16 @@ export function DesignGuide() {
           <TaskDetailTasksPanel subtasks={[]} createdTasks={[]} projects={[]} isLoading />
           <TaskDetailTasksPanel subtasks={[]} createdTasks={[]} projects={[]} hasError onRetry={() => {}} />
         </SubSection>
+      </Section>
+
+      <Section title="Task tree">
+        <p className="text-sm text-muted-foreground">
+          The Tree view (/issues/:key/tree): a task and everything under it, laid out as a tidy top-down tree.
+          Status colour on each card's edge, curved neutral connectors, and the blocked path from the root to each
+          root blocker in the danger colour with a gentle flow (static under reduced motion). On a phone it becomes an
+          indented outline with a red rail.
+        </p>
+        <TaskTreeDesignExamples />
       </Section>
 
       <Section title="Disposition recovery notice">

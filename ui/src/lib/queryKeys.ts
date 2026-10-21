@@ -845,6 +845,8 @@ export const queryKeys = {
   sidebarBadges: (companyId: string) => ["sidebar-badges", companyId] as const,
   /** Desk: tasks the user follows (with rollups), and the tasks they opened lately. */
   issueFollows: (companyId: string) => ["issue-follows", companyId] as const,
+  /** Tree view: a task and its whole subtree. */
+  issueTree: (issueKey: string) => ["issue-tree", issueKey] as const,
   recentIssues: (companyId: string) => ["recent-issues", companyId] as const,
   inboxDismissals: (companyId: string) =>
     ["inbox-dismissals", companyId] as const,

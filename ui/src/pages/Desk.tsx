@@ -10,7 +10,7 @@ import {
   type IssueStatus,
   type RecentlyOpenedIssue,
 } from "@greatstone/shared";
-import { Check, CheckCircle2, CircleDot, ClipboardList, Star } from "lucide-react";
+import { Check, CheckCircle2, CircleDot, ClipboardList, Network, Star } from "lucide-react";
 import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
 import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
@@ -805,6 +805,16 @@ function DeskFollowing({
             />
           </div>
           <FollowRollupSummary counts={counts} latestUpdates={latestUpdates} />
+          {counts.total > 1 ? (
+            <Link
+              to={`/issues/${issue.identifier ?? issueId}/tree`}
+              data-desk-follow-tree={issueId}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+            >
+              <Network className="size-3.5" aria-hidden="true" />
+              Open tree
+            </Link>
+          ) : null}
         </li>
       ))}
     </ul>

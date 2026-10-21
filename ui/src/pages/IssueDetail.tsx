@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Activity as ActivityIcon,
   ListTree,
+  Network,
 } from "lucide-react";
 import {
   useState,
@@ -1070,6 +1071,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       mentionOptions={mentionOptions}
       externalObjectsState={externalObjectsState}
       uploadAttachment={uploadAttachment}
+      treeHref={childIssues.length > 0 ? `/issues/${issue.identifier ?? issue.id}/tree` : null}
     />
   );
 
@@ -1308,7 +1310,11 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
 
           <Tabs
             value={resolvedDetailTab}
-            onValueChange={setDetailTab}
+            onValueChange={(value) => {
+              // Tree is its own page, so it can be shared.
+              if (value === "tree") navigate(`/issues/${issue.identifier ?? issue.id}/tree`);
+              else setDetailTab(value);
+            }}
             className={
               taskChatShellEnabled
                 ? isMobile
@@ -1336,6 +1342,12 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
                   <ListTree className="h-3.5 w-3.5" />
                   Related work
                 </TabsTrigger>
+                {childIssues.length > 0 ? (
+                  <TabsTrigger value="tree" className="gap-1.5">
+                    <Network className="h-3.5 w-3.5" />
+                    Tree
+                  </TabsTrigger>
+                ) : null}
                 {issuePluginTabItems.map((item) => (
                   <TabsTrigger key={item.value} value={item.value}>
                     {item.label}

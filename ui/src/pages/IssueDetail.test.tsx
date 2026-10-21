@@ -2365,6 +2365,40 @@ describe("IssueDetail", () => {
     ]);
   });
 
+  it("links to the Tree view only when the task has sub-tasks", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockIssuesApi.list.mockResolvedValue([
+      createIssue({ id: "child-1", parentId: "issue-1", identifier: "PAP-2", issueNumber: 2, title: "Child task" }),
+    ]);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const link = container.querySelector("a[data-task-tree-link]");
+    expect(link?.getAttribute("href")).toBe("/issues/PAP-1/tree");
+    expect(link?.textContent).toContain("Tree");
+
+    mockIssuesApi.list.mockResolvedValue([]);
+    await act(async () => {
+      queryClient.clear();
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail key="no-children" />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+    expect(container.querySelector("a[data-task-tree-link]")).toBeNull();
+  });
+
   it("keeps the properties panel stable across unrelated chat-detail renders", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
     const detail = (
