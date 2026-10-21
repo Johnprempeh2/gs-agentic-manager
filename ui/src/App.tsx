@@ -156,6 +156,7 @@ const JoinRequestQueue = lazyPage(() => import("./pages/JoinRequestQueue"), "Joi
 
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
 const IssueDetail = lazyPage(() => import("./pages/IssueDetail"), "IssueDetail");
+const TaskTree = lazyPage(() => import("./pages/TaskTree"), "TaskTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
 const WhatNeedsMe = lazyPage(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
 const NeededFromYou = lazyPage(() => import("./pages/NeededFromYou"), "NeededFromYou");
@@ -328,6 +329,7 @@ function boardRoutes() {
       <Route path="messages/:chatId" element={<TeamChat />} />
       <Route path="issues/new" element={<NewTaskRoute />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
+      <Route path="issues/:issueId/tree" element={<TaskTree />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
       ) : null}
@@ -846,6 +848,7 @@ export function App() {
           <Route path="issues" element={<UnprefixedBoardRedirect />} />
           <Route path="tasks" element={<UnprefixedBoardRedirect />} />
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
+          <Route path="issues/:issueId/tree" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
           <Route path="workflows" element={<UnprefixedBoardRedirect />} />

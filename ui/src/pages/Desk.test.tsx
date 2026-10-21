@@ -512,6 +512,7 @@ describe("Desk sections", () => {
     expect(following?.textContent).toContain("1 blocked");
     expect(following?.textContent).toContain("DNS is still pending at the registrar");
     expect(following?.querySelector('[aria-label="Stop following GRE-p1"]')).not.toBeNull();
+    expect(following?.querySelector('[data-desk-follow-tree="p1"]')?.getAttribute("href")).toBe("/issues/GRE-p1/tree");
     expect(section("desk-recent")?.textContent).toContain("Opened lately");
   });
 

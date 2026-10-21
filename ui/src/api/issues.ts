@@ -2,6 +2,7 @@ import type {
   ExecutionReconciliation,
   IssueFollowState,
   IssueFollowWithRollup,
+  IssueTree,
   IssueWorkFilter,
   RecentlyOpenedIssue,
 } from "@greatstone/shared";
@@ -267,6 +268,8 @@ export const issuesApi = {
     api.get<IssueFollowWithRollup[]>(`/companies/${companyId}/issue-follows`),
   follow: (id: string) => api.put<IssueFollowState>(`/issues/${id}/follow`, {}),
   unfollow: (id: string) => api.delete<IssueFollowState>(`/issues/${id}/follow`),
+  /** A task and everything under it, with what blocks what (Tree view). */
+  getTree: (id: string) => api.get<IssueTree>(`/issues/${id}/tree`),
   listRecentlyOpened: (companyId: string) =>
     api.get<RecentlyOpenedIssue[]>(`/companies/${companyId}/recent-issues`),
   recordOpened: (id: string) => api.post<void>(`/issues/${id}/recent-view`, {}),

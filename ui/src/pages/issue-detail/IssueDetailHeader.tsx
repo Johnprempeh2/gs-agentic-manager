@@ -14,6 +14,7 @@ import {
   CopyPlus,
   MessageSquareText,
   Workflow,
+  Network,
 } from "lucide-react";
 import { useDialogActions } from "../../context/DialogContext";
 import { repeatTaskDefaults } from "../../lib/repeat-task";
@@ -106,6 +107,8 @@ export type IssueDetailHeaderProps = {
   mentionOptions: MentionOption[];
   externalObjectsState: IssueExternalObjectsResult;
   uploadAttachment: UseMutationResult<IssueAttachment, Error, File, unknown>;
+  /** Link to the Tree view; null when the task has no sub-tasks. */
+  treeHref?: string | null;
 };
 
 export function IssueDetailHeader({
@@ -158,6 +161,7 @@ export function IssueDetailHeader({
   mentionOptions,
   externalObjectsState,
   uploadAttachment,
+  treeHref = null,
 }: IssueDetailHeaderProps) {
   const { openNewIssue } = useDialogActions();
   const copyText = useCopyToast();
@@ -371,6 +375,13 @@ export function IssueDetailHeader({
 
         {!streamlinedTaskDetailEnabled && !(isMobile && isFromInbox) && (
           <div className="ml-auto flex items-center gap-0.5 md:hidden shrink-0">
+            {treeHref ? (
+              <Button asChild variant="ghost" size="icon-xs" title="Tree" aria-label="Open the task tree">
+                <Link to={treeHref}>
+                  <Network className="h-4 w-4" />
+                </Link>
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-xs"
@@ -410,6 +421,14 @@ export function IssueDetailHeader({
               <Archive className="h-4 w-4" />
             </Button>
           )}
+          {treeHref ? (
+            <Button asChild variant="ghost" size="xs" title="See this task and everything under it as a tree">
+              <Link to={treeHref} data-task-tree-link="">
+                <Network />
+                Tree
+              </Link>
+            </Button>
+          ) : null}
           {!issue.tabledAt && !isTerminalIssue ? (
             <>
               <NotNowButton
