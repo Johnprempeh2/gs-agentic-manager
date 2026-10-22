@@ -47,7 +47,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   /** Set when the tab holds only instance sections, so it can vanish when all are hidden. */
   sections?: readonly InstanceGeneralSection[];
 }> = [
-  { value: "general", label: "General" },
+  { value: "general", label: "Organisation" },
   { value: "agents", label: "Agents and work" },
   { value: "security", label: "Security", sections: SECURITY_SECTIONS },
   { value: "backups", label: "Backups and data", sections: BACKUP_SECTIONS },
@@ -308,7 +308,7 @@ export function CompanySettings() {
           {/* General */}
           <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
             <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              General
+              Name and description
             </div>
             <div className="space-y-3">
               <Field label="Organisation name" hint="The name people see for your organisation.">

@@ -185,7 +185,6 @@ export function NeededFromYou() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5">
       <header className="space-y-1" data-tour="needed-summary">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needed from you</p>
         <h1 className="text-xl font-bold">What we need from you</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups)}</p>
