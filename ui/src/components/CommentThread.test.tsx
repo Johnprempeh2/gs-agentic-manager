@@ -155,7 +155,7 @@ describe("CommentThread", () => {
     expect(runRow?.className).toContain("items-center");
     expect(runRow?.className).not.toContain("border");
     expect(container.textContent).toContain("CodexCoder");
-    expect(container.textContent).toContain("succeeded");
+    expect(container.textContent).toContain("Succeeded");
     expect(container.textContent).toContain("2h ago");
     expect(container.textContent).not.toContain("4h ago");
     const runLink = container.querySelector('a[href="/agents/agent-1/runs/run-12345678abcd"]') as HTMLAnchorElement | null;

@@ -24,6 +24,7 @@ export function sentenceCaseStatus(status: string): string {
 
 /**
  * Generic status badge for runs / goals / approvals (not task status).
+ * Sentence case by default ("timed_out" reads "Timed out"), like task statuses.
  */
 // design-allow(pill-pattern): DECISION-SHEET.md C8 - status badges keep the bespoke WCAG-tuned
 // .status-chip color-mix mechanic and do not wrap the Badge primitive.
@@ -35,7 +36,7 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
         statusBadge[status] ?? statusBadgeDefault
       )}
     >
-      {label ?? status.replace(/[_-]/g, " ")}
+      {label ?? sentenceCaseStatus(status.replace(/-/g, "_"))}
     </span>
   );
 }

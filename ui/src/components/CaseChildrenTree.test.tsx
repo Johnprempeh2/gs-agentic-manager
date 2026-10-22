@@ -74,7 +74,7 @@ describe("CaseChildrenTree", () => {
     expect(text).not.toContain("launch/post");
     expect(text).toContain("blog_post");
     // StatusBadge renders the status with underscores as spaces.
-    expect(text).toContain("in review");
+    expect(text).toContain("In review");
     expect(text).toContain("Hero image");
     expect(container.querySelector('a[href="/PAP/cases/PAP-C8"]')).not.toBeNull();
     expect(container.querySelector('a[href="/PAP/cases/PAP-C9"]')).not.toBeNull();

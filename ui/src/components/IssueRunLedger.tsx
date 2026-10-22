@@ -1,3 +1,4 @@
+import { sentenceCaseStatus } from "./StatusBadge";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ActivityEvent, Issue, Agent, ProviderTraceMetadata } from "@greatstone/shared";
 import {
@@ -282,7 +283,7 @@ function mergeRuns(
 }
 
 function statusLabel(status: string) {
-  return status.replace(/_/g, " ");
+  return sentenceCaseStatus(status);
 }
 
 function isActiveRun(run: Pick<LedgerRun, "status" | "isLive">) {
@@ -885,7 +886,7 @@ export function IssueRunLedgerContent({
                       <span className="text-foreground">{onBehalfOfLabel}</span>
                     </span>
                   ) : null}
-                  <span className="rounded-md border border-border px-1.5 py-0.5 text-(length:--text-micro) capitalize text-muted-foreground">
+                  <span className="rounded-md border border-border px-1.5 py-0.5 text-(length:--text-micro) text-muted-foreground">
                     {statusLabel(run.status)}
                   </span>
                   {run.isLive ? (
