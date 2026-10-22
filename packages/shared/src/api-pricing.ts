@@ -123,7 +123,9 @@ export function computeApiEquivalentCents(usage: ApiEquivalentInput, at: Date | 
   const input = Math.max(0, usage.inputTokens);
   const cached = Math.max(0, usage.cachedInputTokens);
   const output = Math.max(0, usage.outputTokens);
-  const uncachedInput = table.cachedIncludedInInput ? Math.max(0, input - cached) : input;
+  // Cached tokens normally sit inside input; when a run reports more cached than input
+  // (seen on live Codex runs), its input figure is already the uncached part.
+  const uncachedInput = table.cachedIncludedInInput && cached <= input ? input - cached : input;
   return ((uncachedInput * modelPrice.inputPerMTok + cached * modelPrice.cachedInputPerMTok + output * modelPrice.outputPerMTok) / 1_000_000) * 100;
 }
 

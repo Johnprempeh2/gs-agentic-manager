@@ -78,9 +78,6 @@ describe("api pricing", () => {
   });
 
   it("prices the Codex models at OpenAI's published rates, cached tokens inside input", () => {
-    // The live Codex run shape: 43,776 cached tokens reported with 793 input, so nothing is uncached.
-    const live = { provider: "openai", model: "gpt-6-sol", inputTokens: 793, cachedInputTokens: 43_776, outputTokens: 78 };
-    expect(computeApiEquivalentCents(live, "2026-10-22")).toBeCloseTo(((43_776 * 0.2 + 78 * 10) / 1_000_000) * 100, 9);
     const usage = { provider: "openai", inputTokens: 1_000_000, cachedInputTokens: 400_000, outputTokens: 100_000 };
     // 600k at input + 400k at cached + 100k at output
     expect(computeApiEquivalentCents({ ...usage, model: "gpt-6-astra" }, "2026-10-22")).toBeCloseTo(1140, 6);
@@ -122,5 +119,16 @@ describe("api pricing", () => {
         outputTokens: 0,
       }),
     ).toBe(0);
+  });
+});
+
+describe("computeApiEquivalentCents with input reported as uncached", () => {
+  it("prices the input at full rate when cached exceeds input (live Codex runs)", () => {
+    // gpt-6-sol: input 2, cached 0.20, output 10 per million tokens.
+    const cents = computeApiEquivalentCents(
+      { provider: "openai", model: "gpt-6-sol", inputTokens: 793, cachedInputTokens: 43_776, outputTokens: 78 },
+      "2026-10-22",
+    );
+    expect(cents).toBeCloseTo(((793 * 2 + 43_776 * 0.2 + 78 * 10) / 1_000_000) * 100, 8);
   });
 });
