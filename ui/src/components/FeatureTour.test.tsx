@@ -62,8 +62,11 @@ beforeEach(() => {
   server.fail = false;
   server.pending = false;
   server.puts = [];
+  // The button's tooltip measures itself when focus returns to it.
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 });
 afterEach(async () => {
+  vi.unstubAllGlobals();
   if (root) await act(async () => root?.unmount());
   root = undefined;
   container?.remove();
