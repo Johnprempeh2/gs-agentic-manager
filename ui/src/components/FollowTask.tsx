@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 import { Loader2, Pin } from "lucide-react";
 import type { IssueFollowRollupCounts, IssueFollowRollupUpdate } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
+import { IconTip } from "@/components/ui/tooltip";
 import { Link } from "@/lib/router";
 import { cn, relativeTime } from "../lib/utils";
 import { plainTaskStatus } from "../lib/global-search";
@@ -50,6 +51,7 @@ export function FollowTaskButton({
 
   if (variant === "icon") {
     return (
+      <IconTip label={following ? "Pinned: in your sidebar and at the top of your Desk. Select to unpin." : "Pin this task to the top of your Desk"}>
       <Button
         type="button"
         variant="ghost"
@@ -57,7 +59,6 @@ export function FollowTaskButton({
         data-follow-task
         aria-label={following ? `Unpin ${taskName}` : `Pin ${taskName}`}
         aria-pressed={following}
-        title={following ? "Pinned: in your sidebar and at the top of your Desk" : "Pin this task to the top of your Desk"}
         disabled={pending}
         onClick={handleClick}
         className={cn(
@@ -68,6 +69,7 @@ export function FollowTaskButton({
       >
         {icon}
       </Button>
+      </IconTip>
     );
   }
 

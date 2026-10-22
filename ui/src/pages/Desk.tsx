@@ -14,6 +14,7 @@ import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
 import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
+import { IconTip } from "@/components/ui/tooltip";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { myTasksListText } from "../lib/my-tasks-text";
 import { issuesApi } from "../api/issues";
@@ -309,6 +310,10 @@ export function Desk() {
   const leadAgent = useMemo(() => resolveLeadAgent(agents ?? []), [agents]);
   const leadAgentId = leadAgent?.id ?? null;
   const handOffAgents = useMemo(() => handOffAgentChoices(agents ?? [], leadAgentId), [agents, leadAgentId]);
+  // Said in Hand to agent when nobody can take the work, instead of a silent grey button.
+  const handOffUnavailable = (agents ?? []).some((agent) => agent.status === "paused")
+    ? "All agents are paused. Resume one in Agents to hand work over."
+    : "No agent can take work yet. Add or resume one in Agents.";
   const agentById = useMemo(() => new Map((agents ?? []).map((agent) => [agent.id, agent])), [agents]);
 
   // "Assigned" is every row's reason here, so only the telling ones show.
@@ -607,18 +612,22 @@ export function Desk() {
       if (!issue.looksFinishedAt) return renderDiscuss(issue, compact);
       return (
         <>
-          <Button
-            type="button"
-            variant="ghost"
-            size={compact ? "icon-xs" : "xs"}
-            data-desk-reopen={issue.id}
-            aria-label={`Reopen ${issue.identifier ?? issue.title}`}
-            title={compact ? "Reopen" : undefined}
-            onClick={() => reopen(issue)}
-          >
-            <RotateCcw aria-hidden />
-            {compact ? null : "Reopen"}
-          </Button>
+          {(() => {
+            const button = (
+              <Button
+                type="button"
+                variant="ghost"
+                size={compact ? "icon-xs" : "xs"}
+                data-desk-reopen={issue.id}
+                aria-label={`Reopen ${issue.identifier ?? issue.title}`}
+                onClick={() => reopen(issue)}
+              >
+                <RotateCcw aria-hidden />
+                {compact ? null : "Reopen"}
+              </Button>
+            );
+            return <IconTip label="Reopen" off={!compact}>{button}</IconTip>;
+          })()}
           {renderDiscuss(issue, compact)}
         </>
       );
@@ -663,6 +672,7 @@ export function Desk() {
           agents={handOffAgents}
           leadAgentId={leadAgentId}
           compact={compact}
+          unavailableReason={handOffUnavailable}
           onHandOff={(agent, instruction) => handOff.mutate({ issue, agent, instruction })}
         />
         <MyTasksAskButton

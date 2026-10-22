@@ -444,6 +444,8 @@ describe("MyTasks Discuss panel (GRE-620)", () => {
   });
 
   it("below 900px the panel is a full-width dialog that Escape closes", async () => {
+    // Focus going back to the icon-only Discuss button opens its tooltip, which measures itself.
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: query === "(width < 56.25rem)",
       media: query,

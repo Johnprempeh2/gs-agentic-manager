@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { IconTip, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatAssigneeUserLabel } from "../lib/assignees";
 import type { InboxIssueColumn } from "../lib/inbox";
 import { cn } from "../lib/utils";
@@ -108,19 +108,21 @@ export function IssueColumnPicker({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant={iconOnly ? "outline" : "ghost"}
-          size={iconOnly ? "icon" : "sm"}
-          // Desktop task rows only: phones use the stacked row, so no column picker there.
-          className={iconOnly ? "h-8 w-8 shrink-0 max-sm:hidden" : "hidden h-8 shrink-0 px-2 text-xs sm:inline-flex"}
-          title="Columns"
-        >
-          <Columns3 className={iconOnly ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />
-          {!iconOnly && "Columns"}
-        </Button>
-      </DropdownMenuTrigger>
+      <IconTip label={title}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant={iconOnly ? "outline" : "ghost"}
+            size={iconOnly ? "icon" : "sm"}
+            // Desktop task rows only: phones use the stacked row, so no column picker there.
+            className={iconOnly ? "h-8 w-8 shrink-0 max-sm:hidden" : "hidden h-8 shrink-0 px-2 text-xs sm:inline-flex"}
+            aria-label={iconOnly ? "Columns" : undefined}
+          >
+            <Columns3 className={iconOnly ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />
+            {!iconOnly && "Columns"}
+          </Button>
+        </DropdownMenuTrigger>
+      </IconTip>
       <DropdownMenuContent align="end" className="w-(--sz-300px) rounded-xl border-border/70 p-1.5 shadow-xl shadow-black/10">
         <DropdownMenuLabel className="px-2 pb-1 pt-1.5">
           <div className="space-y-1">

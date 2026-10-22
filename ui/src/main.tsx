@@ -75,7 +75,8 @@ getOrCreatePaperclipReactRoot(window, rootElement).render(
               <EditorAutocompleteProvider>
                 <ToastProvider>
                   <LiveUpdatesProvider>
-                    <TooltipProvider>
+                    {/* One delay for every tooltip in the app (ui/tooltip shares this provider). */}
+                    <TooltipProvider delayDuration={300}>
                       <CompanyAwareBreadcrumbProvider>
                         <SidebarProvider>
                           <PanelProvider>

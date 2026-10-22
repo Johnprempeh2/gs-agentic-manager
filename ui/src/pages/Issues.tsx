@@ -16,7 +16,7 @@ import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
 import { IssuesBulkBar } from "../components/IssuesBulkBar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { CircleDot, ListChecks } from "lucide-react";
 import type { Issue, IssueWorkFilter } from "@greatstone/shared";
 import { issueQuickFilterPresets } from "../lib/issue-filters";
@@ -295,18 +295,11 @@ export function Issues() {
           />
         </span>
       ) : undefined}
-      toolbarControls={(
-        <Button
-          variant={selectMode ? "secondary" : "outline"}
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          title={selectMode ? "Stop selecting tasks" : "Select tasks to change several at once"}
-          aria-label="Select tasks"
-          aria-pressed={selectMode}
-          onClick={() => (selectMode ? leaveSelectMode() : setSelectMode(true))}
-        >
+      toolbarMenuItems={(
+        <DropdownMenuItem onSelect={() => (selectMode ? leaveSelectMode() : setSelectMode(true))}>
           <ListChecks className="h-3.5 w-3.5" />
-        </Button>
+          {selectMode ? "Stop selecting" : "Select several tasks"}
+        </DropdownMenuItem>
       )}
     />
     </>
