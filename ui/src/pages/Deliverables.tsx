@@ -732,7 +732,7 @@ export function Deliverables() {
                       <span className="shrink-0 font-normal">· {section.items.length}</span>
                     </h3>
                   ) : null}
-                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
                     {section.items.map((deliverable) => (
                       <DeliverableCard
                         key={deliverable.id}
