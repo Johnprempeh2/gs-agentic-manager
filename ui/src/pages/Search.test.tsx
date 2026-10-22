@@ -86,7 +86,8 @@ vi.mock("@/lib/router", async () => {
   };
 });
 
-vi.mock("../components/StatusIcon", () => ({
+vi.mock("../components/StatusIcon", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../components/StatusIcon")>()),
   StatusIcon: ({ status }: { status: string }) => <span data-status={status} />,
 }));
 

@@ -32,7 +32,8 @@ vi.mock("@/components/ui/checkbox", () => ({
   Checkbox: ({ checked }: { checked?: boolean }) => <input type="checkbox" checked={checked} readOnly />,
 }));
 
-vi.mock("./StatusIcon", () => ({
+vi.mock("./StatusIcon", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./StatusIcon")>()),
   StatusIcon: ({ status }: { status: string }) => <span>{status}</span>,
 }));
 
