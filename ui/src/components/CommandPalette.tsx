@@ -11,6 +11,7 @@ import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
+import { goalsApi } from "../api/goals";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
 import {
@@ -50,6 +51,13 @@ import {
   Gauge,
   Image as ImageIcon,
   Clock,
+  UserCheck,
+  ListChecks,
+  HandHelping,
+  FileCheck2,
+  Newspaper,
+  Settings,
+  type LucideIcon,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { openShortcutsSheet } from "./KeyboardShortcutsCheatsheet";
@@ -86,6 +94,12 @@ import { resolveLeadAgent } from "./MobileEverestButton";
 import { decisionsFeedApi } from "../api/decisionsFeed";
 import { parseCommand, type PaletteCommand } from "../lib/palette-commands";
 import { CommandPreviewPanel, CommandSuggestion } from "./search/CommandPreview";
+import {
+  PALETTE_PAGES,
+  PALETTE_SETTINGS_PAGES,
+  rankDestinations,
+  type PaletteDestination,
+} from "../lib/palette-destinations";
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
@@ -105,38 +119,51 @@ function issueRefFromPath(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]!) : null;
 }
 
-/** Max promoted project matches kept when typing in the palette. */
-const MAX_MATCHED_PROJECTS = 5;
-/** Task cap when projects are also promoted, so Tasks can't crowd them out. */
-const TASK_LIMIT_WITH_PROJECTS = 6;
+/** Places listed in "Go to" while typing. */
+const MAX_DESTINATIONS = 6;
+/** Task cap when places are also listed, so Tasks can't crowd them out. */
+const TASK_LIMIT_WITH_DESTINATIONS = 6;
 const TASK_LIMIT = 10;
 
-/** True when every char of `needle` appears in `haystack` in order (fuzzy). */
-function isSubsequence(needle: string, haystack: string): boolean {
-  let i = 0;
-  for (let j = 0; j < haystack.length && i < needle.length; j += 1) {
-    if (haystack[j] === needle[i]) i += 1;
-  }
-  return i === needle.length;
-}
-
-/**
- * Score a project against a lowercased query. Higher is a better match;
- * `null` means no match. Prefers name hits (exact > prefix > substring) over
- * description hits, with fuzzy subsequence as a last resort.
- */
-function scoreProjectMatch(name: string, description: string, q: string): number | null {
-  if (name === q) return 1000;
-  // Shorter names rank first, but clamp the length penalty so a prefix match can
-  // never sink below the substring band (max 699) for unusually long names —
-  // keeps the prefix > substring > description > fuzzy ordering invariant.
-  if (name.startsWith(q)) return Math.max(700, 900 - name.length);
-  const nameIdx = name.indexOf(q);
-  if (nameIdx >= 0) return 700 - nameIdx;
-  if (description.includes(q)) return 400;
-  if (isSubsequence(q, name)) return 200;
-  return null;
-}
+const PAGE_ICONS: Record<string, LucideIcon> = {
+  desk: UserCheck,
+  decisions: ListChecks,
+  pinned: Pin,
+  needed: HandHelping,
+  inbox: Inbox,
+  calendar: CalendarDays,
+  dashboard: LayoutDashboard,
+  tasks: CircleDot,
+  projects: Hexagon,
+  goals: Target,
+  agents: Bot,
+  deliverables: FileCheck2,
+  studio: ImageIcon,
+  scorecard: Gauge,
+  "this-week": Newspaper,
+  costs: DollarSign,
+  audit: History,
+  pipelines: Briefcase,
+  organisations: Building2,
+  settings: Settings,
+};
+const KIND_ICONS: Record<PaletteDestination["kind"], LucideIcon> = {
+  page: CircleDot,
+  settings: Settings,
+  agent: Bot,
+  project: Hexagon,
+  goal: Target,
+  task: CircleDot,
+};
+const KIND_HINTS: Record<PaletteDestination["kind"], string> = {
+  page: "Page",
+  settings: "Settings",
+  agent: "Agent",
+  project: "Project",
+  goal: "Goal",
+  task: "Task",
+};
+const destinationIcon = (d: PaletteDestination) => (d.kind === "page" ? PAGE_ICONS[d.id] : undefined) ?? KIND_ICONS[d.kind];
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -205,6 +232,12 @@ export function CommandPalette() {
     () => allProjects,
     [allProjects],
   );
+
+  const { data: goals = [] } = useQuery({
+    queryKey: queryKeys.goals.list(selectedCompanyId!),
+    queryFn: () => goalsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && open,
+  });
 
   const { data: labels = [] } = useQuery({
     queryKey: queryKeys.issues.labels(selectedCompanyId!),
@@ -370,33 +403,43 @@ export function CommandPalette() {
     [issues, searchedIssues, quickSearchQuery],
   );
 
-  // Client-side typeahead ranking over the already-loaded projects. cmdk ranks
-  // items by their `value` (which defaults to the rendered name) and would bury
-  // or drop description-only matches, so we rank in JS and force-match below.
-  const matchedProjects = useMemo(() => {
-    if (quickSearchQuery.length === 0) return [];
-    const q = quickSearchQuery.toLowerCase();
-    return projects
-      .map((project) => ({
-        project,
-        score: scoreProjectMatch(
-          project.name.toLowerCase(),
-          (project.description ?? "").toLowerCase(),
-          q,
-        ),
-      }))
-      .filter((entry): entry is { project: (typeof projects)[number]; score: number } => entry.score !== null)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_MATCHED_PROJECTS)
-      .map((entry) => entry.project);
-  }, [projects, quickSearchQuery]);
+  // Places named by the query (pages, Settings pages, agents, projects, goals),
+  // ranked in JS over data already loaded when the palette opened.
+  const destinations = useMemo<PaletteDestination[]>(() => [
+    ...PALETTE_PAGES,
+    ...PALETTE_SETTINGS_PAGES,
+    ...agents
+      .filter((agent) => agent.status !== "terminated")
+      .map((agent) => ({ kind: "agent" as const, id: agent.id, label: agent.name, path: agentUrl(agent), keywords: [agent.role ?? "", agent.title ?? ""] })),
+    ...projects.map((project) => ({ kind: "project" as const, id: project.id, label: project.name, path: projectUrl(project), detail: project.description })),
+    ...goals.map((goal) => ({ kind: "goal" as const, id: goal.id, label: goal.title, path: `/goals/${goal.id}` })),
+  ], [agents, projects, goals]);
+  // Tasks from the list loaded on open join in, so a task's key or title words
+  // reach it as you type, before the server answers. Recently opened tasks are
+  // left to the Recent group just below.
+  const taskDestinations = useMemo<PaletteDestination[]>(() => {
+    const recentIds = new Set(recentlyOpened.map((entry) => entry.issueId));
+    return issues
+      .filter((issue) => !recentIds.has(issue.id))
+      .map((issue) => ({ kind: "task" as const, id: issue.id, label: issue.title, key: issue.identifier, path: `/issues/${issue.identifier ?? issue.id}`, detail: plainTaskStatus(issue.status) }));
+  }, [recentlyOpened, issues]);
+  const matchedDestinations = useMemo(
+    () => (quickSearchQuery.length === 0 ? [] : rankDestinations(quickSearchQuery, [...destinations, ...taskDestinations], MAX_DESTINATIONS)),
+    [destinations, taskDestinations, quickSearchQuery],
+  );
+  // A task listed in Go to is not repeated under Tasks.
+  const goToTaskIds = useMemo(
+    () => new Set(matchedDestinations.filter((d) => d.kind === "task").map((d) => d.id)),
+    [matchedDestinations],
+  );
+  const shownIssues = visibleIssues.filter((issue) => !goToTaskIds.has(issue.id));
 
   const showSearchAll = searchQuery.length > 0;
   const titleMatchIds = useMemo(() => new Set(visibleIssues.map((issue) => issue.id)), [visibleIssues]);
-  const showPromotedProjects = showSearchAll && matchedProjects.length > 0;
-  const taskLimit = showPromotedProjects ? TASK_LIMIT_WITH_PROJECTS : TASK_LIMIT;
+  const showDestinations = showSearchAll && matchedDestinations.length > 0;
+  const taskLimit = showDestinations ? TASK_LIMIT_WITH_DESTINATIONS : TASK_LIMIT;
   const showEmptyHint =
-    showSearchAll && visibleIssues.length === 0 && matchedProjects.length === 0;
+    showSearchAll && visibleIssues.length === 0 && matchedDestinations.length === 0;
 
   return (
     <CommandDialog className="sm:max-w-2xl" open={open} onOpenChange={(v) => {
@@ -484,6 +527,43 @@ export function CommandPalette() {
             "No results found."
           )}
         </CommandEmpty>
+
+        {showDestinations ? (
+          <>
+            <CommandGroup heading="Go to">
+              {matchedDestinations.map((destination, index) => {
+                const Icon = destinationIcon(destination);
+                return (
+                  <CommandItem
+                    key={`${destination.kind}:${destination.id}`}
+                    // cmdk ranks by value. The best place gets the typed words
+                    // exactly (score 1), so it outranks Recent and Search all
+                    // (0.99 and 0.9) and Enter opens it; the rest start with the
+                    // words and keep this order.
+                    value={index === 0 ? searchQuery : `${searchQuery} go-to ${destination.kind} ${destination.id}`}
+                    onSelect={() => go(destination.path)}
+                    data-testid={destination.kind === "project" ? "command-project-match" : "command-destination"}
+                  >
+                    <Icon className="mr-2 h-4 w-4 shrink-0" />
+                    {destination.kind === "task" && destination.key ? (
+                      <span className="mr-2 font-mono text-xs text-muted-foreground">{destination.key}</span>
+                    ) : null}
+                    <span className="min-w-0 truncate">{destination.label}</span>
+                    {destination.kind === "project" && destination.detail ? (
+                      <span className="ml-2 hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">
+                        {destination.detail}
+                      </span>
+                    ) : null}
+                    <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">
+                      {destination.kind === "task" ? destination.detail : KIND_HINTS[destination.kind]}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        ) : null}
 
         {recentMatches.length > 0 ? (
           <>
@@ -605,30 +685,6 @@ export function CommandPalette() {
 
         <CommandSeparator />
 
-        {showPromotedProjects && (
-          <>
-            <CommandGroup heading="Projects">
-              {matchedProjects.map((project) => (
-                <CommandItem
-                  key={project.id}
-                  value={`${searchQuery} ${project.name}`}
-                  onSelect={() => go(projectUrl(project))}
-                  data-testid="command-project-match"
-                >
-                  <Hexagon className="mr-2 h-4 w-4 shrink-0" />
-                  <span className="min-w-0 truncate">{project.name}</span>
-                  {project.description ? (
-                    <span className="ml-2 hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">
-                      {project.description}
-                    </span>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
-
         <CommandGroup heading="Actions">
           <CommandItem
             onSelect={() => {
@@ -691,66 +747,25 @@ export function CommandPalette() {
 
         <CommandSeparator />
 
-        <CommandGroup heading="Pages">
-          <CommandItem onSelect={() => go("/dashboard")}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />
-            Dashboard
-          </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
-            <Inbox className="mr-2 h-4 w-4" />
-            Inbox
-          </CommandItem>
-          <CommandItem onSelect={() => go("/issues")}>
-            <CircleDot className="mr-2 h-4 w-4" />
-            Tasks
-          </CommandItem>
-          <CommandItem onSelect={() => go("/projects")}>
-            <Hexagon className="mr-2 h-4 w-4" />
-            Projects
-          </CommandItem>
-          <CommandItem onSelect={() => go("/goals")}>
-            <Target className="mr-2 h-4 w-4" />
-            Goals
-          </CommandItem>
-          <CommandItem onSelect={() => go("/agents")}>
-            <Bot className="mr-2 h-4 w-4" />
-            Agents
-          </CommandItem>
-          <CommandItem onSelect={() => go("/costs")}>
-            <DollarSign className="mr-2 h-4 w-4" />
-            Costs
-          </CommandItem>
-          <CommandItem onSelect={() => go("/activity")}>
-            <History className="mr-2 h-4 w-4" />
-            Activity
-          </CommandItem>
-          <CommandItem onSelect={() => go("/pipelines")}>
-            <Briefcase className="mr-2 h-4 w-4" />
-            Clients and pipelines
-          </CommandItem>
-          <CommandItem onSelect={() => go("/organisations")}>
-            <Building2 className="mr-2 h-4 w-4" />
-            Organisations
-          </CommandItem>
-          <CommandItem onSelect={() => go("/calendar")}>
-            <CalendarDays className="mr-2 h-4 w-4" />
-            Calendar
-          </CommandItem>
-          <CommandItem onSelect={() => go("/scorecard")}>
-            <Gauge className="mr-2 h-4 w-4" />
-            Scorecard
-          </CommandItem>
-          <CommandItem onSelect={() => go("/images")}>
-            <ImageIcon className="mr-2 h-4 w-4" />
-            GS Studio
-          </CommandItem>
-        </CommandGroup>
+        {!showSearchAll ? (
+          <CommandGroup heading="Pages">
+            {PALETTE_PAGES.map((page) => {
+              const Icon = destinationIcon(page);
+              return (
+                <CommandItem key={page.id} value={`page ${page.label}`} onSelect={() => go(page.path)}>
+                  <Icon className="mr-2 h-4 w-4" />
+                  {page.label}
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        ) : null}
 
-        {visibleIssues.length > 0 && (
+        {shownIssues.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Tasks">
-              {visibleIssues.slice(0, taskLimit).map((issue) => (
+              {shownIssues.slice(0, taskLimit).map((issue) => (
                 <CommandItem
                   key={issue.id}
                   value={
@@ -805,7 +820,7 @@ export function CommandPalette() {
           />
         ) : null}
 
-        {agents.length > 0 && (
+        {agents.length > 0 && !showSearchAll && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Agents">
