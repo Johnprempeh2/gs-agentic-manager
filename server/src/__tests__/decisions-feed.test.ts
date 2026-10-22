@@ -362,6 +362,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(after.count).toBe(1);
     const card = cardFor(after, seeded.gre138)!;
     expect(card).toMatchObject({ kind: "recovery", kinds: ["recovery"], items: [] });
+    expect(card.decision).not.toContain("GRE-138");
     expect(card.reason).toContain("The AI connection works again");
     expect(card.reason).not.toContain("Reconnect");
     expect(action(card, "retry").requests).toEqual([{
@@ -1533,7 +1534,9 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       feed = await build(seeded.companyId);
       const card = cardFor(feed, seeded.stall)!;
       expect(card.escalation).toEqual({ reason: "stall_threshold", lead: { id: seeded.everestId, name: "Everest" }, summary: "Flint is stuck on the staging key; Lintel has it." });
-      expect(card.decision).toBe("GRE-1770 Review guarded first-member invitation route has not moved for over a day and Everest could not get it going: choose who takes it on, tell Flint what to do, or cancel it.");
+      // The heading names the task, so the sentence starts with what is asked.
+      expect(card.title).toBe("GRE-1770 Review guarded first-member invitation route");
+      expect(card.decision).toBe("Not moved for over a day and Everest could not get it going: choose who takes it on, tell Flint what to do, or cancel it.");
       expect(card.why.text).toBe("It holds up GRE-1771 Ship member invitations and GRE-1772 Invitation docs.");
       expect(card.why.holdsUp.map((ref) => ref.href)).toEqual(["/GRE/issues/GRE-1771", "/GRE/issues/GRE-1772"]);
       // The latest agent comment is Everest's; Flint's recommendation is read from Flint's own latest comment.
@@ -1602,7 +1605,8 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       const seeded = await seedKinds();
       const card = cardFor(await build(seeded.companyId), seeded.chat)!;
       expect(card.kind).toBe("connection");
-      expect(card.decision).toBe("Connect Google Drive so Everest can carry on with GRE-296 Chat with Everest, or tell Everest to do without it.");
+      expect(card.title).toBe("GRE-296 Chat with Everest");
+      expect(card.decision).toBe("Connect Google Drive so Everest can carry on with this task, or tell Everest to do without it.");
       expect(card.actions.map((candidate) => candidate.id)).toEqual(["reconnect", "instruct", "ask_clarity", "not_now"]);
       expect(action(card, "reconnect")).toMatchObject({ label: "Connect", description: expect.stringContaining("connect Google Drive"), href: expect.stringMatching(/^\/GRE\/issues\/GRE-296#interaction-/) });
       expect(card.task).toMatchObject({ id: seeded.chat, href: "/GRE/issues/GRE-296" });

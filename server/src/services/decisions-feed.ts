@@ -1456,6 +1456,7 @@ function buildCard(input: {
       main,
       task,
       taskLabel,
+      titleShowsTask: taskLabel !== null && title === taskLabel,
       waiting,
       review,
       stalledReview,
@@ -1599,6 +1600,8 @@ function decisionSentence(input: {
   main: AttentionItem | null;
   task: TaskRow | null;
   taskLabel: string | null;
+  /** The card heading already names the task, so the sentence starts with the ask, not the task again. */
+  titleShowsTask: boolean;
   waiting: DecisionCardAgentRef | null;
   review: PendingReview | null;
   stalledReview: boolean;
@@ -1616,7 +1619,8 @@ function decisionSentence(input: {
 }): string {
   const { kind, main, task, taskLabel, waiting, review, questions, context } = input;
   const agent = waiting?.name ?? "The agent";
-  const label = taskLabel ?? "this task";
+  const shown = input.titleShowsTask;
+  const label = shown ? "this task" : taskLabel ?? "this task";
   const named = namedAskSentence(input.latestComment?.body, context.names);
   if (named && (kind === "blocked" || input.escalation?.reason === "named_in_comment")) {
     const author = input.commentAuthor ?? agent;
@@ -1660,14 +1664,17 @@ function decisionSentence(input: {
       const owner = task?.assigneeAgentId ? agent : "No agent";
       const lead = input.escalation?.lead?.name ?? context.lead?.name ?? "The lead agent";
       if (input.escalation?.reason === "stall_threshold") {
-        return `${label} has not moved for over a day and ${lead} could not get it going: choose who takes it on, tell ${owner === "No agent" ? "an agent" : owner} what to do, or cancel it.`;
+        const ask = `choose who takes it on, tell ${owner === "No agent" ? "an agent" : owner} what to do, or cancel it.`;
+        return shown
+          ? `Not moved for over a day and ${lead} could not get it going: ${ask}`
+          : `${label} has not moved for over a day and ${lead} could not get it going: ${ask}`;
       }
-      return `${label} has no live next step: choose who takes it on, give an instruction, or cancel it.`;
+      return `${shown ? "No live next step" : `${label} has no live next step`}: choose who takes it on, give an instruction, or cancel it.`;
     }
     case "recovery":
-      return `${label} stopped: retry it, give it to another agent, or cancel it.`;
+      return `${shown ? "Stopped" : `${label} stopped`}: retry it, give it to another agent, or cancel it.`;
     case "failed_run":
-      return `${label} failed and its automatic retries are used up: retry it or give it to another agent.`;
+      return `${shown ? "Failed" : `${label} failed`} and its automatic retries are used up: retry it or give it to another agent.`;
     case "budget":
       return `Raise the budget or leave the work paused: ${main?.subject.title ?? input.reason}`;
     case "agent_error":
