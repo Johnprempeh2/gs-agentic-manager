@@ -112,7 +112,8 @@ export function TaskTree() {
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-4" data-task-tree-page="">
+    // The task route drops the shell's top padding for the thread; the tree puts it back so its header sits where every other page's does.
+    <div className="flex h-full min-h-0 w-full flex-col gap-6 md:pt-6" data-task-tree-page="">
       <TaskTreeHeader
         root={root}
         counts={countTreeStatuses(index.byId.values(), root.id)}

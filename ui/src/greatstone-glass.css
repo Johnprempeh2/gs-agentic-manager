@@ -273,6 +273,12 @@
   html:not(.dark) :is(.rounded-md, .rounded-lg, .rounded-xl).border.border-border:not([class*="bg-"]) {
     background-color: var(--card);
   }
+  /* A white panel standing on the canvas (not inside another card) also takes
+     the card shadow: its fill is 1.19:1 and its border 1.14:1 against the
+     stone, so without depth Desk and decision cards melt into the page. */
+  html:not(.dark) :is(.rounded-lg, .rounded-xl).border.border-border:is(.bg-card, :not([class*="bg-"])):not([class*="shadow"]):not(:is(.gs-glass-card, .bg-card, .border-border) *) {
+    box-shadow: var(--glass-shadow);
+  }
 
   .gs-glass-card-interactive {
     transition-property: transform, box-shadow, border-color;

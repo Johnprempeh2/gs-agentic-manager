@@ -201,7 +201,7 @@ export function ProjectTree() {
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-4" data-project-tree-page="">
+    <div className="flex h-full min-h-0 w-full flex-col gap-6" data-project-tree-page="">
       <TaskTreeHeader
         root={index.root}
         counts={data.counts}

@@ -140,7 +140,7 @@ export function Goals() {
     + cascade.vision.length + cascade.values.length + cascade.csfs.length + cascade.strategy.length;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0" data-tour="goals-header">
           <h1 className="text-xl font-bold">How far we are from each <HelpTerm term="goal" /></h1>

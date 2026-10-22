@@ -737,7 +737,7 @@ export function Desk() {
   ) : null;
 
   const page = (
-    <div className="min-w-0 flex-1 space-y-8">
+    <div className="min-w-0 flex-1 space-y-6">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {decisionsError && (
         <ErrorState
