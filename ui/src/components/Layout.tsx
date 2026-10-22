@@ -786,7 +786,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 isMobile
                   ? isMobileChatRoute && !showMobileNav
                     ? "overflow-visible pb-(--tc-composer-hidden-nav-offset)"
-                    : "overflow-visible pb-(--sz-calc-14)"
+                    : "overflow-visible pb-(--mobile-nav-content-inset)"
                   : "overflow-auto [scrollbar-gutter:stable]",
               )}
             >
