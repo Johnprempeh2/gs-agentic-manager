@@ -11,10 +11,10 @@ import type {
   DecisionCardAgentRef,
   DecisionCardKind,
 } from "@greatstone/shared";
-import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { decisionsFeedApi, runDecisionCardAction } from "../../api/decisionsFeed";
 import { attentionDetailDeliverables, attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
+import { DECISION_KIND_LABEL, decisionKindLabel } from "../../lib/decision-kind-label";
 import { focusItemIssueId, focusItemKind, isFocusItem } from "../../lib/focus-items";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn, formatDateTime, relativeTime } from "../../lib/utils";
@@ -33,36 +33,7 @@ import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
 import { ReviewWorkEvidence, reviewDetailOf } from "../ReviewDecisionSummary";
 import { useToastActions } from "../../context/ToastContext";
 
-export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
-  question: "Question",
-  approval: "Approval",
-  connection: "Connection",
-  recovery: "Stopped",
-  failed_run: "Stopped with an error",
-  blocked: "Blocked",
-  review: "Review",
-  decision: "Decision",
-  budget: "Budget",
-  agent_error: "Agent error",
-  join_request: "Join request",
-  outage: "Internet outage",
-};
-
-/**
- * The chip for one of a card's kinds. The feed files confirmations and
- * suggested tasks under "question"; the card names what it really asks for.
- */
-export function decisionKindLabel(card: DecisionCard, kind: DecisionCardKind): string {
-  if (kind === "question") {
-    const interactionKind = card.items.find(isFocusItem);
-    const itemKind = interactionKind ? focusItemKind(interactionKind) : null;
-    const askType = interactionKind ? readAskType(interactionKind.subject.metadata) : null;
-    if (askType) return ASK_TYPE_COPY[askType].label;
-    if (itemKind === "request_confirmation" || itemKind === "request_checkbox_confirmation") return "Confirmation";
-    if (itemKind === "suggest_tasks") return "Suggested tasks";
-  }
-  return DECISION_KIND_LABEL[kind];
-}
+export { DECISION_KIND_LABEL, decisionKindLabel };
 
 /** The task a card is about. Falls back to the `task:<id>` card id. */
 export function decisionCardTaskId(card: DecisionCard): string | null {
