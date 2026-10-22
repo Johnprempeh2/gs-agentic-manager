@@ -2954,6 +2954,7 @@ export function Inbox() {
                         <button
                           type="button"
                           data-slot="icon-button"
+                          data-row-chevron=""
                           className="inline-flex h-4 w-4 shrink-0 items-center justify-center"
                           aria-label={isExpanded ? "Collapse sub-tasks" : "Expand sub-tasks"}
                           onClick={(event) => {

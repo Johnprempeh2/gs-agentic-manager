@@ -24,7 +24,7 @@ import { FeatureTour } from "./FeatureTour";
 import { SEARCH_ASK_TOUR } from "../lib/search-ask-tour";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { openCommandPalette } from "../lib/global-search";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { IconTip, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
 
@@ -332,16 +332,17 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
       {breadcrumbTrail}
       {globalToolbarSlots}
       {taskDetailLayout ? (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-5 size-9 shrink-0 text-muted-foreground @max-2xl/bar:ml-1"
-          onClick={toggleTaskPanel}
-          aria-label={taskPanelOpen ? "Hide properties" : "Show properties"}
-          title={taskPanelOpen ? "Hide properties" : "Show properties"}
-        >
-          {taskPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-        </Button>
+        <IconTip label={taskPanelOpen ? "Hide properties" : "Show properties"}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-5 size-9 shrink-0 text-muted-foreground @max-2xl/bar:ml-1"
+            onClick={toggleTaskPanel}
+            aria-label={taskPanelOpen ? "Hide properties" : "Show properties"}
+          >
+            {taskPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+          </Button>
+        </IconTip>
       ) : null}
     </div>
   );

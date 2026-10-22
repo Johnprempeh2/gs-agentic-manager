@@ -779,8 +779,8 @@ export function Images() {
     // On a phone the wrappers below use display: contents, so the composer's
     // sticky dock sits in this column and can rise as far as the page top.
     <div className="flex w-full max-w-7xl flex-col gap-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-extrabold uppercase tracking-tight">GS Studio</h1>
+      {/* The page bar already says GS Studio; the line says what it is for. */}
+      <header>
         <p className="max-w-2xl text-sm text-muted-foreground">
           Describe a picture or a short video and GSAM makes it for you. Your agents can make them for their tasks too.
         </p>
@@ -883,7 +883,7 @@ export function Images() {
 
             <div className="space-y-4" data-tour="images-gallery">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <h2 className="text-lg font-bold uppercase tracking-tight">
+                <h2 className="text-base font-semibold">
                   {favouritesOnly ? "Favourites" : "Your images"}
                   {images.length > 0 ? <span className="ml-2 text-sm font-medium text-muted-foreground">{images.length}</span> : null}
                 </h2>

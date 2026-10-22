@@ -1233,7 +1233,7 @@ export function AgentDetail() {
   const agentJoinLeavePending = agentMembershipPending && membershipMutation.variables?.starred === undefined;
 
   return (
-    <div className={cn("agent-settings-content mx-auto max-w-5xl space-y-8", `agent-settings-${activeView}`)}>
+    <div className={cn("agent-settings-content mx-auto max-w-5xl space-y-6", `agent-settings-${activeView}`)}>
       {showLeftAgentNotice ? (
         <div className="flex items-center gap-3 border border-yellow-300/35 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-900 dark:text-yellow-100">
           <p className="min-w-0 flex-1">

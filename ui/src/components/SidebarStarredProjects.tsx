@@ -7,6 +7,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { projectsApi } from "../api/projects";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
+import { useSidebarActive } from "../lib/sidebar-active";
 import { cn, projectRouteRef, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import {
   isStarred,
@@ -69,6 +70,8 @@ export function SidebarStarredProjects() {
         left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
       );
   }, [membershipsQuery.data, membershipsQuery.isSuccess, projects]);
+  // A starred project on screen stands for its pages, so Projects above it stays unlit (lib/sidebar-active).
+  useSidebarActive(starredProjects.flatMap((project) => [`project:${projectRouteRef(project)}`, `project:${project.id}`]));
 
   const unstar = useCallback(
     (project: Project) => membershipMutation.mutate({
@@ -135,7 +138,7 @@ export function SidebarStarredProjects() {
               !rail && "pl-6",
               isActive
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
             )}
           >
             <ProjectTile color={project.color ?? null} icon={project.icon ?? null} size="xs" />

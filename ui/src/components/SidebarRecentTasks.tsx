@@ -286,6 +286,7 @@ function RecentTasksList({
             <SidebarNavItem
               to={`/issues/${entry.identifier ?? entry.id}`}
               label={entry.title}
+              activeKey={[`recent:${entry.id}`, `recent:${entry.identifier ?? entry.id}`]}
               className={rail ? undefined : "sidebar-action-link pointer-coarse:pr-8"}
               liveCount={liveIssueIds.has(entry.id) ? 1 : undefined}
             />

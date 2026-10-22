@@ -8,6 +8,7 @@ import { formatDate } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { IconTip } from "../ui/tooltip";
 import { returnAtFromDateInput } from "./NotNowButton";
 
 function tomorrowInputValue(): string {
@@ -61,18 +62,22 @@ export function WaitingOutsideButton({ companyId, issueId, issueLabel, compact, 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size={compact ? "icon-xs" : "xs"}
-          aria-label={`Waiting on someone outside: ${issueLabel ?? "this task"}`}
-          title={compact ? "Waiting on someone outside" : undefined}
-          data-waiting-outside={issueId}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Hourglass aria-hidden />
-          {compact ? null : "Waiting outside"}
-        </Button>
+        {(() => {
+          const button = (
+            <Button
+              type="button"
+              variant="ghost"
+              size={compact ? "icon-xs" : "xs"}
+              aria-label={`Waiting on someone outside: ${issueLabel ?? "this task"}`}
+              data-waiting-outside={issueId}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Hourglass aria-hidden />
+              {compact ? null : "Waiting outside"}
+            </Button>
+          );
+          return <IconTip label="Waiting on someone outside" off={!compact}>{button}</IconTip>;
+        })()}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 space-y-3 p-3">
         <form

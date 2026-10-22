@@ -2,6 +2,7 @@ import { useState, type ComponentType, type ReactNode } from "react";
 import { Link } from "@/lib/router";
 import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconTip } from "@/components/ui/tooltip";
 import { useSidebar } from "../context/SidebarContext";
 import {
   Collapsible,
@@ -160,28 +161,32 @@ function SidebarSectionHeader({
     <div className="group/sidebar-section px-3 py-1.5 pointer-coarse:py-1">
       <div className="relative flex min-h-6 min-w-0 items-center gap-1">
         {collapsible ? (
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              data-slot="icon-button"
-              className="absolute -left-4 flex h-5 w-5 items-center justify-center rounded-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-              aria-label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`}
-            >
-              <ChevronRight className={caretClassName} aria-hidden="true" />
-            </button>
-          </CollapsibleTrigger>
+          <IconTip label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`} side="right">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                data-slot="icon-button"
+                className="absolute -left-4 flex h-5 w-5 items-center justify-center rounded-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                aria-label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`}
+              >
+                <ChevronRight className={caretClassName} aria-hidden="true" />
+              </button>
+            </CollapsibleTrigger>
+          </IconTip>
         ) : null}
         {headingControl}
         {headerAction && HeaderActionIcon ? (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className={actionClassName}
-            aria-label={headerAction.ariaLabel}
-            onClick={headerAction.onClick}
-          >
-            <HeaderActionIcon className="h-3.5 w-3.5" />
-          </Button>
+          <IconTip label={headerAction.ariaLabel}>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={actionClassName}
+              aria-label={headerAction.ariaLabel}
+              onClick={headerAction.onClick}
+            >
+              <HeaderActionIcon className="h-3.5 w-3.5" />
+            </Button>
+          </IconTip>
         ) : null}
         {dragHandle ? <span className={cn("ml-auto flex", headerControlVisibilityClassName)}>{dragHandle}</span> : null}
       </div>

@@ -609,9 +609,9 @@ describe("Inbox toolbar", () => {
 
     expect(container.querySelector('input[placeholder="Search inbox…"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="inbox-blocked-tab-badge"]')).toBeNull();
-    expect(container.querySelector('button[title="Filter"]')).not.toBeNull();
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim().startsWith("Filter"))).toBe(true);
     expect(container.querySelector('button[title="Group"]')).not.toBeNull();
-    expect(container.querySelector('button[title="Columns"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Columns"]')).not.toBeNull();
     expect(container.querySelector('button[title="Sort"]')).not.toBeNull();
     expect(container.querySelector('button[title="Enable parent-child nesting"]')).toBeNull();
     expect(container.textContent).not.toContain("Mark all as read");

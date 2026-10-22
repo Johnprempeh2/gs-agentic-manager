@@ -64,7 +64,7 @@ describe("IssueColumnPicker presentation options", () => {
       />,
     );
 
-    const columnsButton = container?.querySelector<HTMLButtonElement>('button[title="Columns"]');
+    const columnsButton = container?.querySelector<HTMLButtonElement>('button[aria-label="Columns"]');
     expect(columnsButton).not.toBeNull();
     act(() => columnsButton?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
 

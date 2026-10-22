@@ -1058,7 +1058,7 @@ describe("IssuesList", () => {
     });
 
     const sortButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.getAttribute("title") === "Sort",
+      (button) => button.textContent?.trim() === "Sort",
     );
     expect(sortButton).toBeTruthy();
     act(() => {
@@ -1072,7 +1072,7 @@ describe("IssuesList", () => {
     });
 
     const groupButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.getAttribute("title") === "Group",
+      (button) => button.textContent?.trim() === "Group",
     );
     expect(groupButton).toBeTruthy();
     act(() => {
@@ -1629,7 +1629,7 @@ describe("IssuesList", () => {
     });
 
     const pageSizeButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.getAttribute("title") === "Cards per column",
+      button.getAttribute("aria-label")?.startsWith("Cards per column"),
     );
     expect(pageSizeButton).toBeTruthy();
 
@@ -1939,7 +1939,7 @@ describe("IssuesList", () => {
 
     await waitForAssertion(() => {
       const columnsButton = Array.from(document.body.querySelectorAll("button")).find(
-        (button) => button.getAttribute("title") === "Columns",
+        (button) => button.getAttribute("aria-label") === "Columns",
       );
       expect(columnsButton).not.toBeUndefined();
       expect(container.textContent).toContain("PAP-9");
@@ -2169,7 +2169,7 @@ describe("IssuesList", () => {
 
     await act(async () => {
       const filterButton = Array.from(document.body.querySelectorAll("button")).find(
-        (button) => button.getAttribute("title") === "Filter",
+        (button) => button.textContent?.trim().startsWith("Filter"),
       );
       filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();

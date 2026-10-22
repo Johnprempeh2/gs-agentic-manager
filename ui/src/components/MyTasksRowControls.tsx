@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { Issue } from "@greatstone/shared";
 import { MessageCircleQuestion, MessagesSquare, UserRoundPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { IconTip } from "@/components/ui/tooltip";
+import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 import { MY_TASKS_ASK_STATE_LABELS, type MyTasksAskState } from "../lib/myTasks";
 import { AgentIdentity } from "./AgentIdentity";
@@ -62,12 +64,18 @@ export function MyTasksAskStateBadge({ state }: { state: MyTasksAskState }) {
   );
 }
 
+/** Icon-only buttons name themselves with the app tooltip; labelled ones need none (same tree either way, so focus survives). */
+function withTip(compact: boolean | undefined, label: string, button: ReactElement) {
+  return <IconTip label={label} off={!compact}>{button}</IconTip>;
+}
+
 export function MyTasksHandOff<T extends HandOffAgent>({
   issue,
   agents,
   leadAgentId,
   pending,
   compact,
+  unavailableReason,
   onHandOff,
 }: {
   issue: Pick<Issue, "identifier" | "title" | "assigneeAgentId">;
@@ -77,6 +85,8 @@ export function MyTasksHandOff<T extends HandOffAgent>({
   pending?: boolean;
   /** Icon only, for when the Discuss panel narrows the list. */
   compact?: boolean;
+  /** Why no agent can take it (shown in place of the list when there is none). */
+  unavailableReason?: string;
   onHandOff: (agent: T, instruction: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -106,20 +116,30 @@ export function MyTasksHandOff<T extends HandOffAgent>({
       }}
     >
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size={compact ? "icon-xs" : "xs"}
-          disabled={pending || agents.length === 0}
-          aria-label={`Hand ${issueLabel(issue)} to an agent`}
-          title={compact ? "Hand to agent" : undefined}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <UserRoundPlus aria-hidden />
-          {compact ? null : "Hand to agent"}
-        </Button>
+        {withTip(compact, "Hand to agent", (
+          <Button
+            type="button"
+            variant="ghost"
+            size={compact ? "icon-xs" : "xs"}
+            // With no agent free the button still opens, to say why and where to fix it.
+            disabled={pending}
+            aria-label={`Hand ${issueLabel(issue)} to an agent`}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <UserRoundPlus aria-hidden />
+            {compact ? null : "Hand to agent"}
+          </Button>
+        ))}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-0">
+        {agents.length === 0 ? (
+          <div className="flex flex-col gap-2 p-3 text-sm" data-hand-off-unavailable>
+            <p>{unavailableReason ?? "No agent can take work right now."}</p>
+            <Link to="/agents/all" className="font-medium text-foreground underline underline-offset-2" onClick={() => setOpen(false)}>
+              Open Agents
+            </Link>
+          </div>
+        ) : (
         <form onSubmit={submit} className="flex flex-col">
           <p id={`${listId}-label`} className="px-3 pt-3 pb-1.5 text-xs font-medium text-muted-foreground">
             Hand to
@@ -161,6 +181,7 @@ export function MyTasksHandOff<T extends HandOffAgent>({
             </Button>
           </div>
         </form>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -179,7 +200,7 @@ export function MyTasksAskButton({
   compact?: boolean;
   onToggle: () => void;
 }) {
-  return (
+  return withTip(compact, "Ask", (
     <Button
       type="button"
       variant="ghost"
@@ -188,14 +209,13 @@ export function MyTasksAskButton({
       aria-expanded={expanded}
       aria-controls={expanded ? controlsId : undefined}
       aria-label={`Ask about ${issueLabel(issue)}`}
-      title={compact ? "Ask" : undefined}
       onClick={onToggle}
       className={cn("text-muted-foreground hover:text-foreground", expanded && "bg-accent text-foreground")}
     >
       <MessageCircleQuestion aria-hidden />
       {compact ? null : "Ask"}
     </Button>
-  );
+  ));
 }
 
 /** Opens the task's thread in the Discuss panel (GRE-620). */
@@ -212,7 +232,7 @@ export function MyTasksDiscussButton({
   compact?: boolean;
   onToggle: () => void;
 }) {
-  return (
+  return withTip(compact, "Discuss", (
     <Button
       type="button"
       variant="ghost"
@@ -221,14 +241,13 @@ export function MyTasksDiscussButton({
       aria-expanded={open}
       aria-controls={open ? controlsId : undefined}
       aria-label={`Discuss ${issueLabel(issue)}`}
-      title={compact ? "Discuss" : undefined}
       onClick={onToggle}
       className={cn("text-muted-foreground hover:text-foreground", open && "bg-accent text-foreground")}
     >
       <MessagesSquare aria-hidden />
       {compact ? null : "Discuss"}
     </Button>
-  );
+  ));
 }
 
 /** Inline question box under the row. Escape closes it and focus goes back to Ask. */

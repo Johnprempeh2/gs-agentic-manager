@@ -21,6 +21,7 @@ export function SidebarFollowing({ companyId }: { companyId: string | null | und
             key={issueId}
             to={`/issues/${issue.identifier ?? issueId}`}
             label={issue.title}
+            activeKey={[`pinned:${issueId}`, `pinned:${issue.identifier ?? issueId}`]}
             trailing={(
               <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" data-sidebar-follow-progress>
                 {counts.waitingOnYou > 0 ? (

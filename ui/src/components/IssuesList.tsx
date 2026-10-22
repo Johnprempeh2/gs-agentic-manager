@@ -78,9 +78,11 @@ import { PageSkeleton } from "./PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { IconTip } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, List, ListTree, User, Search, CircleSlash2, ChevronsDownUp, PanelTopClose, RotateCcw, ListCollapse,
-  SquareKanban, Download, ClipboardList,
+  SquareKanban, Download, ClipboardList, MoreHorizontal,
 } from "lucide-react";
 import { downloadTextFile, issuesCsvFileName, issuesToCsv } from "../lib/issues-csv";
 import { issuesToPlainList } from "../lib/issues-text";
@@ -554,6 +556,8 @@ interface IssuesListProps {
   renderRowFooter?: (issue: Issue) => ReactNode;
   /** Page controls after the built-in view controls, for example the Tasks page's Select button. */
   toolbarControls?: ReactNode;
+  /** Extra items for the toolbar's More menu (DropdownMenu items), after Download and Copy. */
+  toolbarMenuItems?: ReactNode;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -608,7 +612,8 @@ function IssueSearchInput({
   }, [draftValue, onDebouncedChange]);
 
   return (
-    <div className="relative w-full sm:w-64 md:w-80">
+    // 224px between 1280 and 1536, so the labelled Filter, Sort and Group fit on one line at 1440.
+    <div className="relative w-full sm:w-64 md:w-80 xl:max-2xl:w-56">
       <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={draftValue}
@@ -830,6 +835,7 @@ export function IssuesList({
   renderRowActions,
   renderRowFooter,
   toolbarControls,
+  toolbarMenuItems,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1930,62 +1936,72 @@ export function IssuesList({
           {/* View mode toggle. Phones use the list; board lanes and table
               columns are desktop layouts, so both controls stay off there. */}
           <div className="gs-toolbar-divider flex items-center gap-0.5 max-sm:hidden" role="group" aria-label="View mode">
-            <button
-              className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
-              onClick={() => updateView({ viewMode: "list" })}
-              title="List view"
-              aria-label="List view"
-              aria-pressed={viewState.viewMode === "list"}
-            >
-              <List className="h-3.5 w-3.5" />
-            </button>
-            <button
-              className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "board" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
-              onClick={() => updateView({ viewMode: "board" })}
-              title="Board view"
-              aria-label="Board view"
-              aria-pressed={viewState.viewMode === "board"}
-            >
-              <SquareKanban className="h-3.5 w-3.5" />
-            </button>
+            <IconTip label="List view">
+              <button
+                className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                onClick={() => updateView({ viewMode: "list" })}
+                aria-label="List view"
+                aria-pressed={viewState.viewMode === "list"}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+            </IconTip>
+            <IconTip label="Board view">
+              <button
+                className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "board" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                onClick={() => updateView({ viewMode: "board" })}
+                aria-label="Board view"
+                aria-pressed={viewState.viewMode === "board"}
+              >
+                <SquareKanban className="h-3.5 w-3.5" />
+              </button>
+            </IconTip>
           </div>
 
           {viewState.viewMode === "list" && (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", viewState.nestingEnabled && "bg-accent")}
-              onClick={() => updateView({ nestingEnabled: !viewState.nestingEnabled })}
-              title={viewState.nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
-            >
-              <ListTree className="h-3.5 w-3.5" />
-            </Button>
+            <IconTip label={viewState.nestingEnabled ? "Show sub-tasks as their own rows" : "Show sub-tasks under their parent"}>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", viewState.nestingEnabled && "bg-accent")}
+                onClick={() => updateView({ nestingEnabled: !viewState.nestingEnabled })}
+                aria-label="Nest sub-tasks under their parent"
+                aria-pressed={viewState.nestingEnabled}
+              >
+                <ListTree className="h-3.5 w-3.5" />
+              </Button>
+            </IconTip>
           )}
 
           {viewState.viewMode === "board" && (
             <>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className={cn("h-8 w-8 shrink-0", boardCompactCards && "bg-accent")}
-                onClick={() => updateView({ boardCardDensity: boardCompactCards ? "comfortable" : "compact" })}
-                title={boardCompactCards ? "Use comfortable cards" : "Use compact cards"}
-              >
-                <ChevronsDownUp className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className={cn("h-8 w-8 shrink-0", boardCollapsedStatuses.length > 0 && "bg-accent")}
-                onClick={() => updateView({ boardColdLaneMode: boardCollapsedStatuses.length > 0 ? "expanded" : "collapsed" })}
-                title={boardCollapsedStatuses.length > 0 ? "Expand cold lanes" : "Collapse cold lanes"}
-              >
-                <PanelTopClose className="h-3.5 w-3.5" />
-              </Button>
+              <IconTip label={boardCompactCards ? "Use comfortable cards" : "Use compact cards"}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className={cn("h-8 w-8 shrink-0", boardCompactCards && "bg-accent")}
+                  onClick={() => updateView({ boardCardDensity: boardCompactCards ? "comfortable" : "compact" })}
+                  aria-label={boardCompactCards ? "Use comfortable cards" : "Use compact cards"}
+                >
+                  <ChevronsDownUp className="h-3.5 w-3.5" />
+                </Button>
+              </IconTip>
+              <IconTip label={boardCollapsedStatuses.length > 0 ? "Expand cold lanes" : "Collapse cold lanes"}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className={cn("h-8 w-8 shrink-0", boardCollapsedStatuses.length > 0 && "bg-accent")}
+                  onClick={() => updateView({ boardColdLaneMode: boardCollapsedStatuses.length > 0 ? "expanded" : "collapsed" })}
+                  aria-label={boardCollapsedStatuses.length > 0 ? "Expand cold lanes" : "Collapse cold lanes"}
+                >
+                  <PanelTopClose className="h-3.5 w-3.5" />
+                </Button>
+              </IconTip>
               <Popover>
+                <IconTip label="Cards per column">
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
@@ -1995,12 +2011,13 @@ export function IssuesList({
                       "h-8 shrink-0 gap-1.5 px-2",
                       viewState.boardColumnPageSize !== KANBAN_COLUMN_DEFAULT_PAGE_SIZE && "bg-accent",
                     )}
-                    title="Cards per column"
+                    aria-label={`Cards per column: ${viewState.boardColumnPageSize}`}
                   >
                     <ListCollapse className="h-3.5 w-3.5" />
                     <span className="min-w-4 text-xs tabular-nums">{viewState.boardColumnPageSize}</span>
                   </Button>
                 </PopoverTrigger>
+                </IconTip>
                 <PopoverContent align="end" className="w-40 p-0">
                   <div className="p-2 space-y-0.5">
                     {KANBAN_COLUMN_PAGE_SIZE_OPTIONS.map((pageSize) => (
@@ -2022,21 +2039,26 @@ export function IssuesList({
                   </div>
                 </PopoverContent>
               </Popover>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => updateView({
-                  boardCardDensity: "auto",
-                  boardColdLaneMode: "expanded",
-                  boardColumnPageSize: KANBAN_COLUMN_DEFAULT_PAGE_SIZE,
-                })}
-                disabled={!boardDensityCustomized}
-                title="Reset board density"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </Button>
+              <IconTip label="Reset board density">
+                {/* A disabled button gets no pointer events, so the tip sits on a wrapper. */}
+                <span className="inline-flex" tabIndex={boardDensityCustomized ? undefined : 0}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => updateView({
+                      boardCardDensity: "auto",
+                      boardColdLaneMode: "expanded",
+                      boardColumnPageSize: KANBAN_COLUMN_DEFAULT_PAGE_SIZE,
+                    })}
+                    disabled={!boardDensityCustomized}
+                    aria-label="Reset board density"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
+              </IconTip>
             </>
           )}
 
@@ -2073,12 +2095,14 @@ export function IssuesList({
           {/* Sort (list view only) */}
           {viewState.viewMode === "list" && (
             <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 2xl:w-auto 2xl:px-2.5" title="Sort">
-                  <ArrowUpDown className="h-3.5 w-3.5" />
-                  <span className="max-2xl:sr-only">Sort</span>
-                </Button>
-              </PopoverTrigger>
+              <IconTip label="Sort the list">
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 xl:w-auto xl:px-2.5">
+                    <ArrowUpDown className="h-3.5 w-3.5" />
+                    <span className="max-xl:sr-only">Sort</span>
+                  </Button>
+                </PopoverTrigger>
+              </IconTip>
               <PopoverContent align="end" className="w-48 p-0">
                 <div className="p-2 space-y-0.5">
                   {/* PAP-411: "priority" sort option hidden behind SHOW_TASK_PRIORITY_UI (comparator stays dormant). */}
@@ -2122,12 +2146,14 @@ export function IssuesList({
           {/* Group (list view only) */}
           {viewState.viewMode === "list" && (
             <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 2xl:w-auto 2xl:px-2.5" title="Group">
-                  <Layers className="h-3.5 w-3.5" />
-                  <span className="max-2xl:sr-only">Group</span>
-                </Button>
-              </PopoverTrigger>
+              <IconTip label="Group the list">
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 xl:w-auto xl:px-2.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    <span className="max-xl:sr-only">Group</span>
+                  </Button>
+                </PopoverTrigger>
+              </IconTip>
               <PopoverContent align="end" className="w-44 p-0">
                 <div className="p-2 space-y-0.5">
                   {/* PAP-411: "priority" group-by option hidden behind SHOW_TASK_PRIORITY_UI (group logic stays dormant). */}
@@ -2159,35 +2185,31 @@ export function IssuesList({
             </Popover>
           )}
 
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            title={`Download ${filtered.length === 1 ? "this task" : `these ${filtered.length} tasks`} as a spreadsheet`}
-            aria-label="Download as spreadsheet"
-            disabled={filtered.length === 0}
-            onClick={downloadSpreadsheet}
-          >
-            <Download className="h-3.5 w-3.5" />
-          </Button>
-
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            title={
-              listCopy.copied
-                ? "Copied"
-                : listCopy.failed
-                  ? "Could not copy"
-                  : `Copy ${filtered.length === 1 ? "this task" : `these ${filtered.length} tasks`} as a list to paste into an email or chat`
-            }
-            aria-label={listCopy.copied ? "Copied" : "Copy as a list"}
-            disabled={filtered.length === 0}
-            onClick={copyAsList}
-          >
-            {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
-          </Button>
+          {/* Download, copy and the page's own extras share one menu, so Filter,
+              Sort and Group keep room for their words (from 1280 wide). */}
+          <DropdownMenu>
+            <IconTip label="Download, copy as a list, select">
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" aria-label="More list actions">
+                  {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+                </Button>
+              </DropdownMenuTrigger>
+            </IconTip>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem disabled={filtered.length === 0} onSelect={downloadSpreadsheet}>
+                <Download className="h-3.5 w-3.5" />
+                Download as spreadsheet
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={filtered.length === 0} onSelect={copyAsList}>
+                <ClipboardList className="h-3.5 w-3.5" />
+                Copy as a list
+              </DropdownMenuItem>
+              {toolbarMenuItems}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span role="status" className="sr-only">
+            {listCopy.copied ? `Copied ${filtered.length === 1 ? "1 task" : `${filtered.length} tasks`} as a list` : listCopy.failed ? "Could not copy" : ""}
+          </span>
           {toolbarControls}
           </>
         )}
@@ -2473,6 +2495,7 @@ export function IssuesList({
                             <button
                               type="button"
                               data-slot="icon-button"
+                              data-row-chevron=""
                               className="inline-flex h-4 w-4 shrink-0 items-center justify-center"
                               aria-label={isExpanded ? "Collapse sub-tasks" : "Expand sub-tasks"}
                               onClick={toggleCollapse}
@@ -2504,7 +2527,7 @@ export function IssuesList({
                         showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
                         mobileLeading={<>{rowLeading}{
                           hasChildren ? (
-                            <button type="button" data-slot="icon-button" onClick={toggleCollapse}>
+                            <button type="button" data-slot="icon-button" data-row-chevron="" aria-label={isExpanded ? "Collapse sub-tasks" : "Expand sub-tasks"} onClick={toggleCollapse}>
                               <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
                             </button>
                           ) : (

@@ -412,7 +412,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
 
         <div className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-lg font-bold uppercase tracking-tight">
+            <h2 className="text-base font-semibold">
               {favouritesOnly ? "Favourite clips" : "Your videos"}
               {videos.length > 0 ? <span className="ml-2 text-sm font-medium text-muted-foreground">{videos.length}</span> : null}
             </h2>

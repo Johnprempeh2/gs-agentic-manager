@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { NavLink } from "@/lib/router";
+import { Link, NavLink } from "@/lib/router";
+import { useSidebarActive } from "../lib/sidebar-active";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { useSidebar } from "../context/SidebarContext";
@@ -60,6 +61,11 @@ interface SidebarNavItemProps {
    * computed externally (agent rows match `/agents/:ref` across tab suffixes).
    */
   active?: boolean;
+  /**
+   * The row's names for the one-lit-row rule (lib/sidebar-active): when two
+   * rows lead to the same page, the most specific one on screen is lit.
+   */
+  activeKey?: string | string[];
   /** Rendered after the label, before the right-aligned status cluster. */
   trailing?: ReactNode;
   /** Accessible text for `trailing` status content, surfaced in the collapsed rail (where `trailing` is hidden). */
@@ -84,6 +90,7 @@ export function SidebarNavItem({
   alert = false,
   liveCount,
   active,
+  activeKey,
   trailing,
   trailingLabel,
   liveAccessory,
@@ -114,14 +121,9 @@ export function SidebarNavItem({
     ? undefined
     : `${label}${railStatusText ? `, ${railStatusText}` : ""}${trailingLabel ? `, ${trailingLabel}` : ""}`;
 
-  const link = (
-    <NavLink
-      to={to}
-      state={SIDEBAR_SCROLL_RESET_STATE}
-      end={end}
-      aria-label={railAriaLabel}
-      onClick={() => { if (isMobile) setSidebarOpen(false); }}
-      className={({ isActive }) =>
+  const routed = useSidebarActive(activeKey === undefined ? undefined : [activeKey].flat());
+  const lit = active ?? routed;
+  const rowClass = (isActive: boolean) =>
         cn(
           // One rhythm and one inset pill highlight: mx-2 floats the row off
           // the sidebar edges, rounded-lg matches the card anchor, px-2 gives
@@ -129,13 +131,13 @@ export function SidebarNavItem({
           // (agents/projects) reserve extra right padding via className.
           "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
           "gs-nav-item",
-          (active ?? isActive)
+          isActive
             ? "gs-nav-item-active bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           className,
-        )
-      }
-    >
+        );
+  const content = (
+    <>
       {showIconSlot ? (
         <span data-slot="sidebar-nav-icon" className="relative shrink-0">
           {iconNode ?? (Icon ? <Icon className="h-4 w-4" /> : null)}
@@ -215,7 +217,20 @@ export function SidebarNavItem({
           {badge}
         </Badge>
       )}
-    </NavLink>
+    </>
+  );
+  const shared = {
+    to,
+    state: SIDEBAR_SCROLL_RESET_STATE,
+    "aria-label": railAriaLabel,
+    onClick: () => { if (isMobile) setSidebarOpen(false); },
+  };
+  // A row lit (or not) from outside is a plain link, so the route match cannot
+  // also mark it as the current page for screen readers.
+  const link = lit === undefined ? (
+    <NavLink {...shared} end={end} className={({ isActive }) => rowClass(isActive)}>{content}</NavLink>
+  ) : (
+    <Link {...shared} aria-current={lit ? "page" : undefined} className={rowClass(lit)}>{content}</Link>
   );
 
   if (!rail) return link;
