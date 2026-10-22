@@ -18,7 +18,7 @@ describe("heartbeat cost accounting", () => {
   it("estimates Codex usage from the price table and marks it estimated", () => {
     const usage = { inputTokens: 793, cachedInputTokens: 43_776, outputTokens: 78 };
     const estimate = estimateRunCostUsd("openai", "gpt-6-sol", usage, new Date("2026-10-22T12:00:00Z"));
-    expect(estimate).toBeCloseTo((43_776 * 0.2 + 78 * 10) / 1_000_000, 12);
+    expect(estimate).toBeCloseTo((793 * 2 + 43_776 * 0.2 + 78 * 10) / 1_000_000, 12);
     expect(resolveLedgerCostStatus({ costUsd: null, estimatedCostUsd: estimate, ...usage })).toBe("estimated");
   });
 

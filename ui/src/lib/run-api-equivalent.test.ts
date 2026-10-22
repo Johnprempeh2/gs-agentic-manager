@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runApiEquivalent, runApiEquivalentLabel, visibleRunCostUsd } from "./utils";
 
 const codexTokens = { provider: "openai", model: "gpt-6-sol", inputTokens: 793, cachedInputTokens: 43_776, outputTokens: 78 };
-const codexUsd = (43_776 * 0.2 + 78 * 10) / 1_000_000;
+const codexUsd = (793 * 2 + 43_776 * 0.2 + 78 * 10) / 1_000_000;
 
 describe("run API-equivalent cost", () => {
   it("prices a past Codex run that was stored unpriced, as an estimate", () => {
