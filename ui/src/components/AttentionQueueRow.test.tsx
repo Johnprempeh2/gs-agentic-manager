@@ -229,7 +229,7 @@ describe("AttentionQueueRow", () => {
     const pr = el.querySelector<HTMLAnchorElement>('[data-testid="review-work-product"]');
     expect(pr?.getAttribute("href")).toBe("https://github.com/acme/app/pull/12");
     expect(pr?.textContent).toContain("Pull request: Billing fees");
-    const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    const thread = el.querySelector("[data-testid='review-thread-link']");
     expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1#comment-comment-9");
     expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
       "Ridge says the work is finished.",
@@ -296,7 +296,7 @@ describe("AttentionQueueRow", () => {
     expect(el.querySelector('[data-testid="stalled-review-hint-send_back"]')?.textContent).toContain(
       "goes back to the assignee",
     );
-    const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    const thread = el.querySelector("[data-testid='review-thread-link']");
     expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1");
   });
 

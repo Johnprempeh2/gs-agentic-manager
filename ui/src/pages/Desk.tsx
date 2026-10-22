@@ -65,6 +65,7 @@ import {
 } from "../components/MyTasksRowControls";
 import { MyTasksDiscussPanel, useMyTasksDiscussOverlay } from "../components/MyTasksDiscussPanel";
 import { useIsWideScreen } from "../hooks/useIsWideScreen";
+import { useIsPhone } from "../hooks/useIsPhone";
 import { FollowRollupSummary, FollowTaskToggle } from "../components/FollowTask";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
@@ -230,6 +231,8 @@ export function Desk() {
     isFetching: decisionsFetching,
   } = useDecisionsFeed(selectedCompanyId);
   const { data: needsMe } = useNeedsMe(selectedCompanyId);
+  // On a phone each decision opens short, so every one fits before a scroll (GRE-1918).
+  const isPhone = useIsPhone();
   const decisionCards = useMemo(() => decisionsFeed?.cards ?? [], [decisionsFeed]);
   const cardTaskIds = useMemo(
     () => new Set(decisionCards.map(decisionCardTaskId).filter((id): id is string => Boolean(id))),
@@ -852,7 +855,7 @@ export function Desk() {
             {waits ? <NeedsMeList needsMe={waits} includeAssigned={false} /> : null}
             {/* Everything that needs a decision, most urgent first (the feed's order). */}
             {decisionCards.length > 0 ? (
-              <div className="space-y-4" data-desk-decisions>
+              <div className={isPhone ? "space-y-2" : "space-y-4"} data-desk-decisions>
                 {decisionCards.map((card) => (
                   <DecisionFeedCard
                     key={card.id}
@@ -861,6 +864,7 @@ export function Desk() {
                     assignableAgents={decisionsFeed?.assignableAgents ?? []}
                     agentMap={agentById}
                     currentUserId={currentUserId}
+                    compact={isPhone}
                   />
                 ))}
               </div>

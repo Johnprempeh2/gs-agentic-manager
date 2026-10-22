@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, ExternalLink, Loader2, MessageCircleQuestion } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageCircleQuestion } from "lucide-react";
 import type {
   Agent,
   AttentionDetailDeliverable,
@@ -131,7 +131,21 @@ export interface DecisionFeedCardProps {
   onActed?: () => void;
   /** Focus moves to the next card on its own, so it skips the "done" toast. */
   quietSuccess?: boolean;
+  /**
+   * The phone Desk opens each card short (GRE-1918): title, reason, owner and
+   * one main action. The rest of the card sits behind "Details".
+   */
+  compact?: boolean;
   className?: string;
+}
+
+/**
+ * The one action a short card shows: the agent's recommended option, else the
+ * card's primary option. Null when the card is answered in place.
+ */
+export function compactMainAction(card: DecisionCard): DecisionCardAction | null {
+  const actions = visibleCardActions(card);
+  return actions.find((action) => action.recommended) ?? actions.find(isPrimaryCardAction) ?? null;
 }
 
 /** "for 3 hours", "for 2 days": how long a decision has waited. */
@@ -162,6 +176,7 @@ export function DecisionFeedCard({
   embedded = false,
   onActed,
   quietSuccess = false,
+  compact = false,
   className,
 }: DecisionFeedCardProps) {
   const queryClient = useQueryClient();
@@ -172,6 +187,8 @@ export function DecisionFeedCard({
   const severity = severityStyle(card.severity);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [clarityOpen, setClarityOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = `decision-details-${useId()}`;
   const isPhone = useIsPhone();
 
   const refresh = () => {
@@ -226,6 +243,88 @@ export function DecisionFeedCard({
 
   const Frame = embedded ? "section" : "article";
 
+  if (compact && !expanded) {
+    const mainAction = compactMainAction(card);
+    // The short card says why it waits; what to do is the main action below.
+    const reason = card.reason || card.decision;
+    return (
+      <article
+        className={cn("relative flex flex-col gap-1.5 overflow-hidden rounded-xl border border-border bg-card px-4 py-2.5", className)}
+        data-decision-card={card.id}
+        data-decision-kind={card.kind}
+        data-decision-compact
+        aria-label={card.title}
+      >
+        <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", severity.accent)} />
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="shrink-0 rounded-full border border-border bg-accent px-2 py-0.5 font-medium text-foreground">
+            {decisionKindLabel(card, card.kind)}
+          </span>
+          <span className="sr-only">Severity: {severity.label}</span>
+          <span className="min-w-0 flex-1 truncate" data-decision-owner>
+            {card.kind === "review" ? "Work by" : "Owner"}{" "}
+            <span className="font-medium text-foreground">{card.waiting?.name ?? "no agent yet"}</span>
+          </span>
+          <span className="shrink-0" title={formatDateTime(card.activityAt)}>{relativeTime(card.activityAt)}</span>
+        </div>
+        <h3 className="line-clamp-2 text-base font-semibold leading-snug">
+          {taskHref ? (
+            <Link to={taskHref} className="hover:underline">
+              {card.title}
+            </Link>
+          ) : (
+            card.title
+          )}
+        </h3>
+        <p className="line-clamp-2 text-sm text-muted-foreground" data-decision-reason>
+          {reason}
+        </p>
+        <div className="flex items-center gap-2">
+          {mainAction ? (
+            <div className="min-w-0 flex-1">
+              <CardActionButton
+                action={mainAction}
+                size="sm"
+                block
+                pending={busy && actionMutation.variables?.action.id === mainAction.id}
+                disabled={busy || Boolean(mainAction.disabledReason)}
+                open={openActionId === mainAction.id}
+                onRun={() => runAction(mainAction)}
+              />
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant={mainAction ? "ghost" : "default"}
+            className={cn(!mainAction && "flex-1 justify-start")}
+            aria-expanded={false}
+            aria-controls={detailsId}
+            onClick={() => setExpanded(true)}
+          >
+            {mainAction ? "Details" : answersInPlace || decisionItems.length > 0 ? "Answer" : "See options"}
+            <ChevronDown />
+          </Button>
+        </div>
+        {openAction ? (
+          <ActionInputPanel
+            key={openAction.id}
+            action={openAction}
+            assignableAgents={assignableAgents}
+            pending={actionMutation.isPending}
+            error={actionMutation.error as Error | null}
+            onCancel={() => setOpenActionId(null)}
+            onSubmit={(value) => actionMutation.mutate({ action: openAction, value })}
+          />
+        ) : actionMutation.error ? (
+          <p className="text-xs text-destructive" role="alert">
+            {(actionMutation.error as Error).message}
+          </p>
+        ) : null}
+      </article>
+    );
+  }
+
   return (
     <Frame
       className={cn(
@@ -234,6 +333,7 @@ export function DecisionFeedCard({
           : "relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border bg-card px-4 pt-3 pb-4",
         className,
       )}
+      id={compact ? detailsId : undefined}
       data-decision-card={card.id}
       data-decision-kind={card.kind}
       aria-label={embedded ? "Also on this task" : card.title}
@@ -437,6 +537,21 @@ export function DecisionFeedCard({
           }}
           onCancel={() => setClarityOpen(false)}
         />
+      ) : null}
+
+      {compact ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="self-start"
+          aria-expanded
+          aria-controls={detailsId}
+          onClick={() => setExpanded(false)}
+        >
+          Show less
+          <ChevronUp />
+        </Button>
       ) : null}
     </Frame>
   );
