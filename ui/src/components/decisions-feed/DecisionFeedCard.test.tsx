@@ -652,7 +652,7 @@ describe("review card with no reviewer (GRE-1421)", () => {
     expect(text).not.toContain("Owner");
     const pr = container.querySelector("[data-testid='review-work-product']");
     expect(pr?.getAttribute("href")).toBe("https://github.com/Johnprempeh2/gs-agentic-manager/pull/525");
-    const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    const thread = container.querySelector("[data-testid='review-thread-link']");
     expect(thread?.getAttribute("href")).toBe("/issues/GRE-844#comment-comment-9");
     // Each choice is its button and the line that says what it does.
     const choices = Array.from(container.querySelectorAll("[data-review-choice]")).map((li) => {
@@ -676,9 +676,24 @@ describe("review card with no reviewer (GRE-1421)", () => {
     render(stalledReviewCard({ context: false }));
     expect(container.querySelector("[data-testid='review-no-update']")).not.toBeNull();
     expect(container.querySelector("[data-testid='review-work-product']")).toBeNull();
-    const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    const thread = container.querySelector("[data-testid='review-thread-link']");
     expect(thread?.getAttribute("href")).toBe("/issues/GRE-844");
+    expect(thread?.textContent).toBe("Read the thread");
     expect(container.querySelectorAll("[data-review-choice]")).toHaveLength(3);
+  });
+
+  it("warns about the missing summary and offers the thread before Approve (GRE-1919)", () => {
+    render(stalledReviewCard({ context: false }));
+    const warning = container.querySelector("[data-testid='review-no-update']")!;
+    expect(warning.getAttribute("role")).toBe("status");
+    expect(warning.textContent).toBe("No summary from the agent. Check the work before you approve.");
+    const thread = container.querySelector("[data-testid='review-thread-link']")!;
+    const approve = button("Approve");
+    const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(warning, thread)).toBe(true);
+    expect(before(thread, approve)).toBe(true);
+    // Approve stays available.
+    expect(approve.hasAttribute("disabled")).toBe(false);
   });
 
   it("approves and sends back through the review decision endpoint", async () => {
