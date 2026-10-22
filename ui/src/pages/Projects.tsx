@@ -9,7 +9,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EntityRow } from "../components/EntityRow";
 import { ProjectTile } from "../components/ProjectTile";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, sentenceCaseStatus } from "../components/StatusBadge";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { EmptyState } from "../components/EmptyState";
@@ -306,7 +306,7 @@ export function Projects() {
                                 {projectTargetLabel(project) ?? formatDate(project.targetDate)}
                               </span>
                             )}
-                            <StatusBadge status={project.status} />
+                            <StatusBadge status={project.status} label={sentenceCaseStatus(project.status)} />
                             <MembershipAction
                               state={state}
                               pending={joinLeavePending}

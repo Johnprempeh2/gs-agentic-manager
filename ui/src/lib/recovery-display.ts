@@ -21,13 +21,13 @@ export const RECOVERY_CHIP_DEFAULT_TONE: Record<
 > = {
   needed: {
     className:
-      "border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300",
+      "border-status-warning/60 bg-status-warning-soft text-status-warning-foreground",
     icon: TriangleAlert,
     label: "Recovery needed",
   },
   in_progress: {
     className:
-      "border-sky-500/60 bg-sky-500/15 text-sky-700 dark:text-sky-300",
+      "border-status-info/60 bg-status-info-soft text-status-info-foreground",
     icon: RefreshCw,
     label: "Recovery in progress",
   },
@@ -37,7 +37,7 @@ export const RECOVERY_CHIP_DEFAULT_TONE: Record<
     label: "Watching the agent's work",
   },
   escalated: {
-    className: "border-red-500/60 bg-red-500/15 text-red-700 dark:text-red-300",
+    className: "border-status-danger/60 bg-status-danger-soft text-status-danger-foreground",
     icon: OctagonAlert,
     label: "Recovery escalated",
   },

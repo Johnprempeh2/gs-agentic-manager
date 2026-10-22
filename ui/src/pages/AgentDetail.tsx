@@ -41,7 +41,7 @@ import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { toolsApi } from "../api/tools";
 import { getUIAdapter, buildTranscript, onAdapterChange, rebrandRunLogText } from "../adapters";
-import { StatusBadge, sentenceCaseStatus } from "../components/StatusBadge";
+import { AgentStatusBadge, StatusBadge, sentenceCaseStatus } from "../components/StatusBadge";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { IssueRow } from "../components/IssueRow";
@@ -1814,7 +1814,7 @@ export function AgentOverview({
                   {budgetUse.text}
                 </span>
               ) : null}
-              <StatusBadge status={agent.status} />
+              <AgentStatusBadge status={agent.status} />
             </div>
           </div>
           <div className="space-y-3">
@@ -4859,7 +4859,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
           <h3 className="text-xs font-medium text-muted-foreground mb-2">
             Revoked Keys
           </h3>
-          <div className="border border-border rounded-lg divide-y divide-border opacity-50">
+          <div className="border border-border rounded-lg divide-y divide-border text-muted-foreground">
             {revokedKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>

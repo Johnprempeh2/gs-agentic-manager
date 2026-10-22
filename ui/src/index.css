@@ -390,7 +390,7 @@
   --status-success-foreground: var(--color-green-800); /* 800, not 700: the retuned green-700 is 4.49:1 on the daylight canvas */
   --status-success-soft: var(--color-green-100);
   --status-warning: var(--color-amber-700);
-  --status-warning-foreground: var(--color-amber-700);
+  --status-warning-foreground: var(--color-amber-800); /* 800, not 700: amber-700 on the soft fill is 4.52:1, too close to the line */
   --status-warning-soft: var(--color-amber-100);
   --status-danger: var(--color-red-600);
   --status-danger-foreground: var(--color-red-700);
@@ -789,6 +789,14 @@
 
   * {
     @apply border-border outline-ring/50;
+  }
+  /* Links, tabs and other controls without a focus style of their own fell back
+     to the browser's 1px outline at half the ring colour, about 2.5:1 on the
+     daylight canvas. Give them a solid 2px ring instead. Zero specificity and
+     in the base layer, so any component focus style still wins. */
+  :where(a[href], button, summary, [role="button"], [role="tab"], [role="link"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   html {
     height: 100%;

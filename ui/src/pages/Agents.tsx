@@ -433,7 +433,6 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         to={agentUrl(agent)}
         className={cn(
           "group py-3",
-          agent.pausedAt && tab !== "paused" ? "opacity-50" : "",
           resourceMembershipState(membershipsQuery.data, "agent", agent.id) === "left" ? "sm:text-muted-foreground" : "",
         )}
         leading={hasInvalidOrgChain ? (
@@ -789,7 +788,8 @@ function OrgTreeNode({
         to={agent ? agentUrl(agent) : `/agents/${node.id}`}
         className={cn(
           "group flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent/50 transition-colors w-full text-left no-underline text-inherit",
-          agent?.pausedAt && tab !== "paused" && "opacity-50",
+          // Paused rows read quieter through a text token, never a fade (a fade fails contrast).
+          agent?.pausedAt && tab !== "paused" && "text-muted-foreground",
           membershipState === "left" && "sm:text-muted-foreground",
         )}
       >

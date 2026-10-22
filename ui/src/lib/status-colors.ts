@@ -234,8 +234,11 @@ export const liveBlueBadge = "bg-status-running/10 border-status-running/30 text
 export type BannerTone = "info" | "warning" | "danger";
 
 export const brandBanner: Record<BannerTone, string> = {
-  info: "border-[#2563EB]/40 bg-[#DBEAFE]/50 text-[#1D4ED8] dark:border-[#2563eb59] dark:bg-[#2563eb14] dark:text-[#93C5FD]",
-  warning: "border-[#F59E0B]/50 bg-[#FEF3C7]/60 text-[#B45309] dark:border-[#f59e0b59] dark:bg-[#f59e0b12] dark:text-[#F59E0B]",
+  // Info and warning use the same soft fill / foreground pairs as danger: the old
+  // translucent hex washes let the page tint show through and the amber body
+  // measured 3.75:1 on the daylight canvas.
+  info: "border-status-info/40 bg-status-info-soft text-status-info-foreground",
+  warning: "border-status-warning/50 bg-status-warning-soft text-status-warning-foreground",
   // PAP-14031: aligned to the proven `failed`/`error` chip recipe (danger soft
   // fill / foreground pair) so title + body both clear WCAG AA 4.5:1 in light and
   // dark on either `--background` or `--card`. The prior `text-destructive` on

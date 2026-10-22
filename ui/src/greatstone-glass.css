@@ -871,6 +871,11 @@
 }
 .gs-toolbar-cluster button[data-variant="outline"] {
   border-color: transparent;
+}
+/* Flatten the glass shadow but never the focus ring: the Button's
+   focus-visible ring is a box-shadow too, and an unlayered "none" here beat it,
+   so keyboard focus vanished inside the capsule. */
+.gs-toolbar-cluster button[data-variant="outline"]:not(:focus-visible) {
   box-shadow: none;
 }
 /* Shorthand on purpose: outline buttons paint glass as a background-image. */

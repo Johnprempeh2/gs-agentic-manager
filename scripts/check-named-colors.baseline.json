@@ -1516,20 +1516,6 @@
     "text-violet-300": 2,
     "text-violet-700": 2
   },
-  "ui/src/lib/recovery-display.ts": {
-    "bg-amber-500/15": 1,
-    "bg-red-500/15": 1,
-    "bg-sky-500/15": 1,
-    "border-amber-500/60": 1,
-    "border-red-500/60": 1,
-    "border-sky-500/60": 1,
-    "text-amber-300": 1,
-    "text-amber-700": 1,
-    "text-red-300": 1,
-    "text-red-700": 1,
-    "text-sky-300": 1,
-    "text-sky-700": 1
-  },
   "ui/src/lib/runRetryState.ts": {
     "bg-amber-500/10": 1,
     "bg-blue-500/10": 1,

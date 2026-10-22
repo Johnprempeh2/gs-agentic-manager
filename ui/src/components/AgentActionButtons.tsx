@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Pause,
   Play,
+  Zap,
   Plus,
   MoreHorizontal,
   Loader2,
@@ -65,8 +66,8 @@ export function RunButton({
 }) {
   return (
     <Button variant="outline" size={size} onClick={onClick} disabled={disabled}>
-      <Play className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">{label}</span>
+      <Zap className="h-3.5 w-3.5 sm:mr-1" />
+      <span className="max-sm:sr-only">{label}</span>
     </Button>
   );
 }
@@ -88,7 +89,7 @@ export function PauseResumeButton({
     return (
       <Button variant="outline" size={size} onClick={onResume} disabled={disabled}>
         <Play className="h-3.5 w-3.5 sm:mr-1" />
-        <span className="hidden sm:inline">Resume</span>
+        <span className="max-sm:sr-only">Resume</span>
       </Button>
     );
   }
@@ -96,7 +97,7 @@ export function PauseResumeButton({
   return (
     <Button variant="outline" size={size} onClick={onPause} disabled={disabled}>
       <Pause className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">Pause</span>
+      <span className="max-sm:sr-only">Pause</span>
     </Button>
   );
 }
@@ -120,7 +121,7 @@ export function ClearErrorButton({
       aria-label="Clear error and return agent to idle"
     >
       <CheckCircle2 className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">Clear error</span>
+      <span className="max-sm:sr-only">Clear error</span>
     </Button>
   );
 }
@@ -418,7 +419,7 @@ export function AgentActionButtons({
         title={workActionsDisabled ? workActionsDisabledReason : undefined}
       >
         <Plus className="h-3.5 w-3.5 sm:mr-1" />
-        <span className="hidden sm:inline">{assignLabel}</span>
+        <span className="max-sm:sr-only">{assignLabel}</span>
       </Button>
       {showRun && <RunButton
         onClick={async () => {
