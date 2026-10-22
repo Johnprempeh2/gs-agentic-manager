@@ -957,6 +957,8 @@ async function startServerWithDatabaseTeardown(
       process.env.GSAM_LIVE_BACKUP_STATE_FILE ||
       resolve(resolvePaperclipInstanceRoot(), "data", "health", "live-backup.json"),
     maxAgeHours: Math.max(1, Number(process.env.GSAM_LIVE_BACKUP_MAX_AGE_HOURS) || 30),
+    // The USB drive copy (GRE-1950): warn after two nights without a good one.
+    offsiteMaxAgeHours: Math.max(1, Number(process.env.GSAM_LIVE_BACKUP_OFFSITE_MAX_AGE_HOURS) || 48),
   };
   let databaseBackupInFlight = false;
   const runServerDatabaseBackup = async (

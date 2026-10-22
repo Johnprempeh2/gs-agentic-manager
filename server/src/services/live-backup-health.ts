@@ -4,6 +4,10 @@ import { join } from "node:path";
 // Health of the nightly live backup (scripts/live-backup/live-backup.sh, GRE-1930). The script writes a
 // small state file that names the backup folder and the result of its last run. The archives themselves
 // are checked here, so a state file that says "ok" cannot hide a missing or old archive.
+//
+// The off-machine copy (GRE-1950) goes to a USB drive that may be unplugged when the server looks, so it is
+// judged by the time of the last good copy the script recorded. The script counts a copy as good only after
+// it reads it back from the drive.
 
 export type LiveBackupHealthWarningCode =
   | "live_backup_check_failed"
@@ -13,7 +17,9 @@ export type LiveBackupHealthWarningCode =
   | "live_backup_files_missing"
   | "live_backup_files_stale"
   | "live_backup_secrets_key_missing"
-  | "live_backup_secrets_key_stale";
+  | "live_backup_secrets_key_stale"
+  | "live_backup_offsite_missing"
+  | "live_backup_offsite_stale";
 
 export type LiveBackupHealthWarning = {
   code: LiveBackupHealthWarningCode;
@@ -38,14 +44,26 @@ export type LiveBackupHealthStatus = {
   databaseDump: LiveBackupArtifact | null;
   filesArchive: LiveBackupArtifact | null;
   secretsKeyArchive: LiveBackupArtifact | null;
-  // The off-machine copy (GRE-1929 part 2). Reported as the script records it.
-  offsite: { status: string; lastCopyAt: string | null };
+  offsite: LiveBackupOffsite;
   warnings: LiveBackupHealthWarning[];
+};
+
+// The off-machine copy. status is the last run's attempt: "ok", "failed", "off", or "not_configured" from a
+// script older than GRE-1950. lastCopyAt is the last good copy, kept across failed attempts.
+export type LiveBackupOffsite = {
+  status: string;
+  dir: string | null;
+  lastCopyAt: string | null;
+  lastCopyAgeHours: number | null;
+  failure: string | null;
+  maxAgeHours: number;
 };
 
 export type InspectLiveBackupHealthOptions = {
   stateFile: string;
   maxAgeHours: number;
+  // Warn when there is no good off-machine copy this recent. Default 48.
+  offsiteMaxAgeHours?: number;
   now?: Date;
 };
 
@@ -60,7 +78,7 @@ type StateFile = {
   finishedAt?: unknown;
   ok?: unknown;
   failure?: unknown;
-  offsite?: { status?: unknown; lastCopyAt?: unknown } | null;
+  offsite?: { status?: unknown; dir?: unknown; lastCopyAt?: unknown; failure?: unknown } | null;
 };
 
 function roundHours(value: number): number {
@@ -89,6 +107,7 @@ function newestArtifact(names: string[], dir: string, prefix: string, suffix: st
 export function inspectLiveBackupHealth(opts: InspectLiveBackupHealthOptions): LiveBackupHealthStatus {
   const now = opts.now ?? new Date();
   const maxAgeHours = Math.max(1, opts.maxAgeHours);
+  const offsiteMaxAgeHours = Math.max(1, opts.offsiteMaxAgeHours ?? 48);
   const result: LiveBackupHealthStatus = {
     status: "ok",
     stateFile: opts.stateFile,
@@ -98,7 +117,14 @@ export function inspectLiveBackupHealth(opts: InspectLiveBackupHealthOptions): L
     databaseDump: null,
     filesArchive: null,
     secretsKeyArchive: null,
-    offsite: { status: "not_configured", lastCopyAt: null },
+    offsite: {
+      status: "not_configured",
+      dir: null,
+      lastCopyAt: null,
+      lastCopyAgeHours: null,
+      failure: null,
+      maxAgeHours: offsiteMaxAgeHours,
+    },
     warnings: [],
   };
 
@@ -116,14 +142,32 @@ export function inspectLiveBackupHealth(opts: InspectLiveBackupHealthOptions): L
       ok: state.ok === true,
       failure: stringOrNull(state.failure),
     };
+    const lastCopyAt = stringOrNull(state.offsite?.lastCopyAt);
+    const lastCopyMs = lastCopyAt ? Date.parse(lastCopyAt) : Number.NaN;
     result.offsite = {
       status: stringOrNull(state.offsite?.status) ?? "not_configured",
-      lastCopyAt: stringOrNull(state.offsite?.lastCopyAt),
+      dir: stringOrNull(state.offsite?.dir),
+      lastCopyAt,
+      lastCopyAgeHours: Number.isNaN(lastCopyMs) ? null : roundHours((now.getTime() - lastCopyMs) / 3_600_000),
+      failure: stringOrNull(state.offsite?.failure),
+      maxAgeHours: offsiteMaxAgeHours,
     };
     if (!result.lastRun.ok) {
       result.warnings.push({
         code: "live_backup_last_run_failed",
         message: `Last nightly backup run had a failure: ${result.lastRun.failure ?? "no reason recorded"}.`,
+      });
+    }
+    const offsiteReason = result.offsite.failure ? ` Last attempt: ${result.offsite.failure}.` : "";
+    if (result.offsite.lastCopyAgeHours === null) {
+      result.warnings.push({
+        code: "live_backup_offsite_missing",
+        message: `No good off-machine backup copy is recorded (status ${result.offsite.status}).${offsiteReason}`,
+      });
+    } else if (result.offsite.lastCopyAgeHours > offsiteMaxAgeHours) {
+      result.warnings.push({
+        code: "live_backup_offsite_stale",
+        message: `Last good off-machine backup copy is ${result.offsite.lastCopyAgeHours}h old, exceeding ${offsiteMaxAgeHours}h.${offsiteReason}`,
       });
     }
     if (!backupDir) throw new Error(`no backupDir in ${opts.stateFile}`);
