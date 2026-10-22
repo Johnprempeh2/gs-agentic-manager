@@ -308,6 +308,44 @@ describe("IssueRow", () => {
     act(() => root.unmount());
   });
 
+  it("shows the key and status word on phone task rows, with the time in its own column", () => {
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <IssueRow
+          issue={createIssue({ identifier: "GRE-42", status: "in_progress" })}
+          presentation="task"
+          showIdentifier={false}
+          mobileTitleMeta="5m ago"
+        />,
+      );
+    });
+
+    const row = container.querySelector('[data-slot="task-row"]');
+    const keyStatus = row?.querySelector('[data-slot="task-row-phone-key-status"]');
+    const time = row?.querySelector('[data-slot="task-row-time-phone"]');
+    const cluster = row?.querySelector('[data-slot="task-row-title-cluster"]');
+    expect(keyStatus?.textContent).toBe("GRE-42·In progress");
+    expect(keyStatus?.className).toContain("sm:hidden");
+    expect(row?.querySelector('[data-slot="task-row-title"]')?.className).toContain("line-clamp-2");
+    expect(time?.textContent).toBe("5m ago");
+    expect(time?.className).toContain("w-14");
+    expect(cluster?.contains(time ?? null)).toBe(false);
+
+    act(() => {
+      root.render(
+        <IssueRow
+          issue={createIssue({ status: "in_review", externalConversationState: "waiting" })}
+          presentation="task"
+        />,
+      );
+    });
+    expect(container.querySelector('[data-slot="task-row-phone-key-status"]')?.textContent).toBe("PAP-1·Idle");
+    expect(container.querySelector('[data-slot="task-row-time-phone"]')).toBeNull();
+
+    act(() => root.unmount());
+  });
+
   it("keeps the canonical archive action within the shared task-row height", () => {
     const root = createRoot(container);
 

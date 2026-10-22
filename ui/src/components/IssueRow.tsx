@@ -20,7 +20,7 @@ import {
   readRecoveryRetryLineage,
   type RecoveryLivenessContext,
 } from "../lib/recovery-lineage";
-import { StatusIcon, blockedAttentionLabel } from "./StatusIcon";
+import { StatusIcon, blockedAttentionLabel, statusDisplayLabel } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
@@ -409,7 +409,7 @@ export function IssueRow({
           {/* Phone: the title grows from a zero basis beside the priority arrow
               and owner mark (up to two lines), so neither sits alone on a line;
               it only drops to its own line when chips leave it under 8rem. The
-              notes and time wrap onto the lines under it. */}
+              key, status word and notes wrap onto the lines under it. */}
           <span data-slot="task-row-title-cluster" className="flex min-w-0 flex-1 items-baseline gap-1.5 max-sm:flex-wrap max-sm:gap-y-1 sm:items-center">
             {/* Leading slot convention: status, then priority, then the title. */}
             {priorityMarker}
@@ -425,6 +425,14 @@ export function IssueRow({
               {issue.title}{titleSuffix}
             </span>
             {ownerLabel}
+            {/* Phone: the key and status word start their own line under the
+                title, so rows can be told apart without reading the glyph. */}
+            <span aria-hidden="true" className="basis-full sm:hidden" />
+            <span data-slot="task-row-phone-key-status" className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:hidden">
+              <span className="font-mono">{identifier}</span>
+              <span aria-hidden="true">&middot;</span>
+              <span className="font-medium text-foreground">{statusDisplayLabel(issue.status, issue.externalConversationState)}</span>
+            </span>
             {strategicBadge}
             {overdueBadge}
             {/* In a narrow card (the dashboard column) these notes crowd the title out;
@@ -433,11 +441,6 @@ export function IssueRow({
               <span className="contents @max-xl:hidden">
                 {blockedNote}
                 {recoveryIndicator}
-              </span>
-            ) : null}
-            {mobileTitleMeta ? (
-              <span className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground sm:hidden">
-                {mobileTitleMeta}
               </span>
             ) : null}
           </span>
@@ -451,6 +454,14 @@ export function IssueRow({
             <span data-slot="task-row-actions-phone" className="flex flex-wrap items-center gap-1 sm:hidden">{actions}</span>
           ) : null}
         </span>
+
+        {/* Phone: the time keeps its own fixed column at the top right, so it
+            lines up from row to row however the title and notes wrap. */}
+        {mobileTitleMeta ? (
+          <span data-slot="task-row-time-phone" className="w-14 shrink-0 whitespace-nowrap pt-px text-right text-xs text-muted-foreground sm:hidden">
+            {mobileTitleMeta}
+          </span>
+        ) : null}
 
         <span
           data-slot="task-row-trailing"
