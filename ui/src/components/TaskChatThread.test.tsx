@@ -3433,6 +3433,76 @@ describe("TaskChatThread mobile composer dock (PAP-495)", () => {
   });
 });
 
+describe("TaskChatThread phone request prompt (GRE-1920)", () => {
+  const query = (testId: string) =>
+    container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+
+  it("shows new input as a one-line prompt that opens the full card and can be dismissed", async () => {
+    sidebarState.isMobile = true;
+
+    render(
+      <TaskChatThread
+        comments={[]}
+        interactions={[
+          questionInteraction(
+            "question-phone",
+            "Approve the pilot start date",
+            "2026-08-25T18:00:01.000Z",
+          ),
+        ]}
+        onAdd={async () => {}}
+        onSubmitInteractionAnswers={async () => {}}
+      />,
+    );
+
+    expect(query("task-chat-composer-takeover")).toBeNull();
+    expect(query("task-chat-pending-input-indicator")?.textContent).toContain(
+      "Approve the pilot start date",
+    );
+
+    await act(async () => query("task-chat-pending-input-review")?.click());
+    expect(query("task-chat-composer-takeover")?.textContent).toContain(
+      "Approve the pilot start date",
+    );
+
+    await act(async () =>
+      query("task-chat-composer-takeover-header")
+        ?.querySelector<HTMLButtonElement>('button[aria-label^="Dismiss"]')
+        ?.click(),
+    );
+    expect(query("task-chat-composer-takeover")).toBeNull();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Dismiss request prompt"]')
+        ?.click(),
+    );
+    expect(query("task-chat-pending-input-indicator")).toBeNull();
+
+    await act(async () => query("task-chat-pending-input-reopen")?.click());
+    expect(query("task-chat-composer-takeover")).not.toBeNull();
+  });
+
+  it("still opens the full card straight away on a laptop", () => {
+    render(
+      <TaskChatThread
+        comments={[]}
+        interactions={[
+          questionInteraction(
+            "question-laptop",
+            "Approve the pilot start date",
+            "2026-08-25T18:00:01.000Z",
+          ),
+        ]}
+        onAdd={async () => {}}
+        onSubmitInteractionAnswers={async () => {}}
+      />,
+    );
+
+    expect(query("task-chat-composer-takeover")).not.toBeNull();
+  });
+});
+
 describe("TaskChatThread live transcript", () => {
   it("places the turn status island below composer accessories and hides it when the turn is terminal", () => {
     nativeTranscriptState.transcriptByRun.set("run-status", [

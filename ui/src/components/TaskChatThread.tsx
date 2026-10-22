@@ -2500,7 +2500,14 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     }
     return result;
   }, [interactions, pendingRuntimeRequest]);
-  const [takeoverMode, setTakeoverMode] = useState<"open" | "normal">("open");
+  const { isMobile } = useSidebar();
+  // On a phone the full card would cover the thread John reads to decide
+  // (GRE-1920), so new input arrives as a one-line prompt; "Review request"
+  // opens the full card.
+  const [takeoverMode, setTakeoverMode] = useState<"open" | "normal">(
+    isMobile ? "normal" : "open",
+  );
+  const [pendingPromptDismissed, setPendingPromptDismissed] = useState(false);
   const [selectedPendingKey, setSelectedPendingKey] = useState<string | null>(
     null,
   );
@@ -2518,8 +2525,11 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         ? current
         : (pendingComposerInputs[0]?.key ?? null),
     );
-    if (hasNewInput) setTakeoverMode("open");
-  }, [pendingComposerInputs]);
+    if (hasNewInput) {
+      setTakeoverMode(isMobile ? "normal" : "open");
+      setPendingPromptDismissed(false);
+    }
+  }, [isMobile, pendingComposerInputs]);
   const selectedPendingInput =
     pendingComposerInputs.find((input) => input.key === selectedPendingKey) ??
     pendingComposerInputs[0] ??
@@ -2793,7 +2803,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   // in document flow instead (the same scroll={false} path the previews use)
   // and track auto-follow against window scroll. Both paths include takeover
   // state so opening or closing composer input preserves bottom pinning.
-  const { isMobile } = useSidebar();
+  // (isMobile is read above, next to the takeover state.)
   const initialCommentWindow = useRef<{
     oldestAt: number;
     ids: Set<string>;
@@ -3225,7 +3235,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                           ? {
                               count: pendingComposerInputs.length,
                               label: `${pendingComposerInputs.length} pending input${pendingComposerInputs.length === 1 ? "" : "s"}`,
+                              title: selectedPendingInput?.label,
                               onOpen: openPendingTakeover,
+                              dismissed: pendingPromptDismissed,
+                              onDismiss: () => setPendingPromptDismissed(true),
                             }
                           : null
                       }

@@ -152,7 +152,12 @@ interface TaskChatComposerProps {
   pendingTakeover?: {
     count: number;
     label?: string;
+    /** What is being asked, shown on the one-line prompt. */
+    title?: string;
     onOpen: () => void;
+    /** Folds the prompt into a small button in the action row. */
+    dismissed?: boolean;
+    onDismiss?: () => void;
   } | null;
   runnerGoalCapability?: RunnerGoalCapability | null;
   onRunnerGoalCommand?: (
@@ -1292,21 +1297,44 @@ export function TaskChatComposer({
         </section>
       ) : (
         <>
-          {pendingTakeover || takeover ? (
-            <button
-              type="button"
-              className="mb-2 flex w-full items-center gap-2 rounded-md bg-muted/50 px-2.5 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={pendingTakeover?.onOpen}
+          {(pendingTakeover || takeover) && !pendingTakeover?.dismissed ? (
+            <div
+              className="mb-2 flex min-w-0 items-center gap-2 rounded-md bg-muted/50 py-1 pl-2.5 pr-1 text-sm"
               data-testid="task-chat-pending-input-indicator"
             >
-              <CircleHelp className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">
-                {pendingTakeover?.label ?? takeover?.label ?? "Pending input"}
+              <CircleHelp className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-foreground">
+                {pendingTakeover?.title ?? pendingTakeover?.label ?? takeover?.label ?? "Pending input"}
               </span>
-              <span className="shrink-0 font-medium">
-                {pendingTakeover?.count ?? takeover?.pendingCount ?? 1} pending
-              </span>
-            </button>
+              {(pendingTakeover?.count ?? takeover?.pendingCount ?? 1) > 1 ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {pendingTakeover?.count ?? takeover?.pendingCount} pending
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2 text-xs"
+                disabled={!pendingTakeover}
+                onClick={pendingTakeover?.onOpen}
+                data-testid="task-chat-pending-input-review"
+              >
+                Review request
+              </Button>
+              {pendingTakeover?.onDismiss ? (
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label="Dismiss request prompt"
+                  onClick={pendingTakeover.onDismiss}
+                >
+                  <X aria-hidden />
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           {pause && conversationMode ? (
             <div className="space-y-2">
@@ -1453,6 +1481,19 @@ export function TaskChatComposer({
               className="h-8 w-8"
               testId="task-chat-composer-dictation"
             />
+            {pendingTakeover?.dismissed ? (
+              <button
+                type="button"
+                onClick={pendingTakeover.onOpen}
+                title="Review request"
+                aria-label={`Review request: ${pendingTakeover.title ?? pendingTakeover.label ?? "pending input"}`}
+                className="flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                data-testid="task-chat-pending-input-reopen"
+              >
+                <CircleHelp className="h-4 w-4" aria-hidden />
+                {pendingTakeover.count}
+              </button>
+            ) : null}
 
             {queuedEdit ? (
               <span className="px-1 text-xs font-medium text-muted-foreground">
