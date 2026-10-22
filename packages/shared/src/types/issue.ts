@@ -455,7 +455,11 @@ export interface IssueBlockerAttention {
   pendingFinalizeBlockerIssueIds?: string[];
   sampleBlockerIdentifier: string | null;
   sampleStalledBlockerIdentifier: string | null;
-  /** True when a blocker or one of its open descendants is actively progressing. */
+  /**
+   * True when a blocker or one of its open descendants is actively progressing,
+   * or, for a blocked task with no open blockers, when the task itself has a
+   * run, a pending ask of a person, or a scheduled monitor.
+   */
   blockingTreeLive?: boolean;
   /** The direct blocker whose chain contains the sampled terminal blocker. */
   directBlockerIssueId?: string | null;

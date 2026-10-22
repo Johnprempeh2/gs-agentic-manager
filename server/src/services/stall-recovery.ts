@@ -18,7 +18,16 @@ import { isReleaseTask } from "./release-task.js";
 export const STALL_RECOVERY_ORIGIN_KIND = "decision_stall_recovery";
 const CLOSED = ["done", "cancelled"];
 
-type Stall = { id: string; identifier: string | null; title: string; holdsUp: number };
+type Stall = { id: string; identifier: string | null; title: string; holdsUp: number; state: string };
+
+/**
+ * What a stall looked like when it was routed. statusVersion moves on every
+ * status change, re-block and reassignment, but not on comments, so a lead's
+ * note on the task does not count as a change.
+ */
+function stallState(row: { statusVersion: number; assigneeAgentId: string | null }) {
+  return `${row.statusVersion}:${row.assigneeAgentId ?? ""}`;
+}
 
 export function stallRecoveryDescription(stalls: Stall[]) {
   return [
@@ -46,12 +55,24 @@ export function stallRecoveryService(db: Db, deps: { heartbeat?: IssueAssignment
     }
     if (holdsUp.size === 0) return [];
     const rows = await db
-      .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
+      .select({
+        id: issues.id,
+        identifier: issues.identifier,
+        title: issues.title,
+        statusVersion: issues.statusVersion,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
       .from(issues)
       .where(and(eq(issues.companyId, companyId), inArray(issues.id, [...holdsUp.keys()]), isNull(issues.assigneeUserId)));
     return rows
       .filter((row) => !isReleaseTask(row.title))
-      .map((row) => ({ ...row, holdsUp: holdsUp.get(row.id) ?? 0 }))
+      .map((row) => ({
+        id: row.id,
+        identifier: row.identifier,
+        title: row.title,
+        holdsUp: holdsUp.get(row.id) ?? 0,
+        state: stallState(row),
+      }))
       .sort((left, right) => (left.identifier ?? left.id).localeCompare(right.identifier ?? right.id));
   }
 
@@ -69,19 +90,26 @@ export function stallRecoveryService(db: Db, deps: { heartbeat?: IssueAssignment
       ))
       .limit(1);
     // A stall already handed to the open recovery task is not handed again.
-    const routedRows = open
-      ? await db
-        .select({ issueId: activityLog.entityId })
-        .from(activityLog)
-        .where(and(
-          eq(activityLog.companyId, companyId),
-          eq(activityLog.action, STALL_ROUTED_ACTION),
-          inArray(activityLog.entityId, stalls.map((stall) => stall.id)),
-          sql`${activityLog.details} ->> 'recoveryIssueId' = ${open.id}`,
-        ))
-      : [];
-    const routed = new Set(routedRows.map((row) => row.issueId));
-    const fresh = stalls.filter((stall) => !routed.has(stall.id));
+    // Once that task is closed, a stall goes back only if its state changed
+    // since it was routed; if not, the Decisions gate shows it to a person a
+    // day after routing (GRE-1868).
+    const routedRows = await db
+      .select({
+        issueId: activityLog.entityId,
+        recoveryIssueId: sql<string | null>`${activityLog.details} ->> 'recoveryIssueId'`,
+        state: sql<string | null>`${activityLog.details} ->> 'state'`,
+      })
+      .from(activityLog)
+      .where(and(
+        eq(activityLog.companyId, companyId),
+        eq(activityLog.action, STALL_ROUTED_ACTION),
+        inArray(activityLog.entityId, stalls.map((stall) => stall.id)),
+      ));
+    const stateById = new Map(stalls.map((stall) => [stall.id, stall.state]));
+    const handled = new Set(routedRows
+      .filter((row) => (open && row.recoveryIssueId === open.id) || row.state === stateById.get(row.issueId))
+      .map((row) => row.issueId));
+    const fresh = stalls.filter((stall) => !handled.has(stall.id));
     if (fresh.length === 0) return { routed: 0 };
     const leadAgentId = await findLeadAgentId(db, companyId);
     if (!leadAgentId) return { routed: 0 };
@@ -113,7 +141,7 @@ export function stallRecoveryService(db: Db, deps: { heartbeat?: IssueAssignment
         entityId: stall.id,
         issueId: stall.id,
         agentId: leadAgentId,
-        details: { recoveryIssueId: recovery.id, identifier: stall.identifier },
+        details: { recoveryIssueId: recovery.id, identifier: stall.identifier, state: stall.state },
       });
     }
     if (deps.heartbeat) {

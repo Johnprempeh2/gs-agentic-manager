@@ -369,9 +369,9 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       path: `/api/issues/${seeded.gre138}/recovery-actions/resolve`,
       body: expect.objectContaining({ actionId: seeded.recoveryId, outcome: "restored", sourceIssueStatus: "todo" }),
     }]);
-    // Two connection requests and the recovery (cause fixed), plus GRE-138's
-    // blocker row, which blocks no other task.
-    expect(after.staleCleared).toBe(4);
+    // Two connection requests and the recovery (cause fixed). GRE-138 has no
+    // blocker row to clear: its own pending card already waits on a person (GRE-1868).
+    expect(after.staleCleared).toBe(3);
   });
 
   it("keeps the cards when the connection was saved before the failure", async () => {
@@ -428,7 +428,8 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
 
   it("keeps Retry on a merged card when the fixed connection left the task blocked", async () => {
     const seeded = await seedLiveScenario({ withQuestion: true });
-    // GRE-139 waits on GRE-138, so GRE-138 also carries a blocked row.
+    // GRE-139 waits on GRE-138. GRE-138 already asks the person a question,
+    // so it is not also a stalled blocker (GRE-1868).
     const waiting = randomUUID();
     await db.insert(issues).values({
       id: waiting, companyId: seeded.companyId, identifier: "GRE-139", issueNumber: 139, title: "Ledger export", status: "blocked", priority: "high", assigneeAgentId: seeded.peerId,
@@ -438,8 +439,8 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
 
     const card = cardFor(await build(seeded.companyId), seeded.gre138)!;
 
-    // The question and the blocker keep the card; the connection and recovery rows are gone.
-    expect(card.kinds).toEqual(["question", "blocked"]);
+    // The question keeps the card; the connection and recovery rows are gone.
+    expect(card.kinds).toEqual(["question"]);
     expect(action(card, "retry").requests).toEqual([{
       method: "POST",
       path: `/api/issues/${seeded.gre138}/recovery-actions/resolve`,
@@ -1546,6 +1547,56 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       for (const text of [card.decision, card.why.text, ...card.actions.map((candidate) => candidate.description)]) {
         expect(text).not.toMatch(/[–—]/);
       }
+    });
+
+    it("does not route a blocked task that already asks a person (GRE-1868)", async () => {
+      const seeded = await seedKinds();
+      const { stallRecoveryService } = await import("../services/stall-recovery.js");
+      await db.insert(issueThreadInteractions).values({
+        companyId: seeded.companyId, issueId: seeded.stall, kind: "ask_user_questions", status: "pending", title: "Which key?", createdByAgentId: seeded.flintId,
+        payload: { version: 1, questions: [{ id: "key", prompt: "Which staging key should Flint use?", selectionMode: "single", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }] },
+      });
+
+      expect(await stallRecoveryService(db).stallsOf(seeded.companyId)).toEqual([]);
+      expect(await stallRecoveryService(db).routeCompany(seeded.companyId)).toEqual({ routed: 0 });
+      expect(await db.select().from(issues).where(eq(issues.originKind, "decision_stall_recovery"))).toHaveLength(0);
+    });
+
+    it("does not route an in-review blocker that has a scheduled monitor (GRE-1868)", async () => {
+      const seeded = await seedKinds();
+      const { stallRecoveryService } = await import("../services/stall-recovery.js");
+      const [measure, root] = [randomUUID(), randomUUID()];
+      await db.insert(issues).values([
+        { id: measure, companyId: seeded.companyId, identifier: "GRE-1819", issueNumber: 1819, title: "Verify R1 = 0 for two weeks", status: "in_review", priority: "medium", assigneeAgentId: seeded.lintelId },
+        { id: root, companyId: seeded.companyId, identifier: "GRE-3", issueNumber: 3, title: "Keep R1 at zero", status: "blocked", priority: "medium", assigneeAgentId: seeded.everestId },
+      ]);
+      await db.insert(issueRelations).values({ companyId: seeded.companyId, issueId: measure, relatedIssueId: root, type: "blocks" });
+      // No run and no monitor: a real stall.
+      const stallIds = async () => (await stallRecoveryService(db).stallsOf(seeded.companyId)).map((stall) => stall.id);
+      expect(await stallIds()).toEqual([seeded.stall, measure]);
+
+      // The seeded GRE-1770 stall stays; only the monitored blocker drops out.
+      await db.update(issues).set({ monitorNextCheckAt: new Date(Date.now() + 6 * 24 * HOUR) }).where(eq(issues.id, measure));
+      expect(await stallIds()).toEqual([seeded.stall]);
+    });
+
+    it("does not route the same stall again after its recovery task closes, unless the stall changed (GRE-1868)", async () => {
+      const seeded = await seedKinds();
+      const { stallRecoveryService } = await import("../services/stall-recovery.js");
+      const closeRecovery = () => db.update(issues).set({ status: "done" }).where(eq(issues.originKind, "decision_stall_recovery"));
+
+      expect(await stallRecoveryService(db).routeCompany(seeded.companyId)).toEqual({ routed: 1 });
+      await closeRecovery();
+      // Everest notes it on the task; a comment is not a change of state.
+      await db.insert(issueComments).values({ companyId: seeded.companyId, issueId: seeded.stall, authorAgentId: seeded.everestId, body: "Asked Flint for the key." });
+      expect(await stallRecoveryService(db).routeCompany(seeded.companyId)).toEqual({ routed: 0 });
+      expect(await db.select().from(issues).where(eq(issues.originKind, "decision_stall_recovery"))).toHaveLength(1);
+
+      // It moved and then stuck again: the lead gets it once more.
+      await db.update(issues).set({ status: "todo" }).where(eq(issues.id, seeded.stall));
+      await db.update(issues).set({ status: "blocked" }).where(eq(issues.id, seeded.stall));
+      expect(await stallRecoveryService(db).routeCompany(seeded.companyId)).toEqual({ routed: 1 });
+      expect(await db.select().from(issues).where(eq(issues.originKind, "decision_stall_recovery"))).toHaveLength(2);
     });
 
     it("reads the recommendation from the owning agent's latest comment and marks that option", async () => {
