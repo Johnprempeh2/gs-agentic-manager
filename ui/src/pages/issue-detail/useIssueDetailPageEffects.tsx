@@ -1,7 +1,7 @@
 import type { useNavigationType } from "@/lib/router";
 import { Settings as ChatSettings } from "lucide-react";
 import { agentDetailHref } from "../agent-detail-navigation";
-import { deriveInitials } from "@/components/Identity";
+import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useCallback, useLayoutEffect, useRef } from "react";
 import { Link } from "@/lib/router";
 import {
@@ -23,7 +23,6 @@ import { IssuePanelContexts } from "./IssuePanelContexts";
 import { useAttachmentPreview } from "../../components/AttachmentPreviewPanel";
 import type { GalleryMediaItem } from "../../components/ImageGalleryModal";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Agent, Issue, IssueAttachment, IssueWorkProduct } from "@greatstone/shared";
 import { shouldScrollIssueDetailToTopOnNavigation } from "./helpers";
@@ -166,7 +165,7 @@ export function useIssueDetailPageEffects({
     if (conversationAgent) {
       setBreadcrumbs([{
         label: conversationAgent.name,
-        leading: <Avatar className="size-6 shrink-0"><AvatarFallback>{deriveInitials(conversationAgent.name)}</AvatarFallback></Avatar>,
+        leading: <AgentAvatar agent={conversationAgent} size={24} />,
         leadingKey: `agent:${conversationAgent.id}`,
         trailing: <Button variant="ghost" size="icon-xs" asChild aria-label={`Configure ${conversationAgent.name}`}><Link to={agentDetailHref(conversationAgent.id, "runtime")}><ChatSettings /></Link></Button>,
         trailingKey: `configure:${conversationAgent.id}`,
