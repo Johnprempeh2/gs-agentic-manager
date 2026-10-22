@@ -7,7 +7,7 @@ describe("describeAiCredentialLifetime (GRE-15)", () => {
     const lifetime = describeAiCredentialLifetime({ source: "imported_login", expiresAt: "2026-09-27T18:50:00.000Z" }, now);
     expect(lifetime?.tone).toBe("muted");
     expect(lifetime?.text).toContain("Short-lived token");
-    expect(lifetime?.text).toContain(new Date("2026-09-27T18:50:00.000Z").toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+    expect(lifetime?.text).toContain(new Date("2026-09-27T18:50:00.000Z").toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }));
     expect(lifetime?.text).toContain("claude setup-token gives a token that lasts about a year");
   });
   it("raises the tone within the warning hour and once expired", () => {

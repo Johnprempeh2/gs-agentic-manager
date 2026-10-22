@@ -1591,7 +1591,9 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       expect(mine.assignedTasks.map((task) => task.id)).toEqual([assigned]);
       expect(mine.count).toBe(5);
       // The listed items are exactly the number: cards outside At your desk, waits, expired questions.
-      expect(mine.decisions.filter((card) => !card.atDesk).length + mine.overdueWaits.length + (mine.expiredCards?.length ?? 0)).toBe(4);
+      const cardTasks = new Set(mine.decisions.map((card) => card.task?.id));
+      const cardlessWaits = mine.overdueWaits.filter((wait) => !cardTasks.has(wait.id));
+      expect(mine.decisions.filter((card) => !card.atDesk).length + cardlessWaits.length + (mine.expiredCards?.length ?? 0)).toBe(4);
 
       expect((await request(testApp).get(`/api/companies/${seeded.companyId}/decisions-feed/count`).expect(200)).body.count).toBe(4);
       expect((await request(testApp).get(`/api/companies/${seeded.companyId}/sidebar-badges`).expect(200)).body.decisions).toBe(4);

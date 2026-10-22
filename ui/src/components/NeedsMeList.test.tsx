@@ -134,6 +134,17 @@ describe("NeedsMeList (GRE-358)", () => {
     expect(row?.querySelector("a")?.getAttribute("href")).toBe("/issues/GRE-12");
   });
 
+  it("leaves out a wait that has a decision card: the card is the one row and the one count", () => {
+    const card = questionCard();
+    const wait = {
+      id: card.task!.id, identifier: card.task!.identifier, title: "Pick the release month", status: "blocked", priority: "high",
+      updatedAt: "2026-10-01T05:00:00.000Z", assigneeAgentId: "agent-1", owner: "board" as const, action: "John picks the month.",
+      waitingSinceAt: "2026-10-01T03:00:00.000Z", waitingForMs: 26 * 60 * 60 * 1000, recheckWokenAt: null,
+    };
+    render(<NeedsMeList needsMe={needsMe({ decisions: [card], assignedTasks: [], overdueWaits: [wait] })} includeAssigned={false} />);
+    expect(container.innerHTML).toBe("");
+  });
+
   it("formats wait ages in days and hours", () => {
     const hour = 60 * 60 * 1000;
     expect(formatWaitAge(5 * hour)).toBe("5h");

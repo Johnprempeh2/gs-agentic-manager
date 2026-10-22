@@ -26,7 +26,9 @@ export function formatWaitAge(ms: number) {
  * elsewhere. Renders nothing when there is nothing to show.
  */
 export function NeedsMeList({ needsMe, includeAssigned = true, title }: NeedsMeListProps) {
-  const waits = needsMe.overdueWaits ?? [];
+  // A wait with a decision card is shown (and counted) as that card.
+  const cardTaskIds = new Set(needsMe.decisions.map((card) => card.task?.id).filter(Boolean));
+  const waits = (needsMe.overdueWaits ?? []).filter((wait) => !cardTaskIds.has(wait.id));
   const tasks = includeAssigned ? needsMe.assignedTasks : [];
   // Questions from agents that expired before anyone answered them.
   const expiredCards = needsMe.expiredCards ?? [];

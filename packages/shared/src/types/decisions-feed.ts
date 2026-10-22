@@ -327,7 +327,8 @@ export interface NeedsMe {
   assignedTasks: NeedsMeTask[];
   /**
    * Waits on the user or the board older than 24h, oldest first. A task here
-   * is not repeated in `assignedTasks` and has no decision card.
+   * is not repeated in `assignedTasks`. It may also have a decision card:
+   * then it is counted once, as the card, and lists show the card.
    */
   overdueWaits: NeedsMeOverdueWait[];
   /**

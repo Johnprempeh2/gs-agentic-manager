@@ -138,7 +138,8 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
         // Releases run from Claude, not from here (release-task.ts).
         .filter((task) => !cardTaskIds.has(task.id) && !waitIds.has(task.id) && !isReleaseTask(task.title))
         .map((task) => ({ ...task, updatedAt: task.updatedAt.toISOString() }));
-      // A wait that already has a card is that card: listed and counted once.
+      // A wait that already has a card is counted once, as the card. The
+      // wait stays in `overdueWaits` for its age; lists skip it beside its card.
       const uncountedWaits = overdueWaits.filter((wait) => !cardTaskIds.has(wait.id));
       // One expired question per task, newest first, and none for a task
       // already listed above.
@@ -176,7 +177,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
         assignedTaskCount: assignedTasks.length,
         decisions: feed.cards,
         assignedTasks,
-        overdueWaits: uncountedWaits,
+        overdueWaits,
         expiredCards,
       };
     },

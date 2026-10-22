@@ -128,7 +128,8 @@ describe("AskEverestPanel", () => {
   it("answers a decision question from Needs you", async () => {
     act(() => openAskEverest("What do I need to decide?"));
     await waitFor(() => {
-      expect(container.textContent).toContain("1 thing needs you: 1 decision.");
+      // The headline number is the one needs-you count.
+      expect(container.textContent).toContain("1 thing needs you.");
       expect(container.textContent).toContain("Approve the Indago fee");
     });
     expect(mocks.needsMe).toHaveBeenCalledWith("company-1");
