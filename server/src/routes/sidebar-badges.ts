@@ -5,7 +5,7 @@ import { inboxDismissals, joinRequests } from "@greatstone/db";
 import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
 import { dashboardService } from "../services/dashboard.js";
-import { decisionsFeedService } from "../services/decisions-feed.js";
+import { needsMeService } from "../services/needs-me.js";
 import { collapseDuplicatePendingHumanJoinRequests } from "../lib/join-request-dedupe.js";
 import { assertCompanyAccess } from "./authz.js";
 
@@ -30,7 +30,7 @@ export function sidebarBadgeRoutes(db: Db) {
   const svc = sidebarBadgeService(db);
   const access = accessService(db);
   const dashboard = dashboardService(db);
-  const decisionsFeed = decisionsFeedService(db);
+  const needsMe = needsMeService(db);
 
   router.get("/companies/:companyId/sidebar-badges", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -91,7 +91,8 @@ export function sidebarBadgeRoutes(db: Db) {
       (summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80 ? 1 : 0);
     badges.inbox = badges.failedRuns + alertsCount + badges.joinRequests + badges.approvals;
     if (req.actor.type === "board" && req.actor.userId) {
-      badges.decisions = (await decisionsFeed.build(companyId, { userId: req.actor.userId })).count;
+      // The one "needs you" number (NeedsMe.decisionCount).
+      badges.decisions = (await needsMe.build(companyId, { userId: req.actor.userId })).decisionCount;
     }
 
     res.json(badges);

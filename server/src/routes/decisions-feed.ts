@@ -56,8 +56,9 @@ export function decisionsFeedRoutes(
     const companyId = req.params.companyId as string;
     const userId = boardUserId(req, res, companyId);
     if (!userId) return;
-    const feed = await feeds.build(companyId, { userId });
-    const body: DecisionsFeedCount = { companyId, generatedAt: feed.generatedAt, count: feed.count };
+    // The one "needs you" number, the same build every surface reads.
+    const mine = await needsMe.build(companyId, { userId });
+    const body: DecisionsFeedCount = { companyId, generatedAt: mine.generatedAt, count: mine.decisionCount };
     res.json(body);
   });
 

@@ -4,13 +4,13 @@ import { Loader2 } from "lucide-react";
 import { statusCardsApi } from "@/api/statusCards";
 import { Button } from "@/components/ui/button";
 import { queryKeys } from "@/lib/queryKeys";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatShortDate } from "@/lib/utils";
 import { formatCents, formatTokens, rollupUpdates } from "./format";
 import type { StatusCardView } from "./types";
 
 function shortDate(iso: string | null): string {
   if (!iso) return "never";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return formatShortDate(iso);
 }
 
 export function ArchivedStatusCardRow({

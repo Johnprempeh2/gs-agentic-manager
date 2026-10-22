@@ -8,6 +8,7 @@ import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDateTime } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ErrorState as SharedErrorState, errorStateMessage } from "@/components/ErrorState";
 import { ApiError } from "@/api/client";
@@ -133,7 +134,7 @@ export function RelativeTime({ value }: { value: Date | string | null | undefine
     text = isFuture ? `in ${value}` : `${value} ago`;
   }
   return (
-    <span title={date.toLocaleString()} className="text-muted-foreground">
+    <span title={formatDateTime(date)} className="text-muted-foreground">
       {text}
     </span>
   );

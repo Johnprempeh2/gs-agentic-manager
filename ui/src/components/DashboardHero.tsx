@@ -38,7 +38,7 @@ export function DashboardHero({ companyName, now = new Date() }: { companyName: 
     return () => tide.destroy();
   }, []);
 
-  const dateLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(now);
+  const dateLabel = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(now);
 
   return (
     <section aria-label="Welcome" className="gs-dash-hero relative overflow-hidden rounded-xl border">

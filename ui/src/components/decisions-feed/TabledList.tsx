@@ -4,15 +4,12 @@ import type { Issue } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { decisionsFeedApi } from "../../api/decisionsFeed";
 import { queryKeys } from "../../lib/queryKeys";
+import { formatWeekdayShortDate } from "../../lib/utils";
 import { Button } from "../ui/button";
 
 export function tabledReturnLabel(issue: Pick<Issue, "tabledUntil">): string {
   if (!issue.tabledUntil) return "Until you bring it back";
-  return `Comes back ${new Date(issue.tabledUntil).toLocaleDateString(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  })}`;
+  return `Comes back ${formatWeekdayShortDate(issue.tabledUntil)}`;
 }
 
 export function useTabledIssues(companyId: string | null | undefined, enabled = true) {

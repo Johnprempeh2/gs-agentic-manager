@@ -29,7 +29,7 @@ import {
   isInlineResolvable,
   sourceMeta,
 } from "../lib/attention";
-import { cn, relativeTime } from "../lib/utils";
+import { cn, relativeTime, formatDateTime } from "../lib/utils";
 import { DecisionTriageStrip } from "./DecisionTriageStrip";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { StatusGlyph } from "./StatusGlyph";
@@ -270,7 +270,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
           {isHidden && snoozedUntil ? (
             <span
               className="text-(length:--text-nano) text-muted-foreground"
-              title={`Reappears ${new Date(snoozedUntil).toLocaleString()}`}
+              title={`Reappears ${formatDateTime(snoozedUntil)}`}
             >
               Reappears {reappearLabel(snoozedUntil)}
             </span>

@@ -5,13 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { QuotaBar } from "./QuotaBar";
 import { ClaudeSubscriptionPanel } from "./ClaudeSubscriptionPanel";
 import { CodexSubscriptionPanel } from "./CodexSubscriptionPanel";
-import {
-  billingTypeDisplayName,
-  formatCents,
-  formatTokens,
-  providerDisplayName,
-  quotaSourceDisplayName,
-} from "@/lib/utils";
+import { billingTypeDisplayName, formatCents, formatTokens, providerDisplayName, quotaSourceDisplayName, formatShortDate } from "@/lib/utils";
 
 // ordered display labels for rolling-window rows
 const ROLLING_WINDOWS = ["5h", "24h", "7d"] as const;
@@ -367,7 +361,7 @@ export function ProviderQuotaCard({
                             </p>
                           ) : qw.resetsAt ? (
                             <p className="text-xs text-muted-foreground">
-                              resets {new Date(qw.resetsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                              resets {formatShortDate(qw.resetsAt)}
                             </p>
                           ) : null}
                         </div>

@@ -51,7 +51,10 @@ export interface DerivedMonitorState {
   serviceName: string | null;
 }
 
+const BRITISH_LOCALE = "en-GB";
+
 export interface MonitorDateTimeFormatOptions {
+  /** Defaults to British English, whatever the browser language. */
   locale?: Intl.LocalesArgument;
   timeZone?: string;
 }
@@ -94,10 +97,9 @@ export function formatMonitorEtaLabel(nextCheckAt: MonitorDate, now: MonitorDate
 
 function zonedYmd(
   date: Date,
-  locale: Intl.LocalesArgument,
   timeZone: string | undefined,
 ): { year: string; month: string; day: string } {
-  const parts = new Intl.DateTimeFormat(locale, {
+  const parts = new Intl.DateTimeFormat(BRITISH_LOCALE, {
     year: "numeric",
     month: "numeric",
     day: "numeric",
@@ -110,9 +112,9 @@ function zonedYmd(
 
 /**
  * Compact absolute time for the monitor surfaces (wireframe 04). Renders
- * `Today, 8:16 PM` when the check lands on the reference day, otherwise prefixes
- * the weekday (`Mon Jul 20, 9:00 AM`) and only adds the year when it differs from
- * the reference year (`Mon Jul 20, 2027, 9:00 AM`). Day/year comparisons are made
+ * `Today, 20:16` when the check lands on the reference day, otherwise prefixes
+ * the weekday (`Mon 20 Jul, 9:00`) and only adds the year when it differs from
+ * the reference year (`Mon 20 Jul 2027, 9:00`). Day/year comparisons are made
  * in the display time zone so "Today" matches what the user sees.
  */
 export function formatMonitorAbsolute(
@@ -122,10 +124,10 @@ export function formatMonitorAbsolute(
 ): string {
   const target = new Date(toTimestamp(nextCheckAt));
   const reference = new Date(toTimestamp(now));
-  const targetYmd = zonedYmd(target, options.locale, options.timeZone);
-  const referenceYmd = zonedYmd(reference, options.locale, options.timeZone);
+  const targetYmd = zonedYmd(target, options.timeZone);
+  const referenceYmd = zonedYmd(reference, options.timeZone);
 
-  const time = new Intl.DateTimeFormat(options.locale, {
+  const time = new Intl.DateTimeFormat(options.locale ?? BRITISH_LOCALE, {
     hour: "numeric",
     minute: "2-digit",
     timeZone: options.timeZone,
@@ -137,11 +139,11 @@ export function formatMonitorAbsolute(
     targetYmd.day === referenceYmd.day;
   if (isToday) return `Today, ${time}`;
 
-  const weekday = new Intl.DateTimeFormat(options.locale, {
+  const weekday = new Intl.DateTimeFormat(options.locale ?? BRITISH_LOCALE, {
     weekday: "short",
     timeZone: options.timeZone,
   }).format(target);
-  const date = new Intl.DateTimeFormat(options.locale, {
+  const date = new Intl.DateTimeFormat(options.locale ?? BRITISH_LOCALE, {
     month: "short",
     day: "numeric",
     year: targetYmd.year === referenceYmd.year ? undefined : "numeric",
@@ -156,14 +158,14 @@ export function formatMonitorAbsoluteFull(
   options: MonitorDateTimeFormatOptions = {},
 ): string {
   const date = new Date(toTimestamp(nextCheckAt));
-  const datePart = new Intl.DateTimeFormat(options.locale, {
+  const datePart = new Intl.DateTimeFormat(options.locale ?? BRITISH_LOCALE, {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
     timeZone: options.timeZone,
   }).format(date);
-  const timePart = new Intl.DateTimeFormat(options.locale, {
+  const timePart = new Intl.DateTimeFormat(options.locale ?? BRITISH_LOCALE, {
     hour: "numeric",
     minute: "2-digit",
     second: "2-digit",

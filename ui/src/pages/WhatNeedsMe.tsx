@@ -151,7 +151,7 @@ export function WhatNeedsMe() {
   const { phone: phoneCards, desk: deskCards } = useMemo(() => splitAtDeskCards(cards), [cards]);
   const count = needsMe ? decisionsCountOf(needsMe) : feed?.count ?? 0;
   const waitsList = needsMe ? <NeedsMeList needsMe={needsMe} includeAssigned={false} /> : null;
-  const hasWaits = (needsMe?.overdueWaits?.length ?? 0) > 0;
+  const hasWaits = (needsMe?.overdueWaits?.length ?? 0) + (needsMe?.expiredCards?.length ?? 0) > 0;
 
   const dismissedItems = useMemo(
     () =>

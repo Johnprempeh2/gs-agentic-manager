@@ -218,7 +218,7 @@ describe("Timeline", () => {
     expect(container.textContent).toContain("Run time");
     expect(container.textContent).toContain("Tokens used");
     expect(container.textContent).toContain("45m");
-    expect(container.textContent).toContain("3K");
+    expect(container.textContent).toContain("3k");
 
     const footer = Array.from(container.querySelectorAll("div")).find((element) =>
       element.textContent?.includes("2 runs") && element.textContent.includes("Range"),
@@ -340,8 +340,8 @@ describe("Timeline", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Tokens used");
-    expect(container.textContent).toContain("2K");
-    expect(container.textContent).not.toContain("4K");
+    expect(container.textContent).toContain("2k");
+    expect(container.textContent).not.toContain("4k");
   });
 
   it("summarizes only runs that overlap the visible timeline window", () => {

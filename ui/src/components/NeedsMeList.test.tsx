@@ -61,19 +61,16 @@ afterEach(() => {
 });
 
 describe("NeedsMeList (GRE-358)", () => {
-  it("Inbox: lists decisions and assigned tasks under one count that matches needs-me", () => {
+  it("Inbox Mine: lists only the assigned tasks, with their own count, never decisions", () => {
     const data = needsMe();
-    render(<NeedsMeList needsMe={data} includeDecisions />);
+    render(<NeedsMeList needsMe={{ ...data, overdueWaits: [], expiredCards: [] }} />);
 
-    const section = container.querySelector('section[aria-label="Needs you"]');
-    expect(section).not.toBeNull();
-    expect(section!.querySelector("h2")?.textContent).toContain(String(data.count));
-    expect(section!.querySelectorAll("li")).toHaveLength(data.count);
-    expect(container.textContent).toContain("Sign off the Indago statement of work");
+    expect(container.querySelector('section[aria-label="Needs you"]')).toBeNull();
+    const section = container.querySelector('section[aria-label="Assigned to you"]');
+    expect(section!.querySelector("h2")?.textContent).toContain(String(data.assignedTaskCount));
+    expect(section!.querySelectorAll("li")).toHaveLength(data.assignedTaskCount);
     expect(container.querySelector('a[href="/issues/GRE-9"]')).not.toBeNull();
-    // Task cards open their task; company-level cards open Decisions.
-    expect(container.querySelector('a[href="/issues/GRE-44"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/decisions"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Decision");
   });
 
   it("Decisions and Focus: shows only assigned tasks, since cards are already on screen", () => {
@@ -86,38 +83,7 @@ describe("NeedsMeList (GRE-358)", () => {
     expect(container.textContent).not.toContain("Decision");
   });
 
-  it("lists a wait over 24h first, with its age, once (GRE-500)", () => {
-    const card = questionCard();
-    const data = needsMe({
-      decisions: [card],
-      assignedTasks: [],
-      overdueWaits: [
-        {
-          id: card.task!.id,
-          identifier: card.task!.identifier,
-          title: "Pick the release month",
-          status: "blocked",
-          priority: "high",
-          updatedAt: "2026-10-01T05:00:00.000Z",
-          assigneeAgentId: "agent-1",
-          owner: "board",
-          action: "John picks the month.",
-          waitingSinceAt: "2026-10-01T03:00:00.000Z",
-          waitingForMs: 26 * 60 * 60 * 1000,
-          recheckWokenAt: null,
-        },
-      ],
-    });
-    render(<NeedsMeList needsMe={data} includeDecisions />);
-
-    const items = container.querySelectorAll("li");
-    // The wait replaces its own decision card: one row, not two.
-    expect(items).toHaveLength(1);
-    expect(items[0]!.textContent).toContain("Waiting 1d 2h");
-    expect(items[0]!.textContent).toContain("Pick the release month");
-  });
-
-  it("shows waits on the Decisions page too, under Needs you", () => {
+  it("shows waits on the Desk under Overdue, with no second count", () => {
     const data = needsMe({
       assignedTasks: [],
       overdueWaits: [
@@ -137,13 +103,16 @@ describe("NeedsMeList (GRE-358)", () => {
         },
       ],
     });
-    render(<NeedsMeList needsMe={data} />);
-    expect(container.querySelector('section[aria-label="Needs you"]')).not.toBeNull();
+    render(<NeedsMeList needsMe={data} includeAssigned={false} />);
+    const section = container.querySelector('section[aria-label="Overdue"]');
+    expect(section).not.toBeNull();
+    // The rows are part of the Decisions count above them: no number of their own.
+    expect(section!.querySelector("h2")?.textContent).toBe("Overdue");
     expect(container.textContent).toContain("Waiting 2d");
     expect(container.querySelector('a[href="/issues/GRE-7"]')).not.toBeNull();
   });
 
-  it("lists an agent's expired question under Needs you, linking to its task", () => {
+  it("lists an agent's expired question under Overdue, linking to its task", () => {
     const data = needsMe({
       assignedTasks: [],
       expiredCards: [
@@ -158,11 +127,22 @@ describe("NeedsMeList (GRE-358)", () => {
       ],
     });
     render(<NeedsMeList needsMe={data} includeAssigned={false} />);
-    expect(container.querySelector('section[aria-label="Needs you"]')).not.toBeNull();
+    expect(container.querySelector('section[aria-label="Overdue"]')).not.toBeNull();
     const row = container.querySelector('[data-testid="needs-me-expired-card"]');
     expect(row?.textContent).toContain("Question expired");
     expect(row?.textContent).toContain("Which week suits you?");
     expect(row?.querySelector("a")?.getAttribute("href")).toBe("/issues/GRE-12");
+  });
+
+  it("leaves out a wait that has a decision card: the card is the one row and the one count", () => {
+    const card = questionCard();
+    const wait = {
+      id: card.task!.id, identifier: card.task!.identifier, title: "Pick the release month", status: "blocked", priority: "high",
+      updatedAt: "2026-10-01T05:00:00.000Z", assigneeAgentId: "agent-1", owner: "board" as const, action: "John picks the month.",
+      waitingSinceAt: "2026-10-01T03:00:00.000Z", waitingForMs: 26 * 60 * 60 * 1000, recheckWokenAt: null,
+    };
+    render(<NeedsMeList needsMe={needsMe({ decisions: [card], assignedTasks: [], overdueWaits: [wait] })} includeAssigned={false} />);
+    expect(container.innerHTML).toBe("");
   });
 
   it("formats wait ages in days and hours", () => {

@@ -108,7 +108,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "../lib/utils";
+import { cn, formatDate, formatDateTime } from "../lib/utils";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { useCopyAction } from "../lib/use-copy-action";
 import { PageTabBar } from "../components/PageTabBar";
@@ -299,7 +299,7 @@ function formatRelative(value: Date | string | null | undefined): string {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "Unknown";
   const diff = Date.now() - date.getTime();
-  if (diff < 0) return date.toLocaleString();
+  if (diff < 0) return formatDateTime(date);
   const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
@@ -308,7 +308,7 @@ function formatRelative(value: Date | string | null | undefined): string {
   if (hours < 48) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return date.toLocaleDateString();
+  return formatDate(date);
 }
 
 function statusTextTone(status: SecretStatus) {

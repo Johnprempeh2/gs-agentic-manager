@@ -207,7 +207,7 @@ export function weeklyReportService(db: Db, options: { buildNeedsMe?: (companyId
         lost: moveCounts[0]?.lost ?? 0,
         moves: moveRows.map((row) => ({ ...row, fromStage: row.fromStage ?? null, at: iso(row.at) })),
       },
-      needsYou: { count: mine.count, items: needsYouItems(mine).slice(0, NEEDS_YOU_LIMIT) },
+      needsYou: { count: mine.decisionCount, items: needsYouItems(mine).slice(0, NEEDS_YOU_LIMIT) },
       costs: {
         totalCents: costs.reduce((sum, row) => sum + row.cents, 0),
         agents: costs.map((row) => ({ agentId: row.agentId, name: row.name, cents: row.cents })),

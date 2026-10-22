@@ -21,7 +21,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { toCompanyRelativePath } from "@/lib/company-routes";
-import { cn } from "../lib/utils";
+import { cn, formatNumber } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
 import { formatBytes } from "../lib/issue-output";
 import { createZipArchive, estimateZipArchiveSize } from "../lib/zip";
@@ -1085,7 +1085,7 @@ export function CompanyExport() {
               {selectedCompany?.name ?? "Organisation"} export
             </span>
             <span className="text-muted-foreground">
-              Exporting {selectedCount.toLocaleString()} of {totalFiles.toLocaleString()} file{totalFiles === 1 ? "" : "s"}
+              Exporting {formatNumber(selectedCount)} of {formatNumber(totalFiles)} file{totalFiles === 1 ? "" : "s"}
               {selectedCount > 0 && ` (~${formatBytes(estimatedZipBytes)})`}
             </span>
             {warnings.length > 0 && (
@@ -1108,7 +1108,7 @@ export function CompanyExport() {
             <Download className="mr-1.5 h-3.5 w-3.5" />
             {downloadMutation.isPending
               ? "Building export..."
-              : `Export ${selectedCount.toLocaleString()} file${selectedCount === 1 ? "" : "s"}`}
+              : `Export ${formatNumber(selectedCount)} file${selectedCount === 1 ? "" : "s"}`}
           </Button>
         </div>
       </div>
@@ -1179,7 +1179,7 @@ export function CompanyExport() {
                     />
                     <span className="min-w-0 truncate">{EXPORT_CATEGORY_LABELS[key]}</span>
                     <span className="text-xs text-muted-foreground">
-                      {countLoaded ? count.toLocaleString() : "Not counted"}
+                      {countLoaded ? formatNumber(count) : "Not counted"}
                     </span>
                   </label>
                 );

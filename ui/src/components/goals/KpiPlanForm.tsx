@@ -135,7 +135,7 @@ export function formatMoney(cents: number, currency: string | null): string {
   const amount = cents / 100;
   if (currency) {
     try {
-      return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+      return new Intl.NumberFormat("en-GB", { style: "currency", currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: 0 }).format(amount);
     } catch {
       // Unknown code: fall through to a plain number with the code after it.
     }

@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 import { Link } from "@/lib/router";
-import { cn, relativeTime } from "@/lib/utils";
+import { cn, relativeTime, formatDateTime } from "@/lib/utils";
 import {
   type SourceResolvedWatchdogFold,
   formatCleanupOutcome,
@@ -19,7 +19,7 @@ function isoOrLocaleString(value: string | null | undefined): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return formatDateTime(date);
 }
 
 function issueLink(id: string, identifier: string | null) {

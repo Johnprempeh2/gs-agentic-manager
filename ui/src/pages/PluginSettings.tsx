@@ -30,6 +30,7 @@ import {
   getDefaultValues,
   type JsonSchemaNode,
 } from "@/components/JsonSchemaForm";
+import { formatClockTime, formatDateTime, formatTime } from "@/lib/utils";
 
 /**
  * PluginSettings page component.
@@ -439,7 +440,7 @@ export function PluginSettings() {
 
                       <div className="flex items-center gap-1.5 border-t border-border/50 pt-2 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
-                        Last checked: {new Date(dashboardData.checkedAt).toLocaleTimeString()}
+                        Last checked: {formatClockTime(dashboardData.checkedAt)}
                       </div>
                     </>
                   ) : (
@@ -474,7 +475,7 @@ export function PluginSettings() {
                                   : "text-muted-foreground"
                           }`}
                         >
-                          <span className="shrink-0 text-subtle-foreground">{new Date(entry.createdAt).toLocaleTimeString()}</span>
+                          <span className="shrink-0 text-subtle-foreground">{formatTime(entry.createdAt)}</span>
                           <Badge variant="outline" className="h-4 shrink-0 px-1 text-(length:--text-nano)">{entry.level}</Badge>
                           <span className="truncate" title={entry.message}>{entry.message}</span>
                         </div>
@@ -1206,7 +1207,7 @@ function formatRelativeTime(isoString: string): string {
  * Format a unix timestamp (ms since epoch) to a locale string.
  */
 function formatTimestamp(epochMs: number): string {
-  return new Date(epochMs).toLocaleString();
+  return formatDateTime(new Date(epochMs));
 }
 
 /**

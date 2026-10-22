@@ -162,7 +162,7 @@ import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data"
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
-import { cn, formatCalendarDay, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
+import { cn, formatCalendarDay, formatNumber, formatShortDate as formatUkShortDate, relativeTime, formatDateTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
 import { formatBytes } from "../lib/issue-output";
 import { createIssueDetailPath, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
@@ -4733,7 +4733,7 @@ function BuiltFromTree({
 }
 
 function formatShortDate(value: Date | string) {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-GB", {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -5833,7 +5833,7 @@ export function Learnings() {
                         forcedMove && "border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-400/10",
                       )}
                     >
-                      <span className="text-xs text-muted-foreground" title={new Date(event.createdAt).toLocaleString()}>
+                      <span className="text-xs text-muted-foreground" title={formatDateTime(event.createdAt)}>
                         {relativeTime(event.createdAt)}
                       </span>
                       <div className="min-w-0">

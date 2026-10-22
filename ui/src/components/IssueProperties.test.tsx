@@ -3004,11 +3004,11 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("In 2h 12m");
-    // The hour is rendered in the machine's timezone, so it is not pinned here:
-    // this instant is 4:08 PM at UTC and 9:08 AM at UTC-7. What the row states
-    // are actually about — the countdown and the attempt suffix — is asserted
-    // exactly, and the countdown above is timezone-independent already.
-    expect(monitorRowText()).toContain("Today, 4:08 PM · Attempt 1");
+    // The hour is rendered in the machine's timezone, so it is not pinned here
+    // (16:08 at UTC, 09:08 at UTC-7). It is always the British 24-hour clock,
+    // whatever the browser language, and the attempt suffix is exact.
+    expect(monitorRowText()).toMatch(/Today, \d{1,2}:08 · Attempt 1/);
+    expect(monitorRowText()).not.toMatch(/AM|PM/);
 
     renderMonitor(createIssue({
       executionPolicy: createExecutionPolicy({ monitor: { ...baseMonitorState, nextCheckAt: at(252) } }),
@@ -3017,7 +3017,7 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("In 2h 12m");
-    expect(monitorRowText()).toContain("Today, 4:08 PM");
+    expect(monitorRowText()).toMatch(/Today, \d{1,2}:08/);
 
     renderMonitor(createIssue({
       executionPolicy: createExecutionPolicy({ monitor: { ...baseMonitorState, serviceName: "vercel-deploy" } }),
@@ -3041,7 +3041,7 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("Overdue by 18m");
-    expect(monitorRowText()).toContain("Today, 1:38 PM · fires on next tick");
+    expect(monitorRowText()).toMatch(/Today, \d{1,2}:38 · fires on next tick/);
 
     renderMonitor(createIssue({
       executionPolicy: createExecutionPolicy(),

@@ -412,7 +412,7 @@ describe("SummarySlotCard", () => {
   it("switches to a historical revision from a dated dropdown", async () => {
     // Local, not UTC: the dropdown renders these dates in the machine's
     // timezone, so `2026-07-14T17:10:00.000Z` is the 15th at UTC+9 and the
-    // "Jul 14" assertions below fail. Midday local keeps each revision on its
+    // "14 Jul" assertions below fail. Midday local keeps each revision on its
     // intended calendar day everywhere.
     const localAt = (day: number, hour: number) =>
       new Date(2026, 6, day, hour, 0, 0, 0).toISOString();
@@ -447,11 +447,11 @@ describe("SummarySlotCard", () => {
 
     await openRevisionSelect(container);
 
-    expect(document.body.textContent).toContain("Latest (Rev 3) - Jul 14");
-    expect(document.body.textContent).toContain("Rev 1 - Jul 13");
-    expect(document.body.textContent).toContain("Rev 2 - Jul 14");
+    expect(document.body.textContent).toContain("Latest (Rev 3) - 14 Jul");
+    expect(document.body.textContent).toContain("Rev 1 - 13 Jul");
+    expect(document.body.textContent).toContain("Rev 2 - 14 Jul");
 
-    await chooseRevisionOption("Rev 1 - Jul 13");
+    await chooseRevisionOption("Rev 1 - 13 Jul");
 
     expect(container.textContent).toContain("Historical revision");
     expect(container.textContent).toContain("Old body");

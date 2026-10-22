@@ -3,7 +3,7 @@ import { BadgeCheck, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { sourceTrustLabel } from "../lib/trust-policy-ui";
-import { cn } from "../lib/utils";
+import { cn, formatDateTime } from "../lib/utils";
 
 export function SourceTrustBadge({
   sourceTrust,
@@ -19,7 +19,7 @@ export function SourceTrustBadge({
 
   const promoted = sourceTrust?.disposition === "promoted";
   const tooltip = promoted
-    ? `Promoted from low-trust${sourceTrust.promotedAt ? ` on ${new Date(sourceTrust.promotedAt).toLocaleString()}` : ""}.`
+    ? `Promoted from low-trust${sourceTrust.promotedAt ? ` on ${formatDateTime(sourceTrust.promotedAt)}` : ""}.`
     : `Authored by a low-trust review agent. Raw ${artifactLabel} is not auto-shared with higher-trust agents.`;
 
   return (

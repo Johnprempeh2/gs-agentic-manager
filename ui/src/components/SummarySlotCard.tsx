@@ -50,7 +50,7 @@ function revisionLabel(revision: SummarySlotRevision) {
 }
 
 function formatRevisionTimestamp(date: Date | string) {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("en-GB", {
     month: "short",
     day: "numeric",
     hour: "2-digit",

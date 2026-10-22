@@ -409,11 +409,12 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:decisions" }),
     // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.
     "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:my-tasks" }),
+    // Unread task updates only: messages, not decisions. Approvals, failed
+    // runs and join requests are decision cards, counted on Decisions.
     inbox: link("/inbox", "Inbox", Inbox, {
-      badge: inboxBadge.inbox,
-      badgeLabel: "unread",
-      badgeTone: inboxBadge.failedRuns > 0 ? "danger" : "quiet",
-      alert: inboxBadge.failedRuns > 0,
+      badge: inboxBadge.mineIssues,
+      badgeLabel: "unread updates",
+      badgeTone: "quiet",
     }),
     chats: {
       label: "Chats",

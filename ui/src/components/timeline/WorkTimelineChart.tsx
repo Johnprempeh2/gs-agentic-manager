@@ -12,6 +12,7 @@ import { resolveAgentAppearance } from "@greatstone/shared";
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "@/lib/router";
+import { formatClockTime, formatShortDate } from "@/lib/utils";
 import type { WorkTimelineActor, WorkTimelineResult } from "@greatstone/shared";
 import { applyCompanyPrefix, extractCompanyPrefixFromPath } from "@/lib/company-routes";
 import {
@@ -119,18 +120,12 @@ interface DragSelectionState {
 }
 
 function fmtClock(ms: number): string {
-  const d = new Date(ms);
-  const hasMinutes = d.getMinutes() !== 0;
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: hasMinutes ? "2-digit" : undefined,
-    hour12: true,
-  });
+  return formatClockTime(new Date(ms));
 }
 
 function fmtTick(ms: number, stepMs: number): string {
   const d = new Date(ms);
-  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const date = formatShortDate(d);
   if (stepMs >= 24 * 60 * 60 * 1000) {
     return date;
   }

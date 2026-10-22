@@ -9,6 +9,7 @@ import type {
 import { emailApi } from "@/api/email";
 import { issuesApi } from "@/api/issues";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
+import { formatDateTime } from "@/lib/utils";
 const EmailContext = createContext<EmailThreadSummary | null>(null);
 export function EmailThreadProvider({
   companyId,
@@ -79,7 +80,7 @@ export function EmailMessageCard({
           {message.direction === "inbound" ? "Email received" : "Email sent"}
         </span>
         <span className="text-xs text-muted-foreground">
-          {new Date(message.timestamp).toLocaleString()}
+          {formatDateTime(message.timestamp)}
         </span>
       </div>
       <div className="space-y-1">

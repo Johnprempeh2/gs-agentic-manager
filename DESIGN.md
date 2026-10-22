@@ -48,6 +48,39 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
   lines get; it does not centre the page (`mx-auto` is for dialogs and
   single-column reading views, not app pages).
 
+## One "needs you" count
+
+John, 22 Oct: "one count everywhere". Every number that says something
+needs the person (sidebar Decisions and Desk badges, the phone Decisions tab,
+the Home Screen icon, the Desk's Decisions heading, the Dashboard Decisions
+box, Needed from you, Focus and history, Ask Everest, the morning, evening and
+weekly messages and push badges) is `NeedsMe.decisionCount`, built once on the
+server (`server/src/services/needs-me.ts`, from the Decisions feed) per viewer.
+
+- It counts every decision card outside "At your desk", every overdue wait
+  (more than 24 hours) without a card, and every expired question. A task is
+  counted once.
+- "At your desk" cards (GRE-450) are outside it and always sit in their own
+  labelled group, "At your desk", which says they are not in the count.
+- Tasks merely assigned to the person are not in it. On the Desk they are
+  their own section, "Your tasks"; in Inbox Mine they are "Assigned to you".
+- A list that shows the number lists exactly those items. Rows put away for
+  later on Needed from you still count, and the summary says how many.
+- The Inbox badge is a different thing: unread task updates ("Inbox, 3 unread
+  updates"), quiet grey, never lime. Approvals, failed runs and join requests
+  are decision cards, so they count on Decisions, not on the Inbox. The Inbox
+  Mine tab carries no number.
+- New surfaces read `useDecisionsCount` (UI) or `needsMe.build().decisionCount`
+  (server). Never add up feed cards, approvals or assigned tasks yourself.
+
+## Dates and numbers
+
+British forms whatever the browser language: "Thursday 22 October",
+"22 Oct 2026", "22 Oct 2026, 14:05" (24-hour), "2h ago". Use the helpers in
+`ui/src/lib/utils.ts`; any direct `toLocale*String` or `Intl.*Format` call
+passes `"en-GB"`. `node scripts/check-locale-format.mjs` fails on a call
+without it.
+
 ## Form and wizard footers
 
 Keep **Save & exit** (or Cancel/Back) and the primary Continue/Connect/Finish

@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { FolderOpen, Heart, ChevronDown, X, Copy, Check, ExternalLink, Loader2, TriangleAlert, Bug } from "lucide-react";
-import { asBoolean, asFiniteNumber, asObject, cn } from "../lib/utils";
+import { asBoolean, asFiniteNumber, asObject, cn, formatClockTime } from "../lib/utils";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
   connectSourceName,
@@ -3620,7 +3620,7 @@ export function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmen
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium">{statusLabel}</span>
         <span className="text-(length:--text-micro)">
-          {new Date(result.testedAt).toLocaleTimeString()}
+          {formatClockTime(result.testedAt)}
         </span>
       </div>
       <div className="mt-2 space-y-1.5">

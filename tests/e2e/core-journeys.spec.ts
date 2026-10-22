@@ -115,7 +115,7 @@ test("a client opens from the Organisations list", async ({ page, request }) => 
   }
 });
 
-test("the Inbox shows waiting work and the Blocked tab shows blocked work", async ({ page, request }) => {
+test("waiting work shows in Decisions with the one count, and the Inbox Blocked tab shows blocked work", async ({ page, request }) => {
   const company = await createCompany(request, "Journey Inbox");
   const waiting = await createTask(request, company, "Approve the press release");
   await json(
@@ -125,9 +125,19 @@ test("the Inbox shows waiting work and the Blocked tab shows blocked work", asyn
   );
   const blocked = await createTask(request, company, "Waiting on legal sign-off", "blocked");
 
+  // What needs you lives on the Desk's Decisions section, with the one count.
+  await open(page, `/${company.issuePrefix}/desk#desk-needs-me`);
+  const decisions = page.locator('[data-desk-section="desk-needs-me"]');
+  await expect(decisions.getByText(/Approve the press release/).first()).toBeVisible({ timeout: 30_000 });
+  // The section's number is the sidebar's Decisions badge: one count.
+  const count = (await decisions.locator("[data-desk-section-count]").textContent())?.trim() ?? "";
+  expect(Number(count)).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('a[href$="/desk#desk-needs-me"]').first()).toContainText(count);
+
+  // The Inbox holds updates, not decisions: Mine carries no "needs you" number.
   await open(page, `/${company.issuePrefix}/inbox/mine`);
-  const needsYou = page.getByRole("region", { name: "Needs you" });
-  await expect(needsYou.getByRole("link", { name: /Approve the press release/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("tab", { name: "Mine", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Needs you" })).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Blocked" }).click();
   await expect(page).toHaveURL(/\/inbox\/blocked$/);

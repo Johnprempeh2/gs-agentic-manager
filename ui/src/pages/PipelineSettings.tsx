@@ -102,7 +102,7 @@ import {
   issueExecutionWorkspaceModeForExistingWorkspace,
 } from "../lib/project-workspace-defaults";
 import { orderReusableExecutionWorkspaces } from "../lib/reusable-execution-workspaces";
-import { cn, relativeTime } from "../lib/utils";
+import { cn, relativeTime, formatDateTime } from "../lib/utils";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
@@ -1256,7 +1256,7 @@ function StageEventsList({
           key={event.id}
           className="grid min-h-11 grid-cols-(--gtc-15) items-center gap-3 border-b border-border/70 px-3 py-2 text-sm last:border-b-0"
         >
-          <span className="text-xs text-muted-foreground" title={new Date(event.createdAt).toLocaleString()}>
+          <span className="text-xs text-muted-foreground" title={formatDateTime(event.createdAt)}>
             {relativeTime(event.createdAt)}
           </span>
           <div className="min-w-0">

@@ -39,12 +39,12 @@ vi.mock("../context/ToastContext", () => ({
 }));
 vi.mock("../api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: ME } }) } }));
 // Decisions now live in Needs me: the feed and the one count.
-let decisionCards: Array<{ id: string; task: { id: string } | null; decision: string; severity: string }> = [];
+let decisionCards: Array<{ id: string; task: { id: string } | null; decision: string; severity: string; atDesk?: { command: string | null } | null }> = [];
 vi.mock("../api/decisionsFeed", () => ({
   decisionsFeedApi: {
     get: async () => ({ companyId: "company-1", count: decisionCards.length, cards: decisionCards, assignableAgents: [] }),
     needsMe: async () => ({
-      companyId: "company-1", count: decisionCards.length, decisionCount: decisionCards.length, assignedTaskCount: 0,
+      companyId: "company-1", count: decisionCards.length, decisionCount: decisionCards.filter((card) => !card.atDesk).length, assignedTaskCount: 0,
       decisions: decisionCards, assignedTasks: [], overdueWaits: [], expiredCards: [],
     }),
   },
@@ -523,8 +523,8 @@ describe("Desk sections", () => {
     await renderPage();
 
     const headings = [...container.querySelectorAll("h2")].map((heading) => heading.textContent);
-    expect(headings).toEqual(["Pinned", "Decisions", "Recently opened"]);
-    expect(section("desk-needs-me")?.querySelector('[data-row="1"]')).not.toBeNull();
+    expect(headings).toEqual(["Pinned", "Decisions", "Your tasks", "Recently opened"]);
+    expect(section("desk-tasks")?.querySelector('[data-row="1"]')).not.toBeNull();
     const pinned = section("desk-pinned");
     expect(pinned?.textContent).toContain("Indago portal");
     expect(pinned?.textContent).toContain("2 of 5 done");
@@ -536,7 +536,7 @@ describe("Desk sections", () => {
     expect(section("desk-recent")?.textContent).toContain("Opened lately");
   });
 
-  it("shows decision cards first in Needs me, in feed order, with one count, and the plain rows below", async () => {
+  it("shows decision cards in Decisions, in feed order, with the one count, and the plain rows in Your tasks below", async () => {
     openIssues = [makeIssue("1"), makeIssue("7", { title: "Pick the launch month" })];
     decisionCards = [
       { id: "task:7", task: { id: "7" }, decision: "Which month should we launch?", severity: "high" },
@@ -548,12 +548,31 @@ describe("Desk sections", () => {
     expect([...needsMe.querySelectorAll("[data-decision-card]")].map((card) => card.getAttribute("data-decision-card")))
       .toEqual(["task:7", "item:budget"]);
     expect(needsMe.querySelector("[data-desk-section-count]")?.textContent).toBe("2");
+    // The section lists exactly its number: cards, no task rows.
+    expect(needsMe.querySelectorAll("[data-row]")).toHaveLength(0);
+    const tasks = section("desk-tasks")!;
     // A task with a card is that card, not a second row.
-    expect(needsMe.querySelector('[data-row="7"]')).toBeNull();
-    const row = needsMe.querySelector('[data-row="1"]')!;
-    expect(needsMe.querySelector("[data-desk-decisions]")!.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tasks.querySelector('[data-row="7"]')).toBeNull();
+    const row = tasks.querySelector('[data-row="1"]')!;
+    expect(needsMe.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect([...needsMe.querySelectorAll("a")].find((a) => a.textContent === "Focus and history")?.getAttribute("href")).toBe("/decisions/focus");
     expect(container.textContent).not.toContain("Nothing needs you right now.");
+  });
+
+  it("keeps At your desk cards in their own labelled group, outside the one count (GRE-450)", async () => {
+    decisionCards = [
+      { id: "task:7", task: { id: "7" }, decision: "Which month should we launch?", severity: "high" },
+      { id: "task:8", task: { id: "8" }, decision: "Restart WSL on the host.", severity: "high", atDesk: { command: "wsl --shutdown" } },
+    ];
+    await renderPage();
+
+    const needsMe = section("desk-needs-me")!;
+    expect(needsMe.querySelector("[data-desk-section-count]")?.textContent).toBe("1");
+    expect(needsMe.querySelector("[data-desk-decisions]")?.textContent).not.toContain("Restart WSL");
+    const desk = needsMe.querySelector("[data-at-desk-group]")!;
+    expect(desk.textContent).toContain("At your desk");
+    expect(desk.textContent).toContain("not in the Decisions count");
+    expect(desk.textContent).toContain("Restart WSL on the host.");
   });
 
   it("shows a pinned task only in Pinned, and leaves finished pins out", async () => {

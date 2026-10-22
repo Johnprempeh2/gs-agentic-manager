@@ -30,7 +30,7 @@ import {
   zoomScaleForLevel,
 } from "@/components/timeline/WorkTimelineChart";
 import { formatDuration, TIMELINE_COLORS } from "@/lib/timeline/layout";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { useLocation } from "@/lib/router";
 
 type RangePreset = "today" | "7d" | "30d" | "custom";
@@ -136,11 +136,11 @@ function rangeError(range: DateRangeState): string | null {
 }
 
 function formatInteger(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
+  return new Intl.NumberFormat("en-GB").format(value);
 }
 
 function formatCompactInteger(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-GB", {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
@@ -531,7 +531,7 @@ export function Timeline({ embedded = false }: { embedded?: boolean } = {}) {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {data.spans.length} run{data.spans.length === 1 ? "" : "s"} ·{" "}
-                {new Date(data.window.from).toLocaleString()} to {new Date(data.window.to).toLocaleString()}
+                {formatDateTime(data.window.from)} to {formatDateTime(data.window.to)}
                 {data.window.capped ? " · window capped" : ""}
               </p>
               {rangeControls}

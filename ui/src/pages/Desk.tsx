@@ -27,6 +27,7 @@ import { WaitingOutsideButton } from "../components/decisions-feed/WaitingOutsid
 import { DecisionFeedCard, decisionCardTaskId } from "../components/decisions-feed/DecisionFeedCard";
 import { NeedsMeList } from "../components/NeedsMeList";
 import { decisionsCountOf, useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
+import { AtDeskGroup, splitAtDeskCards } from "../components/decisions-feed/AtDeskGroup";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -233,10 +234,12 @@ export function Desk() {
   const { data: needsMe } = useNeedsMe(selectedCompanyId);
   // On a phone each decision opens short, so every one fits before a scroll (GRE-1918).
   const isPhone = useIsPhone();
-  const decisionCards = useMemo(() => decisionsFeed?.cards ?? [], [decisionsFeed]);
+  const allDecisionCards = useMemo(() => decisionsFeed?.cards ?? [], [decisionsFeed]);
+  // "At your desk" cards (GRE-450) sit apart, outside the one count.
+  const { phone: decisionCards, desk: deskCards } = useMemo(() => splitAtDeskCards(allDecisionCards), [allDecisionCards]);
   const cardTaskIds = useMemo(
-    () => new Set(decisionCards.map(decisionCardTaskId).filter((id): id is string => Boolean(id))),
-    [decisionCards],
+    () => new Set(allDecisionCards.map(decisionCardTaskId).filter((id): id is string => Boolean(id))),
+    [allDecisionCards],
   );
   // The Decisions links land on #desk-needs-me: scroll there once it has rendered.
   const deskLoaded = !isLoading && !decisionsLoading;
@@ -734,7 +737,7 @@ export function Desk() {
   const waits = needsMe && ((needsMe.overdueWaits?.length ?? 0) > 0 || (needsMe.expiredCards?.length ?? 0) > 0)
     ? needsMe
     : null;
-  const nothingNeedsYou = visibleIssues.length === 0 && decisionCards.length === 0 && !waits;
+  const nothingNeedsYou = visibleIssues.length === 0 && allDecisionCards.length === 0 && !waits;
   const discussIssue = discussId ? listedIssues.find((issue) => issue.id === discussId) ?? null : null;
   const discussPanel = discussIssue ? (
     <MyTasksDiscussPanel
@@ -750,7 +753,7 @@ export function Desk() {
     />
   ) : null;
 
-  // Page tools ride on the first section's heading row, on the right, so the
+  // Task tools ride on the Your tasks heading row, on the right, so the
   // page opens on Pinned or Decisions rather than on a row of switches.
   const pageTools = (
     <div className="flex flex-wrap items-center justify-end gap-3">
@@ -809,7 +812,7 @@ export function Desk() {
       )}
 
       {pinned.length > 0 ? (
-        <DeskSection id="desk-pinned" title="Pinned" trailing={pageTools}>
+        <DeskSection id="desk-pinned" title="Pinned">
           <DeskPinned
             companyId={selectedCompanyId}
             pinned={pinned}
@@ -828,28 +831,19 @@ export function Desk() {
 
       <DeskSection
         id="desk-needs-me"
-        // The sidebar's Decisions row lands here, with the same count.
+        // The one "needs you" number: the sidebar, phone tab, app icon and
+        // Dashboard show it too, and this section lists exactly those items.
         title="Decisions"
         count={needsMe ? decisionsCountOf(needsMe) : decisionsFeed?.count}
-        trailing={pinned.length > 0 ? focusLink : (
-          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-            {pageTools}
-            {focusLink}
-          </div>
-        )}
+        trailing={focusLink}
       >
-        {nothingNeedsYou && !decisionsError ? (
-          <EmptyState
-            icon={CheckCircle2}
-            message="Nothing needs you right now."
-            description={
-              pinned.length > 0
-                ? "Decisions, reviews and tasks assigned to you show up here."
-                : "Decisions, reviews and tasks assigned to you show up here. Pin a task on its page to keep it at the top."
-            }
-            action="Create task"
-            onAction={() => openNewIssue()}
-          />
+        {decisionCards.length === 0 && !waits && deskCards.length === 0 ? (
+          !decisionsError ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" data-desk-no-decisions>
+              <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+              No decisions waiting on you.
+            </p>
+          ) : null
         ) : (
           <>
             {waits ? <NeedsMeList needsMe={waits} includeAssigned={false} /> : null}
@@ -869,6 +863,34 @@ export function Desk() {
                 ))}
               </div>
             ) : null}
+            <AtDeskGroup
+              cards={deskCards}
+              defaultOpen
+              companyId={selectedCompanyId}
+              assignableAgents={decisionsFeed?.assignableAgents ?? []}
+              agentMap={agentById}
+              currentUserId={currentUserId}
+            />
+          </>
+        )}
+      </DeskSection>
+
+      {/* Tasks are not decisions: their own section, outside the count. */}
+      <DeskSection id="desk-tasks" title="Your tasks" trailing={pageTools}>
+        {visibleIssues.length === 0 ? (
+          <EmptyState
+            icon={CheckCircle2}
+            message={nothingNeedsYou ? "Nothing needs you right now." : "No tasks assigned to you."}
+            description={
+              pinned.length > 0
+                ? "Tasks assigned to you show up here."
+                : "Tasks assigned to you show up here. Pin a task on its page to keep it at the top."
+            }
+            action="Create task"
+            onAction={() => openNewIssue()}
+          />
+        ) : (
+          <>
             {liveIssues.length > 0 && (
               <IssuesList
                 issues={liveIssues}

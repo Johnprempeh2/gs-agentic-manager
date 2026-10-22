@@ -11,6 +11,7 @@ import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
 import { queryKeys } from "@/lib/queryKeys";
 import { documentDisplayTitle } from "@/lib/issue-artifacts";
 import { useLocation } from "@/lib/router";
+import { formatDateTime } from "@/lib/utils";
 
 export function TaskDocumentPanel({
   issueId,
@@ -73,7 +74,7 @@ export function TaskDocumentPanel({
         <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
           <span>{`Revision ${document.latestRevisionNumber ?? 1}`}</span>
           <span aria-hidden>·</span>
-          <span>{`Updated ${new Date(document.updatedAt).toLocaleString()}`}</span>
+          <span>{`Updated ${formatDateTime(document.updatedAt)}`}</span>
           <DocumentAnnotationsCountChip
             issueId={issueId}
             docKey={document.key}

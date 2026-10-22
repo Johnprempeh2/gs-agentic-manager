@@ -251,6 +251,7 @@ const zonedMinuteFormatterCache = new Map<string, Intl.DateTimeFormat>();
 function getZonedMinuteFormatter(timeZone: string) {
   let formatter = zonedMinuteFormatterCache.get(timeZone);
   if (!formatter) {
+    // en-US parts are parsed, not shown (WEEKDAY_INDEX keys on English names).
     formatter = new Intl.DateTimeFormat("en-US", {
       timeZone,
       hour12: false,

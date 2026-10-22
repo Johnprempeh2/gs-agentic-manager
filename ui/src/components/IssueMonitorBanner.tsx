@@ -92,7 +92,7 @@ export function buildMonitorSurfaceCopy(
   }
 
   const eta = formatMonitorEta(derived.nextCheckAt, now); // "in 2h 12m" | "due now" | "overdue by 18m"
-  const absolute = formatMonitorAbsolute(derived.nextCheckAt, {}, now); // local time, e.g. "Today, 4:08 PM"
+  const absolute = formatMonitorAbsolute(derived.nextCheckAt, {}, now); // local time, e.g. "Today, 16:08"
   const isScheduledRetryOnly = derived.source === "scheduled-retry";
 
   let bannerTitle: string;

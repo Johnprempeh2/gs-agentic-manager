@@ -66,7 +66,7 @@ export function ActivitySection({
     for (const event of events) {
       let label = "Earlier";
       try {
-        label = new Date(event.createdAt).toLocaleDateString(undefined, {
+        label = new Date(event.createdAt).toLocaleDateString("en-GB", {
           weekday: "short",
           month: "short",
           day: "numeric",

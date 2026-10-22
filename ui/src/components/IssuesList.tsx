@@ -50,7 +50,7 @@ import {
   resolveIssueWorkspaceName,
   type InboxIssueColumn,
 } from "../lib/inbox";
-import { cn, formatDurationMs, formatTokens } from "../lib/utils";
+import { cn, formatDurationMs, formatTokens, formatNumber } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { collectSubtreeLiveCounts } from "../lib/liveIssueIds";
 import {
@@ -728,7 +728,7 @@ function SubIssueProgressSummaryStrip({
               <>
                 <span
                   className="text-muted-foreground tabular-nums"
-                  title={`${costSummary.runCount.toLocaleString()} run${
+                  title={`${formatNumber(costSummary.runCount)} run${
                     costSummary.runCount === 1 ? "" : "s"
                   } across ${costSummary.issueCount} sub-task${
                     costSummary.issueCount === 1 ? "" : "s"

@@ -43,7 +43,7 @@ export function AtDeskGroup({
     <div data-at-desk-group>
       <Curtain label="At your desk" count={cards.length} open={open} onToggle={() => setOpen((value) => !value)}>
         <p className="text-xs text-muted-foreground">
-          These need you at the computer. They are not in the phone count.
+          These need you at the computer. They are not in the Decisions count.
         </p>
         {cards.map((card) => (
           <DecisionFeedCard

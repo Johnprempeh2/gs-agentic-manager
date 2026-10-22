@@ -5657,7 +5657,7 @@ function deriveNormalizedUsageDelta(
 
 function formatCount(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "0";
-  return value.toLocaleString("en-US");
+  return value.toLocaleString("en-GB");
 }
 
 export function parseSessionCompactionPolicy(

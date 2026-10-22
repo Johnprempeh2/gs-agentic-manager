@@ -350,7 +350,7 @@ export const NEEDED_TOUR: TourDefinition = {
     {
       target: "needed-groups",
       title: "Grouped by what to do",
-      body: "Questions to answer, sign-offs, stuck work, logins to fix, your own tasks and clients waiting on you. Select a group to jump to it. Select Act here to answer or approve without leaving the page.",
+      body: "Questions to answer, sign-offs, stuck work, logins to fix and anything that has waited on you for over a day. The same items, and the same number, as Decisions on your Desk. Select a group to jump to it. Select Act here to answer or approve without leaving the page.",
     },
     {
       target: "needed-meanwhile",

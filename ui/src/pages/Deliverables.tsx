@@ -160,7 +160,7 @@ export function groupDeliverables(items: Deliverable[], groupBy: GroupBy): Deliv
     const months = new Map<string, DeliverableGroup>();
     for (const item of items) {
       const key = item.createdAt.slice(0, 7);
-      const label = new Date(item.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      const label = new Date(item.createdAt).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
       const group = months.get(key) ?? { key, label, items: [], cases: [] };
       group.items.push(item);
       months.set(key, group);

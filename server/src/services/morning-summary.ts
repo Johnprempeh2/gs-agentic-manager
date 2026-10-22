@@ -27,7 +27,11 @@ function userWork() {
   );
 }
 
-/** Needs you, in the order Decisions shows it: decisions, then assigned tasks, then overdue waits. */
+/**
+ * Needs you, in the order the Desk shows it: decisions, then overdue waits,
+ * then expired questions. Assigned tasks are not "needs you"; they are on the
+ * Desk as tasks. Pair with `needsMe.decisionCount`, the one count.
+ */
 export function needsYouItems(needsMe: NeedsMe): MorningSummaryTask[] {
   const items: MorningSummaryTask[] = [];
   const seen = new Set<string>();
@@ -37,11 +41,11 @@ export function needsYouItems(needsMe: NeedsMe): MorningSummaryTask[] {
     items.push(item);
   };
   for (const card of needsMe.decisions) {
-    if (card.kind === "outage") continue;
+    if (card.kind === "outage" || card.atDesk) continue;
     push({ id: card.task?.id ?? card.id, identifier: card.task?.identifier ?? null, title: card.task?.title ?? card.title });
   }
-  for (const task of needsMe.assignedTasks) push({ id: task.id, identifier: task.identifier, title: task.title });
   for (const wait of needsMe.overdueWaits) push({ id: wait.id, identifier: wait.identifier, title: wait.title });
+  for (const card of needsMe.expiredCards ?? []) push({ id: card.id, identifier: card.identifier, title: card.title });
   return items;
 }
 
@@ -271,7 +275,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       companyId,
       generatedAt: now.toISOString(),
       since: since.toISOString(),
-      needsYou: { count: mine.count, items: needs.slice(0, ITEM_LIMIT) },
+      needsYou: { count: mine.decisionCount, items: needs.slice(0, ITEM_LIMIT) },
       dueToday: { count: dueCount[0]?.count ?? 0, items: dueRows },
       finished: { count: finishedCount[0]?.count ?? 0, items: finishedRows },
       stuck: { count: stuckCount[0]?.count ?? 0, items: stuckRows },

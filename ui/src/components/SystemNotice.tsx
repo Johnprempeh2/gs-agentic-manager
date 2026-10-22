@@ -100,7 +100,7 @@ const TONE_TOKENS: Record<SystemNoticeTone, ToneTokens> = {
 
 function formatTimestamp(ts: string) {
   try {
-    return new Date(ts).toLocaleString(undefined, {
+    return new Date(ts).toLocaleString("en-GB", {
       month: "short",
       day: "numeric",
       hour: "numeric",

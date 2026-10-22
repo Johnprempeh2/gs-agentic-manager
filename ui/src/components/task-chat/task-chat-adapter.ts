@@ -53,7 +53,7 @@ export function formatTaskChatTimestamp(value: unknown): string | undefined {
   if (!value) return undefined;
   const d = value instanceof Date ? value : new Date(value as string);
   if (Number.isNaN(d.getTime())) return undefined;
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" });
 }
 
 /** Keep every comment footer on the same compact, user-visible timestamp. */

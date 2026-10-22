@@ -7,18 +7,14 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock,
-  Handshake,
   MessageCircleQuestion,
   PlugZap,
   ShieldCheck,
-  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { Agent, DecisionCard, DecisionCardAgentRef } from "@greatstone/shared";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
-import { instanceSettingsApi } from "@/api/instanceSettings";
-import { pipelinesApi } from "@/api/pipelines";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { BrandCaughtUpMark } from "@/components/BrandPageTitle";
@@ -58,8 +54,6 @@ const GROUP_ICON: Record<NeededGroupId, LucideIcon> = {
   unblock: Ban,
   fix: PlugZap,
   overdue: Clock,
-  tasks: UserCheck,
-  clients: Handshake,
 };
 
 /**
@@ -77,16 +71,6 @@ export function NeededFromYou() {
 
   const feed = useDecisionsFeed(selectedCompanyId);
   const needsMe = useNeedsMe(selectedCompanyId);
-  const { data: settings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
-  const pipelinesOn = settings?.enablePipelines === true;
-  const clients = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.pipelines.attention(selectedCompanyId) : ["pipelines", "attention", "none"],
-    queryFn: () => pipelinesApi.listAttention(selectedCompanyId!),
-    enabled: !!selectedCompanyId && pipelinesOn,
-  });
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -113,16 +97,16 @@ export function NeededFromYou() {
   // Rows swiped away this visit, hidden at once while the snooze saves.
   const [laterIds, setLaterIds] = useState<ReadonlySet<string>>(new Set());
 
-  const groups = useMemo(() => {
-    const all = buildNeededFromYou({
-      cards: feed.data?.cards ?? [],
-      needsMe: needsMe.data,
-      clients: pipelinesOn ? clients.data : null,
-    });
-    return withoutPutAway(all, dismissals)
+  // Exactly the items behind the one "needs you" number. Rows put away for
+  // later are hidden but still counted, and the summary says so.
+  const { groups, putAway } = useMemo(() => {
+    const all = buildNeededFromYou({ cards: feed.data?.cards ?? [], needsMe: needsMe.data });
+    const shown = withoutPutAway(all, dismissals)
       .map((group) => ({ ...group, items: group.items.filter((item) => !laterIds.has(item.id)) }))
       .filter((group) => group.items.length > 0);
-  }, [feed.data, needsMe.data, clients.data, pipelinesOn, dismissals, laterIds]);
+    const size = (list: NeededGroup[]) => list.reduce((sum, group) => sum + group.items.length, 0);
+    return { groups: shown, putAway: size(all) - size(shown) };
+  }, [feed.data, needsMe.data, dismissals, laterIds]);
 
   const putAwayForLater = useCallback(
     (item: NeededItem) => {
@@ -187,7 +171,7 @@ export function NeededFromYou() {
       <header className="space-y-1" data-tour="needed-summary">
         <h1 className="text-xl font-bold">What we need from you</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups)}</p>
+          <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups, Date.now(), putAway)}</p>
           {groups.length > 0 ? (
             <Button
               variant="outline"
@@ -226,9 +210,6 @@ export function NeededFromYou() {
           onRetry={() => { void feed.refetch(); void needsMe.refetch(); }}
           compact
         />
-      ) : null}
-      {clients.error ? (
-        <p className="text-sm text-destructive">Could not load client cases waiting on you. The rest of this page is up to date.</p>
       ) : null}
 
       {groups.length === 0 && !error ? <AllClear /> : (

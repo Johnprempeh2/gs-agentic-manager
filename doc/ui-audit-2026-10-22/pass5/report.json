@@ -1,0 +1,506 @@
+{
+  "dashboard-light-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": "19",
+    "dashboardDate": "Dashboard",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": "Thursday 22 October"
+  },
+  "desk-light-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": "19",
+    "dashboardCount": null,
+    "dashboardDate": "Desk",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "needed-light-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Needed from you",
+    "neededSummary": "19 things need you. The oldest has waited 4 minutes.",
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "focus-light-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Decisions",
+    "neededSummary": null,
+    "focusCount": "19 waiting",
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "inbox-light-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Inbox",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [
+      "Mine",
+      "Recent",
+      "Unread",
+      "Blocked",
+      "All"
+    ],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "today-light-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Today",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "dashboard-dark-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": "19",
+    "dashboardDate": "Dashboard",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": "Thursday 22 October"
+  },
+  "desk-dark-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": "19",
+    "dashboardCount": null,
+    "dashboardDate": "Desk",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "needed-dark-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Needed from you",
+    "neededSummary": "19 things need you. The oldest has waited 4 minutes.",
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "focus-dark-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Decisions",
+    "neededSummary": null,
+    "focusCount": "19 waiting",
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "inbox-dark-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Inbox",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [
+      "Mine",
+      "Recent",
+      "Unread",
+      "Blocked",
+      "All"
+    ],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "today-dark-d": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Today",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "dashboard-light-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": "19",
+    "dashboardDate": "Dashboard",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": "Thursday 22 October"
+  },
+  "desk-light-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": "19",
+    "dashboardCount": null,
+    "dashboardDate": "Desk",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "needed-light-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Needed from you",
+    "neededSummary": "19 things need you. The oldest has waited 4 minutes.",
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "focus-light-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Decisions",
+    "neededSummary": null,
+    "focusCount": "19 waiting",
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "inbox-light-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Inbox",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [
+      "Mine",
+      "Recent",
+      "Unread",
+      "Blocked",
+      "All"
+    ],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "today-light-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Today",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "dashboard-dark-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": "19",
+    "dashboardDate": "Dashboard",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": "Thursday 22 October"
+  },
+  "desk-dark-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": "19",
+    "dashboardCount": null,
+    "dashboardDate": "Desk",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "needed-dark-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Needed from you",
+    "neededSummary": "19 things need you. The oldest has waited 5 minutes.",
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "focus-dark-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Decisions",
+    "neededSummary": null,
+    "focusCount": "19 waiting",
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "inbox-dark-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Inbox",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [
+      "Mine",
+      "Recent",
+      "Unread",
+      "Blocked",
+      "All"
+    ],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  },
+  "today-dark-m": {
+    "lang": "en-US",
+    "sidebar": [],
+    "mobileNav": [
+      "Needed from you",
+      "Decisions19",
+      "Desk19",
+      "Inbox13",
+      "19Decisions",
+      "13Inbox"
+    ],
+    "deskCount": null,
+    "dashboardCount": null,
+    "dashboardDate": "Today",
+    "neededSummary": null,
+    "focusCount": null,
+    "inboxTabs": [],
+    "hasUsDate": false,
+    "usSample": null,
+    "britishHero": null
+  }
+}

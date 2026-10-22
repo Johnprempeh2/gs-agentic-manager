@@ -315,7 +315,8 @@ describe("answers", () => {
       overdueWaits: [],
     } as unknown as NeedsMe;
     const answer = answerDecide(needsMe);
-    expect(answer.headline).toBe("2 things need you: 1 decision, 1 task assigned to you.");
+    // The headline number is the one needs-you count; assigned tasks are said apart.
+    expect(answer.headline).toBe("1 thing needs you. 1 task is assigned to you.");
     expect(answer.lines[0]).toEqual({ text: "Approve the Indago fee", detail: "Fixed fee or day rate", href: "/issues/GRE-9" });
     expect(answer.lines[1]?.detail).toBe("Assigned to you, waiting for review");
   });

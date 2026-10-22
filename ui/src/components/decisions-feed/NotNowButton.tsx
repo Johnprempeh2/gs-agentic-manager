@@ -7,6 +7,7 @@ import { queryKeys } from "../../lib/queryKeys";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { formatDate } from "@/lib/utils";
 
 /** Return dates are set to 09:00 local time on the chosen day. */
 export function returnAtFromDateInput(value: string): string | null {
@@ -60,7 +61,7 @@ export function NotNowButton({ companyId, issueId, issueLabel, size = "xs", onTa
         id: `not-now-${issueId}`,
         title: "Set aside",
         body: returnAt
-          ? `${issueLabel ?? "The task"} comes back on ${new Date(returnAt).toLocaleDateString()}.`
+          ? `${issueLabel ?? "The task"} comes back on ${formatDate(returnAt)}.`
           : `${issueLabel ?? "The task"} waits in Tabled until you bring it back.`,
         tone: "info",
         ttlMs: 5000,

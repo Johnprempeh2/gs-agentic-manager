@@ -68,7 +68,7 @@ import {
   interactionGuideSummary,
   needsInteractionGuide,
 } from "@/lib/interaction-guide";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { QuestionForm } from "./QuestionForm";
 import {
   TaskChatComposerTakeoverControls,
@@ -580,9 +580,9 @@ function ReceiptDisclosure({
             </p>
             <p className="mt-1">
               Expires{" "}
-              {new Date(
+              {formatDateTime(
                 interaction.payload.toolAction.expiresAt,
-              ).toLocaleString()}
+              )}
             </p>
             <div className="mt-2">
               <MarkdownBody externalReferences={externalReferences} renderEmailHtml>
@@ -617,9 +617,9 @@ function ReceiptDisclosure({
             <div>
               <dt className="text-xs text-muted-foreground">Expires</dt>
               <dd>
-                {new Date(
+                {formatDateTime(
                   interaction.payload.secretProposal.expiresAt,
-                ).toLocaleString()}
+                )}
               </dd>
             </div>
           </dl>
@@ -1095,9 +1095,9 @@ function ConfirmationCard({
             </span>
             <span className="ml-auto text-xs text-muted-foreground">
               Expires{" "}
-              {new Date(
+              {formatDateTime(
                 interaction.payload.toolAction.expiresAt,
-              ).toLocaleString()}
+              )}
             </span>
           </div>
           <MarkdownBody externalReferences={externalReferences} renderEmailHtml>
@@ -1136,9 +1136,9 @@ function ConfirmationCard({
           <div>
             <dt className="text-xs text-muted-foreground">Expires</dt>
             <dd>
-              {new Date(
+              {formatDateTime(
                 interaction.payload.secretProposal.expiresAt,
-              ).toLocaleString()}
+              )}
             </dd>
           </div>
         </dl>

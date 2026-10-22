@@ -1,9 +1,8 @@
 import type { DecisionCard, DecisionCardKind, NeedsMe } from "@greatstone/shared";
-import type { PipelineAttentionFeed } from "@/api/pipelines";
 import { formatShortDate } from "@/lib/utils";
 
 /** The kinds of thing the team can need from a person, in the order the page shows them. */
-export type NeededGroupId = "answer" | "sign-off" | "unblock" | "fix" | "overdue" | "tasks" | "clients";
+export type NeededGroupId = "answer" | "sign-off" | "unblock" | "fix" | "overdue";
 
 export interface NeededItem {
   id: string;
@@ -72,25 +71,13 @@ const GROUP_COPY: Record<NeededGroupId, Omit<NeededGroup, "id" | "items">> = {
   },
   overdue: {
     title: "Waiting on you for over a day",
-    explain: "Tasks an agent handed back to you more than 24 hours ago. They stay still until you act.",
-    allHref: "/desk",
-    allLabel: "Open your desk",
-  },
-  tasks: {
-    title: "Tasks only you can do",
-    explain: "Work assigned to you rather than to an agent.",
-    allHref: "/desk",
-    allLabel: "Open your desk",
-  },
-  clients: {
-    title: "Clients waiting on you",
-    explain: "Client cases ready for your review, or an agent suggesting a client moves to the next stage.",
-    allHref: "/review-queue",
-    allLabel: "Open review queue",
+    explain: "Tasks an agent handed back to you more than 24 hours ago, and questions that ran out of time unanswered. They stay still until you act.",
+    allHref: "/decisions",
+    allLabel: "Open decisions",
   },
 };
 
-export const NEEDED_GROUP_ORDER: NeededGroupId[] = ["answer", "sign-off", "unblock", "fix", "overdue", "tasks", "clients"];
+export const NEEDED_GROUP_ORDER: NeededGroupId[] = ["answer", "sign-off", "unblock", "fix", "overdue"];
 
 function taskHref(task: { id: string; identifier: string | null }) {
   return `/issues/${task.identifier ?? task.id}`;
@@ -110,19 +97,22 @@ function cardItem(card: DecisionCard): NeededItem {
 
 /**
  * Everything the team needs from the signed-in person, grouped by what they
- * have to do. A task shows once: decision cards first, then overdue waits,
- * then plain assigned tasks. Empty groups are left out.
+ * have to do: exactly the items behind the one "needs you" number
+ * (NeedsMe.decisionCount): every decision card outside "At your desk", every
+ * overdue wait and every expired question, each once. Tasks merely assigned to them are on the Desk.
+ * Empty groups are left out.
  */
 export function buildNeededFromYou(input: {
   cards: DecisionCard[];
-  needsMe: Pick<NeedsMe, "assignedTasks" | "overdueWaits"> | null | undefined;
-  clients: PipelineAttentionFeed | null | undefined;
+  needsMe: Pick<NeedsMe, "overdueWaits" | "expiredCards"> | null | undefined;
 }): NeededGroup[] {
   const buckets = new Map<NeededGroupId, NeededItem[]>(NEEDED_GROUP_ORDER.map((id) => [id, []]));
   const taskIds = new Set<string>();
 
   for (const card of input.cards) {
-    const group = card.atDesk || card.setup ? "fix" : GROUP_OF_KIND[card.kind] ?? "answer";
+    // "At your desk" cards are outside the count (GRE-450): on the Desk and in Focus.
+    if (card.atDesk) continue;
+    const group = card.setup ? "fix" : GROUP_OF_KIND[card.kind] ?? "answer";
     buckets.get(group)!.push(cardItem(card));
     if (card.task) taskIds.add(card.task.id);
   }
@@ -140,38 +130,16 @@ export function buildNeededFromYou(input: {
     });
   }
 
-  for (const task of input.needsMe?.assignedTasks ?? []) {
-    if (taskIds.has(task.id)) continue;
-    taskIds.add(task.id);
-    buckets.get("tasks")!.push({
-      id: `task:${task.id}`,
-      title: task.title,
-      reason: null,
+  for (const card of input.needsMe?.expiredCards ?? []) {
+    if (taskIds.has(card.id)) continue;
+    taskIds.add(card.id);
+    buckets.get("overdue")!.push({
+      id: `expired:${card.interactionId}`,
+      title: card.title,
+      reason: card.question ? `Unanswered: ${card.question}` : "A question ran out of time unanswered",
       waiting: null,
-      since: task.updatedAt,
-      href: taskHref(task),
-    });
-  }
-
-  const clientItems = buckets.get("clients")!;
-  for (const review of input.clients?.reviews ?? []) {
-    clientItems.push({
-      id: `review:${review.case.id}`,
-      title: review.case.title,
-      reason: `Ready for your review in ${review.case.stage.name}`,
-      waiting: null,
-      since: String(review.case.updatedAt),
-      href: `/pipelines/${review.case.pipeline.id}/items/${review.case.id}`,
-    });
-  }
-  for (const { case: item, suggestion } of input.clients?.suggestions ?? []) {
-    clientItems.push({
-      id: `suggestion:${suggestion.id}`,
-      title: item.title,
-      reason: `${suggestion.suggestedBy?.agentName ?? "An agent"} suggests moving it to ${suggestion.toStageName ?? "the next stage"}`,
-      waiting: suggestion.suggestedBy?.agentName ?? null,
-      since: String(suggestion.createdAt),
-      href: `/pipelines/${item.pipeline.id}/items/${item.id}`,
+      since: card.expiredAt,
+      href: taskHref(card),
     });
   }
 
@@ -181,15 +149,21 @@ export function buildNeededFromYou(input: {
   });
 }
 
-/** The page's opening line: how many things, and how long the oldest has waited. */
-export function neededSummary(groups: NeededGroup[], now = Date.now()): string {
-  const total = groups.reduce((sum, group) => sum + group.items.length, 0);
+/**
+ * The page's opening line: how many things, and how long the oldest has
+ * waited. `putAway` rows still count (the number is the same everywhere), so
+ * the line says how many of them are hidden until later.
+ */
+export function neededSummary(groups: NeededGroup[], now = Date.now(), putAway = 0): string {
+  const listed = groups.reduce((sum, group) => sum + group.items.length, 0);
+  const total = listed + putAway;
   if (total === 0) return "Nothing needs you right now. The agents are getting on with the work.";
+  const away = putAway > 0 ? ` (${putAway} put away for later)` : "";
   const oldest = groups
     .flatMap((group) => group.items.map((item) => (item.since ? new Date(item.since).getTime() : NaN)))
     .filter((time) => Number.isFinite(time))
     .reduce((min, time) => Math.min(min, time), Infinity);
-  const things = total === 1 ? "1 thing needs you" : `${total} things need you`;
+  const things = (total === 1 ? "1 thing needs you" : `${total} things need you`) + away;
   if (!Number.isFinite(oldest)) return `${things}.`;
   return `${things}. The oldest has waited ${waitedFor(now - oldest)}.`;
 }
