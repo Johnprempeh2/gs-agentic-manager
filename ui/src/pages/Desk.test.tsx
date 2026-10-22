@@ -523,7 +523,7 @@ describe("Desk sections", () => {
     await renderPage();
 
     const headings = [...container.querySelectorAll("h2")].map((heading) => heading.textContent);
-    expect(headings).toEqual(["Pinned", "Needs me", "Recently opened"]);
+    expect(headings).toEqual(["Pinned", "Decisions", "Recently opened"]);
     expect(section("desk-needs-me")?.querySelector('[data-row="1"]')).not.toBeNull();
     const pinned = section("desk-pinned");
     expect(pinned?.textContent).toContain("Indago portal");

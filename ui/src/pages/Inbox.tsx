@@ -107,6 +107,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { approvalLabel, defaultTypeIcon, typeIcon } from "../components/ApprovalPayload";
 import { timeAgo } from "../lib/timeAgo";
 import { Button } from "@/components/ui/button";
+import { IconTip } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -779,10 +780,12 @@ function InboxCollectionToolbar({
   controls,
   feedback,
   ariaLabel,
+  className,
 }: CollectionToolbarProps & { streamlined: boolean }) {
   if (streamlined) {
     return (
       <CollectionToolbar
+        className={className}
         ariaLabel={ariaLabel}
         context={context}
         search={search}
@@ -793,7 +796,7 @@ function InboxCollectionToolbar({
   }
 
   return (
-    <div role="toolbar" aria-label={ariaLabel} className="space-y-2">
+    <div role="toolbar" aria-label={ariaLabel} className={cn("space-y-2", className)}>
       {search ? <div className="sm:hidden">{search}</div> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         {context}
@@ -2509,6 +2512,8 @@ export function Inbox() {
     <div className="space-y-6">
       <InboxCollectionToolbar
         streamlined
+        // A toolbar sits 16px above the list it controls (DESIGN.md); sections stay 24px apart.
+        className="mb-4"
         ariaLabel="Inbox controls"
         context={(
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
@@ -2574,17 +2579,19 @@ export function Inbox() {
                 presentation="streamlined"
               />
               <Popover>
+                <IconTip label="Group">
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
                     className={cn("h-8 w-8 shrink-0", blockedGroupBy !== "none" && "bg-accent")}
-                    title="Group"
+                    aria-label="Group"
                   >
                     <Layers className="h-3.5 w-3.5" />
                   </Button>
                 </PopoverTrigger>
+                </IconTip>
                 <PopoverContent align="end" className="w-44 p-0">
                   <div className="space-y-0.5 p-2">
                     {BLOCKED_GROUP_OPTIONS.map(([value, label]) => (
@@ -2623,17 +2630,19 @@ export function Inbox() {
                 iconOnly
               />
               <Popover>
+                <IconTip label="Sort">
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
                     className="h-8 w-8 shrink-0"
-                    title="Sort"
+                    aria-label="Sort"
                   >
                     <ArrowUpDown className="h-3.5 w-3.5" />
                   </Button>
                 </PopoverTrigger>
+                </IconTip>
                 <PopoverContent align="end" className="w-48 p-0">
                   <div className="space-y-0.5 p-2">
                     {BLOCKED_SORT_OPTIONS.map(([value, label]) => (
@@ -2659,16 +2668,19 @@ export function Inbox() {
             </>
           ) : showGeneralIssueToolbarControls ? (
             <>
+              <IconTip label={nestingEnabled ? "Show sub-tasks as their own rows" : "Show sub-tasks under their parent"}>
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
                 className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", nestingEnabled && "bg-accent")}
                 onClick={toggleNesting}
-                title={nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
+                aria-label="Nest sub-tasks under their parent"
+                aria-pressed={nestingEnabled}
               >
                 <ListTree className="h-3.5 w-3.5" />
               </Button>
+              </IconTip>
               <IssueFiltersPopover
                 state={issueFilters}
                 onChange={updateIssueFilters}
@@ -2700,17 +2712,19 @@ export function Inbox() {
                 } : undefined}
               />
               <Popover>
+                <IconTip label="Group">
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
                     className={cn("h-8 w-8 shrink-0", groupBy !== "none" && "bg-accent")}
-                    title="Group"
+                    aria-label="Group"
                   >
                     <Layers className="h-3.5 w-3.5" />
                   </Button>
                 </PopoverTrigger>
+                </IconTip>
                 <PopoverContent align="end" className="w-40 p-2">
                   <div className="space-y-0.5">
                     {([
@@ -2872,8 +2886,9 @@ export function Inbox() {
                 ? "You are all caught up. Anything that needs your answer is in Decisions."
                 : "Try a different filter, or look in Decisions for anything waiting on you."
           }
-          action={searchQuery.trim() ? "Clear search" : undefined}
-          onAction={searchQuery.trim() ? () => setSearchQuery("") : undefined}
+          // One next step: clear the search, or go where answers are asked for.
+          action={searchQuery.trim() ? "Clear search" : "Open Decisions"}
+          onAction={searchQuery.trim() ? () => setSearchQuery("") : () => navigate("/desk#desk-needs-me")}
           hideActionIcon
         />
       )}

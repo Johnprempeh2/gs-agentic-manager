@@ -972,12 +972,12 @@ function AgentMetaColumns({
       )}
       <div className="w-44 min-w-0 leading-tight">
         <div
-          className="truncate font-mono text-xs text-muted-foreground"
+          className="truncate text-xs text-muted-foreground"
           title={model ?? "The model its AI connection uses by default"}
         >
           {model ?? "Default model"}
         </div>
-        <div className="truncate font-mono text-(length:--text-micro) text-subtle-foreground" title={adapterLabel}>
+        <div className="truncate text-(length:--text-micro) text-subtle-foreground" title={adapterLabel}>
           {adapterLabel}
         </div>
       </div>

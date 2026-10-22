@@ -404,7 +404,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     // Decisions (attention home, PAP-13481) graduated out of Experimental (GRE-66): always shown.
     // The executive's one page: everything waiting on you, grouped by what to do.
     needed: link("/needed", "Needed from you", HandHelping),
-    // Decisions live in the Desk's "Needs me" section: one list, one count.
+    // Decisions live in the Desk's Decisions section: one list, one count.
     // Both rows point at /desk, so the hash decides which one is lit: never both (lib/sidebar-active).
     decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:decisions" }),
     // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.

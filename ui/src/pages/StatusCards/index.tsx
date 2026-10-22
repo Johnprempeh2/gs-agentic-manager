@@ -126,11 +126,10 @@ export function StatusCards() {
   const showCostMeter = todayTotals.tokens > 0 || todayTotals.cents > 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      {/* Header */}
+    <div className="max-w-6xl space-y-6">
+      {/* Header: the page bar already says Status. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold">Status</h1>
           <Badge variant="secondary" className="gap-1">
             <FlaskConical className="h-3 w-3" />
             Experimental

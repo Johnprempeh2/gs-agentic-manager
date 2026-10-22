@@ -26,6 +26,7 @@ vi.mock("@/lib/router", () => ({
 }));
 vi.mock("../hooks/useIsPhone", () => ({ useIsPhone: () => phone }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
+vi.mock("../context/DialogContext", () => ({ useDialogActions: () => ({ openNewIssue: vi.fn() }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: setBreadcrumbsMock }) }));
 vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: pushToastMock }) }));
 vi.mock("../api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: "user-john" } }) } }));

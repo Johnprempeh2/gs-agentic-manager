@@ -14,6 +14,7 @@ import {
 } from "../lib/attention";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { IconTip } from "./ui/tooltip";
 import { Checkbox } from "./ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 
@@ -62,36 +63,38 @@ export function DecisionsToolbar({
       )}
       {/* Filter */}
       <Popover>
+        <IconTip label="Filter">
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="icon"
             className={cn("h-8 w-8 shrink-0", activeFilterCount > 0 && "bg-accent")}
-            title="Filter"
             aria-label="Filter"
           >
             <ListFilter className="h-3.5 w-3.5" />
           </Button>
         </PopoverTrigger>
+        </IconTip>
         <PopoverContent align="end" className="w-64 p-0">
           <FilterMenu options={filterOptions} filters={filters} onChange={onFiltersChange} />
         </PopoverContent>
       </Popover>
       {/* Group by */}
       <Popover>
+        <IconTip label="Group">
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="icon"
             className={cn("h-8 w-8 shrink-0", groupBy !== "none" && "bg-accent")}
-            title="Group"
             aria-label="Group"
           >
             <Layers className="h-3.5 w-3.5" />
           </Button>
         </PopoverTrigger>
+        </IconTip>
         <PopoverContent align="end" className="w-40 p-2">
           <div className="space-y-0.5">
             {ATTENTION_GROUP_BY_OPTIONS.map(([value, label]) => (
@@ -113,18 +116,19 @@ export function DecisionsToolbar({
       </Popover>
       {/* Sort */}
       <Popover>
+        <IconTip label="Sort">
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="icon"
             className="h-8 w-8 shrink-0"
-            title="Sort"
             aria-label="Sort"
           >
             <ArrowUpDown className="h-3.5 w-3.5" />
           </Button>
         </PopoverTrigger>
+        </IconTip>
         <PopoverContent align="end" className="w-44 p-2">
           <div className="space-y-0.5">
             {ATTENTION_SORT_OPTIONS.map(([value, label]) => (

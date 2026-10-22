@@ -610,10 +610,10 @@ describe("Inbox toolbar", () => {
     expect(container.querySelector('input[placeholder="Search inbox…"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="inbox-blocked-tab-badge"]')).toBeNull();
     expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim().startsWith("Filter"))).toBe(true);
-    expect(container.querySelector('button[title="Group"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Group"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Columns"]')).not.toBeNull();
-    expect(container.querySelector('button[title="Sort"]')).not.toBeNull();
-    expect(container.querySelector('button[title="Enable parent-child nesting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Sort"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Nest sub-tasks under their parent"]')).toBeNull();
     expect(container.textContent).not.toContain("Mark all as read");
 
     act(() => {
@@ -826,7 +826,7 @@ describe("Inbox toolbar", () => {
       );
     });
 
-    const groupButton = container.querySelector<HTMLButtonElement>('button[title="Group"]');
+    const groupButton = container.querySelector<HTMLButtonElement>('button[aria-label="Group"]');
     expect(groupButton).not.toBeNull();
 
     await act(async () => {

@@ -262,10 +262,10 @@ export function TeamScorecard() {
   if (!selectedCompanyId) return <EmptyState icon={Trophy} message="Select an organisation to see its scorecard." />;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-5">
+    <div className="w-full max-w-4xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Scorecard</h1>
+          {/* The page bar already says Scorecard; the line says what it is for. */}
           <p className="text-sm text-muted-foreground">
             What each agent finished, and what they are working on now. Agents with stuck work come first.
           </p>

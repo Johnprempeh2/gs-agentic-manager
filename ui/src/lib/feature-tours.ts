@@ -412,7 +412,7 @@ export const MY_TASKS_TOUR: TourDefinition = {
       body: "Pin a task on its page and it sits at the top, with everything under it. You see how much is done, what waits on you and the latest updates.",
     },
     {
-      title: "Needs me",
+      title: "Decisions",
       body: "Decisions, reviews and tasks assigned to you, most urgent first. Routine chores stay hidden until you switch on Show routine tasks.",
     },
     {

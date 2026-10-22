@@ -424,7 +424,8 @@ export function Deliverables() {
       {/* The page bar already says Deliverables; the line says what it is for. */}
       <p className="text-sm text-muted-foreground">Finished documents and sites your agents made for you.</p>
 
-      <div className="space-y-3">
+      {/* The search and filters are the list's toolbar: 16px above it (DESIGN.md). */}
+      <div className="mb-4 space-y-3">
         <div className="relative w-full max-w-2xl" data-tour="deliverables-search">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input

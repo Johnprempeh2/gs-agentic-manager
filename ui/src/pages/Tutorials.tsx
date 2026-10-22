@@ -124,7 +124,7 @@ export function Tutorials() {
     <div className="w-full max-w-3xl space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-xl font-bold">Tutorials</h1>
+          {/* The page bar already says Tutorials; the line says what it is for. */}
           <p className="text-sm text-muted-foreground">Short guided tours of each page. Start one at any time, or select Show me around at the top of a page.</p>
         </div>
         {tours.length > 0 ? (

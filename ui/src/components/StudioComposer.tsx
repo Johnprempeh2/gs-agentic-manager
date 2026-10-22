@@ -111,7 +111,7 @@ export function StudioComposer({
       {children}
       <div className="flex items-center gap-2 max-md:flex-col max-md:items-stretch">
         <div
-          className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scrollbar-none"
+          className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scrollbar-none md:flex-wrap md:overflow-visible"
           role="toolbar"
           aria-label="Settings"
           data-testid="studio-chips"
