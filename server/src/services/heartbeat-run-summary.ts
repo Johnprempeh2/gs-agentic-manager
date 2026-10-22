@@ -359,6 +359,26 @@ function decision(
   };
 }
 
+/** Work after a comment before that comment reads as an opening acknowledgement. */
+const ACKNOWLEDGEMENT_MIN_WORK_AFTER_MS = 30_000;
+
+/**
+ * A run's comment is its opening acknowledgement ("I will check now"), not its
+ * closing word, when it was posted in the first half of the run and real work
+ * followed it. Reusing it as the run's reply hides the final report (GRE-1897).
+ */
+function isEarlyAcknowledgementComment(input: {
+  commentCreatedAt: Date | null | undefined;
+  runStartedAt: Date | null | undefined;
+  runFinishedAt: Date | null | undefined;
+}) {
+  const { commentCreatedAt, runStartedAt, runFinishedAt } = input;
+  if (!commentCreatedAt || !runStartedAt || !runFinishedAt) return false;
+  const before = commentCreatedAt.getTime() - runStartedAt.getTime();
+  const after = runFinishedAt.getTime() - commentCreatedAt.getTime();
+  return after >= ACKNOWLEDGEMENT_MIN_WORK_AFTER_MS && after > before;
+}
+
 /**
  * Resolve durable user-facing prose independently from the semantic run status.
  * The returned text is never truncated. Callers may persist only the bounded
@@ -368,7 +388,10 @@ export function resolveHeartbeatRunResponse(input: {
   resultJson: Record<string, unknown> | null | undefined;
   /** Server-owned conversation finalization, after normal governance checks. */
   conversationTurnFinished?: boolean;
-  existingComment?: { id: string; body?: string | null } | null;
+  existingComment?: { id: string; body?: string | null; createdAt?: Date | null } | null;
+  /** Run timing, used to tell an opening acknowledgement from a closing comment. */
+  runStartedAt?: Date | null;
+  runFinishedAt?: Date | null;
   preferFinalResponseOverExistingComment?: boolean;
   externalChatResponseWakeSummaryAuthorized?: boolean;
   /** Server-only proof of the exact accepted response after durable status
@@ -516,6 +539,28 @@ export function resolveHeartbeatRunResponse(input: {
 
   const existingText = readCommentText(input.existingComment?.body);
   if (input.existingComment && existingText) {
+    if (
+      !hasYieldedSemanticResult(resultJson) &&
+      isEarlyAcknowledgementComment({
+        commentCreatedAt: input.existingComment.createdAt,
+        runStartedAt: input.runStartedAt,
+        runFinishedAt: input.runFinishedAt,
+      })
+    ) {
+      const upstream = resolveCompletedUpstreamResponse();
+      if (upstream?.text && upstream.text.trim() !== existingText.trim()) {
+        return {
+          ...upstream,
+          decision: {
+            ...upstream.decision,
+            reasonCodes: [
+              ...upstream.decision.reasonCodes,
+              "early_acknowledgement_comment_superseded",
+            ],
+          },
+        };
+      }
+    }
     return {
       text: existingText,
       decision: decision("existing_issue_comment", {
