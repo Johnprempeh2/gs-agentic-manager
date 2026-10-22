@@ -24,6 +24,10 @@ interface ProviderPriceTable {
 
 const ANTHROPIC_SOURCE = "https://docs.anthropic.com/en/docs/about-claude/pricing";
 const OPENAI_SOURCE = "https://openai.com/api/pricing";
+// Checked 2026-10-22: standard tier, short context (<=272K input tokens). Longer
+// prompts bill at 2x input / 1.5x output; we only see per-run totals, so they are under-estimated.
+const OPENAI_DEV_SOURCE = "https://developers.openai.com/api/docs/pricing";
+const GPT_5_6_SOURCE = "https://developers.openai.com/api/docs/models/GPT-5.6";
 const ARGON_SOURCE = "https://cloud.google.com/blog/products/ai-machine-learning/gemini-4-argon-available-on-google-cloud";
 
 function price(input: number, cached: number, output: number, effectiveFrom: string, sourceUrl: string, effectiveUntil?: string): ApiModelPrice {
@@ -63,6 +67,14 @@ export const API_PRICE_TABLE: Record<string, ProviderPriceTable> = {
       "gpt-5.1-codex": openai(1.25, 0.125, 10),
       "gpt-5-mini": openai(0.25, 0.025, 2),
       "gpt-5-nano": openai(0.05, 0.005, 0.4),
+      "gpt-6-astra": [price(10, 1, 50, LEGACY_EFFECTIVE_FROM, OPENAI_DEV_SOURCE)],
+      "gpt-6-sol": [price(2, 0.2, 10, LEGACY_EFFECTIVE_FROM, OPENAI_DEV_SOURCE)],
+      "gpt-6-luna": [price(0.1, 0.01, 0.5, LEGACY_EFFECTIVE_FROM, OPENAI_DEV_SOURCE)],
+      "gpt-5.6-sol": [
+        price(5, 0.5, 30, LEGACY_EFFECTIVE_FROM, GPT_5_6_SOURCE, "2026-08-21"),
+        // OpenAI calls this promotional, "at least through November 21, 2026"; add a dated row when it ends.
+        price(4, 0.4, 20, "2026-08-21", OPENAI_DEV_SOURCE),
+      ],
     },
   },
   google: {
@@ -111,7 +123,9 @@ export function computeApiEquivalentCents(usage: ApiEquivalentInput, at: Date | 
   const input = Math.max(0, usage.inputTokens);
   const cached = Math.max(0, usage.cachedInputTokens);
   const output = Math.max(0, usage.outputTokens);
-  const uncachedInput = table.cachedIncludedInInput ? Math.max(0, input - cached) : input;
+  // Cached tokens normally sit inside input; when a run reports more cached than input
+  // (seen on live Codex runs), its input figure is already the uncached part.
+  const uncachedInput = table.cachedIncludedInInput && cached <= input ? input - cached : input;
   return ((uncachedInput * modelPrice.inputPerMTok + cached * modelPrice.cachedInputPerMTok + output * modelPrice.outputPerMTok) / 1_000_000) * 100;
 }
 

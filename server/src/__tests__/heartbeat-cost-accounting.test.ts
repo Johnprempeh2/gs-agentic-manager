@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  estimateRunCostUsd,
   resolveCacheAdjustedCostUsd,
   resolveLedgerCostStatus,
 } from "../services/heartbeat.js";
@@ -12,6 +13,20 @@ describe("heartbeat cost accounting", () => {
       cachedInputTokens: 2_632_998,
       outputTokens: 32_644,
     })).toBe("unpriced");
+  });
+
+  it("estimates Codex usage from the price table and marks it estimated", () => {
+    const usage = { inputTokens: 793, cachedInputTokens: 43_776, outputTokens: 78 };
+    const estimate = estimateRunCostUsd("openai", "gpt-6-sol", usage, new Date("2026-10-22T12:00:00Z"));
+    expect(estimate).toBeCloseTo((793 * 2 + 43_776 * 0.2 + 78 * 10) / 1_000_000, 12);
+    expect(resolveLedgerCostStatus({ costUsd: null, estimatedCostUsd: estimate, ...usage })).toBe("estimated");
+  });
+
+  it("leaves an unpublished model unpriced instead of guessing", () => {
+    const usage = { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 };
+    const estimate = estimateRunCostUsd("openai", "gpt-9-mystery", usage);
+    expect(estimate).toBeNull();
+    expect(resolveLedgerCostStatus({ costUsd: null, estimatedCostUsd: estimate, ...usage })).toBe("unpriced");
   });
 
   it("marks reported CLI cost as priced", () => {

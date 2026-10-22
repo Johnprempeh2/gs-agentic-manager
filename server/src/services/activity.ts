@@ -69,6 +69,7 @@ export function activityService(db: Db) {
         ),
         'billingType', coalesce(${heartbeatRuns.usageJson} -> 'billingType', ${heartbeatRuns.usageJson} -> 'billing_type'),
         'billing_type', coalesce(${heartbeatRuns.usageJson} -> 'billing_type', ${heartbeatRuns.usageJson} -> 'billingType'),
+        'costStatus', ${heartbeatRuns.usageJson} -> 'costStatus',
         'costUsd', coalesce(
           ${heartbeatRuns.usageJson} -> 'costUsd',
           ${heartbeatRuns.usageJson} -> 'cost_usd',

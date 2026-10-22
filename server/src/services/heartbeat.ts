@@ -116,6 +116,8 @@ import {
   type BillingType,
   type ChatProvider,
   type CostStatus,
+  computeApiEquivalentCents,
+  resolveApiPrice,
   type EnvironmentLeaseStatus,
   type ExecutionWorkspace,
   type ExecutionWorkspaceConfig,
@@ -5421,6 +5423,7 @@ function normalizeBilledCostCents(
 
 export function resolveLedgerCostStatus(input: {
   costUsd: number | null | undefined;
+  estimatedCostUsd?: number | null;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -5429,7 +5432,24 @@ export function resolveLedgerCostStatus(input: {
     input.inputTokens > 0 ||
     input.cachedInputTokens > 0 ||
     input.outputTokens > 0;
-  return input.costUsd == null && hasTokenUsage ? "unpriced" : "reported";
+  if (input.costUsd != null || !hasTokenUsage) return "reported";
+  return input.estimatedCostUsd != null ? "estimated" : "unpriced";
+}
+
+/**
+ * API-equivalent USD for a run whose adapter reported tokens but no cost
+ * (Codex), from the published price table. Null when the model is unpriced.
+ * Never billed: it is shown as an estimate and does not touch costCents.
+ */
+export function estimateRunCostUsd(
+  provider: string,
+  model: string,
+  usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number } | null | undefined,
+  at: Date = new Date(),
+): number | null {
+  if (!usage) return null;
+  const cents = computeApiEquivalentCents({ provider, model, ...usage }, at);
+  return cents === null ? null : cents / 100;
 }
 
 export function resolveCacheAdjustedCostUsd(input: {
@@ -21382,6 +21402,10 @@ export function heartbeatService(
       inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0;
     const costStatus = resolveLedgerCostStatus({
       costUsd: billedCostUsd,
+      estimatedCostUsd:
+        billedCostUsd == null
+          ? estimateRunCostUsd(result.provider ?? "unknown", result.model ?? "unknown", usage)
+          : null,
       inputTokens,
       cachedInputTokens,
       outputTokens,
@@ -22518,6 +22542,12 @@ export function heartbeatService(
             : "failed";
 
     const cacheAdjustedCostUsd = resolveCacheAdjustedCostUsd(adapterResult);
+    const usageProvider = readNonEmptyString(adapterResult.provider) ?? "unknown";
+    const usageModel = readNonEmptyString(adapterResult.model) ?? "unknown";
+    const estimatedCostUsd =
+      cacheAdjustedCostUsd == null
+        ? estimateRunCostUsd(usageProvider, usageModel, normalizedUsage)
+        : null;
     const usageJson =
       normalizedUsage ||
       adapterResult.costUsd != null ||
@@ -22564,8 +22594,16 @@ export function heartbeatService(
             ...(cacheAdjustedCostUsd != null
               ? { cacheAdjustedCostUsd }
               : {}),
+            // API-equivalent estimate; costStatus "estimated" marks it as never billed.
+            ...(estimatedCostUsd != null
+              ? {
+                  costUsd: estimatedCostUsd,
+                  estimatePrice: resolveApiPrice(usageProvider, usageModel),
+                }
+              : {}),
             costStatus: resolveLedgerCostStatus({
               costUsd: cacheAdjustedCostUsd,
+              estimatedCostUsd,
               inputTokens: normalizedUsage?.inputTokens ?? 0,
               cachedInputTokens: normalizedUsage?.cachedInputTokens ?? 0,
               outputTokens: normalizedUsage?.outputTokens ?? 0,
