@@ -178,7 +178,36 @@ describe("explainWhyBlocked", () => {
   it("says when everything it waited on is finished", () => {
     const result = expectPlain(explain({ blockedBy: [blocker({ status: "done" })] }));
     expect(result.source).toBe("blockers_finished");
+    expect(result.headline).toBe("Waits on nothing. Everything it was waiting on is finished.");
     expect(result.nextStep).toBe("Move it back to To do so the work can start again.");
+  });
+
+  it("names the owner's wait, not the finished task, when a note says what it waits on now", () => {
+    // GRE-1786: the blocker was done; the task waited on John's release.
+    const result = expectPlain(
+      explain({
+        blockedBy: [blocker({ status: "done" })],
+        unblockDescriptor: { owner: { agentId: "agent-ridge" }, action: "Measure once the fix is live.", waitingOn: "board" },
+      }),
+    );
+    expect(result.source).toBe("waiting");
+    expect(result.headline).toBe("Waiting on you (the board).");
+    expect(result.nextStep).toBe("Measure once the fix is live.");
+  });
+
+  it("says a task waits on the reader when its note says so", () => {
+    // GRE-1799: blocked until John replied to a test email.
+    const result = expectPlain(
+      explain({
+        unblockDescriptor: {
+          owner: { agentId: "agent-ridge" },
+          action: "Check the inbox after John replies to the test email.",
+          waitingOn: "board",
+          expectedBy: "2026-10-23",
+        },
+      }),
+    );
+    expect(result.headline).toBe("Waiting on you (the board) until 23 Oct.");
   });
 
   it("says when what it waited on was cancelled", () => {
@@ -297,7 +326,7 @@ describe("explainWhyBlocked", () => {
   it("falls back to a plain sentence when nothing says why", () => {
     const result = expectPlain(explain());
     expect(result.source).toBe("no_reason");
-    expect(result.headline).toBe("Marked blocked, but nobody has said why.");
+    expect(result.headline).toBe("Waits on nothing. Marked blocked, but nobody has said why.");
     expect(result.whoCanUnblock).toBe("Ridge");
     expect(result.nextStep).toBe("Ask Ridge what they need, or move it back to To do.");
   });
@@ -346,7 +375,7 @@ describe("explainWhyBlocked", () => {
         "This task repairs 'Ship release' (GRE-77), which got stuck.",
       ],
       [attention({ reason: "external_owner_action" }), "outside_wait", "Waiting on someone outside the company."],
-      [attention({ reason: "blocked_without_action_path" }), "no_reason", "Marked blocked, but nobody has said why."],
+      [attention({ reason: "blocked_without_action_path" }), "no_reason", "Waits on nothing. Marked blocked, but nobody has said why."],
     ] as const)("%#: %s", (flag, source, headline) => {
       const result = expectPlain(explain({ blockedInboxAttention: flag }));
       expect(result.source).toBe(source);

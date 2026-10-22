@@ -253,6 +253,15 @@ function pressKey(
   });
 }
 
+/** Radix menus open from the keyboard in jsdom (no pointer events). */
+function openMenu(trigger: HTMLElement) {
+  flushSync(() => {
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+}
+
 function pasteFiles(files: File[]) {
   const paste = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(paste, "clipboardData", {
@@ -844,8 +853,51 @@ describe("TaskChatComposer", () => {
   it("uses a compact mobile editor that can grow with the message", () => {
     render(<TaskChatComposer onAdd={vi.fn()} workMode="standard" mobile />);
 
-    expect(editable().dataset.contentClassName).toContain("min-h-(--sz-48px)");
+    expect(editable().dataset.contentClassName).toContain("min-h-6");
     expect(editable().dataset.contentClassName).toContain("max-h-(--sz-28dvh)");
+    expect(
+      container.querySelector<HTMLElement>(".paperclip-task-chat-composer")?.dataset.composerSize,
+    ).toBe("phone");
+  });
+
+  it("puts labelled attach and dictate actions behind one + on phone", () => {
+    installFakeSpeechRecognition();
+    try {
+      render(
+        <TaskChatComposer
+          onAdd={vi.fn()}
+          workMode="standard"
+          mobile
+          onAttachImage={vi.fn()}
+        />,
+      );
+      // The row keeps only +, mode and send; no bare mic or paperclip icons.
+      expect(container.querySelector('[data-testid="task-chat-composer-dictation"]')).toBeNull();
+      const add = container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-add"]')!;
+      expect(add.getAttribute("aria-label")).toBe("Add to message");
+      openMenu(add);
+      const menu = document.body.querySelector('[data-testid="task-chat-composer-add-menu"]')!;
+      expect(menu.querySelector('[data-testid="task-chat-composer-attach"]')?.textContent).toContain("Attach a file");
+      const dictate = menu.querySelector<HTMLElement>('[data-testid="task-chat-composer-dictation"]')!;
+      expect(dictate.textContent).toContain("Dictate");
+      flushSync(() => dictate.click());
+      expect(FakeSpeechRecognition.last().started).toBe(true);
+      // While listening, a visible stop control sits in the row.
+      expect(
+        container.querySelector('[data-testid="task-chat-composer-dictation-stop"]')?.getAttribute("aria-label"),
+      ).toBe("Stop dictation");
+    } finally {
+      removeFakeSpeechRecognition();
+    }
+  });
+
+  it("names what the mode picker chooses", () => {
+    render(
+      <TaskChatComposer onAdd={vi.fn()} workMode="standard" onWorkModeChange={vi.fn()} mobile />,
+    );
+    openMenu(container.querySelector<HTMLButtonElement>('[data-testid="task-chat-composer-mode"]')!);
+    const menu = document.body.querySelector('[data-testid="task-chat-composer-mode-menu"]')!;
+    expect(menu.textContent).toContain("How the agent works on your message");
   });
 
   it("submits the trimmed body on Cmd+Enter and clears the draft", async () => {

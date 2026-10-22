@@ -509,6 +509,35 @@ describe("Deliverables page", () => {
     expect(checked?.textContent).toBe("Client-facing");
   });
 
+  it("folds the kind and menu filters behind Filters on a phone, with sort and group by the count (GRE-1921)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([sample()]));
+    render("/deliverables?kind=deck&date=week");
+    await flush();
+
+    const toggle = container.querySelector<HTMLButtonElement>("[data-testid='deliverable-filters-toggle']")!;
+    const panel = container.querySelector<HTMLElement>("[data-testid='deliverable-filters']")!;
+    expect(toggle.textContent).toContain("Filters");
+    // Two filters on: kind and date.
+    expect(toggle.textContent).toContain("2");
+    expect(toggle.getAttribute("aria-controls")).toBe(panel.id);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(panel.className).toContain("hidden");
+    expect(panel.className).toContain("sm:flex");
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(panel.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+
+    // Sort and group sit on the result-count row, not in the filter panel.
+    const sortButton = container.querySelector("[data-testid='deliverable-sort']")!;
+    expect(panel.contains(sortButton)).toBe(false);
+    expect(sortButton.parentElement?.textContent).toContain("1 deliverable");
+    expect(sortButton.parentElement?.contains(container.querySelector("[data-testid='deliverable-group']"))).toBe(true);
+    expect(container.querySelector("button[aria-label='Copy as a list']")).not.toBeNull();
+  });
+
   it("explains the page and shows an example prompt when there is nothing yet", async () => {
     deliverablesApiMock.list.mockResolvedValue(response([]));
     render();

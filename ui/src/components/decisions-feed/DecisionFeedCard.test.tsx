@@ -71,7 +71,7 @@ let root: Root;
 let queryClient: QueryClient;
 const onActed = vi.fn();
 
-function render(card: DecisionCard) {
+function render(card: DecisionCard, { compact = false }: { compact?: boolean } = {}) {
   act(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
@@ -80,6 +80,7 @@ function render(card: DecisionCard) {
           companyId={FIXTURE_COMPANY_ID}
           assignableAgents={fixtureAgents}
           onActed={onActed}
+          compact={compact}
         />
       </QueryClientProvider>,
     );
@@ -598,6 +599,48 @@ describe("DecisionFeedCard on a phone", () => {
   });
 });
 
+describe("compact card on the phone Desk (GRE-1918)", () => {
+  it("shows the title, reason, owner and one main action; the rest waits behind Details", async () => {
+    const card = stalledReviewCard();
+    render(card, { compact: true });
+    const article = container.querySelector("[data-decision-compact]")!;
+    expect(article).not.toBeNull();
+    expect(article.querySelector("h3")?.textContent).toBe(card.title);
+    expect(container.querySelector("[data-decision-reason]")?.textContent).toBe(card.reason);
+    expect(container.querySelector("[data-decision-owner]")?.textContent).toContain(card.waiting!.name);
+    expect(hasButton("Approve")).toBe(true);
+    expect(hasButton("Request changes")).toBe(false);
+    expect(container.textContent).not.toContain("What was done");
+
+    await click(button("Approve"));
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-844/stalled-review-decision", { action: "approve" });
+  });
+
+  it("falls back to the decision when the card has no reason", () => {
+    const card = { ...stalledReviewCard(), reason: "" };
+    render(card, { compact: true });
+    expect(container.querySelector("[data-decision-reason]")?.textContent).toBe(card.decision);
+  });
+
+  it("opens the full card with Details and closes it with Show less", async () => {
+    render(stalledReviewCard(), { compact: true });
+    expect(button("Details").getAttribute("aria-expanded")).toBe("false");
+    await click(button("Details"));
+    expect(container.querySelector("[data-decision-compact]")).toBeNull();
+    expect(container.querySelectorAll("[data-review-choice]")).toHaveLength(3);
+    expect(button("Show less").getAttribute("aria-expanded")).toBe("true");
+    await click(button("Show less"));
+    expect(container.querySelector("[data-decision-compact]")).not.toBeNull();
+  });
+
+  it("makes Answer the main action when the card is answered in place", async () => {
+    render(questionCard("int-9", "issue-9", "GRE-9"), { compact: true });
+    expect(container.querySelector("[data-testid='inline-question']")).toBeNull();
+    await click(button("Answer"));
+    expect(container.querySelector("[data-testid='inline-question']")).not.toBeNull();
+  });
+});
+
 describe("review card (GRE-870)", () => {
   it("names the reviewer and shows Approve and Request changes", () => {
     render(humanReviewCard());
@@ -652,7 +695,7 @@ describe("review card with no reviewer (GRE-1421)", () => {
     expect(text).not.toContain("Owner");
     const pr = container.querySelector("[data-testid='review-work-product']");
     expect(pr?.getAttribute("href")).toBe("https://github.com/Johnprempeh2/gs-agentic-manager/pull/525");
-    const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    const thread = container.querySelector("[data-testid='review-thread-link']");
     expect(thread?.getAttribute("href")).toBe("/issues/GRE-844#comment-comment-9");
     // Each choice is its button and the line that says what it does.
     const choices = Array.from(container.querySelectorAll("[data-review-choice]")).map((li) => {
@@ -676,9 +719,24 @@ describe("review card with no reviewer (GRE-1421)", () => {
     render(stalledReviewCard({ context: false }));
     expect(container.querySelector("[data-testid='review-no-update']")).not.toBeNull();
     expect(container.querySelector("[data-testid='review-work-product']")).toBeNull();
-    const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    const thread = container.querySelector("[data-testid='review-thread-link']");
     expect(thread?.getAttribute("href")).toBe("/issues/GRE-844");
+    expect(thread?.textContent).toBe("Read the thread");
     expect(container.querySelectorAll("[data-review-choice]")).toHaveLength(3);
+  });
+
+  it("warns about the missing summary and offers the thread before Approve (GRE-1919)", () => {
+    render(stalledReviewCard({ context: false }));
+    const warning = container.querySelector("[data-testid='review-no-update']")!;
+    expect(warning.getAttribute("role")).toBe("status");
+    expect(warning.textContent).toBe("No summary from the agent. Check the work before you approve.");
+    const thread = container.querySelector("[data-testid='review-thread-link']")!;
+    const approve = button("Approve");
+    const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(warning, thread)).toBe(true);
+    expect(before(thread, approve)).toBe(true);
+    // Approve stays available.
+    expect(approve.hasAttribute("disabled")).toBe(false);
   });
 
   it("approves and sends back through the review decision endpoint", async () => {

@@ -1532,13 +1532,17 @@ Environment overrides:
   files. Off when unset or not a positive number. Leave it off on sandboxes and
   previews: an instance cannot see worktrees another instance records.
 
-Without `GSAM_DB_BACKUP_ALERT_FILE`, health checks look for
-`db-backup-to-s3.failure` in the backup directory, beside the backup directory,
-and in the default sibling `health/` directory.
+Without `GSAM_DB_BACKUP_ALERT_FILE`, health checks read no failure marker.
 
 DB backups are not full instance filesystem backups. For full local disaster
 recovery, also back up local storage files and the local encrypted secrets key if
-those providers are enabled.
+those providers are enabled. On the Greatstone live PC the nightly job in
+`scripts/live-backup/` does both (see its README). `/api/health` reports it as
+`liveBackup`: the newest dump, files archive and encrypted key archive, read from
+the folder named in `<instance>/data/health/live-backup.json`.
+
+- `GSAM_LIVE_BACKUP_STATE_FILE=/path/to/live-backup.json` moves that state file
+- `GSAM_LIVE_BACKUP_MAX_AGE_HOURS=<hours>` sets the stale warning (default 30)
 
 ## Secrets in Dev
 

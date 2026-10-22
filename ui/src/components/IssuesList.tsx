@@ -32,6 +32,7 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  describeActiveIssueFilters,
   issueFilterArraysEqual,
   issueFilterLabel,
   issuePriorityOrder,
@@ -67,6 +68,7 @@ import { ErrorState } from "./ErrorState";
 import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
+import { ActiveIssueFilterChips } from "./ActiveIssueFilterChips";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
 import { FollowTaskButton } from "./FollowTask";
 import { useFollowIssue, useIssueFollows } from "../hooks/useIssueFollows";
@@ -1421,6 +1423,18 @@ export function IssuesList({
   const teamById = useMemo(() => new Map((agentTeams ?? []).map((team) => [team.id, team])), [agentTeams]);
 
   const activeFilterCount = countActiveIssueFilters(viewState, enableRoutineVisibilityFilter);
+  const activeFilters = describeActiveIssueFilters(
+    viewState,
+    {
+      agents,
+      creators: creatorOptions,
+      labels,
+      teams: agentTeams,
+      projects,
+      workspaces: isolatedWorkspacesEnabled ? workspaceOptions : undefined,
+    },
+    enableRoutineVisibilityFilter,
+  );
   const boardHighVolume = viewState.viewMode === "board" && filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
   const boardCompactCards =
     viewState.boardCardDensity === "compact"
@@ -2105,6 +2119,7 @@ export function IssuesList({
               </IconTip>
               <PopoverContent align="end" className="w-48 p-0">
                 <div className="p-2 space-y-0.5">
+                  <div className="px-2 pb-1 pt-0.5 text-xs font-medium text-muted-foreground">Sort by</div>
                   {/* PAP-411: "priority" sort option hidden behind SHOW_TASK_PRIORITY_UI (comparator stays dormant). */}
                   {([
                     ["workflow", "Workflow"],
@@ -2156,6 +2171,7 @@ export function IssuesList({
               </IconTip>
               <PopoverContent align="end" className="w-44 p-0">
                 <div className="p-2 space-y-0.5">
+                  <div className="px-2 pb-1 pt-0.5 text-xs font-medium text-muted-foreground">Group by</div>
                   {/* PAP-411: "priority" group-by option hidden behind SHOW_TASK_PRIORITY_UI (group logic stays dormant). */}
                   {([
                     ...(customGrouping ? [["custom", customGrouping.label] as const] : []),
@@ -2214,6 +2230,8 @@ export function IssuesList({
           </>
         )}
       />
+      {/* Below 1280 the Filter trigger is compact, so name each filter here (GRE-1924). */}
+      <ActiveIssueFilterChips filters={activeFilters} onChange={updateView} className="-mt-2 xl:hidden" />
 
       {(isLoading || externalObjectFilterLoading) && <PageSkeleton variant="issues-list" />}
       {error && <ErrorState error={error} title="Tasks did not load" onRetry={onRetry} compact />}

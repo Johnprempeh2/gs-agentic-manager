@@ -1,6 +1,7 @@
-import { ExternalLink, GitPullRequest, Link2 } from "lucide-react";
+import { CircleAlert, ExternalLink, GitPullRequest, Link2, MessagesSquare } from "lucide-react";
 import type { Agent, AttentionItem, AttentionItemDetail } from "@greatstone/shared";
 import { Link } from "@/lib/router";
+import { Button } from "@/components/ui/button";
 import { relativeTime } from "../lib/utils";
 
 type ReviewDetail = Extract<AttentionItemDetail, { kind: "review" }>;
@@ -25,7 +26,8 @@ const SECTION_LABEL = "text-xs font-medium text-muted-foreground";
 
 /**
  * What the agent handed over for review (GRE-1421): its newest comment, the
- * work product to check, and a link to the full thread. Shared by the
+ * work product to check, and a button to the full thread. With no summary a
+ * warning sits above the decision so Approve is not the easy default. Shared by the
  * /decisions card and the attention row.
  */
 export function ReviewWorkEvidence({
@@ -61,40 +63,41 @@ export function ReviewWorkEvidence({
           <blockquote className="line-clamp-4 text-sm text-foreground">{lastUpdate.excerpt}</blockquote>
         </figure>
       ) : (
-        <p className="text-sm text-muted-foreground" data-testid="review-no-update">
-          The agent did not write a summary. Read the thread to see the work.
+        // No summary: warn before Approve, so the evidence is checked first (GRE-1919).
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-md border border-status-warning/40 bg-status-warning-soft px-3 py-2 text-sm text-foreground"
+          data-testid="review-no-update"
+        >
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-status-warning-foreground" aria-hidden="true" />
+          <span>No summary from the agent. Check the work before you approve.</span>
         </p>
       )}
       {workProduct || threadHref ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {workProduct && (
-            <a
-              href={workProduct.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs font-medium text-foreground underline-offset-2 hover:underline"
-              data-testid="review-work-product"
-            >
-              {workProduct.type === "pull_request" ? (
-                <GitPullRequest className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              ) : (
-                <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              )}
-              <span className="min-w-0 truncate">
-                {workProduct.type === "pull_request" ? "Pull request" : "Result"}: {workProduct.title}
-              </span>
-              <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
-            </a>
-          )}
+        <div className="flex flex-wrap items-center gap-2">
           {threadHref && (
-            <Link
-              to={threadHref}
-              disableIssueQuicklook
-              className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Read the full thread
-            </Link>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to={threadHref}
+                disableIssueQuicklook
+                onClick={(e) => e.stopPropagation()}
+                data-testid="review-thread-link"
+              >
+                <MessagesSquare aria-hidden />
+                Read the thread
+              </Link>
+            </Button>
+          )}
+          {workProduct && (
+            <Button asChild variant="outline" size="sm" className="min-w-0 max-w-full">
+              <a href={workProduct.url} target="_blank" rel="noreferrer" data-testid="review-work-product">
+                {workProduct.type === "pull_request" ? <GitPullRequest aria-hidden /> : <Link2 aria-hidden />}
+                <span className="min-w-0 truncate">
+                  {workProduct.type === "pull_request" ? "Pull request" : "Result"}: {workProduct.title}
+                </span>
+                <ExternalLink className="size-3" aria-hidden />
+              </a>
+            </Button>
           )}
         </div>
       ) : null}

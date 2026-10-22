@@ -948,14 +948,18 @@ async function startServerWithDatabaseTeardown(
     Number(process.env.GSAM_DB_BACKUP_MAX_AGE_HOURS) ||
       Math.max(26, Math.ceil((config.databaseBackupIntervalMinutes / 60) * 2)),
   );
-  const databaseBackupAlertFile =
-    process.env.GSAM_DB_BACKUP_ALERT_FILE ||
-    resolve(config.databaseBackupDir, "..", "health", "db-backup-to-s3.failure");
-  const databaseBackupAlertFiles = [
-    databaseBackupAlertFile,
-    resolve(config.databaseBackupDir, "db-backup-to-s3.failure"),
-    resolve(config.databaseBackupDir, "..", "db-backup-to-s3.failure"),
-  ];
+  // Only a marker an external job is configured to write. There is no S3 job, so the old
+  // db-backup-to-s3.failure defaults could only ever report nothing (GRE-1930).
+  const databaseBackupAlertFile = process.env.GSAM_DB_BACKUP_ALERT_FILE || undefined;
+  // The nightly live backup (scripts/live-backup/live-backup.sh) writes this state file each run.
+  const liveBackupHealth = {
+    stateFile:
+      process.env.GSAM_LIVE_BACKUP_STATE_FILE ||
+      resolve(resolvePaperclipInstanceRoot(), "data", "health", "live-backup.json"),
+    maxAgeHours: Math.max(1, Number(process.env.GSAM_LIVE_BACKUP_MAX_AGE_HOURS) || 30),
+    // The USB drive copy (GRE-1950): warn after two nights without a good one.
+    offsiteMaxAgeHours: Math.max(1, Number(process.env.GSAM_LIVE_BACKUP_OFFSITE_MAX_AGE_HOURS) || 48),
+  };
   let databaseBackupInFlight = false;
   const runServerDatabaseBackup = async (
     trigger: InstanceDatabaseBackupTrigger,
@@ -1046,9 +1050,9 @@ async function startServerWithDatabaseTeardown(
           backupDir: config.databaseBackupDir,
           maxAgeHours: databaseBackupMaxAgeHours,
           alertFile: databaseBackupAlertFile,
-          alertFiles: databaseBackupAlertFiles,
         }
       : undefined,
+    liveBackupHealth,
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
     allowedHostnames: config.allowedHostnames,

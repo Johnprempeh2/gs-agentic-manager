@@ -25,6 +25,7 @@ import {
   type DeploymentMode,
 } from "@greatstone/shared";
 import type { InspectDatabaseBackupHealthOptions } from "./services/database-backup-health.js";
+import type { InspectLiveBackupHealthOptions } from "./services/live-backup-health.js";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
@@ -533,6 +534,7 @@ export async function createApp(
     };
     databaseBackupService?: InstanceDatabaseBackupService;
     databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
+    liveBackupHealth?: Omit<InspectLiveBackupHealthOptions, "now">;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     allowedHostnames: string[];
@@ -738,6 +740,7 @@ export async function createApp(
       authReady: opts.authReady,
       companyDeletionEnabled: opts.companyDeletionEnabled,
       databaseBackupHealth: opts.databaseBackupHealth,
+      liveBackupHealth: opts.liveBackupHealth,
     }),
   );
   api.use(openApiRoutes());

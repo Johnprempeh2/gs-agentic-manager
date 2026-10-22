@@ -5,6 +5,7 @@ import { Activity, AlertTriangle, Briefcase, CalendarClock, Check, CircleCheck, 
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
+import { useNeedsMe } from "../hooks/useDecisionsFeed";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -13,6 +14,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { Link, useSearchParams } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
 import { morningSummarySpeech, morningSummaryText } from "@/lib/morning-summary-text";
+import { needsYouAsks, type NeedsYouAsk } from "@/lib/needs-you-rows";
 import { ListenButton } from "../components/ListenButton";
 import { ShareTextButton } from "../components/ShareTextButton";
 import { useCopyAction } from "@/lib/use-copy-action";
@@ -65,6 +67,35 @@ function localToday(now: Date) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/**
+ * A Needs you line: what kind of ask it is and the ask itself first, then the
+ * task on up to two lines, so a review, a question and a confirmation read
+ * differently at a glance. It opens the request itself where there is one.
+ */
+function NeedsYouLine({ item, ask }: { item: MorningSummaryTask; ask: NeedsYouAsk | undefined }) {
+  const prompt = ask?.prompt && ask.prompt !== item.title ? ask.prompt : null;
+  return (
+    <Link
+      to={ask?.href ?? item.href ?? `/issues/${item.identifier ?? item.id}`}
+      className="flex min-h-11 flex-col gap-1 py-2 text-sm hover:underline"
+      data-needs-you-line
+    >
+      {ask || item.identifier ? (
+        <span className="flex items-center gap-2">
+          {ask ? (
+            <span className="rounded-full border border-border bg-accent px-2 py-0.5 text-xs font-medium text-foreground" data-needs-you-action>
+              {ask.action}
+            </span>
+          ) : null}
+          {item.identifier ? <span className="ml-auto shrink-0 text-xs text-muted-foreground">{item.identifier}</span> : null}
+        </span>
+      ) : null}
+      {prompt ? <span className="line-clamp-2 font-medium leading-snug">{prompt}</span> : null}
+      <span className={cn("line-clamp-2 leading-snug", prompt && "text-muted-foreground")}>{item.title}</span>
+    </Link>
+  );
+}
+
 function Section({
   icon: Icon,
   title,
@@ -74,6 +105,7 @@ function Section({
   more,
   tone,
   today,
+  asks,
 }: {
   icon: LucideIcon;
   title: string;
@@ -83,6 +115,8 @@ function Section({
   more: { label: string; to: string };
   tone?: "attention" | "danger" | "success";
   today?: string;
+  /** Set on Needs you: each line then says what it asks of you. */
+  asks?: Map<string, NeedsYouAsk>;
 }) {
   return (
     <section
@@ -108,13 +142,13 @@ function Section({
         <ul className="divide-y divide-border">
           {items.map((item) => (
             <li key={item.id}>
-              <Link to={item.href ?? `/issues/${item.identifier ?? item.id}`} className="flex min-h-11 items-center gap-2 py-2 text-sm hover:underline">
+              {asks ? <NeedsYouLine item={item} ask={asks.get(item.id)} /> : <Link to={item.href ?? `/issues/${item.identifier ?? item.id}`} className="flex min-h-11 items-center gap-2 py-2 text-sm hover:underline">
                 <span className="min-w-0 flex-1 truncate">{item.title}</span>
                 {today && lateLabel(item.dueDate, today) ? (
                   <span className="shrink-0 text-xs font-medium text-status-danger">{lateLabel(item.dueDate, today)}</span>
                 ) : null}
                 {item.identifier ? <span className="shrink-0 text-xs text-muted-foreground">{item.identifier}</span> : null}
-              </Link>
+              </Link>}
             </li>
           ))}
         </ul>
@@ -153,6 +187,8 @@ export function MorningSummary() {
     queryFn: () => morningSummaryApi.get(selectedCompanyId!, hours),
     enabled: !!selectedCompanyId,
   });
+  // The same data Desk shows; the layout already loads it, so this is no extra call.
+  const needsMe = useNeedsMe(selectedCompanyId);
 
   if (!selectedCompanyId) return <EmptyState icon={Sun} message="Select an organisation to see your morning summary." />;
   if (isLoading) return <PageSkeleton variant="detail" />;
@@ -211,6 +247,7 @@ export function MorningSummary() {
         items={data.needsYou.items}
         more={{ label: "Open Decisions", to: "/decisions" }}
         tone="attention"
+        asks={needsYouAsks(needsMe.data)}
       />
       <Section
         icon={CalendarClock}

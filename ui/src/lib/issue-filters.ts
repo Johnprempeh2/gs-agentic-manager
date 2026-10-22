@@ -370,3 +370,143 @@ export function countActiveIssueFilters(
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) count += 1;
   return count;
 }
+
+export type ActiveIssueFilter = {
+  key: string;
+  /** What the filter is, for example "Responsible". */
+  name: string;
+  /** What it is set to, for example "Me" or "Ada +2". */
+  value: string;
+  /** The patch that turns this one filter off. */
+  clear: Partial<IssueFilterState>;
+};
+
+export type ActiveIssueFilterNames = {
+  agents?: ReadonlyArray<{ id: string; name: string }>;
+  creators?: ReadonlyArray<{ id: string; label: string }>;
+  labels?: ReadonlyArray<{ id: string; name: string }>;
+  teams?: ReadonlyArray<{ id: string; name: string }>;
+  projects?: ReadonlyArray<{ id: string; name: string }>;
+  workspaces?: ReadonlyArray<{ id: string; name: string }>;
+};
+
+/** First name, then "+N" for the rest, so a chip stays one short line. */
+function summarizeFilterValues(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names[0]} +${names.length - 1}`;
+}
+
+function namesById(
+  ids: string[],
+  options: ReadonlyArray<{ id: string; name?: string; label?: string }> | undefined,
+  fallback: (id: string) => string,
+): string[] {
+  const byId = new Map((options ?? []).map((option) => [option.id, option.name ?? option.label ?? option.id]));
+  return ids.map((id) => byId.get(id) ?? fallback(id));
+}
+
+/**
+ * Each active filter in words, in the same order and with the same rules as
+ * countActiveIssueFilters, so the chips and the count always agree.
+ */
+export function describeActiveIssueFilters(
+  state: IssueFilterState,
+  names: ActiveIssueFilterNames = {},
+  enableRoutineVisibilityFilter = false,
+): ActiveIssueFilter[] {
+  const filters: ActiveIssueFilter[] = [];
+  const shortId = (id: string) => id.slice(0, 8);
+  if (state.statuses.length > 0) {
+    const preset = issueQuickFilterPresets.find(
+      (candidate) => candidate.statuses.length > 0 && issueFilterArraysEqual(candidate.statuses, state.statuses),
+    );
+    filters.push({
+      key: "statuses",
+      name: "Status",
+      value: preset?.label ?? summarizeFilterValues(state.statuses.map(issueFilterLabel)),
+      clear: { statuses: [] },
+    });
+  }
+  if (state.priorities.length > 0) {
+    filters.push({
+      key: "priorities",
+      name: "Priority",
+      value: summarizeFilterValues(state.priorities.map(issueFilterLabel)),
+      clear: { priorities: [] },
+    });
+  }
+  if (state.assignees.length > 0) {
+    const agentNames = new Map((names.agents ?? []).map((agent) => [agent.id, agent.name]));
+    filters.push({
+      key: "assignees",
+      name: "Responsible",
+      value: summarizeFilterValues(state.assignees.map((id) =>
+        id === "__unassigned" ? "No one" : id === "__me" ? "Me" : agentNames.get(id) ?? shortId(id))),
+      clear: { assignees: [] },
+    });
+  }
+  if (state.creators.length > 0) {
+    filters.push({
+      key: "creators",
+      name: "Created by",
+      value: summarizeFilterValues(namesById(state.creators, names.creators, (id) => shortId(id.replace(/^(agent|user):/, "")))),
+      clear: { creators: [] },
+    });
+  }
+  if (state.labels.length > 0) {
+    filters.push({
+      key: "labels",
+      name: "Label",
+      value: summarizeFilterValues(namesById(state.labels, names.labels, shortId)),
+      clear: { labels: [] },
+    });
+  }
+  const teams = state.teams ?? [];
+  if (teams.length > 0) {
+    filters.push({
+      key: "teams",
+      name: "Team",
+      value: summarizeFilterValues(namesById(teams, names.teams, shortId)),
+      clear: { teams: [] },
+    });
+  }
+  if (state.projects.length > 0) {
+    filters.push({
+      key: "projects",
+      name: "Project",
+      value: summarizeFilterValues(namesById(state.projects, names.projects, shortId)),
+      clear: { projects: [] },
+    });
+  }
+  if (state.workspaces.length > 0) {
+    filters.push({
+      key: "workspaces",
+      name: "Workspace",
+      value: summarizeFilterValues(namesById(state.workspaces, names.workspaces, shortId)),
+      clear: { workspaces: [] },
+    });
+  }
+  if (state.liveOnly) {
+    filters.push({ key: "liveOnly", name: "Only", value: "Working now", clear: { liveOnly: false } });
+  }
+  if (state.work) {
+    const option = issueWorkFilterOptions.find((candidate) => candidate.value === state.work);
+    filters.push({ key: "work", name: "Work", value: option?.label ?? issueFilterLabel(state.work), clear: { work: null } });
+  }
+  if (state.due) {
+    const option = issueDueFilterOptions.find((candidate) => candidate.value === state.due);
+    filters.push({ key: "due", name: "Due", value: option?.label ?? issueFilterLabel(state.due), clear: { due: null } });
+  }
+  if (state.externalObjectStatuses.length > 0) {
+    filters.push({
+      key: "externalObjectStatuses",
+      name: "Linked work",
+      value: summarizeFilterValues(state.externalObjectStatuses.map(externalObjectFilterLabel)),
+      clear: { externalObjectStatuses: [] },
+    });
+  }
+  if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) {
+    filters.push({ key: "hideRoutineExecutions", name: "Hide", value: "Routine tasks", clear: { hideRoutineExecutions: false } });
+  }
+  return filters;
+}

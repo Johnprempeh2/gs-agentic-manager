@@ -297,10 +297,11 @@ import {
 } from "../services/issue-dependency-wakeups.js";
 import {
   handOffBlockedDependents,
-  releaseUnownedReadyDependents,
+  releaseReadyDependents,
   resolveDuplicateOfFromComment,
   type BlockerHandoff,
   type BlockerHandoffResult,
+  type ReleasedDependent,
 } from "../services/issue-blocker-handoff.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import {
@@ -15196,6 +15197,10 @@ export function issueRoutes(
                 body: decision.body,
                 createdByRunId: actor.runId ?? null,
               });
+              if (transition.skippedStageNote) {
+                // Say why a later stage never ran (GRE-1903).
+                await svc.addComment(updated.id, transition.skippedStageNote, {}, { authorType: "system" }, tx);
+              }
               if (reviewOverride) {
                 // The waiting reviewer sees who decided for them and why.
                 await svc.addComment(updated.id, decision.body, {}, { authorType: "system" }, tx);
@@ -15242,15 +15247,6 @@ export function issueRoutes(
                   agentId: actor.agentId ?? null,
                   userId: actor.actorType === "user" ? actor.actorId : null,
                   runId: actor.runId ?? null,
-                },
-              });
-            } else if (existing.status !== "done" && updated.status === "done") {
-              await releaseUnownedReadyDependents(svc, tx, {
-                companyId: updated.companyId,
-                blocker: { id: updated.id, identifier: updated.identifier },
-                actor: {
-                  agentId: actor.agentId ?? null,
-                  userId: actor.actorType === "user" ? actor.actorId : null,
                 },
               });
             }
@@ -16044,6 +16040,30 @@ export function issueRoutes(
         requestedByActorId: actor.actorId,
       });
 
+      // GRE-1896: a done blocker frees the tasks that waited only on it. This
+      // runs after the closing comment is saved, so the note on each freed task
+      // quotes it, and before the reply, so the page shows them in todo at once.
+      // The one dependency wake below carries that note.
+      let releasedDependents = new Map<string, ReleasedDependent>();
+      if (existing.status !== "done" && issue.status === "done") {
+        try {
+          releasedDependents = await releaseReadyDependents(svc, db, {
+            companyId: issue.companyId,
+            blocker: { id: issue.id, identifier: issue.identifier },
+            actor: {
+              agentId: actor.agentId ?? null,
+              userId: actor.actorType === "user" ? actor.actorId : null,
+            },
+          });
+        } catch (err) {
+          // The dependency backstop moves them on its next pass.
+          logger.warn(
+            { err, issueId: issue.id },
+            "failed to return ready dependents to todo after blocker done",
+          );
+        }
+      }
+
       // Merge all wakeups from this update into one enqueue per agent to avoid duplicate runs.
       void (async () => {
         type WakeupRequest = NonNullable<
@@ -16079,6 +16099,7 @@ export function issueRoutes(
           blockedTransitionAt?: Date | string | null;
           source: string;
           mutation: string;
+          wakeCommentId?: string | null;
         }) => {
           const idempotencyKey = buildIssueBlockersResolvedWakeStateKey({
             dependentIssueId: input.dependentIssueId,
@@ -16109,6 +16130,7 @@ export function issueRoutes(
               resolvedBlockerIssueId: input.resolvedBlockerIssueId,
               blockerIssueIds: input.blockerIssueIds,
               mutation: input.mutation,
+              ...(input.wakeCommentId ? { commentId: input.wakeCommentId } : {}),
             },
             idempotencyKey,
             requestedByActorType: actor.actorType,
@@ -16120,6 +16142,9 @@ export function issueRoutes(
               source: input.source,
               resolvedBlockerIssueId: input.resolvedBlockerIssueId,
               blockerIssueIds: input.blockerIssueIds,
+              ...(input.wakeCommentId
+                ? { commentId: input.wakeCommentId, wakeCommentId: input.wakeCommentId }
+                : {}),
             },
           });
         };
@@ -16347,21 +16372,29 @@ export function issueRoutes(
         if (becameDone) {
           const dependents = await svc.listWakeableBlockedDependents(issue.id);
           for (const dependent of dependents) {
+            const release = releasedDependents.get(dependent.id);
             await addDependencyResolvedWakeup({
               agentId: dependent.assigneeAgentId,
               dependentIssueId: dependent.id,
               resolvedBlockerIssueId: issue.id,
               blockerIssueIds: dependent.blockerIssueIds,
-              blockedTransitionAt: dependent.blockedTransitionAt,
+              blockedTransitionAt: release
+                ? release.blockedTransitionAt
+                : dependent.blockedTransitionAt,
               source: "issue.blockers_resolved",
               mutation: "blocker_done",
+              wakeCommentId: release?.commentId ?? null,
             });
           }
         }
 
+        // An unblock note says the task now waits on something else, so a done
+        // blocker still on record is no reason to wake it again (GRE-1786 woke
+        // 20 times in 22 minutes this way).
         const restoredBlockedReadyDependency =
           issue.status === "blocked" &&
           issue.assigneeAgentId &&
+          !issue.unblockDescriptor &&
           (existing.status !== "blocked" ||
             Array.isArray(req.body.blockedByIssueIds) ||
             existing.assigneeAgentId !== issue.assigneeAgentId);
@@ -19920,6 +19953,26 @@ export function issueRoutes(
           currentIssue.status === "todo",
       });
 
+      // GRE-1896: same release as the update route, before the reply.
+      let releasedDependents = new Map<string, ReleasedDependent>();
+      if (issueBeforeCommentDecision.status !== "done" && currentIssue.status === "done") {
+        try {
+          releasedDependents = await releaseReadyDependents(svc, db, {
+            companyId: currentIssue.companyId,
+            blocker: { id: currentIssue.id, identifier: currentIssue.identifier },
+            actor: {
+              agentId: actor.agentId ?? null,
+              userId: actor.actorType === "user" ? actor.actorId : null,
+            },
+          });
+        } catch (err) {
+          logger.warn(
+            { err, issueId: currentIssue.id },
+            "failed to return ready dependents to todo after blocker done",
+          );
+        }
+      }
+
       // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
       void (async () => {
         type WakeupRequest = NonNullable<
@@ -19949,6 +20002,7 @@ export function issueRoutes(
           resolvedBlockerIssueId: string;
           blockerIssueIds: string[];
           blockedTransitionAt?: Date | string | null;
+          wakeCommentId?: string | null;
         }) => {
           const idempotencyKey = buildIssueBlockersResolvedWakeStateKey({
             dependentIssueId: input.dependentIssueId,
@@ -19979,6 +20033,7 @@ export function issueRoutes(
               resolvedBlockerIssueId: input.resolvedBlockerIssueId,
               blockerIssueIds: input.blockerIssueIds,
               mutation: "comment",
+              ...(input.wakeCommentId ? { commentId: input.wakeCommentId } : {}),
             },
             idempotencyKey,
             requestedByActorType: actor.actorType,
@@ -19990,6 +20045,9 @@ export function issueRoutes(
               source: "issue.blockers_resolved",
               resolvedBlockerIssueId: input.resolvedBlockerIssueId,
               blockerIssueIds: input.blockerIssueIds,
+              ...(input.wakeCommentId
+                ? { commentId: input.wakeCommentId, wakeCommentId: input.wakeCommentId }
+                : {}),
             },
           });
         };
@@ -20166,12 +20224,16 @@ export function issueRoutes(
             currentIssue.id,
           );
           for (const dependent of dependents) {
+            const release = releasedDependents.get(dependent.id);
             await addDependencyResolvedWakeup({
               agentId: dependent.assigneeAgentId,
               dependentIssueId: dependent.id,
               resolvedBlockerIssueId: currentIssue.id,
               blockerIssueIds: dependent.blockerIssueIds,
-              blockedTransitionAt: dependent.blockedTransitionAt,
+              blockedTransitionAt: release
+                ? release.blockedTransitionAt
+                : dependent.blockedTransitionAt,
+              wakeCommentId: release?.commentId ?? null,
             });
           }
         }

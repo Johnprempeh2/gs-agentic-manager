@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { groupDeliverableDocuments, type DeliverableAudience, type Project } from "@greatstone/shared";
-import { ArrowUpDown, Briefcase, Check, ChevronDown, ClipboardList, FileCheck2, Layers, Search, X } from "lucide-react";
+import { ArrowUpDown, Briefcase, Check, ChevronDown, ClipboardList, FileCheck2, Layers, ListFilter, Search, X } from "lucide-react";
 import {
   deliverablesApi,
   type Deliverable,
@@ -260,6 +260,9 @@ export function Deliverables() {
   const openId = searchParams.get("open");
 
   const [draftQuery, setDraftQuery] = useState(query);
+  // On a phone the kind and menu filters fold behind one Filters button, so
+  // the first deliverable shows on the first screen (GRE-1921).
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const navigate = useNavigate();
   // Arriving on a deliverable from another page in the app (a chat link, a
   // toast) closes back to that page; the installed app has no browser Back.
@@ -383,6 +386,8 @@ export function Deliverables() {
   const ordered = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const openIndex = openId ? ordered.findIndex((item) => item.id === openId) : -1;
 
+  const secondaryFilterCount = [kind, projectId, agentId, brand, confidentiality, linkHealth, dateRange === "all" ? null : dateRange]
+    .filter(Boolean).length;
   const filtered = !!(query || kind || projectId || agentId || brand || confidentiality || audience || linkHealth || dateRange !== "all");
 
   const listCopy = useCopyAction();
@@ -426,41 +431,64 @@ export function Deliverables() {
 
       {/* The search and filters are the list's toolbar: 16px above it (DESIGN.md). */}
       <div className="mb-4 space-y-3">
-        <div className="relative w-full max-w-2xl" data-tour="deliverables-search">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <input
-            ref={searchRef}
-            value={draftQuery}
-            onChange={(event) => setDraftQuery(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                if (draftQuery) setDraftQuery("");
-                else event.currentTarget.blur();
-              }
-            }}
-            type="search"
-            placeholder="Search titles, projects, clients, sites and document text"
-            aria-label="Search deliverables"
-            className="h-12 w-full rounded-lg border border-input bg-background pl-12 pr-16 text-base shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
-          />
-          {draftQuery ? (
-            <button
-              type="button"
-              onClick={() => setDraftQuery("")}
-              aria-label="Clear search"
-              className="absolute right-3 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : (
-            <kbd className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 font-mono text-xs text-muted-foreground">
-              /
-            </kbd>
-          )}
+        <div className="flex w-full max-w-2xl items-center gap-2">
+          <div className="relative min-w-0 flex-1" data-tour="deliverables-search">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <input
+              ref={searchRef}
+              value={draftQuery}
+              onChange={(event) => setDraftQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  if (draftQuery) setDraftQuery("");
+                  else event.currentTarget.blur();
+                }
+              }}
+              type="search"
+              placeholder="Search titles, projects, clients, sites and document text"
+              aria-label="Search deliverables"
+              className="h-12 w-full rounded-lg border border-input bg-background pl-12 pr-16 text-base shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
+            />
+            {draftQuery ? (
+              <button
+                type="button"
+                onClick={() => setDraftQuery("")}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : (
+              <kbd className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 font-mono text-xs text-muted-foreground">
+                /
+              </kbd>
+            )}
+          </div>
+          <button
+            type="button"
+            aria-expanded={filtersOpen}
+            aria-controls="deliverable-filters"
+            onClick={() => setFiltersOpen((open) => !open)}
+            data-testid="deliverable-filters-toggle"
+            className={cn(
+              "inline-flex h-12 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:hidden",
+              filtersOpen || secondaryFilterCount > 0
+                ? "border-foreground/20 bg-accent text-foreground"
+                : "border-input bg-background text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            <ListFilter className="h-4 w-4" aria-hidden="true" />
+            Filters
+            {secondaryFilterCount > 0 ? (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs text-primary-foreground">
+                <span className="sr-only">, </span>{secondaryFilterCount}<span className="sr-only"> on</span>
+              </span>
+            ) : null}
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2" data-testid="deliverable-audience">
-          <span id="deliverable-audience-label" className="text-sm font-medium text-foreground">Who it is for</span>
+          <span id="deliverable-audience-label" className="sr-only text-sm font-medium text-foreground sm:not-sr-only">Who it is for</span>
           <div role="radiogroup" aria-labelledby="deliverable-audience-label" className="inline-flex rounded-full border border-border p-0.5">
             {AUDIENCE_OPTIONS.map((option) => {
               const active = audience === option.value;
@@ -484,7 +512,11 @@ export function Deliverables() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          id="deliverable-filters"
+          className={cn("flex-wrap items-center gap-2 sm:flex", filtersOpen ? "flex" : "hidden")}
+          data-testid="deliverable-filters"
+        >
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by kind" data-tour="deliverables-kind">
             {[{ value: null, label: "All" }, ...KIND_OPTIONS].map((option) => {
               const active = kind === option.value;
@@ -555,51 +587,6 @@ export function Deliverables() {
             onChange={(value) => setParam("date", value)}
             testId="deliverable-filter-date"
           />
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="deliverable-sort">
-                  <ArrowUpDown />
-                  {DELIVERABLE_SORT_OPTIONS.find((option) => option.value === sort)?.label}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-                {DELIVERABLE_SORT_OPTIONS.map((option) => (
-                  <DropdownMenuItem
-                    key={option.value}
-                    onSelect={() => setParam("sort", option.value === "newest" ? null : option.value)}
-                    className="justify-between"
-                  >
-                    {option.label}
-                    {sort === option.value ? <Check className="h-3.5 w-3.5" /> : null}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="deliverable-group">
-                  <Layers />
-                  {groupBy === "none" ? "No grouping" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuLabel>Group by</DropdownMenuLabel>
-                {GROUP_OPTIONS.map((option) => (
-                  <DropdownMenuItem
-                    key={option.value}
-                    onSelect={() => setParam("group", option.value === DEFAULT_GROUP ? null : option.value)}
-                    className="justify-between"
-                  >
-                    {option.label}
-                    {groupBy === option.value ? <Check className="h-3.5 w-3.5" /> : null}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
         </div>
       </div>
 
@@ -647,21 +634,79 @@ export function Deliverables() {
         )
       ) : (
         <div className="space-y-8">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground" aria-live="polite">
+          {/* On a phone the sort and group icons give way so the count fits on one line. */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
               {total} {total === 1 ? "deliverable" : "deliverables"}
               {foldedCount > 0
                 ? ` · ${foldedCount} older ${foldedCount === 1 ? "version" : "versions"} grouped under the latest`
                 : null}
             </p>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="deliverable-sort"
+                  aria-label={`Sort: ${DELIVERABLE_SORT_OPTIONS.find((option) => option.value === sort)?.label}`}
+                  className="max-sm:[&>svg]:hidden"
+                >
+                  <ArrowUpDown />
+                  {DELIVERABLE_SORT_OPTIONS.find((option) => option.value === sort)?.label}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                {DELIVERABLE_SORT_OPTIONS.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onSelect={() => setParam("sort", option.value === "newest" ? null : option.value)}
+                    className="justify-between"
+                  >
+                    {option.label}
+                    {sort === option.value ? <Check className="h-3.5 w-3.5" /> : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="deliverable-group"
+                  aria-label={`Group: ${groupBy === "none" ? "No grouping" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}`}
+                  className="max-sm:[&>svg]:hidden"
+                >
+                  <Layers />
+                  {groupBy === "none" ? "No grouping" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Group by</DropdownMenuLabel>
+                {GROUP_OPTIONS.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onSelect={() => setParam("group", option.value === DEFAULT_GROUP ? null : option.value)}
+                    className="justify-between"
+                  >
+                    {option.label}
+                    {groupBy === option.value ? <Check className="h-3.5 w-3.5" /> : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="sm"
+              aria-label={listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
               title="Copy the deliverables on screen as a list with links, ready to paste into an email"
               onClick={() => void listCopy.copy(deliverablesListText(groups, (item) => deliverableShareUrl(item.id)))}
             >
               {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-              {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+              <span className="hidden sm:inline">
+                {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+              </span>
             </Button>
           </div>
           {groups.map((group) => (
@@ -687,7 +732,7 @@ export function Deliverables() {
                       <span className="shrink-0 font-normal">· {section.items.length}</span>
                     </h3>
                   ) : null}
-                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
                     {section.items.map((deliverable) => (
                       <DeliverableCard
                         key={deliverable.id}

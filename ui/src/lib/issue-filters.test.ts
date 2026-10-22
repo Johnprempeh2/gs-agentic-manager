@@ -6,6 +6,7 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  describeActiveIssueFilters,
   issueMatchesDueFilter,
   normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
@@ -322,5 +323,41 @@ describe("due date filter", () => {
     expect(normalizeIssueFilterState({ due: "overdue" }).due).toBe("overdue");
     expect(normalizeIssueFilterState({ due: "someday" }).due).toBeNull();
     expect(countActiveIssueFilters({ ...defaultIssueFilterState, due: "overdue" })).toBe(1);
+  });
+});
+
+describe("describeActiveIssueFilters", () => {
+  it("names each active filter in words and agrees with the count", () => {
+    const state = {
+      ...defaultIssueFilterState,
+      statuses: ["todo", "in_progress", "in_review", "blocked", "done"],
+      assignees: ["__me", "agent-1", "agent-2"],
+      projects: ["project-1"],
+      due: "overdue" as const,
+    };
+    const filters = describeActiveIssueFilters(state, {
+      agents: [{ id: "agent-1", name: "Ada" }],
+      projects: [{ id: "project-1", name: "Rover pilot" }],
+    });
+    expect(filters.map((filter) => `${filter.name}: ${filter.value}`)).toEqual([
+      "Status: Recent",
+      "Responsible: Me +2",
+      "Project: Rover pilot",
+      "Due: Past due",
+    ]);
+    expect(filters).toHaveLength(countActiveIssueFilters(state));
+  });
+
+  it("gives a patch that turns only that filter off", () => {
+    const state = { ...defaultIssueFilterState, labels: ["label-1"], liveOnly: true };
+    const [labelFilter, liveFilter] = describeActiveIssueFilters(state);
+    expect(labelFilter).toMatchObject({ name: "Label", value: "label-1", clear: { labels: [] } });
+    expect(liveFilter?.clear).toEqual({ liveOnly: false });
+  });
+
+  it("only lists the routine filter when the page offers it", () => {
+    const state = { ...defaultIssueFilterState, hideRoutineExecutions: true };
+    expect(describeActiveIssueFilters(state)).toEqual([]);
+    expect(describeActiveIssueFilters(state, {}, true)).toHaveLength(1);
   });
 });

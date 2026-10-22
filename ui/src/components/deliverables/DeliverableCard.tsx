@@ -88,7 +88,7 @@ function VersionsMenu({
   if (total <= 1) return null;
   if (olderVersions.length === 0) {
     // Only this entry's own versions: Quick Look lists them.
-    return <span className="ml-auto shrink-0">v{deliverable.version} of {total}</span>;
+    return <span className="relative ml-auto shrink-0">v{deliverable.version} of {total}</span>;
   }
   return (
     <DropdownMenu>
@@ -96,7 +96,7 @@ function VersionsMenu({
         <button
           type="button"
           data-testid="deliverable-versions"
-          className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <History className="h-3 w-3" aria-hidden="true" />
           {total} versions
@@ -144,9 +144,10 @@ export function DeliverableCard({
         onClick={onPreview}
         aria-label={`Preview ${deliverable.title}`}
         data-testid="deliverable-card-preview"
-        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        // Phones: text first, no thumbnail; the button covers the card so a tap anywhere previews.
+        className="absolute inset-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:static sm:block sm:w-full sm:rounded-none"
       >
-        <DeliverableThumbnail source={deliverable} />
+        <DeliverableThumbnail source={deliverable} className="hidden sm:block" />
       </button>
 
       <div
@@ -174,7 +175,7 @@ export function DeliverableCard({
         </QuickAction>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
+      <div className="flex flex-1 flex-col gap-1.5 p-3 sm:gap-2 sm:p-4">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{DELIVERABLE_KIND_LABELS[deliverable.kind]}</Badge>
           <ConfidentialityBadge value={deliverable.confidentiality} />
@@ -208,7 +209,7 @@ export function DeliverableCard({
             <span className="truncate">{deliverable.clientCase.name}</span>
           </p>
         ) : null}
-        <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-foreground" title={deliverable.title}>
+        <h3 className="order-first line-clamp-2 text-sm sm:order-none font-semibold leading-5 text-foreground" title={deliverable.title}>
           {deliverable.title}
         </h3>
         {deliverable.summary ? (
@@ -223,7 +224,7 @@ export function DeliverableCard({
           <Link
             to={deliverable.href}
             disableIssueQuicklook
-            className="shrink-0 font-mono hover:text-foreground hover:underline"
+            className="relative shrink-0 font-mono hover:text-foreground hover:underline"
           >
             {deliverable.issue.identifier}
           </Link>

@@ -32,6 +32,12 @@ import {
   type DatabaseBackupHealthWarning,
   type InspectDatabaseBackupHealthOptions,
 } from "../services/database-backup-health.js";
+import {
+  createCachedLiveBackupHealth,
+  type InspectLiveBackupHealthOptions,
+  type LiveBackupHealthStatus,
+  type LiveBackupHealthWarning,
+} from "../services/live-backup-health.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { isManagedWorkspaceInstance, resolveWorkspaceReadiness } from "../services/workspace-readiness.js";
 import {
@@ -105,6 +111,29 @@ function redactedDatabaseBackupHealth(databaseBackup: DatabaseBackupHealthStatus
   };
 }
 
+function redactedLiveBackupWarning(warning: LiveBackupHealthWarning): LiveBackupHealthWarning {
+  const messages: Record<LiveBackupHealthWarning["code"], string> = {
+    live_backup_check_failed: "Nightly backup health check failed.",
+    live_backup_last_run_failed: "Last nightly backup run had a failure.",
+    live_backup_dump_missing: "No nightly database dump was found.",
+    live_backup_dump_stale: "Newest nightly database dump is stale.",
+    live_backup_files_missing: "No nightly uploaded files archive was found.",
+    live_backup_files_stale: "Newest nightly uploaded files archive is stale.",
+    live_backup_secrets_key_missing: "No nightly secrets key archive was found.",
+    live_backup_secrets_key_stale: "Newest nightly secrets key archive is stale.",
+    live_backup_offsite_missing: "No off-machine backup copy was found.",
+    live_backup_offsite_stale: "Last off-machine backup copy is stale.",
+  };
+  return { code: warning.code, message: messages[warning.code] };
+}
+
+function redactedLiveBackupHealth(liveBackup: LiveBackupHealthStatus) {
+  return {
+    status: liveBackup.status,
+    warnings: liveBackup.warnings.map(redactedLiveBackupWarning),
+  };
+}
+
 // GRE-1094: local agent runs fall back to unwrapped when bwrap is missing or
 // broken, so the instance health check is where an operator sees it.
 async function inspectAgentSandboxHealth(): Promise<{
@@ -171,6 +200,7 @@ export function healthRoutes(
     companyDeletionEnabled: boolean;
     serverInfo?: ServerInfoSnapshot;
     databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
+    liveBackupHealth?: Omit<InspectLiveBackupHealthOptions, "now">;
     runtimeEnv?: CloudInstanceEnv;
   } = {
     deploymentMode: "local_trusted",
@@ -180,6 +210,7 @@ export function healthRoutes(
   },
 ) {
   const router = Router();
+  const inspectLiveBackup = opts.liveBackupHealth ? createCachedLiveBackupHealth(opts.liveBackupHealth) : null;
 
   // "Is commit X live?" (GRE-50): the commit and live-* tag this server runs,
   // the last live start it recorded, and whether ?ref= (a commit SHA or an
@@ -453,8 +484,13 @@ export function healthRoutes(
     const databaseBackup = opts.databaseBackupHealth
       ? inspectDatabaseBackupHealth(opts.databaseBackupHealth)
       : undefined;
+    const liveBackup = inspectLiveBackup?.();
     const agentSandbox = exposeFullDetails ? await inspectAgentSandboxHealth() : null;
-    const allWarnings = [...(databaseBackup?.warnings ?? []), ...(agentSandbox?.warnings ?? [])];
+    const allWarnings = [
+      ...(databaseBackup?.warnings ?? []),
+      ...(liveBackup?.warnings ?? []),
+      ...(agentSandbox?.warnings ?? []),
+    ];
     const warnings = allWarnings.length ? allWarnings : undefined;
     const nativeRecovery = exposeFullDetails
       ? await nativeRestartRecoverySummary(db).catch((error) => {
@@ -465,7 +501,12 @@ export function healthRoutes(
 
     if (!exposeFullDetails) {
       const redactedDatabaseBackup = databaseBackup ? redactedDatabaseBackupHealth(databaseBackup) : undefined;
-      const redactedWarnings = redactedDatabaseBackup?.warnings.length ? redactedDatabaseBackup.warnings : undefined;
+      const redactedLiveBackup = liveBackup ? redactedLiveBackupHealth(liveBackup) : undefined;
+      const redactedAllWarnings = [
+        ...(redactedDatabaseBackup?.warnings ?? []),
+        ...(redactedLiveBackup?.warnings ?? []),
+      ];
+      const redactedWarnings = redactedAllWarnings.length ? redactedAllWarnings : undefined;
       res.json({
         status: healthStatus,
         deploymentMode: opts.deploymentMode,
@@ -475,6 +516,7 @@ export function healthRoutes(
         bootstrapStatus,
         bootstrapInviteActive,
         ...(redactedDatabaseBackup ? { databaseBackup: redactedDatabaseBackup } : {}),
+        ...(redactedLiveBackup ? { liveBackup: redactedLiveBackup } : {}),
         ...(redactedWarnings ? { warnings: redactedWarnings } : {}),
         ...(devServer ? { devServer } : {}),
         // The local supervisor (dev-server status token) checks that a restart
@@ -510,6 +552,7 @@ export function healthRoutes(
       startupRecovery,
       nativeRecovery,
       ...(databaseBackup ? { databaseBackup } : {}),
+      ...(liveBackup ? { liveBackup } : {}),
       ...(agentSandbox ? { agentSandbox: agentSandbox.status } : {}),
       ...(warnings ? { warnings } : {}),
       ...(devServer ? { devServer } : {}),
