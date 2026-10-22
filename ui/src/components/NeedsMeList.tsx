@@ -64,7 +64,7 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
               <span className="shrink-0 rounded-sm bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
                 Waiting {formatWaitAge(wait.waitingForMs)}
               </span>
-              <span className="min-w-0 truncate font-medium">{wait.title}</span>
+              <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{wait.title}</span>
               {wait.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{wait.identifier}</span>
               ) : null}
@@ -80,7 +80,7 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
               <span className="shrink-0 rounded-sm bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
                 Decision
               </span>
-              <span className="min-w-0 truncate font-medium">{card.task?.title ?? card.title}</span>
+              <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{card.task?.title ?? card.title}</span>
               {card.task?.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{card.task.identifier}</span>
               ) : null}
@@ -97,7 +97,7 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
               <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                 Question expired
               </span>
-              <span className="min-w-0 truncate font-medium">{card.question ?? card.title}</span>
+              <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{card.question ?? card.title}</span>
               {card.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{card.identifier}</span>
               ) : null}
@@ -111,7 +111,7 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
               className="flex min-w-0 items-center gap-3 px-4 py-2.5 text-sm hover:bg-accent/50"
             >
               <StatusIcon status={task.status} />
-              <span className="min-w-0 truncate font-medium">{task.title}</span>
+              <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{task.title}</span>
               {task.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{task.identifier}</span>
               ) : null}

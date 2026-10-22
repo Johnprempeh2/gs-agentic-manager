@@ -47,7 +47,7 @@ vi.mock("../api/auth", () => ({
 }));
 vi.mock("./AgentAvatar", () => ({ AgentAvatar: () => <span data-testid="agent-avatar" /> }));
 
-const mockLocation = vi.hoisted(() => ({ pathname: "/PAP/dashboard" }));
+const mockLocation = vi.hoisted(() => ({ pathname: "/PAP/dashboard", hash: "" }));
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
@@ -248,6 +248,7 @@ describe("Sidebar", () => {
     });
     mockSidebarPrefs.layout = {};
     mockLocation.pathname = "/PAP/dashboard";
+    mockLocation.hash = "";
     mockSidebarPrefs.api.getLayout.mockImplementation(async () => ({ layout: mockSidebarPrefs.layout, updatedAt: null }));
     mockSidebarPrefs.api.updateLayout.mockImplementation(async (layout: unknown) => ({ layout, updatedAt: null }));
     mockSidebarPrefs.api.getSectionOrder.mockResolvedValue({ orderedIds: [], updatedAt: null });
@@ -515,6 +516,25 @@ describe("Sidebar", () => {
     expect(link("/desk")?.textContent?.trim()).toBe("Desk1");
     expect(link("/desk#desk-needs-me")?.textContent?.trim()).toBe("Decisions1");
 
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("lights only one of Decisions and Desk, since both point at the Desk", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    const active = () => [...container.querySelectorAll("a.gs-nav-item-active")].map((a) => a.textContent?.trim());
+
+    mockLocation.pathname = "/PAP/desk";
+    let root = await renderSidebar();
+    expect(active()).toEqual([expect.stringMatching(/^Desk/)]);
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockLocation.hash = "#desk-needs-me";
+    root = await renderSidebar();
+    expect(active()).toEqual([expect.stringMatching(/^Decisions/)]);
     flushSync(() => {
       root.unmount();
     });

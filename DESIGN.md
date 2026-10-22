@@ -160,6 +160,13 @@ the brand colour comes from the charcoal rail, the lime and teal light in
   adding them; "close enough" in daylight is often 3:1.
 - **Scrim.** Dialogs dim the page with `--glass-scrim` and a light blur, not a
   black wash.
+- **Focus.** Keyboard focus is the solid `--ring` (dark ink by day), never a
+  half-strength ring: at 50% it falls under 3:1 on the stone canvas. Controls
+  without their own focus style get a 2px ring from one base rule in
+  `index.css`. A rule that flattens a button's shadow must leave
+  `:focus-visible` alone, because the ring is a box-shadow too.
+- **Paused or quiet rows.** Never fade a row with opacity to say it is paused
+  or inactive; use a text token and the status chip.
 
 ## Night (dark mode) surfaces
 

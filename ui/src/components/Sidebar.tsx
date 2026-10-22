@@ -382,15 +382,18 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   });
   const gated = (on: boolean, def: SidebarItemDef): SidebarItemDef => (on ? def : { ...def, node: null });
 
+  const onDesk = /\/desk\/?$/.test(location.pathname);
+  const onDecisions = location.hash === "#desk-needs-me";
   // Every destination, keyed by its layout id (lib/sidebar-layout.ts holds the default places).
   const items: Record<string, SidebarItemDef> = {
     // Decisions (attention home, PAP-13481) graduated out of Experimental (GRE-66): always shown.
     // The executive's one page: everything waiting on you, grouped by what to do.
     needed: link("/needed", "Needed from you", HandHelping),
     // Decisions live in the Desk's "Needs me" section: one list, one count.
-    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions" }),
+    // Both rows point at /desk, so the hash decides which one is lit: never both.
+    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", active: onDesk ? onDecisions : undefined }),
     // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.
-    "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions" }),
+    "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions", active: onDesk ? !onDecisions : undefined }),
     inbox: link("/inbox", "Inbox", Inbox, {
       badge: inboxBadge.inbox,
       badgeLabel: "unread",

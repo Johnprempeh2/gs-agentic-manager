@@ -405,9 +405,10 @@ export function IssueRow({
         </span>
 
         <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-          {/* Phone: the title takes the whole first line (up to two lines) and
-              the owner label and time wrap onto the line under it, instead of
-              squeezing the title to a few words. */}
+          {/* Phone: the title grows from a zero basis beside the priority arrow
+              and owner mark (up to two lines), so neither sits alone on a line;
+              it only drops to its own line when chips leave it under 8rem. The
+              notes and time wrap onto the lines under it. */}
           <span data-slot="task-row-title-cluster" className="flex min-w-0 flex-1 items-baseline gap-1.5 max-sm:flex-wrap max-sm:gap-y-1 sm:items-center">
             {/* Leading slot convention: status, then priority, then the title. */}
             {priorityMarker}
@@ -415,7 +416,7 @@ export function IssueRow({
               data-slot="task-row-title"
               className={cn(
                 // sm:min-w-24 keeps a few words of the title visible when badges crowd a narrow row.
-                "min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:min-w-24 sm:truncate sm:line-clamp-none",
+                "min-w-0 line-clamp-2 text-sm max-sm:min-w-32 max-sm:flex-1 max-sm:basis-0 sm:min-w-24 sm:truncate sm:line-clamp-none",
                 isUnread && "font-semibold",
                 titleClassName,
               )}
@@ -523,7 +524,7 @@ export function IssueRow({
           {priorityMarker}
           <span
             data-slot="task-row-title"
-            className={cn("min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:truncate sm:line-clamp-none", titleClassName)}
+            className={cn("min-w-0 line-clamp-2 text-sm max-sm:min-w-32 max-sm:flex-1 max-sm:basis-0 sm:truncate sm:line-clamp-none", titleClassName)}
           >
             {issue.title}{titleSuffix}
           </span>

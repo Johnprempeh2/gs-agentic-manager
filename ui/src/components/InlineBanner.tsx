@@ -59,7 +59,7 @@ export function InlineBanner({
         {Icon && <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
         <div className="space-y-1 text-sm">
           {title && <p className="font-medium leading-tight">{title}</p>}
-          {children && <div className="leading-snug opacity-90">{children}</div>}
+          {children && <div className="leading-snug">{children}</div>}
         </div>
       </div>
       {actions && (
