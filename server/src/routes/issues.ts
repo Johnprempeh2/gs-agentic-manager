@@ -15197,6 +15197,10 @@ export function issueRoutes(
                 body: decision.body,
                 createdByRunId: actor.runId ?? null,
               });
+              if (transition.skippedStageNote) {
+                // Say why a later stage never ran (GRE-1903).
+                await svc.addComment(updated.id, transition.skippedStageNote, {}, { authorType: "system" }, tx);
+              }
               if (reviewOverride) {
                 // The waiting reviewer sees who decided for them and why.
                 await svc.addComment(updated.id, decision.body, {}, { authorType: "system" }, tx);

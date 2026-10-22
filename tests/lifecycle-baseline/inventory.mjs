@@ -11,6 +11,8 @@ export const lanes = {
       "tests/lifecycle-baseline/review-decision-wake.test.ts",
       // GRE-1897: an opening "I will check now" comment does not hide the final report.
       "tests/lifecycle-baseline/acknowledgement-reply.test.ts",
+      // GRE-1903: approval does not strand on a stage only the work owner reviews.
+      "tests/lifecycle-baseline/review-handoff-owner-stage.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
       // GRE-15: a rejected login is a board-owned blocker, never a retried transient.

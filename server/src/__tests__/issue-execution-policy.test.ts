@@ -1266,6 +1266,111 @@ describe("issue execution policy transitions", () => {
     });
   });
 
+  describe("approval hands off past a later stage the work owner reviews (GRE-1903)", () => {
+    function approveFirstStage(policy: IssueExecutionPolicy) {
+      return applyIssueExecutionPolicyTransition({
+        issue: {
+          status: "in_review",
+          assigneeAgentId: qaAgentId,
+          assigneeUserId: null,
+          executionPolicy: policy,
+          executionState: {
+            status: "pending",
+            currentStageId: policy.stages[0].id,
+            currentStageIndex: 0,
+            currentStageType: "review",
+            currentParticipant: { type: "agent", agentId: qaAgentId },
+            returnAssignee: { type: "agent", agentId: coderAgentId },
+            completedStageIds: [],
+            lastDecisionId: null,
+            lastDecisionOutcome: null,
+          },
+        },
+        policy,
+        requestedStatus: "done",
+        requestedAssigneePatch: {},
+        actor: { agentId: qaAgentId },
+        commentBody: "QA pass",
+      });
+    }
+
+    it("skips the owner-only final review stage and completes the workflow", () => {
+      const policy = makePolicy([
+        { type: "review", participants: [{ type: "agent", agentId: qaAgentId }] },
+        { type: "review", participants: [{ type: "agent", agentId: coderAgentId }] },
+      ]);
+
+      const result = approveFirstStage(policy);
+
+      expect(result.patch.executionState).toMatchObject({
+        status: "completed",
+        currentParticipant: null,
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+        completedStageIds: [policy.stages[0].id, policy.stages[1].id],
+        lastDecisionOutcome: "approved",
+      });
+      expect(result.patch.status).toBeUndefined();
+      expect(result.decision).toMatchObject({ stageId: policy.stages[0].id, outcome: "approved", body: "QA pass" });
+      expect(result.skippedStageNote).toBe(
+        "Skipped stage 2 (review): the only participant is the work owner, who cannot review their own work.",
+      );
+    });
+
+    it("skips the owner-only middle review stage and hands to the stage after it", () => {
+      const policy = makePolicy([
+        { type: "review", participants: [{ type: "agent", agentId: qaAgentId }] },
+        { type: "review", participants: [{ type: "agent", agentId: coderAgentId }] },
+        { type: "approval", participants: [{ type: "user", userId: ctoUserId }] },
+      ]);
+
+      const result = approveFirstStage(policy);
+
+      expect(result.patch).toMatchObject({
+        status: "in_review",
+        assigneeAgentId: null,
+        assigneeUserId: ctoUserId,
+        executionState: {
+          status: "pending",
+          currentStageId: policy.stages[2].id,
+          currentStageIndex: 2,
+          currentParticipant: { type: "user", userId: ctoUserId },
+          returnAssignee: { type: "agent", agentId: coderAgentId },
+          completedStageIds: [policy.stages[0].id, policy.stages[1].id],
+        },
+      });
+      expect(result.skippedStageNote).toContain("stage 2 (review)");
+    });
+
+    it("does not skip anything when the next stage has another reviewer", () => {
+      const policy = makePolicy([
+        { type: "review", participants: [{ type: "agent", agentId: qaAgentId }] },
+        {
+          type: "review",
+          participants: [
+            { type: "agent", agentId: coderAgentId },
+            { type: "agent", agentId: ctoAgentId },
+          ],
+        },
+      ]);
+
+      const result = approveFirstStage(policy);
+
+      expect(result.patch.assigneeAgentId).toBe(ctoAgentId);
+      expect(result.skippedStageNote).toBeUndefined();
+    });
+
+    it("names the stage and the reason when an owner-only approval stage cannot be handed off", () => {
+      const policy = makePolicy([
+        { type: "review", participants: [{ type: "agent", agentId: qaAgentId }] },
+        { type: "approval", participants: [{ type: "agent", agentId: coderAgentId }] },
+      ]);
+
+      expect(() => approveFirstStage(policy)).toThrow(
+        "No eligible participant for stage 2 (approval): its only participant is the work owner, who cannot review their own work",
+      );
+    });
+  });
+
   describe("final stage completion terminates the policy (#7893)", () => {
     function threeStagePolicy() {
       return makePolicy([
