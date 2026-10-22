@@ -26,6 +26,9 @@
 #   LIVE_BACKUP_KEY_FILE   backup key               (default ~/.config/gsam-live-backup/backup.key)
 #   LIVE_BACKUP_LOG        log file for runs        (default ~/GSAM/logs/nightly-backup.log; "-" for the terminal)
 #   LIVE_BACKUP_COMMON     scripts/greatstone-common.sh to source; it sets GSAM_ROOT paths and the dump helpers
+#   LIVE_BACKUP_STORAGE_DIR, LIVE_BACKUP_MASTER_KEY_FILE
+#                          what to archive (default: storage.localDisk.baseDir and secrets.localEncrypted.keyFilePath
+#                          from <instance>/config.json, else <instance>/data/storage and <instance>/secrets/master.key)
 #   GSAM_ROOT              the GSAM home            (default ~/GSAM, read by greatstone-common.sh)
 set -uo pipefail
 
@@ -50,8 +53,22 @@ KEEP="${LIVE_BACKUP_KEEP:-14}"
 BACKUP_KEY="${LIVE_BACKUP_KEY_FILE:-$USER_HOME/.config/gsam-live-backup/backup.key}"
 LOG_FILE="${LIVE_BACKUP_LOG:-$GS_ROOT/logs/nightly-backup.log}"
 INSTANCE_DIR="$LIVE_DATA_DIR/instances/$INSTANCE_ID"
-STORAGE_DIR="$INSTANCE_DIR/data/storage"
-MASTER_KEY="$INSTANCE_DIR/secrets/master.key"
+
+# config_path <dotted.key>: a path from the instance config.json, "~/" expanded, or nothing. The server reads
+# the same keys (server/src/config.ts), so the backup follows a key or storage folder that was moved.
+config_path() {
+  local file="$INSTANCE_DIR/config.json"
+  [[ -f "$file" ]] && command -v node >/dev/null 2>&1 || return 0
+  node -e '
+    let v; try { v = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { process.exit(0); }
+    for (const k of process.argv[2].split(".")) v = v?.[k];
+    if (typeof v === "string" && v.trim()) console.log(v.trim().replace(/^~(?=\/|$)/, process.argv[3]));
+  ' "$file" "$1" "$USER_HOME" 2>/dev/null
+}
+STORAGE_DIR="${LIVE_BACKUP_STORAGE_DIR:-$(config_path storage.localDisk.baseDir)}"
+STORAGE_DIR="${STORAGE_DIR:-$INSTANCE_DIR/data/storage}"
+MASTER_KEY="${LIVE_BACKUP_MASTER_KEY_FILE:-$(config_path secrets.localEncrypted.keyFilePath)}"
+MASTER_KEY="${MASTER_KEY:-$INSTANCE_DIR/secrets/master.key}"
 STATE_FILE="$INSTANCE_DIR/data/health/live-backup.json"
 INSTALL_TARGET="$GS_ROOT/nightly-backup.sh"
 
@@ -110,7 +127,8 @@ archive_files() {
   local name="files-$STAMP.tar.gz" part rc
   [[ -d "$STORAGE_DIR" ]] || { log "no storage folder at $STORAGE_DIR; no files archive"; return 1; }
   part="$DEST/.$name.part"
-  quiet tar -C "$(dirname "$STORAGE_DIR")" -czf "$part" "$(basename "$STORAGE_DIR")"; rc=$?
+  # Stored under storage/ whatever the folder is called, so restore-files always lands in data/storage.
+  quiet tar -C "$STORAGE_DIR" --transform 's|^\.$|storage|;s|^\./|storage/|' -czf "$part" .; rc=$?
   # tar exit 1 means a file changed while it was read (an upload during the run). The archive is still good.
   if (( rc > 1 )) || ! gzip -t "$part" 2>/dev/null; then
     rm -f "$part"; log "files archive FAILED (tar exit $rc)"; return 1
@@ -127,12 +145,13 @@ archive_key() {
   [[ -s "$MASTER_KEY" ]] || { log "no secrets master key at $MASTER_KEY; no key archive"; return 1; }
   ensure_backup_key || { log "secrets key archive FAILED (no backup key)"; return 1; }
   part="$DEST/.$name.part"
-  if ! tar -C "$(dirname "$MASTER_KEY")" -cf - "$(basename "$MASTER_KEY")" | encrypt_stream > "$part"; then
+  # Stored as master.key whatever the file is called, so restore-key always knows the member name.
+  if ! tar -C "$(dirname "$MASTER_KEY")" --transform 's|^.*$|master.key|' -cf - "$(basename "$MASTER_KEY")" | encrypt_stream > "$part"; then
     rm -f "$part"; log "secrets key archive FAILED (encrypt)"; return 1
   fi
   # The archive counts only when it decrypts back to the same key bytes.
   want="$(sha256sum < "$MASTER_KEY" | cut -d' ' -f1)"
-  got="$(decrypt_stream < "$part" 2>/dev/null | tar -xOf - "$(basename "$MASTER_KEY")" 2>/dev/null | sha256sum | cut -d' ' -f1)"
+  got="$(decrypt_stream < "$part" 2>/dev/null | tar -xOf - master.key 2>/dev/null | sha256sum | cut -d' ' -f1)"
   if [[ "$want" != "$got" ]]; then
     rm -f "$part"; log "secrets key archive FAILED (decrypt check)"; return 1
   fi

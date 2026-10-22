@@ -72,6 +72,19 @@ check "full run: state says ok and names the folder" node -e '
   process.exit(s.ok === true && s.failure === null && s.backupDir === process.argv[2] && s.offsite.status === "not_configured" ? 0 : 1);
 ' "$STATE" "$LIVE_BACKUP_DEST"
 
+# --- 1b. the instance config.json moves the key and the storage folder -------------------------------
+fresh moved
+mkdir -p "$CASE/elsewhere/storage/company-2" "$CASE/elsewhere/keys"
+printf 'moved upload\n' > "$CASE/elsewhere/storage/company-2/moved.txt"
+(umask 077; printf 'moved-key-material\n' > "$CASE/elsewhere/keys/instance.key")
+printf '{"secrets":{"localEncrypted":{"keyFilePath":"%s"}},"storage":{"localDisk":{"baseDir":"%s"}}}\n' \
+  "$CASE/elsewhere/keys/instance.key" "$CASE/elsewhere/uploads" > "$INST/config.json"
+mv "$CASE/elsewhere/storage" "$CASE/elsewhere/uploads"
+"$SCRIPT" run >/dev/null 2>&1; rc=$?
+check "moved paths: run exits 0 ($rc)" test "$rc" = 0
+check "moved paths: files archive holds the configured folder, as storage/" bash -c "tar -tzf '$(newest 'files-*.tar.gz')' | grep -qx 'storage/company-2/moved.txt'"
+check "moved paths: key archive holds the configured key, as master.key" test "$(decrypt_key "$(newest 'secrets-*.tar.enc')")" = moved-key-material
+
 # --- 2. database down: files and key are still archived, the run fails ---------------------------------
 fresh dbdown
 export STUB_DB_DOWN=1
