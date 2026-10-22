@@ -606,7 +606,7 @@ describe("compact card on the phone Desk (GRE-1918)", () => {
     const article = container.querySelector("[data-decision-compact]")!;
     expect(article).not.toBeNull();
     expect(article.querySelector("h3")?.textContent).toBe(card.title);
-    expect(container.querySelector("[data-decision-reason]")?.textContent).toBe(card.decision);
+    expect(container.querySelector("[data-decision-reason]")?.textContent).toBe(card.reason);
     expect(container.querySelector("[data-decision-owner]")?.textContent).toContain(card.waiting!.name);
     expect(hasButton("Approve")).toBe(true);
     expect(hasButton("Request changes")).toBe(false);
@@ -614,6 +614,12 @@ describe("compact card on the phone Desk (GRE-1918)", () => {
 
     await click(button("Approve"));
     expect(api.post).toHaveBeenCalledWith("/issues/issue-844/stalled-review-decision", { action: "approve" });
+  });
+
+  it("falls back to the decision when the card has no reason", () => {
+    const card = { ...stalledReviewCard(), reason: "" };
+    render(card, { compact: true });
+    expect(container.querySelector("[data-decision-reason]")?.textContent).toBe(card.decision);
   });
 
   it("opens the full card with Details and closes it with Show less", async () => {

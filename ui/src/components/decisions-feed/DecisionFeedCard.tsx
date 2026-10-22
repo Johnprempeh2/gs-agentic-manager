@@ -245,10 +245,11 @@ export function DecisionFeedCard({
 
   if (compact && !expanded) {
     const mainAction = compactMainAction(card);
-    const reason = CAUSE_KINDS.has(card.kind) && card.reason ? card.reason : card.decision;
+    // The short card says why it waits; what to do is the main action below.
+    const reason = card.reason || card.decision;
     return (
       <article
-        className={cn("relative flex flex-col gap-2 overflow-hidden rounded-xl border border-border bg-card px-4 py-3", className)}
+        className={cn("relative flex flex-col gap-1.5 overflow-hidden rounded-xl border border-border bg-card px-4 py-2.5", className)}
         data-decision-card={card.id}
         data-decision-kind={card.kind}
         data-decision-compact
