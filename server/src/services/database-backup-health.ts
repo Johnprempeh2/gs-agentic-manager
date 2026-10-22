@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 
 export type DatabaseBackupHealthWarningCode =
   | "database_backup_check_failed"
@@ -46,11 +46,10 @@ function roundHours(value: number): number {
 }
 
 function alertFileCandidates(opts: InspectDatabaseBackupHealthOptions) {
+  // Only markers the caller names. No job writes a conventional marker (GRE-1930).
   return [...new Set([
     opts.alertFile,
     ...(opts.alertFiles ?? []),
-    join(opts.backupDir, "db-backup-to-s3.failure"),
-    resolve(opts.backupDir, "..", "db-backup-to-s3.failure"),
   ].filter((value): value is string => Boolean(value)))];
 }
 
