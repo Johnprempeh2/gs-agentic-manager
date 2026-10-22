@@ -38,7 +38,9 @@ export function AgentChatSidebar({
         <SidebarNavItem
           to={href(agent.id)}
           label={agent.name}
-          active={activeId === agent.id}
+          // The chat page names its agent; a chat task finds its row through lib/sidebar-active.
+          active={activeId === agent.id || undefined}
+          activeKey={[`chat:${agent.id}`, `chat:${agentRouteRef(agent)}`]}
           iconNode={
             <AgentIcon icon={agent.icon} className="h-4 w-4 shrink-0" />
           }

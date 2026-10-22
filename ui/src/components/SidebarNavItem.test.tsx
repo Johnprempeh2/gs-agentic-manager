@@ -16,6 +16,7 @@ const sidebarState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/router", () => ({
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => <a href={to} {...props}>{children}</a>,
   NavLink: ({ children, to, className, ...props }: {
     children: ReactNode | ((state: { isActive: boolean }) => ReactNode);
     to: string;

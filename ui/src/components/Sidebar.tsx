@@ -69,7 +69,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
 import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
@@ -88,6 +88,8 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
+import { issuesApi } from "../api/issues";
+import { SidebarActiveProvider, sidebarActiveCandidates } from "../lib/sidebar-active";
 import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
@@ -382,18 +384,31 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   });
   const gated = (on: boolean, def: SidebarItemDef): SidebarItemDef => (on ? def : { ...def, node: null });
 
-  const onDesk = /\/desk\/?$/.test(location.pathname);
-  const onDecisions = location.hash === "#desk-needs-me";
+  // Board routes carry the company prefix ("/GRE/apps"); items link without it.
+  const currentPath = location.pathname.replace(/^\/[^/]+/, "");
+  // On a task, the open task decides which row stands for it (its chat, its pin, Recent, or Tasks).
+  const openIssueRef = currentPath.match(/^\/issues\/([^/]+)/)?.[1];
+  const { data: openIssue } = useQuery({
+    queryKey: queryKeys.issues.detail(openIssueRef ?? ""),
+    queryFn: () => issuesApi.get(openIssueRef!),
+    enabled: Boolean(openIssueRef) && openIssueRef !== "new",
+    staleTime: 30_000,
+    retry: false,
+  });
+  const activeCandidates = useMemo(
+    () => sidebarActiveCandidates(currentPath, location.hash, openIssue),
+    [currentPath, location.hash, openIssue],
+  );
   // Every destination, keyed by its layout id (lib/sidebar-layout.ts holds the default places).
   const items: Record<string, SidebarItemDef> = {
     // Decisions (attention home, PAP-13481) graduated out of Experimental (GRE-66): always shown.
     // The executive's one page: everything waiting on you, grouped by what to do.
     needed: link("/needed", "Needed from you", HandHelping),
     // Decisions live in the Desk's "Needs me" section: one list, one count.
-    // Both rows point at /desk, so the hash decides which one is lit: never both.
-    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", active: onDesk ? onDecisions : undefined }),
+    // Both rows point at /desk, so the hash decides which one is lit: never both (lib/sidebar-active).
+    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:decisions" }),
     // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.
-    "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions", active: onDesk ? !onDecisions : undefined }),
+    "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:my-tasks" }),
     inbox: link("/inbox", "Inbox", Inbox, {
       badge: inboxBadge.inbox,
       badgeLabel: "unread",
@@ -429,14 +444,14 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     deliverables: link("/deliverables", "Deliverables", FileCheck2),
     images: link("/images", "GS Studio", ImageIcon),
     dashboard: link("/dashboard", "Dashboard", LayoutDashboard, { liveCount: liveRunCount }),
-    tasks: link("/issues", "Tasks", CircleCheck),
+    tasks: link("/issues", "Tasks", CircleCheck, { activeKey: "item:tasks" }),
     projects: {
       label: "Projects",
       icon: FolderOpen,
       to: "/projects",
       node: (
         <>
-          <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
+          <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} activeKey="item:projects" />
           <SidebarStarredProjects />
         </>
       ),
@@ -472,8 +487,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     "design-guide": link("/design-guide", "Design guide", Palette),
   };
   const available = (id: string) => Boolean(items[id]?.node);
-  // Board routes carry the company prefix ("/GRE/apps"); items link without it.
-  const currentPath = location.pathname.replace(/^\/[^/]+/, "");
   const isCurrent = (id: string) => {
     const to = items[id]?.to;
     return Boolean(to && (currentPath === to || currentPath.startsWith(`${to}/`)));
@@ -567,6 +580,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const hiddenAvailable = layout.resolved.hidden.filter(available);
 
   return (
+    <SidebarActiveProvider candidates={activeCandidates}>
     <aside
       className={cn(
         "w-full h-full min-h-0 flex flex-col",
@@ -738,5 +752,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
       </nav>
     </aside>
+    </SidebarActiveProvider>
   );
 }
