@@ -64,6 +64,8 @@ export const lanes = {
       `${server}disposition-repair-manager-escalation.test.ts`,
       // GRE-1371: an approved top-up lifts the budget stop; the hold release wakes each held task once.
       `${server}budget-top-ups.test.ts`,
+      // GRE-1896: a task whose last blocker closes goes to todo and its owner gets one wake with the closing comment.
+      `${server}blocker-done-returns-dependent-to-todo.test.ts`,
     ],
   },
   grading: {

@@ -116,6 +116,8 @@ import {
   buildIssueBlockersResolvedWakeStateKey,
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../issue-dependency-wakeups.js";
+import { releaseReadyDependents } from "../issue-blocker-handoff.js";
+import { getExecutionBlocker } from "../execution-blocker.js";
 import { evaluateAgentInvokabilityFromDb } from "../agent-invokability.js";
 import { isHeartbeatWakeOnDemandEnabled } from "../heartbeat-policy.js";
 import {
@@ -6029,6 +6031,9 @@ export function recoveryService(
       const filters = [
         eq(issues.status, "blocked"),
         isNull(issues.conversationAgentId),
+        // An unblock note says the task waits on something else; done
+        // blockers on record are no reason to wake it again (GRE-1896).
+        isNull(issues.unblockDescriptor),
         visibleIssueCondition(),
         sql`${issues.assigneeAgentId} is not null`,
       ];
@@ -6197,6 +6202,26 @@ export function recoveryService(
           continue;
         }
 
+        // GRE-1896: the task goes back to todo before its one wake, like the
+        // route-time path (a blocker with a workspace is only ready here). A
+        // task held for a stopped-run check stays as it is until that clears.
+        let wakeCommentId: string | null = null;
+        try {
+          if (!(await getExecutionBlocker(db, companyId, candidate.id))) {
+            const released = await releaseReadyDependents(issuesSvc, db, {
+              companyId,
+              dependentIds: [candidate.id],
+              actor: {},
+            });
+            wakeCommentId = released.get(candidate.id)?.commentId ?? null;
+          }
+        } catch (err) {
+          logger.warn(
+            { err, issueId: candidate.id, source },
+            "failed to return ready dependent to todo from dependency backstop",
+          );
+        }
+
         try {
           const wake = await deps.enqueueWakeup(agentId, {
             source: "automation",
@@ -6207,6 +6232,7 @@ export function recoveryService(
               resolvedBlockerIssueId,
               blockerIssueIds: readiness.blockerIssueIds,
               backstop: payloadBackstop,
+              ...(wakeCommentId ? { commentId: wakeCommentId } : {}),
             },
             idempotencyKey,
             requestedByActorType: "system",
@@ -6218,6 +6244,7 @@ export function recoveryService(
               source,
               resolvedBlockerIssueId,
               blockerIssueIds: readiness.blockerIssueIds,
+              ...(wakeCommentId ? { commentId: wakeCommentId, wakeCommentId } : {}),
             },
           });
           if (!wake) {
