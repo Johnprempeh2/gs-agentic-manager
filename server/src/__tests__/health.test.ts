@@ -380,6 +380,7 @@ describe("GET /health", () => {
     });
     expect(res.body.warnings.map((warning: { code: string }) => warning.code)).toEqual([
       "live_backup_last_run_failed",
+      "live_backup_offsite_missing",
       "live_backup_files_missing",
       "live_backup_secrets_key_missing",
     ]);

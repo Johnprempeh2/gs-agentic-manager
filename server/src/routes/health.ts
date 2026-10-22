@@ -121,6 +121,8 @@ function redactedLiveBackupWarning(warning: LiveBackupHealthWarning): LiveBackup
     live_backup_files_stale: "Newest nightly uploaded files archive is stale.",
     live_backup_secrets_key_missing: "No nightly secrets key archive was found.",
     live_backup_secrets_key_stale: "Newest nightly secrets key archive is stale.",
+    live_backup_offsite_missing: "No off-machine backup copy was found.",
+    live_backup_offsite_stale: "Last off-machine backup copy is stale.",
   };
   return { code: warning.code, message: messages[warning.code] };
 }
