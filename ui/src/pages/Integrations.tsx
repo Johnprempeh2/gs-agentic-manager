@@ -384,7 +384,7 @@ export function Integrations() {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
 
   return (
-    <div className="flex max-w-5xl flex-col gap-4">
+    <div className="flex max-w-5xl flex-col gap-6">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <Plug className="h-5 w-5 text-muted-foreground" />

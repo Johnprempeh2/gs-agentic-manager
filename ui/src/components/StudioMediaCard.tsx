@@ -177,7 +177,7 @@ export function StudioEmptyGallery({
         ))}
       </div>
       <div className="space-y-1">
-        <p className="text-lg font-bold uppercase tracking-tight text-foreground">{title}</p>
+        <p className="text-base font-semibold text-foreground">{title}</p>
         <p className="text-sm text-muted-foreground">{message}</p>
       </div>
       {suggestions && suggestions.length > 0 ? (

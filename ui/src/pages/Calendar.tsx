@@ -157,7 +157,7 @@ function DayList({
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing is due on this day.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border bg-card">
+        <ul className="divide-y divide-border rounded-lg border border-border bg-card">
           {items.map((item) => {
             const Icon = KIND_ICONS[item.kind];
             return (
@@ -400,10 +400,10 @@ export function Calendar() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-5">
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Calendar</h1>
+          {/* The page bar already says Calendar; the line says what it is for. */}
           <p className="text-sm text-muted-foreground">
             Task deadlines, routine runs and goal dates in one place. Pick a day to see everything on it.
           </p>
@@ -539,7 +539,7 @@ export function Calendar() {
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (
         <>
-          <div className="hidden overflow-hidden rounded-md border border-border bg-card md:block">
+          <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
             <div className="grid grid-cols-7 border-b border-border bg-muted/40">
               {WEEKDAY_LABELS.map((label) => (
                 <div key={label} className="px-2 py-1.5 text-xs font-medium text-muted-foreground">

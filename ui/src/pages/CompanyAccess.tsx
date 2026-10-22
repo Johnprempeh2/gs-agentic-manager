@@ -92,7 +92,6 @@ export function CompanyAccess() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Members" },
     ]);
@@ -291,7 +290,7 @@ export function CompanyAccess() {
     : currentUserPrincipalId;
 
   return (
-    <div className="max-w-6xl space-y-8">
+    <div className="max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-muted-foreground" />

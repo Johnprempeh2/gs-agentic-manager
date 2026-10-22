@@ -421,10 +421,8 @@ export function Deliverables() {
 
   return (
     <div className="w-full max-w-7xl space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-bold">Deliverables</h1>
-        <p className="text-sm text-muted-foreground">Finished documents and sites your agents made for you.</p>
-      </header>
+      {/* The page bar already says Deliverables; the line says what it is for. */}
+      <p className="text-sm text-muted-foreground">Finished documents and sites your agents made for you.</p>
 
       <div className="space-y-3">
         <div className="relative w-full max-w-2xl" data-tour="deliverables-search">

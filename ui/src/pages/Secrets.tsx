@@ -737,7 +737,7 @@ export function Secrets() {
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Secrets" }]);
+    setBreadcrumbs([{ label: "Settings", href: "/company/settings" }, { label: "Secrets" }]);
   }, [setBreadcrumbs]);
 
   const secretsQuery = useQuery({
@@ -1811,7 +1811,7 @@ export function Secrets() {
 
   return (
     <TooltipProvider>
-    <div className="flex max-w-6xl flex-col gap-4">
+    <div className="flex max-w-6xl flex-col gap-6">
       <div className="flex items-center gap-2">
         <KeyRound className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">Secrets</h1>
