@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MorningSummary as Summary } from "@greatstone/shared";
+import type { MorningSummary as Summary, NeedsMe } from "@greatstone/shared";
+import { questionCard, reviewCard } from "../fixtures/decisionsFeedFixtures";
 import { MorningSummary, greeting, lateLabel } from "./MorningSummary";
 
 const server = vi.hoisted(() => ({ summary: null as Summary | null, pausedUntil: null as string | null, windows: [] as string[] }));
@@ -16,6 +17,8 @@ vi.mock("../api/notificationPreferences", () => ({
     update: async () => ({ morningSummaryHour: 8, pausedUntil: null }),
   },
 }));
+const needsMe = vi.hoisted(() => ({ data: null as NeedsMe | null }));
+vi.mock("../api/decisionsFeed", () => ({ decisionsFeedApi: { needsMe: async () => needsMe.data } }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1", selectedCompany: null }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
 
@@ -139,6 +142,43 @@ describe("MorningSummary", () => {
     expect(text).toContain("Due today");
     expect(text).toContain("Late, due 2 Jan");
     expect(container.querySelector('a[href="/issues/GRE-8"]')?.textContent).not.toContain("Late");
+  });
+
+  it("says what each Needs you line asks and opens the request itself", async () => {
+    needsMe.data = {
+      companyId: "company-1",
+      generatedAt: "",
+      count: 2,
+      decisionCount: 2,
+      assignedTaskCount: 0,
+      decisions: [reviewCard(), questionCard()],
+      assignedTasks: [],
+      overdueWaits: [],
+    };
+    server.summary = {
+      companyId: "company-1",
+      generatedAt: "",
+      since: "",
+      needsYou: {
+        count: 2,
+        items: [
+          { id: "issue-120", identifier: "GRE-120", title: "New price list for 2027" },
+          { id: "issue-44", identifier: "GRE-44", title: "Stalled runs recovery" },
+        ],
+      },
+      dueToday: { count: 0, items: [] },
+      finished: { count: 0, items: [] },
+      stuck: { count: 0, items: [] },
+    };
+    await render();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const lines = [...container.querySelectorAll("a[data-needs-you-line]")];
+    expect(lines.map((line) => line.querySelector("[data-needs-you-action]")?.textContent)).toEqual(["Review", "Question"]);
+    expect(lines[0]!.getAttribute("href")).toBe("/issues/GRE-120");
+    expect(lines[0]!.textContent).toContain("Summit asks you to review the new price list.");
+    expect(lines[1]!.getAttribute("href")).toBe("/issues/GRE-44#interaction-int-1");
+    expect(lines[1]!.textContent).toContain("When a run is stuck, should I restart it?");
+    needsMe.data = null;
   });
 
   it("still renders when the server sends no due today section", async () => {
