@@ -14540,6 +14540,7 @@ export function heartbeatService(
       .select({
         id: issueComments.id,
         body: issueComments.body,
+        createdAt: issueComments.createdAt,
       })
       .from(issueComments)
       .where(
@@ -22753,6 +22754,8 @@ export function heartbeatService(
           conversationTurnFinished: isConversation(issueContext) &&
             persistedResultJson?.finalizationReasonCode === "conversation_turn_finished",
           existingComment: existingRunComment,
+          runStartedAt: livenessRun.startedAt,
+          runFinishedAt: livenessRun.finishedAt,
           finalAgentMessage,
           preferFinalResponseOverExistingComment:
             externalChatPresentationContext,
