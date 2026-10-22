@@ -42,6 +42,8 @@ import { issueService } from "../issues.js";
 import { issueThreadInteractionService } from "../issue-thread-interactions.js";
 import { issueRecoveryActionService } from "../issue-recovery-actions.js";
 import { buildIssueBlockersResolvedWakeIdempotencyKey } from "../issue-dependency-wakeups.js";
+import { releaseReadyDependents } from "../issue-blocker-handoff.js";
+import { logger } from "../../middleware/logger.js";
 import {
   persistActivity,
   publishActivity,
@@ -1902,6 +1904,20 @@ export async function commitNativeStatusDecision(input: {
 
     if (input.decision.statusAction === "done" && issue.status !== "done") {
       const issueSvc = issueService(tx as unknown as Db);
+      // GRE-1896: freed tasks go back to todo; their wake carries the note.
+      // It runs in a savepoint, so a failure here leaves the decision intact
+      // and the dependency backstop moves them later.
+      const released = await releaseReadyDependents(issueSvc, tx as unknown as Db, {
+        companyId: input.companyId,
+        blocker: { id: input.issueId, identifier: issue.identifier },
+        actor: {},
+      }).catch((err) => {
+        logger.warn(
+          { err, issueId: input.issueId },
+          "failed to return ready dependents to todo after native done decision",
+        );
+        return new Map<string, { commentId: string }>();
+      });
       const dependents = await issueSvc.listWakeableBlockedDependents(
         input.issueId,
       );
@@ -1947,6 +1963,9 @@ export async function commitNativeStatusDecision(input: {
                 childIssueSummaryTruncated: parent.childIssueSummaryTruncated,
               }
             : null;
+        const releasedCommentId = isCompletedChildParent
+          ? null
+          : released.get(dependent.id)?.commentId ?? null;
         const wakeId = await enqueueWake({
           tx: tx as unknown as Db,
           companyId: input.companyId,
@@ -1960,8 +1979,13 @@ export async function commitNativeStatusDecision(input: {
             resolvedBlockerIssueId: input.issueId,
             blockerIssueIds: dependent.blockerIssueIds,
             ...(childCompletionContext ?? {}),
+            ...(releasedCommentId ? { commentId: releasedCommentId } : {}),
           },
-          contextSnapshot: childCompletionContext ?? undefined,
+          contextSnapshot:
+            childCompletionContext ??
+            (releasedCommentId
+              ? { commentId: releasedCommentId, wakeCommentId: releasedCommentId }
+              : undefined),
         });
         materialized.push({
           effectKind: isCompletedChildParent

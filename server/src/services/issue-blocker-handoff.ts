@@ -1,6 +1,6 @@
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { issueRelations, issues } from "@greatstone/db";
+import { issueComments, issueRelations, issues } from "@greatstone/db";
 import { unprocessable } from "../errors.js";
 import type { issueService } from "./issues.js";
 
@@ -134,7 +134,9 @@ function handoffCommentBody(input: {
 
 /**
  * Returns `blocked` dependents to `todo` when every blocker is done and no other
- * reason (an unblock owner) keeps them blocked. Returns the ids it moved.
+ * reason (an unblock owner) keeps them blocked. Locks the rows first, so two
+ * callers racing on the same dependent move it once. Returns the moved ids with
+ * the time each one entered `blocked` (the dependency wake key needs it).
  */
 async function returnReadyDependentsToTodo(
   svc: IssueService,
@@ -142,33 +144,30 @@ async function returnReadyDependentsToTodo(
   companyId: string,
   dependentIds: string[],
   actor: { agentId?: string | null; userId?: string | null },
-  options: { onlyWithoutAgentAssignee?: boolean } = {},
 ) {
-  if (dependentIds.length === 0) return new Set<string>();
+  const returned = new Map<string, { blockedTransitionAt: Date | null }>();
+  if (dependentIds.length === 0) return returned;
   const rows = await (tx as Db)
     .select({
       id: issues.id,
       status: issues.status,
       unblockDescriptor: issues.unblockDescriptor,
-      assigneeAgentId: issues.assigneeAgentId,
       conversationAgentId: issues.conversationAgentId,
+      blockedTransitionAt: issues.blockedTransitionAt,
     })
     .from(issues)
-    .where(and(eq(issues.companyId, companyId), inArray(issues.id, dependentIds)));
+    .where(and(eq(issues.companyId, companyId), inArray(issues.id, [...dependentIds].sort())))
+    .orderBy(issues.id)
+    .for("update");
   const candidates = rows.filter(
-    (row) =>
-      row.status === "blocked" &&
-      !row.unblockDescriptor &&
-      !row.conversationAgentId &&
-      !(options.onlyWithoutAgentAssignee && row.assigneeAgentId),
+    (row) => row.status === "blocked" && !row.unblockDescriptor && !row.conversationAgentId,
   );
-  if (candidates.length === 0) return new Set<string>();
+  if (candidates.length === 0) return returned;
   const readiness = await svc.listDependencyReadiness(
     companyId,
     candidates.map((row) => row.id),
     tx,
   );
-  const returned = new Set<string>();
   for (const candidate of candidates) {
     const state = readiness.get(candidate.id);
     if (state && !state.isDependencyReady) continue;
@@ -181,7 +180,7 @@ async function returnReadyDependentsToTodo(
       },
       tx,
     );
-    returned.add(candidate.id);
+    returned.set(candidate.id, { blockedTransitionAt: candidate.blockedTransitionAt });
   }
   return returned;
 }
@@ -293,37 +292,116 @@ export async function handOffBlockedDependents(
   return { target, dependents: result };
 }
 
+export type ReleasedDependent = {
+  /** The note on the dependent that quotes the blocker's closing comment. */
+  commentId: string;
+  /** When the dependent entered `blocked`; the dependency wake key uses it. */
+  blockedTransitionAt: Date | null;
+};
+
+const CLOSING_COMMENT_QUOTE_CHARS = 2000;
+
+function quote(body: string) {
+  const trimmed = body.trim();
+  const clipped =
+    trimmed.length > CLOSING_COMMENT_QUOTE_CHARS
+      ? `${trimmed.slice(0, CLOSING_COMMENT_QUOTE_CHARS).trimEnd()} …`
+      : trimmed;
+  return clipped
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
+/** The newest done blocker of a dependent: the one whose close freed it. */
+async function latestDoneBlocker(db: Db, companyId: string, dependentId: string) {
+  return db
+    .select({ id: issues.id, identifier: issues.identifier })
+    .from(issueRelations)
+    .innerJoin(issues, eq(issueRelations.issueId, issues.id))
+    .where(
+      and(
+        eq(issueRelations.companyId, companyId),
+        eq(issueRelations.type, "blocks"),
+        eq(issueRelations.relatedIssueId, dependentId),
+        eq(issues.status, "done"),
+      ),
+    )
+    .orderBy(desc(issues.completedAt))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+}
+
+/** The last thing a person or agent said on the blocker, usually the close. */
+async function closingComment(db: Db, blockerIssueId: string) {
+  return db
+    .select({ body: issueComments.body, sourceTrust: issueComments.sourceTrust })
+    .from(issueComments)
+    .where(
+      and(
+        eq(issueComments.issueId, blockerIssueId),
+        isNull(issueComments.deletedAt),
+        or(isNull(issueComments.authorType), ne(issueComments.authorType, "system")),
+      ),
+    )
+    .orderBy(desc(issueComments.createdAt))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+}
+
 /**
- * After a blocker becomes done, dependents with no agent to wake stay `blocked`
- * with nothing left to wait on. Return them to `todo` with a short note. Agent
- * dependents keep their existing `issue_blockers_resolved` wake path.
+ * When a blocker is done, every `blocked` task that no longer waits on anything
+ * goes back to `todo` with a note that quotes the blocker's closing comment.
+ * The caller wakes agent assignees once with that note (GRE-1896). A task whose
+ * unblock note names another reason stays blocked.
+ *
+ * Pass `blocker` when one task just closed, or `dependentIds` alone (the
+ * dependency backstop) to quote each dependent's newest done blocker. Running it
+ * twice moves nothing the second time.
  */
-export async function releaseUnownedReadyDependents(
+export async function releaseReadyDependents(
   svc: IssueService,
-  tx: Tx,
+  db: Db,
   input: {
     companyId: string;
-    blocker: { id: string; identifier: string | null };
+    blocker?: { id: string; identifier: string | null };
+    dependentIds?: string[];
     actor: { agentId?: string | null; userId?: string | null };
   },
-) {
-  const dependents = await svc.listOpenBlockedDependents(input.companyId, input.blocker.id, tx);
-  const returned = await returnReadyDependentsToTodo(
-    svc,
-    tx,
-    input.companyId,
-    dependents.map((d) => d.id),
-    input.actor,
-    { onlyWithoutAgentAssignee: true },
-  );
-  for (const id of returned) {
-    await svc.addComment(
-      id,
-      `${label(input.blocker)} is done and no open blockers are left, so this task is back in todo.`,
-      {},
-      { authorType: "system" },
-      tx,
-    );
-  }
-  return [...returned];
+): Promise<Map<string, ReleasedDependent>> {
+  // Most closes free nothing; only open a transaction when a task is blocked.
+  const dependentIds =
+    input.dependentIds ??
+    (input.blocker
+      ? (await svc.listOpenBlockedDependents(input.companyId, input.blocker.id, db))
+          .filter((d) => d.status === "blocked")
+          .map((d) => d.id)
+      : []);
+  if (dependentIds.length === 0) return new Map();
+  const run = async (tx: Tx) => {
+    const returned = await returnReadyDependentsToTodo(svc, tx, input.companyId, dependentIds, input.actor);
+    const released = new Map<string, ReleasedDependent>();
+    for (const [id, { blockedTransitionAt }] of returned) {
+      const blocker = input.blocker ?? (await latestDoneBlocker(tx as Db, input.companyId, id));
+      const closing = blocker ? await closingComment(tx as Db, blocker.id) : null;
+      const opening = blocker
+        ? `${label(blocker)} is done and no open blockers are left, so this task is back in todo.`
+        : "Every blocker is done, so this task is back in todo.";
+      const body = closing?.body.trim()
+        ? `${opening}\n\n${label(blocker!)}'s closing comment:\n\n${quote(closing.body)}`
+        : opening;
+      // The quote keeps the trust of the words it repeats.
+      const comment = await svc.addComment(
+        id,
+        body,
+        {},
+        { authorType: "system", ...(closing?.sourceTrust ? { sourceTrust: closing.sourceTrust } : {}) },
+        tx,
+      );
+      released.set(id, { commentId: comment.id, blockedTransitionAt });
+    }
+    return released;
+  };
+  // On a caller's transaction this nests as a savepoint.
+  return db.transaction((tx) => run(tx as unknown as Tx));
 }
