@@ -489,6 +489,132 @@ describe("resolveHeartbeatRunResponse", () => {
     });
   });
 
+  // GRE-1897: GRE-677 run cd89d50c posted "I will check now" at 14s, checked for
+  // three minutes, then ended with its answer only in resultJson.summary. The
+  // opening acknowledgement was reused as the reply and the answer was lost.
+  describe("early acknowledgement comment", () => {
+    const runStartedAt = new Date("2026-10-07T21:10:18Z");
+    const runFinishedAt = new Date("2026-10-07T21:13:16Z");
+    const acknowledgement = {
+      id: "ack-comment",
+      body: "Thanks John. I will check the TST queue, inbox and test tickets now, then record the table.",
+      createdAt: new Date("2026-10-07T21:10:32Z"),
+    };
+    const finalReport =
+      "The inbox is connected, but the TST support queue still isn't set up, so the test can't run yet.";
+
+    it("posts the final report instead of reusing an opening acknowledgement", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: { summary: finalReport },
+          existingComment: acknowledgement,
+          runStartedAt,
+          runFinishedAt,
+        }),
+      ).toMatchObject({
+        text: finalReport,
+        decision: {
+          chosenSource: "adapter_final_response",
+          commentAction: "create",
+          commentId: null,
+          reasonCodes: [
+            "legacy_adapter_summary_compatibility",
+            "early_acknowledgement_comment_superseded",
+          ],
+        },
+      });
+    });
+
+    it("prefers the provider final over an opening acknowledgement", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: {},
+          existingComment: acknowledgement,
+          runStartedAt,
+          runFinishedAt,
+          finalAgentMessage: { text: finalReport, sourceEventId: "event-final", channel: "final" },
+        }),
+      ).toMatchObject({
+        text: finalReport,
+        decision: { chosenSource: "final_agent_message", commentAction: "create" },
+      });
+    });
+
+    it("keeps the acknowledgement when no final report exists", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: {},
+          existingComment: acknowledgement,
+          runStartedAt,
+          runFinishedAt,
+        }),
+      ).toMatchObject({
+        text: acknowledgement.body,
+        decision: {
+          chosenSource: "existing_issue_comment",
+          commentAction: "reuse",
+          reasonCodes: ["explicit_non_progress_comment_precedence"],
+        },
+      });
+    });
+
+    it("does not post the final report again when it repeats the comment", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: { summary: ` ${acknowledgement.body}\n` },
+          existingComment: acknowledgement,
+          runStartedAt,
+          runFinishedAt,
+        }).decision.commentAction,
+      ).toBe("reuse");
+    });
+
+    it("keeps a yielded control-plane wait silent", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: {
+            summary: finalReport,
+            nativeResult: { schema: "paperclip.run_result.v1", reportedWorkDisposition: "yielded" },
+          },
+          existingComment: acknowledgement,
+          runStartedAt,
+          runFinishedAt,
+        }).decision.commentAction,
+      ).toBe("reuse");
+    });
+
+    it("reuses a closing comment posted at the end of the run", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: { summary: finalReport },
+          existingComment: { ...acknowledgement, createdAt: new Date("2026-10-07T21:13:05Z") },
+          runStartedAt,
+          runFinishedAt,
+        }).decision,
+      ).toMatchObject({ chosenSource: "existing_issue_comment", commentAction: "reuse" });
+    });
+
+    it("reuses a comment followed by less than 30 seconds of work", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: { summary: finalReport },
+          existingComment: { ...acknowledgement, createdAt: new Date("2026-10-07T21:10:20Z") },
+          runStartedAt,
+          runFinishedAt: new Date("2026-10-07T21:10:45Z"),
+        }).decision.commentAction,
+      ).toBe("reuse");
+    });
+
+    it("reuses the comment when run timing is unknown", () => {
+      expect(
+        resolveHeartbeatRunResponse({
+          resultJson: { summary: finalReport },
+          existingComment: acknowledgement,
+        }).decision.commentAction,
+      ).toBe("reuse");
+    });
+  });
+
   it("preserves the exact upstream response text", () => {
     const text = "\n  final response with intentional whitespace  \n";
     expect(
