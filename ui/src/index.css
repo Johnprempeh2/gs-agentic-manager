@@ -862,6 +862,7 @@
   [data-size="xs"],
   [data-size="icon-xs"],
   [data-size="icon-sm"],
+  [data-filter-chip],
   input[type="checkbox"],
   input[type="radio"],
   /* Auto-resizing title fields are vertically centered inside their own bar,
@@ -962,6 +963,17 @@
   }
   button[data-size="icon-xs"]:not(:last-child):not(.absolute) {
     margin-right: calc(var(--spacing) * 1.5);
+  }
+  /* Active filter chips (GRE-1924): 28px drawn, 44px to tap. Rows of chips sit
+     16px apart and the toolbar 8px above, so the layer takes 8px up and down
+     and half of the 6px gap to each side. */
+  [data-filter-chip] {
+    position: relative;
+  }
+  [data-filter-chip]::before {
+    content: "";
+    position: absolute;
+    inset: calc(var(--spacing) * -2) calc(var(--spacing) * -0.75);
   }
   /* The 12px help icon beside a field label: 32px wide to tap. */
   [data-hint-trigger] {

@@ -5,7 +5,8 @@ import { cn } from "../lib/utils";
 
 /**
  * One removable chip per active filter, so a phone shows which filter is on
- * in words (GRE-1924). The whole chip is the tap target.
+ * in words (GRE-1924). The whole chip is the tap target: drawn 28px tall, it
+ * grows to 44px on touch screens (`[data-filter-chip]` in index.css).
  */
 export function ActiveIssueFilterChips({
   filters,
@@ -18,11 +19,12 @@ export function ActiveIssueFilterChips({
 }) {
   if (filters.length === 0) return null;
   return (
-    <div role="group" aria-label="Filters on" className={cn("flex flex-wrap items-center gap-1.5", className)}>
+    <div role="group" aria-label="Filters on" className={cn("flex flex-wrap items-center gap-x-1.5 gap-y-4", className)}>
       {filters.map((filter) => (
         <button
           key={filter.key}
           type="button"
+          data-filter-chip
           onClick={() => onChange(filter.clear)}
           aria-label={`Remove filter ${filter.name}: ${filter.value}`}
           className="gs-press inline-flex h-7 max-w-full min-w-0 items-center gap-1 rounded-full border border-border bg-background px-2.5 text-xs transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -35,6 +37,7 @@ export function ActiveIssueFilterChips({
       {filters.length > 1 ? (
         <button
           type="button"
+          data-filter-chip
           onClick={() => onChange(defaultIssueFilterState)}
           className="h-7 rounded-full px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
