@@ -155,7 +155,8 @@ export function Desk() {
   const recentlyOpened = useRecentlyOpenedIssues(selectedCompanyId);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Your desk" }]);
+    // Named as in the sidebar.
+    setBreadcrumbs([{ label: "Desk" }]);
   }, [setBreadcrumbs]);
 
   const { data: session } = useQuery({
@@ -220,7 +221,7 @@ export function Desk() {
     refetchOnWindowFocus: true,
   });
 
-  // Decisions live here (Needs me): the same feed and count as the sidebar badge.
+  // Decisions live here: the same feed and count as the sidebar badge.
   const {
     data: decisionsFeed,
     isLoading: decisionsLoading,
@@ -337,7 +338,7 @@ export function Desk() {
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
-        "Your desk",
+        "Desk",
         `${location.pathname}${location.search}${location.hash}`,
         "issues",
       ),
@@ -746,6 +747,51 @@ export function Desk() {
     />
   ) : null;
 
+  // Page tools ride on the first section's heading row, on the right, so the
+  // page opens on Pinned or Decisions rather than on a row of switches.
+  const pageTools = (
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      <label className="inline-flex items-center gap-2 text-sm">
+        <ToggleSwitch
+          checked={showRoutine}
+          onCheckedChange={setShowRoutine}
+          aria-label="Show routine tasks"
+          data-desk-routine-toggle
+        />
+        <span>Show routine tasks</span>
+        {!showRoutine && routineCount > 0 ? (
+          <span className="text-xs text-muted-foreground" data-desk-routine-hidden>
+            {routineCount} hidden
+          </span>
+        ) : null}
+      </label>
+      {visibleIssues.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          title="Copy your tasks as a list with links, grouped by who acts next, ready to paste into a message"
+          onClick={() =>
+            void listCopy.copy(
+              myTasksListText(
+                visibleIssues,
+                (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
+                (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
+              ),
+            )
+          }
+        >
+          {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+          {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+        </Button>
+      )}
+    </div>
+  );
+  const focusLink = (
+    <Link to="/decisions/focus" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+      Focus and history
+    </Link>
+  );
+
   const page = (
     <div className="min-w-0 flex-1 space-y-6">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
@@ -759,44 +805,8 @@ export function Desk() {
         />
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="inline-flex items-center gap-2 text-sm">
-          <ToggleSwitch
-            checked={showRoutine}
-            onCheckedChange={setShowRoutine}
-            aria-label="Show routine tasks"
-            data-desk-routine-toggle
-          />
-          <span>Show routine tasks</span>
-          {!showRoutine && routineCount > 0 ? (
-            <span className="text-xs text-muted-foreground" data-desk-routine-hidden>
-              {routineCount} hidden
-            </span>
-          ) : null}
-        </label>
-        {visibleIssues.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            title="Copy your tasks as a list with links, grouped by who acts next, ready to paste into a message"
-            onClick={() =>
-              void listCopy.copy(
-                myTasksListText(
-                  visibleIssues,
-                  (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
-                  (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
-                ),
-              )
-            }
-          >
-            {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-            {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
-          </Button>
-        )}
-      </div>
-
       {pinned.length > 0 ? (
-        <DeskSection id="desk-pinned" title="Pinned">
+        <DeskSection id="desk-pinned" title="Pinned" trailing={pageTools}>
           <DeskPinned
             companyId={selectedCompanyId}
             pinned={pinned}
@@ -815,19 +825,25 @@ export function Desk() {
 
       <DeskSection
         id="desk-needs-me"
-        title="Needs me"
+        // The sidebar's Decisions row lands here, with the same count.
+        title="Decisions"
         count={needsMe ? decisionsCountOf(needsMe) : decisionsFeed?.count}
-        trailing={
-          <Link to="/decisions/focus" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
-            Focus and history
-          </Link>
-        }
+        trailing={pinned.length > 0 ? focusLink : (
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+            {pageTools}
+            {focusLink}
+          </div>
+        )}
       >
         {nothingNeedsYou && !decisionsError ? (
           <EmptyState
             icon={CheckCircle2}
             message="Nothing needs you right now."
-            description="Decisions, reviews and tasks assigned to you show up here."
+            description={
+              pinned.length > 0
+                ? "Decisions, reviews and tasks assigned to you show up here."
+                : "Decisions, reviews and tasks assigned to you show up here. Pin a task on its page to keep it at the top."
+            }
             action="Create task"
             onAction={() => openNewIssue()}
           />
@@ -935,7 +951,7 @@ function DeskSection({
 }) {
   return (
     <section aria-labelledby={id} className="scroll-mt-4 space-y-3" data-desk-section={id}>
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id={id} className="text-base font-semibold">
           {title}
           {count ? (

@@ -476,7 +476,7 @@ function boardRoutes() {
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
       <Route path="needed" element={<NeededFromYou />} />
-      {/* Decisions live in the Desk's "Needs me" section. Focus mode and the
+      {/* Decisions live in the Desk's Decisions section. Focus mode and the
           history curtains (Tabled, Dismissed, Decided, Expired) live only on
           the old page, so it stays at decisions/focus. */}
       <Route path="decisions" element={<Navigate to="/desk#desk-needs-me" replace />} />

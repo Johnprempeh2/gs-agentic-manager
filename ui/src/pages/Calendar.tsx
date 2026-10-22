@@ -400,7 +400,7 @@ export function Calendar() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
+    <div className="w-full max-w-5xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           {/* The page bar already says Calendar; the line says what it is for. */}

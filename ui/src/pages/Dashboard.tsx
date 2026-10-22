@@ -434,10 +434,9 @@ export function Dashboard() {
       {selectedCompany ? <DashboardHero companyName={selectedCompany.name} /> : null}
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
-      <DashboardDecisionsBox companyId={selectedCompanyId!} />
-      <FirstWeekChecklist companyId={selectedCompanyId!} currentUserId={currentUserId} />
-      <DashboardDigestCard companyId={selectedCompanyId!} />
-
+      {/* What needs attention first: anything that stops work (all agents
+          paused, no agents, a spending limit hit), then the decisions waiting
+          on you, then what happened. The first-week checklist follows. */}
       {pausedBanner?.kind === "imported" ? (
         <InlineBanner
           tone="warning"
@@ -488,21 +487,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {isMobile ? <PhoneShortcuts /> : null}
-
-      <DashboardOverview
-        agents={agents}
-        openIssues={openIssues}
-        liveAgents={liveAgents}
-        agentsLoading={agentsLoading}
-        issuesLoading={openIssuesLoading}
-        agentsError={agentsError}
-        issuesError={openIssuesError}
-        currentUserId={currentUserId}
-        userLabels={companyUserLabelMap}
-        openTaskLimit={isMobile ? PHONE_DASHBOARD_OPEN_TASK_LIMIT : undefined}
-      />
-
       {data && data.budgets.activeIncidents > 0 ? (
         <div className="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-(image:--gradient-extract-1) px-4 py-3">
           <div className="flex items-start gap-2.5">
@@ -521,6 +505,25 @@ export function Dashboard() {
           </Link>
         </div>
       ) : null}
+
+      <DashboardDecisionsBox companyId={selectedCompanyId!} />
+      <DashboardDigestCard companyId={selectedCompanyId!} />
+      <FirstWeekChecklist companyId={selectedCompanyId!} currentUserId={currentUserId} />
+
+      {isMobile ? <PhoneShortcuts /> : null}
+
+      <DashboardOverview
+        agents={agents}
+        openIssues={openIssues}
+        liveAgents={liveAgents}
+        agentsLoading={agentsLoading}
+        issuesLoading={openIssuesLoading}
+        agentsError={agentsError}
+        issuesError={openIssuesError}
+        currentUserId={currentUserId}
+        userLabels={companyUserLabelMap}
+        openTaskLimit={isMobile ? PHONE_DASHBOARD_OPEN_TASK_LIMIT : undefined}
+      />
 
       {isMobile ? (
         <Button

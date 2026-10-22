@@ -113,6 +113,10 @@ vi.mock("../api/projects", () => ({
   projectsApi: mockProjectsApi,
 }));
 
+vi.mock("../api/goals", () => ({
+  goalsApi: { list: vi.fn().mockResolvedValue([]) },
+}));
+
 vi.mock("../api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
@@ -393,6 +397,33 @@ describe("CommandPalette", () => {
       expect(navigateState.navigate).toHaveBeenCalledWith("/projects/mobile");
     });
 
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("goes to a page or a Settings page by its sidebar name, listed first", async () => {
+    mockIssuesApi.list.mockResolvedValue([]);
+    const { root } = renderWithQueryClient(<CommandPalette />, container);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+    const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
+    act(() => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      nativeSetter.call(input, "members");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      const first = container.querySelector("button[data-testid]");
+      expect(first?.getAttribute("data-testid")).toBe("command-destination");
+      expect(first?.textContent).toContain("Members");
+      expect(first?.textContent).toContain("Settings");
+    });
+    act(() => {
+      container.querySelector('button[data-testid="command-destination"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigateState.navigate).toHaveBeenCalledWith("/company/settings/members");
     act(() => {
       root.unmount();
     });

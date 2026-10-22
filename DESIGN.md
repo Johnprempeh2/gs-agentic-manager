@@ -35,6 +35,19 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 7. **Words are part of the system.** One name per concept across the entire UI — the canonical term is *task* (never *issue* or *ticket* in copy, labels, or empty states). Buttons name the action ("Approve hire," not "Submit"). Errors say what happened and what to do. Empty states say what to do first. **Note:** enforcing the task rename is a visible change and is explicitly OUT of the zero-visual-change extraction run; it happens in its own follow-up run.
 8. **Agent-modifiable by design.** The system must be changeable via instructions: single token source, lint rules that enforce it, and this document kept current. A correct change should be expressible as "edit tokens + run checks," not "visit 40 files."
 
+## Page rhythm
+
+- The page bar is 24px above the first thing on the page.
+- Top-level sections sit **24px** apart (`space-y-6`).
+- A toolbar (tabs, search, filter, sort, group, view switches) belongs to the
+  list it controls: **16px** between them, never 24. Tasks, Agents, Projects,
+  Inbox, Deliverables, Focus and a project's task list all follow this. When
+  the toolbar shares a `space-y-6` parent with other sections, give the
+  toolbar `mb-4` rather than changing the parent.
+- Pages start at the left edge of the content area. A `max-w-*` caps how long
+  lines get; it does not centre the page (`mx-auto` is for dialogs and
+  single-column reading views, not app pages).
+
 ## Form and wizard footers
 
 Keep **Save & exit** (or Cancel/Back) and the primary Continue/Connect/Finish

@@ -2228,7 +2228,9 @@ export function IssuesList({
         </p>
       )}
       {!error && !isLoading && !externalObjectFilterLoading && filtered.length === 0 && viewState.viewMode === "list" && (
-        issues.length === 0 && activeFilterCount === 0 && normalizedIssueSearch.length === 0 ? (
+        // No tasks at all: say what a task is, even when the page's default
+        // filters (the Recent chip) are on, since clearing them shows nothing more.
+        issues.length === 0 && normalizedIssueSearch.length === 0 ? (
           <EmptyState
             icon={CircleDot}
             message="No tasks yet."

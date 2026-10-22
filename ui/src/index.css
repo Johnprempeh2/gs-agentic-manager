@@ -931,6 +931,17 @@
   :is(button, [data-slot="checkbox"], span:has(> [data-slot="checkbox"]), [data-tap-dot]) + [data-row-chevron]::before {
     left: calc(var(--spacing) * -0.5);
   }
+  /* A row with both a chevron and a priority arrow has no spare space beside
+     the status icon, so the arrow moves 14px right (gap 8 to 22px). The
+     status icon keeps its place (the tree guides of its sub-tasks still line
+     up under it) and takes 2px towards the chevron and all of the new gap:
+     40 x 40, touching nothing. */
+  .gs-row:has([data-row-chevron]) [data-testid="issue-row-priority"] {
+    margin-left: calc(var(--spacing) * 3.5);
+  }
+  .gs-row:has([data-testid="issue-row-priority"]):has([data-row-chevron]) [data-status-icon-trigger]::before {
+    right: calc(var(--spacing) * -5.5);
+  }
   /* The read dot sits at the row's left edge: grow it into the row. */
   [data-tap-dot]::before {
     inset: calc(var(--spacing) * -3) calc(var(--spacing) * -6) calc(var(--spacing) * -3) calc(var(--spacing) * -1.5);

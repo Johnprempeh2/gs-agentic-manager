@@ -8,6 +8,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { projectsApi } from "../api/projects";
 import { ApiError } from "../api/client";
 import { useCompany } from "../context/CompanyContext";
+import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -51,6 +52,7 @@ export function ProjectTree() {
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { openNewIssue } = useDialogActions();
   const isPhone = useIsPhone();
 
   const projectQuery = useQuery({
@@ -212,11 +214,25 @@ export function ProjectTree() {
         subtitle={subtitle}
         actions={actions}
       />
-      {data.keyTaskIds.length === 0 ? (
-        <p className="text-sm text-muted-foreground" data-no-key-tasks="">
-          No key tasks yet. The project lead marks the 3 to 7 tasks that drive the project; you can mark one from its
-          properties.
-        </p>
+      {data.nodes.length === 0 && data.keyTaskIds.length === 0 ? (
+        <div className="flex flex-wrap items-center gap-3" data-no-key-tasks="">
+          <p className="text-sm text-muted-foreground">
+            No tasks in this project yet. The tree shows the project's work, branch by branch, as tasks are added.
+          </p>
+          <Button size="sm" onClick={() => openNewIssue({ projectId: data.project.id })}>
+            New task
+          </Button>
+        </div>
+      ) : data.keyTaskIds.length === 0 ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-no-key-tasks="">
+          <p className="text-sm text-muted-foreground">
+            No key tasks yet. The project lead marks the 3 to 7 tasks that drive the project; you can mark one from its
+            properties.
+          </p>
+          <Link to={listHref} className="text-sm font-medium text-foreground underline underline-offset-2">
+            Open the task list
+          </Link>
+        </div>
       ) : null}
       {isPhone ? (
         <TaskTreeOutline

@@ -46,9 +46,9 @@ export function DashboardHero({ companyName, now = new Date() }: { companyName: 
       <BrandMark
         variant="outline"
         decorative
-        className="gs-dash-hero-mark absolute bottom-3 right-6 h-10 w-auto sm:bottom-auto sm:right-(--gs-dash-hero-mark-inset) sm:top-1/2 sm:h-24 sm:-translate-y-1/2"
+        className="gs-dash-hero-mark absolute bottom-3 right-6 h-10 w-auto sm:bottom-auto sm:right-(--gs-dash-hero-mark-inset) sm:top-1/2 sm:h-20 sm:-translate-y-1/2"
       />
-      <div className="relative min-w-0 px-6 pt-7 pb-20 sm:w-2/5 sm:px-8 sm:py-9">
+      <div className="relative min-w-0 px-6 pt-7 pb-20 sm:w-2/5 sm:px-8 sm:py-6">
         <p className="gs-dash-hero-muted text-xs font-semibold uppercase tracking-(--tracking-eyebrow)">
           {greetingFor(now.getHours())}
         </p>

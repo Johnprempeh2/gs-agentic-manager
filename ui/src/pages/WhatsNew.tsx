@@ -19,10 +19,8 @@ export function WhatsNew() {
 
   return (
     <div className="w-full max-w-3xl space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-bold">What's new</h1>
-        <p className="text-sm text-muted-foreground">What has changed in GSAM lately, and where to try it.</p>
-      </header>
+      {/* The page bar already says What's new; the line says what it is for. */}
+      <p className="text-sm text-muted-foreground">What has changed in GSAM lately, and where to try it.</p>
 
       {WHATS_NEW.map((release) => (
         <section key={release.id} className="space-y-4" aria-labelledby={`release-${release.id}`} data-testid={`whats-new-${release.id}`}>
