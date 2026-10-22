@@ -4213,6 +4213,20 @@ async function listIssueBlockerAttentionMap(
           ),
         );
       for (const row of decisionRows) explicitWaitingIssueIds.add(row.issueId);
+
+      // A scheduled monitor is a wake path with a deadline, so its issue is
+      // waiting, not stalled (GRE-1868).
+      const monitorRows: Array<{ issueId: string }> = await dbOrTx
+        .select({ issueId: issues.id })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.companyId, companyId),
+            inArray(issues.id, chunk),
+            isNotNull(issues.monitorNextCheckAt),
+          ),
+        );
+      for (const row of monitorRows) explicitWaitingIssueIds.add(row.issueId);
     }
 
     // Recovery rows are intentionally company-wide: a liveness escalation for
@@ -4572,6 +4586,10 @@ async function listIssueBlockerAttentionMap(
         createIssueBlockerAttention({
           state: "needs_attention",
           reason: "attention_required",
+          // A blocked task that already asks a person, or has a run or a
+          // scheduled monitor, has a live way forward (GRE-1868).
+          blockingTreeLive:
+            activeIssueIds.has(root.id) || explicitWaitingIssueIds.has(root.id),
           terminalBlockerIssueId: root.id,
         }),
       );
