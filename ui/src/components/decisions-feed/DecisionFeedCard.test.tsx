@@ -71,7 +71,7 @@ let root: Root;
 let queryClient: QueryClient;
 const onActed = vi.fn();
 
-function render(card: DecisionCard) {
+function render(card: DecisionCard, { compact = false }: { compact?: boolean } = {}) {
   act(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
@@ -80,6 +80,7 @@ function render(card: DecisionCard) {
           companyId={FIXTURE_COMPANY_ID}
           assignableAgents={fixtureAgents}
           onActed={onActed}
+          compact={compact}
         />
       </QueryClientProvider>,
     );
@@ -595,6 +596,42 @@ describe("DecisionFeedCard on a phone", () => {
     const question = container.querySelector("[data-testid='inline-question']")!;
     const options = container.querySelector("[data-card-options]")!;
     expect(question.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("compact card on the phone Desk (GRE-1918)", () => {
+  it("shows the title, reason, owner and one main action; the rest waits behind Details", async () => {
+    const card = stalledReviewCard();
+    render(card, { compact: true });
+    const article = container.querySelector("[data-decision-compact]")!;
+    expect(article).not.toBeNull();
+    expect(article.querySelector("h3")?.textContent).toBe(card.title);
+    expect(container.querySelector("[data-decision-reason]")?.textContent).toBe(card.decision);
+    expect(container.querySelector("[data-decision-owner]")?.textContent).toContain(card.waiting!.name);
+    expect(hasButton("Approve")).toBe(true);
+    expect(hasButton("Request changes")).toBe(false);
+    expect(container.textContent).not.toContain("What was done");
+
+    await click(button("Approve"));
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-844/stalled-review-decision", { action: "approve" });
+  });
+
+  it("opens the full card with Details and closes it with Show less", async () => {
+    render(stalledReviewCard(), { compact: true });
+    expect(button("Details").getAttribute("aria-expanded")).toBe("false");
+    await click(button("Details"));
+    expect(container.querySelector("[data-decision-compact]")).toBeNull();
+    expect(container.querySelectorAll("[data-review-choice]")).toHaveLength(3);
+    expect(button("Show less").getAttribute("aria-expanded")).toBe("true");
+    await click(button("Show less"));
+    expect(container.querySelector("[data-decision-compact]")).not.toBeNull();
+  });
+
+  it("makes Answer the main action when the card is answered in place", async () => {
+    render(questionCard("int-9", "issue-9", "GRE-9"), { compact: true });
+    expect(container.querySelector("[data-testid='inline-question']")).toBeNull();
+    await click(button("Answer"));
+    expect(container.querySelector("[data-testid='inline-question']")).not.toBeNull();
   });
 });
 
