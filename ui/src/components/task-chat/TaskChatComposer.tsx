@@ -33,7 +33,7 @@ import {
   CircleHelp,
   Loader2,
   Mic,
-  Paperclip,
+  PaperclipIcon,
   Plus,
   X,
 } from "lucide-react";
@@ -1464,7 +1464,7 @@ export function TaskChatComposer({
                         onSelect={() => fileInputRef.current?.click()}
                         data-testid="task-chat-composer-attach"
                       >
-                        <Paperclip className="h-4 w-4 shrink-0" aria-hidden />
+                        <PaperclipIcon className="h-4 w-4 shrink-0" aria-hidden />
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="font-medium">Attach a file</span>
                           <span className="text-xs text-muted-foreground">
