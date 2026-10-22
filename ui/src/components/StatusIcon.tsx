@@ -27,6 +27,11 @@ interface StatusIconProps {
   waiting?: boolean;
 }
 
+/** The status word a person sees beside the glyph (a review waiting on an outside reply reads "Idle"). */
+export function statusDisplayLabel(status: string, externalConversationState?: "active" | "waiting" | null): string {
+  return statusLabel(status === "in_review" && externalConversationState === "waiting" ? "idle" : status);
+}
+
 export function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
   if (!blockerAttention || blockerAttention.state === "none") return "Blocked";
 

@@ -546,7 +546,8 @@ vi.mock("../components/ScrollToBottom", () => ({
   ScrollToBottom: () => null,
 }));
 
-vi.mock("../components/StatusIcon", () => ({
+vi.mock("../components/StatusIcon", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../components/StatusIcon")>()),
   StatusIcon: ({
     status,
     blockerAttention,
