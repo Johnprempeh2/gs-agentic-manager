@@ -109,10 +109,10 @@ describe("CompanySettings tabs", () => {
     flushSync(() => tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
   }
 
-  it("opens on General with the organisation, hiring, sign-out and archive controls only", () => {
+  it("opens on Organisation with the organisation, hiring, sign-out and archive controls only", () => {
     render();
 
-    expect(tabNames()).toEqual(["General", "Agents and work", "Security", "Backups and data"]);
+    expect(tabNames()).toEqual(["Organisation", "Agents and work", "Security", "Backups and data"]);
     expect(container.textContent).toContain("Organisation name");
     expect(container.textContent).toContain("Require board approval for new hires");
     expect(container.textContent).toContain("Archive organisation");
@@ -128,7 +128,7 @@ describe("CompanySettings tabs", () => {
     expect(container.textContent).not.toContain("Organisation name");
   });
 
-  it("remembers the chosen tab in the URL, and General clears it", async () => {
+  it("remembers the chosen tab in the URL, and Organisation clears it", async () => {
     render();
 
     chooseTab("Security");
@@ -140,23 +140,23 @@ describe("CompanySettings tabs", () => {
     await vi.waitFor(() => expect(observedSearch).toBe("?tab=backups"));
     await vi.waitFor(() => expect(sections()).toEqual(["backupRetention,feedbackDataSharingPreference"]));
 
-    chooseTab("General");
+    chooseTab("Organisation");
     await vi.waitFor(() => expect(observedSearch).toBe(""));
     expect(container.textContent).toContain("Organisation name");
   });
 
-  it("drops a tab the operator has emptied and falls back to General", () => {
+  it("drops a tab the operator has emptied and falls back to Organisation", () => {
     render("/ACM/company/settings?tab=security", [
       "instance.general.deploymentStatus",
       "instance.general.requireTwoStepSignIn",
       "instance.general.censorUsernameInLogs",
     ]);
 
-    expect(tabNames()).toEqual(["General", "Agents and work", "Backups and data"]);
+    expect(tabNames()).toEqual(["Organisation", "Agents and work", "Backups and data"]);
     expect(container.textContent).toContain("Organisation name");
   });
 
-  it("falls back to General for an unknown tab", () => {
+  it("falls back to Organisation for an unknown tab", () => {
     render("/ACM/company/settings?tab=nonsense");
     expect(container.textContent).toContain("Organisation name");
   });
@@ -169,7 +169,7 @@ describe("CompanySettings tabs", () => {
     expect(select).not.toBeNull();
     expect(select!.value).toBe("backups");
     expect(Array.from(select!.options).map((option) => option.textContent)).toEqual([
-      "General",
+      "Organisation",
       "Agents and work",
       "Security",
       "Backups and data",

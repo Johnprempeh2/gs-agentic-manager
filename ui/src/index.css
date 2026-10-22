@@ -873,21 +873,40 @@
 
   /* Those small widgets keep their drawn size, but a thumb still needs a
      bigger target. An invisible layer grows the tap area around them: the
-     toggle to 44px tall, the task status icon to 28px square. */
+     toggle to 44px tall, the task status icon and the inbox read dot to 40px
+     square, and 24px buttons (Not now, Ask for clarity, row actions) to 40px
+     tall. Rows stay as light as they look; only the touch area grows. */
   [data-slot="toggle"]::before,
   [data-status-icon-trigger]::before,
-  [data-hint-trigger]::before {
+  [data-hint-trigger]::before,
+  [data-tap-dot]::before,
+  button[data-size="xs"]::before,
+  button[data-size="icon-xs"]::before {
     content: "";
     position: absolute;
   }
   [data-slot="toggle"]::before {
     inset: calc(var(--spacing) * -3) calc(var(--spacing) * -1);
   }
-  [data-status-icon-trigger] {
+  [data-status-icon-trigger],
+  [data-tap-dot],
+  button[data-size="xs"],
+  button[data-size="icon-xs"] {
     position: relative;
   }
+  /* 16px icon to 40px: mostly rightward, over its own row, because the
+     sub-task chevron sits 6px to its left and keeps its own taps. */
   [data-status-icon-trigger]::before {
-    inset: calc(var(--spacing) * -1.5);
+    inset: calc(var(--spacing) * -3) calc(var(--spacing) * -5.25) calc(var(--spacing) * -3) calc(var(--spacing) * -0.75);
+  }
+  /* The read dot sits at the row's left edge: grow it into the row. */
+  [data-tap-dot]::before {
+    inset: calc(var(--spacing) * -3) calc(var(--spacing) * -6) calc(var(--spacing) * -3) calc(var(--spacing) * -1.5);
+  }
+  /* Only up and down: side by side, these buttons sit 4px apart. */
+  button[data-size="xs"]::before,
+  button[data-size="icon-xs"]::before {
+    inset: calc(var(--spacing) * -2) 0;
   }
   /* The 12px help icon beside a field label: 32px wide to tap. */
   [data-hint-trigger] {

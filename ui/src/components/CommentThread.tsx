@@ -1,3 +1,4 @@
+import { sentenceCaseStatus } from "./StatusBadge";
 import { AgentIdentity } from "./AgentIdentity";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -221,9 +222,9 @@ function initialsForName(name: string) {
 function formatRunStatusLabel(status: string) {
   switch (status) {
     case "timed_out":
-      return "timed out";
+      return "Timed out";
     default:
-      return status.replace(/_/g, " ");
+      return sentenceCaseStatus(status);
   }
 }
 

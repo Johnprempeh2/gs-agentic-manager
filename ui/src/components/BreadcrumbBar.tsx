@@ -24,6 +24,7 @@ import { FeatureTour } from "./FeatureTour";
 import { SEARCH_ASK_TOUR } from "../lib/search-ask-tour";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { openCommandPalette } from "../lib/global-search";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
 
@@ -31,7 +32,7 @@ type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | 
 function CrumbIdentifier({ identifier }: { identifier?: string }) {
   if (!identifier) return null;
   return (
-    <span data-slot="task-title-identifier" className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground">
+    <span data-slot="task-title-identifier" className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground @max-xl/bar:hidden">
       {identifier}
     </span>
   );
@@ -69,7 +70,13 @@ function GlobalToolbar({
  */
 function GlobalSearchButton() {
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  const shortcut = isMac ? "⌘K" : "Ctrl K";
+  // The bar is a size container (`@container/bar`): when a side panel squeezes
+  // it, the label goes first and then the button (Search stays in the sidebar),
+  // so the page title keeps its room.
   return (
+    <Tooltip>
+      <TooltipTrigger asChild>
     <button
       type="button"
       onClick={() => openCommandPalette()}
@@ -77,12 +84,15 @@ function GlobalSearchButton() {
       data-tour="global-search"
       aria-label="Search everything"
       aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-      className="hidden h-8 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-(length:--text-compact) text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex"
+      className="hidden h-8 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-(length:--text-compact) text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex @max-4xl/bar:size-8 @max-4xl/bar:justify-center @max-4xl/bar:px-0 @max-xl/bar:hidden"
     >
       <Search className="h-4 w-4" aria-hidden="true" />
-      <span>Search</span>
-      <kbd className="rounded border border-border bg-muted px-1 font-sans text-(length:--text-nano)">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+      <span className="@max-4xl/bar:sr-only">Search</span>
+      <kbd className="rounded border border-border bg-muted px-1 font-sans text-(length:--text-nano) @max-4xl/bar:hidden">{shortcut}</kbd>
     </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">Search everything ({shortcut})</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -90,18 +100,24 @@ function GlobalSearchButton() {
 function GlobalAskButton() {
   const lead = useLeadAgent();
   if (!lead) return null;
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
   return (
+    <Tooltip>
+      <TooltipTrigger asChild>
     <button
       type="button"
       onClick={() => openAskEverest()}
       data-testid="global-ask-button"
       data-tour="global-ask"
       aria-keyshortcuts="Control+J Meta+J"
-      className="hidden h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-(length:--text-compact) font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex"
+      className="hidden h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-(length:--text-compact) font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex @max-2xl/bar:size-8 @max-2xl/bar:justify-center @max-2xl/bar:px-0 @max-xl/bar:hidden"
     >
       <MessageCircle className="h-4 w-4" aria-hidden="true" />
-      Ask {lead.name}
+      <span className="@max-2xl/bar:sr-only">Ask {lead.name}</span>
     </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">Ask {lead.name} ({isMac ? "⌘J" : "Ctrl J"})</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -151,7 +167,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
 
   if (isMobile && mobileToolbar) {
     return (
-      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-2">
+      <div className="gs-page-bar @container/bar h-(--sz-60px) shrink-0 flex items-center px-2">
         {mobileToolbar}
       </div>
     );
@@ -159,7 +175,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
 
   if (breadcrumbs.length === 0) {
     return (
-      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center justify-end px-4 md:px-6">
+      <div className="gs-page-bar @container/bar h-(--sz-60px) shrink-0 flex items-center justify-end px-4 md:px-6">
         {globalToolbarSlots}
       </div>
     );
@@ -182,7 +198,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   if (isMobile && backFallback) {
     // Inner page on a phone: back arrow and the page title, like a native app.
     return (
-      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4">
+      <div className="gs-page-bar @container/bar h-(--sz-60px) shrink-0 flex items-center px-4">
         <MobileBackButton fallbackHref={backFallback} />
         <h1 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-semibold">
           {currentCrumb.leading ? (
@@ -197,7 +213,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   }
   if (isMobile && breadcrumbs[0]?.label === "Tasks" && currentCrumb.identifier) {
     return (
-      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4">
+      <div className="gs-page-bar @container/bar h-(--sz-60px) shrink-0 flex items-center px-4">
         {menuButton}
         <h1 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm">
           {currentCrumb.leading ? (
@@ -217,10 +233,13 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
         <BreadcrumbList className="flex-nowrap">
           {breadcrumbs.map((crumb, i) => {
             const isLast = i === breadcrumbs.length - 1;
+            // A squeezed task bar keeps only the task title: the trail before it
+            // is the sidebar's highlighted row.
+            const squeezedHidden = taskDetailLayout && "@max-xl/bar:hidden";
             return (
               <Fragment key={i}>
-                {i > 0 && <BreadcrumbSeparator />}
-                <BreadcrumbItem className={isLast ? "min-w-0" : "shrink-0"}>
+                {i > 0 && <BreadcrumbSeparator className={cn(squeezedHidden)} />}
+                <BreadcrumbItem className={cn(isLast ? "min-w-0" : "shrink-0", !isLast && squeezedHidden)}>
                   {isLast || !crumb.href ? (
                     crumb.leading || crumb.identifier ? (
                       <BreadcrumbPage className="flex min-w-0 items-baseline gap-1.5">
@@ -278,7 +297,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   // Other single-crumb pages keep their existing page-title presentation.
   if (breadcrumbs.length === 1 && !taskDetailLayout) {
     return (
-      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4 md:px-6">
+      <div className="gs-page-bar @container/bar h-(--sz-60px) shrink-0 flex items-center px-4 md:px-6">
         {menuButton}
         <div className="min-w-0 overflow-hidden flex-1">
           {breadcrumbs[0].leading || breadcrumbs[0].identifier ? (
@@ -305,7 +324,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   return (
     <div
       className={cn(
-        "gs-page-bar relative h-(--sz-60px) shrink-0 flex items-center",
+        "gs-page-bar @container/bar relative h-(--sz-60px) shrink-0 flex items-center",
         "px-4 md:px-6",
       )}
     >
@@ -316,7 +335,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
         <Button
           variant="ghost"
           size="icon-sm"
-          className="ml-5 size-9 shrink-0 text-muted-foreground"
+          className="ml-5 size-9 shrink-0 text-muted-foreground @max-2xl/bar:ml-1"
           onClick={toggleTaskPanel}
           aria-label={taskPanelOpen ? "Hide properties" : "Show properties"}
           title={taskPanelOpen ? "Hide properties" : "Show properties"}

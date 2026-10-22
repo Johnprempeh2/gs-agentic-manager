@@ -411,6 +411,7 @@ export function FailedRunInboxRow({
                   "hover:bg-blue-500/20",
                 )}
                 aria-label="Mark as read"
+                data-tap-dot=""
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
@@ -562,6 +563,7 @@ function ApprovalInboxRow({
                   "hover:bg-blue-500/20",
                 )}
                 aria-label="Mark as read"
+                data-tap-dot=""
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
@@ -695,6 +697,7 @@ function JoinRequestInboxRow({
                   "hover:bg-blue-500/20",
                 )}
                 aria-label="Mark as read"
+                data-tap-dot=""
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",

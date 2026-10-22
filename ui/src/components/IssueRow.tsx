@@ -252,6 +252,7 @@ export function IssueRow({
         selected ? "hover:bg-muted/80" : "hover:bg-blue-500/20",
       )}
       aria-label="Mark as read"
+      data-tap-dot=""
     >
       <span
         className={cn(

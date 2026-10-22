@@ -4,6 +4,7 @@ import { CircleHelp } from "lucide-react";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsPhone } from "@/hooks/useIsPhone";
 import { useTourSeen } from "@/hooks/useTourSeen";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
@@ -162,6 +163,8 @@ export function FeatureTour({
 
   return (
     <>
+      <Tooltip>
+        <TooltipTrigger asChild>
       <Button
         ref={helpRef}
         type="button"
@@ -181,8 +184,11 @@ export function FeatureTour({
             />
           ) : null}
         </span>
-        <span className="max-sm:sr-only">Show me around</span>
+        <span className="max-sm:sr-only @max-4xl/bar:sr-only">Show me around</span>
       </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Show me around {tour.label}</TooltipContent>
+      </Tooltip>
       <Popover open={Boolean(step)} onOpenChange={(open) => { if (!open) close(); }}>
         <PopoverAnchor virtualRef={anchorRef} />
         {step && steps ? (

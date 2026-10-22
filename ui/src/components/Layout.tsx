@@ -15,6 +15,7 @@ import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
+import { FocusTitleTip } from "./FocusTitleTip";
 import { AskEverestPanel } from "./AskEverestPanel";
 import { OnDemandCreateDialogs } from "./OnDemandDialogs";
 import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
@@ -814,6 +815,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       {isMobile && <MobileBottomNav visible={showMobileNav} />}
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
+      <FocusTitleTip />
       <AskEverestPanel />
       <OnDemandCreateDialogs />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />

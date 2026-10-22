@@ -2074,8 +2074,9 @@ export function IssuesList({
           {viewState.viewMode === "list" && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Sort">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 2xl:w-auto 2xl:px-2.5" title="Sort">
                   <ArrowUpDown className="h-3.5 w-3.5" />
+                  <span className="max-2xl:sr-only">Sort</span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-48 p-0">
@@ -2122,8 +2123,9 @@ export function IssuesList({
           {viewState.viewMode === "list" && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Group">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 2xl:w-auto 2xl:px-2.5" title="Group">
                   <Layers className="h-3.5 w-3.5" />
+                  <span className="max-2xl:sr-only">Group</span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-44 p-0">

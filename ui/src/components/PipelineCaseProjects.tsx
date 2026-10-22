@@ -1,3 +1,4 @@
+import { sentenceCaseStatus } from "./StatusBadge";
 import { useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -81,7 +82,7 @@ export function PipelineCaseProjects({ caseId, companyId }: { caseId: string; co
               <Link to={projectUrl(row.project)} className="min-w-0 flex-1 truncate font-medium text-foreground hover:underline">
                 {row.project.name}
               </Link>
-              <span className="shrink-0 text-xs text-muted-foreground">{row.project.status.replace(/_/g, " ")}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{sentenceCaseStatus(row.project.status)}</span>
               <button
                 type="button"
                 className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
