@@ -1019,6 +1019,14 @@
     grid-column: 1 / -1;
     grid-row: 2;
   }
+
+  /* A control that carries words ("Filter: 1") keeps the 44px height but
+     grows to fit them (GRE-1924). */
+  [role="toolbar"][aria-label="Inbox controls"] button[data-worded],
+  .paperclip-task-list-toolbar [data-slot="collection-toolbar-controls"] button[data-worded] {
+    width: auto;
+    padding-inline: calc(var(--spacing) * 3);
+  }
 }
 
 /* Dark mode scrollbars */

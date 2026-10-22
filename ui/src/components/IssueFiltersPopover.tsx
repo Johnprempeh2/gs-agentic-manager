@@ -205,7 +205,7 @@ export function IssueFiltersPopover({
       <PopoverTrigger asChild>
         {/* With a filter on, the compact trigger says so in words at every
             width ("Filter: 1"); a bare icon and badge is unreadable on touch (GRE-1924). */}
-        <Button variant={buttonVariant} size={iconOnly ? "icon" : "sm"} className={`text-xs ${iconOnly ? (activeFilterCount > 0 ? "h-8 w-auto shrink-0 px-2.5" : "h-8 w-8 shrink-0 xl:w-auto xl:px-2.5") : ""} ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`}>
+        <Button variant={buttonVariant} size={iconOnly ? "icon" : "sm"} data-worded={iconOnly && activeFilterCount > 0 ? "" : undefined} className={`text-xs ${iconOnly ? (activeFilterCount > 0 ? "h-8 w-auto shrink-0 px-2.5" : "h-8 w-8 shrink-0 xl:w-auto xl:px-2.5") : ""} ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`}>
           <Filter className={iconOnly ? "h-3.5 w-3.5" : "h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1"} />
           {iconOnly ? (
             activeFilterCount > 0
