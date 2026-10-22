@@ -346,6 +346,8 @@ function describeBlockedBy(input: WhyBlockedInput): WhyBlocked | null {
   const open = blockers.filter((blocker) => !CLOSED.has(blocker.status));
   if (open.length === 0) {
     if (input.issue.status !== "blocked") return null;
+    // The owner's note names what it waits on now (GRE-1786: a release).
+    if (input.issue.unblockDescriptor) return null;
     const cancelled = blockers.find((blocker) => blocker.status === "cancelled");
     if (cancelled) {
       return {
@@ -359,7 +361,7 @@ function describeBlockedBy(input: WhyBlockedInput): WhyBlocked | null {
     }
     return {
       source: "blockers_finished",
-      headline: "Everything this task was waiting on is finished.",
+      headline: "Waits on nothing. Everything it was waiting on is finished.",
       detail: "It still says blocked, but nothing holds it up any more.",
       whoCanUnblock: "You",
       nextStep: "Move it back to To do so the work can start again.",
@@ -646,7 +648,7 @@ function describeNoReason(input: WhyBlockedInput): WhyBlocked {
   const owner = ownerOfIssue(input);
   return {
     source: "no_reason",
-    headline: "Marked blocked, but nobody has said why.",
+    headline: "Waits on nothing. Marked blocked, but nobody has said why.",
     detail: null,
     whoCanUnblock: owner ? capitalize(owner) : "You",
     nextStep: owner

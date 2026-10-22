@@ -138,7 +138,7 @@ describe("WhyBlockedCallout", () => {
     render({ issue: baseIssue() });
     await settle();
     expect(container.querySelector('[data-testid="why-blocked-headline"]')?.textContent).toBe(
-      "Marked blocked, but nobody has said why.",
+      "Waits on nothing. Marked blocked, but nobody has said why.",
     );
     expect(container.querySelector('[data-testid="why-blocked-link"]')).toBeNull();
   });
