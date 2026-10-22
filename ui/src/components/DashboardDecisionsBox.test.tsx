@@ -36,9 +36,11 @@ function feed(cards: DecisionCard[], count = cards.length): DecisionsFeed {
 }
 
 describe("selectDashboardDecisions", () => {
-  it("previews the first card and uses the feed's one count", () => {
-    const result = selectDashboardDecisions(feed([card("a", "A"), card("b", "B"), card("c", "C")], 7));
+  it("previews the first card and shows the one needs-you count", () => {
+    const result = selectDashboardDecisions(feed([card("a", "A"), card("b", "B"), card("c", "C")]), 7);
     expect(result.count).toBe(7);
+    // Without the one count, the feed's cards.
+    expect(selectDashboardDecisions(feed([card("a", "A"), card("b", "B")])).count).toBe(2);
     expect(result.preview.map((entry) => entry.id)).toEqual(["a"]);
   });
 });
@@ -62,7 +64,8 @@ describe("DashboardDecisionsBoxView", () => {
     act(() => {
       root.render(
         <DashboardDecisionsBoxView
-          feed={feed([card("task:1", "Pick a name"), card("task:2", "Approve hire")], 5)}
+          feed={feed([card("task:1", "Pick a name"), card("task:2", "Approve hire")])}
+          count={5}
         />,
       );
     });

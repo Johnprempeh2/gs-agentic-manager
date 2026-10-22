@@ -28,12 +28,12 @@ export function useNeedsMe(companyId: string | null | undefined) {
 }
 
 /**
- * What needs a decision from the user (GRE-586): decision cards plus overdue
- * waits that have no card. Tasks merely assigned to the user are not
- * decisions; they count on My tasks instead.
+ * The one "needs you" number (22 Oct): every decision card, overdue wait and
+ * expired question, computed once on the server. Tasks merely assigned to the
+ * user are not in it; they are tasks on the Desk.
  */
-export function decisionsCountOf(needsMe: Pick<NeedsMe, "count" | "assignedTaskCount">): number {
-  return Math.max(0, needsMe.count - needsMe.assignedTaskCount);
+export function decisionsCountOf(needsMe: Pick<NeedsMe, "decisionCount">): number {
+  return Math.max(0, needsMe.decisionCount);
 }
 
 /**

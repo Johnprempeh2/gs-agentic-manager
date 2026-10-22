@@ -279,15 +279,19 @@ export function answerDecide(needsMe: NeedsMe): AskAnswer {
   if (needsMe.count === 0) {
     return { headline: "Nothing needs you right now. The team is not waiting on any decision from you.", lines: [] };
   }
-  const parts = [
-    needsMe.decisionCount > 0 ? plural(needsMe.decisionCount, "decision") : null,
-    needsMe.assignedTaskCount > 0 ? plural(needsMe.assignedTaskCount, "task") + " assigned to you" : null,
-    needsMe.overdueWaits.length > 0 ? `${needsMe.overdueWaits.length} waiting more than a day` : null,
-  ].filter(Boolean);
+  // The one "needs you" number (decisionCount); assigned tasks are said apart.
+  const needs = needsMe.decisionCount;
+  const assigned = needsMe.assignedTaskCount > 0
+    ? `${plural(needsMe.assignedTaskCount, "task")} ${needsMe.assignedTaskCount === 1 ? "is" : "are"} assigned to you.`
+    : "";
+  const waiting = needsMe.overdueWaits.length > 0 ? `, ${needsMe.overdueWaits.length} waiting more than a day` : "";
+  const headline = needs === 0
+    ? `No decisions need you. ${assigned}`
+    : `${plural(needs, "thing")} need${needs === 1 ? "s" : ""} you${waiting}.${assigned ? ` ${assigned}` : ""}`;
   return {
-    headline: `${plural(needsMe.count, "thing")} need${needsMe.count === 1 ? "s" : ""} you: ${parts.join(", ")}.`,
+    headline: headline.trim(),
     lines,
-    more: { label: "Open Needs you", href: "/decisions" },
+    more: { label: "Open Decisions", href: "/decisions" },
   };
 }
 
@@ -676,8 +680,8 @@ export function answerOverview(scorecard: TeamScorecard | null, needsMe: NeedsMe
       });
     }
   }
-  if (needsMe && needsMe.count > 0) {
-    lines.unshift({ text: `${plural(needsMe.count, "thing")} need${needsMe.count === 1 ? "s" : ""} you`, href: "/decisions" });
+  if (needsMe && needsMe.decisionCount > 0) {
+    lines.unshift({ text: `${plural(needsMe.decisionCount, "thing")} need${needsMe.decisionCount === 1 ? "s" : ""} you`, href: "/decisions" });
   }
   return { headline, lines, more: { label: "Open the scorecard", href: "/scorecard" } };
 }
@@ -709,7 +713,7 @@ export function answerAway(
   const finished = digest.agents
     .flatMap((agent) => agent.items.filter((item) => item.kind === "task_finished").map((item) => ({ item, agent: agent.agentName })))
     .sort((a, b) => new Date(b.item.at).getTime() - new Date(a.item.at).getTime());
-  const needs = needsMe?.count ?? 0;
+  const needs = needsMe?.decisionCount ?? 0;
   const parts = [
     `${plural(digest.counts.tasksFinished, "task")} finished`,
     `${stuck.length} got stuck`,

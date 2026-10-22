@@ -92,7 +92,7 @@ describe("routine variable helpers", () => {
     const values = getBuiltinRoutineVariableValues();
     const year = String(new Date().getUTCFullYear());
     expect(values.timestamp).toContain(year);
-    expect(values.timestamp).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);
+    expect(values.timestamp).toMatch(/\d{1,2} [A-Z][a-z]+ \d{4} at \d{1,2}:\d{2} UTC/);
     expect(values.timestamp).toContain("UTC");
   });
 

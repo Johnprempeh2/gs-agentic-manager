@@ -44,6 +44,7 @@ import type {
   EmailEndpointSummary,
 } from "@greatstone/shared";
 import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
+import { formatDateTime } from "@/lib/utils";
 const selectClass =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 
@@ -754,7 +755,7 @@ export function EmailEndpointSettings({
         {inbox.receiveMode === "websocket" ? "Live connection" : "Webhook"}
       </p>
       <p className="text-sm text-muted-foreground">
-        Last mail check: {inbox.lastSyncAt ? new Date(inbox.lastSyncAt).toLocaleString() : "Not checked yet"}
+        Last mail check: {inbox.lastSyncAt ? formatDateTime(inbox.lastSyncAt) : "Not checked yet"}
       </p>
       <p className="text-sm">
         Each email conversation is a task. Task comments stay internal; use

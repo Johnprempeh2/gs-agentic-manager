@@ -4,37 +4,44 @@ import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDecisionsFeed } from "../hooks/useDecisionsFeed";
+import { useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
 
 export const DASHBOARD_DECISION_PREVIEW_LIMIT = 1;
 
 /**
- * The decisions waiting on the board, from the one Decisions feed (GRE-263):
- * the same count as the sidebar badge, the mobile tab and the Decisions
- * header. The feed is already ordered, most urgent first.
+ * The decisions waiting on the board. `count` is the one "needs you" number
+ * (NeedsMe.decisionCount), the same as the sidebar badge, the phone tab and
+ * the Desk's Decisions section; without it, the feed's cards. The preview is
+ * the feed's most urgent card that can be acted on from anywhere.
  */
-export function selectDashboardDecisions(feed: DecisionsFeed | null | undefined): {
+export function selectDashboardDecisions(
+  feed: DecisionsFeed | null | undefined,
+  oneCount?: number,
+): {
   count: number;
   preview: DecisionCard[];
 } {
-  // "At your desk" cards are not in the count (GRE-450).
+  // "At your desk" cards are outside the count (GRE-450).
   const cards = (feed?.cards ?? []).filter((card) => !card.atDesk);
   return {
-    count: Math.max(feed?.count ?? 0, cards.length),
+    count: oneCount ?? cards.length,
     preview: cards.slice(0, DASHBOARD_DECISION_PREVIEW_LIMIT),
   };
 }
 
 export function DashboardDecisionsBoxView({
   feed,
+  count: oneCount,
   loading = false,
   error = null,
 }: {
   feed: DecisionsFeed | null | undefined;
+  /** The one "needs you" number; falls back to the feed's cards. */
+  count?: number;
   loading?: boolean;
   error?: Error | null;
 }) {
-  const { count, preview } = selectDashboardDecisions(feed);
+  const { count, preview } = selectDashboardDecisions(feed, oneCount);
   const top = preview[0];
 
   // Stacks on a phone (count and button on top, the top decision under it)
@@ -98,5 +105,6 @@ export function DashboardDecisionsBoxView({
 
 export function DashboardDecisionsBox({ companyId }: { companyId: string }) {
   const { data, isLoading, error } = useDecisionsFeed(companyId);
-  return <DashboardDecisionsBoxView feed={data} loading={isLoading} error={error} />;
+  const { data: needsMe } = useNeedsMe(companyId);
+  return <DashboardDecisionsBoxView feed={data} count={needsMe?.decisionCount} loading={isLoading} error={error} />;
 }

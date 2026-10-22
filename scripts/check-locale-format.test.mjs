@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { countLocaleCalls, compare, lowerBaseline, readBaseline, run, scan } from "./check-locale-format.mjs";
+import { countLocaleCalls, compare, findNonBritishCalls, lowerBaseline, readBaseline, run, scan } from "./check-locale-format.mjs";
 
 function fixture(files) {
   const repoRoot = mkdtempSync(path.join(os.tmpdir(), "locale-format-"));
@@ -32,7 +32,7 @@ function fixture(files) {
 }
 
 const ONE = `d.toLocaleDateString("en-GB");`;
-const TWO = `d.toLocaleDateString(); n.toLocaleTimeString();`;
+const TWO = `d.toLocaleDateString("en-GB"); n.toLocaleTimeString("en-GB");`;
 
 test("counts toLocaleString, toLocaleDateString and toLocaleTimeString calls only", () => {
   assert.equal(
@@ -119,4 +119,45 @@ test("test files are not counted", (t) => {
   const f = fixture({ "A.test.tsx": ONE });
   t.after(f.cleanup);
   assert.deepEqual(scan(f.scanRoot, f.repoRoot), {});
+});
+
+test("strict check: calls without the British locale are reported with file:line", (t) => {
+  const f = fixture({
+    "A.tsx": `const a = 1;\nd.toLocaleString();\nconst f = new Intl.DateTimeFormat(undefined, {});\nn.toLocaleString("en-US");\n`,
+  });
+  t.after(f.cleanup);
+  f.exec(["--init"]);
+  // The ratchet alone would pass (same counts); the strict check must not.
+  assert.equal(f.exec(), 1);
+  const out = f.lines.join("\n");
+  assert.match(out, /ui\/src\/A\.tsx:2\b/);
+  assert.match(out, /ui\/src\/A\.tsx:3\b/);
+  assert.match(out, /ui\/src\/A\.tsx:4\b/);
+  assert.match(out, /Pass "en-GB"/);
+});
+
+test("strict check: en-GB passes, including the locale on the next line", () => {
+  assert.deepEqual(findNonBritishCalls(`d.toLocaleString("en-GB");`), []);
+  assert.deepEqual(findNonBritishCalls(`x.toLocaleString(\n  "en-GB",\n  { style: "currency" },\n);`), []);
+  assert.deepEqual(findNonBritishCalls(`new Intl.NumberFormat(\n  "en-GB"\n).format(1);`), []);
+  assert.deepEqual(findNonBritishCalls(`x.toLocaleString(\n  undefined,\n  {},\n);`), [1]);
+});
+
+test("strict check: allowed exceptions", () => {
+  assert.deepEqual(findNonBritishCalls(`Intl.DateTimeFormat().resolvedOptions().timeZone;`), []);
+  assert.deepEqual(findNonBritishCalls(`new Intl.DateTimeFormat(options.locale ?? BRITISH_LOCALE, {});`), []);
+  assert.deepEqual(
+    findNonBritishCalls(`// en-US parts are parsed, not shown\nconst f = new Intl.DateTimeFormat("en-US", {});`),
+    [],
+  );
+  // Reading the time zone is fine; formatting with the default locale is not.
+  assert.deepEqual(findNonBritishCalls(`Intl.DateTimeFormat().format(d);`), [1]);
+});
+
+test("strict check: ui/src/lib/utils.ts is not exempt", (t) => {
+  const f = fixture({ "lib/utils.ts": `d.toLocaleDateString();` });
+  t.after(f.cleanup);
+  f.exec(["--init"]);
+  assert.equal(f.exec(), 1);
+  assert.match(f.lines.join("\n"), /ui\/src\/lib\/utils\.ts:1\b/);
 });

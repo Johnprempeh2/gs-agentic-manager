@@ -146,7 +146,7 @@ export function describeAiCredentialLifetime(
   const state = aiCredentialExpiryState(credential.expiresAt, now);
   if (state === "unknown")
     return { tone: "warning", text: `Short-lived token copied from your Claude login. Its expiry is unknown. ${renewal}` };
-  const when = new Date(credential.expiresAt!).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const when = new Date(credential.expiresAt!).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
   if (state === "expired")
     return { tone: "danger", text: `This token expired on ${when}. Runs using it stop until you reconnect. ${renewal}` };
   return {

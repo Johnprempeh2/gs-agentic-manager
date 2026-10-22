@@ -201,15 +201,16 @@ export function OrganisationCrmFieldsForm({
   );
 }
 
-const numberFormat = new Intl.NumberFormat(undefined);
+const numberFormat = new Intl.NumberFormat("en-GB");
 
 export function formatRevenue(organisation: Pick<Organisation, "annualRevenue" | "annualRevenueCurrency">) {
   if (organisation.annualRevenue === null) return null;
   if (!organisation.annualRevenueCurrency) return numberFormat.format(organisation.annualRevenue);
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat("en-GB", {
       style: "currency",
       currency: organisation.annualRevenueCurrency,
+      currencyDisplay: "narrowSymbol",
       maximumFractionDigits: 0,
     }).format(organisation.annualRevenue);
   } catch {

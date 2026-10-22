@@ -138,6 +138,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
         // Releases run from Claude, not from here (release-task.ts).
         .filter((task) => !cardTaskIds.has(task.id) && !waitIds.has(task.id) && !isReleaseTask(task.title))
         .map((task) => ({ ...task, updatedAt: task.updatedAt.toISOString() }));
+      // A wait that already has a card is that card: listed and counted once.
       const uncountedWaits = overdueWaits.filter((wait) => !cardTaskIds.has(wait.id));
       // One expired question per task, newest first, and none for a task
       // already listed above.
@@ -161,15 +162,21 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
         });
       }
 
+      // The one "needs you" number (22 Oct, "one count everywhere"): every
+      // decision card, overdue wait and expired question. "At your desk"
+      // cards stay out (GRE-450) and are shown apart, labelled as such.
+      // Sidebar, phone tab, app icon, Dashboard, Desk, Needed from you,
+      // Focus, push and the morning summary all show it.
+      const decisionCount = feed.count + uncountedWaits.length + expiredCards.length;
       return {
         companyId,
         generatedAt: feed.generatedAt,
-        count: feed.count + assignedTasks.length + uncountedWaits.length + expiredCards.length,
-        decisionCount: feed.count,
+        count: decisionCount + assignedTasks.length,
+        decisionCount,
         assignedTaskCount: assignedTasks.length,
         decisions: feed.cards,
         assignedTasks,
-        overdueWaits,
+        overdueWaits: uncountedWaits,
         expiredCards,
       };
     },

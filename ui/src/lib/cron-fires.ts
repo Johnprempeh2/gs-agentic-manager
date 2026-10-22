@@ -138,6 +138,7 @@ interface ZonedParts {
 }
 
 function getZonedMinuteParts(date: Date, timeZone: string): ZonedParts {
+  // en-US parts are parsed, not shown (WEEKDAY_INDEX keys on English names).
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",

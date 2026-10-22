@@ -12,6 +12,7 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/context/ConfirmContext";
 import { ShareTextButton } from "@/components/ShareTextButton";
+import { formatDateTime } from "@/lib/utils";
 
 const inviteRoleOptions = [
   {
@@ -331,7 +332,7 @@ export function InvitesSection() {
                         ) : null}
                       </td>
                       <td className="px-5 py-3 align-top text-muted-foreground">
-                        {new Date(invite.createdAt).toLocaleString()}
+                        {formatDateTime(invite.createdAt)}
                       </td>
                       <td className="px-5 py-3 align-top">
                         {invite.relatedJoinRequestId ? (

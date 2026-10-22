@@ -235,8 +235,8 @@ export interface DecisionsFeed {
   companyId: string;
   generatedAt: string;
   /**
-   * The one count: sidebar badge, list header and Focus all show this number.
-   * "At your desk" cards are not in it (GRE-450).
+   * Cards outside "At your desk" (GRE-450). Part of the number the UI shows;
+   * every "needs you" count reads `NeedsMe.decisionCount`.
    */
   count: number;
   /** Cards that need the board user at the computer, outside `count`. */
@@ -313,8 +313,13 @@ export interface NeedsMeExpiredCard {
 export interface NeedsMe {
   companyId: string;
   generatedAt: string;
-  /** Decisions, assigned tasks and overdue waits. A task is never counted twice. */
+  /** `decisionCount` plus assigned tasks. A task is never counted twice. */
   count: number;
+  /**
+   * The one "needs you" number shown everywhere: every decision card except
+   * "At your desk" ones (GRE-450), every overdue wait and every expired
+   * question listed here.
+   */
   decisionCount: number;
   assignedTaskCount: number;
   decisions: DecisionCard[];
@@ -322,7 +327,7 @@ export interface NeedsMe {
   assignedTasks: NeedsMeTask[];
   /**
    * Waits on the user or the board older than 24h, oldest first. A task here
-   * is not repeated in `assignedTasks`; it may also have a decision card.
+   * is not repeated in `assignedTasks` and has no decision card.
    */
   overdueWaits: NeedsMeOverdueWait[];
   /**

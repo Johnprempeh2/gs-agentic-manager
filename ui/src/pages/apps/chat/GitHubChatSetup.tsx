@@ -44,6 +44,7 @@ import {
   githubSelectClass,
 } from "./GitHubBotConfiguration";
 import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
+import { formatClockTime } from "@/lib/utils";
 
 const steps = [
   "Choose agent",
@@ -439,7 +440,7 @@ export function GitHubChatSetup() {
                   </Button>
                   <p className="mt-2 text-xs text-muted-foreground">
                     Registration expires at{" "}
-                    {new Date(registration.expiresAt).toLocaleTimeString()}.
+                    {formatClockTime(registration.expiresAt)}.
                   </p>
                 </form>
               )}

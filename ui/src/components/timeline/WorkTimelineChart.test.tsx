@@ -96,14 +96,14 @@ function timelineSample(): WorkTimelineResult {
 }
 
 describe("WorkTimelineChart", () => {
-  it("renders date-aware AM/PM labels on the header axis", () => {
+  it("renders date-aware 24-hour labels on the header axis", () => {
     renderChart(timelineSample());
 
     const timeAxis = container.querySelector<HTMLElement>("[data-testid='work-timeline-time-axis']");
 
-    expect(timeAxis?.textContent).toContain("Jul 2");
-    expect(timeAxis?.textContent).toContain("AM");
-    expect(timeAxis?.textContent).not.toContain("09:00");
+    expect(timeAxis?.textContent).toContain("2 Jul");
+    expect(timeAxis?.textContent).toMatch(/2 Jul, \d{2}:\d{2}/);
+    expect(timeAxis?.textContent).not.toMatch(/AM|PM/);
   });
 
   it("freezes the time axis over vertical scrolling while preserving horizontal alignment", async () => {
@@ -125,7 +125,7 @@ describe("WorkTimelineChart", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(timeAxis.textContent).toContain("Jul 2");
+    expect(timeAxis.textContent).toContain("2 Jul");
     expect(axisSvg.style.transform).toBe("translateX(-240px)");
   });
 

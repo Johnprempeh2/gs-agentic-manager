@@ -1600,6 +1600,7 @@ function readZonedDateParts(startsAt: string, timeZone: string) {
   try {
     const date = new Date(startsAt);
     if (Number.isNaN(date.getTime())) return null;
+    // en-US parts are parsed, not shown (WEEKDAY_TO_CRON keys on English names).
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone,
       hour12: false,

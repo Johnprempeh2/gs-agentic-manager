@@ -21,13 +21,12 @@ export function isBuiltinRoutineVariable(name: string): boolean {
   return BUILTIN_ROUTINE_VARIABLE_NAMES.has(name);
 }
 
-const HUMAN_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const HUMAN_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
   month: "long",
   day: "numeric",
   hour: "numeric",
   minute: "2-digit",
-  hour12: true,
   timeZone: "UTC",
   timeZoneName: "short",
 });
@@ -35,7 +34,7 @@ const HUMAN_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
 /**
  * Returns current values for all built-in routine variables.
  * `date` expands to the current date in YYYY-MM-DD format (UTC).
- * `timestamp` expands to a human-readable date and time (e.g. "April 28, 2026 at 12:17 PM UTC").
+ * `timestamp` expands to a human-readable date and time (e.g. "28 April 2026 at 12:17 UTC").
  */
 export function getBuiltinRoutineVariableValues(): Record<string, string> {
   const now = new Date();

@@ -59,12 +59,13 @@ describe("when the weekly report is due", () => {
 const needsMe = (): NeedsMe => ({
   companyId: "c",
   generatedAt: "",
-  count: 1,
-  decisionCount: 0,
+  count: 2,
+  decisionCount: 1,
   assignedTaskCount: 1,
   decisions: [],
-  assignedTasks: [{ id: "t", identifier: "WK-9", title: "Pick a launch date", status: "todo", priority: "medium", updatedAt: "" }],
-  overdueWaits: [],
+  // An assigned task is not "needs you": only the overdue wait counts.
+  assignedTasks: [{ id: "a", identifier: "WK-8", title: "Sign the lease", status: "todo", priority: "medium", updatedAt: "" }],
+  overdueWaits: [{ id: "t", identifier: "WK-9", title: "Pick a launch date" }] as unknown as NeedsMe["overdueWaits"],
 });
 
 describe("weekly report service", () => {

@@ -256,7 +256,7 @@ function shortenFileData(text: string, key: string | null): string {
     FILE_DATA_KEYS.has(normalizeKey(key)) &&
     /^[A-Za-z0-9+/=_\r\n-]+$/.test(text);
   if (!isDataUrl && !isFileField) return text;
-  return `[file data, ${text.length.toLocaleString("en-US")} characters not shown]`;
+  return `[file data, ${text.length.toLocaleString("en-GB")} characters not shown]`;
 }
 
 function shortenNestedFileData(value: unknown, key: string | null): unknown {

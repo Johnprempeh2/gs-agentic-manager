@@ -5,9 +5,7 @@ import { issueUrl } from "../lib/utils";
 
 interface NeedsMeListProps {
   needsMe: NeedsMe;
-  /** Inbox shows decisions too; Decisions and Focus already show them as cards. */
-  includeDecisions?: boolean;
-  /** Inbox Mine lists assigned tasks; Decisions does not (GRE-586). */
+  /** Inbox Mine lists assigned tasks; the Desk's Decisions section does not (GRE-586). */
   includeAssigned?: boolean;
   title?: string;
 }
@@ -22,36 +20,34 @@ export function formatWaitAge(ms: number) {
 }
 
 /**
- * The one "needs me" list (GRE-358), compact: tasks that have waited on the
- * user or the board for more than 24h, with their age (GRE-500), then open
- * decisions, agents' questions that expired unanswered, and tasks assigned
- * to the user. Renders nothing when there is
- * nothing to show.
+ * Compact rows: tasks that have waited on the user or the board for more
+ * than 24h, with their age (GRE-500), agents' questions that expired
+ * unanswered, then tasks assigned to the user. Decision cards render as cards
+ * elsewhere. Renders nothing when there is nothing to show.
  */
-export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned = true, title }: NeedsMeListProps) {
-  // "At your desk" cards wait for the computer, not this count (GRE-450).
+export function NeedsMeList({ needsMe, includeAssigned = true, title }: NeedsMeListProps) {
   const waits = needsMe.overdueWaits ?? [];
-  const waitIds = new Set(waits.map((wait) => wait.id));
-  // A task that waits on you is listed once, as the wait.
-  const decisions = includeDecisions
-    ? needsMe.decisions.filter((card) => !card.atDesk && !(card.task && waitIds.has(card.task.id)))
-    : [];
   const tasks = includeAssigned ? needsMe.assignedTasks : [];
   // Questions from agents that expired before anyone answered them.
   const expiredCards = needsMe.expiredCards ?? [];
-  const shown = waits.length + decisions.length + tasks.length + expiredCards.length;
+  const overdue = waits.length + expiredCards.length;
+  const shown = overdue + tasks.length;
   if (shown === 0) return null;
 
-  const heading = title
-    ?? (includeDecisions || waits.length > 0 || expiredCards.length > 0 ? "Needs you" : "Assigned to you");
+  // Overdue rows are part of the Decisions count shown above them, so they
+  // carry no second number. Assigned tasks are counted on their own.
+  const heading = title ?? (overdue > 0 ? "Overdue" : "Assigned to you");
+  const showCount = overdue === 0;
 
   return (
     <section aria-label={heading} className="space-y-2">
       <h2 className="flex items-baseline gap-2 text-sm font-semibold text-foreground">
         {heading}
-        <span className="tabular-nums text-muted-foreground" aria-label={`${shown} items`}>
-          {shown}
-        </span>
+        {showCount ? (
+          <span className="tabular-nums text-muted-foreground" aria-label={`${shown} items`}>
+            {shown}
+          </span>
+        ) : null}
       </h2>
       <ul className="divide-y divide-border rounded-xl border border-border bg-card">
         {waits.map((wait) => (
@@ -67,22 +63,6 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
               <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{wait.title}</span>
               {wait.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{wait.identifier}</span>
-              ) : null}
-            </Link>
-          </li>
-        ))}
-        {decisions.map((card) => (
-          <li key={card.id}>
-            <Link
-              to={card.task ? issueUrl(card.task) : "/decisions"}
-              className="flex min-w-0 items-center gap-3 px-4 py-2.5 text-sm hover:bg-accent/50"
-            >
-              <span className="shrink-0 rounded-sm bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                Decision
-              </span>
-              <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{card.task?.title ?? card.title}</span>
-              {card.task?.identifier ? (
-                <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{card.task.identifier}</span>
               ) : null}
             </Link>
           </li>

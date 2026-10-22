@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { MarkdownBody } from "@/components/MarkdownBody";
-import { cn } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 import { useTaskChatExpansion } from "./expansion-state";
 import type { TaskChatActivityPhaseItem } from "./task-chat-model";
 import {
@@ -85,10 +85,10 @@ function presentation(item: Activity, active: boolean) {
   const { used, size, inputTokens, outputTokens, costUsd } = item.usage;
   const usage = [
     size > 0
-      ? `${used.toLocaleString()}/${size.toLocaleString()} ctx`
+      ? `${formatNumber(used)}/${formatNumber(size)} ctx`
       : undefined,
     inputTokens != null || outputTokens != null
-      ? `↑${(inputTokens ?? 0).toLocaleString()} ↓${(outputTokens ?? 0).toLocaleString()}`
+      ? `↑${formatNumber(inputTokens ?? 0)} ↓${formatNumber(outputTokens ?? 0)}`
       : undefined,
     costUsd != null ? `$${costUsd.toFixed(4)}` : undefined,
   ]

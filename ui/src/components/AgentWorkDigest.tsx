@@ -18,7 +18,7 @@ import { AWAY_QUESTION, newlyStuck } from "../lib/ask-everest";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { queryKeys } from "../lib/queryKeys";
 import { timeAgo } from "../lib/timeAgo";
-import { cn, issueUrl } from "../lib/utils";
+import { cn, formatDateTime, issueUrl } from "../lib/utils";
 
 export const SINCE_LAST_VISIT_PATH = "/since-last-visit";
 /** Agents named on the home card; the full view has the rest. */
@@ -42,7 +42,7 @@ export function digestCountsSentence(counts: AgentWorkDigestCounts): string {
 export function digestSinceLabel(digest: Pick<AgentWorkDigest, "since" | "sinceSource">): string {
   if (digest.sinceSource === "default_window") return "In the last 24 hours";
   if (digest.sinceSource === "last_visit") return `Since your last visit, ${timeAgo(digest.since)}`;
-  return `Since ${new Date(digest.since).toLocaleString()}`;
+  return `Since ${formatDateTime(digest.since)}`;
 }
 
 export function useAgentWorkDigest(companyId: string | null | undefined) {
@@ -161,7 +161,7 @@ export function DashboardDigestCard({ companyId }: { companyId: string }) {
     queryFn: () => decisionsFeedApi.needsMe(companyId),
   });
   const extras = data && blocked.data
-    ? { stuck: newlyStuck(blocked.data, data.since).length, needsYou: needsMe.data?.count ?? 0 }
+    ? { stuck: newlyStuck(blocked.data, data.since).length, needsYou: needsMe.data?.decisionCount ?? 0 }
     : null;
   return (
     <DashboardDigestCardView

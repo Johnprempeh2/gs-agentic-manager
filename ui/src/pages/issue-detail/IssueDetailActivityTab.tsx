@@ -250,10 +250,11 @@ export function IssueDetailActivityTab({
                   <span className="font-medium text-foreground">
                     Including sub-tasks{" "}
                     {(issueTreeCostSummary.costCents / 100).toLocaleString(
-                      undefined,
+                      "en-GB",
                       {
                         style: "currency",
                         currency: "USD",
+                        currencyDisplay: "narrowSymbol",
                         minimumFractionDigits: 4,
                         maximumFractionDigits: 4,
                       },

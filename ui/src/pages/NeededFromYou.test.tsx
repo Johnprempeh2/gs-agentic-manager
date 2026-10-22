@@ -80,14 +80,16 @@ describe("NeededFromYou", () => {
     state.cards = ["1", "2", "3", "4"].map(questionCard);
     state.assignedTasks = [{ id: "t1", identifier: "GRE-9", title: "Sign the lease", status: "todo", priority: "high", updatedAt: new Date().toISOString() }];
     await render();
-    expect(container.querySelector('[data-testid="needed-summary"]')?.textContent).toBe("5 things need you. The oldest has waited 3 hours.");
+    // The one needs-you count: decisions, not tasks merely assigned to you.
+    expect(container.querySelector('[data-testid="needed-summary"]')?.textContent).toBe("4 things need you. The oldest has waited 3 hours.");
     const answer = container.querySelector('[data-testid="needed-group-answer"]')!;
     expect(answer.textContent).toContain("Answer a question");
     expect(answer.querySelectorAll("li")).toHaveLength(3);
     expect(answer.textContent).toContain("Everest has waited 3 hours");
     expect(answer.textContent).toContain("and 1 more");
     expect(answer.querySelector("li a")?.getAttribute("href")).toBe("/issues/GRE-1");
-    expect(container.querySelector('[data-testid="needed-group-tasks"]')?.textContent).toContain("Sign the lease");
+    expect(container.querySelector('[data-testid="needed-group-tasks"]')).toBeNull();
+    expect(container.textContent).not.toContain("Sign the lease");
   });
 
   it("opens a decision in place so it can be acted on without leaving the page", async () => {
@@ -106,7 +108,7 @@ describe("NeededFromYou", () => {
     expect(container.querySelector('[data-testid="decision-card"]')).toBeNull();
   });
 
-  it("leaves out rows put away for later until the snooze ends", async () => {
+  it("hides rows put away for later until the snooze ends, and still counts them", async () => {
     state.cards = [questionCard("1"), questionCard("2")];
     state.dismissals = [
       { kind: "snooze", itemKey: "attention:needed:1", snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() },
@@ -116,6 +118,6 @@ describe("NeededFromYou", () => {
     const answer = container.querySelector('[data-testid="needed-group-answer"]')!;
     expect(answer.textContent).not.toContain("Pick a supplier 1");
     expect(answer.textContent).toContain("Pick a supplier 2");
-    expect(container.querySelector('[data-testid="needed-summary"]')?.textContent).toContain("1 thing needs you");
+    expect(container.querySelector('[data-testid="needed-summary"]')?.textContent).toContain("2 things need you (1 put away for later)");
   });
 });

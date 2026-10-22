@@ -6,7 +6,7 @@ import {
   type IssueUnblockWaitingOn,
 } from "@greatstone/shared";
 import { formatUserLabel } from "./assignees";
-import { formatCalendarDay } from "./utils";
+import { formatCalendarDay, formatClockTime } from "./utils";
 
 /**
  * One plain line for a task that is blocked or whose last run failed: what
@@ -284,7 +284,7 @@ function capitalize(text: string): string {
 }
 
 function defaultFormatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return formatClockTime(date);
 }
 
 function unblockOwnerName(owner: IssueUnblockOwner, input: TaskStopReasonInput): string | null {

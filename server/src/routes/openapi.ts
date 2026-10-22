@@ -7771,7 +7771,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/decisions-feed/count",
   tags: ["inbox"],
-  summary: "Get the one Decisions count (same build as the feed)",
+  summary: "Get the one \"needs you\" count (NeedsMe.decisionCount): decision cards outside At your desk, overdue waits and expired questions, the number every surface shows",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });

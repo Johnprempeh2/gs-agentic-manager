@@ -36,6 +36,7 @@ import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { InvitesSection } from "@/components/access/InvitesSection";
 import { MemberHandoverDialog } from "@/components/access/MemberHandoverDialog";
+import { formatDateTime } from "@/lib/utils";
 
 const LEGACY_BOARD_USER_ID = "local-board";
 type EditableMemberStatus = "pending" | "active" | "suspended";
@@ -356,7 +357,7 @@ export function CompanyAccess() {
                       ? `${request.invite.allowedJoinTypes} join invite${request.invite.humanRole ? ` • default role ${request.invite.humanRole}` : ""}`
                       : "Invite metadata unavailable"
                   }
-                  detail={`Submitted ${new Date(request.createdAt).toLocaleString()}`}
+                  detail={`Submitted ${formatDateTime(request.createdAt)}`}
                   approveLabel="Approve human"
                   rejectLabel="Reject human"
                   disabled={joinRequestActionPending}

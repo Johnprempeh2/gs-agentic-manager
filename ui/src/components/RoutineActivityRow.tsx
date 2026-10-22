@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { ActivityEvent } from "@greatstone/shared";
-import { cn } from "@/lib/utils";
+import { cn, formatClockTime } from "@/lib/utils";
 import { routineRunStatusLabel } from "@/lib/routine-run-status";
 
 export type RoutineActivityEvent = Pick<ActivityEvent, "id" | "action" | "details" | "createdAt">;
 
 function formatTime(value: string | Date): string {
   try {
-    return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return formatClockTime(value);
   } catch {
     return String(value);
   }

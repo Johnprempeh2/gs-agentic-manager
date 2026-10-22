@@ -993,8 +993,7 @@ export function Inbox() {
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
   usePublishSharedQueryData(sharedInboxIssues, issues, issuesUpdatedAt);
-  // One "needs me" list (GRE-358): same count as the Decisions header and the
-  // nav badge, shown first on Mine so assigned tasks are above the fold.
+  // Tasks assigned to you, shown first on Mine so they are above the fold.
   const { data: needsMe } = useNeedsMe(selectedCompanyId);
   const {
     data: mineIssuesRaw = [],
@@ -2519,7 +2518,8 @@ export function Inbox() {
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
             <PageTabBar
               items={[
-                { value: "mine", label: needsMe?.count ? `Mine (${needsMe.count})` : "Mine" },
+                // No number here: the one "needs you" count lives on Decisions.
+                { value: "mine", label: "Mine" },
                 { value: "recent", label: "Recent" },
                 { value: "unread", label: "Unread" },
                 { value: "blocked", label: "Blocked" },
@@ -2818,7 +2818,10 @@ export function Inbox() {
       {approvalsError && <ErrorState error={approvalsError} title="Approvals did not load" onRetry={() => void refetchApprovals()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {tab === "mine" && needsMe ? <NeedsMeList needsMe={needsMe} includeDecisions /> : null}
+      {/* Decisions live on the Desk with the one count; Mine lists the tasks assigned to you. */}
+      {tab === "mine" && needsMe ? (
+        <NeedsMeList needsMe={{ ...needsMe, overdueWaits: [], expiredCards: [] }} />
+      ) : null}
 
       {tab === "blocked" ? (
         <div className="-mx-2 sm:mx-0">

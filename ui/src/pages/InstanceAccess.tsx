@@ -14,6 +14,7 @@ import { useToast } from "@/context/ToastContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { formatDate } from "@/lib/utils";
 
 export function InstanceAccess() {
   const { userId: accountUserId, settled: accountSettled } = useAccountIdentity();
@@ -277,7 +278,7 @@ export function InstanceAccess() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(membership.updatedAt).toLocaleDateString()}
+                        {formatDate(membership.updatedAt)}
                       </div>
                     </div>
                   ))}

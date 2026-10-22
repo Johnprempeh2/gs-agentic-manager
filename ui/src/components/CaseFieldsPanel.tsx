@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { IssueReferencePill } from "@/components/IssueReferencePill";
 import { Link, useCaseHref } from "@/lib/router";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { cn } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
 // -----------------------------------------------------------------------------
 // CaseFieldsPanel (PAP-12968 §3) — the generic key-value renderer for a case's
@@ -176,11 +176,11 @@ export function CaseFieldValue({
     if (variant === "compact") {
       return (
         <CopyableCompactValue value={value} className="text-sm tabular-nums">
-          {value.toLocaleString()}
+          {formatNumber(value)}
         </CopyableCompactValue>
       );
     }
-    return <span className="text-sm tabular-nums">{value.toLocaleString()}</span>;
+    return <span className="text-sm tabular-nums">{formatNumber(value)}</span>;
   }
 
   if (typeof value === "boolean") {

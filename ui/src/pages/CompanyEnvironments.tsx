@@ -63,6 +63,7 @@ import { environmentDisplayLabel, isPlatformManagedEnvironment } from "@/lib/man
 import { queryKeys } from "@/lib/queryKeys";
 import { Link, useNavigate, useParams } from "@/lib/router";
 import { buildSameOriginWebSocketUrl } from "@/lib/websocket-url";
+import { formatDateTime as formatBritishDateTime } from "@/lib/utils";
 import {
   Field,
   ToggleField,
@@ -323,7 +324,7 @@ function readEnvironmentSandboxProvider(environment: Environment): string | null
 function formatDateTime(value: string | Date | null | undefined): string | null {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? null : formatBritishDateTime(date);
 }
 
 function formatShortId(value: string): string {

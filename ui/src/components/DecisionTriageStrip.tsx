@@ -14,7 +14,7 @@ import {
   decideByLabel,
   type DecideByPreset,
 } from "../lib/attention";
-import { cn } from "../lib/utils";
+import { cn, formatDateTime } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import {
@@ -239,7 +239,7 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
         {item.snoozedUntil ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <AlarmClock className="h-3.5 w-3.5" />
-            Snoozed until {new Date(item.snoozedUntil).toLocaleString()}
+            Snoozed until {formatDateTime(item.snoozedUntil)}
             <button
               type="button"
               className="text-muted-foreground hover:text-foreground"

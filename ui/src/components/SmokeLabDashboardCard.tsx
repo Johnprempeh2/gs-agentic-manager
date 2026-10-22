@@ -26,7 +26,7 @@ function formatTime(value: string | Date | null | undefined): string {
   if (!value) return "unknown";
   const date = new Date(value as string | Date);
   if (Number.isNaN(date.getTime())) return "unknown";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 /**

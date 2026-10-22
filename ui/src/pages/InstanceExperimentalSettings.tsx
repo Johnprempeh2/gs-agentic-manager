@@ -66,7 +66,7 @@ function resolveWorktreeRunExecutionDisplayState(
 function formatActivationTimestamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return parsed.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function ManagedByCloudBadge() {

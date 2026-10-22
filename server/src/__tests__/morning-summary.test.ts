@@ -43,18 +43,20 @@ describe("morning summary wording", () => {
     );
   });
 
-  it("lists decisions before assigned tasks, once per task, and leaves out outage notices", () => {
+  it("lists decisions, then waits and expired questions, once per task; never assigned tasks, outage notices or At your desk cards", () => {
     const needs = emptyNeedsMe({
       decisions: [
         { id: "outage:1", kind: "outage", title: "Offline", task: null },
         { id: "task:a", kind: "review", title: "Review", task: { id: "a", identifier: "GRE-1", title: "Approve brief" } },
+        { id: "task:d", kind: "question", title: "Restart", task: { id: "d", identifier: "GRE-4", title: "Restart WSL" }, atDesk: { command: null } },
       ] as unknown as NeedsMe["decisions"],
+      expiredCards: [{ interactionId: "q", id: "c", identifier: "GRE-3", title: "Book interviews", question: "Which week?", expiredAt: "" }],
       assignedTasks: [{ id: "b", identifier: "GRE-2", title: "Pick a date", status: "todo", priority: "medium", updatedAt: "" }],
       overdueWaits: [{ id: "a", identifier: "GRE-1", title: "Approve brief" }] as unknown as NeedsMe["overdueWaits"],
     });
     expect(needsYouItems(needs)).toEqual([
       { id: "a", identifier: "GRE-1", title: "Approve brief" },
-      { id: "b", identifier: "GRE-2", title: "Pick a date" },
+      { id: "c", identifier: "GRE-3", title: "Book interviews" },
     ]);
   });
 });
@@ -186,7 +188,7 @@ describe("morning summary service", () => {
     await db.delete(pushSubscriptions);
   });
 
-  const service = () => morningSummaryService(db, { buildNeedsMe: async () => emptyNeedsMe({ count: 2 }) });
+  const service = () => morningSummaryService(db, { buildNeedsMe: async () => emptyNeedsMe({ count: 3, decisionCount: 2, assignedTaskCount: 1 }) });
 
   it("counts what finished in the last 24 hours and what is stuck", async () => {
     const built = await service().build(companyId, "john", now);

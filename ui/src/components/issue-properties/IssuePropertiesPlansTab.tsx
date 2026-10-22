@@ -87,7 +87,7 @@ export function IssuePropertiesPlansTab({ issue }: IssuePropertiesPlansTabProps)
       {planDocument ? (
         <section data-testid="issue-plan-document" className="space-y-2">
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            {`Revision ${planDocument.latestRevisionNumber ?? 1} · updated ${new Date(planDocument.updatedAt).toLocaleString([], {
+            {`Revision ${planDocument.latestRevisionNumber ?? 1} · updated ${new Date(planDocument.updatedAt).toLocaleString("en-GB", {
               month: "short",
               day: "numeric",
               hour: "numeric",

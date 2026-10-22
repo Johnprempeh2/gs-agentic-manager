@@ -618,6 +618,7 @@ function parseProviderQuotaClockReset(error: string, now: Date) {
   try {
     const wallClock = (date: Date) =>
       Object.fromEntries(
+        // en-US parts are parsed, not shown.
         new Intl.DateTimeFormat("en-US", {
           timeZone,
           hourCycle: "h23",

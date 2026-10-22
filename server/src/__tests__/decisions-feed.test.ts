@@ -1552,6 +1552,55 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       }
     });
 
+    it("shows one needs-you number everywhere: count route, sidebar badge, needs-me, morning summary and push (22 Oct)", async () => {
+      const seeded = await seedKinds();
+      const { needsMeService } = await import("../services/needs-me.js");
+      const { morningSummaryService } = await import("../services/morning-summary.js");
+      const testApp = app(seeded.companyId);
+      // The agent stall has been with the lead for over a day: it reaches the person.
+      await routedToLead(seeded.companyId, seeded.stall, new Date(Date.now() - 25 * HOUR));
+      // A tabled task's question leaves the feed and the count.
+      const tabled = randomUUID();
+      // A task merely assigned to the person is a task, not a decision.
+      const assigned = randomUUID();
+      // An "At your desk" ask stays out of the count (GRE-450).
+      const desk = randomUUID();
+      await db.insert(issues).values([
+        { id: tabled, companyId: seeded.companyId, identifier: "GRE-901", issueNumber: 901, title: "Pick a venue", status: "in_progress", priority: "medium", assigneeAgentId: seeded.flintId },
+        { id: assigned, companyId: seeded.companyId, identifier: "GRE-902", issueNumber: 902, title: "Sign the lease", status: "todo", priority: "medium", assigneeUserId: USER_ID },
+        { id: desk, companyId: seeded.companyId, identifier: "GRE-903", issueNumber: 903, title: "Restart WSL", status: "in_review", priority: "high", assigneeAgentId: seeded.flintId },
+      ]);
+      await db.insert(issueThreadInteractions).values({
+        companyId: seeded.companyId, issueId: tabled, kind: "ask_user_questions", status: "pending", title: "Which venue?", createdByAgentId: seeded.flintId,
+        payload: { version: 1, questions: [{ id: "venue", prompt: "Which venue?", selectionMode: "single", options: [{ id: "a", label: "Hall A" }] }] },
+      });
+      await request(testApp).post(`/api/issues/${tabled}/table`).send({ returnAt: null }).expect(200);
+      await request(testApp)
+        .post(`/api/issues/${desk}/interactions`)
+        .send({ kind: "request_confirmation", continuationPolicy: "none", payload: { version: 1, prompt: "Restart WSL, then press Done.", atDesk: { command: "wsl --shutdown" } } })
+        .expect(201);
+
+      const feed = await build(seeded.companyId);
+      // Stall, question to the board, review and chat connection card.
+      for (const id of [seeded.stall, seeded.question, seeded.review, seeded.chat]) expect(cardFor(feed, id), id).not.toBeNull();
+      expect(cardFor(feed, tabled)).toBeNull();
+      expect(cardFor(feed, desk)?.atDesk).toEqual({ command: "wsl --shutdown" });
+
+      const mine = await needsMeService(db).build(seeded.companyId, { userId: USER_ID });
+      expect(mine.decisionCount).toBe(4);
+      expect(mine.assignedTasks.map((task) => task.id)).toEqual([assigned]);
+      expect(mine.count).toBe(5);
+      // The listed items are exactly the number: cards outside At your desk, waits, expired questions.
+      expect(mine.decisions.filter((card) => !card.atDesk).length + mine.overdueWaits.length + (mine.expiredCards?.length ?? 0)).toBe(4);
+
+      expect((await request(testApp).get(`/api/companies/${seeded.companyId}/decisions-feed/count`).expect(200)).body.count).toBe(4);
+      expect((await request(testApp).get(`/api/companies/${seeded.companyId}/sidebar-badges`).expect(200)).body.decisions).toBe(4);
+      expect((await request(testApp).get(`/api/companies/${seeded.companyId}/needs-me`).expect(200)).body.decisionCount).toBe(4);
+      const morning = await morningSummaryService(db).build(seeded.companyId, USER_ID);
+      expect(morning.needsYou.count).toBe(4);
+      expect(morning.needsYou.items.map((item) => item.id)).not.toContain(assigned);
+    });
+
     it("does not route a blocked task that already asks a person (GRE-1868)", async () => {
       const seeded = await seedKinds();
       const { stallRecoveryService } = await import("../services/stall-recovery.js");

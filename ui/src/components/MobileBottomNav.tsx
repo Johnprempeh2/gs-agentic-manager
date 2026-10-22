@@ -74,11 +74,12 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         to: "/inbox",
         label: "Inbox",
         icon: Inbox,
-        badge: inboxBadge.inbox,
+        // Unread task updates, not decisions (those count on Decisions).
+        badge: inboxBadge.mineIssues,
         quietBadge: true,
       },
     ],
-    [openNewIssue, inboxBadge.inbox, attentionCount],
+    [openNewIssue, inboxBadge.mineIssues, attentionCount],
   );
 
   return (
