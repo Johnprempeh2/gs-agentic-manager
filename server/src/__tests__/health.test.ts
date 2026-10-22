@@ -45,6 +45,7 @@ function createApp(
   serverInfo = testServerInfo,
   databaseBackupHealth?: Parameters<typeof healthRoutes>[1]["databaseBackupHealth"],
   runtimeEnv?: Parameters<typeof healthRoutes>[1]["runtimeEnv"],
+  liveBackupHealth?: Parameters<typeof healthRoutes>[1]["liveBackupHealth"],
 ) {
   const app = express();
   app.use(
@@ -57,6 +58,7 @@ function createApp(
       serverInfo,
       databaseBackupHealth,
       runtimeEnv,
+      liveBackupHealth,
     }),
   );
   return app;
@@ -325,14 +327,16 @@ describe("GET /health", () => {
     });
   });
 
-  it("finds conventional database backup failure markers without an explicit alert file", async () => {
+  // GRE-1930: no job writes db-backup-to-s3.failure, so a stray file of that name is not backup state.
+  it("ignores a db-backup-to-s3.failure file when no alert file is configured", async () => {
     const backupRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-root-"));
     const backupDir = path.join(backupRoot, "backups");
     fs.mkdirSync(backupDir);
     const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
-    const alertFile = path.join(backupRoot, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
-    fs.writeFileSync(alertFile, "db-backup-to-s3 failed beside backups\n");
+    fs.writeFileSync(path.join(backupRoot, "db-backup-to-s3.failure"), "db-backup-to-s3 failed beside backups\n");
+    fs.writeFileSync(path.join(backupDir, "db-backup-to-s3.failure"), "db-backup-to-s3 failed in backups\n");
+    fs.utimesSync(backupFile, new Date("2026-07-06T03:17:02.000Z"), new Date("2026-07-06T03:17:02.000Z"));
     const app = createApp(createHealthyDb(), testServerInfo, {
       enabled: true,
       backupDir,
@@ -343,19 +347,84 @@ describe("GET /health", () => {
     const res = await request(app).get("/health");
 
     expect(res.status).toBe(200);
-    expect(res.body.databaseBackup).toMatchObject({
+    expect(res.body.databaseBackup).toMatchObject({ status: "ok", lastFailure: null, warnings: [] });
+    expect(res.body.warnings).toBeUndefined();
+  });
+
+  it("reports the nightly live backup and merges its warnings", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-live-backup-"));
+    const backupDir = path.join(root, "GSAM-backups");
+    fs.mkdirSync(backupDir);
+    fs.writeFileSync(path.join(backupDir, "nightly-20261022-023000.sql.gz"), "dump");
+    const stateFile = path.join(root, "live-backup.json");
+    fs.writeFileSync(stateFile, JSON.stringify({
+      version: 1,
+      backupDir,
+      finishedAt: "2026-10-22T02:41:00Z",
+      ok: false,
+      failure: "failed: files archive, secrets key archive",
+      offsite: { status: "not_configured" },
+    }));
+    const app = createApp(createHealthyDb(), testServerInfo, undefined, undefined, { stateFile, maxAgeHours: 30 });
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.liveBackup).toMatchObject({
       status: "warning",
-      lastFailure: {
-        path: alertFile,
-        message: "db-backup-to-s3 failed beside backups",
-      },
-      warnings: [
-        {
-          code: "database_backup_last_failure",
-          message: "db-backup-to-s3 failed beside backups",
-        },
-      ],
+      backupDir,
+      databaseDump: { name: "nightly-20261022-023000.sql.gz" },
+      filesArchive: null,
+      secretsKeyArchive: null,
+      offsite: { status: "not_configured" },
     });
+    expect(res.body.warnings.map((warning: { code: string }) => warning.code)).toEqual([
+      "live_backup_last_run_failed",
+      "live_backup_files_missing",
+      "live_backup_secrets_key_missing",
+    ]);
+  });
+
+  it("shows anonymous probes the live backup status without paths or failure text", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-live-backup-redacted-"));
+    const stateFile = path.join(root, "live-backup.json");
+    fs.writeFileSync(stateFile, JSON.stringify({
+      version: 1,
+      backupDir: path.join(root, "missing"),
+      ok: false,
+      failure: "failed: database dump",
+    }));
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).actor = { type: "none", source: "none" };
+      next();
+    });
+    app.use(
+      "/health",
+      healthRoutes({
+        execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+        select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ count: 1 }]) })) })),
+      } as unknown as Db, {
+        deploymentMode: "authenticated",
+        deploymentExposure: "public",
+        authReady: true,
+        companyDeletionEnabled: false,
+        serverInfo: testServerInfo,
+        liveBackupHealth: { stateFile, maxAgeHours: 30 },
+      }),
+    );
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.liveBackup.status).toBe("warning");
+    expect(res.body.liveBackup.warnings[0]).toEqual({
+      code: "live_backup_last_run_failed",
+      message: "Last nightly backup run had a failure.",
+    });
+    expect(res.body.warnings).toEqual(res.body.liveBackup.warnings);
+    expect(res.text).not.toContain(root);
+    expect(res.text).not.toContain("failed: database dump");
   });
 
   it("surfaces redacted database backup warnings for anonymous authenticated probes", async () => {
