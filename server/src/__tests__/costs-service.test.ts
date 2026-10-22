@@ -1464,6 +1464,51 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(afterDelete.subscriptionCostCents).toBeCloseTo(20_000, 6);
     await expect(costs.deleteSubscription(companyId, "not-a-uuid")).rejects.toThrow("Subscription not found");
   });
+
+  it("totals Codex subscription runs stored unpriced alongside Claude's reported runs", async () => {
+    const companyId = randomUUID();
+    const codexAgentId = randomUUID();
+    const claudeAgentId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values([
+      { id: codexAgentId, companyId, name: "Codex", role: "engineer", status: "active", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {} },
+      { id: claudeAgentId, companyId, name: "Claude", role: "engineer", status: "active", adapterType: "claude_local", adapterConfig: {}, runtimeConfig: {}, permissions: {} },
+    ]);
+    const occurredAt = new Date("2026-10-20T00:00:00.000Z");
+    await db.insert(costEvents).values([
+      {
+        // a past Codex run, written before gpt-6-sol was priced
+        companyId, agentId: codexAgentId, provider: "openai", biller: "chatgpt",
+        billingType: "subscription_included", costStatus: "unpriced", model: "gpt-6-sol",
+        inputTokens: 1_000_000, cachedInputTokens: 400_000, outputTokens: 100_000, costCents: 0, occurredAt,
+      },
+      {
+        companyId, agentId: claudeAgentId, provider: "anthropic", biller: "anthropic",
+        billingType: "subscription_included", costStatus: "reported", model: "claude-opus-5-5",
+        inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0, costCents: 0, occurredAt,
+      },
+    ]);
+
+    const summary = await costService(db).apiEquivalent(
+      companyId,
+      { from: new Date("2026-10-01T00:00:00.000Z"), to: new Date("2026-11-01T00:00:00.000Z") },
+      new Date("2026-10-22T00:00:00.000Z"),
+    );
+
+    // Codex: 600k at $2 + 400k at $0.20 + 100k at $10 = $2.28. Claude: 1M at $4 = $4.00.
+    expect(summary.unpricedTokens).toBe(0);
+    expect(summary.unpricedModels).toEqual([]);
+    expect(summary.apiEquivalentCents).toBeCloseTo(228 + 400, 6);
+    expect(summary.actualApiSpendCents).toBe(0);
+    const byAgent = Object.fromEntries(summary.byAgent.map((row) => [row.agentId, row.apiEquivalentCents]));
+    expect(byAgent[codexAgentId]).toBeCloseTo(228, 6);
+    expect(byAgent[claudeAgentId]).toBeCloseTo(400, 6);
+  });
 });
 
 describeEmbeddedPostgres("monthly cost ledger", () => {

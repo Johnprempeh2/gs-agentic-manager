@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
-import { deriveAgentUrlKey, deriveProjectUrlKey, normalizeProjectUrlKey, hasNonAsciiContent } from "@greatstone/shared";
+import { computeApiEquivalentCents, deriveAgentUrlKey, deriveProjectUrlKey, normalizeProjectUrlKey, hasNonAsciiContent } from "@greatstone/shared";
 import type { BillingType, FinanceDirection, FinanceEventKind } from "@greatstone/shared";
 
 /** Named stacking layers from `--z-index-*` in index.css, lowest first. */
@@ -225,13 +225,54 @@ function readRunCostUsd(payload: Record<string, unknown> | null): number {
   return 0;
 }
 
+/** What a run was billed per token. Subscription runs and our estimates are not billed. */
 export function visibleRunCostUsd(
   usage: Record<string, unknown> | null,
   result: Record<string, unknown> | null = null,
 ): number {
   const billingType = coerceBillingType(usage?.billingType) ?? coerceBillingType(result?.billingType);
-  if (billingType === "subscription_included") return 0;
+  if (billingType === "subscription_included" || usage?.costStatus === "estimated") return 0;
   return readRunCostUsd(usage) || readRunCostUsd(result);
+}
+
+function readTokens(usage: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+/**
+ * What a run that was not billed per token would have cost under API billing:
+ * the provider's own figure (Claude), the estimate stored at run end (Codex), or,
+ * for runs recorded before their model was priced, an estimate made now.
+ */
+export function runApiEquivalent(
+  usage: Record<string, unknown> | null,
+  result: Record<string, unknown> | null = null,
+  at: Date | string = new Date(),
+): { usd: number; estimated: boolean } | null {
+  if (!usage || visibleRunCostUsd(usage, result) > 0) return null;
+  const stored = readTokens(usage, "cacheAdjustedCostUsd") || readRunCostUsd(usage);
+  if (stored > 0) return { usd: stored, estimated: usage.costStatus === "estimated" };
+  const provider = typeof usage.provider === "string" ? usage.provider : "";
+  const model = typeof usage.model === "string" ? usage.model : "";
+  const cents = computeApiEquivalentCents(
+    {
+      provider,
+      model,
+      inputTokens: readTokens(usage, "inputTokens", "input_tokens"),
+      cachedInputTokens: readTokens(usage, "cachedInputTokens", "cached_input_tokens", "cache_read_input_tokens"),
+      outputTokens: readTokens(usage, "outputTokens", "output_tokens"),
+    },
+    at,
+  );
+  return cents ? { usd: cents / 100, estimated: true } : null;
+}
+
+export function runApiEquivalentLabel(estimated: boolean): string {
+  return estimated ? "Estimated, API-equivalent" : "API-equivalent; billed through your subscription";
 }
 
 export function financeEventKindDisplayName(eventKind: FinanceEventKind): string {

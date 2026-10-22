@@ -62,7 +62,7 @@ import { SourceResolvedFoldBadge } from "../components/SourceResolvedFoldBadge";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
-import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
+import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, runApiEquivalent, runApiEquivalentLabel, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { AgentStatusHistory } from "../components/AgentStatusHistory";
 import { MoveOpenTasksBanner } from "../components/MoveOpenTasksBanner";
@@ -389,6 +389,7 @@ function runMetrics(run: HeartbeatRun) {
   );
   const cost =
     visibleRunCostUsd(usage, result);
+  const apiEquivalent = runApiEquivalent(usage, result, run.startedAt ?? run.createdAt);
   const provider = asNonEmptyString(usage?.provider) ?? null;
   const model = asNonEmptyString(usage?.model) ?? null;
   return {
@@ -396,6 +397,7 @@ function runMetrics(run: HeartbeatRun) {
     output,
     cached,
     cost,
+    apiEquivalent,
     totalTokens: input + output,
     provider,
     model,
@@ -3283,11 +3285,17 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
           {summary.slice(0, 60)}
         </span>
       )}
-      {metrics.cost > 0 && (
+      {metrics.cost > 0 ? (
         <div className="flex items-center gap-2 pl-5.5 text-(length:--text-micro) text-muted-foreground tabular-nums">
           <span>${metrics.cost.toFixed(3)}</span>
         </div>
-      )}
+      ) : metrics.apiEquivalent ? (
+        <div className="flex items-center gap-2 pl-5.5 text-(length:--text-micro) text-muted-foreground tabular-nums">
+          <span title={runApiEquivalentLabel(metrics.apiEquivalent.estimated)}>
+            ${metrics.apiEquivalent.usd.toFixed(3)} {metrics.apiEquivalent.estimated ? "estimated" : "API-equivalent"}
+          </span>
+        </div>
+      ) : null}
     </Link>
   );
 }
@@ -3882,7 +3890,16 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Cost</div>
-                <div className="text-sm font-medium font-mono">{metrics.cost > 0 ? `$${metrics.cost.toFixed(4)}` : "-"}</div>
+                {metrics.cost > 0 || !metrics.apiEquivalent ? (
+                  <div className="text-sm font-medium font-mono">{metrics.cost > 0 ? `$${metrics.cost.toFixed(4)}` : "-"}</div>
+                ) : (
+                  <>
+                    <div className="text-sm font-medium font-mono">${metrics.apiEquivalent.usd.toFixed(4)}</div>
+                    <div className="text-xs text-muted-foreground" data-testid="run-api-equivalent-label">
+                      {runApiEquivalentLabel(metrics.apiEquivalent.estimated)}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
