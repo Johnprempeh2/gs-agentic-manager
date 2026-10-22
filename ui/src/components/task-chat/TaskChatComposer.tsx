@@ -32,6 +32,8 @@ import {
   ChevronDown,
   CircleHelp,
   Loader2,
+  Mic,
+  Paperclip,
   Plus,
   X,
 } from "lucide-react";
@@ -40,6 +42,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -1141,6 +1144,7 @@ export function TaskChatComposer({
           : "paperclip-task-chat-composer rounded-xl bg-card p-(--sz-18px)",
         mobile && "p-2",
       )}
+      data-composer-size={mobile ? "phone" : undefined}
       onKeyDownCapture={(e) => {
         // Capture mode shortcuts on the wrapper so they work while the rich
         // editor is focused and win over Lexical/browser bindings. Match the
@@ -1340,7 +1344,7 @@ export function TaskChatComposer({
               className={cn(disabled && "opacity-60")}
               contentClassName={
                 mobile
-                  ? "max-h-(--sz-28dvh) min-h-(--sz-48px) overflow-y-auto px-1 py-1 text-base scrollbar-auto-hide"
+                  ? "max-h-(--sz-28dvh) min-h-6 overflow-y-auto px-1 py-1 text-base scrollbar-auto-hide"
                   : "max-h-(--sz-28dvh) min-h-(--sz-48px) overflow-y-auto px-1 py-1 text-sm scrollbar-auto-hide"
               }
             />
@@ -1423,36 +1427,101 @@ export function TaskChatComposer({
           ) : null}
 
           <div
-            className="mt-2 flex items-center gap-2"
+            className={cn("flex items-center gap-2", mobile ? "mt-1" : "mt-2")}
             data-testid="task-chat-composer-actions"
           >
             {canAcceptFiles ? (
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileInputChange}
+              />
+            ) : null}
+            {/* Phone (GRE-1927): one + opens labelled attach and dictate actions. */}
+            {mobile && (canAcceptFiles || dictation.available) ? (
               <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileInputChange}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={disabled}
-                  title="Attach file"
-                  aria-label="Attach file"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  data-testid="task-chat-composer-attach"
-                >
-                  <Plus className="h-4 w-4" aria-hidden />
-                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      title="Add to message"
+                      aria-label="Add to message"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                      data-testid="task-chat-composer-add"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="flex w-(--sz-260px) flex-col gap-0.5"
+                    data-testid="task-chat-composer-add-menu"
+                  >
+                    {canAcceptFiles ? (
+                      <DropdownMenuItem
+                        onSelect={() => fileInputRef.current?.click()}
+                        data-testid="task-chat-composer-attach"
+                      >
+                        <Paperclip className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="font-medium">Attach a file</span>
+                          <span className="text-xs text-muted-foreground">
+                            Photo, document or any file
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    ) : null}
+                    {dictation.available ? (
+                      <DropdownMenuItem
+                        onSelect={dictation.toggle}
+                        disabled={!!uncertainSubmission}
+                        data-testid="task-chat-composer-dictation"
+                      >
+                        <Mic className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="font-medium">
+                            {dictation.listening ? "Stop dictation" : "Dictate"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Speak and your words are typed in
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {dictation.listening ? (
+                  <DictationButton
+                    dictation={dictation}
+                    className="h-8 w-8"
+                    testId="task-chat-composer-dictation-stop"
+                  />
+                ) : null}
               </>
             ) : null}
-            <DictationButton
-              dictation={dictation}
-              disabled={disabled || !!uncertainSubmission}
-              className="h-8 w-8"
-              testId="task-chat-composer-dictation"
-            />
+            {!mobile && canAcceptFiles ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled}
+                title="Attach file"
+                aria-label="Attach file"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                data-testid="task-chat-composer-attach"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+            {!mobile ? (
+              <DictationButton
+                dictation={dictation}
+                disabled={disabled || !!uncertainSubmission}
+                className="h-8 w-8"
+                testId="task-chat-composer-dictation"
+              />
+            ) : null}
 
             {queuedEdit ? (
               <span className="px-1 text-xs font-medium text-muted-foreground">
@@ -1494,6 +1563,9 @@ export function TaskChatComposer({
                   className="flex w-(--sz-300px) flex-col gap-0.5"
                   data-testid="task-chat-composer-mode-menu"
                 >
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    How {assigneeName} works on your message
+                  </DropdownMenuLabel>
                   {workModeMetaList().map((m) => {
                     const Icon = m.icon;
                     const selected = m.value === pendingMode;

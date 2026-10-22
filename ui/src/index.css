@@ -2090,6 +2090,12 @@
   white-space: normal;
 }
 
+/* Phone composer (GRE-1927): an empty draft is one line tall and grows with
+   the message, instead of holding the editor's 2.5rem minimum. */
+.paperclip-task-chat-composer[data-composer-size="phone"] .paperclip-mdxeditor .mdxeditor-root-contenteditable {
+  min-height: 0;
+}
+
 .paperclip-mdxeditor-content {
   font-size: inherit;
   line-height: inherit;
