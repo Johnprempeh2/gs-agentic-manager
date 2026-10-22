@@ -589,34 +589,37 @@ export function Desk() {
   // Icons only when the Discuss panel takes the side, or the screen is not wide: the title keeps the room.
   const compactActions = (discussId !== null && !discussOverlay) || !wideScreen;
 
-  const renderDiscuss = (issue: Issue) => (
+  const renderDiscuss = (issue: Issue, compact = compactActions) => (
     <MyTasksDiscussButton
       issue={issue}
       open={discussId === issue.id}
       controlsId={DISCUSS_PANEL_ID}
-      compact={compactActions}
+      compact={compact}
       onToggle={() => (discussId === issue.id ? closeDiscuss() : openDiscuss(issue))}
     />
   );
 
-  const renderRowActions = (issue: Issue) => {
+  // `labelled`: the actions sit on their own line (a pinned card), so the most
+  // used ones keep their words whatever the screen width.
+  const renderRowActions = (issue: Issue, labelled = false) => {
+    const compact = labelled ? false : compactActions;
     if (issue.status === "done") {
-      if (!issue.looksFinishedAt) return renderDiscuss(issue);
+      if (!issue.looksFinishedAt) return renderDiscuss(issue, compact);
       return (
         <>
           <Button
             type="button"
             variant="ghost"
-            size={compactActions ? "icon-xs" : "xs"}
+            size={compact ? "icon-xs" : "xs"}
             data-desk-reopen={issue.id}
             aria-label={`Reopen ${issue.identifier ?? issue.title}`}
-            title={compactActions ? "Reopen" : undefined}
+            title={compact ? "Reopen" : undefined}
             onClick={() => reopen(issue)}
           >
             <RotateCcw aria-hidden />
-            {compactActions ? null : "Reopen"}
+            {compact ? null : "Reopen"}
           </Button>
-          {renderDiscuss(issue)}
+          {renderDiscuss(issue, compact)}
         </>
       );
     }
@@ -647,7 +650,7 @@ export function Desk() {
           >
             Not finished
           </Button>
-          {renderDiscuss(issue)}
+          {renderDiscuss(issue, compact)}
         </>
       );
     }
@@ -659,14 +662,14 @@ export function Desk() {
           issue={issue}
           agents={handOffAgents}
           leadAgentId={leadAgentId}
-          compact={compactActions}
+          compact={compact}
           onHandOff={(agent, instruction) => handOff.mutate({ issue, agent, instruction })}
         />
         <MyTasksAskButton
           issue={issue}
           expanded={askOpenId === issue.id}
           controlsId={askBoxId(issue.id)}
-          compact={compactActions}
+          compact={compact}
           onToggle={() => (askOpenId === issue.id ? closeAsk(issue.id) : setAskOpenId(issue.id))}
         />
         <WaitingOutsideButton
@@ -675,7 +678,7 @@ export function Desk() {
           issueLabel={issue.identifier}
           compact
         />
-        {renderDiscuss(issue)}
+        {renderDiscuss(issue, compact)}
       </>
     );
   };
@@ -790,7 +793,7 @@ export function Desk() {
             issueLinkState={issueLinkState}
             renderActions={(issueId) => {
               const issue = deskIssueById.get(issueId);
-              return issue ? renderRowActions(issue) : null;
+              return issue ? renderRowActions(issue, true) : null;
             }}
             renderFooter={(issueId) => {
               const issue = deskIssueById.get(issueId);
