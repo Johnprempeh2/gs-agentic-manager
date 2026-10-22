@@ -855,7 +855,7 @@ export function Desk() {
             {waits ? <NeedsMeList needsMe={waits} includeAssigned={false} /> : null}
             {/* Everything that needs a decision, most urgent first (the feed's order). */}
             {decisionCards.length > 0 ? (
-              <div className="space-y-4" data-desk-decisions>
+              <div className={isPhone ? "space-y-3" : "space-y-4"} data-desk-decisions>
                 {decisionCards.map((card) => (
                   <DecisionFeedCard
                     key={card.id}

@@ -255,11 +255,15 @@ export function DecisionFeedCard({
         aria-label={card.title}
       >
         <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", severity.accent)} />
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full border border-border bg-accent px-2 py-0.5 font-medium text-foreground">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="shrink-0 rounded-full border border-border bg-accent px-2 py-0.5 font-medium text-foreground">
             {decisionKindLabel(card, card.kind)}
           </span>
           <span className="sr-only">Severity: {severity.label}</span>
+          <span className="min-w-0 flex-1 truncate" data-decision-owner>
+            {card.kind === "review" ? "Work by" : "Owner"}{" "}
+            <span className="font-medium text-foreground">{card.waiting?.name ?? "no agent yet"}</span>
+          </span>
           <span className="shrink-0" title={formatDateTime(card.activityAt)}>{relativeTime(card.activityAt)}</span>
         </div>
         <h3 className="line-clamp-2 text-base font-semibold leading-snug">
@@ -273,10 +277,6 @@ export function DecisionFeedCard({
         </h3>
         <p className="line-clamp-2 text-sm text-muted-foreground" data-decision-reason>
           {reason}
-        </p>
-        <p className="truncate text-xs text-muted-foreground" data-decision-owner>
-          <span className="font-semibold uppercase tracking-wide">{card.kind === "review" ? "Work by" : "Owner"}</span>{" "}
-          <span className="text-foreground">{card.waiting?.name ?? "No agent yet"}</span>
         </p>
         <div className="flex items-center gap-2">
           {mainAction ? (
