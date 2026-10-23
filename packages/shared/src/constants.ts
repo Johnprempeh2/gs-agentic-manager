@@ -832,6 +832,9 @@ export const APPROVAL_TYPES = [
   "ai_route_change",
   // A top-up the requester could not approve alone and no pre-authorised ceiling covered (GRE-1371).
   "budget_top_up",
+  // An agent (or a person without Publish rights) proposes a Publish of a site; a person
+  // with website:publish approves it and the Publish runs in that person's name (GRE-2109).
+  "website_publish",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { documents, websitePage, websiteSitemapOption } from "@greatstone/db";
 import {
+  isPrivatePagePath,
   sitemapTreeProblems,
   type CreateWebsiteSitemapOption,
   type UpdateWebsiteSitemapOption,
@@ -68,10 +69,10 @@ function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
-/** sitemap.xml for a site's live (not archived), non-noindex pages, in path order. */
+/** sitemap.xml for a site's live (not archived), non-noindex pages, in path order. Private pattern pages are always left out. */
 export function buildSitemapXml(domain: string, pages: Array<Pick<PageRow, "slug" | "seo" | "updatedAt">>): string {
   const urls = pages
-    .filter((page) => (page.seo as WebsitePageSeo | null)?.noindex !== true)
+    .filter((page) => (page.seo as WebsitePageSeo | null)?.noindex !== true && !isPrivatePagePath(page.slug))
     .sort((x, y) => x.slug.localeCompare(y.slug))
     .map((page) => {
       const loc = escapeXml(`https://${domain}${page.slug === "/" ? "/" : page.slug}`);
@@ -219,7 +220,7 @@ export function websiteSitemapService(db: Db) {
           updatedAt: now,
         };
         if (existing) {
-          const seo = { ...((existing.seo ?? {}) as WebsitePageSeo), noindex: node.noindex === true };
+          const seo = { ...((existing.seo ?? {}) as WebsitePageSeo), noindex: node.noindex === true || isPrivatePagePath(node.path) };
           if (node.seoTitle) seo.title = node.seoTitle;
           await tx
             .update(websitePage)
@@ -229,7 +230,7 @@ export function websiteSitemapService(db: Db) {
           summary.updated += 1;
         } else {
           const doc = await store.createDocument(tx, { companyId: site.companyId, title: node.title, format: "puck-json", body: emptyBody.body, actor });
-          const seo: WebsitePageSeo = { noindex: node.noindex === true, ...(node.seoTitle ? { title: node.seoTitle } : {}) };
+          const seo: WebsitePageSeo = { noindex: node.noindex === true || isPrivatePagePath(node.path), ...(node.seoTitle ? { title: node.seoTitle } : {}) };
           const [created] = await tx
             .insert(websitePage)
             .values({ companyId: site.companyId, siteId: site.id, status: "planned", seo: seo as Record<string, unknown>, documentId: doc.id, ...fields })

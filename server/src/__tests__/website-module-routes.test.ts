@@ -324,10 +324,10 @@ describeEmbeddedPostgres("website module routes", () => {
     await http.patch(`/api/companies/${a.company.id}/website/sites/${a.site.id}`).send({ name: "Renamed" }).expect(403);
     const access = accessService(db);
     expect(await access.hasPermission(a.company.id, "agent", agent.id, "website:publish")).toBe(false);
-    await expect(access.setPrincipalPermission(a.company.id, "agent", agent.id, "website:publish", true, null)).rejects.toThrow(/cannot be given the right to publish/);
+    await expect(access.setPrincipalPermission(a.company.id, "agent", agent.id, "website:publish", true, null)).rejects.toThrow(/Agents cannot have Publish rights/);
     await expect(
       access.setPrincipalGrants(a.company.id, "agent", agent.id, [{ permissionKey: "website:publish" }], null),
-    ).rejects.toThrow(/cannot be given the right to publish/);
+    ).rejects.toThrow(/Agents cannot have Publish rights/);
   });
 
   it("role defaults: owner publishes, operator edits but cannot publish, viewer only views", async () => {
