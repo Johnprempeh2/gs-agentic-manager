@@ -312,7 +312,7 @@ function PendingPanel({ companyId, site, release, releases, canManage, personNam
           ) : null}
           {live?.liveAt ? (
             // The way out while this release is Pending: put the live release back (copy 11 confirm).
-            <Button type="button" size="sm" variant="ghost" className="sm:ml-auto" onClick={() => onGoBack(live)}>
+            <Button type="button" size="sm" variant="ghost" className="max-sm:-ml-3 sm:ml-auto" onClick={() => onGoBack(live)}>
               Go back to Release {live.number}
             </Button>
           ) : null}
@@ -424,17 +424,11 @@ function ReleaseRow({ release, rollbackOf, showReason, personName, canRollBack, 
   const hasDetails = release.checks.length > 0 || release.deploy;
   const failed = showReason ? failedSummary(release) : null;
   return (
-    <li className="space-y-1.5 py-3" data-testid="website-release-row" id={`website-release-${release.id}`}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <li className="relative space-y-1.5 py-3" data-testid="website-release-row" id={`website-release-${release.id}`}>
+      <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", canRollBack && "sm:pr-44")}>
         <span className="font-medium">Release {release.number}</span>
         <StatusLabel status={release.status} />
         {rollbackOf ? <span className="text-xs text-muted-foreground">Restored Release {rollbackOf.number}</span> : null}
-        {canRollBack ? (
-          // Own line on phones, so every row with the button has the same shape.
-          <Button type="button" variant="ghost" size="xs" className="max-sm:order-last max-sm:-ml-2 max-sm:basis-full max-sm:justify-start sm:ml-auto" onClick={onRollBack}>
-            Roll back to this release
-          </Button>
-        ) : null}
       </div>
       <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
         {release.liveAt ? <div className="flex gap-1"><dt>Went live</dt><dd className="text-foreground">{releaseTime(release.liveAt)}</dd></div> : null}
@@ -446,6 +440,12 @@ function ReleaseRow({ release, rollbackOf, showReason, personName, canRollBack, 
           <div className="flex min-w-0 gap-1"><dt className="shrink-0">What failed</dt><dd className="min-w-0 truncate text-foreground" title={failed}>{failed}</dd></div>
         ) : null}
       </dl>
+      {canRollBack ? (
+        // Top right on wider screens; under the meta line on phones, so every row keeps the same shape.
+        <Button type="button" variant="ghost" size="xs" className="max-sm:-ml-2 sm:absolute sm:top-2.5 sm:right-0" onClick={onRollBack}>
+          Roll back to this release
+        </Button>
+      ) : null}
       {hasDetails ? (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground">Details</summary>
