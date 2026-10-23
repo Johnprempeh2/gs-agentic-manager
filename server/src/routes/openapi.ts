@@ -392,6 +392,7 @@ import {
   createWebsitePropertySchema,
   createWebsiteSiteSchema,
   updateWebsiteSiteSchema,
+  websiteReleaseActionSchema,
   createWebsitePageSchema,
   updateWebsitePageSchema,
   saveWebsiteContentSchema,
@@ -1567,6 +1568,10 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/website/properties/{propertyId}/google/disconnect",
   "POST /api/companies/{companyId}/website/properties/{propertyId}/pull",
   "GET /api/website/google/callback",
+  // Website Publish, Retry and Rollback are a person's click only (GRE-2108).
+  "POST /api/companies/{companyId}/website/sites/{siteId}/releases",
+  "POST /api/companies/{companyId}/website/sites/{siteId}/releases/{releaseId}/retry",
+  "POST /api/companies/{companyId}/website/sites/{siteId}/releases/{releaseId}/rollback",
   "POST /api/companies/{companyId}/workflow-templates",
   "PATCH /api/workflow-templates/{id}",
   "GET /api/companies/{companyId}/releases",
@@ -15946,6 +15951,78 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "List an entry's revisions, newest first (website:view)",
   responses: websiteModuleResponses,
+});
+
+// GRE-2108: Publish and rollback. Publish, Retry and Rollback are a signed-in
+// person's click only (never an agent, a board API key, an approval or a
+// timer); each answers 202 and the job reports progress on the release.
+
+const websiteReleaseActionResponses = {
+  202: r.ok(),
+  400: r.badRequest,
+  401: r.unauthorized,
+  403: r.forbidden,
+  404: r.notFound,
+  409: r.conflict,
+  422: r.unprocessable,
+};
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/releases`,
+  tags: ["website"],
+  summary: "List a site's releases, newest first, with status, Pending reason, checks and the Netlify deploy (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/releases`,
+  tags: ["website"],
+  summary: "Publish: build a release from the approved revisions, check it, upload it, switch current and start one content-only rebuild (about 15 credits). 409 while a publish or rollback runs (website:publish, a person's click only)",
+  responses: websiteReleaseActionResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/releases/{releaseId}`,
+  tags: ["website"],
+  summary: "Get a release (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/releases/{releaseId}/retry`,
+  tags: ["website"],
+  summary: "What Retry will do for a Pending release: check again (free) or one new rebuild (about 15 credits) (website:publish)",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/releases/{releaseId}/retry`,
+  tags: ["website"],
+  summary: "Retry a Pending release. A rebuild needs confirmRebuild: true (website:publish, a person's click only)",
+  body: websiteReleaseActionSchema,
+  responses: websiteReleaseActionResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/releases/{releaseId}/rollback`,
+  tags: ["website"],
+  summary: "What rolling back to this release will do: restore its deploy (0 credits) or rebuild it (about 15 credits) (website:publish)",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/releases/{releaseId}/rollback`,
+  tags: ["website"],
+  summary: "Roll back to an earlier Live release as a new release. A rebuild needs confirmRebuild: true (website:publish, a person's click only)",
+  body: websiteReleaseActionSchema,
+  responses: websiteReleaseActionResponses,
 });
 
 // ─── Workflow templates ───────────────────────────────────────────────────────
