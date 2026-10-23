@@ -398,6 +398,7 @@ import {
   saveWebsiteContentSchema,
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
+  sendBackWebsiteContentSchema,
   createWebsiteSitemapOptionSchema,
   importWebsiteSitemapOptionSchema,
   updateWebsiteSitemapOptionSchema,
@@ -16026,6 +16027,47 @@ registerCurrentRoute({
   summary: "Roll back to an earlier Live release as a new release. A rebuild needs confirmRebuild: true (website:publish, a person's click only)",
   body: websiteReleaseActionSchema,
   responses: websiteReleaseActionResponses,
+});
+
+// Review and Publish proposals (GRE-2109, ADR GRE-1914 section 6). Agents and
+// people with website:edit submit and propose; only a person with
+// website:publish for the site approves a change or a Publish.
+
+const websiteReviewResponses = { ...websiteModuleResponses, 422: r.unprocessable };
+
+for (const kind of ["pages", "entries"] as const) {
+  const one = kind === "pages" ? "page" : "entry";
+  const idParam = kind === "pages" ? "{pageId}" : "{entryId}";
+  registerCurrentRoute({
+    method: "post",
+    path: `${siteParams}/${kind}/${idParam}/submit`,
+    tags: ["website"],
+    summary: `Send a ${one} for review: a person with Publish rights approves it (website:edit; agents can). A planned or archived ${one} answers 422`,
+    responses: websiteReviewResponses,
+  });
+  registerCurrentRoute({
+    method: "post",
+    path: `${siteParams}/${kind}/${idParam}/approve`,
+    tags: ["website"],
+    summary: `Approve a ${one}: its latest revision goes live with the next Publish (website:publish, people only; an agent gets 403)`,
+    responses: websiteReviewResponses,
+  });
+  registerCurrentRoute({
+    method: "post",
+    path: `${siteParams}/${kind}/${idParam}/send-back`,
+    tags: ["website"],
+    summary: `Send a ${one} in review back to draft with a note (website:publish, people only)`,
+    body: sendBackWebsiteContentSchema,
+    responses: websiteReviewResponses,
+  });
+}
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/publish-proposals`,
+  tags: ["website"],
+  summary: "Propose a Publish of every approved change (website:edit; this is how an agent asks to Publish). Returns a website_publish approval: 201 new, 200 when one is already open for the site. Nothing approved answers 422. A person with website:publish for the site approves it with POST /api/approvals/{id}/approve, which starts the Publish in their name",
+  responses: { 200: r.ok(), 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 // Sitemap options (GRE-2111): named drafts of a site's structure. Agents and

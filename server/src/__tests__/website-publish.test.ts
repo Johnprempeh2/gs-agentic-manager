@@ -297,7 +297,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
 
     const agent = await seedAgent(company.id, ["website:view", "website:edit", "website:publish"]);
     const refused = await request(app(agent)).post(`${base}/releases`).send({}).expect(403);
-    expect(refused.body.details?.code).toBe("website_permission_missing");
+    expect(refused.body.details?.code).toBe("website_publish_agent_refused");
     await request(app(agent)).post(`${base}/releases/${live.id}/retry`).send({}).expect(403);
     await request(app(agent)).post(`${base}/releases/${live.id}/rollback`).send({ confirmRebuild: true }).expect(403);
     await settle();

@@ -19,6 +19,7 @@ import { conflict, unprocessable } from "../errors.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import { authorizationService, type AuthorizationActor, type AuthorizationResource } from "./authorization.js";
 import { ensureHumanRoleDefaultGrants } from "./principal-access-compatibility.js";
+import { WEBSITE_MESSAGES } from "./website/messages.js";
 
 type MembershipRow = typeof companyMemberships.$inferSelect;
 type GrantInput = {
@@ -47,7 +48,7 @@ type MemberArchiveInput = {
 /** website:publish is for people only (GRE-1914 ADR section 6): no route, import or plugin can grant it to an agent. */
 export function assertNoAgentWebsitePublish(principalType: PrincipalType, grants: Array<{ permissionKey: string }>) {
   if (principalType === "agent" && grants.some((grant) => grant.permissionKey === "website:publish")) {
-    throw unprocessable("Agents cannot be given the right to publish a website. They propose a publish; a person publishes it.", {
+    throw unprocessable(WEBSITE_MESSAGES["agent.grant_refused"], {
       code: "website_publish_agent_refused",
     });
   }

@@ -97,6 +97,14 @@ export const saveWebsiteContentSchema = z
   .strict();
 export type SaveWebsiteContent = z.infer<typeof saveWebsiteContentSchema>;
 
+export const sendBackWebsiteContentSchema = z
+  .object({
+    /** What needs to change. Shown to the author. */
+    note: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+export type SendBackWebsiteContent = z.infer<typeof sendBackWebsiteContentSchema>;
+
 const collectionSchema = z.string().trim().regex(/^[a-z][a-z0-9_-]{0,39}$/, "Use a lower-case collection key");
 
 export const createWebsiteEntrySchema = z

@@ -5,6 +5,7 @@ import {
   AI_ROUTE_CHANGE_APPROVAL_TYPE,
   BUDGET_TOP_UP_APPROVAL_TYPE,
   OPERATOR_APPROVAL_REQUIRED_ERROR_CODE,
+  WEBSITE_PUBLISH_APPROVAL_TYPE,
   addApprovalCommentSchema,
   createApprovalSchema,
   requestApprovalRevisionSchema,
@@ -43,6 +44,7 @@ import {
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { forbidden, unprocessable } from "../errors.js";
 import { REVIEW_PATH_RECOVERY_INSTRUCTION } from "../services/recovery/review-path-recovery.js";
+import { websitePublishApprovals } from "../services/website/publish-approval.js";
 
 function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
   return {
@@ -80,6 +82,7 @@ export function approvalRoutes(
     releaseHeldWorkForScope: (scope: { companyId: string }) =>
       heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
   });
+  const websitePublish = websitePublishApprovals(db);
   const strictSecretsMode = process.env.GSAM_SECRETS_STRICT_MODE === "true";
 
   async function lostReviewPathIssueIds(
@@ -304,6 +307,10 @@ export function approvalRoutes(
     if (approvalInput.type === BUDGET_TOP_UP_APPROVAL_TYPE) {
       throw unprocessable("Ask for a top-up with POST /api/companies/:companyId/budgets/top-ups");
     }
+    // GRE-2109: the server builds a Publish proposal from the approved changes; callers cannot set its payload.
+    if (approvalInput.type === WEBSITE_PUBLISH_APPROVAL_TYPE) {
+      throw unprocessable("Propose a Publish with POST /api/companies/:companyId/website/sites/:siteId/publish-proposals");
+    }
     const normalizedPayload =
       approvalInput.type === "hire_agent"
         ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
@@ -367,8 +374,13 @@ export function approvalRoutes(
     }
     await assertCanDecidePermissionGrant(req, existing);
     await assertCanDecideSpendingApproval(req, existing);
+    await websitePublish.assertCanDecide(req.actor, existing);
+    await websitePublish.assertCanStart(existing);
     const decidedByUserId = req.actor.userId ?? "board";
-    const { approval, applied } = await svc.approve(id, decidedByUserId, req.body.decisionNote);
+    const resolved = await svc.approve(id, decidedByUserId, req.body.decisionNote);
+    const { applied } = resolved;
+    // GRE-2109: "Approve and Publish" starts the Publish in the approver's name; if it cannot start, the approval reopens.
+    const approval = applied ? await websitePublish.startApprovedPublish(resolved.approval, decidedByUserId) : resolved.approval;
     // Applied after the card: the budget sweep settles it if the server stops in between.
     if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
@@ -488,6 +500,7 @@ export function approvalRoutes(
     }
     await assertCanDecidePermissionGrant(req, existing);
     await assertCanDecideSpendingApproval(req, existing);
+    await websitePublish.assertCanDecide(req.actor, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.reject(id, decidedByUserId, req.body.decisionNote);
     if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
@@ -535,6 +548,7 @@ export function approvalRoutes(
         throw unprocessable("A permission request can only be granted or denied");
       }
       await assertCanDecideSpendingApproval(req, existing);
+      await websitePublish.assertCanDecide(req.actor, existing);
       const decidedByUserId = req.actor.userId ?? "board";
       const approval = await svc.requestRevision(id, decidedByUserId, req.body.decisionNote);
 
@@ -561,6 +575,9 @@ export function approvalRoutes(
     if (req.actor.type === "agent" && req.actor.agentId !== existing.requestedByAgentId) {
       res.status(403).json({ error: "Only requesting agent can resubmit this approval" });
       return;
+    }
+    if (existing.type === WEBSITE_PUBLISH_APPROVAL_TYPE && req.body.payload) {
+      throw unprocessable("A Publish proposal is built by the server. Propose again with POST /api/companies/:companyId/website/sites/:siteId/publish-proposals");
     }
 
     const normalizedPayload = req.body.payload

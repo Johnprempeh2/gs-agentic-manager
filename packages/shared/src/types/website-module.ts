@@ -175,6 +175,33 @@ export interface WebsiteReleaseActionPlan {
   reason: string;
 }
 
+/** Approval type of a proposed Publish (GRE-2109, ADR GRE-1914 section 6). */
+export const WEBSITE_PUBLISH_APPROVAL_TYPE = "website_publish";
+
+/** One approved page or entry that a proposed Publish takes live. */
+export interface WebsitePublishChange {
+  kind: "page" | "entry";
+  id: string;
+  /** The approved revision at the time of the proposal. */
+  revisionId: string;
+  /** Page title, or `collection/entryKey` for an entry. */
+  label: string;
+}
+
+/** Payload of a `website_publish` approval. The server builds it; callers cannot set it. */
+export interface WebsitePublishApprovalPayload {
+  siteId: string;
+  siteName: string;
+  /** Card title and body, from the copy (GRE-2107 section 8). */
+  title: string;
+  summary: string;
+  changeCount: number;
+  manifest: { pages: Array<{ pageId: string; revisionId: string }>; entries: Array<{ entryId: string; revisionId: string }> };
+  changes: WebsitePublishChange[];
+  /** Set when the approval started a Publish. */
+  releaseId?: string;
+}
+
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
@@ -190,6 +217,12 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageArchive: "/companies/:companyId/website/sites/:siteId/pages/:pageId/archive",
   /** GET → `WebsiteRevision[]`, newest first. */
   pageRevisions: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions",
+  /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */
+  pageSubmit: "/companies/:companyId/website/sites/:siteId/pages/:pageId/submit",
+  /** POST → `WebsitePage` (website:publish, people only). The latest revision becomes the approved one. */
+  pageApprove: "/companies/:companyId/website/sites/:siteId/pages/:pageId/approve",
+  /** POST `{ note }` → `WebsitePage` (website:publish, people only). Back to draft. */
+  pageSendBack: "/companies/:companyId/website/sites/:siteId/pages/:pageId/send-back",
   /** GET → `WebsiteEntry[]` (`?collection=product`). POST `CreateWebsiteEntry` → 201 `WebsiteEntryDetail`. */
   entries: "/companies/:companyId/website/sites/:siteId/entries",
   /** GET → `WebsiteEntryDetail`. PATCH `UpdateWebsiteEntry` → `WebsiteEntry`. */
@@ -212,4 +245,15 @@ export const WEBSITE_MODULE_API_ROUTES = {
   releaseRetry: "/companies/:companyId/website/sites/:siteId/releases/:releaseId/retry",
   /** GET → `WebsiteReleaseActionPlan`. POST `{ confirmRebuild? }` → 202 `WebsiteRelease` (the new rollback release). */
   releaseRollback: "/companies/:companyId/website/sites/:siteId/releases/:releaseId/rollback",
+  /** POST → `WebsiteEntry` (website:edit). */
+  entrySubmit: "/companies/:companyId/website/sites/:siteId/entries/:entryId/submit",
+  /** POST → `WebsiteEntry` (website:publish, people only). */
+  entryApprove: "/companies/:companyId/website/sites/:siteId/entries/:entryId/approve",
+  /** POST `{ note }` → `WebsiteEntry` (website:publish, people only). */
+  entrySendBack: "/companies/:companyId/website/sites/:siteId/entries/:entryId/send-back",
+  /**
+   * POST → 201 (new) or 200 (one is already open) `Approval` of type `website_publish` (website:edit).
+   * Proposes a Publish of every approved change; a person with website:publish approves it.
+   */
+  publishProposals: "/companies/:companyId/website/sites/:siteId/publish-proposals",
 } as const;
