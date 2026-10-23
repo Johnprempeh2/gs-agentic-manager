@@ -10,6 +10,7 @@ import {
   defaultTypeIcon,
   ApprovalPayloadRenderer,
   typeLabel,
+  approvalActionLabels,
 } from "./ApprovalPayload";
 import { timeAgo } from "../lib/timeAgo";
 import { waitingLabel } from "../lib/approval-wait";
@@ -54,8 +55,7 @@ export function ApprovalCard({
     approval.type !== "budget_override_required" &&
     (approval.status === "pending" || approval.status === "revision_requested");
   const hasFooter = showResolutionButtons || Boolean(detailLink || onOpen);
-  // GRE-601: a missing-permission request reads as Grant / Deny.
-  const isPermissionGrant = approval.type === "permission_grant";
+  const labels = approvalActionLabels(approval.type);
 
   return (
     <Card className="block border-border/70 p-4">
@@ -127,9 +127,7 @@ export function ApprovalCard({
                   onClick={onApprove}
                   disabled={isPending}
                 >
-                  {pendingAction === "approve"
-                    ? (isPermissionGrant ? "Granting..." : "Approving...")
-                    : (isPermissionGrant ? "Grant" : "Approve")}
+                  {pendingAction === "approve" ? labels.approving : labels.approve}
                 </Button>
                 <Button
                   variant="destructive"
@@ -137,9 +135,7 @@ export function ApprovalCard({
                   onClick={onReject}
                   disabled={isPending}
                 >
-                  {pendingAction === "reject"
-                    ? (isPermissionGrant ? "Denying..." : "Rejecting...")
-                    : (isPermissionGrant ? "Deny" : "Reject")}
+                  {pendingAction === "reject" ? labels.rejecting : labels.reject}
                 </Button>
               </>
             )}

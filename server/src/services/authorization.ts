@@ -703,7 +703,7 @@ export function authorizationService(db: Db | DbTransaction) {
       return deny({
         action: input.action,
         reason: "deny_missing_grant",
-        explanation: "Agents cannot publish a website. They propose a publish; a person publishes it.",
+        explanation: "Agents cannot Publish, retry or roll back. Propose a Publish instead; a person approves it.",
       });
     }
     const membership = await getActiveMembership(input.companyId, input.principalType, input.principalId);
