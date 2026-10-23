@@ -273,12 +273,15 @@ export class WebsiteFrameHostSession<Source> {
       retryable,
     });
 
-    if (this.options.mode !== "editor") return Promise.resolve(answer(fail("invalid", "Preview cannot save.", false)));
-    if (save.pageId !== this.options.pageId) {
-      return Promise.resolve(answer(fail("invalid", "The save is for another page.", false)));
-    }
+    // A refused save is shown on the host too, never only inside the frame.
+    const refuse = (message: string) => {
+      this.options.onSaveState?.({ status: "failed", message: `The editor sent a save GSAM cannot accept: ${message}`, retryable: false });
+      return Promise.resolve(answer(fail("invalid", message, false)));
+    };
+    if (this.options.mode !== "editor") return refuse("Preview cannot save.");
+    if (save.pageId !== this.options.pageId) return refuse("The save is for another page.");
     const inspected = inspectWebsitePuckData(save.data, this.engineTypes ?? undefined);
-    if (!inspected.ok) return Promise.resolve(answer(fail("invalid", inspected.reason, false)));
+    if (!inspected.ok) return refuse(inspected.reason);
     if (this.inFlight) {
       return Promise.resolve(answer(fail("busy", "Another save is still running.", true)));
     }

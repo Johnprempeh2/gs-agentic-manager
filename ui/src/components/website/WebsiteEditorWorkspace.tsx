@@ -161,7 +161,7 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
       <PageList pages={pages} selectedId={page.id} onOpen={(id) => void openPage(id)} />
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
             <h2 className="truncate text-lg font-semibold">{page.title}</h2>
             <p className="truncate font-mono text-xs text-muted-foreground">{page.slug}</p>
           </div>

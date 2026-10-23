@@ -228,8 +228,14 @@ describe("saving (test 7, 12)", () => {
 
   it("refuses invalid data, another page and a second save in flight", async () => {
     let release: (answer: WebsiteFrameSaveAnswer) => void = () => {};
-    const t = await ready({ saveDraft: vi.fn(() => new Promise<WebsiteFrameSaveAnswer>((resolve) => (release = resolve))) });
+    const states: unknown[] = [];
+    const t = await ready({
+      saveDraft: vi.fn(() => new Promise<WebsiteFrameSaveAnswer>((resolve) => (release = resolve))),
+      onSaveState: (state) => states.push(state),
+    });
     t.msg("save", save("bad", { data: { root: { props: {} }, content: [{ type: "Hero", props: {} }] } }));
+    // The host banner says so too, not only the frame.
+    expect(states[0]).toMatchObject({ status: "failed", retryable: false, message: expect.stringContaining("no valid id") });
     t.msg("save", save("other", { pageId: "page-2" }));
     t.msg("save", save("unknown-type", { data: { root: { props: {} }, content: [{ type: "Script", props: { id: "x" } }] } }));
     t.msg("save", save("first"));
