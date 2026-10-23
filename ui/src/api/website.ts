@@ -5,7 +5,12 @@ import {
   type CreateWebsiteSite,
   type UpdateWebsiteProperty,
   type UpdateWebsiteSite,
+  type WebsiteMediaItem,
   type WebsitePage,
+  type WebsitePageDetail,
+  type WebsitePageEditorLoad,
+  type WebsiteRevision,
+  type WebsiteSaveResult,
   type WebsiteSite,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
@@ -66,7 +71,46 @@ export const websiteModuleApi = {
   updateSite: (companyId: string, siteId: string, patch: UpdateWebsiteSite) =>
     api.patch<WebsiteSite>(sitePath(companyId, siteId), patch),
   pages: (companyId: string, siteId: string) => api.get<WebsitePage[]>(`${sitePath(companyId, siteId)}/pages`),
+  page: (companyId: string, siteId: string, pageId: string) => api.get<WebsitePageDetail>(pagePath(companyId, siteId, pageId)),
+  /** Draft, theme, site and media for the editor frame's `load-draft`. */
+  pageEditor: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsitePageEditorLoad>(`${pagePath(companyId, siteId, pageId)}/editor`, { cache: "no-store" }),
+  /** A save; `conflict` (409) and `failed` (422) answers are returned, not thrown. */
+  savePageContent: (
+    companyId: string,
+    siteId: string,
+    pageId: string,
+    body: { baseRevisionId: string; content: unknown; editorOrigin?: string; changeSummary?: string },
+  ) => saveAnswer(api.put<WebsiteSaveResult>(`${pagePath(companyId, siteId, pageId)}/content`, body)),
+  revisions: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsiteRevision[]>(`${pagePath(companyId, siteId, pageId)}/revisions`),
+  revision: (companyId: string, siteId: string, pageId: string, revisionId: string) =>
+    api.get<{ revision: WebsiteRevision; content: unknown }>(
+      `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}`,
+    ),
+  restoreRevision: (companyId: string, siteId: string, pageId: string, revisionId: string, baseRevisionId: string) =>
+    saveAnswer(
+      api.post<WebsiteSaveResult>(
+        `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}/restore`,
+        { baseRevisionId },
+      ),
+    ),
+  media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
 };
+
+const pagePath = (companyId: string, siteId: string, pageId: string) =>
+  `${sitePath(companyId, siteId)}/pages/${encodeURIComponent(pageId)}`;
+
+/** Conflict and failed saves come back as 409 and 422 with a `WebsiteSaveResult` body. */
+async function saveAnswer(pending: Promise<WebsiteSaveResult>): Promise<WebsiteSaveResult> {
+  try {
+    return await pending;
+  } catch (error) {
+    const body = error instanceof ApiError ? (error.body as Partial<WebsiteSaveResult> | null) : null;
+    if (body && (body.state === "conflict" || body.state === "failed")) return body as WebsiteSaveResult;
+    throw error;
+  }
+}
 
 /** True when the server refused because the Website switch is off (`403 not_entitled`). */
 export function isWebsiteNotEntitled(error: unknown): boolean {

@@ -206,6 +206,26 @@ describe("saving (test 7, 12)", () => {
     expect(t.sentOf("save-result")[1]!.message.payload).toMatchObject({ outcome: "saved" });
   });
 
+  it("the host's Retry saves the failed save again with the same requestId, once", async () => {
+    const saveDraft = vi
+      .fn<() => Promise<WebsiteFrameSaveAnswer>>()
+      .mockResolvedValueOnce({ outcome: "failed", code: "network", message: "offline", retryable: true })
+      .mockResolvedValueOnce({ outcome: "saved", revisionId: "rev-2", savedAt: "now" });
+    const t = await ready({ saveDraft });
+    expect(t.session.canRetry).toBe(false);
+    t.msg("save", save("req-7"));
+    await flush();
+    expect(t.session.canRetry).toBe(true);
+    await t.session.retry();
+    expect(saveDraft).toHaveBeenCalledTimes(2);
+    expect(t.sentOf("save-result").map((entry) => entry.message.payload)).toEqual([
+      expect.objectContaining({ requestId: "req-7", outcome: "failed" }),
+      expect.objectContaining({ requestId: "req-7", outcome: "saved", revisionId: "rev-2" }),
+    ]);
+    expect(t.session.canRetry).toBe(false);
+    expect(t.session.retry()).toBeNull();
+  });
+
   it("refuses invalid data, another page and a second save in flight", async () => {
     let release: (answer: WebsiteFrameSaveAnswer) => void = () => {};
     const t = await ready({ saveDraft: vi.fn(() => new Promise<WebsiteFrameSaveAnswer>((resolve) => (release = resolve))) });

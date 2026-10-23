@@ -55,6 +55,7 @@ function SiteForm({ companyId, property, site, onDone }: {
   const [repoUrl, setRepoUrl] = useState(site?.repoUrl ?? "");
   const [netlifySiteId, setNetlifySiteId] = useState(site?.netlifySiteId ?? "");
   const [netlifyToken, setNetlifyToken] = useState("");
+  const [editorFrameOrigin, setEditorFrameOrigin] = useState(site?.editorFrameOrigin ?? "");
   const save = useMutation({
     mutationFn: () => {
       const fields = {
@@ -63,6 +64,8 @@ function SiteForm({ companyId, property, site, onDone }: {
         repoUrl: repoUrl.trim() || null,
         netlifySiteId: netlifySiteId.trim(),
         ...(netlifyToken.trim() ? { netlifyToken: netlifyToken.trim() } : {}),
+        // Sent only when it changes: a change ends open editor sessions (frame contract rule C2.3).
+        ...((site?.editorFrameOrigin ?? "") !== editorFrameOrigin.trim() ? { editorFrameOrigin: editorFrameOrigin.trim() || null } : {}),
       };
       return site
         ? websiteModuleApi.updateSite(companyId, site.id, fields)
@@ -136,6 +139,21 @@ function SiteForm({ companyId, property, site, onDone }: {
             autoComplete="new-password"
           />
         </Field>
+        <Field
+          id={`${idPrefix}-editor`}
+          label="Editor address"
+          help="Optional now, needed to edit pages. The site's own editor host, for example https://editor.example.com. Never the public address. Changing it closes open editors."
+        >
+          <Input
+            id={`${idPrefix}-editor`}
+            value={editorFrameOrigin}
+            onChange={(event) => setEditorFrameOrigin(event.target.value)}
+            aria-describedby={`${idPrefix}-editor-help`}
+            inputMode="url"
+            placeholder="https://editor.example.com"
+            autoComplete="off"
+          />
+        </Field>
       </fieldset>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="ghost" onClick={onDone} disabled={save.isPending}>Cancel</Button>
@@ -184,6 +202,7 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
           <Detail label="Repository">{site.repoUrl ? <span className="font-mono">{site.repoUrl}</span> : "Not set"}</Detail>
           <Detail label="Netlify site id"><span className="font-mono">{site.netlifySiteId}</span></Detail>
           <Detail label="Netlify token">{site.hasNetlifyToken ? "Stored in this company's secrets" : "Not stored yet: needed to publish"}</Detail>
+          <Detail label="Editor address">{site.editorFrameOrigin ? <span className="font-mono">{site.editorFrameOrigin}</span> : "Not set: needed to edit pages"}</Detail>
         </dl>
       ) : (
         <div className="space-y-3">

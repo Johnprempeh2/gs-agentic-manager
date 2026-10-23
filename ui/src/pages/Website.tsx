@@ -49,6 +49,7 @@ import {
   websiteTabFrom,
   type WebsiteTab,
 } from "../components/website/WebsiteHub";
+import { WebsiteEditorTab } from "../components/website/WebsiteEditorWorkspace";
 import { WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
 
 /* ---- Formatting ---- */
@@ -631,7 +632,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
   };
 
   return (
-    <div className="w-full max-w-7xl space-y-6">
+    <div className={cn("w-full space-y-6", tab !== "editor" && "max-w-7xl")}>
       <header className="space-y-2">
         <h1 className="text-xl font-bold">Website</h1>
         <p className="text-sm text-muted-foreground">
@@ -668,6 +669,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       {tab === "overview" ? <WebsiteOverviewTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
       {tab === "progress" ? <WebsiteProgressTab companyId={companyId} property={property} /> : null}
       {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} /> : null}
+      {tab === "editor" ? <WebsiteEditorTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
       {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
       {tab === "traffic" ? (
         <PropertyReport companyId={companyId} property={property} signInAvailable={signInAvailable} notice={notice} canManage={canManage} />

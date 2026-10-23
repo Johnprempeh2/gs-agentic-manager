@@ -49,6 +49,7 @@ function site(overrides: Partial<WebsiteSite> = {}): WebsiteSite {
     releaseSchemaVersion: 1,
     propertyId: "prop-1",
     editorOrigins: [],
+    editorFrameOrigin: null,
     checkPaths: ["/"],
     liveReleaseId: null,
     archivedAt: null,
@@ -135,6 +136,23 @@ describe("WebsiteSiteConnection", () => {
       netlifyToken: "nfp_secret_token",
       propertyId: "prop-1",
     });
+  });
+
+  it("sets the editor address, sending it only when it changes", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.updateSite.mockResolvedValue(site({ editorFrameOrigin: "https://editor.greatstone.example" }));
+    await render();
+    expect(container.textContent).toContain("Not set: needed to edit pages");
+    const change = [...container.querySelectorAll("button")].find((button) => button.textContent === "Change")!;
+    await act(async () => change.click());
+    await act(async () => {
+      setValue(container.querySelector<HTMLInputElement>("#website-site-prop-1-editor")!, "https://editor.greatstone.example");
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(moduleMock.updateSite).toHaveBeenCalledWith("co-1", "site-1", expect.objectContaining({ editorFrameOrigin: "https://editor.greatstone.example" }));
   });
 
   it("tells people who cannot publish who can connect it", async () => {
