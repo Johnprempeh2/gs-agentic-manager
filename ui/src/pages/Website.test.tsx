@@ -16,8 +16,11 @@ const websiteApiMock = vi.hoisted(() => ({
   report: vi.fn(),
   connectGoogle: vi.fn(),
   update: vi.fn(),
+  create: vi.fn(),
   hub: vi.fn(),
 }));
+const accessMock = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
+vi.mock("../api/access", () => ({ accessApi: accessMock }));
 const projectsMock = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), getTree: vi.fn() }));
 vi.mock("../api/projects", () => ({ projectsApi: projectsMock }));
 const settingsMock = vi.hoisted(() => ({ getExperimental: vi.fn() }));
@@ -139,6 +142,7 @@ beforeEach(() => {
   settingsMock.getExperimental.mockResolvedValue({ enableWebsiteView: true });
   websiteApiMock.overview.mockResolvedValue(overview());
   websiteApiMock.report.mockResolvedValue(report());
+  accessMock.getCurrentBoardAccess.mockResolvedValue({ source: "local_implicit", isInstanceAdmin: false, memberships: [] });
   projectsMock.list.mockResolvedValue([{ id: "proj-1", name: "Greatstone Website", urlKey: "greatstone-website", archivedAt: null }]);
 });
 
@@ -171,10 +175,77 @@ describe("Website page", () => {
     expect(text()).toContain("Server down");
   });
 
-  it("shows the empty state when no website is set up", async () => {
+  it("tells people who are not owners or admins who can set the website up", async () => {
+    accessMock.getCurrentBoardAccess.mockResolvedValue({
+      source: "session",
+      isInstanceAdmin: false,
+      memberships: [{ companyId: "co-1", membershipRole: "operator", status: "active" }],
+    });
     websiteApiMock.overview.mockResolvedValue(overview({ properties: [] }));
     await render();
     await waitForText("No website is set up yet");
+    expect(text()).toContain("A company owner or admin can set up the website here.");
+    expect(container.querySelector('[data-testid="website-setup"]')).toBeNull();
+  });
+
+  it("sets up a website without a GA4 id and opens the hub on Overview", async () => {
+    const created = property({ ga4PropertyId: null, projectId: "proj-1", connectionStatus: "not_connected" });
+    websiteApiMock.overview.mockResolvedValueOnce(overview({ properties: [] })).mockResolvedValue(overview({ properties: [created] }));
+    websiteApiMock.create.mockResolvedValue(created);
+    websiteApiMock.hub.mockResolvedValue({ projectId: "proj-1", recentWork: [], sitemap: null, previewLinks: [], siteLinks: [] });
+    await render("/website?tab=traffic");
+    await waitForText("Set up your website");
+    expect(text()).toContain("sc-domain:example.com");
+    await vi.waitFor(() => expect(container.querySelector("option[value='proj-1']")).not.toBeNull());
+    const setValue = (selector: string, value: string) => {
+      const el = container.querySelector(selector) as HTMLInputElement | HTMLSelectElement;
+      const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, value);
+      el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+    };
+    await act(async () => {
+      setValue("#website-setup-name", "Greatstone website");
+      setValue("#website-setup-url", "https://greatstone.example/");
+      setValue("#website-setup-project", "proj-1");
+    });
+    const submit = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Set up website")!;
+    await act(async () => { submit.click(); });
+    await vi.waitFor(() =>
+      expect(websiteApiMock.create).toHaveBeenCalledWith("co-1", {
+        name: "Greatstone website",
+        siteUrl: "https://greatstone.example/",
+        projectId: "proj-1",
+      }),
+    );
+    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Overview"));
+    expect(location).toBe("/website");
+  });
+
+  it("says plainly that Google Analytics is not linked and lets an owner add it", async () => {
+    const noGa4 = property({ ga4PropertyId: null, connectionStatus: "not_connected", lastPullAt: null, lastPullStatus: null, nextPullDueAt: null });
+    websiteApiMock.overview.mockResolvedValue(overview({ properties: [noGa4] }));
+    websiteApiMock.report.mockResolvedValue(
+      report({ property: noGa4, lastPull: null, ga4: null, ga4PulledAt: null, searchConsole: null, searchConsolePulledAt: null }),
+    );
+    websiteApiMock.update.mockResolvedValue(property({ ga4PropertyId: "987" }));
+    await render();
+    await waitForText("Google Analytics is not linked to this website yet");
+    expect(text()).not.toContain("No Google Analytics data yet");
+    expect(text()).toContain("GSAM then pulls Search Console every day");
+    const input = container.querySelector('[data-testid="website-ga4-link"] input') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "987");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const save = Array.from(container.querySelectorAll('[data-testid="website-ga4-link"] button')).find((el) => el.textContent === "Save") as HTMLButtonElement;
+    await act(async () => { save.click(); });
+    await vi.waitFor(() => expect(websiteApiMock.update).toHaveBeenCalledWith("co-1", "prop-1", { ga4PropertyId: "987" }));
+  });
+
+  it("shows the linked GA4 property with a Change action", async () => {
+    await render();
+    await waitForText("Google Analytics property");
+    expect(container.querySelector('[data-testid="website-ga4-property"]')?.textContent).toContain("123456789");
   });
 
   it("shows every GA4 and Search Console section from the stored pull", async () => {

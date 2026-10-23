@@ -14,7 +14,8 @@ export const websiteProperties = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     siteUrl: text("site_url").notNull(),
-    ga4PropertyId: text("ga4_property_id").notNull(),
+    /** GA4 property id; null until Google Analytics is linked (Search Console, progress and previews work without it). */
+    ga4PropertyId: text("ga4_property_id"),
     /** The project that builds this website; the Website page shows its progress (GRE-1831 hub). */
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     connectionStatus: text("connection_status").notNull().default("not_connected"),

@@ -1,6 +1,7 @@
 import { api, ApiError } from "./client";
 import {
   WEBSITE_NOT_ENTITLED_CODE,
+  type CreateWebsiteProperty,
   type UpdateWebsiteProperty,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
@@ -30,6 +31,9 @@ export const websiteApi = {
     api.get<WebsiteReport>(
       `/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}/report`,
     ),
+  /** Set up a website (owners and admins). The GA4 id and the project are optional. */
+  create: (companyId: string, input: CreateWebsiteProperty) =>
+    api.post<WebsiteProperty>(`/companies/${encodeURIComponent(companyId)}/website/properties`, input),
   update: (companyId: string, propertyId: string, patch: UpdateWebsiteProperty) =>
     api.patch<WebsiteProperty>(
       `/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}`,

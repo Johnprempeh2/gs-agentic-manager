@@ -49,6 +49,7 @@ import {
   websiteTabFrom,
   type WebsiteTab,
 } from "../components/website/WebsiteHub";
+import { WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
 
 /* ---- Formatting ---- */
 
@@ -288,6 +289,23 @@ function Ga4Section({ report }: { report: WebsiteGa4Report | null }) {
   );
 }
 
+/** Visitors, before a GA4 property is linked: say so and show how to add it. */
+function Ga4NotLinked({ companyId, property, canManage }: { companyId: string; property: WebsiteProperty; canManage: boolean }) {
+  return (
+    <Section id="website-ga4" title="Visitors" subtitle="Google Analytics 4">
+      <div className="gs-glass-card space-y-3 rounded-xl border p-4" data-testid="website-ga4-not-linked">
+        <p className="text-sm">
+          Google Analytics is not linked to this website yet, so there are no visitor numbers.
+          {canManage
+            ? " Add the GA4 property id below; the next daily pull then includes visitors, sources, top pages and conversions."
+            : " A company owner or admin can add the GA4 property id here."}
+        </p>
+        {canManage ? <WebsiteGa4Link companyId={companyId} property={property} /> : null}
+      </div>
+    </Section>
+  );
+}
+
 function SearchConsoleSection({ report }: { report: WebsiteSearchConsoleReport | null }) {
   return (
     <Section
@@ -478,12 +496,14 @@ function NotEntitled() {
   );
 }
 
-function PropertyReport({ companyId, property, signInAvailable, notice }: {
+function PropertyReport({ companyId, property, signInAvailable, notice, canManage }: {
   companyId: string;
   property: WebsiteProperty;
   signInAvailable: boolean;
   notice: { result: string; reason: string | null } | null;
+  canManage: boolean;
 }) {
+  const [editingGa4, setEditingGa4] = useState(false);
   const reportQuery = useQuery({
     queryKey: queryKeys.website.report(companyId, property.id),
     queryFn: () => websiteApi.report(companyId, property.id),
@@ -495,6 +515,20 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
       <div className="min-w-0 space-y-1" data-tour="website-header">
         <p className="text-sm text-muted-foreground">Visitors and search results from Google.</p>
         {reportQuery.data ? <PullStatusBar report={reportQuery.data} /> : null}
+        {property.ga4PropertyId ? (
+          editingGa4 ? (
+            <WebsiteGa4Link companyId={companyId} property={property} onDone={() => setEditingGa4(false)} />
+          ) : (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" data-testid="website-ga4-property">
+              <span>
+                Google Analytics property <span className="font-mono text-foreground">{property.ga4PropertyId}</span>
+              </span>
+              {canManage ? (
+                <Button type="button" variant="ghost" size="xs" onClick={() => setEditingGa4(true)}>Change</Button>
+              ) : null}
+            </p>
+          )
+        ) : null}
       </div>
       <div className="flex flex-wrap items-start gap-2">
         {reportQuery.data ? <FeatureTour tour={WEBSITE_TOUR} /> : null}
@@ -518,6 +552,9 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
 
   const report = reportQuery.data!;
   const hasData = report.ga4 !== null || report.searchConsole !== null;
+  const visitors = property.ga4PropertyId
+    ? <Ga4Section report={report.ga4} />
+    : <Ga4NotLinked companyId={companyId} property={property} canManage={canManage} />;
   const errors = report.lastPull?.errors ?? [];
 
   return (
@@ -532,39 +569,49 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
       <PullErrors errors={errors} />
       {hasData ? (
         <div className="space-y-10">
-          <Ga4Section report={report.ga4} />
+          {visitors}
           <SearchConsoleSection report={report.searchConsole} />
           <p className="text-xs text-subtle-foreground">
             Read-only. <PulledAt at={report.ga4PulledAt ?? report.searchConsolePulledAt} />. The page shows the stored daily pull, not live Google data.
           </p>
         </div>
-      ) : property.connectionStatus === "connected" ? (
-        <EmptyState
-          icon={Globe}
-          title="Waiting for the first pull"
-          message={
-            property.nextPullDueAt
-              ? `Google is connected. The first pull is due ${formatDateTime(property.nextPullDueAt)}; visitor and search data show here after it.`
-              : "Google is connected. Visitor and search data show here after the first daily pull."
-          }
-        />
       ) : (
-        <EmptyState
-          icon={Globe}
-          title="Connect Google to see your website data"
-          message="Sign in with Google once. GSAM then pulls Google Analytics and Search Console every day, with read-only access."
-        />
+        <div className="space-y-6">
+          {property.connectionStatus === "connected" ? (
+            <EmptyState
+              icon={Globe}
+              title="Waiting for the first pull"
+              message={
+                property.nextPullDueAt
+                  ? `Google is connected. The first pull is due ${formatDateTime(property.nextPullDueAt)}; visitor and search data show here after it.`
+                  : "Google is connected. Visitor and search data show here after the first daily pull."
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Globe}
+              title="Connect Google to see your website data"
+              message={
+                property.ga4PropertyId
+                  ? "Sign in with Google once. GSAM then pulls Google Analytics and Search Console every day, with read-only access."
+                  : "Sign in with Google once. GSAM then pulls Search Console every day, with read-only access."
+              }
+            />
+          )}
+          {property.ga4PropertyId ? null : visitors}
+        </div>
       )}
     </div>
   );
 }
 
 /** One website: its title, its project, and the hub tabs (23 Oct 2026). Traffic is the Google report. */
-function PropertyHub({ companyId, property, signInAvailable, notice }: {
+function PropertyHub({ companyId, property, signInAvailable, notice, canManage }: {
   companyId: string;
   property: WebsiteProperty;
   signInAvailable: boolean;
   notice: { result: string; reason: string | null } | null;
+  canManage: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = notice ? "traffic" : websiteTabFrom(searchParams.get("tab"));
@@ -623,7 +670,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice }: {
       {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} /> : null}
       {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
       {tab === "traffic" ? (
-        <PropertyReport companyId={companyId} property={property} signInAvailable={signInAvailable} notice={notice} />
+        <PropertyReport companyId={companyId} property={property} signInAvailable={signInAvailable} notice={notice} canManage={canManage} />
       ) : null}
       </div>
     </div>
@@ -635,6 +682,8 @@ export function Website() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const notice = useGoogleReturnNotice();
   const [propertyId, setPropertyId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { canManage, isLoading: accessLoading } = useCanManageWebsite(selectedCompanyId ?? "");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Website" }]);
@@ -668,13 +717,26 @@ export function Website() {
       <div className="w-full max-w-7xl space-y-6">
         <header className="space-y-1">
           <h1 className="text-xl font-bold">Website</h1>
-          <p className="text-sm text-muted-foreground">Visitors and search results for your website, from Google.</p>
+          <p className="text-sm text-muted-foreground">Your website's progress, sitemap, previews and traffic in one place.</p>
         </header>
-        <EmptyState
-          icon={Search}
-          title="No website is set up yet"
-          message="Once your website is added to this company, its Google Analytics and Search Console reports show here."
-        />
+        {canManage ? (
+          <WebsiteSetupForm
+            companyId={selectedCompanyId}
+            onCreated={(created) => {
+              // The hub opens on Overview.
+              setPropertyId(created.id);
+              const next = new URLSearchParams(searchParams);
+              next.delete("tab");
+              setSearchParams(next, { replace: true });
+            }}
+          />
+        ) : accessLoading ? null : (
+          <EmptyState
+            icon={Search}
+            title="No website is set up yet"
+            message="A company owner or admin can set up the website here. Ask one of them to add it."
+          />
+        )}
       </div>
     );
   }
@@ -711,6 +773,7 @@ export function Website() {
         property={selected}
         signInAvailable={googleSignInAvailable}
         notice={notice}
+        canManage={canManage}
       />
     </div>
   );
