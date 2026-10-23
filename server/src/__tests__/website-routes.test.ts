@@ -262,6 +262,53 @@ describeEmbeddedPostgres("website view routes", () => {
     expect(after.body.searchConsole).not.toBeNull();
   });
 
+  it("sets up a website without Google Analytics; a Search Console only pull succeeds", async () => {
+    await enableWebsiteView();
+    const company = await seedCompany();
+    const http = request(app());
+    const created = await http
+      .post(`/api/companies/${company.id}/website/properties`)
+      .send({ name: "Greatstone website", siteUrl: "sc-domain:example.com" })
+      .expect(201);
+    const property = created.body as WebsiteProperty;
+    expect(property.ga4PropertyId).toBeNull();
+    await connect(company.id, property.id);
+
+    let ga4Calls = 0;
+    const fixtures = createFixtureGoogleClient();
+    const counting: WebsiteGoogleClient = {
+      ...fixtures,
+      async batchRunReports(...args) {
+        ga4Calls += 1;
+        return fixtures.batchRunReports(...args);
+      },
+    };
+    const pull = await request(app(localBoard, counting))
+      .post(`/api/companies/${company.id}/website/properties/${property.id}/pull`)
+      .expect(200);
+    expect(pull.body).toMatchObject({ status: "succeeded", errors: [] });
+    expect(ga4Calls).toBe(0);
+    const report = await http.get(`/api/companies/${company.id}/website/properties/${property.id}/report`).expect(200);
+    expect(report.body.ga4).toBeNull();
+    expect(report.body.searchConsole).not.toBeNull();
+
+    // GA4 can be linked later, then cleared again.
+    const linked = await http
+      .patch(`/api/companies/${company.id}/website/properties/${property.id}`)
+      .send({ ga4PropertyId: "properties/42" })
+      .expect(200);
+    expect(linked.body.ga4PropertyId).toBe("42");
+    const cleared = await http
+      .patch(`/api/companies/${company.id}/website/properties/${property.id}`)
+      .send({ ga4PropertyId: null })
+      .expect(200);
+    expect(cleared.body.ga4PropertyId).toBeNull();
+    await http
+      .post(`/api/companies/${company.id}/website/properties`)
+      .send({ name: "Bad", siteUrl: "https://b.example/", ga4PropertyId: "G-ABC123" })
+      .expect(400);
+  });
+
   it("pulls each connected property once a day from the scheduler", async () => {
     await enableWebsiteView();
     const company = await seedCompany();

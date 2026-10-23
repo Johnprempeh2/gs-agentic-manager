@@ -495,6 +495,8 @@ export * from "./validators/document-evidence.js";
 export * from "./document-evidence.js";
 export * from "./types/website.js";
 export * from "./validators/website.js";
+export * from "./types/website-module.js";
+export * from "./validators/website-module.js";
 export * from "./website-frame.js";
 export * from "./types/intelligence.js";
 export * from "./validators/intelligence.js";

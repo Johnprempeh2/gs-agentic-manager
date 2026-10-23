@@ -682,6 +682,8 @@ export const queryKeys = {
       ["website", companyId, "report", propertyId] as const,
     hub: (companyId: string, propertyId: string) =>
       ["website", companyId, "hub", propertyId] as const,
+    sites: (companyId: string) => ["website", companyId, "sites"] as const,
+    pages: (companyId: string, siteId: string) => ["website", companyId, "pages", siteId] as const,
   },
   budgets: {
     overview: (companyId: string) =>

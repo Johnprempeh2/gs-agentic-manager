@@ -1,7 +1,12 @@
 import { api, ApiError } from "./client";
 import {
   WEBSITE_NOT_ENTITLED_CODE,
+  type CreateWebsiteProperty,
+  type CreateWebsiteSite,
   type UpdateWebsiteProperty,
+  type UpdateWebsiteSite,
+  type WebsitePage,
+  type WebsiteSite,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
   type WebsiteOverview,
@@ -30,6 +35,9 @@ export const websiteApi = {
     api.get<WebsiteReport>(
       `/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}/report`,
     ),
+  /** Set up a website (owners and admins). The GA4 id and the project are optional. */
+  create: (companyId: string, input: CreateWebsiteProperty) =>
+    api.post<WebsiteProperty>(`/companies/${encodeURIComponent(companyId)}/website/properties`, input),
   update: (companyId: string, propertyId: string, patch: UpdateWebsiteProperty) =>
     api.patch<WebsiteProperty>(
       `/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}`,
@@ -45,6 +53,19 @@ export const websiteApi = {
       `/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}/google/connect`,
       returnTo ? { returnTo } : {},
     ),
+};
+
+const sitesPath = (companyId: string) => `/companies/${encodeURIComponent(companyId)}/website/sites`;
+const sitePath = (companyId: string, siteId: string) => `${sitesPath(companyId)}/${encodeURIComponent(siteId)}`;
+
+/** Website module client (GRE-2105): connected sites and their pages. */
+export const websiteModuleApi = {
+  sites: (companyId: string) => api.get<WebsiteSite[]>(sitesPath(companyId)),
+  /** Connect a site (website:publish). The Netlify token goes to the company's secrets and is never returned. */
+  createSite: (companyId: string, input: CreateWebsiteSite) => api.post<WebsiteSite>(sitesPath(companyId), input),
+  updateSite: (companyId: string, siteId: string, patch: UpdateWebsiteSite) =>
+    api.patch<WebsiteSite>(sitePath(companyId, siteId), patch),
+  pages: (companyId: string, siteId: string) => api.get<WebsitePage[]>(`${sitePath(companyId, siteId)}/pages`),
 };
 
 /** True when the server refused because the Website switch is off (`403 not_entitled`). */

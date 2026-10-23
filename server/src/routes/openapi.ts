@@ -390,6 +390,13 @@ import {
   createOrganisationSchema,
   createPipelineFieldSchema,
   createWebsitePropertySchema,
+  createWebsiteSiteSchema,
+  updateWebsiteSiteSchema,
+  createWebsitePageSchema,
+  updateWebsitePageSchema,
+  saveWebsiteContentSchema,
+  createWebsiteEntrySchema,
+  updateWebsiteEntrySchema,
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
@@ -15704,7 +15711,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/website/properties",
   tags: ["website"],
-  summary: "Add a website property (owners and admins)",
+  summary: "Set up a website property (owners and admins); the GA4 property id and the project that builds it are optional",
   body: createWebsitePropertySchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
@@ -15713,7 +15720,7 @@ registerCurrentRoute({
   method: "patch",
   path: "/api/companies/{companyId}/website/properties/{propertyId}",
   tags: ["website"],
-  summary: "Edit a website property (owners and admins)",
+  summary: "Edit a website property (owners and admins); send ga4PropertyId null to unlink Google Analytics",
   body: updateWebsitePropertySchema,
   responses: websiteResponses,
 });
@@ -15767,6 +15774,178 @@ registry.registerPath({
   description: "Called by Google after consent. Only the board user who started the sign-in may finish it, into the company it was started for; redirects back to the app.",
   request: { query: z.object({ state: z.string(), code: z.string().optional(), error: z.string().optional() }) },
   responses: { 302: { description: "Redirect back to the website page with the outcome" }, 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+// ─── Website module (sites, pages, entries) ───────────────────────────────────
+// GRE-2105, ADR GRE-1914 section 6. Checks run in this order: company access,
+// then website:view, website:edit or website:publish (scope { siteIds }), then
+// the row by company. Another company's site, page or entry, or a site outside
+// a scoped grant, answers 404. Agents can hold view and edit, never publish.
+
+const siteParams = "/api/companies/{companyId}/website/sites/{siteId}";
+const websiteModuleResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const websiteSaveResponses = {
+  200: r.ok(),
+  400: r.badRequest,
+  401: r.unauthorized,
+  403: r.forbidden,
+  404: r.notFound,
+  409: r.conflict,
+  422: r.unprocessable,
+};
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website/sites",
+  tags: ["website"],
+  summary: "List the company's website sites the caller can view (website:view). The Netlify token is never returned; hasNetlifyToken says whether one is stored",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/website/sites",
+  tags: ["website"],
+  summary: "Connect a site: name, domain, repo, Netlify site id and an optional Netlify token stored in the company's secrets (website:publish, people only)",
+  body: createWebsiteSiteSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: siteParams,
+  tags: ["website"],
+  summary: "Get a website site (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: siteParams,
+  tags: ["website"],
+  summary: "Change a site's settings, rotate its Netlify token or archive it (website:publish, people only)",
+  body: updateWebsiteSiteSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages`,
+  tags: ["website"],
+  summary: "List a site's pages with their sitemap fields (parent, menu, menu order, status planned to published); includeArchived=true adds archived pages (website:view)",
+  query: z.object({ includeArchived: z.enum(["true", "false"]).optional() }),
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages`,
+  tags: ["website"],
+  summary: "Create a page (status planned or draft) with its first revision (website:edit)",
+  body: createWebsitePageSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}`,
+  tags: ["website"],
+  summary: "Get a page with its latest content and latestRevisionId (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/pages/{pageId}`,
+  tags: ["website"],
+  summary: "Change a page's path, title, SEO, status (planned, draft or review) or sitemap place: parent page, menu and menu order (website:edit)",
+  body: updateWebsitePageSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: `${siteParams}/pages/{pageId}/content`,
+  tags: ["website"],
+  summary: "Save a page revision from baseRevisionId: 200 saved, 409 conflict (a newer revision exists; nothing written) or 422 failed (website:edit)",
+  body: saveWebsiteContentSchema,
+  responses: websiteSaveResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/archive`,
+  tags: ["website"],
+  summary: "Archive a page (never deleted); its sub-pages move up to its parent (website:edit)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}/revisions`,
+  tags: ["website"],
+  summary: "List a page's revisions, newest first (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/entries`,
+  tags: ["website"],
+  summary: "List a site's collection entries, optionally for one collection (website:view)",
+  query: z.object({ collection: z.string().optional(), includeArchived: z.enum(["true", "false"]).optional() }),
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/entries`,
+  tags: ["website"],
+  summary: "Create a collection entry (product, category, team, redirect, form, media or a site's own collection) with its first revision (website:edit)",
+  body: createWebsiteEntrySchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/entries/{entryId}`,
+  tags: ["website"],
+  summary: "Get a collection entry with its latest content (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/entries/{entryId}`,
+  tags: ["website"],
+  summary: "Change an entry's key, org id, sort order or status (draft or review) (website:edit)",
+  body: updateWebsiteEntrySchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: `${siteParams}/entries/{entryId}/content`,
+  tags: ["website"],
+  summary: "Save an entry revision from baseRevisionId: 200 saved, 409 conflict or 422 failed (website:edit)",
+  body: saveWebsiteContentSchema,
+  responses: websiteSaveResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/entries/{entryId}/archive`,
+  tags: ["website"],
+  summary: "Archive a collection entry (never deleted) (website:edit)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/entries/{entryId}/revisions`,
+  tags: ["website"],
+  summary: "List an entry's revisions, newest first (website:view)",
+  responses: websiteModuleResponses,
 });
 
 // ─── Workflow templates ───────────────────────────────────────────────────────

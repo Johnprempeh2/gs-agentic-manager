@@ -281,23 +281,27 @@ export function websiteService(db: Db, options: WebsiteServiceOptions = {}) {
           });
         }
       }
-      if (client && accessToken) {
+      // Google Analytics is optional: with no GA4 id the pull skips it without an error.
+      const ga4PropertyId = property.ga4PropertyId;
+      if (client && accessToken && ga4PropertyId) {
         try {
-          ga4 = parseGa4Batch(
-            await client.batchRunReports(accessToken, property.ga4PropertyId, ga4BatchRequest(range)),
-            range,
-          );
+          ga4 = parseGa4Batch(await client.batchRunReports(accessToken, ga4PropertyId, ga4BatchRequest(range)), range);
         } catch (err) {
           errors.push({ source: "ga4", message: errorMessage(err) });
         }
+      }
+      if (client && accessToken) {
         try {
           searchConsole = await pullSearchConsole(client, accessToken, property, range, ga4);
         } catch (err) {
           errors.push({ source: "search_console", message: errorMessage(err) });
         }
       }
+      // Only the sources this website has configured count towards the status.
+      const reports = ga4PropertyId ? [ga4, searchConsole] : [searchConsole];
+      const pulled = reports.filter((report) => report !== null).length;
       const status: WebsitePullStatus =
-        ga4 && searchConsole ? "succeeded" : ga4 || searchConsole ? "partial" : "failed";
+        pulled === reports.length ? "succeeded" : pulled > 0 ? "partial" : "failed";
       const finishedAt = new Date();
       const [finished] = await db
         .update(websitePulls)
@@ -340,7 +344,13 @@ export function websiteService(db: Db, options: WebsiteServiceOptions = {}) {
       try {
         const [row] = await db
           .insert(websiteProperties)
-          .values({ companyId, name: input.name, siteUrl: input.siteUrl, ga4PropertyId: input.ga4PropertyId })
+          .values({
+            companyId,
+            name: input.name,
+            siteUrl: input.siteUrl,
+            ga4PropertyId: input.ga4PropertyId ?? null,
+            projectId: input.projectId ?? null,
+          })
           .returning();
         return toWebsiteProperty(row!);
       } catch (err) {

@@ -143,6 +143,26 @@ describeEmbeddedPostgres("website hub routes", () => {
     expect(unlinked.body.projectId).toBeNull();
   });
 
+  it("sets up a website with its project in one call, and refuses another company's project", async () => {
+    const company = await seedCompany();
+    const other = await seedCompany("Other");
+    const project = await seedProject(company.id);
+    const foreign = await seedProject(other.id, "Not ours");
+    const http = request(app());
+
+    const refused = await http
+      .post(`/api/companies/${company.id}/website/properties`)
+      .send({ name: "Greatstone website", siteUrl: "https://www.example.com/", projectId: foreign.id })
+      .expect(422);
+    expect(refused.body.details?.code ?? refused.body.code).toBe("website_project_not_found");
+
+    const created = await http
+      .post(`/api/companies/${company.id}/website/properties`)
+      .send({ name: "Greatstone website", siteUrl: "https://www.example.com/", projectId: project.id })
+      .expect(201);
+    expect(created.body).toMatchObject({ projectId: project.id, ga4PropertyId: null });
+  });
+
   it("returns an empty hub while no project is linked", async () => {
     const company = await seedCompany();
     const property = await seedProperty(company.id);

@@ -110,6 +110,17 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
     });
   }
 
+  /** Only a project in the same company can be linked. */
+  async function assertProjectInCompany(companyId: string, projectId: string | null | undefined) {
+    if (!projectId) return;
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.companyId, companyId)))
+      .limit(1);
+    if (!project) throw unprocessable("That project is not in this company", { code: "website_project_not_found" });
+  }
+
   router.get(WEBSITE_API_ROUTES.overview, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -123,6 +134,7 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
   router.post(WEBSITE_API_ROUTES.createProperty, validate(createWebsitePropertySchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyOwnerOrAdmin(req, companyId);
+    await assertProjectInCompany(companyId, req.body.projectId);
     const property = await service.createProperty(companyId, req.body);
     await logWebsite(req, companyId, "website.property_created", property.id, { siteUrl: property.siteUrl });
     res.status(201).json(property);
@@ -133,15 +145,7 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
     assertCompanyOwnerOrAdmin(req, companyId);
     const property = await propertyInCompany(req, res);
     if (!property) return;
-    if (req.body.projectId) {
-      // Only a project in the same company can be linked.
-      const [project] = await db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(and(eq(projects.id, req.body.projectId), eq(projects.companyId, companyId)))
-        .limit(1);
-      if (!project) throw unprocessable("That project is not in this company", { code: "website_project_not_found" });
-    }
+    await assertProjectInCompany(companyId, req.body.projectId);
     const updated = await service.updateProperty(property, req.body);
     await logWebsite(req, companyId, "website.property_updated", property.id, { fields: Object.keys(req.body) });
     res.json(updated);
