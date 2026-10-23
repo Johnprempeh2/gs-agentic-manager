@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { WEBSITE_PAGE_MENUS, type WebsitePage, type WebsitePageMenu } from "./types/website-module.js";
-import { websitePagePathSchema } from "./validators/website-module.js";
+import { isPrivatePagePath, websitePagePathSchema } from "./validators/website-module.js";
 
 // Sitemap section (GRE-2111). A sitemap option is a named draft of the site's
 // structure: a flat list of nodes (pages) with parents, menus and board
@@ -104,7 +104,7 @@ export const websiteSitemapJourneySchema = z
   })
   .strict();
 
-/** Shape plus the rules a tree must keep: unique ids and paths, parents that exist, no cycles. */
+/** Shape plus the rules a tree must keep: unique ids and paths, parents that exist, no cycles, no private page in a menu. */
 export const websiteSitemapTreeSchema = z
   .object({
     nodes: z.array(websiteSitemapNodeSchema).max(WEBSITE_SITEMAP_MAX_NODES),
@@ -125,6 +125,7 @@ export function sitemapTreeProblems(tree: WebsiteSitemapTree): string[] {
     byId.set(node.id, node);
     if (paths.has(node.path)) problems.push(`Two pages share the path ${node.path}.`);
     paths.add(node.path);
+    if (isPrivatePagePath(node.path) && node.menu !== "none") problems.push(`${node.title} is a private page (${node.path}) and cannot be a menu link.`);
   }
   for (const node of tree.nodes) {
     if (node.parentId && !byId.has(node.parentId)) problems.push(`${node.title} sits under a page that is not in this sitemap.`);
@@ -231,7 +232,7 @@ export function sitemapTreeFromImport(input: ImportWebsiteSitemapOption): Websit
         menuColumn: page.menuColumn ?? null,
         template: page.template ?? null,
         seoTitle: page.seoTitle ?? null,
-        noindex: page.noindex ?? false,
+        noindex: page.noindex ?? isPrivatePagePath(page.path),
         owner: page.owner ?? null,
         notes: page.notes ?? null,
       });
