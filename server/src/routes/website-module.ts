@@ -31,6 +31,7 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
 
 const NOT_FOUND = "Not found";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Website module routes (GRE-2105, ADR GRE-1914 section 6). Order of checks on
 // every route: company access, then the website permission, then a lookup by
@@ -67,7 +68,9 @@ export function websiteModuleRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     const siteId = req.params.siteId as string;
     assertCompanyAccess(req, companyId);
-    const permitted = await allowed(req, companyId, permission, siteId);
+    // A malformed id is simply not found (never a database error).
+    const idsValid = ["siteId", "pageId", "entryId", "optionId"].every((key) => req.params[key] === undefined || UUID_RE.test(req.params[key] as string));
+    const permitted = (await allowed(req, companyId, permission, siteId)) && idsValid;
     const site = permitted ? await service.getSite(companyId, siteId) : null;
     if (!site) {
       res.status(404).json({ error: NOT_FOUND });

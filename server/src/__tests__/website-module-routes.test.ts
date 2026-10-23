@@ -336,6 +336,9 @@ describeEmbeddedPostgres("website module routes", () => {
     const operator = await seedUser(a.company.id, "operator");
     const viewer = await seedUser(a.company.id, "viewer");
     await request(app(owner)).patch(`${base}/${a.site.id}`).send({ name: "Renamed" }).expect(200);
+    // A malformed id is not found, never a database error.
+    await request(app(owner)).get(`${base}/not-a-uuid/pages`).expect(404);
+    await request(app(owner)).get(`${base}/${a.site.id}/pages/123`).expect(404);
     await request(app(operator)).patch(`${base}/${a.site.id}`).send({ name: "Nope" }).expect(403);
     await request(app(operator)).post(`${base}/${a.site.id}/pages`).send({ slug: "/about", title: "About", status: "planned" }).expect(201);
     await request(app(viewer)).get(`${base}/${a.site.id}/pages`).expect(200);
