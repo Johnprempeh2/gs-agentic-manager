@@ -2018,28 +2018,179 @@ describe("review round circuit breaker", () => {
     });
   });
 
-  it("escalates the pending stage to the responsible human at the round cap", () => {
+  // GRE-2049: on GRE-2044 the third agent verdict parked the review on John,
+  // who had nothing to decide, and the author could not pick up the fix.
+  it.each([1, 2])(
+    "returns an agent's changes-requested to the author on a repeat round (count %i)",
+    (changesRequestedCount) => {
+      const result = applyIssueExecutionPolicyTransition({
+        issue: reviewPendingIssue({}, { changesRequestedCount }),
+        policy,
+        requestedStatus: "in_progress",
+        requestedAssigneePatch: {},
+        actor: { agentId: qaAgentId },
+        commentBody: `Round ${changesRequestedCount + 1} feedback`,
+      });
+
+      expect(result.decision).toMatchObject({ outcome: "changes_requested" });
+      expect(result.patch.status).toBe("in_progress");
+      expect(result.patch.assigneeAgentId).toBe(coderAgentId);
+      expect(result.patch.assigneeUserId).toBeNull();
+      expect(result.patch.executionState).toMatchObject({
+        status: "changes_requested",
+        currentParticipant: { type: "agent", agentId: qaAgentId },
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+        changesRequestedCount: changesRequestedCount + 1,
+      });
+    },
+  );
+
+  function changesRequestedIssue(changesRequestedCount: number, overrides: Record<string, unknown> = {}) {
+    return {
+      status: "in_progress",
+      assigneeAgentId: coderAgentId,
+      assigneeUserId: null,
+      responsibleUserId: boardUserId,
+      executionPolicy: policy,
+      executionState: {
+        status: "changes_requested",
+        currentStageId: reviewStageId,
+        currentStageIndex: 0,
+        currentStageType: "review",
+        currentParticipant: { type: "agent", agentId: qaAgentId },
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+        completedStageIds: [],
+        lastDecisionId: null,
+        lastDecisionOutcome: "changes_requested",
+        changesRequestedCount,
+      },
+      ...overrides,
+    };
+  }
+
+  it.each(["in_review", "done"])(
+    "sends the author's resubmission (%s) to the responsible human once the rounds are used up",
+    (requestedStatus) => {
+      const result = applyIssueExecutionPolicyTransition({
+        issue: changesRequestedIssue(3),
+        policy,
+        requestedStatus,
+        requestedAssigneePatch: {},
+        actor: { agentId: coderAgentId },
+        commentBody: "Fixed round three",
+      });
+
+      expect(result.decision).toBeUndefined();
+      expect(result.patch.status).toBe("in_review");
+      expect(result.patch.assigneeAgentId).toBeNull();
+      expect(result.patch.assigneeUserId).toBe(boardUserId);
+      expect(result.patch.executionState).toMatchObject({
+        status: "pending",
+        currentStageId: reviewStageId,
+        currentParticipant: { type: "user", userId: boardUserId },
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+        changesRequestedCount: 3,
+      });
+    },
+  );
+
+  it("sends the resubmission to the bound escalation user from the caller", () => {
     const result = applyIssueExecutionPolicyTransition({
-      issue: reviewPendingIssue({}, { changesRequestedCount: 2 }),
+      issue: changesRequestedIssue(3),
       policy,
-      requestedStatus: "in_progress",
+      requestedStatus: "in_review",
       requestedAssigneePatch: {},
-      actor: { agentId: qaAgentId },
-      commentBody: "Round three feedback — still not converging",
+      actor: { agentId: coderAgentId },
+      commentBody: "Fixed round three",
+      reviewEscalationUserId: "owner-user",
     });
 
-    // The decision is still recorded, but the stage stays pending with the
-    // responsible human as participant instead of bouncing to the executor.
-    expect(result.decision).toMatchObject({ outcome: "changes_requested" });
-    expect(result.patch.status).toBe("in_review");
-    expect(result.patch.assigneeAgentId).toBeNull();
-    expect(result.patch.assigneeUserId).toBe(boardUserId);
+    expect(result.patch.assigneeUserId).toBe("owner-user");
     expect(result.patch.executionState).toMatchObject({
-      status: "pending",
-      currentStageId: reviewStageId,
-      currentParticipant: { type: "user", userId: boardUserId },
-      changesRequestedCount: 3,
+      currentParticipant: { type: "user", userId: "owner-user" },
     });
+  });
+
+  it("keeps sending resubmissions to the agent reviewer when the human is the author", () => {
+    const result = applyIssueExecutionPolicyTransition({
+      issue: {
+        ...changesRequestedIssue(3, { assigneeAgentId: null, assigneeUserId: boardUserId }),
+        executionState: {
+          ...changesRequestedIssue(3).executionState,
+          returnAssignee: { type: "user", userId: boardUserId },
+        },
+      },
+      policy,
+      requestedStatus: "in_review",
+      requestedAssigneePatch: {},
+      actor: { userId: boardUserId },
+      commentBody: "Fixed it myself",
+    });
+
+    expect(result.patch.assigneeAgentId).toBe(qaAgentId);
+    expect(result.patch.executionState).toMatchObject({
+      currentParticipant: { type: "agent", agentId: qaAgentId },
+    });
+  });
+
+  it("holds the escalated review for the human after the full agent loop", () => {
+    // Three agent rounds, each returned to the author, then the resubmission.
+    let issue: Record<string, unknown> = reviewPendingIssue();
+    for (let round = 1; round <= 3; round += 1) {
+      const verdict = applyIssueExecutionPolicyTransition({
+        issue: issue as never,
+        policy,
+        requestedStatus: "in_progress",
+        requestedAssigneePatch: {},
+        actor: { agentId: qaAgentId },
+        commentBody: `Round ${round} feedback`,
+      });
+      expect(verdict.patch.assigneeAgentId).toBe(coderAgentId);
+      issue = { ...issue, ...verdict.patch };
+      if (round === 3) break;
+      const resubmit = applyIssueExecutionPolicyTransition({
+        issue: issue as never,
+        policy,
+        requestedStatus: "in_review",
+        requestedAssigneePatch: {},
+        actor: { agentId: coderAgentId },
+        commentBody: `Fixed round ${round}`,
+      });
+      expect(resubmit.patch.assigneeAgentId).toBe(qaAgentId);
+      issue = { ...issue, ...resubmit.patch };
+    }
+
+    const final = applyIssueExecutionPolicyTransition({
+      issue: issue as never,
+      policy,
+      requestedStatus: "in_review",
+      requestedAssigneePatch: {},
+      actor: { agentId: coderAgentId },
+      commentBody: "Fixed round three",
+    });
+    expect(final.patch.assigneeUserId).toBe(boardUserId);
+    issue = { ...issue, ...final.patch };
+
+    // The agent reviewer can no longer decide; the human can.
+    expect(() =>
+      applyIssueExecutionPolicyTransition({
+        issue: issue as never,
+        policy,
+        requestedStatus: "in_progress",
+        requestedAssigneePatch: {},
+        actor: { agentId: qaAgentId },
+        commentBody: "Round four feedback",
+      }),
+    ).toThrow("Only the escalated reviewer can advance the current execution stage");
+    const human = applyIssueExecutionPolicyTransition({
+      issue: issue as never,
+      policy,
+      requestedStatus: "done",
+      requestedAssigneePatch: {},
+      actor: { userId: boardUserId },
+      commentBody: "Approved",
+    });
+    expect(human.decision).toMatchObject({ outcome: "approved" });
   });
 
   it("keeps the escalated hold sticky across unrelated transitions", () => {
@@ -2169,20 +2320,21 @@ describe("review round circuit breaker", () => {
     });
   });
 
-  it("keeps handing back to the executor when no responsible human exists", () => {
+  it("keeps sending resubmissions to the agent reviewer when no responsible human exists", () => {
     const result = applyIssueExecutionPolicyTransition({
-      issue: reviewPendingIssue({ responsibleUserId: null }, { changesRequestedCount: 9 }),
+      issue: changesRequestedIssue(10, { responsibleUserId: null }),
       policy,
-      requestedStatus: "in_progress",
+      requestedStatus: "in_review",
       requestedAssigneePatch: {},
-      actor: { agentId: qaAgentId },
-      commentBody: "Round ten feedback",
+      actor: { agentId: coderAgentId },
+      commentBody: "Fixed round ten",
     });
 
-    expect(result.patch.status).toBe("in_progress");
-    expect(result.patch.assigneeAgentId).toBe(coderAgentId);
+    expect(result.patch.status).toBe("in_review");
+    expect(result.patch.assigneeAgentId).toBe(qaAgentId);
     expect(result.patch.executionState).toMatchObject({
-      status: "changes_requested",
+      status: "pending",
+      currentParticipant: { type: "agent", agentId: qaAgentId },
       changesRequestedCount: 10,
     });
   });
@@ -2220,8 +2372,30 @@ describe("review round circuit breaker", () => {
       commentBody: "First and only agent round",
     });
 
-    expect(result.patch.assigneeUserId).toBe(boardUserId);
+    expect(result.patch.assigneeAgentId).toBe(coderAgentId);
     expect(result.patch.executionState).toMatchObject({
+      status: "changes_requested",
+      changesRequestedCount: 1,
+    });
+
+    const resubmit = applyIssueExecutionPolicyTransition({
+      issue: {
+        status: "in_progress",
+        assigneeAgentId: coderAgentId,
+        assigneeUserId: null,
+        responsibleUserId: boardUserId,
+        executionPolicy: strictPolicy,
+        executionState: result.patch.executionState as Record<string, unknown>,
+      },
+      policy: strictPolicy,
+      requestedStatus: "in_review",
+      requestedAssigneePatch: {},
+      actor: { agentId: coderAgentId },
+      commentBody: "Fixed it",
+    });
+
+    expect(resubmit.patch.assigneeUserId).toBe(boardUserId);
+    expect(resubmit.patch.executionState).toMatchObject({
       status: "pending",
       currentParticipant: { type: "user", userId: boardUserId },
       changesRequestedCount: 1,

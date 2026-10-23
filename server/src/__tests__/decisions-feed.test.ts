@@ -1249,16 +1249,27 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       // Only John is an active human owner; the second user is a plain member.
       await db.update(companyMemberships).set({ membershipRole: "member" })
         .where(eq(companyMemberships.principalId, OTHER_USER_ID));
-      const runId = randomUUID();
-      await db.insert(heartbeatRuns).values({
-        id: runId, companyId: seeded.companyId, agentId: seeded.keystoneId, invocationSource: "assignment",
-        status: "running", contextSnapshot: { issueId: seeded.issueId },
-      });
-      const keystoneApp = app(seeded.companyId, { type: "agent", agentId: seeded.keystoneId, companyId: seeded.companyId, source: "agent_key", runId });
+      function agentApp(agentId: string) {
+        const runId = randomUUID();
+        return db.insert(heartbeatRuns).values({
+          id: runId, companyId: seeded.companyId, agentId, invocationSource: "assignment",
+          status: "running", contextSnapshot: { issueId: seeded.issueId },
+        }).then(() => app(seeded.companyId, { type: "agent", agentId, companyId: seeded.companyId, source: "agent_key", runId }));
+      }
 
-      const third = await request(keystoneApp).patch(`/api/issues/${seeded.issueId}`)
+      const third = await request(await agentApp(seeded.keystoneId)).patch(`/api/issues/${seeded.issueId}`)
         .send({ status: "in_progress", comment: "Not ready: the HTML part is still raw." });
       expect(third.status, JSON.stringify(third.body)).toBe(200);
+
+      // The last agent verdict still goes back to Mason (GRE-2049).
+      const [returned] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+      expect(returned?.status).toBe("in_progress");
+      expect(returned?.assigneeAgentId).toBe(seeded.masonId);
+
+      // Mason's fix then goes to John, not to another agent round.
+      const resubmit = await request(await agentApp(seeded.masonId)).patch(`/api/issues/${seeded.issueId}`)
+        .send({ status: "in_review", comment: "Rendered the HTML part as a page." });
+      expect(resubmit.status, JSON.stringify(resubmit.body)).toBe(200);
 
       const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
       const state = task?.executionState as { status?: string; currentParticipant?: { type: string; userId: string | null } } | null;

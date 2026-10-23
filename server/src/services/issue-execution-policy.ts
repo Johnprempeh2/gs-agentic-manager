@@ -86,8 +86,9 @@ type TransitionResult = {
 };
 
 /**
- * Consecutive agent-initiated changes-requested rounds tolerated on one stage
- * before the pending review escalates to the responsible human. Policies can
+ * Consecutive agent-initiated changes-requested rounds tolerated on one stage.
+ * Every verdict returns to the author; once the rounds are used up, the
+ * author's next resubmission goes to the responsible human. Policies can
  * override via `maxReviewRounds`; human decisions always reset the counter.
  */
 export const DEFAULT_MAX_REVIEW_ROUNDS = 3;
@@ -501,8 +502,8 @@ function resolveMaxReviewRounds(policy: IssueExecutionPolicy | null): number {
 
 /**
  * The human a review stage escalates to when agents exhaust their
- * changes-requested rounds. Without one the loop keeps handing back to the
- * return assignee (pre-existing behavior) rather than stalling the stage.
+ * changes-requested rounds. Without one the resubmission keeps going to the
+ * stage's reviewer rather than stalling the stage.
  */
 export function reviewEscalationUserId(issue: Pick<IssueLike, "responsibleUserId" | "createdByUserId">): string | null {
   const responsible = issue.responsibleUserId?.trim();
@@ -977,36 +978,12 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
           body: input.commentBody.trim(),
         };
         // Human decisions reset the round counter: the cap exists to stop
-        // unattended agent↔agent ping-pong, not to limit human review.
+        // unattended agent↔agent ping-pong, not to limit human review. The
+        // verdict always goes back to the author, even at the cap, so the
+        // fix is never parked on a human with nothing to decide (GRE-2049);
+        // the cap is enforced on the author's next resubmission instead.
         const actorIsHuman = actor?.type === "user";
         const nextRounds = actorIsHuman ? 0 : (existingState.changesRequestedCount ?? 0) + 1;
-        if (!actorIsHuman && nextRounds >= resolveMaxReviewRounds(input.policy)) {
-          const escalationUserId = input.reviewEscalationUserId !== undefined
-            ? input.reviewEscalationUserId
-            : reviewEscalationUserId(input.issue);
-          if (escalationUserId) {
-            // Rounds exhausted: keep the stage pending but hand it to the
-            // responsible human instead of bouncing back to the implementer.
-            // The recorded changes-requested decision carries the reviewer's
-            // reasoning; the human approves, requests changes (resetting the
-            // counter), or re-scopes.
-            buildPendingStagePatch({
-              patch,
-              previous: existingState,
-              policy: input.policy,
-              stage: activeStage,
-              participant: { type: "user", agentId: null, userId: escalationUserId },
-              returnAssignee: existingState.returnAssignee,
-              reviewRequest: effectiveReviewRequest,
-              changesRequestedCount: nextRounds,
-            });
-            return {
-              patch,
-              decision,
-              workflowControlledAssignment: true,
-            };
-          }
-        }
         patch.status = "in_progress";
         Object.assign(patch, patchForPrincipal(existingState.returnAssignee));
         patch.executionState = buildChangesRequestedState(existingState, activeStage, nextRounds);
@@ -1101,6 +1078,40 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
   if (!pendingStage) return { patch };
 
   const returnAssignee = existingState?.returnAssignee ?? currentAssignee;
+
+  // Agents used up their changes-requested rounds on this stage: the fix
+  // goes to the responsible human for the final approve or send-back rather
+  // than another agent round (GRE-2049). Without a human, or when the human
+  // is the author, the loop keeps going to the stage's reviewer.
+  if (
+    existingState?.status === CHANGES_REQUESTED_STATUS &&
+    currentStage &&
+    pendingStage.id === currentStage.id &&
+    (existingState.changesRequestedCount ?? 0) >= resolveMaxReviewRounds(input.policy)
+  ) {
+    const escalationUserId = input.reviewEscalationUserId !== undefined
+      ? input.reviewEscalationUserId
+      : reviewEscalationUserId(input.issue);
+    const escalationParticipant: IssueExecutionStagePrincipal | null = escalationUserId
+      ? { type: "user", agentId: null, userId: escalationUserId }
+      : null;
+    if (escalationParticipant && !principalsEqual(escalationParticipant, returnAssignee)) {
+      buildPendingStagePatch({
+        patch,
+        previous: existingState,
+        policy: input.policy,
+        stage: pendingStage,
+        participant: escalationParticipant,
+        returnAssignee,
+        reviewRequest: input.reviewRequest ?? null,
+      });
+      return {
+        patch,
+        workflowControlledAssignment: true,
+      };
+    }
+  }
+
   const skippedStageIds = [...(existingState?.completedStageIds ?? [])];
   let participant = selectStageParticipant(pendingStage, {
     preferred:
