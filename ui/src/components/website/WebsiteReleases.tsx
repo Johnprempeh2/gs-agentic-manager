@@ -12,7 +12,7 @@ import { accessApi } from "../../api/access";
 import { websiteErrorCode, websiteModuleApi } from "../../api/website";
 import { buildCompanyUserLabelMap } from "../../lib/company-members";
 import { queryKeys } from "../../lib/queryKeys";
-import { cn } from "../../lib/utils";
+import { cn, formatClockTime, formatDate, formatShortDate } from "../../lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -80,14 +80,12 @@ export function releaseTime(at: string, now = Date.now()) {
   const minutes = Math.floor((now - new Date(at).getTime()) / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
-  const date = new Date(at);
-  return `${date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}, ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  return `${formatShortDate(at)}, ${formatClockTime(at)}`;
 }
 
 /** "23 Oct 2026, 14:05" (copy `{date}`). */
 export function releaseDate(at: string) {
-  const date = new Date(at);
-  return `${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}, ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  return `${formatDate(at)}, ${formatClockTime(at)}`;
 }
 
 /** Rollback confirm body (copy 11): the cost line only when the rollback rebuilds. */
