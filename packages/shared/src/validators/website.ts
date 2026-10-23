@@ -30,7 +30,10 @@ export const createWebsitePropertySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     siteUrl: siteUrlSchema,
-    ga4PropertyId: ga4PropertyIdSchema,
+    /** Optional: a website can be set up before Google Analytics exists. */
+    ga4PropertyId: ga4PropertyIdSchema.optional(),
+    /** The project that builds this website. */
+    projectId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -40,7 +43,8 @@ export const updateWebsitePropertySchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     siteUrl: siteUrlSchema.optional(),
-    ga4PropertyId: ga4PropertyIdSchema.optional(),
+    /** The GA4 property id, or null to unlink Google Analytics. */
+    ga4PropertyId: ga4PropertyIdSchema.nullable().optional(),
     /** The project that builds this website, or null to unlink it. */
     projectId: z.string().uuid().nullable().optional(),
   })

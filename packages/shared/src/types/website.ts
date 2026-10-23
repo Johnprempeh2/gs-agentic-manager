@@ -75,8 +75,8 @@ export interface WebsiteProperty {
   name: string;
   /** Search Console property: `https://example.com/` or `sc-domain:example.com`. */
   siteUrl: string;
-  /** GA4 property id, digits only (for example `"123456789"`). */
-  ga4PropertyId: string;
+  /** GA4 property id, digits only (for example `"123456789"`); null until Google Analytics is linked. */
+  ga4PropertyId: string | null;
   /** The project that builds this website; null until it is linked. */
   projectId: string | null;
   connectionStatus: WebsiteConnectionStatus;

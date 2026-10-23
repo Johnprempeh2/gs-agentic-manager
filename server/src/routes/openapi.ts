@@ -15704,7 +15704,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/website/properties",
   tags: ["website"],
-  summary: "Add a website property (owners and admins)",
+  summary: "Set up a website property (owners and admins); the GA4 property id and the project that builds it are optional",
   body: createWebsitePropertySchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
@@ -15713,7 +15713,7 @@ registerCurrentRoute({
   method: "patch",
   path: "/api/companies/{companyId}/website/properties/{propertyId}",
   tags: ["website"],
-  summary: "Edit a website property (owners and admins)",
+  summary: "Edit a website property (owners and admins); send ga4PropertyId null to unlink Google Analytics",
   body: updateWebsitePropertySchema,
   responses: websiteResponses,
 });
