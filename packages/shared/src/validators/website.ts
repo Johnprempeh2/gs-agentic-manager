@@ -41,6 +41,8 @@ export const updateWebsitePropertySchema = z
     name: z.string().trim().min(1).max(120).optional(),
     siteUrl: siteUrlSchema.optional(),
     ga4PropertyId: ga4PropertyIdSchema.optional(),
+    /** The project that builds this website, or null to unlink it. */
+    projectId: z.string().uuid().nullable().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });

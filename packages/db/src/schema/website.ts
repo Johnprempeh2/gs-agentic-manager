@@ -1,6 +1,7 @@
 import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { companySecrets } from "./company_secrets.js";
+import { projects } from "./projects.js";
 
 /**
  * Website view (GRE-1087): one row per website a company watches. The Google
@@ -14,6 +15,8 @@ export const websiteProperties = pgTable(
     name: text("name").notNull(),
     siteUrl: text("site_url").notNull(),
     ga4PropertyId: text("ga4_property_id").notNull(),
+    /** The project that builds this website; the Website page shows its progress (GRE-1831 hub). */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     connectionStatus: text("connection_status").notNull().default("not_connected"),
     googleTokenSecretId: uuid("google_token_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
     connectedAt: timestamp("connected_at", { withTimezone: true }),

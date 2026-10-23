@@ -47,6 +47,14 @@ function stop(event: SyntheticEvent) {
  */
 export function ProjectTree() {
   const { projectId: projectRef = "" } = useParams<{ projectId: string }>();
+  return <ProjectTreeView projectRef={projectRef} />;
+}
+
+/**
+ * The project tree itself. The Website page embeds it for the website
+ * project (`embedded`), where the page keeps its own breadcrumbs.
+ */
+export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: string; embedded?: boolean }) {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
@@ -87,12 +95,13 @@ export function ProjectTree() {
   const ref = project ? projectRouteRef(project) : projectRef;
   const listHref = `/projects/${ref}/issues`;
   useEffect(() => {
+    if (embedded) return;
     setBreadcrumbs([
       { label: "Projects", href: "/projects" },
       { label: project?.name ?? "Project", href: listHref },
       { label: "Tree" },
     ]);
-  }, [setBreadcrumbs, project?.name, listHref]);
+  }, [embedded, setBreadcrumbs, project?.name, listHref]);
 
   const tidy = useMutation({
     mutationFn: () => projectsApi.tidy(project!.id),

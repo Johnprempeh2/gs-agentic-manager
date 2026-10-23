@@ -106,6 +106,7 @@ export function toWebsiteProperty(row: PropertyRow): WebsiteProperty {
     name: row.name,
     siteUrl: row.siteUrl,
     ga4PropertyId: row.ga4PropertyId,
+    projectId: row.projectId ?? null,
     connectionStatus: row.connectionStatus as WebsiteConnectionStatus,
     connectedAt: row.connectedAt?.toISOString() ?? null,
     lastPullAt: row.lastPullAt?.toISOString() ?? null,

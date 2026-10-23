@@ -63,7 +63,6 @@ export function TaskTreeHeader({
   actions,
   className,
 }: TaskTreeHeaderProps) {
-  const total = counts.done + counts.active + counts.blocked + counts.waiting;
   return (
     <section
       data-slot="task-tree-header"
@@ -82,39 +81,7 @@ export function TaskTreeHeader({
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
 
-      <div className="space-y-2">
-        <p className="text-sm text-foreground">
-          <span className="font-semibold tabular-nums">{counts.done}</span>
-          <span className="text-muted-foreground"> of </span>
-          <span className="font-semibold tabular-nums">{total}</span>
-          <span className="text-muted-foreground"> done</span>
-        </p>
-        <div
-          className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          aria-label="Sub-tasks done"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={counts.done}
-          aria-valuetext={`${counts.done} of ${total} done`}
-        >
-          {SEGMENTS.filter((segment) => segment.key !== "waiting" && counts[segment.key] > 0).map((segment) => (
-            <span
-              key={segment.key}
-              className={cn("h-full first:rounded-l-full", segment.fill)}
-              style={{ width: `${(counts[segment.key] / Math.max(total, 1)) * 100}%` }}
-            />
-          ))}
-        </div>
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {SEGMENTS.map((segment) => (
-            <li key={segment.key} className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className={cn("size-2 rounded-full", segment.fill)} />
-              <span className="tabular-nums text-foreground">{counts[segment.key]}</span> {segment.label}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <TaskTreeProgress counts={counts} />
 
       <div className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">What is holding this up</h2>
@@ -167,5 +134,45 @@ export function TaskTreeHeader({
 
       {truncatedNote ? <p className="text-xs text-muted-foreground">{truncatedNote}</p> : null}
     </section>
+  );
+}
+
+/** "18 of 24 done", the bar and the counts by state. Also on the Website page. */
+export function TaskTreeProgress({ counts, className }: { counts: TaskTreeStatusCounts; className?: string }) {
+  const total = counts.done + counts.active + counts.blocked + counts.waiting;
+  return (
+    <div className={cn("space-y-2", className)}>
+      <p className="text-sm text-foreground">
+        <span className="font-semibold tabular-nums">{counts.done}</span>
+        <span className="text-muted-foreground"> of </span>
+        <span className="font-semibold tabular-nums">{total}</span>
+        <span className="text-muted-foreground"> done</span>
+      </p>
+      <div
+        className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label="Sub-tasks done"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={counts.done}
+        aria-valuetext={`${counts.done} of ${total} done`}
+      >
+        {SEGMENTS.filter((segment) => segment.key !== "waiting" && counts[segment.key] > 0).map((segment) => (
+          <span
+            key={segment.key}
+            className={cn("h-full first:rounded-l-full", segment.fill)}
+            style={{ width: `${(counts[segment.key] / Math.max(total, 1)) * 100}%` }}
+          />
+        ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {SEGMENTS.map((segment) => (
+          <li key={segment.key} className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className={cn("size-2 rounded-full", segment.fill)} />
+            <span className="tabular-nums text-foreground">{counts[segment.key]}</span> {segment.label}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

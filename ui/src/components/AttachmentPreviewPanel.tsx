@@ -264,6 +264,38 @@ function HtmlPreviewFrame({
   title: string;
   viewport: HtmlViewport;
 }) {
+  return (
+    <ScaledFrame
+      src={src}
+      title={title}
+      width={viewport === "fit" ? null : VIEWPORT_WIDTHS[viewport]}
+      sandbox={HTML_PREVIEW_SANDBOX}
+      testId="attachment-preview-frame"
+      viewport={viewport}
+    />
+  );
+}
+
+/**
+ * A frame that lays its page out at `width` and scales it down to fit the
+ * box it sits in (absolute, fills its positioned parent). Null fills the box.
+ * Also the Website page's preview.
+ */
+export function ScaledFrame({
+  src,
+  title,
+  width,
+  sandbox,
+  testId,
+  viewport,
+}: {
+  src: string;
+  title: string;
+  width: number | null;
+  sandbox?: string;
+  testId?: string;
+  viewport?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
 
@@ -283,7 +315,7 @@ function HtmlPreviewFrame({
     return () => observer.disconnect();
   }, []);
 
-  const frameWidth = viewport === "fit" ? null : VIEWPORT_WIDTHS[viewport];
+  const frameWidth = width;
   const scale = frameWidth && box.width > 0 ? Math.min(1, box.width / frameWidth) : 1;
   const frameStyle: React.CSSProperties | undefined = frameWidth
     ? {
@@ -300,9 +332,9 @@ function HtmlPreviewFrame({
       <iframe
         title={title}
         src={src}
-        sandbox={HTML_PREVIEW_SANDBOX}
+        sandbox={sandbox}
         referrerPolicy="no-referrer"
-        data-testid="attachment-preview-frame"
+        data-testid={testId}
         data-viewport={viewport}
         style={frameStyle}
         className={cn(

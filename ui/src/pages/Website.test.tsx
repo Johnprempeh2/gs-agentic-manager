@@ -15,7 +15,11 @@ const websiteApiMock = vi.hoisted(() => ({
   overview: vi.fn(),
   report: vi.fn(),
   connectGoogle: vi.fn(),
+  update: vi.fn(),
+  hub: vi.fn(),
 }));
+const projectsMock = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), getTree: vi.fn() }));
+vi.mock("../api/projects", () => ({ projectsApi: projectsMock }));
 const settingsMock = vi.hoisted(() => ({ getExperimental: vi.fn() }));
 
 vi.mock("../api/website", async () => {
@@ -27,8 +31,9 @@ vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompa
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { useSearchParams: actual.useSearchParams };
+  return { useSearchParams: actual.useSearchParams, Link: actual.Link };
 });
+vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 
 function property(overrides: Partial<WebsiteProperty> = {}): WebsiteProperty {
   return {
@@ -37,6 +42,7 @@ function property(overrides: Partial<WebsiteProperty> = {}): WebsiteProperty {
     name: "Greatstone",
     siteUrl: "https://greatstone.example/",
     ga4PropertyId: "123456789",
+    projectId: null,
     connectionStatus: "connected",
     connectedAt: "2026-10-08T09:00:00.000Z",
     lastPullAt: "2026-10-09T06:00:00.000Z",
@@ -105,7 +111,7 @@ function LocationProbe() {
   return null;
 }
 
-async function render(path = "/website") {
+async function render(path = "/website?tab=traffic") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root.render(
@@ -133,6 +139,7 @@ beforeEach(() => {
   settingsMock.getExperimental.mockResolvedValue({ enableWebsiteView: true });
   websiteApiMock.overview.mockResolvedValue(overview());
   websiteApiMock.report.mockResolvedValue(report());
+  projectsMock.list.mockResolvedValue([{ id: "proj-1", name: "Greatstone Website", urlKey: "greatstone-website", archivedAt: null }]);
 });
 
 afterEach(() => {
@@ -238,6 +245,33 @@ describe("Website page", () => {
     await render("/website?websiteGoogle=connected");
     await waitForText("Google is connected.");
     expect(location).toBe("/website");
+  });
+});
+
+describe("Website hub tabs", () => {
+  it("opens on Overview with the five tabs and asks once for the website project", async () => {
+    await render("/website");
+    await waitForText("Link the website project");
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
+    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Preview", "Traffic"]);
+    expect(text()).toContain("Live site");
+    expect(text()).toContain("greatstone.example");
+    expect(websiteApiMock.report).not.toHaveBeenCalled();
+  });
+
+  it("links the chosen project through the property settings", async () => {
+    websiteApiMock.update.mockResolvedValue(property({ projectId: "proj-1" }));
+    await render("/website");
+    await vi.waitFor(() => expect(container.querySelector("option[value='proj-1']")).not.toBeNull());
+    const select = container.querySelector("select") as HTMLSelectElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+      setter.call(select, "proj-1");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const save = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Save")!;
+    await act(async () => { save.click(); });
+    await vi.waitFor(() => expect(websiteApiMock.update).toHaveBeenCalledWith("co-1", "prop-1", { projectId: "proj-1" }));
   });
 });
 

@@ -33,8 +33,22 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { FeatureTour } from "../components/FeatureTour";
 import { WEBSITE_TOUR } from "../lib/feature-tours";
 import { Button } from "@/components/ui/button";
-import { useSearchParams } from "@/lib/router";
-import { cn, formatCalendarDay, formatDateTime, relativeTime } from "@/lib/utils";
+import { Tabs } from "@/components/ui/tabs";
+import { Link, useSearchParams } from "@/lib/router";
+import { cn, formatCalendarDay, formatDateTime, projectRouteRef, relativeTime } from "@/lib/utils";
+import { projectsApi } from "../api/projects";
+import { PageTabBar } from "../components/PageTabBar";
+import {
+  WEBSITE_TABS,
+  WebsiteOverviewTab,
+  WebsitePreviewTab,
+  WebsiteProgressTab,
+  WebsiteProjectLink,
+  WebsiteSitemapTab,
+  liveSiteUrl,
+  websiteTabFrom,
+  type WebsiteTab,
+} from "../components/website/WebsiteHub";
 
 /* ---- Formatting ---- */
 
@@ -475,14 +489,11 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
     queryFn: () => websiteApi.report(companyId, property.id),
   });
 
+  // The page title and site sit above the tabs; Traffic keeps its pull status and Google connection.
   const header = (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 space-y-1" data-tour="website-header">
-        <h1 className="text-xl font-bold">Website</h1>
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{property.name}</span>{" "}
-          <span className="break-all font-mono text-xs">{property.siteUrl}</span>
-        </p>
+        <p className="text-sm text-muted-foreground">Visitors and search results from Google.</p>
         {reportQuery.data ? <PullStatusBar report={reportQuery.data} /> : null}
       </div>
       <div className="flex flex-wrap items-start gap-2">
@@ -544,6 +555,77 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
           message="Sign in with Google once. GSAM then pulls Google Analytics and Search Console every day, with read-only access."
         />
       )}
+    </div>
+  );
+}
+
+/** One website: its title, its project, and the hub tabs (23 Oct 2026). Traffic is the Google report. */
+function PropertyHub({ companyId, property, signInAvailable, notice }: {
+  companyId: string;
+  property: WebsiteProperty;
+  signInAvailable: boolean;
+  notice: { result: string; reason: string | null } | null;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = notice ? "traffic" : websiteTabFrom(searchParams.get("tab"));
+  const [editingProject, setEditingProject] = useState(false);
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects.list(companyId),
+    queryFn: () => projectsApi.list(companyId),
+    enabled: !!property.projectId,
+  });
+  const project = projectsQuery.data?.find((entry) => entry.id === property.projectId) ?? null;
+  const siteUrl = liveSiteUrl(property.siteUrl);
+  const openTab = (next: WebsiteTab) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "overview") params.delete("tab");
+    else params.set("tab", next);
+    setSearchParams(params, { replace: true });
+  };
+
+  return (
+    <div className="w-full max-w-7xl space-y-6">
+      <header className="space-y-2">
+        <h1 className="text-xl font-bold">Website</h1>
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{property.name}</span>{" "}
+          {siteUrl ? (
+            <a href={siteUrl} target="_blank" rel="noreferrer" className="break-all rounded-sm font-mono text-xs hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {property.siteUrl}
+            </a>
+          ) : (
+            <span className="break-all font-mono text-xs">{property.siteUrl}</span>
+          )}
+        </p>
+        {editingProject ? (
+          <WebsiteProjectLink companyId={companyId} property={property} onDone={() => setEditingProject(false)} />
+        ) : property.projectId ? (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" data-testid="website-linked-project">
+            <span>
+              Built in{" "}
+              {project ? (
+                <Link to={`/projects/${projectRouteRef(project)}/issues`} className="font-medium text-foreground hover:underline">{project.name}</Link>
+              ) : (
+                <span className="text-foreground">the linked project</span>
+              )}
+            </span>
+            <Button type="button" variant="ghost" size="xs" onClick={() => setEditingProject(true)}>Change</Button>
+          </p>
+        ) : null}
+      </header>
+      <div>
+      {/* The tab bar sits 16px above what it switches (DESIGN.md page rhythm). */}
+      <Tabs value={tab} onValueChange={(value) => openTab(value as WebsiteTab)} className="mb-4">
+        <PageTabBar items={WEBSITE_TABS} value={tab} onValueChange={(value) => openTab(value as WebsiteTab)} align="start" ariaLabel="Website section" />
+      </Tabs>
+      {tab === "overview" ? <WebsiteOverviewTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
+      {tab === "progress" ? <WebsiteProgressTab companyId={companyId} property={property} /> : null}
+      {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} /> : null}
+      {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
+      {tab === "traffic" ? (
+        <PropertyReport companyId={companyId} property={property} signInAvailable={signInAvailable} notice={notice} />
+      ) : null}
+      </div>
     </div>
   );
 }
@@ -623,7 +705,7 @@ export function Website() {
           })}
         </div>
       ) : null}
-      <PropertyReport
+      <PropertyHub
         key={selected.id}
         companyId={selectedCompanyId}
         property={selected}
