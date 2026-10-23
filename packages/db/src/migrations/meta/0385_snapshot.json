@@ -1,5 +1,5 @@
 {
-  "id": "03703f4c-3118-48f3-9f8c-2f84200cf700",
+  "id": "ecec1a04-a5f2-4985-9b4d-556712eb14f7",
   "prevId": "ce836e0c-c0da-47f6-82c6-40c1ca07330d",
   "version": "7",
   "dialect": "postgresql",
@@ -62772,12 +62772,6 @@
           "notNull": true,
           "default": "'{}'::text[]"
         },
-        "editor_frame_origin": {
-          "name": "editor_frame_origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "check_paths": {
           "name": "check_paths",
           "type": "jsonb",
@@ -62929,6 +62923,195 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.website_sitemap_option": {
+      "name": "website_sitemap_option",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "site_id": {
+          "name": "site_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tree": {
+          "name": "tree",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "proposed_by_agent_id": {
+          "name": "proposed_by_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by_user_id": {
+          "name": "approved_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "website_sitemap_option_site_idx": {
+          "name": "website_sitemap_option_site_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "site_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "website_sitemap_option_site_approved_uq": {
+          "name": "website_sitemap_option_site_approved_uq",
+          "columns": [
+            {
+              "expression": "site_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"website_sitemap_option\".\"status\" = 'approved'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "website_sitemap_option_company_id_companies_id_fk": {
+          "name": "website_sitemap_option_company_id_companies_id_fk",
+          "tableFrom": "website_sitemap_option",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "website_sitemap_option_proposed_by_agent_id_agents_id_fk": {
+          "name": "website_sitemap_option_proposed_by_agent_id_agents_id_fk",
+          "tableFrom": "website_sitemap_option",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "proposed_by_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "website_sitemap_option_company_site_fk": {
+          "name": "website_sitemap_option_company_site_fk",
+          "tableFrom": "website_sitemap_option",
+          "tableTo": "website_site",
+          "columnsFrom": [
+            "company_id",
+            "site_id"
+          ],
+          "columnsTo": [
+            "company_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "website_sitemap_option_company_id_uq": {
+          "name": "website_sitemap_option_company_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "company_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "website_sitemap_option_status_chk": {
+          "name": "website_sitemap_option_status_chk",
+          "value": "\"website_sitemap_option\".\"status\" in ('draft', 'approved', 'archived')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.work_assessments": {
