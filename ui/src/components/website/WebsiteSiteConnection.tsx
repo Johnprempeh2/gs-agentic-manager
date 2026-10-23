@@ -10,7 +10,7 @@ import { useCanManageWebsite } from "./WebsiteSetup";
 
 // Connect a site (GRE-2105): the website module's site row for this website
 // property. The Netlify token goes into the company's secrets; the page only
-// ever learns whether one is stored.
+// ever learns whether one is stored. Words: GRE-2107 copy sections 3, 13, 14.
 
 /** The bare domain of a website property's address: `https://www.example.com/` → `www.example.com`. */
 export function domainFromSiteUrl(siteUrl: string): string {
@@ -85,10 +85,17 @@ function SiteForm({ companyId, property, site, onDone }: {
       }}
     >
       <fieldset disabled={save.isPending} className="grid gap-4 sm:grid-cols-2">
-        <Field id={`${idPrefix}-name`} label="Site name">
-          <Input id={`${idPrefix}-name`} value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required />
+        <Field id={`${idPrefix}-name`} label="Site name" help="What your team calls it. Only shown in GSAM.">
+          <Input
+            id={`${idPrefix}-name`}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            aria-describedby={`${idPrefix}-name-help`}
+            maxLength={120}
+            required
+          />
         </Field>
-        <Field id={`${idPrefix}-domain`} label="Domain" help="The bare domain the public site answers on, for example www.example.com.">
+        <Field id={`${idPrefix}-domain`} label="Live address" help="The address visitors use, for example www.example.com.">
           <Input
             id={`${idPrefix}-domain`}
             value={domain}
@@ -98,17 +105,17 @@ function SiteForm({ companyId, property, site, onDone }: {
             required
           />
         </Field>
-        <Field id={`${idPrefix}-repo`} label="Repository" help="Optional. The site's code repository, for example https://github.com/owner/site.">
+        <Field id={`${idPrefix}-repo`} label="Code repository" help="Where the site's code lives, for example owner/site-name.">
           <Input
             id={`${idPrefix}-repo`}
             value={repoUrl}
             onChange={(event) => setRepoUrl(event.target.value)}
             aria-describedby={`${idPrefix}-repo-help`}
-            inputMode="url"
-            placeholder="https://github.com/owner/site"
+            autoComplete="off"
+            placeholder="owner/site-name"
           />
         </Field>
-        <Field id={`${idPrefix}-netlify`} label="Netlify site id" help="In Netlify open Site configuration and copy the Site ID.">
+        <Field id={`${idPrefix}-netlify`} label="Netlify site ID" help="In Netlify: Site configuration, General, Site ID.">
           <Input
             id={`${idPrefix}-netlify`}
             value={netlifySiteId}
@@ -120,11 +127,11 @@ function SiteForm({ companyId, property, site, onDone }: {
         </Field>
         <Field
           id={`${idPrefix}-token`}
-          label="Netlify token"
+          label="Netlify access token"
           help={
             site?.hasNetlifyToken
-              ? "A token is stored in this company's secrets. Leave this empty to keep it, or paste a new one to replace it."
-              : "Optional now, needed to publish. It is stored in this company's secrets and never shown again."
+              ? "Token saved. Leave this empty to keep it, or paste a new token to replace it."
+              : "Stored in this company's secrets. Only the Publish job reads it. You cannot see it again after saving."
           }
         >
           <Input
@@ -157,7 +164,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Overview panel: the connected site, or a "Connect site" form for people who can publish. */
+/** Overview panel: the connected site, or a "Connect a site" form for people with Publish rights. */
 export function WebsiteSiteConnection({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const { site, isLoading, error } = useWebsiteSite(companyId, property.id);
   const { canManage } = useCanManageWebsite(companyId);
@@ -179,21 +186,22 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
         <SiteForm companyId={companyId} property={property} site={site} onDone={() => setEditing(false)} />
       ) : site ? (
         <dl className="space-y-1.5 text-xs">
-          <Detail label="Site">{site.name}</Detail>
-          <Detail label="Domain"><span className="font-mono">{site.domain}</span></Detail>
-          <Detail label="Repository">{site.repoUrl ? <span className="font-mono">{site.repoUrl}</span> : "Not set"}</Detail>
-          <Detail label="Netlify site id"><span className="font-mono">{site.netlifySiteId}</span></Detail>
-          <Detail label="Netlify token">{site.hasNetlifyToken ? "Stored in this company's secrets" : "Not stored yet: needed to publish"}</Detail>
+          <Detail label="Site name">{site.name}</Detail>
+          <Detail label="Live address"><span className="font-mono">{site.domain}</span></Detail>
+          <Detail label="Code repository">{site.repoUrl ? <span className="font-mono">{site.repoUrl}</span> : "Not set"}</Detail>
+          <Detail label="Netlify site ID"><span className="font-mono">{site.netlifySiteId}</span></Detail>
+          <Detail label="Netlify access token">{site.hasNetlifyToken ? "Token saved." : "Not saved yet. Publish needs it."}</Detail>
         </dl>
       ) : (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Connect the site so its pages, sitemap and content can be managed here, then published to Netlify.
-          </p>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Connect your website</p>
+            <p className="text-sm text-muted-foreground">Connect a site to edit its pages here and Publish them.</p>
+          </div>
           {canManage ? (
-            <Button type="button" size="sm" onClick={() => setEditing(true)}>Connect site</Button>
+            <Button type="button" size="sm" onClick={() => setEditing(true)}>Connect a site</Button>
           ) : (
-            <p className="text-xs text-muted-foreground">A company owner or admin can connect it.</p>
+            <p className="text-xs text-muted-foreground">Only people with Publish rights can change site settings, the theme and the token.</p>
           )}
         </div>
       )}

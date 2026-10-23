@@ -107,7 +107,8 @@ describe("WebsiteSiteConnection", () => {
     await render();
     const text = container.textContent ?? "";
     expect(text).toContain("netlify-123");
-    expect(text).toContain("Stored in this company's secrets");
+    expect(text).toContain("Token saved.");
+    expect(text).toContain("Live address");
     expect(container.querySelector("button")?.textContent).toBe("Change");
   });
 
@@ -115,7 +116,9 @@ describe("WebsiteSiteConnection", () => {
     moduleMock.sites.mockResolvedValue([]);
     moduleMock.createSite.mockResolvedValue(site());
     await render();
-    const connect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Connect site")!;
+    const connect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Connect a site")!;
+    expect(container.textContent).toContain("Connect your website");
+    expect(container.textContent).not.toMatch(/published/i);
     await act(async () => connect.click());
     const domain = container.querySelector<HTMLInputElement>("#website-site-prop-1-domain")!;
     expect(domain.value).toBe("www.greatstone.example");
@@ -137,11 +140,11 @@ describe("WebsiteSiteConnection", () => {
     });
   });
 
-  it("tells people who cannot publish who can connect it", async () => {
+  it("tells people without Publish rights who can connect it", async () => {
     canManage.value = false;
     moduleMock.sites.mockResolvedValue([]);
     await render();
-    expect(container.textContent).toContain("A company owner or admin can connect it.");
+    expect(container.textContent).toContain("Only people with Publish rights can change site settings, the theme and the token.");
     expect(container.querySelector("button")).toBeNull();
   });
 });
