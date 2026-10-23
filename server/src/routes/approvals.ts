@@ -375,7 +375,7 @@ export function approvalRoutes(
     await assertCanDecidePermissionGrant(req, existing);
     await assertCanDecideSpendingApproval(req, existing);
     await websitePublish.assertCanDecide(req.actor, existing);
-    websitePublish.assertCanStart(existing);
+    await websitePublish.assertCanStart(existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const resolved = await svc.approve(id, decidedByUserId, req.body.decisionNote);
     const { applied } = resolved;

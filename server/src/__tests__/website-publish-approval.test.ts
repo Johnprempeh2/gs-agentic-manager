@@ -254,7 +254,7 @@ describeEmbeddedPostgres("website publish approvals", () => {
   it("Approve and Publish: only a person with publish rights for the site; the Publish runs in their name", async () => {
     const { company, site, base } = await seedWorld("Alpha", "alpha.test");
     const { agent, actor } = await seedAgent(company.id, ["website:view", "website:edit"]);
-    const { page } = await agentDraftsAndSubmits(base, actor);
+    const { page, revisionId } = await agentDraftsAndSubmits(base, actor);
     await request(app()).post(`${base}/pages/${page.id}/approve`).expect(200);
     const proposal = (await request(app(actor)).post(`${base}/publish-proposals`).expect(201)).body;
 
@@ -287,7 +287,55 @@ describeEmbeddedPostgres("website publish approvals", () => {
       publishedByUserId: scopedHere.userId,
       requestedByAgentId: agent.id,
       requestedByUserId: null,
+      manifest: { pages: [{ pageId: page.id, revisionId }], entries: [] },
     });
+  });
+
+  it("a board actor with no user cannot decide a Publish: it must run in a person's name", async () => {
+    const { company, base } = await seedWorld("Alpha", "alpha.test");
+    const { actor } = await seedAgent(company.id, ["website:view", "website:edit"]);
+    const { page } = await agentDraftsAndSubmits(base, actor);
+    await request(app()).post(`${base}/pages/${page.id}/approve`).expect(200);
+    const proposal = (await request(app(actor)).post(`${base}/publish-proposals`).expect(201)).body;
+    const starter = vi.fn(async () => ({ releaseId: "r" }));
+    registerWebsitePublishStarter(starter);
+    const noUser = { type: "board", source: "local_implicit", isInstanceAdmin: true } as Actor;
+    for (const decision of ["approve", "reject", "request-revision"]) {
+      const refused = await request(app(noUser)).post(`/api/approvals/${proposal.id}/${decision}`).send({ decisionNote: "x" }).expect(403);
+      expect(refused.body.error).toBe(WEBSITE_MESSAGES["proposal.publish.person_only"]);
+    }
+    expect(starter).not.toHaveBeenCalled();
+    const [row] = await db.select().from(approvals).where(eq(approvals.id, proposal.id));
+    expect(row!.status).toBe("pending");
+  });
+
+  it("the card is pinned: new changes replace the open proposal, and a stale card cannot start a Publish", async () => {
+    const { company, base } = await seedWorld("Alpha", "alpha.test");
+    const { actor } = await seedAgent(company.id, ["website:view", "website:edit"]);
+    const owner = await seedUser(company.id, "owner");
+    const starter = vi.fn(async () => ({ releaseId: "r" }));
+    registerWebsitePublishStarter(starter);
+    const first = await agentDraftsAndSubmits(base, actor, "/about");
+    await request(app(owner)).post(`${base}/pages/${first.page.id}/approve`).expect(200);
+    const oldCard = (await request(app(actor)).post(`${base}/publish-proposals`).expect(201)).body;
+
+    // A second page is approved after the card was made: the old card no longer matches.
+    const second = await agentDraftsAndSubmits(base, actor, "/contact");
+    await request(app(owner)).post(`${base}/pages/${second.page.id}/approve`).expect(200);
+    const moved = await request(app(owner)).post(`/api/approvals/${oldCard.id}/approve`).send({}).expect(409);
+    expect(moved.body.error).toBe(WEBSITE_MESSAGES["proposal.publish.changed"]);
+    expect(starter).not.toHaveBeenCalled();
+
+    // Proposing again does not rewrite the old card; it replaces it with a new one.
+    const newCard = (await request(app(actor)).post(`${base}/publish-proposals`).expect(201)).body;
+    expect(newCard.id).not.toBe(oldCard.id);
+    expect(newCard.payload.changeCount).toBe(2);
+    const [old] = await db.select().from(approvals).where(eq(approvals.id, oldCard.id));
+    expect(old).toMatchObject({ status: "cancelled", payload: { changeCount: 1 } });
+    await request(app(owner)).post(`/api/approvals/${oldCard.id}/approve`).send({}).expect(422);
+
+    await request(app(owner)).post(`/api/approvals/${newCard.id}/approve`).send({}).expect(200);
+    expect(starter).toHaveBeenCalledWith(expect.objectContaining({ manifest: newCard.payload.manifest }));
   });
 
   it("if the Publish cannot start, the approval reopens and the approver sees why", async () => {

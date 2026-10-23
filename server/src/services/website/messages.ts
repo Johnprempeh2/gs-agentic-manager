@@ -17,6 +17,12 @@ export const WEBSITE_MESSAGES = {
   "proposal.publish.nothing": "Nothing to Publish. There are no approved changes since the last Publish. Send changes for review first.",
   // new: the server cannot start a Publish yet (2.4 not wired in).
   "proposal.publish.unavailable": "Publish is not ready on this server yet. Nothing was sent and no credits were used. The proposal stays open.",
+  // new: the decision has no signed-in person behind it (e.g. a local board token).
+  "proposal.publish.person_only": "Only a signed-in person can approve this Publish. The Publish runs in that person's name.",
+  // new: the approved changes moved after the card was made.
+  "proposal.publish.changed": "The changes in this Publish moved after this card was made. Nothing was sent. Ask for a new proposal and approve that one.",
+  // new: a newer proposal replaced this one.
+  "proposal.publish.replaced": "Replaced by a newer proposal with the current changes.",
   // new: a planned page has no content to approve.
   "review.planned": "This page is planned only. Add content and save a draft before you send it for review.",
   // new: send back a page or entry that is not in review.

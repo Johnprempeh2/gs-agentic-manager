@@ -760,9 +760,15 @@ and collection entries (products, team, redirects, forms) under
   under `.../entries`.
 - Propose: `POST .../pages/{pageId}/submit` (or `.../entries/{entryId}/submit`) sends it for review.
   When changes are approved, `POST .../publish-proposals` asks a person to Publish them all: it
-  returns a `website_publish` approval (one open per site; calling again refreshes it). A person
+  returns a `website_publish` approval (one open per site; calling again returns it, or replaces it
+  when the approved changes moved, so the person approves exactly what the card shows). A person
   with Publish rights clicks Approve and Publish, which runs the Publish in their name and costs
   about 15 credits, so propose once per batch of changes, not per page.
+- Sitemap: propose a whole new structure as a named option with `POST .../sitemap/options`
+  `{ name, description, tree }` or `POST .../sitemap/options/import` (nested pages with
+  `children`); list and read them with `GET .../sitemap/options[/{optionId}]`; change one with
+  `PUT .../sitemap/options/{optionId}` and its `baseUpdatedAt` (`409` means read it again). A
+  person approves an option; that writes the site's pages and menus.
 - Approve, send back, Publish, retry, roll back and site settings answer `403` for agents. Do not
   ask for `website:publish`: it cannot be granted to an agent. Another company's site, or a site
   outside your grant, answers `404`.

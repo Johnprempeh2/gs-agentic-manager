@@ -6,7 +6,7 @@ import {
   type WebsitePublishApprovalPayload,
   type WebsitePublishChange,
 } from "@greatstone/shared";
-import { HttpError, forbidden, unprocessable } from "../../errors.js";
+import { HttpError, conflict, forbidden, unprocessable } from "../../errors.js";
 import { accessService } from "../access.js";
 import { WEBSITE_MESSAGES, publishProposalText } from "./messages.js";
 import type { SiteRow, WebsiteActor } from "./module.js";
@@ -27,6 +27,8 @@ export interface WebsitePublishStartInput {
   publishedByUserId: string;
   requestedByAgentId: string | null;
   requestedByUserId: string | null;
+  /** The pinned revisions the approver saw on the card: the Publish takes exactly these. */
+  manifest: WebsitePublishApprovalPayload["manifest"];
 }
 
 /** Starts a Publish and returns its release. Throws an HttpError (e.g. 409 busy) when it cannot start. */
@@ -44,6 +46,27 @@ export function registerWebsitePublishStarter(starter: WebsitePublishStarter | n
 
 function payloadOf(approval: Pick<ApprovalRow, "payload">) {
   return (approval.payload ?? {}) as Partial<WebsitePublishApprovalPayload>;
+}
+
+type Manifest = WebsitePublishApprovalPayload["manifest"];
+
+function manifestOf(changes: WebsitePublishChange[]): Manifest {
+  return {
+    pages: changes.filter((c) => c.kind === "page").map((c) => ({ pageId: c.id, revisionId: c.revisionId })),
+    entries: changes.filter((c) => c.kind === "entry").map((c) => ({ entryId: c.id, revisionId: c.revisionId })),
+  };
+}
+
+function manifestKey(manifest: Manifest | undefined) {
+  if (!manifest) return "";
+  return [
+    ...manifest.pages.map((p) => `page:${p.pageId}:${p.revisionId}`),
+    ...manifest.entries.map((e) => `entry:${e.entryId}:${e.revisionId}`),
+  ].sort().join("|");
+}
+
+function sameManifest(a: Manifest | undefined, b: Manifest | undefined) {
+  return manifestKey(a) === manifestKey(b);
 }
 
 export function websitePublishApprovals(db: Db) {
@@ -103,7 +126,7 @@ export function websitePublishApprovals(db: Db) {
 
   /**
    * Propose a Publish of every approved change. One open proposal per site:
-   * a second call returns the open one (refreshed with the current changes).
+   * a second call returns the open one, or replaces it when the changes moved.
    */
   async function propose(site: SiteRow, actor: WebsiteActor): Promise<{ approval: ApprovalRow; created: boolean }> {
     const changes = await approvedChanges(site.companyId, site.id);
@@ -115,20 +138,19 @@ export function websitePublishApprovals(db: Db) {
       title: text.title,
       summary: text.summary,
       changeCount: changes.length,
-      manifest: {
-        pages: changes.filter((c) => c.kind === "page").map((c) => ({ pageId: c.id, revisionId: c.revisionId })),
-        entries: changes.filter((c) => c.kind === "entry").map((c) => ({ entryId: c.id, revisionId: c.revisionId })),
-      },
+      manifest: manifestOf(changes),
       changes,
     };
+    // The card an approver reads never changes under them (GRE-2109 review):
+    // the same changes return the open proposal; new changes replace it, so a
+    // decision on the old card answers 422.
     const open = await openProposal(site.companyId, site.id);
     if (open) {
-      const [refreshed] = await db
+      if (sameManifest(payloadOf(open).manifest, payload.manifest)) return { approval: open, created: false };
+      await db
         .update(approvals)
-        .set({ payload: { ...payloadOf(open), changeCount: payload.changeCount, manifest: payload.manifest, changes, summary: payload.summary }, updatedAt: new Date() })
-        .where(eq(approvals.id, open.id))
-        .returning();
-      return { approval: refreshed ?? open, created: false };
+        .set({ status: "cancelled", decisionNote: WEBSITE_MESSAGES["proposal.publish.replaced"], updatedAt: new Date() })
+        .where(and(eq(approvals.id, open.id), inArray(approvals.status, ["pending", "revision_requested"])));
     }
     const [approval] = await db
       .insert(approvals)
@@ -148,6 +170,8 @@ export function websitePublishApprovals(db: Db) {
   async function assertCanDecide(actor: Express.Request["actor"], approval: Pick<ApprovalRow, "type" | "companyId" | "payload">) {
     if (approval.type !== WEBSITE_PUBLISH_APPROVAL_TYPE) return;
     if (actor.type !== "board") throw forbidden(WEBSITE_MESSAGES["agent.publish_refused"], { code: "website_publish_agent_refused" });
+    // The Publish runs in a person's name, so a board actor with no user cannot decide.
+    if (!actor.userId) throw forbidden(WEBSITE_MESSAGES["proposal.publish.person_only"], { code: "website_publish_person_only" });
     const siteId = payloadOf(approval).siteId;
     if (typeof siteId !== "string") throw unprocessable("This Publish proposal names no site");
     const decision = await access.decide({
@@ -159,10 +183,20 @@ export function websitePublishApprovals(db: Db) {
     if (!decision.allowed) throw forbidden(WEBSITE_MESSAGES["proposal.publish.no_rights"], { code: "website_publish_decider_missing" });
   }
 
-  /** Fail before the approval changes when this server cannot start a Publish yet. */
-  function assertCanStart(approval: Pick<ApprovalRow, "type">) {
+  /**
+   * Fail before the approval changes when this server cannot start a Publish
+   * yet, or when the approved changes are no longer the ones on the card.
+   */
+  async function assertCanStart(approval: Pick<ApprovalRow, "type" | "companyId" | "payload" | "status">) {
     if (approval.type !== WEBSITE_PUBLISH_APPROVAL_TYPE) return;
     if (!publishStarter) throw new HttpError(503, WEBSITE_MESSAGES["proposal.publish.unavailable"], { code: "website_publish_unavailable" });
+    // A decided or replaced card gets the approvals service's own answer.
+    if (approval.status !== "pending" && approval.status !== "revision_requested") return;
+    const payload = payloadOf(approval);
+    const current = manifestOf(await approvedChanges(approval.companyId, payload.siteId as string));
+    if (!sameManifest(payload.manifest, current)) {
+      throw conflict(WEBSITE_MESSAGES["proposal.publish.changed"], { code: "website_publish_changed" });
+    }
   }
 
   /**
@@ -182,6 +216,7 @@ export function websitePublishApprovals(db: Db) {
         publishedByUserId,
         requestedByAgentId: approval.requestedByAgentId,
         requestedByUserId: approval.requestedByUserId,
+        manifest: payload.manifest as WebsitePublishApprovalPayload["manifest"],
       });
       const [updated] = await db
         .update(approvals)
