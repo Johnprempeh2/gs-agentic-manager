@@ -99,6 +99,12 @@ export interface AdapterExecutionResult {
    */
   usageBasis?: "per_run" | "session_cumulative" | null;
   /**
+   * "partial" means `usage` is known to miss some of the run's model requests
+   * (a Codex ACP runtime that reported only its last request), so any estimate
+   * from it is a lower bound. Absent means the adapter reported the whole run.
+   */
+  usageCompleteness?: "partial" | null;
+  /**
    * Legacy single session id output. Prefer `sessionParams` + `sessionDisplayId`.
    */
   sessionId?: string | null;

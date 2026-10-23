@@ -22566,6 +22566,9 @@ export function heartbeatService(
               : adapterResult.usageBasis === "per_run"
                 ? { usageSource: "per_run" }
                 : {}),
+            ...(adapterResult.usageCompleteness === "partial"
+              ? { usageCompleteness: "partial" }
+              : {}),
             ...((nextSessionState.displayId ??
             nextSessionState.legacySessionId)
               ? {

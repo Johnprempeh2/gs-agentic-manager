@@ -3235,18 +3235,28 @@ async function readRuntimeStatus(
  * amount, so the per-run cost is the delta against the pre-turn snapshot; a
  * decrease means the agent process restarted and its counter reset, in which
  * case the post-turn amount alone covers this run.
+ *
+ * Codex: stock codex-acp reports only the LAST model request of the turn. Our
+ * codex-acp patch sums every request of the turn and streams that running
+ * total as `usage_update` `_meta.usage` (the only source of `eventBreakdown`
+ * for Codex). Without it the figure is one request, so it is marked partial.
+ * Codex input excludes cached reads; OpenAI pricing counts cached inside input,
+ * so cached reads are added back to `inputTokens`.
  */
 export function summarizeAcpxTurnUsage(input: {
   preStatus: AcpRuntimeStatus | null;
   postStatus: AcpRuntimeStatus | null;
   eventBreakdown: AcpRuntimeUsageBreakdown | null;
   eventCostUsd: number | null;
+  acpxAgent?: string | null;
 }): {
   usage: UsageSummary | null;
   usageDetail: Record<string, number> | null;
   costUsd: number | null;
   cumulativeCostUsd: number | null;
+  usageCompleteness: "partial" | null;
 } {
+  const codex = input.acpxAgent === "codex";
   // The persisted breakdown is overwritten per turn, so an unchanged value
   // is stale for this turn. Prefer an in-turn event breakdown when available;
   // otherwise suppress the stale value so it cannot be double-counted.
@@ -3268,11 +3278,12 @@ export function summarizeAcpxTurnUsage(input: {
   // entries; UsageSummary has no dedicated field, so count them as input.
   const usage: UsageSummary | null = hasTokens
     ? {
-        inputTokens: inputTokens + cachedWriteTokens,
+        inputTokens: inputTokens + cachedWriteTokens + (codex ? cachedReadTokens : 0),
         outputTokens,
         cachedInputTokens: cachedReadTokens,
       }
     : null;
+  const usageCompleteness = codex && usage && !input.eventBreakdown ? "partial" : null;
   const usageDetail = breakdown
     ? Object.fromEntries(
         Object.entries({
@@ -3302,7 +3313,7 @@ export function summarizeAcpxTurnUsage(input: {
         : cumulativeCostUsd;
   }
 
-  return { usage, usageDetail, costUsd, cumulativeCostUsd };
+  return { usage, usageDetail, costUsd, cumulativeCostUsd, usageCompleteness };
 }
 
 type AcpxExecutionPhase =
@@ -4958,6 +4969,7 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
           postStatus: postTurnStatus,
           eventBreakdown,
           eventCostUsd,
+          acpxAgent: prepared.acpxAgent,
         });
         const failedTurn = terminal.status === "failed" || terminal.status === "cancelled" || timedOut;
         // ACPX can defer session/load until runTurn. Forget an unavailable
@@ -5040,6 +5052,7 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
           ...referencedProjectStagingFailuresField,
           model: prepared.requestedModel || null,
           ...(turnUsage.usage ? { usage: turnUsage.usage, usageBasis: "per_run" as const } : {}),
+          ...(turnUsage.usageCompleteness ? { usageCompleteness: turnUsage.usageCompleteness } : {}),
           costUsd: turnUsage.costUsd,
           resultJson: {
             status: channelLost ? "failed" : terminal.status,

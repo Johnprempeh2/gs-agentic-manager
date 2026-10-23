@@ -3291,8 +3291,8 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
         </div>
       ) : metrics.apiEquivalent ? (
         <div className="flex items-center gap-2 pl-5.5 text-(length:--text-micro) text-muted-foreground tabular-nums">
-          <span title={runApiEquivalentLabel(metrics.apiEquivalent.estimated)}>
-            ${metrics.apiEquivalent.usd.toFixed(3)} {metrics.apiEquivalent.estimated ? "estimated" : "API-equivalent"}
+          <span title={runApiEquivalentLabel(metrics.apiEquivalent.estimated, metrics.apiEquivalent.lowerBound)}>
+            {metrics.apiEquivalent.lowerBound ? "at least " : ""}${metrics.apiEquivalent.usd.toFixed(3)} {metrics.apiEquivalent.estimated ? "estimated" : "API-equivalent"}
           </span>
         </div>
       ) : null}
@@ -3894,9 +3894,11 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                   <div className="text-sm font-medium font-mono">{metrics.cost > 0 ? `$${metrics.cost.toFixed(4)}` : "-"}</div>
                 ) : (
                   <>
-                    <div className="text-sm font-medium font-mono">${metrics.apiEquivalent.usd.toFixed(4)}</div>
+                    <div className="text-sm font-medium font-mono">
+                      {metrics.apiEquivalent.lowerBound ? "at least " : ""}${metrics.apiEquivalent.usd.toFixed(4)}
+                    </div>
                     <div className="text-xs text-muted-foreground" data-testid="run-api-equivalent-label">
-                      {runApiEquivalentLabel(metrics.apiEquivalent.estimated)}
+                      {runApiEquivalentLabel(metrics.apiEquivalent.estimated, metrics.apiEquivalent.lowerBound)}
                     </div>
                   </>
                 )}
