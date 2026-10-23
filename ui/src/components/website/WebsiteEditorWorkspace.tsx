@@ -591,9 +591,9 @@ function HistoryPanel({
               <div className="min-w-0 flex-1 text-xs">
                 <p className="font-medium text-foreground">
                   Version {revision.revisionNumber}
-                  {index === 0 ? <span className="ml-1.5 rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium">Current</span> : null}
+                  {index === 0 ? <span className="ml-1.5 rounded bg-accent px-1.5 py-0.5 text-micro font-medium">Current</span> : null}
                   {revision.id === page.publishedRevisionId ? (
-                    <span className="ml-1.5 rounded bg-status-success-soft px-1.5 py-0.5 text-[11px] font-medium text-status-success-foreground">Live</span>
+                    <span className="ml-1.5 rounded bg-status-success-soft px-1.5 py-0.5 text-micro font-medium text-status-success-foreground">Live</span>
                   ) : null}
                 </p>
                 <p className="text-muted-foreground">{`${relativeTime(revision.createdAt)}, by ${revisionAuthor(revision)}`}</p>
@@ -642,7 +642,7 @@ function MediaPanel({ companyId, site }: { companyId: string; site: WebsiteSite 
                 )}
               </div>
               <p className="truncate text-xs font-medium" title={item.entryKey}>{item.entryKey}</p>
-              <p className="truncate text-[11px] text-muted-foreground" title={item.alt}>{item.alt || "No alt text"}</p>
+              <p className="truncate text-micro text-muted-foreground" title={item.alt}>{item.alt || "No alt text"}</p>
             </li>
           ))}
         </ul>
