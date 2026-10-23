@@ -15902,6 +15902,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
+  path: `${siteParams}/entries/import-public-drafts`,
+  tags: ["website"],
+  summary: "Import public catalogue and team snapshots as drafts, skipping entries already present (website:publish)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
   path: `${siteParams}/entries`,
   tags: ["website"],
   summary: "Create a collection entry (product, category, team, redirect, form, media or a site's own collection) with its first revision (website:edit)",
@@ -15949,6 +15957,22 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "List an entry's revisions, newest first (website:view)",
   responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/entries/{entryId}/revisions/{revisionId}`,
+  tags: ["website"],
+  summary: "Get one entry revision (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/entries/{entryId}/approve`,
+  tags: ["website"],
+  summary: "Approve a reviewed entry revision for a later release (website:publish)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
 });
 
 // Sitemap options (GRE-2111): named drafts of a site's structure. Agents and
