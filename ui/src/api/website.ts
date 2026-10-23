@@ -10,6 +10,11 @@ import {
   type UpdateWebsiteProperty,
   type UpdateWebsiteSite,
   type WebsitePage,
+  type WebsiteEntry,
+  type WebsiteEntryDetail,
+  type WebsiteRevision,
+  type WebsiteSaveResult,
+  type CreateWebsiteEntry,
   type WebsiteSite,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
@@ -61,6 +66,8 @@ export const websiteApi = {
 
 const sitesPath = (companyId: string) => `/companies/${encodeURIComponent(companyId)}/website/sites`;
 const sitePath = (companyId: string, siteId: string) => `${sitesPath(companyId)}/${encodeURIComponent(siteId)}`;
+const entryPath = (companyId: string, siteId: string, entryId: string) =>
+  `${sitePath(companyId, siteId)}/entries/${encodeURIComponent(entryId)}`;
 
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
@@ -70,6 +77,26 @@ export const websiteModuleApi = {
   updateSite: (companyId: string, siteId: string, patch: UpdateWebsiteSite) =>
     api.patch<WebsiteSite>(sitePath(companyId, siteId), patch),
   pages: (companyId: string, siteId: string) => api.get<WebsitePage[]>(`${sitePath(companyId, siteId)}/pages`),
+  entries: (companyId: string, siteId: string, collection: string) =>
+    api.get<WebsiteEntry[]>(`${sitePath(companyId, siteId)}/entries?collection=${encodeURIComponent(collection)}`),
+  importPublicDrafts: (companyId: string, siteId: string) =>
+    api.post<{ imported: number; skipped: number; capturedAt: string }>(`${sitePath(companyId, siteId)}/entries/import-public-drafts`, {}),
+  entry: (companyId: string, siteId: string, entryId: string) =>
+    api.get<WebsiteEntryDetail>(entryPath(companyId, siteId, entryId)),
+  createEntry: (companyId: string, siteId: string, input: CreateWebsiteEntry) =>
+    api.post<WebsiteEntryDetail>(`${sitePath(companyId, siteId)}/entries`, input),
+  saveEntry: (companyId: string, siteId: string, entryId: string, input: { baseRevisionId: string; content: unknown }) =>
+    api.put<WebsiteSaveResult>(`${entryPath(companyId, siteId, entryId)}/content`, input),
+  updateEntry: (companyId: string, siteId: string, entryId: string, patch: { status?: "draft" | "review"; entryKey?: string; sortOrder?: number | null }) =>
+    api.patch<WebsiteEntry>(entryPath(companyId, siteId, entryId), patch),
+  approveEntry: (companyId: string, siteId: string, entryId: string) =>
+    api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/approve`, {}),
+  archiveEntry: (companyId: string, siteId: string, entryId: string) =>
+    api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/archive`, {}),
+  entryRevisions: (companyId: string, siteId: string, entryId: string) =>
+    api.get<WebsiteRevision[]>(`${entryPath(companyId, siteId, entryId)}/revisions`),
+  entryRevision: (companyId: string, siteId: string, entryId: string, revisionId: string) =>
+    api.get<{ revisionNumber: number; content: unknown }>(`${entryPath(companyId, siteId, entryId)}/revisions/${encodeURIComponent(revisionId)}`),
   /** Sitemap options (GRE-2111). */
   sitemapOptions: (companyId: string, siteId: string) =>
     api.get<WebsiteSitemapOption[]>(`${sitePath(companyId, siteId)}/sitemap/options`),

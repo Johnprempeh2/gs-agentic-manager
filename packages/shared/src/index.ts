@@ -496,6 +496,7 @@ export * from "./document-evidence.js";
 export * from "./types/website.js";
 export * from "./validators/website.js";
 export * from "./types/website-module.js";
+export * from "./website-collections.js";
 export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
 export * from "./website-frame.js";

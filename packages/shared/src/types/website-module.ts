@@ -117,6 +117,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageRevisions: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions",
   /** GET → `WebsiteEntry[]` (`?collection=product`). POST `CreateWebsiteEntry` → 201 `WebsiteEntryDetail`. */
   entries: "/companies/:companyId/website/sites/:siteId/entries",
+  /** POST → imported draft counts from the dated public snapshot. */
+  entryImport: "/companies/:companyId/website/sites/:siteId/entries/import-public-drafts",
   /** GET → `WebsiteEntryDetail`. PATCH `UpdateWebsiteEntry` → `WebsiteEntry`. */
   entry: "/companies/:companyId/website/sites/:siteId/entries/:entryId",
   /** PUT `SaveWebsiteContent` → `WebsiteSaveResult`. */
@@ -125,4 +127,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   entryArchive: "/companies/:companyId/website/sites/:siteId/entries/:entryId/archive",
   /** GET → `WebsiteRevision[]`. */
   entryRevisions: "/companies/:companyId/website/sites/:siteId/entries/:entryId/revisions",
+  /** GET → one historic entry's JSON fields, scoped to the entry's document. */
+  entryRevision: "/companies/:companyId/website/sites/:siteId/entries/:entryId/revisions/:revisionId",
+  /** POST → `WebsiteEntry`. A person with website:publish approves the current revision for a later release. */
+  entryApprove: "/companies/:companyId/website/sites/:siteId/entries/:entryId/approve",
 } as const;

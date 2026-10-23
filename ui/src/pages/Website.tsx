@@ -50,6 +50,7 @@ import {
   type WebsiteTab,
 } from "../components/website/WebsiteHub";
 import { WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
+import { WebsiteCollectionsTab } from "../components/website/WebsiteCollections";
 
 /* ---- Formatting ---- */
 
@@ -668,6 +669,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       {tab === "overview" ? <WebsiteOverviewTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
       {tab === "progress" ? <WebsiteProgressTab companyId={companyId} property={property} /> : null}
       {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} /> : null}
+      {tab === "collections" ? <WebsiteCollectionsTab companyId={companyId} property={property} /> : null}
       {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
       {tab === "traffic" ? (
         <PropertyReport companyId={companyId} property={property} signInAvailable={signInAvailable} notice={notice} canManage={canManage} />

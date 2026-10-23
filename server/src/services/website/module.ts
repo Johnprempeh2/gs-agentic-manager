@@ -174,6 +174,7 @@ export function websiteDocumentStore(db: Db) {
     baseRevisionId: string;
     changeSummary?: string | null;
     actor: WebsiteActor;
+    afterSave?: (tx: Tx) => Promise<void>;
   }): Promise<WebsiteSaveResult> {
     const serialised = serialiseWebsiteContent(input.content);
     if ("error" in serialised) return { state: "failed", message: serialised.error };
@@ -221,6 +222,7 @@ export function websiteDocumentStore(db: Db) {
             updatedAt: now,
           })
           .where(eq(documents.id, doc.id));
+        await input.afterSave?.(tx);
         return { state: "saved", revisionId: revision.id, revisionNumber } as const;
       });
     } catch (err) {
@@ -247,6 +249,13 @@ export function websiteDocumentStore(db: Db) {
     return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
   }
 
+  async function readRevision(companyId: string, documentId: string, revisionId: string) {
+    const [revision] = await db.select({ body: documentRevisions.body, revisionNumber: documentRevisions.revisionNumber })
+      .from(documentRevisions)
+      .where(and(eq(documentRevisions.companyId, companyId), eq(documentRevisions.documentId, documentId), eq(documentRevisions.id, revisionId)));
+    return revision ? { revisionNumber: revision.revisionNumber, content: parseBody(revision.body) } : null;
+  }
+
   async function readDocument(companyId: string, documentId: string) {
     const [doc] = await db
       .select()
@@ -255,7 +264,7 @@ export function websiteDocumentStore(db: Db) {
     return doc ?? null;
   }
 
-  return { createDocument, saveRevision, listRevisions, readDocument };
+  return { createDocument, saveRevision, listRevisions, readRevision, readDocument };
 }
 
 function parseBody(body: string): unknown {
@@ -564,6 +573,33 @@ export function websiteModuleService(db: Db) {
     return updated;
   }
 
+  async function approveEntry(row: EntryRow) {
+    const doc = await store.readDocument(row.companyId, row.documentId);
+    if (!doc?.latestRevisionId) throw unprocessable("This entry has no revision to approve", { code: "website_entry_no_revision" });
+    const [updated] = await db
+      .update(websiteEntry)
+      .set({ status: "approved", approvedRevisionId: doc.latestRevisionId, updatedAt: new Date() })
+      .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id), eq(websiteEntry.status, "review")))
+      .returning();
+    if (!updated) throw conflict("This entry changed while you reviewed it. Reload and try again.", { code: "website_entry_review_conflict" });
+    return toWebsiteEntry(updated, doc);
+  }
+
+  async function saveEntryRevision(row: EntryRow, input: {
+    content: unknown; baseRevisionId: string; changeSummary?: string; actor: WebsiteActor;
+  }) {
+    return store.saveRevision({
+      companyId: row.companyId,
+      documentId: row.documentId,
+      ...input,
+      afterSave: async (tx) => {
+        await tx.update(websiteEntry)
+          .set({ status: "draft", approvedRevisionId: null, updatedAt: new Date() })
+          .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)));
+      },
+    });
+  }
+
   return {
     store,
     listSites,
@@ -583,6 +619,8 @@ export function websiteModuleService(db: Db) {
     createEntry,
     updateEntry,
     archiveEntry,
+    approveEntry,
+    saveEntryRevision,
   };
 }
 
