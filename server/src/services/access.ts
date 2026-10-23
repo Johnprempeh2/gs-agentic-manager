@@ -15,7 +15,7 @@ import {
   userSecretDeclarations,
 } from "@greatstone/db";
 import { isMemoryPermissionKey, type PermissionKey, type PrincipalType } from "@greatstone/shared";
-import { conflict } from "../errors.js";
+import { conflict, unprocessable } from "../errors.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import { authorizationService, type AuthorizationActor, type AuthorizationResource } from "./authorization.js";
 import { ensureHumanRoleDefaultGrants } from "./principal-access-compatibility.js";
@@ -43,6 +43,15 @@ type MemberArchiveInput = {
     assigneeUserId?: string | null;
   } | null;
 };
+
+/** website:publish is for people only (GRE-1914 ADR section 6): no route, import or plugin can grant it to an agent. */
+export function assertNoAgentWebsitePublish(principalType: PrincipalType, grants: Array<{ permissionKey: string }>) {
+  if (principalType === "agent" && grants.some((grant) => grant.permissionKey === "website:publish")) {
+    throw unprocessable("Agents cannot be given the right to publish a website. They propose a publish; a person publishes it.", {
+      code: "website_publish_agent_refused",
+    });
+  }
+}
 
 export function accessService(db: Db) {
   const authorization = authorizationService(db);
@@ -925,6 +934,7 @@ export function accessService(db: Db) {
     grantedByUserId: string | null,
   ) {
     grants = withoutMemoryGrants(grants);
+    assertNoAgentWebsitePublish(principalType, grants);
     await db.transaction(async (tx) => {
       await tx
         .delete(principalPermissionGrants)
@@ -1014,6 +1024,7 @@ export function accessService(db: Db) {
     scope: Record<string, unknown> | null = null,
   ) {
     if (isMemoryPermissionKey(permissionKey)) return;
+    if (enabled) assertNoAgentWebsitePublish(principalType, [{ permissionKey }]);
     if (!enabled) {
       await db
         .delete(principalPermissionGrants)

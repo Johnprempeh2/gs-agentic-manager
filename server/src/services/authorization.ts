@@ -210,6 +210,15 @@ function pipelineRoleDefaultAllows(role: string | null | undefined, permissionKe
   return role === "operator" && permissionKey === "pipelines:cases";
 }
 
+// Website module (GRE-1914 ADR section 6): owners and admins hold all three,
+// operators view and edit, viewers view. Agents never get a role default.
+function websiteRoleDefaultAllows(role: string | null | undefined, permissionKey: PermissionKey) {
+  if (permissionKey !== "website:view" && permissionKey !== "website:edit" && permissionKey !== "website:publish") return false;
+  if (role === "owner" || role === "admin") return true;
+  if (role === "operator") return permissionKey !== "website:publish";
+  return role === "viewer" && permissionKey === "website:view";
+}
+
 function isSimpleAssignableAgentStatus(status: string | null | undefined) {
   return status !== "pending_approval" && status !== "terminated";
 }
@@ -404,7 +413,14 @@ async function scopeAllows(
   const requestedProjectId = typeof requestedScope.projectId === "string" ? requestedScope.projectId : null;
   const requestedUserId = typeof requestedScope.userId === "string" ? requestedScope.userId : null;
   const requestedPipelineId = typeof requestedScope.pipelineId === "string" ? requestedScope.pipelineId : null;
+  const requestedSiteId = typeof requestedScope.siteId === "string" ? requestedScope.siteId : null;
   let constrained = false;
+
+  const siteIds = scopeValuesForKeys(grantScope, ["siteId", "siteIds"]);
+  if (siteIds.length > 0) {
+    constrained = true;
+    if (!scopeIncludesId(siteIds, requestedSiteId)) return false;
+  }
 
   const pipelineIds = scopeValuesForKeys(grantScope, ["pipelineId", "pipelineIds"]);
   if (pipelineIds.length > 0) {
@@ -682,6 +698,14 @@ export function authorizationService(db: Db | DbTransaction) {
     permissionKey: PermissionKey;
     scope?: Record<string, unknown> | null;
   }): Promise<PrincipalGrantDecision> {
+    // website:publish is for people only, even if a grant row got in by import.
+    if (input.principalType === "agent" && input.permissionKey === "website:publish") {
+      return deny({
+        action: input.action,
+        reason: "deny_missing_grant",
+        explanation: "Agents cannot publish a website. They propose a publish; a person publishes it.",
+      });
+    }
     const membership = await getActiveMembership(input.companyId, input.principalType, input.principalId);
     if (!membership) {
       return deny({
@@ -706,7 +730,11 @@ export function authorizationService(db: Db | DbTransaction) {
           explanation: `Allowed by the ${membership.membershipRole ?? "operator"} membership role.`,
         });
       }
-      if (input.principalType === "user" && pipelineRoleDefaultAllows(membership.membershipRole, input.permissionKey)) {
+      if (
+        input.principalType === "user"
+        && (pipelineRoleDefaultAllows(membership.membershipRole, input.permissionKey)
+          || websiteRoleDefaultAllows(membership.membershipRole, input.permissionKey))
+      ) {
         return allow({
           action: input.action,
           reason: "allow_role_default",
@@ -2323,7 +2351,8 @@ export function authorizationService(db: Db | DbTransaction) {
         permissionKey,
         scope: input.scope,
       });
-      if (grantDecision.allowed) return grantDecision;
+      // A website grant scoped to other sites stays a scope denial, so the route answers 404.
+      if (grantDecision.allowed || (grantDecision.reason === "deny_scope" && permissionKey.startsWith("website:"))) return grantDecision;
     }
 
     if (input.action === "agents:create" && canCreateAgentsLegacy(actorAgent)) {

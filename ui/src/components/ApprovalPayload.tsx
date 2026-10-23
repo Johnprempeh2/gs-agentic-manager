@@ -181,6 +181,9 @@ const PERMISSION_KEY_LABELS: Record<PermissionKey, string> = {
   "strategy:board_chair": "Chair the board",
   "intelligence:write": "Write intelligence reports",
   "reviews:override": "Approve or send back reviews on someone else's behalf",
+  "website:view": "See the website's pages and content",
+  "website:edit": "Edit website drafts",
+  "website:publish": "Publish the website",
 };
 
 /** Plain words for a permission key, e.g. "tasks:assign" becomes "Assign tasks". */
