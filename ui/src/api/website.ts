@@ -1,6 +1,10 @@
-import { api, ApiError } from "./client";
+import { api, ApiError, plainHttpErrorMessage } from "./client";
 import {
   WEBSITE_NOT_ENTITLED_CODE,
+  type CreateWebsiteSitemapOption,
+  type UpdateWebsiteSitemapOption,
+  type WebsiteSitemapApproveResult,
+  type WebsiteSitemapOption,
   type CreateWebsiteProperty,
   type CreateWebsiteSite,
   type UpdateWebsiteProperty,
@@ -66,6 +70,23 @@ export const websiteModuleApi = {
   updateSite: (companyId: string, siteId: string, patch: UpdateWebsiteSite) =>
     api.patch<WebsiteSite>(sitePath(companyId, siteId), patch),
   pages: (companyId: string, siteId: string) => api.get<WebsitePage[]>(`${sitePath(companyId, siteId)}/pages`),
+  /** Sitemap options (GRE-2111). */
+  sitemapOptions: (companyId: string, siteId: string) =>
+    api.get<WebsiteSitemapOption[]>(`${sitePath(companyId, siteId)}/sitemap/options`),
+  createSitemapOption: (companyId: string, siteId: string, input: CreateWebsiteSitemapOption) =>
+    api.post<WebsiteSitemapOption>(`${sitePath(companyId, siteId)}/sitemap/options`, input),
+  updateSitemapOption: (companyId: string, siteId: string, optionId: string, patch: UpdateWebsiteSitemapOption) =>
+    api.put<WebsiteSitemapOption>(`${sitePath(companyId, siteId)}/sitemap/options/${encodeURIComponent(optionId)}`, patch),
+  approveSitemapOption: (companyId: string, siteId: string, optionId: string) =>
+    api.post<WebsiteSitemapApproveResult>(`${sitePath(companyId, siteId)}/sitemap/options/${encodeURIComponent(optionId)}/approve`, {}),
+  archiveSitemapOption: (companyId: string, siteId: string, optionId: string) =>
+    api.post<WebsiteSitemapOption>(`${sitePath(companyId, siteId)}/sitemap/options/${encodeURIComponent(optionId)}/archive`, {}),
+  /** The sitemap.xml preview, as text. */
+  sitemapXml: async (companyId: string, siteId: string) => {
+    const res = await fetch(`/api${sitePath(companyId, siteId)}/sitemap.xml`, { credentials: "include" });
+    if (!res.ok) throw new ApiError(plainHttpErrorMessage(res.status), res.status, null);
+    return res.text();
+  },
 };
 
 /** True when the server refused because the Website switch is off (`403 not_entitled`). */
