@@ -14575,11 +14575,9 @@ export function issueRoutes(
         req.body.executionPolicy !== undefined && monitorChanged,
       );
 
-      // Only an agent's changes-requested escalates; bind a legacy board id to the real owner (GRE-870).
+      // Only a resubmission after changes-requested escalates (GRE-2049); bind a legacy board id to the real owner (GRE-870).
       const reviewEscalationUserId =
-        existing.status === "in_review" &&
-        actor.actorType === "agent" &&
-        parseIssueExecutionState(existing.executionState)?.status === "pending"
+        parseIssueExecutionState(existing.executionState)?.status === "changes_requested"
           ? await resolveReviewEscalationUserId(db, existing)
           : undefined;
       // An owner decides a stage that waits on the legacy `local-board` user.
