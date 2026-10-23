@@ -8,6 +8,7 @@ import {
   createWebsitePageSchema,
   createWebsiteSiteSchema,
   saveWebsiteContentSchema,
+  sendBackWebsiteContentSchema,
   updateWebsiteEntrySchema,
   updateWebsitePageSchema,
   updateWebsiteSiteSchema,
@@ -26,11 +27,20 @@ import {
   type SiteRow,
   type WebsiteActor,
 } from "../services/website/module.js";
+import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
+import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
 
 const NOT_FOUND = "Not found";
+
+/** What the caller is refused, in the copy's words (GRE-2107 section 13). */
+const REFUSAL: Record<WebsitePermission, WebsiteMessageKey> = {
+  "website:view": "perm.view_none",
+  "website:edit": "perm.edit_none",
+  "website:publish": "perm.publish_none",
+};
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Website module routes (GRE-2105, ADR GRE-1914 section 6). Order of checks on
@@ -42,6 +52,7 @@ export function websiteModuleRoutes(db: Db) {
   const router = Router();
   const service = websiteModuleService(db);
   const access = accessService(db);
+  const publishApprovals = websitePublishApprovals(db);
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
 
@@ -50,8 +61,21 @@ export function websiteModuleRoutes(db: Db) {
     return info.actorType === "agent" ? { agentId: info.agentId, userId: null } : { agentId: null, userId: info.actorId };
   }
 
-  /** Throws 403 when the caller has no such permission at all; returns false when only the site scope excludes it. */
-  async function allowed(req: Request, companyId: string, permission: WebsitePermission, siteId?: string) {
+  /**
+   * Throws 403 when the caller has no such permission at all; returns false when only the site scope excludes it.
+   * `refusal` names the message for this route when the generic one does not fit (people and agents).
+   */
+  async function allowed(
+    req: Request,
+    companyId: string,
+    permission: WebsitePermission,
+    siteId?: string,
+    refusal?: { person?: WebsiteMessageKey; agent?: WebsiteMessageKey },
+  ) {
+    // Agents never hold website:publish (ADR section 6): say so, and say what they can do instead.
+    if (permission === "website:publish" && req.actor.type === "agent") {
+      throw new HttpError(403, WEBSITE_MESSAGES[refusal?.agent ?? "agent.publish_refused"], { code: "website_publish_agent_refused", permission });
+    }
     const decision = await access.decide({
       actor: req.actor,
       action: permission,
@@ -60,17 +84,22 @@ export function websiteModuleRoutes(db: Db) {
     });
     if (decision.allowed) return true;
     if (decision.reason === "deny_scope" && siteId) return false;
-    throw new HttpError(403, decision.explanation, { code: "website_permission_missing", permission });
+    throw new HttpError(403, WEBSITE_MESSAGES[refusal?.person ?? REFUSAL[permission]], { code: "website_permission_missing", permission });
   }
 
   /** Company access, permission, then the site by (company_id, id) or 404. */
-  async function siteFor(req: Request, res: Response, permission: WebsitePermission): Promise<SiteRow | null> {
+  async function siteFor(
+    req: Request,
+    res: Response,
+    permission: WebsitePermission,
+    refusal?: { person?: WebsiteMessageKey; agent?: WebsiteMessageKey },
+  ): Promise<SiteRow | null> {
     const companyId = req.params.companyId as string;
     const siteId = req.params.siteId as string;
     assertCompanyAccess(req, companyId);
     // A malformed id is simply not found (never a database error).
     const idsValid = ["siteId", "pageId", "entryId", "optionId"].every((key) => req.params[key] === undefined || UUID_RE.test(req.params[key] as string));
-    const permitted = (await allowed(req, companyId, permission, siteId)) && idsValid;
+    const permitted = (await allowed(req, companyId, permission, siteId, refusal)) && idsValid;
     const site = permitted ? await service.getSite(companyId, siteId) : null;
     if (!site) {
       res.status(404).json({ error: NOT_FOUND });
@@ -124,7 +153,7 @@ export function websiteModuleRoutes(db: Db) {
   router.post(WEBSITE_MODULE_API_ROUTES.sites, validate(createWebsiteSiteSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    await allowed(req, companyId, "website:publish");
+    await allowed(req, companyId, "website:publish", undefined, { person: "perm.settings" });
     await assertPropertyInCompany(companyId, req.body.propertyId);
     const row = await service.createSite(companyId, req.body, actorOf(req));
     await log(req, companyId, "website.site_connected", "website_site", row.id, {
@@ -141,7 +170,7 @@ export function websiteModuleRoutes(db: Db) {
   });
 
   router.patch(WEBSITE_MODULE_API_ROUTES.site, validate(updateWebsiteSiteSchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:publish");
+    const site = await siteFor(req, res, "website:publish", { person: "perm.settings" });
     if (!site) return;
     await assertPropertyInCompany(site.companyId, req.body.propertyId);
     const row = await service.updateSite(site, req.body, actorOf(req));
@@ -166,8 +195,8 @@ export function websiteModuleRoutes(db: Db) {
     res.status(201).json(page);
   });
 
-  async function pageFor(req: Request, res: Response, permission: WebsitePermission) {
-    const site = await siteFor(req, res, permission);
+  async function pageFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
+    const site = await siteFor(req, res, permission, refusal);
     if (!site) return null;
     const page = await service.getPageRow(site.companyId, site.id, req.params.pageId as string);
     if (!page) {
@@ -233,6 +262,37 @@ export function websiteModuleRoutes(db: Db) {
     res.json(await service.store.listRevisions(page.companyId, page.documentId));
   });
 
+  // ---- review: submit (edit), approve and send back (people with Publish rights) ----
+
+  const APPROVER = { agent: "agent.approve_refused" } as const;
+
+  router.post(WEBSITE_MODULE_API_ROUTES.pageSubmit, async (req, res) => {
+    const page = await pageFor(req, res, "website:edit");
+    if (!page) return;
+    const updated = await service.submitPage(page);
+    await log(req, page.companyId, "website.page_submitted", "website_page", page.id, { siteId: page.siteId, title: page.title });
+    const { doc } = await service.withDoc(updated);
+    res.json(toWebsitePage(updated, doc));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.pageApprove, async (req, res) => {
+    const page = await pageFor(req, res, "website:publish", APPROVER);
+    if (!page) return;
+    const updated = await service.approvePage(page);
+    await log(req, page.companyId, "website.page_approved", "website_page", page.id, { siteId: page.siteId, revisionId: updated.approvedRevisionId });
+    const { doc } = await service.withDoc(updated);
+    res.json(toWebsitePage(updated, doc));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.pageSendBack, validate(sendBackWebsiteContentSchema), async (req, res) => {
+    const page = await pageFor(req, res, "website:publish", APPROVER);
+    if (!page) return;
+    const updated = await service.sendBackPage(page);
+    await log(req, page.companyId, "website.page_sent_back", "website_page", page.id, { siteId: page.siteId, note: req.body.note });
+    const { doc } = await service.withDoc(updated);
+    res.json(toWebsitePage(updated, doc));
+  });
+
   // ---- entries ----
 
   router.get(WEBSITE_MODULE_API_ROUTES.entries, async (req, res) => {
@@ -250,8 +310,8 @@ export function websiteModuleRoutes(db: Db) {
     res.status(201).json(entry);
   });
 
-  async function entryFor(req: Request, res: Response, permission: WebsitePermission) {
-    const site = await siteFor(req, res, permission);
+  async function entryFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
+    const site = await siteFor(req, res, permission, refusal);
     if (!site) return null;
     const entry = await service.getEntryRow(site.companyId, site.id, req.params.entryId as string);
     if (!entry) {
@@ -315,6 +375,45 @@ export function websiteModuleRoutes(db: Db) {
     const entry = await entryFor(req, res, "website:view");
     if (!entry) return;
     res.json(await service.store.listRevisions(entry.companyId, entry.documentId));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.entrySubmit, async (req, res) => {
+    const entry = await entryFor(req, res, "website:edit");
+    if (!entry) return;
+    const updated = await service.submitEntry(entry);
+    await log(req, entry.companyId, "website.entry_submitted", "website_entry", entry.id, { siteId: entry.siteId, collection: entry.collection });
+    const { doc } = await service.withDoc(updated);
+    res.json(toWebsiteEntry(updated, doc));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.entryApprove, async (req, res) => {
+    const entry = await entryFor(req, res, "website:publish", APPROVER);
+    if (!entry) return;
+    const updated = await service.approveEntry(entry);
+    await log(req, entry.companyId, "website.entry_approved", "website_entry", entry.id, { siteId: entry.siteId, revisionId: updated.approvedRevisionId });
+    const { doc } = await service.withDoc(updated);
+    res.json(toWebsiteEntry(updated, doc));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.entrySendBack, validate(sendBackWebsiteContentSchema), async (req, res) => {
+    const entry = await entryFor(req, res, "website:publish", APPROVER);
+    if (!entry) return;
+    const updated = await service.sendBackEntry(entry);
+    await log(req, entry.companyId, "website.entry_sent_back", "website_entry", entry.id, { siteId: entry.siteId, note: req.body.note });
+    const { doc } = await service.withDoc(updated);
+    res.json(toWebsiteEntry(updated, doc));
+  });
+
+  // ---- Publish proposals (GRE-2109): agents and people without Publish rights propose; a person approves ----
+
+  router.post(WEBSITE_MODULE_API_ROUTES.publishProposals, async (req, res) => {
+    const site = await siteFor(req, res, "website:edit");
+    if (!site) return;
+    const { approval, created } = await publishApprovals.propose(site, actorOf(req));
+    if (created) {
+      await log(req, site.companyId, "approval.created", "approval", approval.id, { type: approval.type, siteId: site.id });
+    }
+    res.status(created ? 201 : 200).json(approval);
   });
 
   return router;

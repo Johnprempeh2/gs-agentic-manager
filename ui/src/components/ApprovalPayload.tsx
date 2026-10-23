@@ -1,4 +1,4 @@
-import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound } from "lucide-react";
+import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound, Globe } from "lucide-react";
 import { MarkdownBody } from "./MarkdownBody";
 import { formatCents } from "../lib/utils";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
@@ -10,7 +10,19 @@ export const typeLabel: Record<string, string> = {
   budget_override_required: "Over budget",
   request_board_approval: "Needs your approval",
   permission_grant: "Permission request",
+  website_publish: "Publish proposal",
 };
+
+/**
+ * Button words per approval type. GRE-601: a permission request reads as
+ * Grant / Deny. GRE-2109: a Publish proposal reads as Approve and Publish /
+ * Not now (GRE-2107 copy section 8).
+ */
+export function approvalActionLabels(type: string) {
+  if (type === "permission_grant") return { approve: "Grant", approving: "Granting...", reject: "Deny", rejecting: "Denying..." };
+  if (type === "website_publish") return { approve: "Approve and Publish", approving: "Starting Publish...", reject: "Not now", rejecting: "Declining..." };
+  return { approve: "Approve", approving: "Approving...", reject: "Reject", rejecting: "Rejecting..." };
+}
 
 function firstNonEmptyString(...values: unknown[]): string | null {
   for (const value of values) {
@@ -46,6 +58,7 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   budget_override_required: ShieldAlert,
   request_board_approval: ShieldCheck,
   permission_grant: KeyRound,
+  website_publish: Globe,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -324,6 +337,30 @@ function PermissionGrantPayload({ payload }: { payload: Record<string, unknown> 
   );
 }
 
+/** GRE-2109: an agent proposes a Publish; the summary says what it costs and in whose name it runs. */
+function WebsitePublishPayload({ payload }: { payload: Record<string, unknown> }) {
+  const changes = Array.isArray(payload.changes)
+    ? payload.changes.filter((change): change is { label: string; kind: string } =>
+      typeof change === "object" && change !== null && typeof (change as { label?: unknown }).label === "string")
+    : [];
+  return (
+    <div className="mt-3 space-y-2 text-sm">
+      <PayloadField label="Site" value={payload.siteName} />
+      {typeof payload.summary === "string" && <p className="leading-6 text-foreground/90">{payload.summary}</p>}
+      {changes.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-(length:--text-micro) font-medium uppercase tracking-(--tracking-label) text-muted-foreground">What goes live</p>
+          <ul className="space-y-0.5 text-muted-foreground">
+            {changes.map((change, index) => (
+              <li key={`${index}-${change.label}`}>{change.label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -336,6 +373,7 @@ export function ApprovalPayloadRenderer({
   if (type === "hire_agent") return <HireAgentPayload payload={payload} />;
   if (type === "budget_override_required") return <BudgetOverridePayload payload={payload} />;
   if (type === "permission_grant") return <PermissionGrantPayload payload={payload} />;
+  if (type === "website_publish") return <WebsitePublishPayload payload={payload} />;
   if (type === "request_board_approval") {
     return <BoardApprovalPayload payload={payload} hideTitle={hidePrimaryTitle} />;
   }

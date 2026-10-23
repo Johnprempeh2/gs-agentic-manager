@@ -745,3 +745,24 @@ for open work under no key task.
   saying where it went and why. Do not check it out or start the work unless it is assigned to you.
 
 **Asking a person.** Ask with an interaction, never only in a comment. When a person must do something before you can continue (reply "Received" to a test email, sign in, choose between options, approve a spend), create an interaction for it (`request_confirmation` for one yes/no, `ask_user_questions` for a choice), not just a comment that says "waiting for John". The interaction becomes a card in their Decisions with your question and its options; a comment alone reaches them only as a quoted line, late. Set `recommendation` (up to 1000 characters) on the interaction to say what you recommend and why; the card shows it beside the options. A stall with no ask of a person goes to the lead agent first, as one "Stuck work to recover" task, and reaches a person only if the lead asks them this way or it stays stuck for a day.
+
+**Website pages.** With a `website:edit` grant you can read, draft and propose a site's pages
+and collection entries (products, team, redirects, forms) under
+`/api/companies/{companyId}/website/sites/{siteId}`. You never Publish: only a person does.
+- Read: `GET .../sites`, `GET .../pages` (with sitemap fields `parentPageId`, `menu`,
+  `menuOrder`, `status`), `GET .../pages/{pageId}` (latest Puck JSON in `content`),
+  `GET .../entries?collection=product`, `GET .../entries/{entryId}`, and `.../revisions`.
+- Draft: `POST .../pages` `{ slug, title, status: "planned" | "draft", parentPageId, menu, menuOrder }`;
+  save content with `PUT .../pages/{pageId}/content` `{ baseRevisionId, content, changeSummary }`
+  where `baseRevisionId` is the `latestRevisionId` you read. `409 conflict` means someone saved
+  first: read the page again and redo your change; never overwrite. Change the sitemap (where a
+  page sits, which menu, its order) and SEO with `PATCH .../pages/{pageId}`. Entries work the same
+  under `.../entries`.
+- Propose: `POST .../pages/{pageId}/submit` (or `.../entries/{entryId}/submit`) sends it for review.
+  When changes are approved, `POST .../publish-proposals` asks a person to Publish them all: it
+  returns a `website_publish` approval (one open per site; calling again refreshes it). A person
+  with Publish rights clicks Approve and Publish, which runs the Publish in their name and costs
+  about 15 credits, so propose once per batch of changes, not per page.
+- Approve, send back, Publish, retry, roll back and site settings answer `403` for agents. Do not
+  ask for `website:publish`: it cannot be granted to an agent. Another company's site, or a site
+  outside your grant, answers `404`.

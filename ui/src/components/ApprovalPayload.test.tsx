@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ApprovalPayloadRenderer, approvalLabel, permissionKeyLabel, scopeTypeLabel } from "./ApprovalPayload";
+import { ApprovalPayloadRenderer, approvalActionLabels, approvalLabel, permissionKeyLabel, scopeTypeLabel } from "./ApprovalPayload";
 import { ThemeProvider } from "../context/ThemeContext";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -265,5 +265,37 @@ describe("permissionKeyLabel and scopeTypeLabel", () => {
     expect(permissionKeyLabel("widgets:do_thing")).toBe("Widgets: do thing");
     expect(scopeTypeLabel("agent")).toBe("An agent");
     expect(scopeTypeLabel("team")).toBe("team");
+  });
+});
+
+// GRE-2109: an agent's Publish proposal (GRE-2107 copy section 8).
+describe("website_publish approvals", () => {
+  it("reads as Approve and Publish / Not now and shows what goes live", () => {
+    expect(approvalActionLabels("website_publish")).toMatchObject({ approve: "Approve and Publish", reject: "Not now" });
+    expect(approvalActionLabels("permission_grant")).toMatchObject({ approve: "Grant", reject: "Deny" });
+    expect(approvalLabel("website_publish", { title: "Quill proposes a Publish" })).toBe("Publish proposal: Quill proposes a Publish");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <ApprovalPayloadRenderer
+            type="website_publish"
+            payload={{
+              siteName: "Example site",
+              summary: "1 change is ready. Approving starts a Publish in your name. It costs about 15 credits.",
+              changes: [{ kind: "page", id: "p1", revisionId: "r1", label: "About" }],
+            }}
+          />
+        </ThemeProvider>,
+      );
+    });
+    expect(container.textContent).toContain("Example site");
+    expect(container.textContent).toContain("Approving starts a Publish in your name");
+    expect(container.textContent).toContain("About");
+    act(() => root.unmount());
+    container.remove();
   });
 });
