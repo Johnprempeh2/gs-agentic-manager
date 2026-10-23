@@ -1,13 +1,14 @@
 import { Router, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies } from "@greatstone/db";
+import { companies, projects } from "@greatstone/db";
 import {
   WEBSITE_API_ROUTES,
   createWebsitePropertySchema,
   startWebsiteGoogleConnectSchema,
   updateWebsitePropertySchema,
   type WebsiteGoogleConnectStart,
+  type WebsiteHub,
   type WebsiteOverview,
 } from "@greatstone/shared";
 import { forbidden, unprocessable } from "../errors.js";
@@ -17,6 +18,7 @@ import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
 import { logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { websiteService, type WebsiteServiceOptions } from "../services/website/index.js";
+import { buildWebsiteHub } from "../services/website/hub.js";
 import { isLoopbackHost } from "../url-utils.js";
 import { logger } from "../middleware/logger.js";
 import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -131,6 +133,15 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
     assertCompanyOwnerOrAdmin(req, companyId);
     const property = await propertyInCompany(req, res);
     if (!property) return;
+    if (req.body.projectId) {
+      // Only a project in the same company can be linked.
+      const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, req.body.projectId), eq(projects.companyId, companyId)))
+        .limit(1);
+      if (!project) throw unprocessable("That project is not in this company", { code: "website_project_not_found" });
+    }
     const updated = await service.updateProperty(property, req.body);
     await logWebsite(req, companyId, "website.property_updated", property.id, { fields: Object.keys(req.body) });
     res.json(updated);
@@ -141,6 +152,20 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
     const property = await propertyInCompany(req, res);
     if (!property) return;
     res.json(await service.getReport(property));
+  });
+
+  // The linked project's website work: recent work, the sitemap and preview links.
+  router.get(WEBSITE_API_ROUTES.hub, async (req, res) => {
+    assertCompanyAccess(req, req.params.companyId as string);
+    assertBoard(req);
+    const property = await propertyInCompany(req, res);
+    if (!property) return;
+    const hub: WebsiteHub = await buildWebsiteHub(db, {
+      companyId: property.companyId,
+      propertyId: property.id,
+      projectId: property.projectId ?? null,
+    });
+    res.json(hub);
   });
 
   router.post(WEBSITE_API_ROUTES.connectGoogle, validate(startWebsiteGoogleConnectSchema), async (req, res) => {

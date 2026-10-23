@@ -185,6 +185,7 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "post", path: `${COMPANY}/website/properties` },
       { method: "patch", path: `${COMPANY}/website/properties/${ID}` },
       { method: "get", path: `${COMPANY}/website/properties/${ID}/report` },
+      { method: "get", path: `${COMPANY}/website/properties/${ID}/hub` },
       { method: "post", path: `${COMPANY}/website/properties/${ID}/google/connect` },
       { method: "post", path: `${COMPANY}/website/properties/${ID}/google/disconnect` },
       { method: "post", path: `${COMPANY}/website/properties/${ID}/pull` },

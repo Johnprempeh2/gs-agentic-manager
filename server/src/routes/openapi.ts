@@ -15727,6 +15727,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}/hub",
+  tags: ["website"],
+  summary: "Get the linked project's website work: recent deliverables and work products, the latest website-sitemap file, and Netlify preview links posted on its tasks (board users)",
+  responses: websiteResponses,
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/website/properties/{propertyId}/google/connect",
   tags: ["website"],

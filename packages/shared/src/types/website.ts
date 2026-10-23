@@ -37,6 +37,8 @@ export const WEBSITE_API_ROUTES = {
   property: "/companies/:companyId/website/properties/:propertyId",
   /** GET → `WebsiteReport` (latest stored pull, last pull time and errors). */
   report: "/companies/:companyId/website/properties/:propertyId/report",
+  /** GET → `WebsiteHub`: recent work, sitemap and preview links from the linked project. Board users. */
+  hub: "/companies/:companyId/website/properties/:propertyId/hub",
   /** POST `StartWebsiteGoogleConnect` → `WebsiteGoogleConnectStart`. Owner or admin. */
   connectGoogle: "/companies/:companyId/website/properties/:propertyId/google/connect",
   /** POST → `WebsiteProperty`. Removes the token from the vault. Owner or admin. */
@@ -75,6 +77,8 @@ export interface WebsiteProperty {
   siteUrl: string;
   /** GA4 property id, digits only (for example `"123456789"`). */
   ga4PropertyId: string;
+  /** The project that builds this website; null until it is linked. */
+  projectId: string | null;
   connectionStatus: WebsiteConnectionStatus;
   connectedAt: string | null;
   lastPullAt: string | null;
@@ -202,4 +206,71 @@ export interface WebsiteReport {
 export interface WebsiteGoogleConnectStart {
   /** Open this URL in the browser to give consent. */
   authorizationUrl: string;
+}
+
+/** Name prefix that marks a file as the website sitemap (`website-sitemap*.html`). */
+export const WEBSITE_SITEMAP_PREFIX = "website-sitemap";
+
+export interface WebsiteHubTask {
+  id: string;
+  identifier: string | null;
+  title: string;
+}
+
+/**
+ * Something recently made on a task in the website project: a deliverable,
+ * a preview link, a pull request or a screenshot.
+ */
+export interface WebsiteHubWorkItem {
+  id: string;
+  /** A work product type (`deliverable`, `preview_url`, ...) or `screenshot` for an image attachment. */
+  type: string;
+  title: string;
+  /** External link (preview, pull request), when there is one. */
+  url: string | null;
+  /** In-app file path (`/api/attachments/:id/content`), when the item is a stored file. */
+  contentPath: string | null;
+  contentType: string | null;
+  status: string | null;
+  reviewState: string | null;
+  task: WebsiteHubTask;
+  createdAt: string;
+}
+
+/** The newest `website-sitemap*` file on a task in the website project. */
+export interface WebsiteHubSitemap {
+  source: "deliverable" | "attachment";
+  title: string;
+  filename: string | null;
+  contentPath: string;
+  contentType: string;
+  /** Deliverable version; 1 for a plain attachment. */
+  version: number;
+  versionCount: number;
+  /** Deliverable status (`draft`, `final`); null for a plain attachment. */
+  status: string | null;
+  /** Work product review state (`needs_board_review`, `approved`, ...); null for a plain attachment. */
+  reviewState: string | null;
+  task: WebsiteHubTask;
+  createdAt: string;
+}
+
+/** A deploy-preview link an agent posted on a website task. */
+export interface WebsiteHubPreviewLink {
+  url: string;
+  /** Where the link came from. */
+  source: "work_product" | "comment";
+  /** The work product title, or who wrote the comment. */
+  label: string;
+  task: WebsiteHubTask;
+  postedAt: string;
+}
+
+/** `GET .../website/properties/:propertyId/hub`. Empty lists while no project is linked. */
+export interface WebsiteHub {
+  propertyId: string;
+  projectId: string | null;
+  recentWork: WebsiteHubWorkItem[];
+  sitemap: WebsiteHubSitemap | null;
+  previewLinks: WebsiteHubPreviewLink[];
 }
