@@ -49,7 +49,8 @@ function OptionColumn({ option, tree, changesById, side }: {
 /**
  * Compare (GRE-2111): two options side by side, with added, removed, moved
  * and renamed pages marked. Pick one (approve it), or copy a branch from one
- * option into the other to mix them.
+ * option into a copy of the other to mix them: the mix is a new option, shown
+ * on the right, and the two options compared do not change (GRE-2143).
  */
 export function SitemapCompareView({ options, initialA, initialB, canApprove, canEdit, onApprove, onCopy, busy }: {
   options: WebsiteSitemapOption[];
@@ -58,7 +59,8 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
   canApprove: boolean;
   canEdit: boolean;
   onApprove: (optionId: string) => void;
-  onCopy: (targetOptionId: string, tree: Tree) => void;
+  /** Saves the mix as a new option and resolves to its id (null when the save fails). */
+  onCopy: (targetOptionId: string, tree: Tree) => Promise<string | null>;
   busy: boolean;
 }) {
   const [aId, setAId] = useState(initialA ?? options[0]?.id ?? "");
@@ -136,14 +138,25 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
           onSubmit={(event) => {
             event.preventDefault();
             if (!copyNode) return;
-            onCopy(target.id, copyBranch(source.tree, copyNode, target.tree, copyParent || null));
-            setCopyNode("");
+            const targetId = target.id;
+            void onCopy(targetId, copyBranch(source.tree, copyNode, target.tree, copyParent || null)).then((createdId) => {
+              if (!createdId) return;
+              // Keep the base option on the left and show the new mix on the right.
+              setAId(targetId);
+              setBId(createdId);
+              setCopyFrom("a");
+              setCopyNode("");
+              setCopyParent("");
+            });
           }}
         >
           <h3 id="sitemap-copy-branch" className="text-sm font-semibold">Mix: copy a branch</h3>
-          <p className="text-xs text-muted-foreground">Copies a page and its sub-pages into the other option. Paths already in use get a number on the end.</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-sm">
+          <p className="text-xs text-muted-foreground">
+            Copies a page and its sub-pages into a copy of the other option and saves it as a new option. The options you compare do not change. Paths already in use get a number on the end.
+          </p>
+          {/* One field per row on a phone; a row from sm up (GRE-2143). */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="font-medium">From</span>
               <NativeSelect value={copyFrom} onChange={(event) => {
                 setCopyFrom(event.target.value as "a" | "b");
@@ -154,7 +167,7 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
                 <option value="b">{b?.name}</option>
               </NativeSelect>
             </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm sm:max-w-xs">
+            <label className="flex min-w-0 flex-col gap-1 text-sm sm:max-w-xs sm:flex-1">
               <span className="font-medium">Page and its sub-pages</span>
               <NativeSelect value={copyNode} onChange={(event) => setCopyNode(event.target.value)}>
                 <option value="">Choose a page</option>
@@ -163,8 +176,8 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
                 ))}
               </NativeSelect>
             </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm sm:max-w-xs">
-              <span className="font-medium">Into {target.name}, under</span>
+            <label className="flex min-w-0 flex-col gap-1 text-sm sm:max-w-xs sm:flex-1">
+              <span className="font-medium">Into a copy of {target.name}, under</span>
               <NativeSelect value={copyParent} onChange={(event) => setCopyParent(event.target.value)}>
                 <option value="">Top level</option>
                 {flatten(target.tree).map(({ node }) => (
@@ -172,7 +185,7 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
                 ))}
               </NativeSelect>
             </label>
-            <Button type="submit" size="sm" variant="outline" disabled={!copyNode || busy || target.status === "archived"}>
+            <Button type="submit" size="sm" variant="outline" className="self-start sm:self-auto" disabled={!copyNode || busy}>
               <Copy aria-hidden="true" />
               Copy branch
             </Button>
