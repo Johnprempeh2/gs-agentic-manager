@@ -1,0 +1,130 @@
+import { describe, expect, it } from "vitest";
+import {
+  checkWebsiteEditorOrigin,
+  createWebsiteFrameNonce,
+  inspectWebsitePuckData,
+  isWebsiteFrameNonce,
+  parseWebsiteEditorOrigin,
+  receiveWebsiteFrameMessage,
+  sanitizeWebsiteFrameSourceHint,
+  websiteFrameSrc,
+} from "./website-frame.js";
+
+const ORIGIN = "https://editor.example.com";
+const frameWindow = { name: "frame" };
+const nonce = createWebsiteFrameNonce();
+
+function ack(overrides: Record<string, unknown> = {}) {
+  return {
+    gs: "website-frame",
+    id: "m1",
+    type: "hello-ack",
+    payload: {
+      protocol: 1,
+      nonce,
+      siteId: "site-1",
+      engine: { version: "1.0.0", commit: "a".repeat(40) },
+      supportedReleaseSchemas: [1],
+      blocks: [{ type: "Hero", label: "Hero" }],
+      ...overrides,
+    },
+  };
+}
+
+const ctx = (protocol: number | null) => ({ origin: ORIGIN, source: frameWindow, nonce, protocol });
+
+describe("nonce", () => {
+  it("is 22 base64url characters and new every time", () => {
+    const a = createWebsiteFrameNonce();
+    expect(isWebsiteFrameNonce(a)).toBe(true);
+    expect(a).not.toBe(createWebsiteFrameNonce());
+  });
+});
+
+describe("editor origin", () => {
+  it("accepts an exact https origin only", () => {
+    expect(parseWebsiteEditorOrigin("https://editor.example.com")).toBe(ORIGIN);
+    expect(parseWebsiteEditorOrigin("https://editor.example.com/")).toBe(ORIGIN);
+    expect(parseWebsiteEditorOrigin("https://editor.example.com/editor")).toBeNull();
+    expect(parseWebsiteEditorOrigin("https://*.example.com")).toBeNull();
+    expect(parseWebsiteEditorOrigin("http://editor.example.com")).toBeNull();
+    expect(parseWebsiteEditorOrigin("https://u:p@editor.example.com")).toBeNull();
+    expect(parseWebsiteEditorOrigin("http://localhost:3000")).toBeNull();
+    expect(parseWebsiteEditorOrigin("http://localhost:3000", { allowLocalhost: true })).toBe("http://localhost:3000");
+  });
+
+  it("refuses the public origin and every GSAM origin (C1.1)", () => {
+    const context = { publicOrigin: "https://example.com", gsamOrigins: ["https://gsam.tail.ts.net"] };
+    expect(checkWebsiteEditorOrigin(ORIGIN, context)).toBeNull();
+    expect(checkWebsiteEditorOrigin("https://example.com", context)).toBe("public-origin");
+    expect(checkWebsiteEditorOrigin("https://gsam.tail.ts.net", context)).toBe("gsam-origin");
+    expect(checkWebsiteEditorOrigin("nope", context)).toBe("invalid");
+  });
+
+  it("builds the iframe src from the origin and a fixed path only", () => {
+    expect(websiteFrameSrc(ORIGIN, "editor", "page/1")).toBe(`${ORIGIN}/editor/page%2F1`);
+  });
+});
+
+describe("receive rules (test 1, 11)", () => {
+  it("accepts a valid hello-ack", () => {
+    const result = receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: ack() }, ctx(null));
+    expect(result.ok).toBe(true);
+  });
+
+  it("drops a wrong origin, a wrong window and a wrong nonce", () => {
+    expect(receiveWebsiteFrameMessage({ origin: "https://evil.example", source: frameWindow, data: ack() }, ctx(null)).ok).toBe(false);
+    expect(receiveWebsiteFrameMessage({ origin: ORIGIN, source: { name: "other" }, data: ack() }, ctx(null)).ok).toBe(false);
+    expect(
+      receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: ack({ nonce: createWebsiteFrameNonce() }) }, ctx(null)).ok,
+    ).toBe(false);
+  });
+
+  it("drops a non-handshake message before hello-ack", () => {
+    const dirty = { gs: "website-frame", protocol: 1, session: nonce, id: "m2", type: "dirty", payload: { dirty: true } };
+    expect(receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: dirty }, ctx(null))).toEqual({
+      ok: false,
+      reason: "dirty before hello-ack",
+    });
+    expect(receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: dirty }, ctx(1)).ok).toBe(true);
+  });
+
+  it("drops a wrong protocol, a wrong session and an unknown type after the handshake", () => {
+    const base = { gs: "website-frame", protocol: 1, session: nonce, id: "m3", type: "dirty", payload: { dirty: true } };
+    const check = (data: unknown) => receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data }, ctx(1)).ok;
+    expect(check({ ...base, protocol: 2 })).toBe(false);
+    expect(check({ ...base, session: createWebsiteFrameNonce() })).toBe(false);
+    expect(check({ ...base, type: "eval" })).toBe(false);
+    expect(check({ ...base, payload: { dirty: "yes" } })).toBe(false);
+    expect(check({ ...base, gs: "other" })).toBe(false);
+  });
+});
+
+describe("Puck data (R6)", () => {
+  const page = (content: unknown[]) => ({ root: { props: {} }, content });
+
+  it("collects nested slot blocks by id", () => {
+    const result = inspectWebsitePuckData(
+      page([{ type: "Section", props: { id: "s1", items: [{ type: "Hero", props: { id: "h1" } }] } }]),
+    );
+    expect(result.ok && [...result.blocks.keys()]).toEqual(["s1", "h1"]);
+  });
+
+  it("refuses duplicate ids, missing ids, unknown types and legacy zones", () => {
+    expect(inspectWebsitePuckData(page([{ type: "Hero", props: { id: "a" } }, { type: "Hero", props: { id: "a" } }])).ok).toBe(false);
+    expect(inspectWebsitePuckData(page([{ type: "Hero", props: {} }])).ok).toBe(false);
+    expect(inspectWebsitePuckData(page([{ type: "Hero", props: { id: "a" } }]), new Set(["Text"])).ok).toBe(false);
+    expect(inspectWebsitePuckData({ ...page([]), zones: {} }).ok).toBe(false);
+  });
+});
+
+describe("source hint (test 8)", () => {
+  it("keeps a repo-relative file and line, drops anything else", () => {
+    expect(sanitizeWebsiteFrameSourceHint({ file: "src/blocks/Hero.tsx", line: 12 })).toEqual({ file: "src/blocks/Hero.tsx", line: 12 });
+    expect(sanitizeWebsiteFrameSourceHint({ file: "/etc/passwd", line: 1 })).toBeNull();
+    expect(sanitizeWebsiteFrameSourceHint({ file: "src/../../x", line: 1 })).toBeNull();
+    expect(sanitizeWebsiteFrameSourceHint({ file: "src/<b>.tsx", line: 1 })).toBeNull();
+    expect(sanitizeWebsiteFrameSourceHint({ file: "src/a.tsx", line: 0 })).toBeNull();
+    expect(sanitizeWebsiteFrameSourceHint(null)).toBeNull();
+  });
+});
