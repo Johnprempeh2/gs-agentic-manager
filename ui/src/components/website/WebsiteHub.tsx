@@ -35,6 +35,7 @@ import { StatusIcon } from "../StatusIcon";
 import { ProgressRing } from "../task-tree/ProgressRing";
 import { TaskTreeProgress } from "../task-tree/TaskTreeHeader";
 import { ProjectTreeView } from "../../pages/ProjectTree";
+import { WebsiteSiteConnection } from "./WebsiteSiteConnection";
 
 // The website hub (23 Oct 2026): the Website page's Overview, Progress,
 // Sitemap and Preview tabs. Everything is read from what GSAM already keeps:
@@ -431,6 +432,7 @@ export function WebsiteOverviewTab({
     return (
       <div className="space-y-6">
         <LiveSitePanel property={property} project={undefined} />
+        <WebsiteSiteConnection companyId={companyId} property={property} />
         <LinkProjectFirst companyId={companyId} property={property} />
       </div>
     );
@@ -447,6 +449,7 @@ export function WebsiteOverviewTab({
           <Panel title="Progress"><p className="text-xs text-muted-foreground">Loading progress</p></Panel>
         )}
       </div>
+      <WebsiteSiteConnection companyId={companyId} property={property} />
       <NeedsYouPanel companyId={companyId} projectId={projectId} tree={treeQuery.data} />
       {hubQuery.error ? (
         <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />

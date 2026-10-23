@@ -1208,6 +1208,12 @@ export const PERMISSION_KEYS = [
   // Approve or send back a review that waits on someone else. People only:
   // owners hold it implicitly, anyone else needs a grant.
   "reviews:override",
+  // Website module (GRE-1914 ADR section 6). Grant scope: { siteIds: string[] }; null = all the company's sites.
+  // Role defaults: owner and admin all three, operator view and edit, viewer view.
+  // website:publish is for people only: it can never be granted to or held by an agent.
+  "website:view",
+  "website:edit",
+  "website:publish",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
