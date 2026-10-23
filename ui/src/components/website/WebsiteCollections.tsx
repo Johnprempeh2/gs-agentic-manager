@@ -163,7 +163,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
       if (!entryId) throw new Error("Save the draft first.");
       if (action === "approve") return websiteModuleApi.approveEntry(companyId, siteId, entryId);
       if (action === "archive") return websiteModuleApi.archiveEntry(companyId, siteId, entryId);
-      return websiteModuleApi.updateEntry(companyId, siteId, entryId, { status: "review" });
+      return websiteModuleApi.submitEntry(companyId, siteId, entryId);
     },
     onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. This change goes live with the next Publish." : "Archived. This change goes live with the next Publish."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
   });

@@ -89,6 +89,8 @@ export const websiteModuleApi = {
     api.put<WebsiteSaveResult>(`${entryPath(companyId, siteId, entryId)}/content`, input),
   updateEntry: (companyId: string, siteId: string, entryId: string, patch: { status?: "draft" | "review"; entryKey?: string; sortOrder?: number | null }) =>
     api.patch<WebsiteEntry>(entryPath(companyId, siteId, entryId), patch),
+  submitEntry: (companyId: string, siteId: string, entryId: string) =>
+    api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/submit`, {}),
   approveEntry: (companyId: string, siteId: string, entryId: string) =>
     api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/approve`, {}),
   archiveEntry: (companyId: string, siteId: string, entryId: string) =>

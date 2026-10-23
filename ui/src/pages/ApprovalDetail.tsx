@@ -13,7 +13,7 @@ import { waitingLabel } from "../lib/approval-wait";
 import { formatDateTime } from "../lib/utils";
 import { StatusBadge } from "../components/StatusBadge";
 import { Identity } from "../components/Identity";
-import { approvalLabel, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "../components/ApprovalPayload";
+import { approvalLabel, approvalActionLabels, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "../components/ApprovalPayload";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -331,7 +331,7 @@ export function ApprovalDetail() {
                 onClick={() => approveMutation.mutate()}
                 disabled={approveMutation.isPending}
               >
-                {isPermissionGrant ? "Grant" : "Approve"}
+                {approvalActionLabels(approval.type).approve}
               </Button>
               <Button
                 variant="destructive"
@@ -339,7 +339,7 @@ export function ApprovalDetail() {
                 onClick={() => setNoteAction("reject")}
                 disabled={rejectMutation.isPending}
               >
-                {isPermissionGrant ? "Deny" : "Reject"}
+                {approvalActionLabels(approval.type).reject}
               </Button>
             </>
           )}
