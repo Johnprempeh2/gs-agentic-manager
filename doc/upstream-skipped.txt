@@ -3,6 +3,12 @@
 # sync skips a commit; the reason must say why (see the Upstream log on GRE-82).
 # Format: <upstream sha> <reason>
 813e808af #16963 removes filesystem-history auth from the #15749 task-workspace model (deferred, GRE-1505); our tree never had the gate. Revisit together with #15749.
+30f402f5f restore-point capture starts the storage and retention stack excluded by Beacon on GRE-2034; keep out of the 26 Oct sync
+12bb7e197 restore-point ledger and retention depends on the excluded stack; migration 0372 also clashes with ours (GRE-2034)
+6d44b80a5 closed-worktree expiry depends on the excluded restore-point stack (GRE-2034)
+650581b2f nested checkout restore points depend on the excluded stack; migration 0374 also clashes with ours (GRE-2034)
+5ef783d97 idle-worktree expiry depends on the excluded restore-point stack (GRE-2034)
+d69631b01 reopening after restore-point expiry depends on the excluded retention stack (GRE-2034)
 1d23cb696 #14394 their CI Rust cache paths; our CI is fork-owned
 3166e93a7 #14461 lockfile refresh; we regenerate our own lockfile at sync
 d1f3e7bb0 #14741 upstream README and roadmap; ours is rebranded
