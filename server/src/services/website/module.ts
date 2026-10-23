@@ -332,8 +332,14 @@ export function websiteModuleService(db: Db) {
       throw err;
     }
     if (input.netlifyToken) {
-      const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
-      [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId }).where(eq(websiteSite.id, row.id)).returning();
+      // The secret lives in its own store, so a failure removes the new site row rather than leaving it without a token.
+      try {
+        const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
+        [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId }).where(eq(websiteSite.id, row.id)).returning();
+      } catch (err) {
+        await db.delete(websiteSite).where(and(eq(websiteSite.companyId, companyId), eq(websiteSite.id, row.id)));
+        throw err;
+      }
     }
     return row;
   }
@@ -438,19 +444,21 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updatePage(row: PageRow, input: UpdateWebsitePage) {
-    if (input.parentPageId !== undefined) await assertParent(row.companyId, row.siteId, row.id, input.parentPageId);
+    const { archived, ...fields } = input;
+    if (fields.parentPageId !== undefined) await assertParent(row.companyId, row.siteId, row.id, fields.parentPageId);
+    const slug = fields.slug ?? row.slug;
     try {
       const [updated] = await db
         .update(websitePage)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(websitePage.companyId, row.companyId), eq(websitePage.id, row.id)))
         .returning();
-      if (input.title !== undefined) {
-        await db.update(documents).set({ title: input.title }).where(and(eq(documents.id, row.documentId), eq(documents.companyId, row.companyId)));
+      if (fields.title !== undefined) {
+        await db.update(documents).set({ title: fields.title }).where(and(eq(documents.id, row.documentId), eq(documents.companyId, row.companyId)));
       }
       return updated;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`A page with the path ${input.slug} already exists on this site`, { code: "website_page_slug_taken" });
+      if (isUniqueViolation(err)) throw conflict(`A page with the path ${slug} already exists on this site`, { code: "website_page_slug_taken" });
       throw err;
     }
   }
@@ -542,15 +550,16 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updateEntry(row: EntryRow, input: UpdateWebsiteEntry) {
+    const { archived, ...fields } = input;
     try {
       const [updated] = await db
         .update(websiteEntry)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)))
         .returning();
       return updated;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`${row.collection} already has an entry ${input.entryKey}`, { code: "website_entry_key_taken" });
+      if (isUniqueViolation(err)) throw conflict(`${row.collection} already has an entry ${fields.entryKey ?? row.entryKey}`, { code: "website_entry_key_taken" });
       throw err;
     }
   }

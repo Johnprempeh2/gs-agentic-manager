@@ -322,10 +322,10 @@ describeEmbeddedPostgres("website module routes", () => {
     await http.patch(`/api/companies/${a.company.id}/website/sites/${a.site.id}`).send({ name: "Renamed" }).expect(403);
     const access = accessService(db);
     expect(await access.hasPermission(a.company.id, "agent", agent.id, "website:publish")).toBe(false);
-    await expect(access.setPrincipalPermission(a.company.id, "agent", agent.id, "website:publish", true, null)).rejects.toThrow(/cannot be given the right to publish/);
+    await expect(access.setPrincipalPermission(a.company.id, "agent", agent.id, "website:publish", true, null)).rejects.toThrow(/Agents cannot have Publish rights/);
     await expect(
       access.setPrincipalGrants(a.company.id, "agent", agent.id, [{ permissionKey: "website:publish" }], null),
-    ).rejects.toThrow(/cannot be given the right to publish/);
+    ).rejects.toThrow(/Agents cannot have Publish rights/);
   });
 
   it("role defaults: owner publishes, operator edits but cannot publish, viewer only views", async () => {
@@ -346,6 +346,79 @@ describeEmbeddedPostgres("website module routes", () => {
     // Agents have no default: they need an explicit grant.
     const { actor } = await seedAgent(a.company.id, []);
     await request(app(actor)).get(`${base}/${a.site.id}`).expect(403);
+  });
+
+  it("isolation 11 for a person: a scoped website:edit grant edits one site and gets 404 on another", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const second = (await request(app())
+      .post(`/api/companies/${a.company.id}/website/sites`)
+      .send({ name: "Second", domain: "second.alpha.test", netlifySiteId: "n2" })
+      .expect(201)).body as WebsiteSite;
+    // An operator edits every site by role default; a scoped grant row narrows that to one site.
+    const person = await seedUser(a.company.id, "operator", [{ key: "website:edit", scope: { siteIds: [a.site.id] } }]);
+    const http = request(app(person));
+    const base = `/api/companies/${a.company.id}/website/sites`;
+    await http.post(`${base}/${a.site.id}/pages`).send({ slug: "/about", title: "About" }).expect(201);
+    await http.post(`${base}/${second.id}/pages`).send({ slug: "/about", title: "About" }).expect(404);
+    // View has no grant row, so the role default still shows both sites.
+    await http.get(`${base}/${second.id}`).expect(200);
+  });
+
+  it("a disconnected (archived) site answers 409 to page and entry writes; reads still work", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const base = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    await http.patch(base).send({ archived: true }).expect(200);
+    const writes = [
+      http.post(`${base}/pages`).send({ slug: "/about", title: "About" }),
+      http.patch(`${base}/pages/${a.page.id}`).send({ title: "Renamed" }),
+      http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 } }),
+      http.post(`${base}/pages/${a.page.id}/archive`),
+      http.post(`${base}/entries`).send({ collection: "product", entryKey: "other" }),
+      http.patch(`${base}/entries/${a.entry.id}`).send({ sortOrder: 2 }),
+      http.put(`${base}/entries/${a.entry.id}/content`).send({ baseRevisionId: a.entry.latestRevisionId, content: { v: 2 } }),
+      http.post(`${base}/entries/${a.entry.id}/archive`),
+    ];
+    for (const write of writes) {
+      const response = await write;
+      expect(response.status, response.req.path).toBe(409);
+      expect(response.body.code).toBe("website_site_disconnected");
+    }
+    expect(await revisionCount(a.page.documentId)).toBe(1);
+    expect(await revisionCount(a.entry.documentId)).toBe(1);
+    const [page] = await db.select().from(websitePage).where(eq(websitePage.id, a.page.id));
+    expect(page!.archivedAt).toBeNull();
+    expect(page!.title).toBe("Alpha home");
+    await http.get(`${base}/pages/${a.page.id}`).expect(200);
+    await http.get(`${base}/entries`).expect(200);
+    // Connecting it again lets edits through.
+    await http.patch(base).send({ archived: false }).expect(200);
+    await http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 } }).expect(200);
+  });
+
+  it("restores an archived page and entry; a taken path answers 409", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const base = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const about = (await http.post(`${base}/pages`).send({ slug: "/about", title: "About", parentPageId: a.page.id }).expect(201)).body;
+    await http.post(`${base}/pages/${about.id}/archive`).expect(200);
+    const archivedSave = await http.put(`${base}/pages/${about.id}/content`).send({ baseRevisionId: about.latestRevisionId, content: { v: 2 } }).expect(422);
+    expect(archivedSave.body.message).toContain("Restore it");
+    const replacement = (await http.post(`${base}/pages`).send({ slug: "/about", title: "About again" }).expect(201)).body;
+    const clash = await http.patch(`${base}/pages/${about.id}`).send({ archived: false }).expect(409);
+    expect(clash.body.code).toBe("website_page_slug_taken");
+    expect(clash.body.error).toContain("/about");
+    await http.post(`${base}/pages/${replacement.id}/archive`).expect(200);
+    const restored = (await http.patch(`${base}/pages/${about.id}`).send({ archived: false }).expect(200)).body;
+    expect(restored).toMatchObject({ archivedAt: null, parentPageId: null, slug: "/about" });
+    await http.put(`${base}/pages/${about.id}/content`).send({ baseRevisionId: about.latestRevisionId, content: { v: 2 } }).expect(200);
+
+    await http.post(`${base}/entries/${a.entry.id}/archive`).expect(200);
+    const entry = (await http.patch(`${base}/entries/${a.entry.id}`).send({ archived: false }).expect(200)).body;
+    expect(entry.archivedAt).toBeNull();
   });
 
   it("keeps the sitemap fields: parent in the same site, no cycles, archive moves sub-pages up", async () => {

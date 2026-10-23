@@ -14,7 +14,7 @@ import {
   type PermissionKey,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
-import { HttpError, unprocessable } from "../errors.js";
+import { HttpError, conflict, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
@@ -75,6 +75,15 @@ export function websiteModuleRoutes(db: Db) {
     if (!site) {
       res.status(404).json({ error: NOT_FOUND });
       return null;
+    }
+    return site;
+  }
+
+  /** Writes to pages and entries need a connected site: a disconnected (archived) site answers 409. */
+  async function writableSiteFor(req: Request, res: Response): Promise<SiteRow | null> {
+    const site = await siteFor(req, res, "website:edit");
+    if (site?.archivedAt) {
+      throw conflict("This site is disconnected. Connect it again before you edit or Publish.", { code: "website_site_disconnected" });
     }
     return site;
   }
@@ -159,15 +168,15 @@ export function websiteModuleRoutes(db: Db) {
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.pages, validate(createWebsitePageSchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:edit");
+    const site = await writableSiteFor(req, res);
     if (!site) return;
     const page = await service.createPage(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.page_created", "website_page", page.id, { siteId: site.id, slug: page.slug });
     res.status(201).json(page);
   });
 
-  async function pageFor(req: Request, res: Response, permission: WebsitePermission) {
-    const site = await siteFor(req, res, permission);
+  async function pageFor(req: Request, res: Response, permission: "website:view" | "website:edit") {
+    const site = permission === "website:edit" ? await writableSiteFor(req, res) : await siteFor(req, res, permission);
     if (!site) return null;
     const page = await service.getPageRow(site.companyId, site.id, req.params.pageId as string);
     if (!page) {
@@ -243,15 +252,15 @@ export function websiteModuleRoutes(db: Db) {
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:edit");
+    const site = await writableSiteFor(req, res);
     if (!site) return;
     const entry = await service.createEntry(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.entry_created", "website_entry", entry.id, { siteId: site.id, collection: entry.collection });
     res.status(201).json(entry);
   });
 
-  async function entryFor(req: Request, res: Response, permission: WebsitePermission) {
-    const site = await siteFor(req, res, permission);
+  async function entryFor(req: Request, res: Response, permission: "website:view" | "website:edit") {
+    const site = permission === "website:edit" ? await writableSiteFor(req, res) : await siteFor(req, res, permission);
     if (!site) return null;
     const entry = await service.getEntryRow(site.companyId, site.id, req.params.entryId as string);
     if (!entry) {
