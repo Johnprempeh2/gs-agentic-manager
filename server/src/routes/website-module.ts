@@ -4,6 +4,12 @@ import type { Db } from "@greatstone/db";
 import { websiteProperties } from "@greatstone/db";
 import {
   WEBSITE_MODULE_API_ROUTES,
+  WEBSITE_SITEMAP_API_ROUTES,
+  createWebsiteSitemapOptionSchema,
+  importWebsiteSitemapOptionSchema,
+  sitemapTreeFromImport,
+  updateWebsiteSitemapOptionSchema,
+  websiteSitemapTreeSchema,
   createWebsiteEntrySchema,
   createWebsitePageSchema,
   createWebsiteSiteSchema,
@@ -29,6 +35,7 @@ import {
 } from "../services/website/module.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
+import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
@@ -51,6 +58,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function websiteModuleRoutes(db: Db) {
   const router = Router();
   const service = websiteModuleService(db);
+  const sitemap = websiteSitemapService(db);
   const access = accessService(db);
   const publishApprovals = websitePublishApprovals(db);
 
@@ -414,6 +422,88 @@ export function websiteModuleRoutes(db: Db) {
       await log(req, site.companyId, "approval.created", "approval", approval.id, { type: approval.type, siteId: site.id });
     }
     res.status(created ? 201 : 200).json(approval);
+  });
+
+  // ---- sitemap options (GRE-2111): agents propose, people approve ----
+
+  router.get(WEBSITE_SITEMAP_API_ROUTES.options, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await sitemap.list(site.companyId, site.id, req.query.includeArchived === "true"));
+  });
+
+  router.post(WEBSITE_SITEMAP_API_ROUTES.options, validate(createWebsiteSitemapOptionSchema), async (req, res) => {
+    const site = await siteFor(req, res, "website:edit");
+    if (!site) return;
+    const row = await sitemap.create(site, req.body, actorOf(req));
+    await log(req, site.companyId, "website.sitemap_option_created", "website_sitemap_option", row.id, { siteId: site.id, name: row.name });
+    res.status(201).json(toWebsiteSitemapOption(row));
+  });
+
+  router.post(WEBSITE_SITEMAP_API_ROUTES.importOption, validate(importWebsiteSitemapOptionSchema), async (req, res) => {
+    const site = await siteFor(req, res, "website:edit");
+    if (!site) return;
+    const tree = sitemapTreeFromImport(req.body);
+    const parsed = websiteSitemapTreeSchema.safeParse(tree);
+    if (!parsed.success) {
+      throw unprocessable(parsed.error.issues[0]?.message ?? "The sitemap is not valid", {
+        code: "website_sitemap_tree_invalid",
+        problems: parsed.error.issues.map((issue) => issue.message),
+      });
+    }
+    const row = await sitemap.create(site, { name: req.body.name, description: req.body.description ?? null, tree: parsed.data }, actorOf(req));
+    await log(req, site.companyId, "website.sitemap_option_imported", "website_sitemap_option", row.id, { siteId: site.id, name: row.name, pages: tree.nodes.length });
+    res.status(201).json(toWebsiteSitemapOption(row));
+  });
+
+  async function optionFor(req: Request, res: Response, permission: WebsitePermission) {
+    const site = await siteFor(req, res, permission);
+    if (!site) return null;
+    const row = await sitemap.getRow(site.companyId, site.id, req.params.optionId as string);
+    if (!row) {
+      res.status(404).json({ error: NOT_FOUND });
+      return null;
+    }
+    return { site, row };
+  }
+
+  router.get(WEBSITE_SITEMAP_API_ROUTES.option, async (req, res) => {
+    const found = await optionFor(req, res, "website:view");
+    if (!found) return;
+    res.json(toWebsiteSitemapOption(found.row));
+  });
+
+  router.put(WEBSITE_SITEMAP_API_ROUTES.option, validate(updateWebsiteSitemapOptionSchema), async (req, res) => {
+    const found = await optionFor(req, res, "website:edit");
+    if (!found) return;
+    const row = await sitemap.update(found.row, req.body);
+    await log(req, found.site.companyId, "website.sitemap_option_updated", "website_sitemap_option", row.id, { siteId: found.site.id, fields: Object.keys(req.body) });
+    res.json(toWebsiteSitemapOption(row));
+  });
+
+  router.post(WEBSITE_SITEMAP_API_ROUTES.archiveOption, async (req, res) => {
+    const found = await optionFor(req, res, "website:edit");
+    if (!found) return;
+    const row = await sitemap.archive(found.row);
+    await log(req, found.site.companyId, "website.sitemap_option_archived", "website_sitemap_option", row.id, { siteId: found.site.id });
+    res.json(toWebsiteSitemapOption(row));
+  });
+
+  // Approving writes the site's pages and menus: website:publish, which agents can never hold.
+  router.post(WEBSITE_SITEMAP_API_ROUTES.approveOption, async (req, res) => {
+    const found = await optionFor(req, res, "website:publish");
+    if (!found) return;
+    const actor = actorOf(req);
+    if (!actor.userId) throw new HttpError(403, "Only a person can approve a sitemap", { code: "website_sitemap_approve_people_only" });
+    const result = await sitemap.approve(found.site, found.row, actor);
+    await log(req, found.site.companyId, "website.sitemap_option_approved", "website_sitemap_option", found.row.id, { siteId: found.site.id, ...result.summary });
+    res.json(result);
+  });
+
+  router.get(WEBSITE_SITEMAP_API_ROUTES.sitemapXml, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.type("application/xml").send(await sitemap.sitemapXml(site));
   });
 
   return router;
