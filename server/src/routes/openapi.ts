@@ -397,6 +397,9 @@ import {
   saveWebsiteContentSchema,
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
+  createWebsiteSitemapOptionSchema,
+  importWebsiteSitemapOptionSchema,
+  updateWebsiteSitemapOptionSchema,
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
@@ -15945,6 +15948,78 @@ registerCurrentRoute({
   path: `${siteParams}/entries/{entryId}/revisions`,
   tags: ["website"],
   summary: "List an entry's revisions, newest first (website:view)",
+  responses: websiteModuleResponses,
+});
+
+// Sitemap options (GRE-2111): named drafts of a site's structure. Agents and
+// people with website:edit propose and edit them; approving one writes the
+// site's pages and menus and needs website:publish (people only).
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/sitemap/options`,
+  tags: ["website"],
+  summary: "List a site's sitemap options (drafts and the approved one); includeArchived=true adds archived options (website:view)",
+  query: z.object({ includeArchived: z.enum(["true", "false"]).optional() }),
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/sitemap/options`,
+  tags: ["website"],
+  summary: "Propose a sitemap option: a tree of pages (path, parent, order, menu, menu column, board position) and named journeys (website:edit)",
+  body: createWebsiteSitemapOptionSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/sitemap/options/import`,
+  tags: ["website"],
+  summary: "Import a sitemap option from a nested JSON tree of pages with children; journeys name pages by path (website:edit)",
+  body: importWebsiteSitemapOptionSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/sitemap/options/{optionId}`,
+  tags: ["website"],
+  summary: "Get a sitemap option with its tree (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: `${siteParams}/sitemap/options/{optionId}`,
+  tags: ["website"],
+  summary: "Rename a sitemap option or replace its tree; a stale baseUpdatedAt answers 409 and writes nothing (website:edit)",
+  body: updateWebsiteSitemapOptionSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/sitemap/options/{optionId}/archive`,
+  tags: ["website"],
+  summary: "Archive a sitemap option that is not the approved one (website:edit)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/sitemap/options/{optionId}/approve`,
+  tags: ["website"],
+  summary: "Approve a sitemap option (website:publish, people only): its pages become the site's pages and menus; new pages are planned, pages it no longer names are archived",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/sitemap.xml`,
+  tags: ["website"],
+  summary: "Preview the sitemap.xml made from the site's live, non-noindex pages (website:view); publishing it is a separate step",
   responses: websiteModuleResponses,
 });
 
