@@ -407,7 +407,7 @@ function ReleaseRow({ release, rollbackOf, personName, canRollBack, onRollBack }
         ) : null}
       </div>
       <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-        <div className="flex gap-1"><dt>Went live</dt><dd className="text-foreground">{release.liveAt ? releaseTime(release.liveAt) : "Not yet"}</dd></div>
+        {release.liveAt ? <div className="flex gap-1"><dt>Went live</dt><dd className="text-foreground">{releaseTime(release.liveAt)}</dd></div> : null}
         <div className="flex gap-1"><dt>By</dt><dd className="text-foreground">{personName(release.publishedByUserId)}</dd></div>
         {release.status === "pending" && release.pendingReason ? (
           <div className="flex gap-1"><dt>What failed</dt><dd className="text-foreground">{PENDING_REASON_TEXT[release.pendingReason]}</dd></div>
