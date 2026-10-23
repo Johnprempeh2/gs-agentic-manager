@@ -43,6 +43,8 @@ export const createWebsiteSiteSchema = z
     netlifyToken: z.string().trim().min(10).max(500).optional(),
     propertyId: z.string().uuid().nullable().optional(),
     editorOrigins: z.array(z.string().trim().url().max(300)).max(10).optional(),
+    /** The dedicated editor host. The route checks rule C1.1 and that the caller may publish. */
+    editorFrameOrigin: z.string().trim().min(1).max(300).nullable().optional(),
     checkPaths: z.array(websitePagePathSchema).min(1).max(20).optional(),
   })
   .strict();
@@ -93,9 +95,19 @@ export const saveWebsiteContentSchema = z
     baseRevisionId: z.string().uuid(),
     content: z.unknown().refine((value) => value !== undefined, "content is required"),
     changeSummary: z.string().trim().max(500).optional(),
+    /** Sent by the editor frame host: the editor origin its session opened with (rule C2.4). */
+    editorOrigin: z.string().trim().max(300).optional(),
   })
   .strict();
 export type SaveWebsiteContent = z.infer<typeof saveWebsiteContentSchema>;
+
+export const restoreWebsiteRevisionSchema = z
+  .object({
+    /** The latest revision the user saw; a newer one is a conflict and nothing is restored. */
+    baseRevisionId: z.string().uuid(),
+  })
+  .strict();
+export type RestoreWebsiteRevision = z.infer<typeof restoreWebsiteRevisionSchema>;
 
 const collectionSchema = z.string().trim().regex(/^[a-z][a-z0-9_-]{0,39}$/, "Use a lower-case collection key");
 

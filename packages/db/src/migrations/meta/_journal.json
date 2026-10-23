@@ -2682,6 +2682,13 @@
       "when": 1792789172049,
       "tag": "0384_website_module_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 385,
+      "version": "7",
+      "when": 1792792606699,
+      "tag": "0385_website_editor_frame_origin",
+      "breakpoints": true
     }
   ]
 }

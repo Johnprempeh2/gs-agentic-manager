@@ -72,7 +72,7 @@ import { releasesFloorRoutes } from "./routes/releases-floor.js";
 import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
-import { websiteModuleRoutes } from "./routes/website-module.js";
+import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
 import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
@@ -760,7 +760,12 @@ export async function createApp(
   api.use(clientVersionRoutes());
   api.use(statusCardRoutes(db));
   api.use(websiteRoutes(db));
-  api.use(websiteModuleRoutes(db));
+  api.use(
+    websiteModuleRoutes(db, {
+      gsamOrigins: gsamServedOrigins(opts.authPublicBaseUrl, opts.allowedHostnames),
+      allowLocalhostEditor: process.env.NODE_ENV !== "production",
+    }),
+  );
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
