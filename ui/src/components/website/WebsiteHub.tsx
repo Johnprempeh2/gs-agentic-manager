@@ -35,7 +35,9 @@ import { StatusIcon } from "../StatusIcon";
 import { ProgressRing } from "../task-tree/ProgressRing";
 import { TaskTreeProgress } from "../task-tree/TaskTreeHeader";
 import { ProjectTreeView } from "../../pages/ProjectTree";
-import { WebsiteSiteConnection } from "./WebsiteSiteConnection";
+import { WebsiteSiteConnection, useWebsiteSite } from "./WebsiteSiteConnection";
+import { useCanManageWebsite } from "./WebsiteSetup";
+import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapSection";
 
 // The website hub (23 Oct 2026): the Website page's Overview, Progress,
 // Sitemap and Preview tabs. Everything is read from what GSAM already keeps:
@@ -473,7 +475,38 @@ export function WebsiteProgressTab({ companyId, property }: { companyId: string;
 
 /* ---- Sitemap ---- */
 
+/**
+ * The Sitemap tab: the Sitemap section (GRE-2111) once the connected site has
+ * pages or sitemap options; until then the sitemap file attached to the
+ * project's tasks (the website hub), with a way to start the section.
+ */
 export function WebsiteSitemapTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
+  const { site, isLoading: siteLoading } = useWebsiteSite(companyId, property.id);
+  const { options, pages } = useSitemapData(companyId, site?.id ?? null);
+  const { canManage } = useCanManageWebsite(companyId);
+  const optionList = options.data ?? [];
+  const pageList = pages.data ?? [];
+  if (siteLoading || (site && (options.isLoading || pages.isLoading))) {
+    return <p className="text-sm text-muted-foreground">Loading the sitemap</p>;
+  }
+  if (site && (options.error || pages.error)) {
+    return <ErrorState error={options.error ?? pages.error} onRetry={() => { void options.refetch(); void pages.refetch(); }} />;
+  }
+  if (site && optionList.length > 0) {
+    // Board users who are not viewers can edit; the server checks website:edit on every save.
+    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit />;
+  }
+  // A site with pages but no option yet: start from its pages. No pages: the attached sitemap file stays.
+  if (site && pageList.length > 0) return <StartSitemap companyId={companyId} site={site} pages={pageList} />;
+  return (
+    <div className="space-y-6">
+      {site ? <StartSitemap companyId={companyId} site={site} pages={pageList} /> : null}
+      <WebsiteSitemapAttachment companyId={companyId} property={property} />
+    </div>
+  );
+}
+
+function WebsiteSitemapAttachment({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const projectId = property.projectId;
   const hubQuery = useHub(companyId, property.id, !!projectId);
   const treeQuery = useQuery({

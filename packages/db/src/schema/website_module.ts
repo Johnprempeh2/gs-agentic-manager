@@ -191,3 +191,39 @@ export const websiteRelease = pgTable(
     ),
   ],
 );
+
+/**
+ * Sitemap options (GRE-2111): named drafts of the site's structure, each a
+ * JSON tree of pages, menus and journeys. Options cost nothing and never
+ * touch pages; approving one (a person with website:publish) writes its tree
+ * into `website_page` rows. At most one approved option per site.
+ */
+export const websiteSitemapOption = pgTable(
+  "website_sitemap_option",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    tree: jsonb("tree").$type<Record<string, unknown>>().notNull(),
+    status: text("status").notNull().default("draft"),
+    proposedByAgentId: uuid("proposed_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdByUserId: text("created_by_user_id"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedByUserId: text("approved_by_user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("website_sitemap_option_company_id_uq").on(t.companyId, t.id),
+    foreignKey({
+      columns: [t.companyId, t.siteId],
+      foreignColumns: [websiteSite.companyId, websiteSite.id],
+      name: "website_sitemap_option_company_site_fk",
+    }).onDelete("cascade"),
+    index("website_sitemap_option_site_idx").on(t.companyId, t.siteId),
+    uniqueIndex("website_sitemap_option_site_approved_uq").on(t.siteId).where(sql`${t.status} = 'approved'`),
+    check("website_sitemap_option_status_chk", sql`${t.status} in ('draft', 'approved', 'archived')`),
+  ],
+);
