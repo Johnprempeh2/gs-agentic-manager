@@ -35,6 +35,15 @@ describe("run API-equivalent cost", () => {
     expect(runApiEquivalent({ ...codexTokens, billingType: "metered_api", costStatus: "reported", costUsd: 1 })).toBeNull();
   });
 
+  it("flags a run whose token count missed requests as a lower bound", () => {
+    const usage = { ...codexTokens, billingType: "subscription_included", costStatus: "estimated", costUsd: 0.5, usageCompleteness: "partial" };
+    expect(runApiEquivalent(usage)).toEqual({ usd: 0.5, estimated: true, lowerBound: true });
+    expect(runApiEquivalent({ ...usage, costUsd: undefined, costStatus: "unpriced" }, null, "2026-10-22")?.lowerBound).toBe(true);
+    expect(runApiEquivalentLabel(true, true)).toBe(
+      "Estimated lower bound, API-equivalent: some model requests in this run were not counted",
+    );
+  });
+
   it("labels each kind plainly", () => {
     expect(runApiEquivalentLabel(true)).toBe("Estimated, API-equivalent");
     expect(runApiEquivalentLabel(false)).toBe("API-equivalent; billed through your subscription");

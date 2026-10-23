@@ -247,15 +247,17 @@ function readTokens(usage: Record<string, unknown>, ...keys: string[]): number {
  * What a run that was not billed per token would have cost under API billing:
  * the provider's own figure (Claude), the estimate stored at run end (Codex), or,
  * for runs recorded before their model was priced, an estimate made now.
+ * `lowerBound` marks runs whose token count missed some model requests.
  */
 export function runApiEquivalent(
   usage: Record<string, unknown> | null,
   result: Record<string, unknown> | null = null,
   at: Date | string = new Date(),
-): { usd: number; estimated: boolean } | null {
+): { usd: number; estimated: boolean; lowerBound?: true } | null {
   if (!usage || visibleRunCostUsd(usage, result) > 0) return null;
+  const lowerBound = usage.usageCompleteness === "partial" ? { lowerBound: true as const } : {};
   const stored = readTokens(usage, "cacheAdjustedCostUsd") || readRunCostUsd(usage);
-  if (stored > 0) return { usd: stored, estimated: usage.costStatus === "estimated" };
+  if (stored > 0) return { usd: stored, estimated: usage.costStatus === "estimated", ...lowerBound };
   const provider = typeof usage.provider === "string" ? usage.provider : "";
   const model = typeof usage.model === "string" ? usage.model : "";
   const cents = computeApiEquivalentCents(
@@ -268,10 +270,11 @@ export function runApiEquivalent(
     },
     at,
   );
-  return cents ? { usd: cents / 100, estimated: true } : null;
+  return cents ? { usd: cents / 100, estimated: true, ...lowerBound } : null;
 }
 
-export function runApiEquivalentLabel(estimated: boolean): string {
+export function runApiEquivalentLabel(estimated: boolean, lowerBound = false): string {
+  if (lowerBound) return "Estimated lower bound, API-equivalent: some model requests in this run were not counted";
   return estimated ? "Estimated, API-equivalent" : "API-equivalent; billed through your subscription";
 }
 
