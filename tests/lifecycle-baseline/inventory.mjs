@@ -13,6 +13,8 @@ export const lanes = {
       "tests/lifecycle-baseline/acknowledgement-reply.test.ts",
       // GRE-1903: approval does not strand on a stage only the work owner reviews.
       "tests/lifecycle-baseline/review-handoff-owner-stage.test.ts",
+      // GRE-2049: the review round cap never parks an agent verdict on a human.
+      "tests/lifecycle-baseline/review-round-cap-returns-to-author.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
       // GRE-15: a rejected login is a board-owned blocker, never a retried transient.
