@@ -217,6 +217,7 @@ describe("WebsiteReleases", () => {
     expect(container.querySelector("[data-testid=website-retry-cost]")?.textContent).toBe("About 15 credits.");
     await click("Rebuild again");
     expect(moduleMock.retry).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Rebuild again?");
     expect(document.body.textContent).toContain("Start one more rebuild? It costs about 15 credits.");
     const confirm = [...document.body.querySelectorAll<HTMLButtonElement>("[role=alertdialog] button")].find((entry) => entry.textContent === "Rebuild again")!;
     await act(async () => confirm.click());
@@ -278,6 +279,52 @@ describe("WebsiteReleases", () => {
     expect(container.querySelector("[data-testid=website-publish-error]")?.textContent).toBe(
       "Only a person can publish, retry or roll back a website, by clicking in GSAM.",
     );
+  });
+
+  it("Pending: the live release is offered as Go back in the banner, not as Roll back on its row", async () => {
+    const pending = release({ status: "pending", pendingReason: "verify_failed", checks: [] });
+    moduleMock.releases.mockResolvedValue([pending, live41, replaced40]);
+    moduleMock.retryPlan.mockResolvedValue({ action: "verify", costsCredits: false, reason: "The rebuild worked." });
+    moduleMock.rollbackPlan.mockResolvedValue({ action: "restore", costsCredits: false, reason: "No credits." });
+    moduleMock.rollback.mockResolvedValue(release({ id: "rel-43", number: 43, kind: "rollback", rollbackOfReleaseId: "rel-41", status: "building" }));
+    await render();
+    const banner = container.querySelector("[data-testid=website-release-pending]")!;
+    expect(banner.textContent).toContain("Why: The live pages do not show this release yet.");
+    expect(banner.textContent).not.toContain("What failed");
+    // The reason shows once, in the banner, not again in the row.
+    expect(container.textContent?.split("The live pages do not show this release yet.").length).toBe(2);
+    // Only the Replaced row offers Roll back.
+    expect([...container.querySelectorAll("button")].filter((entry) => entry.textContent === "Roll back to this release")).toHaveLength(1);
+    await click("Go back to Release 41");
+    expect(document.body.textContent).toContain("Go back to Release 41?");
+    await click("Go back");
+    expect(moduleMock.rollback).toHaveBeenCalledWith("co-1", "site-1", "rel-41", false);
+  });
+
+  it("marks a rollback release as Restored, and shows what failed on a release that did not finish", async () => {
+    const restore43 = release({ id: "rel-43", number: 43, kind: "rollback", rollbackOfReleaseId: "rel-41", status: "live", liveAt: "2026-10-23T11:00:00.000Z" });
+    const failed42 = release({
+      status: "failed",
+      deploy: { method: "build", requestedAt: "2026-10-23T10:00:00.000Z", deployId: "d1", commitRef: null, state: "error", errorMessage: "Build script returned non-zero exit code: 2\nmore log" },
+    });
+    moduleMock.releases.mockResolvedValue([restore43, failed42, live41]);
+    await render();
+    expect(container.textContent).toContain("Restored Release 41");
+    expect(container.textContent).not.toContain("Roll back to Release 41");
+    expect(container.textContent).toContain("What failedBuild script returned non-zero exit code: 2");
+    const summary = [...container.querySelectorAll("dd")].find((node) => node.textContent?.startsWith("Build script"));
+    expect(summary?.textContent).toBe("Build script returned non-zero exit code: 2");
+  });
+
+  it("shows the busy line muted, not as an error", async () => {
+    moduleMock.releases.mockResolvedValue([live41]);
+    moduleMock.publish.mockRejectedValue(conflict("website_publish_running"));
+    await render();
+    await click("Publish");
+    await click("Publish now");
+    const line = container.querySelector("[data-testid=website-publish-error]")!;
+    expect(line.className).toContain("text-muted-foreground");
+    expect(line.className).not.toContain("text-status-danger");
   });
 
   it("hides Publish, Retry and Roll back from people without Publish rights", async () => {
