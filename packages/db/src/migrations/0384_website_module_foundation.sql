@@ -2,8 +2,11 @@
 -- are tied to their site by a composite (company_id, site_id) foreign key. Additive only.
 -- Rollback, in one transaction, in this order (tested on a sandbox copy, GRE-2126). Collect the page and
 -- entry documents first: once the tables are gone nothing names them. document_id is ON DELETE restrict,
--- so the website rows must go before their documents; revisions cascade with the documents.
+-- so the website rows must go before their documents; revisions cascade with the documents. Later
+-- migrations that point at these tables (0385 website_sitemap_option) are rolled back first.
 --   BEGIN;
+--   DROP TABLE IF EXISTS "website_sitemap_option";
+--   DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792790160161;
 --   CREATE TEMP TABLE _wm_docs ON COMMIT DROP AS
 --     SELECT document_id FROM "website_page" UNION SELECT document_id FROM "website_entry";
 --   DROP TABLE "website_release", "website_entry", "website_page", "website_site";
