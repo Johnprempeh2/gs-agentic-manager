@@ -764,6 +764,7 @@ export async function createApp(
     websiteModuleRoutes(db, {
       gsamOrigins: gsamServedOrigins(opts.authPublicBaseUrl, opts.allowedHostnames),
       allowLocalhostEditor: process.env.NODE_ENV !== "production",
+      heartbeat: connectionIntentHeartbeat,
     }),
   );
   api.use(intelligenceRoutes(db));

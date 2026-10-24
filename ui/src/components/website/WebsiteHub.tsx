@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
@@ -7,7 +7,6 @@ import {
   Globe,
   Image as ImageIcon,
   Laptop,
-  Link2,
   Map as MapIcon,
   MonitorPlay,
   Smartphone,
@@ -47,18 +46,21 @@ import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapS
 
 export type WebsiteTab = "overview" | "progress" | "sitemap" | "editor" | "collections" | "preview" | "traffic";
 
+/** The site itself leads (John, 24 Oct 2026): Preview first, and the hub opens on it. */
+export const WEBSITE_DEFAULT_TAB: WebsiteTab = "preview";
+
 export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
+  { value: "preview", label: "Preview" },
   { value: "overview", label: "Overview" },
   { value: "progress", label: "Progress" },
   { value: "sitemap", label: "Sitemap" },
   { value: "editor", label: "Pages" },
   { value: "collections", label: "Collections" },
-  { value: "preview", label: "Preview" },
   { value: "traffic", label: "Traffic" },
 ];
 
 export function websiteTabFrom(value: string | null): WebsiteTab {
-  return WEBSITE_TABS.some((tab) => tab.value === value) ? (value as WebsiteTab) : "overview";
+  return WEBSITE_TABS.some((tab) => tab.value === value) ? (value as WebsiteTab) : WEBSITE_DEFAULT_TAB;
 }
 
 /** The public address of a Search Console property: `sc-domain:example.com` → `https://example.com/`. */
@@ -656,6 +658,66 @@ function PreviewLinksList({
   );
 }
 
+/** How long a frame may take to load before the page offers the new tab instead. */
+const PREVIEW_SLOW_MS = 8_000;
+
+/**
+ * The site in a frame, never a blank box: a calm placeholder while it loads,
+ * and, if it has not loaded after a while (most often a site that refuses
+ * to be framed), a clear message with "Open in new tab".
+ */
+function PreviewStage({ url, device, width }: { url: string; device: Device; width: number }) {
+  const [state, setState] = useState<"loading" | "loaded" | "slow">("loading");
+  useEffect(() => {
+    setState("loading");
+    const timer = window.setTimeout(() => setState((current) => (current === "loading" ? "slow" : current)), PREVIEW_SLOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [url]);
+  const host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return (
+    <div className="relative h-(--sz-80vh) min-h-96 overflow-hidden rounded-xl border border-border bg-muted" data-preview-state={state}>
+      <ScaledFrame
+        key={url}
+        src={url}
+        title={`Website preview, ${device} width`}
+        width={width}
+        sandbox={PREVIEW_SANDBOX}
+        testId="website-preview-frame"
+        viewport={device}
+        onLoad={() => setState("loaded")}
+      />
+      {state === "loaded" ? null : (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted p-6" data-testid="website-preview-placeholder">
+          <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full border border-border bg-card">
+              <Globe className="size-5 text-muted-foreground" aria-hidden="true" />
+            </span>
+            {state === "loading" ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Loading <span className="font-mono text-foreground">{host}</span>
+              </p>
+            ) : (
+              <>
+                <p className="text-sm font-medium">The site is not showing here</p>
+                <p className="text-xs text-muted-foreground">
+                  It may still be starting, or it may not allow being shown inside another page. That is the site keeping
+                  itself safe; open it in a new tab instead.
+                </p>
+                <Button asChild size="sm">
+                  <a href={url} target="_blank" rel="noreferrer">
+                    <ExternalLink />
+                    Open in new tab
+                  </a>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function WebsitePreviewTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const projectId = property.projectId;
   const projectQuery = useQuery({
@@ -668,32 +730,39 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
   const [device, setDevice] = useState<Device>("laptop");
   const [chosenUrl, setChosenUrl] = useState<string | null>(null);
 
-  if (!projectId) return <LinkProjectFirst companyId={companyId} property={property} />;
-  if (projectQuery.error) return <ErrorState error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data;
   const service = pickLivePreviewService(project?.workspaces.flatMap((workspace) => workspace.runtimeServices ?? []));
-  const url = chosenUrl ?? service?.url ?? null;
+  const liveUrl = liveSiteUrl(property.siteUrl);
+  // A chosen deploy preview, else the running workspace preview, else the live site.
+  const url = chosenUrl ?? service?.url ?? liveUrl;
   const source = chosenUrl
     ? "Deploy preview"
     : service
       ? `Workspace preview (${service.serviceName}${service.port ? `, port ${service.port}` : ""})`
-      : null;
+      : liveUrl
+        ? "Live site"
+        : null;
   const problem = url ? framingProblem(url, window.location.protocol) : null;
   const width = WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width;
 
   return (
     <div className="space-y-6" data-testid="website-preview">
-      {project ? <LivePreviewCard project={project} companyId={companyId} /> : null}
       <section className="space-y-4" aria-labelledby="website-preview-frame">
+        {/* The site leads; the controls stay quiet above it. */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <h2 id="website-preview-frame" className="text-lg font-semibold">Preview</h2>
-            <p className="truncate text-xs text-muted-foreground">
-              {url ? <>{source}: <span className="font-mono">{url}</span></> : "No preview is running."}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-md border border-border" role="group" aria-label="Preview width">
+          <h2 id="website-preview-frame" className="sr-only">Preview</h2>
+          <p className="min-w-0 truncate text-xs text-muted-foreground">
+            {url ? (
+              <>
+                <span className="font-medium text-foreground">{source}</span>
+                <span className="font-mono"> {url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+              </>
+            ) : (
+              "No preview is running."
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-1">
+            <div className="flex items-center gap-0.5" role="group" aria-label="Preview width">
               {WEBSITE_PREVIEW_DEVICES.map((entry) => {
                 const Icon = entry.icon;
                 const active = entry.value === device;
@@ -705,7 +774,7 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
                     title={`${entry.label} width (${entry.width} px)`}
                     onClick={() => setDevice(entry.value)}
                     className={cn(
-                      "inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                     )}
                   >
@@ -715,11 +784,13 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
                 );
               })}
             </div>
-            {chosenUrl && service?.url ? (
-              <Button type="button" size="sm" variant="ghost" onClick={() => setChosenUrl(null)}>Back to workspace preview</Button>
+            {chosenUrl && (service?.url || liveUrl) ? (
+              <Button type="button" size="xs" variant="ghost" onClick={() => setChosenUrl(null)}>
+                {service?.url ? "Back to workspace preview" : "Back to the live site"}
+              </Button>
             ) : null}
             {url ? (
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="xs" variant="ghost">
                 <a href={url} target="_blank" rel="noreferrer">
                   <ExternalLink />
                   Open in new tab
@@ -732,28 +803,35 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
           <EmptyState
             icon={Globe}
             title="No preview to show"
-            message="Start the preview from the card above, or pick a deploy preview below. The Greatstone Website project serves its preview on port 4100."
+            message="Start the preview from the card below, or pick a deploy preview. The Greatstone Website project serves its preview on port 4100."
           />
         ) : problem ? (
-          <div role="alert" className="rounded-lg border border-status-warning/40 bg-status-warning-soft px-4 py-3 text-sm text-status-warning-foreground">
-            {problem}
+          <div className="flex h-(--sz-50vh) flex-col items-center justify-center gap-3 rounded-xl border border-border bg-muted p-6 text-center">
+            <p role="alert" className="max-w-md text-sm text-muted-foreground">{problem}</p>
+            <Button asChild size="sm">
+              <a href={url} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                Open in new tab
+              </a>
+            </Button>
           </div>
         ) : (
-          <>
-            <div className="relative h-(--sz-70vh) overflow-hidden rounded-xl border border-border bg-muted">
-              <ScaledFrame key={url} src={url} title={`Website preview, ${device} width`} width={width} sandbox={PREVIEW_SANDBOX} testId="website-preview-frame" viewport={device} />
-            </div>
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <Link2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-              If the frame stays blank, the site does not allow being shown inside another page. That is the site keeping itself safe; open it in a new tab instead.
-            </p>
-          </>
+          <PreviewStage url={url} device={device} width={width} />
         )}
       </section>
-      {hubQuery.error ? (
-        <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
+      {!projectId ? (
+        <LinkProjectFirst companyId={companyId} property={property} />
+      ) : projectQuery.error ? (
+        <ErrorState error={projectQuery.error} compact onRetry={() => void projectQuery.refetch()} />
       ) : (
-        <PreviewLinksList links={hubQuery.data?.previewLinks ?? []} selected={chosenUrl} onShow={setChosenUrl} />
+        <>
+          {project ? <LivePreviewCard project={project} companyId={companyId} /> : null}
+          {hubQuery.error ? (
+            <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
+          ) : (
+            <PreviewLinksList links={hubQuery.data?.previewLinks ?? []} selected={chosenUrl} onShow={setChosenUrl} />
+          )}
+        </>
       )}
     </div>
   );

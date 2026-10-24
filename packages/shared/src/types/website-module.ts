@@ -256,6 +256,15 @@ export interface WebsitePublishApprovalPayload {
   releaseId?: string;
 }
 
+/** The task click to change made for the website agent. */
+export interface WebsiteChangeRequestResult {
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  assigneeAgentId: string | null;
+  projectId: string | null;
+}
+
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
@@ -279,6 +288,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageRevisionRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions/:revisionId/restore",
   /** GET → `WebsitePageEditorLoad` (website:view; saves need website:edit). 404 until the site's editor frame origin is set and passes C1.1. */
   pageEditor: "/companies/:companyId/website/sites/:siteId/pages/:pageId/editor",
+  /** POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId. */
+  pageChangeRequests: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
   media: "/companies/:companyId/website/sites/:siteId/media",
   /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */

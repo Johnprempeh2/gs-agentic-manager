@@ -27,7 +27,7 @@ const REASON_TEXT: Record<WebsitePendingReason, string> = {
 };
 
 /** The website team: the lead agent of the site's project, else the company's lead agent. */
-async function websiteTeamAgent(db: Db, companyId: string, propertyId: string | null) {
+export async function websiteTeamAgent(db: Db, companyId: string, propertyId: string | null) {
   const [project] = propertyId
     ? await db
         .select({ projectId: projects.id, leadAgentId: agents.id })

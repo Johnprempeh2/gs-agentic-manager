@@ -188,7 +188,7 @@ describe("Website page", () => {
     expect(container.querySelector('[data-testid="website-setup"]')).toBeNull();
   });
 
-  it("sets up a website without a GA4 id and opens the hub on Overview", async () => {
+  it("sets up a website without a GA4 id and opens the hub on Preview", async () => {
     const created = property({ ga4PropertyId: null, projectId: "proj-1", connectionStatus: "not_connected" });
     websiteApiMock.overview.mockResolvedValueOnce(overview({ properties: [] })).mockResolvedValue(overview({ properties: [created] }));
     websiteApiMock.create.mockResolvedValue(created);
@@ -217,7 +217,7 @@ describe("Website page", () => {
         projectId: "proj-1",
       }),
     );
-    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Overview"));
+    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Preview"));
     expect(location).toBe("/website");
   });
 
@@ -320,14 +320,32 @@ describe("Website page", () => {
 });
 
 describe("Website hub tabs", () => {
-  it("opens on Overview with the six tabs and asks once for the website project", async () => {
+  it("puts Preview first and opens on it, showing the live site before anything else", async () => {
     await render("/website");
     await waitForText("Link the website project");
     const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
-    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Pages", "Collections", "Preview", "Traffic"]);
+    expect(tabs).toEqual(["Preview", "Overview", "Progress", "Sitemap", "Pages", "Collections", "Traffic"]);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Preview");
+    const frame = container.querySelector('[data-testid="website-preview-frame"]');
+    expect(frame?.getAttribute("src")).toBe("https://greatstone.example/");
+    // The site comes first; asking for the project follows it.
+    const preview = container.querySelector('[data-testid="website-preview"]')!;
+    expect(preview.firstElementChild?.querySelector('[data-testid="website-preview-frame"]')).not.toBeNull();
     expect(text()).toContain("Live site");
-    expect(text()).toContain("greatstone.example");
     expect(websiteApiMock.report).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit tab from the URL and drops the tab from the URL when going back to Preview", async () => {
+    await render("/website?tab=overview");
+    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Overview"));
+    expect(text()).toContain("greatstone.example");
+    const previewTab = Array.from(container.querySelectorAll('[role="tab"]')).find((el) => el.textContent === "Preview") as HTMLElement;
+    await act(async () => {
+      previewTab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      previewTab.click();
+    });
+    await vi.waitFor(() => expect(location).toBe("/website"));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Preview");
   });
 
   it("links the chosen project through the property settings", async () => {

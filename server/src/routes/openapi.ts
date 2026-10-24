@@ -396,6 +396,7 @@ import {
   createWebsitePageSchema,
   updateWebsitePageSchema,
   restoreWebsiteRevisionSchema,
+  createWebsiteChangeRequestSchema,
   saveWebsiteContentSchema,
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
@@ -15929,6 +15930,15 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Load a page for the editor frame: draft, theme, site, navigation and media; 422 until the editor address is set and allowed (website:view)",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/change-requests`,
+  tags: ["website"],
+  summary: "Click to change: create one task for the website agent with the picked block's durable reference (page, revision, block id and type, engine commit; file and line only as a hint). 201 created, 200 with the same task on a repeated requestId; 422 when the block or revision is not on the page (website:edit)",
+  body: createWebsiteChangeRequestSchema,
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registerCurrentRoute({

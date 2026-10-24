@@ -15,6 +15,7 @@ import {
   sitemapTreeFromImport,
   updateWebsiteSitemapOptionSchema,
   websiteSitemapTreeSchema,
+  createWebsiteChangeRequestSchema,
   createWebsiteEntrySchema,
   createWebsitePageSchema,
   createWebsiteSiteSchema,
@@ -49,6 +50,8 @@ import {
   type WebsitePerson,
   type WebsitePublishOptions,
 } from "../services/website/publish.js";
+import { websiteChangeRequestService } from "../services/website/change-request.js";
+import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
@@ -85,6 +88,8 @@ export interface WebsiteModuleRouteOptions {
   gsamOrigins?: readonly string[];
   /** Allow an `http://localhost` editor frame origin (development and sandboxes only). */
   allowLocalhostEditor?: boolean;
+  /** Wakes the website agent when click to change gives it a task. */
+  heartbeat?: IssueAssignmentWakeupDeps;
 }
 
 /** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
@@ -122,6 +127,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   const service = websiteModuleService(db);
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
+  const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
   const access = accessService(db);
   const collectionValidator = new Ajv2020({ allErrors: true });
   const fieldValidators = new Map<string, ReturnType<typeof collectionValidator.compile>>();
@@ -513,6 +519,29 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       return;
     }
     res.json(load);
+  });
+
+  // Click to change (GRE-2121): website:edit, the page in this company, and
+  // the picked block in that revision of the page. One task per requestId.
+  router.post(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, validate(createWebsiteChangeRequestSchema), async (req, res) => {
+    const found = await sitePageFor(req, res, "website:edit");
+    if (!found) return;
+    const { site, page } = found;
+    const revision = await service.pageRevision(page, req.body.pageRevisionId);
+    if (!revision) {
+      throw unprocessable("That version of the page is not found. Reload the preview and pick the block again.", { code: "website_change_revision_unknown" });
+    }
+    const { result, created } = await changeRequests.create({ site, page, revisionBody: revision.body, request: req.body, actor: actorOf(req) });
+    if (created) {
+      await log(req, site.companyId, "website.change_requested", "website_page", page.id, {
+        siteId: site.id,
+        issueId: result.issueId,
+        blockId: req.body.blockId,
+        blockType: req.body.blockType,
+        pageRevisionId: req.body.pageRevisionId,
+      });
+    }
+    res.status(created ? 201 : 200).json(result);
   });
 
   router.get(WEBSITE_MODULE_API_ROUTES.media, async (req, res) => {
