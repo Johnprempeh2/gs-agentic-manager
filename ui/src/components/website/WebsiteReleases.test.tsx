@@ -46,6 +46,8 @@ const site: WebsiteSite = {
   propertyId: "prop-1",
   editorOrigins: [],
   editorFrameOrigin: null,
+  livePreviewUrl: null,
+  devPreviewUrl: null,
   checkPaths: ["/"],
   liveReleaseId: "rel-41",
   archivedAt: null,

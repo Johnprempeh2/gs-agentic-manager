@@ -54,6 +54,14 @@ export const websiteSite = pgTable(
      * until a person with website:publish sets it; GSAM opens no editor until then.
      */
     editorFrameOrigin: text("editor_frame_origin"),
+    /**
+     * Preview addresses for the Preview tab's Live and In development views
+     * (24 Oct 2026), set by a person with website:publish. The live view is an
+     * optional frameable exact copy of the live deploy (null: the live domain);
+     * the development view defaults to the editor address when null.
+     */
+    livePreviewUrl: text("live_preview_url"),
+    devPreviewUrl: text("dev_preview_url"),
     checkPaths: jsonb("check_paths").$type<string[]>().notNull().default(["/"]),
     liveReleaseId: uuid("live_release_id"),
     publishLeaseId: uuid("publish_lease_id"),

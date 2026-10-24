@@ -380,6 +380,16 @@ describeEmbeddedPostgres("website module routes", () => {
     await request(app(owner)).get(`${base}/not-a-uuid/pages`).expect(404);
     await request(app(owner)).get(`${base}/${a.site.id}/pages/123`).expect(404);
     await request(app(operator)).patch(`${base}/${a.site.id}`).send({ name: "Nope" }).expect(403);
+    // Preview addresses (24 Oct 2026): Publish rights only, https only, null clears.
+    await request(app(operator)).patch(`${base}/${a.site.id}`).send({ livePreviewUrl: "https://mirror.alpha.test/" }).expect(403);
+    const set = await request(app(owner)).patch(`${base}/${a.site.id}`)
+      .send({ livePreviewUrl: "https://mirror.alpha.test/", devPreviewUrl: "https://dev.alpha.test/" }).expect(200);
+    expect(set.body).toMatchObject({ livePreviewUrl: "https://mirror.alpha.test/", devPreviewUrl: "https://dev.alpha.test/" });
+    for (const bad of ["http://mirror.alpha.test/", "mirror.alpha.test", "https://user:pw@mirror.alpha.test/"]) {
+      await request(app(owner)).patch(`${base}/${a.site.id}`).send({ livePreviewUrl: bad }).expect(400);
+    }
+    const cleared = await request(app(owner)).patch(`${base}/${a.site.id}`).send({ livePreviewUrl: null }).expect(200);
+    expect(cleared.body).toMatchObject({ livePreviewUrl: null, devPreviewUrl: "https://dev.alpha.test/" });
     await request(app(operator)).post(`${base}/${a.site.id}/pages`).send({ slug: "/about", title: "About", status: "planned" }).expect(201);
     await request(app(viewer)).get(`${base}/${a.site.id}/pages`).expect(200);
     await request(app(viewer)).post(`${base}/${a.site.id}/pages`).send({ slug: "/no", title: "No" }).expect(403);

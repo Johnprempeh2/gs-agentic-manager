@@ -16,6 +16,7 @@ import {
   type WebsiteHomeSummary,
   type WebsitePageStatus,
   type WebsitePublishApprovalPayload,
+  websitePreviewAddresses,
 } from "@greatstone/shared";
 import { websitePublishApprovals } from "./publish-approval.js";
 import type { SiteRow } from "./module.js";
@@ -28,30 +29,34 @@ type Framing = WebsiteHomeSummary["liveFraming"];
 /**
  * Whether a page with these headers lets GSAM show it in a frame. A browser
  * fires `load` on a refused frame too, so the page cannot tell; the headers can.
- * ponytail: any frame-ancestors list without `*` counts as refused, even one that names GSAM's own origin.
+ * A frame-ancestors list allows GSAM when it holds `*` or one of GSAM's own origins.
  */
-export function framingFromHeaders(headers: Pick<Headers, "get">): Exclude<Framing, "unknown"> {
+export function framingFromHeaders(headers: Pick<Headers, "get">, gsamOrigins: readonly string[] = []): Exclude<Framing, "unknown"> {
   if (headers.get("x-frame-options")) return "refused";
   const ancestors = /frame-ancestors([^;]*)/i.exec(headers.get("content-security-policy") ?? "")?.[1];
-  if (ancestors !== undefined && !ancestors.trim().split(/\s+/).includes("*")) return "refused";
-  return "allowed";
+  if (ancestors === undefined) return "allowed";
+  const sources = ancestors.trim().split(/\s+/).map((source) => source.replace(/\/$/, "").toLowerCase());
+  const origins = gsamOrigins.map((origin) => origin.replace(/\/$/, "").toLowerCase());
+  return sources.includes("*") || sources.some((source) => origins.includes(source)) ? "allowed" : "refused";
 }
 
 const FRAMING_TTL_MS = 10 * 60_000;
 const framingCache = new Map<string, { at: number; value: Framing }>();
 
-/** One HEAD request to the site's own domain (set by a person with Publish rights), cached ten minutes. */
-async function liveFraming(domain: string): Promise<Framing> {
-  const cached = framingCache.get(domain);
+/** One HEAD request to an address set by a person with Publish rights, cached ten minutes per address and asking origin. */
+async function framingOf(url: string | null, gsamOrigins: readonly string[]): Promise<Framing> {
+  if (!url) return "unknown";
+  const key = `${url} ${gsamOrigins.join(" ")}`;
+  const cached = framingCache.get(key);
   if (cached && Date.now() - cached.at < FRAMING_TTL_MS) return cached.value;
   let value: Framing = "unknown";
   try {
-    const res = await fetch(`https://${domain}/`, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(3_000) });
-    value = framingFromHeaders(res.headers);
+    const res = await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(3_000) });
+    value = framingFromHeaders(res.headers, gsamOrigins);
   } catch {
     // Unreachable or slow: the page falls back to its own load timer.
   }
-  framingCache.set(domain, { at: Date.now(), value });
+  framingCache.set(key, { at: Date.now(), value });
   return value;
 }
 
@@ -150,8 +155,10 @@ export function websiteHomeService(db: Db) {
     }));
   }
 
-  async function summary(site: SiteRow): Promise<WebsiteHomeSummary> {
+  /** `gsamOrigins`: the origins GSAM is served from, so a frame-ancestors list naming GSAM counts as allowed. */
+  async function summary(site: SiteRow, gsamOrigins: readonly string[] = []): Promise<WebsiteHomeSummary> {
     const { companyId } = site;
+    const addresses = websitePreviewAddresses(site);
     const pageCounts = await db
       .select({ status: websitePage.status, n: count() })
       .from(websitePage)
@@ -221,7 +228,9 @@ export function websiteHomeService(db: Db) {
         : null,
       collections,
       activity: await activity(site),
-      liveFraming: await liveFraming(site.domain),
+      // The addresses the Preview tab and the Home hero actually show.
+      liveFraming: await framingOf(addresses.live, gsamOrigins),
+      devFraming: await framingOf(addresses.dev, gsamOrigins),
     };
   }
 

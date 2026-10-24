@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   CheckCircle2,
+  Columns2,
   ExternalLink,
   FileText,
   Globe,
@@ -14,7 +15,15 @@ import {
   Rocket,
   Send,
 } from "lucide-react";
-import type { ProjectTree, WebsiteHomeActivity, WebsiteHomeRelease, WebsiteHomeSummary, WebsiteProperty, WebsiteSite } from "@greatstone/shared";
+import {
+  websitePreviewAddresses,
+  type ProjectTree,
+  type WebsiteHomeActivity,
+  type WebsiteHomeRelease,
+  type WebsiteHomeSummary,
+  type WebsiteProperty,
+  type WebsiteSite,
+} from "@greatstone/shared";
 import { websiteApi, websiteModuleApi, type WebsiteHubWorkItem } from "../../api/website";
 import { projectsApi } from "../../api/projects";
 import { queryKeys } from "../../lib/queryKeys";
@@ -34,6 +43,7 @@ import {
   When,
   framingProblem,
   liveSiteUrl,
+  rememberPreviewMode,
   taskHref,
   useDecisionCardContext,
   useHub,
@@ -151,45 +161,52 @@ const HOLD_COPY: Record<Exclude<HeroFrameHold, "waiting" | null>, { title: (host
   },
   refused: {
     title: (host) => `${host} keeps itself out of frames`,
-    body: "The live site does not allow being shown inside another page, which keeps it safe. Open it in a new tab, or start the workspace preview to see it here.",
+    body: "This site does not allow being shown inside another page, which keeps it safe. Open it in a new tab, or set a frameable copy under Releases, Site connection.",
   },
   unreachable: {
     title: (host) => `${host} did not answer`,
-    body: "GSAM could not reach the live site just now, so it is not shown here. Open it in a new tab to check it.",
+    body: "GSAM could not reach this site just now, so it is not shown here. Open it in a new tab to check it.",
   },
 };
 
+/** The hero's two views (John, 24 Oct 2026). In development leads: it is the site being worked on. */
+export type HeroView = "live" | "dev";
+
 /**
- * Why the hero holds the live site back instead of framing it. A browser
- * fires `load` on a refused or failed frame too, so the page cannot see the
- * failure; the server's check of the live domain can. A workspace or other
- * preview address frames as before (Preview tab logic).
+ * Why the hero holds a site back instead of framing it. A browser fires
+ * `load` on a refused or failed frame too, so the page cannot see the
+ * failure; the server's check of the address shown can. An address the
+ * server did not check (a running workspace preview) frames as before.
  */
 export function heroFrameHold(
-  previewUrl: string | null,
-  liveHost: string | null,
+  view: HeroView,
+  url: string | null,
   site: WebsiteSite | null,
   home: WebsiteHomeSummary | undefined,
 ): HeroFrameHold {
-  if (!previewUrl || !liveHost) return null;
-  let host: string;
-  try {
-    host = new URL(previewUrl).host;
-  } catch {
-    return null;
-  }
-  if (host !== liveHost) return null;
-  if (!site) return "not_connected";
+  if (!url) return null;
+  if (!site) return view === "live" ? "not_connected" : null;
+  const addresses = websitePreviewAddresses(site);
+  if (url !== (view === "live" ? addresses.live : addresses.dev)) return null;
   if (!home) return "waiting";
-  if (home.liveFraming === "refused") return "refused";
-  if (home.liveFraming === "unknown") return "unreachable";
+  const framing = view === "live" ? home.liveFraming : home.devFraming;
+  if (framing === "refused") return "refused";
+  if (framing === "unknown") return "unreachable";
   return null;
 }
 
-function HeroFrame({ url, host, hold, onOpenPreview }: {
+const HERO_VIEWS: { value: HeroView; label: string }[] = [
+  { value: "live", label: "Live" },
+  { value: "dev", label: "In development" },
+];
+
+function HeroFrame({ url, host, hold, view, onView, canShowDev, onOpenPreview }: {
   url: string | null;
   host: string | null;
   hold: HeroFrameHold;
+  view: HeroView;
+  onView: (view: HeroView) => void;
+  canShowDev: boolean;
   onOpenPreview: () => void;
 }) {
   const still = useHazeStill();
@@ -199,11 +216,29 @@ function HeroFrame({ url, host, hold, onOpenPreview }: {
     <div className="gs-website-haze rounded-2xl p-3 sm:p-5" data-motion={still ? "still" : "drift"} data-testid="website-home-haze">
       <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="flex items-center gap-3 border-b border-border bg-muted px-3 py-2">
-          <span className="flex shrink-0 gap-1.5" aria-hidden="true">
+          <span className="hidden shrink-0 gap-1.5 sm:flex" aria-hidden="true">
             <span className="size-2.5 rounded-full bg-border" />
             <span className="size-2.5 rounded-full bg-border" />
             <span className="size-2.5 rounded-full bg-border" />
           </span>
+          <div className="flex shrink-0 items-center gap-0.5 rounded-md bg-background p-0.5" role="group" aria-label="Which site" data-testid="website-home-view">
+            {HERO_VIEWS.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                aria-pressed={view === entry.value}
+                disabled={entry.value === "dev" && !canShowDev}
+                title={entry.value === "dev" && !canShowDev ? "No development address yet. Set it under Releases, Site connection." : undefined}
+                onClick={() => onView(entry.value)}
+                className={cn(
+                  "inline-flex h-6 items-center rounded px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-subtle-foreground",
+                  view === entry.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
           <span className="min-w-0 flex-1 truncate rounded-md bg-background px-2 py-0.5 text-center font-mono text-xs text-muted-foreground">
             {host ?? "No address yet"}
           </span>
@@ -216,7 +251,7 @@ function HeroFrame({ url, host, hold, onOpenPreview }: {
             <p className="text-sm text-muted-foreground" role="status">Loading <span className="font-mono text-foreground">{host}</span></p>
           </div>
         ) : url && !problem && !copy ? (
-          <PreviewStage url={url} device="laptop" width={1440} className="aspect-16/9 w-full" />
+          <PreviewStage url={url} device="laptop" width={1440} label={view === "live" ? "Live site" : "In development"} className="aspect-16/9 w-full" />
         ) : (
           <div className="flex aspect-16/9 w-full flex-col items-center justify-center gap-3 bg-muted p-6 text-center" data-testid="website-home-frame-placeholder">
             <span className="flex size-12 items-center justify-center rounded-full border border-border bg-card">
@@ -258,16 +293,22 @@ function Hero({
   property,
   site,
   home,
-  previewUrl,
+  devUrl,
   onOpenTab,
 }: {
   property: WebsiteProperty;
   site: WebsiteSite | null;
   home: WebsiteHomeSummary | undefined;
-  previewUrl: string | null;
+  /** The In development address: the site's own, else the running workspace preview. */
+  devUrl: string | null;
   onOpenTab: (tab: WebsiteTab) => void;
 }) {
   const live = site ? `https://${site.domain}/` : liveSiteUrl(property.siteUrl);
+  // The Live view frames the exact copy of the live deploy when one is set.
+  const liveView = site ? websitePreviewAddresses(site).live : live;
+  const [chosenView, setView] = useState<HeroView>("dev");
+  const view: HeroView = chosenView === "dev" && devUrl ? "dev" : "live";
+  const previewUrl = view === "dev" ? devUrl : liveView;
   const domain = site?.domain ?? (live ? live.replace(/^https?:\/\//, "").replace(/\/$/, "") : property.siteUrl);
   const status = liveStatus(site, home?.releases);
   const latest = home?.releases.latest ?? null;
@@ -276,7 +317,15 @@ function Hero({
   return (
     <section className="grid gap-6 lg:grid-cols-5 lg:items-center" aria-labelledby="website-home-title" data-testid="website-home-hero">
       <div className="min-w-0 lg:col-span-3">
-        <HeroFrame url={previewUrl} host={previewHost} hold={heroFrameHold(previewUrl, live ? new URL(live).host : null, site, home)} onOpenPreview={() => onOpenTab("preview")} />
+        <HeroFrame
+          url={previewUrl}
+          host={previewHost}
+          hold={heroFrameHold(view, previewUrl, site, home)}
+          view={view}
+          onView={setView}
+          canShowDev={!!devUrl}
+          onOpenPreview={() => onOpenTab("preview")}
+        />
       </div>
       <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
         <div className="space-y-2">
@@ -329,6 +378,21 @@ function Hero({
               </a>
             </Button>
           ) : null}
+        </div>
+        <div>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto px-0"
+            onClick={() => {
+              rememberPreviewMode("side");
+              onOpenTab("preview");
+            }}
+            data-testid="website-home-compare"
+          >
+            <Columns2 />
+            Compare side by side
+          </Button>
         </div>
       </div>
     </section>
@@ -693,12 +757,12 @@ export function WebsiteHomeTab({
   const hubQuery = useHub(companyId, property.id, !!projectId);
 
   const service = pickLivePreviewService(projectQuery.data?.workspaces.flatMap((workspace) => workspace.runtimeServices ?? []));
-  const previewUrl = service?.url ?? liveSiteUrl(property.siteUrl) ?? (site ? `https://${site.domain}/` : null);
+  const devUrl = (site ? websitePreviewAddresses(site).dev : null) ?? service?.url ?? null;
   const home = homeQuery.data;
 
   return (
     <div className="space-y-6" data-testid="website-home">
-      <Hero property={property} site={site} home={home} previewUrl={previewUrl} onOpenTab={onOpenTab} />
+      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}
