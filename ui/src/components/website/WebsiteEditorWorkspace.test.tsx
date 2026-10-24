@@ -414,7 +414,7 @@ describe("WebsiteEditorTab", () => {
       await editor.reply("insert-media-result", { requestId: insert!.id, ok: true });
       expect(frame()).toBe(iframe);
       expect(editor.sent("load-draft")).toHaveLength(1);
-      expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. The image shows after you save the page in the editor.");
+      expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. Save the page to keep it.");
       expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
     });
 

@@ -124,6 +124,8 @@ describe("insert-media helpers (GRE-2206)", () => {
       { type: "Hero", props: { id: "h1", heading: "Hi", backdrop: "media:asset-1" } },
       { type: "Grid", props: { id: "g1", items: [{ type: "Card", props: { id: "c1", title: "x", photo: "" } }] } },
       { type: "Text", props: { id: "t1", body: "words" } },
+      { type: "BeforeAfter", props: { id: "b1", caption: "Kitchen.jpg looks great", beforeImage: "/images/before.jpg", afterClip: "https://cdn.example.com/after.mp4?v=2" } },
+      { type: "Mixed", props: { id: "m1", poster: "/images/old.png", image: "media:asset-2" } },
     ],
   };
 
@@ -135,6 +137,12 @@ describe("insert-media helpers (GRE-2206)", () => {
     expect(insertMediaField(null, "missing", "image")).toBe("image");
   });
 
+  it("picks a field that holds a site path or URL of the kind's file type, after a media reference (GRE-2295)", () => {
+    expect(insertMediaField(data, "b1", "image")).toBe("beforeImage");
+    expect(insertMediaField(data, "b1", "animation")).toBe("afterClip");
+    expect(insertMediaField(data, "m1", "image")).toBe("image");
+  });
+
   it("sends an absolute https asset URL, or the path when GSAM is not on https", () => {
     expect(insertMediaAssetUrl("/api/assets/a/content", "https://gsam.example.com")).toBe("https://gsam.example.com/api/assets/a/content");
     expect(insertMediaAssetUrl("/api/assets/a/content", "http://localhost:3100")).toBe("/api/assets/a/content");
@@ -142,7 +150,7 @@ describe("insert-media helpers (GRE-2206)", () => {
 
   it("names the block, says why in plain words, and that the entry is kept", () => {
     expect(insertMediaMessage({ requestId: "r", ok: true }, "Hero", "image")).toBe(
-      "Put in Hero. The image shows after you save the page in the editor.",
+      "Put in Hero. Save the page to keep it.",
     );
     for (const code of ["block_not_found", "field_not_found", "field_not_media", "invalid_payload", "error"] as const) {
       const text = insertMediaMessage({ requestId: "r", ok: false, code }, "Hero", "image");
