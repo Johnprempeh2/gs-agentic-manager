@@ -107,7 +107,7 @@ export function TaskTreeCard({
         </p>
         <div className="mt-auto flex min-w-0 items-center gap-2">
           <TaskTreeOwner people={people} owner={node} className="min-w-0 flex-1" />
-          {runState ? <TaskRunStateChip state={runState} /> : null}
+          {runState ? <TaskRunStateChip state={runState} short /> : null}
           {isRootBlocker ? (
             <span className="shrink-0 rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">
               Root blocker

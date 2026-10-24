@@ -24,6 +24,8 @@ export interface TaskRunStateChipProps {
   issueLabel?: (issueId: string) => string | null | undefined;
   /** Hide the chip text below `sm`, leaving the icon (dense rows on phones). */
   hideLabelOnPhone?: boolean;
+  /** Narrow cards (tree nodes): "No output 12 min" in place of "No output for 12 min". */
+  short?: boolean;
   className?: string;
 }
 
@@ -48,13 +50,13 @@ function useLiveRunState(derived: TaskRunState): { state: TaskRunState; now: num
   return { state: refreshTaskRunState(derived, now), now };
 }
 
-function CompactTaskRunState({ state: derived, issueLabel, hideLabelOnPhone = false, className }: TaskRunStateChipProps) {
+function CompactTaskRunState({ state: derived, issueLabel, hideLabelOnPhone = false, short = false, className }: TaskRunStateChipProps) {
   const { state, now } = useLiveRunState(derived);
   const copy = describeTaskRunState(state, { now, issueLabel });
   return (
     <RunStateChip
       state={state}
-      label={copy.label}
+      label={short ? copy.label.replace(/^No output for /, "No output ") : copy.label}
       title={copy.detail ? `${copy.label} · ${copy.detail}` : copy.label}
       srDetail={copy.detail}
       hideLabelOnPhone={hideLabelOnPhone}

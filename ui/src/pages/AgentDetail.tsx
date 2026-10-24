@@ -1,6 +1,7 @@
 import { useConfirm } from "@/context/ConfirmContext";
 import { TaskRunStateChip } from "../components/TaskRunStateChip";
 import { useTaskRunStates } from "../hooks/useTaskRunStates";
+import { runStateForTask } from "../lib/task-run-state";
 import { AgentAppearanceEditor } from "../components/AgentAppearanceEditor";
 import { mergeRunLogChunks, readChunkSeq } from "../lib/run-log-chunks";
 import { getPageVisibility, usePageVisibility } from "../lib/page-visibility";
@@ -1691,7 +1692,8 @@ function LatestRunCard({
 
   const isLive = run.status === "running" || run.status === "queued";
   const isQueued = run.status === "queued";
-  const queuedState = isQueued && snapshotIssueId ? taskRunStates.get(snapshotIssueId) ?? null : null;
+  // The shared run-state chip is the card's one live signal, worded as on every other surface.
+  const liveState = isLive && snapshotIssueId ? taskRunStates.get(snapshotIssueId) ?? null : null;
   // Fold any directly-fetched fallback issue into the lookup, keyed by the same
   // snapshot id used to resolve the row so it hits regardless of id-vs-slug.
   const effectiveIssuesById =
@@ -1715,19 +1717,19 @@ function LatestRunCard({
           className="no-underline"
         >
           <h3 className="flex items-center gap-2 text-sm font-medium transition-colors hover:text-foreground">
-            {isLive && !isQueued && (
+            {isLive && !isQueued && !liveState && (
               <span className="relative flex h-2 w-2">
                 <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
             )}
-            {isQueued && <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
+            {isQueued && !liveState && <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
             <span title={`Run ${run.id.slice(0, 8)}`}>
               {isQueued ? "Queued" : isLive ? "Working now" : "Latest work"}
             </span>
           </h3>
         </Link>
-        {queuedState ? <TaskRunStateChip state={queuedState} variant="full" className="min-w-0 justify-end" /> : null}
+        {liveState ? <TaskRunStateChip state={liveState} variant="full" className="min-w-0 justify-end" /> : null}
       </div>
 
       <Link
@@ -1738,11 +1740,15 @@ function LatestRunCard({
         )}
       >
         <div className="flex items-center gap-2">
-          <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
-          <StatusBadge status={run.status} />
+          {liveState ? null : (
+            <>
+              <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
+              <StatusBadge status={run.status} />
+            </>
+          )}
           {task ? (
             <>
-              <StatusGlyph status={task.status} size="sm" />
+              {liveState ? null : <StatusGlyph status={task.status} size="sm" />}
               <span className="font-mono text-xs text-muted-foreground">
                 {task.identifier ?? task.id.slice(0, 8)}
               </span>
@@ -1809,6 +1815,7 @@ export function AgentOverview({
   const budgetUse = budgetUseLabel(agent);
   const monthLine = agentMonthLine(agent);
   const workloadLine = agentWorkloadLine(assignedIssues, agent.id);
+  const taskRunStates = useTaskRunStates(agent.companyId);
 
   return (
     <div className="space-y-6">
@@ -1911,6 +1918,7 @@ export function AgentOverview({
                 key={issue.id}
                 issue={issue}
                 presentation="task"
+                runQueued={runStateForTask(taskRunStates, issue)?.kind === "queued"}
                 metadata={<span className="text-xs text-muted-foreground">{relativeTime(issue.updatedAt)}</span>}
                 showDivider
               />

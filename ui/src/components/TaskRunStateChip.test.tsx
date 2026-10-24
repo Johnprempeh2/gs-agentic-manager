@@ -121,6 +121,11 @@ describe("TaskRunStateChip", () => {
     expect(spins()).toBe(false);
   });
 
+  it("stuck: tree cards use the short label so the owner name fits", async () => {
+    await render(<TaskRunStateChip state={{ ...running, lastOutputAt: ago(12 * MIN), silentMs: 12 * MIN }} short />);
+    expect(chipLabel()).toBe("No output 12 min");
+  });
+
   it("turns stuck on its own as the silence passes 10 minutes", async () => {
     await render(<TaskRunStateChip state={{ ...running, lastOutputAt: ago(9 * MIN + 58_000), silentMs: 9 * MIN }} />);
     expect(chip().getAttribute("data-run-state")).toBe("running");
