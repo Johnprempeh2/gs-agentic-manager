@@ -345,6 +345,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
         {view === "compare" ? (
           <SitemapCompareView
             options={options.map((entry) => (entry.id === option.id && draft ? { ...entry, tree: draft } : entry))}
+            pagesById={pagesById}
             initialA={approved && approved.id !== option.id ? approved.id : option.id}
             initialB={approved && approved.id !== option.id ? option.id : options.find((entry) => entry.id !== option.id)?.id ?? null}
             canApprove={canApprove && !draft}
