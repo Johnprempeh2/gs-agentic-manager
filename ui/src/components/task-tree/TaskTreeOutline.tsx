@@ -126,7 +126,7 @@ export function TaskTreeOutline({
         </div>
         {blockReason ? (
           // Beside the title, under the row: a link inside the row's link is not allowed.
-          <TaskTreeBlockReason reason={blockReason} className="pb-2 pr-2" style={{ paddingLeft: depth * 16 + 4 + 46 }} />
+          <TaskTreeBlockReason reason={blockReason} className="pb-2 pr-2" style={{ paddingLeft: depth * 16 + 4 + 50 }} />
         ) : null}
         {item.children.length > 0 ? (
           <ul role="group">{item.children.map((child) => row(child, depth + 1))}</ul>
