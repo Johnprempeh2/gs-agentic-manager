@@ -306,7 +306,8 @@ describe("issue validators", () => {
       createdByUserId: "spoofed-creator",
       responsibleUserId: "spoofed-responsible",
     });
-    const updated = updateIssueSchema.parse({
+    // GRE-2329: create-only fields on an update are refused, not dropped.
+    const updated = updateIssueSchema.safeParse({
       title: "Do not update attribution",
       createdByUserId: "spoofed-creator",
       responsibleUserId: "spoofed-responsible",
@@ -314,8 +315,11 @@ describe("issue validators", () => {
 
     expect(created.createdByUserId).toBe("spoofed-creator");
     expect(created.responsibleUserId).toBe("spoofed-responsible");
-    expect(updated).not.toHaveProperty("createdByUserId");
-    expect(updated).not.toHaveProperty("responsibleUserId");
+    expect(updated.success).toBe(false);
+    expect(updated.error?.issues[0]).toMatchObject({
+      code: "unrecognized_keys",
+      keys: ["createdByUserId", "responsibleUserId"],
+    });
   });
 
   it("allows false-positive recovery resolutions to atomically restore the source issue status", () => {
