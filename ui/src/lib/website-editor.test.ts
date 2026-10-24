@@ -136,13 +136,27 @@ describe("insert-media helpers (GRE-2206)", () => {
     expect(insertMediaAssetUrl("/api/assets/a/content", "http://localhost:3100")).toBe("/api/assets/a/content");
   });
 
-  it("says why in plain words, and that the entry is kept", () => {
-    expect(insertMediaMessage({ requestId: "r", ok: true })).toContain("Save the page");
+  it("names the block, says why in plain words, and that the entry is kept", () => {
+    expect(insertMediaMessage({ requestId: "r", ok: true }, "Hero", "image")).toBe(
+      "Put in Hero. The image shows after you save the page in the editor.",
+    );
     for (const code of ["block_not_found", "field_not_found", "field_not_media", "invalid_payload", "error"] as const) {
-      const text = insertMediaMessage({ requestId: "r", ok: false, code });
-      expect(text).toContain("It is in Website media");
+      const text = insertMediaMessage({ requestId: "r", ok: false, code }, "Hero", "image");
+      expect(text).toContain("The image is saved in Website media.");
       expect(text).not.toContain(code);
     }
-    expect(insertMediaMessage({ requestId: "r", ok: false, code: "error", message: "Draft locked" })).toContain(": Draft locked");
+    expect(insertMediaMessage({ requestId: "r", ok: false, code: "field_not_media" }, "Hero", "image")).toBe(
+      "Hero has no image or video field, so nothing changed. The image is saved in Website media. Pick it from an image field in the editor.",
+    );
+    expect(insertMediaMessage({ requestId: "r", ok: false, code: "block_not_found" }, "Hero", "animation")).toBe(
+      "Hero is no longer on this page, so nothing changed. The animation is saved in Website media.",
+    );
+  });
+
+  it("keeps the site's own message out of the panel", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(insertMediaMessage({ requestId: "r", ok: false, code: "error", message: "Draft locked" }, "Hero", "image")).not.toContain("Draft locked");
+    expect(warn).toHaveBeenCalledWith("insert-media refused:", "Draft locked");
+    warn.mockRestore();
   });
 });

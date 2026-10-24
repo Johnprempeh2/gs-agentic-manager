@@ -229,6 +229,7 @@ export function WebsiteMediaPicker({
   kind,
   media,
   canInsert = false,
+  insertBlockName,
   onClose,
   onAdded,
 }: {
@@ -238,6 +239,8 @@ export function WebsiteMediaPicker({
   media: WebsiteMediaItem[];
   /** A block is selected in the editor, so an existing Website media entry can be used too. */
   canInsert?: boolean;
+  /** The selected block's name, shown when `canInsert`. */
+  insertBlockName?: string;
   onClose: () => void;
   onAdded: (message: string, media: PickedWebsiteMedia) => void;
 }) {
@@ -353,7 +356,7 @@ export function WebsiteMediaPicker({
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                {canInsert ? "Pick one to put in the selected block." : "The site's images. The editor's image fields pick from these."}
+                {canInsert ? `Pick one to put in ${insertBlockName || "the selected block"}.` : "The site's images. The editor's image fields pick from these."}
               </p>
               <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="media-picker-library">
                 {libraryItems.map((item) =>

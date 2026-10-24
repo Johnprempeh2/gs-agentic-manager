@@ -193,19 +193,27 @@ export function insertMediaAssetUrl(contentPath: string, gsamOrigin: string): st
   return contentPath;
 }
 
-/** What the media panel says after the frame answered `insert-media`. */
-export function insertMediaMessage(result: WebsiteFrameInsertMediaResult): string {
-  if (result.ok) return "Put in the selected block. Save the page in the editor to keep it.";
-  const kept = "It is in Website media, so you can pick it in a block's image field.";
+const KIND_NOUN: Record<InsertMediaKind, string> = { image: "image", animation: "animation" };
+
+/**
+ * What the media panel says after the frame answered `insert-media`, naming
+ * the block. The site's own `message` is not shown; it goes to the console.
+ */
+export function insertMediaMessage(result: WebsiteFrameInsertMediaResult, blockName: string, kind: InsertMediaKind): string {
+  const noun = KIND_NOUN[kind];
+  // Until GRE-2225 the frame cannot load GSAM's asset, so the block shows the item only after save and reload.
+  if (result.ok) return `Put in ${blockName}. The ${noun} shows after you save the page in the editor.`;
+  const kept = `The ${noun} is saved in Website media.`;
   switch (result.code) {
     case "block_not_found":
-      return `The selected block is no longer on this page, so nothing changed. ${kept}`;
+      return `${blockName} is no longer on this page, so nothing changed. ${kept}`;
     case "field_not_found":
     case "field_not_media":
-      return `The selected block has no image or video field for this. ${kept}`;
+      return `${blockName} has no image or video field, so nothing changed. ${kept} Pick it from an image field in the editor.`;
     case "invalid_payload":
-      return `The site's editor could not use this item. ${kept}`;
+      return `The site's editor could not use this ${noun}, so nothing changed. ${kept}`;
     default:
-      return `The site's editor did not put it in${result.message ? `: ${result.message}` : "."} ${kept}`;
+      if (result.message) console.warn("insert-media refused:", result.message);
+      return `The site's editor did not put the ${noun} in ${blockName}, so nothing changed. ${kept}`;
   }
 }

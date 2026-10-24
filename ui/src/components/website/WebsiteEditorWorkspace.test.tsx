@@ -402,7 +402,8 @@ describe("WebsiteEditorTab", () => {
         alt: "Boats in a harbour",
         media: { blob: expect.any(Blob), alt: "Boats in a harbour", width: null, height: null },
       });
-      expect(mediaPanel().textContent).toContain("Putting it in the selected block.");
+      expect(mediaPanel().textContent).toContain("Selected block: Hero banner.");
+      expect(mediaPanel().textContent).toContain("Putting it in Hero banner.");
     });
 
     it("ok reply: no editor reload, and the draft shows unsaved changes", async () => {
@@ -413,7 +414,7 @@ describe("WebsiteEditorTab", () => {
       await editor.reply("insert-media-result", { requestId: insert!.id, ok: true });
       expect(frame()).toBe(iframe);
       expect(editor.sent("load-draft")).toHaveLength(1);
-      expect(mediaPanel().textContent).toContain("Put in the selected block. Save the page in the editor to keep it.");
+      expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. The image shows after you save the page in the editor.");
       expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
     });
 
@@ -422,7 +423,9 @@ describe("WebsiteEditorTab", () => {
       await useStudioImage();
       const [insert] = editor.sentMessages("insert-media");
       await editor.reply("insert-media-result", { requestId: insert!.id, ok: false, code: "field_not_media" });
-      expect(mediaPanel().textContent).toContain("The selected block has no image or video field for this. It is in Website media");
+      expect(mediaPanel().querySelector('[role="alert"]')!.textContent).toBe(
+        "Hero banner has no image or video field, so nothing changed. The image is saved in Website media. Pick it from an image field in the editor.",
+      );
       expect(api.createEntry).toHaveBeenCalledTimes(1);
     });
 
@@ -435,7 +438,9 @@ describe("WebsiteEditorTab", () => {
       await act(async () => { vi.advanceTimersByTime(5_000); });
       await flush();
       expect(frame()).not.toBe(iframe);
-      expect(mediaPanel().textContent).toContain("Added from GS Studio. It is now in Website media and goes live with the next Publish.");
+      expect(mediaPanel().querySelector('[role="alert"]')!.textContent).toBe(
+        "The site's editor did not answer, so the editor was reloaded. The image is saved in Website media. Pick it from the block's image field.",
+      );
     });
 
     it("no block selected: makes the entry and reloads, without insert-media", async () => {
