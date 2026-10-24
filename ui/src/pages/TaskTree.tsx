@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { FileText, Network } from "lucide-react";
+import { FileText, Maximize2, Network } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -51,11 +51,15 @@ export function TaskTree() {
 
   const index = useMemo(() => (treeQuery.data ? indexTaskTree(treeQuery.data) : null), [treeQuery.data]);
   const [showFinished, setShowFinished] = useState(false);
-  const { toggleCollapsed, visibleRoot, trace, waitingOnById, focusRequest, selectBlocker } = useTaskTreeView(index, {
+  const storageKey = issueId ? `task-tree.${issueId}` : undefined;
+  const view = useTaskTreeView(index, {
     viewerUserId: people.viewerUserId ?? null,
     isPhone,
     showFinished,
+    storageKey,
   });
+  const { toggleCollapsed, visibleRoot, trace, waitingOnById, focusRequest, selectBlocker } = view;
+  const [diagramOpen, setDiagramOpen] = useState(false);
 
   const root = index?.root;
   const project = treeQuery.data?.project ?? null;
@@ -123,7 +127,15 @@ export function TaskTree() {
         truncatedNote={truncatedNote}
         actions={actions}
       />
-      {isPhone ? (
+      {isPhone && !diagramOpen ? (
+        <div className="flex">
+          <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
+            <Maximize2 />
+            Open the diagram full screen
+          </Button>
+        </div>
+      ) : null}
+      {isPhone && !diagramOpen ? (
         <TaskTreeOutline
           visibleRoot={visibleRoot}
           trace={trace}
@@ -145,6 +157,13 @@ export function TaskTree() {
           onToggleCollapsed={toggleCollapsed}
           onShowFinished={() => setShowFinished(true)}
           focusRequest={focusRequest}
+          storageKey={storageKey}
+          findItems={view.findItems}
+          onFind={view.reveal}
+          onCollapseAll={view.collapseAll}
+          onExpandAll={view.expandAll}
+          startFullscreen={isPhone}
+          onExitFullscreen={() => setDiagramOpen(false)}
         />
       )}
     </div>

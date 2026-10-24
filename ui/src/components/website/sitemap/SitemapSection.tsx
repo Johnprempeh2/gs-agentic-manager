@@ -361,7 +361,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
           <PageTabBar items={SITEMAP_VIEWS} value={view} onValueChange={(value) => setView(value as SitemapView)} align="start" ariaLabel="Sitemap view" />
         </Tabs>
         {view === "tree" ? <SitemapTreeView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
-        {view === "board" ? <SitemapBoardView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
+        {view === "board" ? <SitemapBoardView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} storageKey={`sitemap-board.${option.id}`} /> : null}
         {view === "menus" ? <SitemapMenusView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
         {view === "journeys" ? <SitemapJourneysView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
         {view === "list" ? <SitemapListView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}

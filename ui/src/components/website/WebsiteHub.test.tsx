@@ -192,8 +192,10 @@ describe("WebsitePreviewTab", () => {
       previewLinks: [{ url: "https://deploy-preview-3--gs.netlify.app", source: "comment", label: "Mason", task, postedAt: "2026-10-22T09:00:00.000Z" }],
     }));
     await render(<WebsitePreviewTab companyId="co-1" property={property()} />);
-    await vi.waitFor(() => expect(container.querySelector('[data-testid="website-preview-frame"]')).not.toBeNull());
-    expect(container.querySelector('[data-testid="website-preview-frame"]')!.getAttribute("src")).toBe("http://127.0.0.1:4100");
+    // The live site shows at once; the running workspace preview takes over when it is known.
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="website-preview-frame"]')?.getAttribute("src")).toBe("http://127.0.0.1:4100"),
+    );
     expect(text()).toContain("Workspace preview (preview, port 4100)");
     const widths = Array.from(container.querySelectorAll('[aria-label="Preview width"] button')).map((el) => el.textContent);
     expect(widths).toEqual(["Laptop", "Tablet", "Phone"]);
@@ -202,5 +204,27 @@ describe("WebsitePreviewTab", () => {
     const show = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Show here")!;
     await act(async () => { show.click(); });
     expect(container.querySelector('[data-testid="website-preview-frame"]')!.getAttribute("src")).toBe("https://deploy-preview-3--gs.netlify.app");
+  });
+
+  it("shows the live site when no preview runs, with a placeholder until it loads and Open in new tab if it never does", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      projectsMock.get.mockResolvedValue({ id: "proj-1", workspaces: [] });
+      websiteApiMock.hub.mockResolvedValue(hub());
+      await render(<WebsitePreviewTab companyId="co-1" property={property()} />);
+      const frame = container.querySelector('[data-testid="website-preview-frame"]')!;
+      expect(frame.getAttribute("src")).toBe("https://greatstone.example/");
+      expect(text()).toContain("Live site");
+      expect(container.querySelector('[data-testid="website-preview-placeholder"]')?.textContent).toContain("Loading greatstone.example");
+      await act(async () => { vi.advanceTimersByTime(8_000); });
+      const fallback = container.querySelector('[data-testid="website-preview-placeholder"]')!;
+      expect(fallback.textContent).toContain("The site is not showing here");
+      expect(fallback.querySelector('a[target="_blank"]')?.getAttribute("href")).toBe("https://greatstone.example/");
+      // Once the frame loads, the site shows and the placeholder goes.
+      await act(async () => { frame.dispatchEvent(new Event("load")); });
+      expect(container.querySelector('[data-testid="website-preview-placeholder"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

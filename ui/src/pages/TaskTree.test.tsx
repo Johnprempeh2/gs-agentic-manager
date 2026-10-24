@@ -84,6 +84,7 @@ async function renderPage() {
 
 beforeEach(() => {
   phone = false;
+  window.localStorage.clear();
   navigateMock.mockReset();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -218,5 +219,71 @@ describe("Task tree page", () => {
     tree = { ...tree, truncated: true, limits: { maxNodes: 300, maxDepth: 12 } };
     await renderPage();
     expect(container.textContent).toContain("Showing the first 300 tasks, up to 12 levels down.");
+  });
+});
+
+describe("Task tree navigation", () => {
+  const nodeIds = () => [...container.querySelectorAll("[data-tree-node]")].map((el) => el.getAttribute("data-tree-node"));
+  const clickButton = async (label: string) => {
+    const button = [...container.querySelectorAll("button")].find((el) => el.textContent?.trim() === label || el.getAttribute("aria-label") === label);
+    if (!button) throw new Error(`No button "${label}"`);
+    flushSync(() => (button as HTMLButtonElement).click());
+    await flush();
+  };
+
+  beforeEach(() => {
+    tree = { ...tree, nodes: [...tree.nodes, { ...node("6", "3", { title: "Wire the payments API" }), depth: 2 }] };
+  });
+
+  it("collapses and expands every branch, and remembers the fold", async () => {
+    await renderPage();
+    expect(nodeIds()).toContain("6");
+    await clickButton("Collapse all");
+    expect(nodeIds()).not.toContain("6");
+    expect(JSON.parse(window.localStorage.getItem("gsam.diagram.task-tree.GRE-1")!).collapsed).toContain("3");
+    await clickButton("Expand all");
+    expect(nodeIds()).toContain("6");
+  });
+
+  it("finds a task by name: unfolds its branch, focuses it and highlights it", async () => {
+    await renderPage();
+    await clickButton("Collapse all");
+    const input = container.querySelector("[data-diagram-find]") as HTMLInputElement;
+    flushSync(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "payments");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...container.querySelectorAll('[role="option"]')].map((el) => el.textContent)).toEqual(["Wire the payments APIGRE-6"]);
+    flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await flush();
+    const found = container.querySelector('[data-tree-node="6"]')!;
+    expect(found.hasAttribute("data-found")).toBe(true);
+    expect(document.activeElement).toBe(found);
+  });
+
+  it("zooms with + and - from a task and keeps the controls in the toolbar", async () => {
+    await renderPage();
+    const zoom = () => container.querySelector("[data-diagram-zoom]")?.textContent;
+    const rootCard = container.querySelector('[data-tree-node="1"]') as HTMLElement;
+    flushSync(() => rootCard.dispatchEvent(new KeyboardEvent("keydown", { key: "+", bubbles: true })));
+    expect(zoom()).toBe("120%");
+    flushSync(() => rootCard.dispatchEvent(new KeyboardEvent("keydown", { key: "-", bubbles: true })));
+    expect(zoom()).toBe("100%");
+    const toolbar = container.querySelector('[role="toolbar"][aria-label="Task tree controls"]')!;
+    for (const label of ["Fit to screen", "Reset", "Full screen", "Collapse all", "Expand all"]) {
+      expect([...toolbar.querySelectorAll("button")].some((el) => el.textContent?.trim() === label)).toBe(true);
+    }
+  });
+
+  it("opens the diagram full screen from the outline on a phone, and goes back to the outline", async () => {
+    phone = true;
+    await renderPage();
+    expect(container.querySelector('[data-slot="task-tree-canvas"]')).toBeNull();
+    await clickButton("Open the diagram full screen");
+    expect(container.querySelector('[data-slot="task-tree-canvas"]')).not.toBeNull();
+    expect(container.querySelector("[data-diagram-frame]")?.getAttribute("data-fullscreen")).toBe("overlay");
+    await clickButton("Exit full screen");
+    expect(container.querySelector('[data-slot="task-tree-canvas"]')).toBeNull();
+    expect(container.querySelector('[data-slot="task-tree-outline"]')).not.toBeNull();
   });
 });

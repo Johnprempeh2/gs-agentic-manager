@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { readDiagramPrefs, writeDiagramPrefs } from "@/components/diagram/useDiagramViewport";
+import type { DiagramFindItem } from "@/components/diagram/DiagramFrame";
 import {
   ancestorIds,
+  flattenVisible,
   traceBlockedPaths,
   visibleTaskTree,
   type RootBlocker,
@@ -19,10 +22,22 @@ export function useTaskTreeView(
     isPhone: boolean;
     showFinished: boolean;
     initialCollapsed?: () => ReadonlySet<string>;
+    /** Remembers folded branches for this tree; `restored` says a remembered fold was used. */
+    storageKey?: string;
   },
 ) {
-  const { viewerUserId, isPhone, showFinished } = options;
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => options.initialCollapsed?.() ?? new Set());
+  const { viewerUserId, isPhone, showFinished, storageKey } = options;
+  const [restored] = useState(() => Array.isArray(readDiagramPrefs(storageKey).collapsed));
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => {
+    const stored = readDiagramPrefs(storageKey).collapsed;
+    if (Array.isArray(stored)) return new Set(stored.filter((id): id is string => typeof id === "string"));
+    return options.initialCollapsed?.() ?? new Set();
+  });
+  // Remember a fold once it changes, not the empty one a first visit starts with.
+  const [initial] = useState(collapsed);
+  useEffect(() => {
+    if (collapsed !== initial) writeDiagramPrefs(storageKey, { collapsed: [...collapsed] });
+  }, [collapsed, initial, storageKey]);
   const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null);
 
   const visibleRoot = useMemo(
@@ -53,21 +68,36 @@ export function useTaskTreeView(
     });
   }, []);
 
-  const selectBlocker = useCallback(
-    (blocker: RootBlocker) => {
+  /** Unfold every branch on the way to a task and bring it on screen. */
+  const reveal = useCallback(
+    (id: string) => {
       if (!index) return;
-      // Unfold every branch on the way, so the task is on screen.
-      const path = ancestorIds(index, blocker.anchorId);
+      const path = ancestorIds(index, id);
       setCollapsed((current) => {
-        if (!path.some((id) => current.has(id))) return current;
+        if (!path.some((ancestor) => current.has(ancestor))) return current;
         const next = new Set(current);
-        for (const id of path) next.delete(id);
+        for (const ancestor of path) next.delete(ancestor);
         return next;
       });
-      setFocusRequest({ id: blocker.anchorId, nonce: Date.now() });
+      setFocusRequest({ id, nonce: Date.now() });
     },
     [index],
   );
+  const selectBlocker = useCallback((blocker: RootBlocker) => reveal(blocker.anchorId), [reveal]);
+
+  /** Fold every branch below the top, so the main branches show. */
+  const collapseAll = useCallback(() => {
+    if (!index) return;
+    setCollapsed(new Set([...index.children.keys()].filter((id) => id !== index.root.id)));
+  }, [index]);
+  const expandAll = useCallback(() => setCollapsed(new Set()), []);
+
+  // What "Find" can jump to: every task the tree shows when nothing is folded.
+  const findItems = useMemo<DiagramFindItem[]>(() => {
+    if (!index) return [];
+    return flattenVisible(visibleTaskTree(index, { showFinished, collapsed: new Set() }))
+      .flatMap((item) => (item.kind === "task" ? [{ id: item.id, label: item.node.title, detail: item.node.identifier ?? undefined }] : []));
+  }, [index, showFinished]);
 
   useEffect(() => {
     if (!isPhone || !focusRequest) return;
@@ -76,5 +106,19 @@ export function useTaskTreeView(
       ?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [isPhone, focusRequest]);
 
-  return { collapsed, setCollapsed, toggleCollapsed, visibleRoot, trace, waitingOnById, focusRequest, selectBlocker };
+  return {
+    collapsed,
+    setCollapsed,
+    restored,
+    toggleCollapsed,
+    collapseAll,
+    expandAll,
+    reveal,
+    findItems,
+    visibleRoot,
+    trace,
+    waitingOnById,
+    focusRequest,
+    selectBlocker,
+  };
 }

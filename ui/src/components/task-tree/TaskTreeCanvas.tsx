@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { Maximize, Minus, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DiagramFrame, type DiagramFindItem } from "@/components/diagram/DiagramFrame";
+import { fitView, useDiagramViewport, type DiagramView } from "@/components/diagram/useDiagramViewport";
 import { StatusIcon } from "@/components/StatusIcon";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import {
@@ -22,19 +22,12 @@ import { ownerName, type TaskTreePeople } from "./TaskTreeOwner";
 
 const DONE_PILL = { width: 112, height: 32 };
 const LAYOUT = { siblingGap: 28, levelGap: 72, padding: 48 };
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 2;
-/** "Fit to screen" never shrinks cards below this; past it, the root stays in view instead. */
+/** The tree opens no smaller than this; past it, the root stays in view instead. "Fit to screen" shows it all. */
 const MIN_READABLE_ZOOM = 0.6;
 const FIT_MARGIN = 32;
-const DRAG_THRESHOLD = 4;
 const GRID = 20;
 
-export interface TaskTreeView {
-  x: number;
-  y: number;
-  k: number;
-}
+export type TaskTreeView = DiagramView;
 
 export interface TaskTreeCanvasProps {
   visibleRoot: VisibleTaskItem;
@@ -49,10 +42,19 @@ export interface TaskTreeCanvasProps {
   focusRequest?: { id: string; nonce: number } | null;
   /** A control for a card's footer. */
   actionFor?: (node: IssueTreeNode) => ReactNode;
+  /** Remembers zoom and place for this tree. */
+  storageKey?: string;
+  /** Every task "Find" can jump to, folded or not. */
+  findItems?: DiagramFindItem[];
+  /** Unfold the way to a task and bring it into view (sets `focusRequest`). */
+  onFind?: (id: string) => void;
+  onCollapseAll?: () => void;
+  onExpandAll?: () => void;
+  /** Open in full screen straight away (the phone opens the diagram this way). */
+  startFullscreen?: boolean;
+  onExitFullscreen?: () => void;
   className?: string;
 }
-
-const clampZoom = (k: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k));
 
 function cssMilliseconds(name: string, fallback: number) {
   if (typeof window === "undefined") return fallback;
@@ -102,8 +104,10 @@ function useGlide(layout: TreeLayout, reduced: boolean) {
 
 /**
  * The tree on a pannable, zoomable canvas: SVG connectors under HTML cards.
- * Drag to pan; wheel, pinch or the buttons to zoom; arrow keys move between
- * tasks, Enter opens one, Space folds its branch.
+ * Drag or scroll to pan; Ctrl or Cmd with the wheel, pinch, + and - or the
+ * buttons to zoom; 0 fits. Arrow keys move between tasks, Enter opens one,
+ * Space folds its branch. Find, fold all, minimap and full screen come from
+ * the shared DiagramFrame.
  */
 export function TaskTreeCanvas({
   visibleRoot,
@@ -115,13 +119,16 @@ export function TaskTreeCanvas({
   onShowFinished,
   focusRequest,
   actionFor,
+  storageKey,
+  findItems,
+  onFind,
+  onCollapseAll,
+  onExpandAll,
+  startFullscreen,
+  onExitFullscreen,
   className,
 }: TaskTreeCanvasProps) {
   const reduced = usePrefersReducedMotion();
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [view, setView] = useState<TaskTreeView>({ x: 0, y: 0, k: 1 });
-  const viewRef = useRef(view);
-  viewRef.current = view;
 
   const layout = useMemo(
     () =>
@@ -145,73 +152,35 @@ export function TaskTreeCanvas({
   );
 
   // ── View ────────────────────────────────────────────────────────────────
-  const fit = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const width = viewport.clientWidth;
-    const height = viewport.clientHeight;
-    if (width === 0 || height === 0) return;
-    const whole = Math.min(1, (width - FIT_MARGIN * 2) / layout.width, (height - FIT_MARGIN * 2) / layout.height);
-    if (whole >= MIN_READABLE_ZOOM) {
-      setView({ k: whole, x: (width - layout.width * whole) / 2, y: Math.max(FIT_MARGIN, (height - layout.height * whole) / 2) });
-      return;
-    }
-    // Too big to fit and still read: keep the cards legible, top of the tree in view,
-    // centred on the whole tree's width (centring on the root cut off a wide branch).
-    // Too big to fit and still read: keep the cards legible, the top of the tree in
-    // view, and centre on the span from the root to the first root blocker, so the
-    // task holding everything up is on screen when the tree opens.
-    const k = MIN_READABLE_ZOOM;
-    const rootBox = layout.boxes.find((box) => box.depth === 0);
-    const blockerBox = trace.rootBlockers
-      .map((blocker) => layout.byId.get(blocker.anchorId))
-      .find((box) => box !== undefined);
-    const span = [rootBox, blockerBox].filter((box): box is NonNullable<typeof box> => box !== undefined);
-    const left = span.length ? Math.min(...span.map((box) => box.x)) : 0;
-    const right = span.length ? Math.max(...span.map((box) => box.x + box.width)) : layout.width;
-    setView({ k, x: width / 2 - ((left + right) / 2) * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k });
-  }, [layout, trace]);
-
-  const fittedOnce = useRef(false);
-  useLayoutEffect(() => {
-    if (fittedOnce.current) return;
-    fittedOnce.current = true;
-    fit();
-  }, [fit]);
-
-  const zoomAt = useCallback((factor: number, at?: Point) => {
-    const viewport = viewportRef.current;
-    const current = viewRef.current;
-    const k = clampZoom(current.k * factor);
-    const px = at?.x ?? (viewport?.clientWidth ?? 0) / 2;
-    const py = at?.y ?? (viewport?.clientHeight ?? 0) / 2;
-    setView({ k, x: px - (px - current.x) * (k / current.k), y: py - (py - current.y) * (k / current.k) });
-  }, []);
+  // Where the tree opens and "Reset" returns to: the whole tree when it fits
+  // and still reads; otherwise cards stay legible with the top of the tree in
+  // view, centred on the span from the root to the first root blocker, so the
+  // task holding everything up is on screen when the tree opens.
+  const home = useCallback(
+    (viewport: { width: number; height: number }): TaskTreeView => {
+      const whole = fitView(layout, viewport);
+      if (whole.k >= MIN_READABLE_ZOOM) return { ...whole, y: Math.max(FIT_MARGIN, whole.y) };
+      const k = MIN_READABLE_ZOOM;
+      const rootBox = layout.boxes.find((box) => box.depth === 0);
+      const blockerBox = trace.rootBlockers
+        .map((blocker) => layout.byId.get(blocker.anchorId))
+        .find((box) => box !== undefined);
+      const span = [rootBox, blockerBox].filter((box): box is NonNullable<typeof box> => box !== undefined);
+      const left = span.length ? Math.min(...span.map((box) => box.x)) : 0;
+      const right = span.length ? Math.max(...span.map((box) => box.x + box.width)) : layout.width;
+      return { k, x: viewport.width / 2 - ((left + right) / 2) * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k };
+    },
+    [layout, trace],
+  );
+  const viewport = useDiagramViewport({ content: layout, storageKey: storageKey ? `${storageKey}.view` : undefined, home });
+  const { view, viewportRef, reveal, suppressClick } = viewport;
 
   const panTo = useCallback(
     (id: string, onlyIfHidden = false) => {
-      const viewport = viewportRef.current;
       const box = layout.byId.get(id);
-      if (!viewport || !box) return;
-      const { k, x, y } = viewRef.current;
-      const left = box.x * k + x;
-      const top = box.y * k + y;
-      if (
-        onlyIfHidden &&
-        left >= 0 &&
-        top >= 0 &&
-        left + box.width * k <= viewport.clientWidth &&
-        top + box.height * k <= viewport.clientHeight
-      ) {
-        return;
-      }
-      setView({
-        k,
-        x: viewport.clientWidth / 2 - (box.x + box.width / 2) * k,
-        y: viewport.clientHeight / 2 - (box.y + box.height / 2) * k,
-      });
+      if (box) reveal(box, onlyIfHidden);
     },
-    [layout],
+    [layout, reveal],
   );
 
   useEffect(() => {
@@ -224,84 +193,7 @@ export function TaskTreeCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest]);
 
-  // Wheel zoom needs a non-passive listener to keep the page from scrolling.
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = viewport.getBoundingClientRect();
-      const factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.01 : 0.002));
-      zoomAt(factor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
-    };
-    viewport.addEventListener("wheel", onWheel, { passive: false });
-    return () => viewport.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
-
-  // ── Pointer: drag to pan, two fingers to pinch ──────────────────────────
-  const pointers = useRef(new Map<number, Point>());
-  const gesture = useRef<{ start: Point; view: TaskTreeView; moved: boolean; pinch?: { distance: number; mid: Point } } | null>(null);
-  const suppressClick = useRef(false);
-
-  const localPoint = (event: { clientX: number; clientY: number }): Point => {
-    const rect = viewportRef.current!.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  };
-
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 && event.pointerType === "mouse") return;
-    pointers.current.set(event.pointerId, localPoint(event));
-    suppressClick.current = false;
-    const points = [...pointers.current.values()];
-    if (points.length === 2) {
-      const [a, b] = points as [Point, Point];
-      gesture.current = {
-        start: a,
-        view: viewRef.current,
-        moved: true,
-        pinch: { distance: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } },
-      };
-    } else {
-      gesture.current = { start: localPoint(event), view: viewRef.current, moved: false };
-    }
-  };
-
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointers.current.has(event.pointerId) || !gesture.current) return;
-    pointers.current.set(event.pointerId, localPoint(event));
-    const current = gesture.current;
-    const points = [...pointers.current.values()];
-    if (current.pinch && points.length >= 2) {
-      const [a, b] = points as [Point, Point];
-      const distance = Math.hypot(a.x - b.x, a.y - b.y);
-      const k = clampZoom(current.view.k * (distance / Math.max(current.pinch.distance, 1)));
-      const mid = current.pinch.mid;
-      setView({
-        k,
-        x: mid.x - (mid.x - current.view.x) * (k / current.view.k),
-        y: mid.y - (mid.y - current.view.y) * (k / current.view.k),
-      });
-      return;
-    }
-    const point = pointers.current.get(event.pointerId)!;
-    const dx = point.x - current.start.x;
-    const dy = point.y - current.start.y;
-    if (!current.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    if (!current.moved) {
-      current.moved = true;
-      // Capture only once it is a drag, so a plain click still reaches the card.
-      viewportRef.current?.setPointerCapture?.(event.pointerId);
-    }
-    setView({ ...current.view, x: current.view.x + dx, y: current.view.y + dy });
-  };
-
-  const onPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
-    pointers.current.delete(event.pointerId);
-    if (gesture.current?.moved) suppressClick.current = true;
-    if (pointers.current.size === 0) gesture.current = null;
-  };
-
-  // ── Keyboard and focus ──────────────────────────────────────────────────
+// ── Keyboard and focus ──────────────────────────────────────────────────
   const [focusedId, setFocusedId] = useState<string>(visibleRoot.id);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [keyboardFocus, setKeyboardFocus] = useState(false);
@@ -360,34 +252,31 @@ export function TaskTreeCanvas({
     }
   };
 
+  // ── Find ────────────────────────────────────────────────────────────────
+  const [foundId, setFoundId] = useState<string | null>(null);
+  const find = useMemo(
+    () =>
+      findItems && onFind
+        ? {
+            items: findItems,
+            onPick: (id: string) => {
+              setFoundId(id);
+              onFind(id);
+            },
+          }
+        : undefined,
+    [findItems, onFind],
+  );
+
   // ── Paint ───────────────────────────────────────────────────────────────
   const hoverItem = hoveredId ? items.get(hoveredId) : keyboardFocus ? items.get(activeFocusId) : undefined;
   const hoverBox = hoverItem?.kind === "task" ? boxAt(hoverItem.id) : null;
 
-  return (
-    <div
-      ref={viewportRef}
-      data-slot="task-tree-canvas"
-      className={cn(
-        "task-tree-canvas relative h-full min-h-0 w-full touch-none select-none overflow-hidden rounded-xl border border-border",
-        gesture.current?.moved ? "cursor-grabbing" : "cursor-grab",
-        className,
-      )}
-      style={{
-        backgroundSize: `${GRID * view.k}px ${GRID * view.k}px`,
-        backgroundPosition: `${view.x}px ${view.y}px`,
-      }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerEnd}
-      onPointerCancel={onPointerEnd}
-    >
-      <div
-        role="tree"
-        aria-label="Task tree"
-        className="absolute left-0 top-0 origin-top-left"
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, width: layout.width, height: layout.height }}
-      >
+  // The cards and lines do not depend on the view, so panning and zooming
+  // only move the layer: smooth with hundreds of tasks.
+  const layer = useMemo(
+    () => (
+      <>
         <svg
           aria-hidden="true"
           width={layout.width}
@@ -450,6 +339,7 @@ export function TaskTreeCanvas({
             );
           }
           const node = item.node;
+          const found = foundId === node.id;
           return (
             <div
               key={item.id}
@@ -457,7 +347,11 @@ export function TaskTreeCanvas({
               aria-expanded={item.descendants > 0 ? !item.collapsed : undefined}
               aria-label={`${node.identifier ? `${node.identifier} ` : ""}${node.title}, ${taskStatusLabel(node.status)}`}
               data-on-blocked-path={trace.pathNodeIds.has(node.id) ? "" : undefined}
-              className="group/tree-node absolute left-0 top-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              data-found={found ? "" : undefined}
+              className={cn(
+                "group/tree-node absolute left-0 top-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                found && "ring-2 ring-ring ring-offset-4 ring-offset-background",
+              )}
               onPointerEnter={() => setHoveredId(node.id)}
               onPointerLeave={() => setHoveredId((current) => (current === node.id ? null : current))}
             >
@@ -476,35 +370,58 @@ export function TaskTreeCanvas({
             </div>
           );
         })}
-      </div>
+      </>
+    ),
+    // The handlers inside read current state through setters and refs; the layer redraws when what it shows changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+  );
 
-      {hoverItem?.kind === "task" && hoverBox ? (
-        <TaskTreeHoverCard
-          node={hoverItem.node}
-          people={people}
-          left={(hoverBox.x + hoverBox.width) * view.k + view.x + 10}
-          top={hoverBox.y * view.k + view.y}
-        />
-      ) : null}
-
+  return (
+    <DiagramFrame
+      label="Task tree"
+      viewport={viewport}
+      content={layout}
+      boxes={layout.boxes}
+      find={find}
+      onCollapseAll={onCollapseAll}
+      onExpandAll={onExpandAll}
+      startFullscreen={startFullscreen}
+      onExitFullscreen={onExitFullscreen}
+      className={className}
+    >
       <div
-        className="absolute bottom-3 right-3 z-raised flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-sm"
-        onPointerDown={(event) => event.stopPropagation()}
+        ref={viewportRef}
+        data-slot="task-tree-canvas"
+        className={cn(
+          "task-tree-canvas relative h-full min-h-0 w-full flex-1 touch-none select-none overflow-hidden rounded-xl border border-border",
+          viewport.panning ? "cursor-grabbing" : "cursor-grab",
+        )}
+        style={{
+          backgroundSize: `${GRID * view.k}px ${GRID * view.k}px`,
+          backgroundPosition: `${view.x}px ${view.y}px`,
+        }}
+        {...viewport.panHandlers}
       >
-        <Button variant="ghost" size="icon-xs" aria-label="Zoom out" title="Zoom out" onClick={() => zoomAt(1 / 1.2)}>
-          <Minus />
-        </Button>
-        <span className="w-10 text-center text-xs tabular-nums text-muted-foreground" aria-live="polite">
-          {Math.round(view.k * 100)}%
-        </span>
-        <Button variant="ghost" size="icon-xs" aria-label="Zoom in" title="Zoom in" onClick={() => zoomAt(1.2)}>
-          <Plus />
-        </Button>
-        <Button variant="ghost" size="icon-xs" aria-label="Fit to screen" title="Fit to screen" onClick={fit}>
-          <Maximize />
-        </Button>
+        <div
+          role="tree"
+          aria-label="Task tree"
+          className="absolute left-0 top-0 origin-top-left"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, width: layout.width, height: layout.height }}
+        >
+          {layer}
+        </div>
+
+        {hoverItem?.kind === "task" && hoverBox ? (
+          <TaskTreeHoverCard
+            node={hoverItem.node}
+            people={people}
+            left={(hoverBox.x + hoverBox.width) * view.k + view.x + 10}
+            top={hoverBox.y * view.k + view.y}
+          />
+        ) : null}
       </div>
-    </div>
+    </DiagramFrame>
   );
 }
 
