@@ -142,6 +142,34 @@ export const restoreWebsiteRevisionSchema = z
   .strict();
 export type RestoreWebsiteRevision = z.infer<typeof restoreWebsiteRevisionSchema>;
 
+/**
+ * Click to change (GRE-2121, plan 3.4): the block a person picked in the
+ * preview and what they want changed. The block reference is durable (page,
+ * revision, block id and type, engine commit); `source` is only a hint.
+ */
+export const createWebsiteChangeRequestSchema = z
+  .object({
+    /** Client-made id for this confirm; the same id never makes a second task. */
+    requestId: z.string().uuid(),
+    pageRevisionId: z.string().uuid(),
+    blockId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
+    blockType: z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/),
+    blockLabel: z.string().trim().max(200).optional(),
+    engine: z.object({ version: z.string().max(100), commit: z.string().regex(/^[0-9a-f]{40}$/) }).strict(),
+    source: z
+      .object({
+        file: z.string().regex(/^[A-Za-z0-9_./-]{1,300}$/).refine((file) => !file.startsWith("/") && !file.split("/").includes("..")),
+        line: z.number().int().positive(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    /** The change, in the person's own words. */
+    request: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+export type CreateWebsiteChangeRequest = z.infer<typeof createWebsiteChangeRequestSchema>;
+
 export const sendBackWebsiteContentSchema = z
   .object({
     /** What needs to change. Shown to the author. */
