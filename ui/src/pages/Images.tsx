@@ -45,6 +45,7 @@ import {
   Star,
   Trash2,
   Wand2,
+  Waves,
   type LucideIcon,
 } from "lucide-react";
 import { imagesApi } from "../api/images";
@@ -89,6 +90,7 @@ import { StudioLookPicker } from "../components/StudioLookPicker";
 import { StudioShotList } from "../components/StudioShotList";
 import { StudioPlanBar } from "../components/StudioPlanBar";
 import { VideoStudio } from "../components/VideoStudio";
+import { MotionStudio } from "../components/MotionStudio";
 import { UseOnWebsiteDialog } from "../components/website/WebsiteStudioMedia";
 import { studioImageItems, type StudioMediaItem } from "../lib/website-studio-media";
 
@@ -296,7 +298,7 @@ export function Images() {
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"images" | "videos">("images");
+  const [tab, setTab] = useState<"images" | "videos" | "motion">("images");
   const [animateImage, setAnimateImage] = useState<GeneratedImage | null>(null);
   const [websiteItem, setWebsiteItem] = useState<StudioMediaItem | null>(null);
 
@@ -532,7 +534,7 @@ export function Images() {
     setAspectRatio(starter.aspectRatio);
     promptRef.current?.focus();
   };
-  const openMode = (mode: "images" | "videos", chip: string | null = null) => {
+  const openMode = (mode: "images" | "videos" | "motion", chip: string | null = null) => {
     setTab(mode);
     setOpenChip(chip);
     if (mode === "images") requestAnimationFrame(focusPrompt);
@@ -780,6 +782,7 @@ export function Images() {
     { id: "compare", icon: Columns2, title: "Compare looks", description: "The same picture in each house look", badge: "New", onClick: () => openMode("images", "compare") },
     { id: "looks", icon: Bookmark, title: "House looks", description: "Your saved client styles, one pick away", onClick: () => openMode("images", "look") },
     { id: "camera", icon: Camera, title: "Camera", description: "Shoot it like a film: lens and focus", onClick: () => openMode("images", "camera") },
+    { id: "motion", icon: Waves, title: "Motion", description: "The Animation Lab's studies, to review and decide", selected: tab === "motion", onClick: () => openMode("motion") },
   ];
 
   return (
@@ -793,7 +796,7 @@ export function Images() {
         </p>
       </header>
 
-      <nav aria-label="Studio modes" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <nav aria-label="Studio modes" className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {modes.map((mode) => (
           <StudioModeTile
             key={mode.id}
@@ -803,12 +806,14 @@ export function Images() {
             badge={mode.badge}
             selected={mode.selected}
             onClick={mode.onClick}
-            data-testid={mode.id === "images" || mode.id === "videos" ? `studio-tab-${mode.id}` : `studio-mode-${mode.id}`}
+            data-testid={mode.id === "images" || mode.id === "videos" || mode.id === "motion" ? `studio-tab-${mode.id}` : `studio-mode-${mode.id}`}
           />
         ))}
       </nav>
 
-      {tab === "videos" ? (
+      {tab === "motion" ? (
+        <MotionStudio companyId={companyId} />
+      ) : tab === "videos" ? (
         <VideoStudio
           companyId={companyId}
           sourceImage={animateImage}
