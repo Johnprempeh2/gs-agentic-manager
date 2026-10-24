@@ -741,7 +741,8 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(set.editorFrameOrigin).toBe("https://editor.alpha.test");
     await http.patch(url).send({ editorFrameOrigin: "https://edit2.alpha.test" }).expect(200);
 
-    const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"));
+    const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"))
+      .orderBy(activityLog.createdAt);
     expect(changes.map((row) => row.details)).toEqual([
       { from: null, to: "https://editor.alpha.test" },
       { from: "https://editor.alpha.test", to: "https://edit2.alpha.test" },
