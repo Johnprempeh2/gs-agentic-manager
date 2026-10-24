@@ -606,8 +606,9 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
           <div className="hidden items-center gap-1 lg:flex">
             {editing ? (
               <>
-                <IconButton label="Add block" icon={Plus} disabled={!canAddBlock} onClick={() => run("add-block")} />
-                <IconButton label="Outline" icon={ListTree} disabled={!canOutline} pressed={outlineOn} onClick={() => run("outline", !outlineOn)} />
+                <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+                <IconButton label="Add block" icon={Plus} labelled disabled={!canAddBlock} onClick={() => run("add-block")} />
+                <IconButton label="Outline" icon={ListTree} labelled disabled={!canOutline} pressed={outlineOn} onClick={() => run("outline", !outlineOn)} />
               </>
             ) : null}
             <Segmented
@@ -627,9 +628,9 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 onChange={(value) => void switchView({ source: value })}
               />
             ) : null}
-            <IconButton label="History" icon={History} pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
-            <IconButton label="Media" icon={ImageIcon} pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
-            <IconButton label="Motion" icon={Waves} pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
+            <IconButton label="History" icon={History} labelled pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
+            <IconButton label="Media" icon={ImageIcon} labelled pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
+            <IconButton label="Motion" icon={Waves} labelled pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
           </div>
           <Button
             type="button"
@@ -805,8 +806,9 @@ const DRAWER_TITLES: Record<Exclude<Drawer, null>, string> = {
 };
 
 /**
- * GSAM's one drawer, over the right of the canvas; a bottom sheet on a phone.
- * Not modal: the page stays live beside it.
+ * GSAM's one drawer. From lg up it is a column beside the canvas, so the page
+ * narrows and reflows instead of hiding under it; below lg it lies over the
+ * right of the canvas, and on a phone it is a bottom sheet. Not modal.
  */
 function EditorDrawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -816,6 +818,7 @@ function EditorDrawer({ title, onClose, children }: { title: string; onClose: ()
         "absolute z-raised flex flex-col border-border bg-background shadow-lg",
         "inset-x-0 bottom-0 max-h-(--sz-70vh) rounded-t-xl border-t",
         "sm:inset-x-auto sm:top-0 sm:right-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-t-0 sm:border-l",
+        "lg:relative lg:inset-auto lg:shrink-0 lg:shadow-none",
       )}
       data-testid="website-editor-drawer"
     >
@@ -830,31 +833,40 @@ function EditorDrawer({ title, onClose, children }: { title: string; onClose: ()
   );
 }
 
+/** Pressed reads like the chosen Width segment, with an edge so it holds on the light wash. */
+const PRESSED = "bg-accent text-foreground ring-1 ring-inset ring-border hover:bg-accent";
+
 function IconButton({
   label,
   icon: Icon,
   onClick,
   disabled,
   pressed,
+  labelled,
 }: {
   label: string;
   icon: typeof Undo2;
   onClick: () => void;
   disabled?: boolean;
   pressed?: boolean;
+  /** Show the label beside the icon where the bar has room (xl and up). */
+  labelled?: boolean;
 }) {
+  const name = label.replace(/ \(.+\)$/, "");
   return (
     <Button
       type="button"
-      variant={pressed ? "secondary" : "ghost"}
-      size="icon-sm"
-      aria-label={label.replace(/ \(.+\)$/, "")}
+      variant="ghost"
+      size={labelled ? "sm" : "icon-sm"}
+      aria-label={name}
       title={label}
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
+      className={cn(labelled && "w-9 xl:w-auto", pressed && PRESSED)}
     >
       <Icon />
+      {labelled ? <span className="hidden xl:inline">{name}</span> : null}
     </Button>
   );
 }
@@ -872,7 +884,10 @@ function PagePicker({ pages, page, onOpen }: { pages: WebsitePage[]; page: Websi
           data-testid="website-page-picker"
         >
           <span className="min-w-0 truncate text-sm font-medium">{page.title}</span>
-          <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground md:inline">{page.slug}</span>
+          {/* The home page's "/" read as a broken breadcrumb; the picker list still shows it. */}
+          {page.slug !== "/" ? (
+            <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground md:inline">{page.slug}</span>
+          ) : null}
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>
       </PopoverTrigger>
@@ -919,7 +934,8 @@ function SaveStatePill({
   status: WebsitePageStatus;
 }) {
   let text: string;
-  let tone = "bg-muted text-muted-foreground";
+  // Full-strength text on a neutral fill: the state is a must-have, so never the faint grey.
+  let tone = "bg-status-neutral-soft text-foreground";
   if (connection.phase === "connecting") text = "Connecting";
   else if (mode === "preview") text = "Preview";
   else if (saveState.status === "saving") text = "Saving";
@@ -929,7 +945,11 @@ function SaveStatePill({
   } else if (saveState.status === "saved") {
     text = `Saved ${formatTime(saveState.savedAt)}`;
     tone = "bg-status-success-soft text-status-success-foreground";
-  } else text = PAGE_STATUS_COPY[status]?.label ?? "Draft";
+  } else {
+    const copy = PAGE_STATUS_COPY[status] ?? PAGE_STATUS_COPY.draft;
+    text = copy.label;
+    if (status !== "planned") tone = copy.tone;
+  }
   return (
     <span
       role="status"

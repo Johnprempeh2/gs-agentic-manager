@@ -606,6 +606,16 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/editor/page-2`);
   });
 
+  it("the top bar names the page without the home page's '/', and shows which panel is open", async () => {
+    await render();
+    await connect(fullAck);
+    expect(document.body.querySelector('[data-testid="website-page-picker"]')!.textContent).toBe("Home");
+    expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Draft");
+    await act(async () => labelled("Media").click());
+    expect(labelled("Media").getAttribute("aria-pressed")).toBe("true");
+    expect(labelled("History").getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("Esc closes the drawer, then clears the selected block, then leaves", async () => {
     await render();
     const editor = await connect(fullAck);
