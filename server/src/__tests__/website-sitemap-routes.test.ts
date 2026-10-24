@@ -61,6 +61,43 @@ describe("diffSitemapTrees", () => {
     // Same site page under a new path and parent: one moved page, not a remove and an add.
     expect(byPath.get("/about/team")).toEqual(["moved"]);
   });
+
+  it("pairs a page with a new address by its title when no site page links them (GRE-2193)", () => {
+    const a: WebsiteSitemapTree = {
+      nodes: [
+        node("1", "Services", "/services", null),
+        node("2", "Business website build", "/services/business-website-build", "1"),
+        node("3", "SEO", "/services/seo", "1"),
+        node("4", "Overview", "/services/web-overview", "1"),
+        node("5", "Overview", "/services/seo-overview", "1"),
+        node("6", "Retainer", "/services/retainer", "1"),
+      ],
+      journeys: [],
+    };
+    const b: WebsiteSitemapTree = {
+      nodes: [
+        node("a", "Services", "/services", null),
+        node("b", "Websites and web apps", "/services/websites-web-apps", "a"),
+        node("c", "Business website build", "/services/websites-web-apps/business-website-build", "b"),
+        node("d", "SEO", "/services/seo", "a"),
+        node("e", "Overview", "/services/websites-web-apps/overview", "b"),
+        node("f", "Overview", "/services/growth/overview", "a"),
+      ],
+      journeys: [],
+    };
+    const diff = diffSitemapTrees(a, b);
+    const moved = diff.find((entry) => entry.a?.id === "2")!;
+    // One moved row, with both addresses, not a removed row and an added row.
+    expect(moved.b?.id).toBe("c");
+    expect(moved.changes).toEqual(["moved"]);
+    expect(diff.find((entry) => entry.a?.id === "3")!.changes).toEqual([]);
+    // A title on two pages is not unique, so those stay removed and added.
+    expect(diff.filter((entry) => entry.a?.title === "Overview" || entry.b?.title === "Overview").map((entry) => entry.changes)).toEqual([
+      ["removed"], ["removed"], ["added"], ["added"],
+    ]);
+    expect(diff.find((entry) => entry.a?.id === "6")!.changes).toEqual(["removed"]);
+    expect(diff.find((entry) => entry.b?.id === "b")!.changes).toEqual(["added"]);
+  });
 });
 
 describe("private pattern pages", () => {

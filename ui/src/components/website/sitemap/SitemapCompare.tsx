@@ -14,10 +14,12 @@ const CHANGE_LABELS: Record<SitemapChange, { label: string; className: string }>
   renamed: { label: "Renamed", className: "bg-status-warning-soft text-status-warning-foreground" },
 };
 
-function OptionColumn({ option, tree, changesById, pagesById, side }: {
+function OptionColumn({ option, tree, changesById, newAddressById, pagesById, side }: {
   option: WebsiteSitemapOption;
   tree: Tree;
   changesById: Map<string, SitemapChange[]>;
+  /** Pages at a new address: the address in the other option (GRE-2193). */
+  newAddressById: Map<string, string>;
   pagesById: Map<string, WebsitePage>;
   side: "a" | "b";
 }) {
@@ -42,6 +44,9 @@ function OptionColumn({ option, tree, changesById, pagesById, side }: {
               {changes.map((change) => (
                 <Pill key={change} className={CHANGE_LABELS[change].className}>{CHANGE_LABELS[change].label}</Pill>
               ))}
+              {newAddressById.has(node.id) ? (
+                <p className="w-full break-all font-mono text-xs text-muted-foreground">{newAddressById.get(node.id)}</p>
+              ) : null}
               {status === "planned" && node.menu !== "none" ? <p className="w-full text-xs text-muted-foreground">{plannedHiddenNote(node.title)}</p> : null}
             </li>
           );
@@ -78,16 +83,22 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
   const [copyParent, setCopyParent] = useState("");
 
   const diff = useMemo(() => (a && b ? diffSitemapTrees(a.tree, b.tree) : []), [a, b]);
-  const { aChanges, bChanges, counts } = useMemo(() => {
+  const { aChanges, bChanges, aAddresses, bAddresses, counts } = useMemo(() => {
     const aChanges = new Map<string, SitemapChange[]>();
     const bChanges = new Map<string, SitemapChange[]>();
+    const aAddresses = new Map<string, string>();
+    const bAddresses = new Map<string, string>();
     const counts: Record<SitemapChange, number> = { added: 0, removed: 0, moved: 0, renamed: 0 };
     for (const entry of diff) {
       for (const change of entry.changes) counts[change] += 1;
       if (entry.a) aChanges.set(entry.a.id, entry.changes);
       if (entry.b) bChanges.set(entry.b.id, entry.changes);
+      if (entry.a && entry.b && entry.a.path !== entry.b.path) {
+        aAddresses.set(entry.a.id, `Now at ${entry.b.path}`);
+        bAddresses.set(entry.b.id, `Was at ${entry.a.path}`);
+      }
     }
-    return { aChanges, bChanges, counts };
+    return { aChanges, bChanges, aAddresses, bAddresses, counts };
   }, [diff]);
 
   if (options.length < 2) {
@@ -124,13 +135,13 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
       {a && b ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="min-w-0 space-y-2">
-            <OptionColumn option={a} tree={a.tree} changesById={aChanges} pagesById={pagesById} side="a" />
+            <OptionColumn option={a} tree={a.tree} changesById={aChanges} newAddressById={aAddresses} pagesById={pagesById} side="a" />
             {canApprove && a.status !== "approved" ? (
               <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(a.id)}>Use this option</Button>
             ) : null}
           </div>
           <div className="min-w-0 space-y-2">
-            <OptionColumn option={b} tree={b.tree} changesById={bChanges} pagesById={pagesById} side="b" />
+            <OptionColumn option={b} tree={b.tree} changesById={bChanges} newAddressById={bAddresses} pagesById={pagesById} side="b" />
             {canApprove && b.status !== "approved" ? (
               <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(b.id)}>Use this option</Button>
             ) : null}
