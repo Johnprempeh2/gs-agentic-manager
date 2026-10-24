@@ -9,7 +9,9 @@ import {
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
   WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES,
+  WEBSITE_EDITOR_COMMANDS,
   WEBSITE_FRAME_SET_MOTION_ERROR_CODES,
+  websiteFrameEditorCommandSchema,
   websiteFrameSetMotionSchema,
   websiteFrameInsertMediaSchema,
   websiteFrameSrc,
@@ -307,5 +309,54 @@ describe("set-motion (GRE-2232)", () => {
       expect(receive("set-motion-result", { requestId: "m8", ok: false, code, message: "No." }).ok).toBe(true);
     }
     expect(receive("set-motion-result", { requestId: "m8", ok: false, code: "field_not_media" }).ok).toBe(false);
+  });
+});
+
+describe("full-screen editor messages (GRE-2296)", () => {
+  const receive = (type: string, payload: unknown, protocol: number | null = 1) =>
+    receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: { gs: "website-frame", protocol: 1, session: nonce, id: "m9", type, payload } },
+      ctx(protocol),
+    );
+  const helloAck = (overrides: Record<string, unknown>) => {
+    const result = receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: ack(overrides) }, ctx(null));
+    if (!result.ok || result.message.type !== "hello-ack") throw new Error("hello-ack was dropped");
+    return result.message.payload;
+  };
+
+  it("reads the engine's editor commands from hello-ack, keeping only known ones", () => {
+    expect(WEBSITE_EDITOR_COMMANDS).toEqual(["undo", "redo", "save", "add-block", "deselect", "outline"]);
+    expect(helloAck({ editorCommands: ["undo", "redo", "save", "teleport"] }).editorCommands).toEqual(["undo", "redo", "save"]);
+    expect(helloAck({}).editorCommands).toBeUndefined();
+    // A malformed list is dropped, never the handshake.
+    expect(helloAck({ editorCommands: "undo" }).editorCommands).toBeUndefined();
+  });
+
+  it("editor-command carries one known command and nothing else", () => {
+    const parses = (payload: unknown) => websiteFrameEditorCommandSchema.safeParse(payload).success;
+    expect(parses({ command: "undo" })).toBe(true);
+    expect(parses({ command: "outline", on: true })).toBe(true);
+    expect(parses({ command: "publish" })).toBe(false);
+    expect(parses({ command: "save", data: {} })).toBe(false);
+  });
+
+  it("accepts editor-state with a selection or none, and drops a bad block id", () => {
+    const selection = { blockId: "h1", blockType: "Hero", label: "Hero banner" };
+    expect(receive("editor-state", { selection, canUndo: true, canRedo: false }).ok).toBe(true);
+    expect(receive("editor-state", { selection: null, canUndo: false, canRedo: false, outline: true }).ok).toBe(true);
+    expect(receive("editor-state", { selection: { ...selection, blockId: "../x" }, canUndo: true, canRedo: false }).ok).toBe(false);
+    expect(receive("editor-state", { selection: null }).ok).toBe(false);
+    expect(receive("editor-state", { selection: null, canUndo: false, canRedo: false }, null).ok).toBe(false);
+  });
+
+  it("accepts editor-key escape only", () => {
+    expect(receive("editor-key", { key: "escape" }).ok).toBe(true);
+    expect(receive("editor-key", { key: "s" }).ok).toBe(false);
+  });
+
+  it("accepts media-requested for a block's image or animation field", () => {
+    expect(receive("media-requested", { blockId: "h1", field: "image", kind: "image", label: "Hero banner" }).ok).toBe(true);
+    expect(receive("media-requested", { blockId: "h1", field: "image", kind: "video" }).ok).toBe(false);
+    expect(receive("media-requested", { blockId: "h1", field: "a.b", kind: "image" }).ok).toBe(false);
   });
 });

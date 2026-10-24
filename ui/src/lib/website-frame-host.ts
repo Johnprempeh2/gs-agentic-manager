@@ -7,15 +7,19 @@ import {
   inspectWebsitePuckData,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
+  isWebsiteEditorCommand,
   websiteFrameHelloMessage,
   websiteFrameInsertMediaSchema,
   websiteFrameMessage,
   websiteFrameSetMotionSchema,
+  type WebsiteEditorCommand,
   type WebsiteFrameBlockPicked,
+  type WebsiteFrameEditorState,
   type WebsiteFrameHelloAck,
   type WebsiteFrameHostMessageType,
   type WebsiteFrameInsertMedia,
   type WebsiteFrameInsertMediaResult,
+  type WebsiteFrameMediaRequested,
   type WebsiteFrameMode,
   type WebsiteFrameSave,
   type WebsiteFrameSaveResult,
@@ -101,6 +105,12 @@ export interface WebsiteFrameHostOptions<Source> {
   /** The frame has the draft (after `load-draft`), so `highlight` can reach a block. */
   onDraftLoaded?: () => void;
   onFrameError?: (error: { code: string; message: string }) => void;
+  /** Editor (GRE-2296): the selected block, the editor's undo and redo, and the outline. */
+  onEditorState?: (state: WebsiteFrameEditorState) => void;
+  /** Editor: Esc in the frame with nothing selected. */
+  onEditorKey?: (key: "escape") => void;
+  /** Editor: the person clicked an image in the page to replace it. */
+  onMediaRequested?: (request: WebsiteFrameMediaRequested) => void;
   /** Drop reasons, for the console. Never shown as HTML. */
   onDrop?: (reason: string) => void;
   createId?: () => string;
@@ -132,6 +142,7 @@ export class WebsiteFrameHostSession<Source> {
   private shownRevisionId: string | null = null;
   private shownData: unknown = null;
   private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [] };
+  private commands = new Set<WebsiteEditorCommand>();
   /** `insert-media` and `set-motion` requests waiting for their result, by message id. */
   private replies = new Map<string, { type: ReplyType; resolve: (result: never) => void; timer: ReturnType<typeof setTimeout> }>();
   /** Saves by `pageId:requestId`. Scoped to this session (one nonce). */
@@ -211,6 +222,18 @@ export class WebsiteFrameHostSession<Source> {
       case "set-motion-result":
         this.reply(message.type, message.payload);
         return;
+      case "editor-state":
+        if (this.options.mode !== "editor") return this.drop("editor-state outside the editor");
+        this.options.onEditorState?.(message.payload);
+        return;
+      case "editor-key":
+        if (this.options.mode !== "editor") return this.drop("editor-key outside the editor");
+        this.options.onEditorKey?.(message.payload.key);
+        return;
+      case "media-requested":
+        if (this.options.mode !== "editor") return this.drop("media-requested outside the editor");
+        this.options.onMediaRequested?.(message.payload);
+        return;
     }
   }
 
@@ -266,6 +289,22 @@ export class WebsiteFrameHostSession<Source> {
     return this.request("set-motion", parsed.data, "set-motion-result", WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS);
   }
 
+  /** The `editor-command`s the engine said it takes in its `hello-ack` (GRE-2296). Empty for an older engine. */
+  get editorCommands(): ReadonlySet<WebsiteEditorCommand> {
+    return this.commands;
+  }
+
+  /**
+   * Run one of the editor's own commands (GRE-2296): undo, redo, save, add
+   * block, deselect, outline. Returns false when the frame cannot be asked (not
+   * the editor, not ready, or the engine did not offer that command).
+   */
+  command(command: WebsiteEditorCommand, on?: boolean): boolean {
+    if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null) return false;
+    if (!this.commands.has(command)) return false;
+    return this.send("editor-command", on === undefined ? { command } : { command, on }) !== null;
+  }
+
   /** The user leaves the editor. The frame drops the draft; this session stops listening. */
   teardown() {
     if (this.connection.phase === "closed") return;
@@ -297,6 +336,7 @@ export class WebsiteFrameHostSession<Source> {
       blocks: new Map(ack.blocks.flatMap((block) => (block.motion ? [[block.type, block.motion] as const] : []))),
       effects: ack.motionEffects ?? [],
     };
+    this.commands = new Set((ack.editorCommands ?? []).filter(isWebsiteEditorCommand));
     this.setConnection({ phase: "ready", protocol: ack.protocol, engine: ack.engine });
 
     let draft: WebsiteFrameDraft;
