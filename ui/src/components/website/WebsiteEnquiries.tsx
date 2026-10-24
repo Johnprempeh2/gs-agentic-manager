@@ -6,7 +6,7 @@ import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 
-/** The live enquiry list in the Front door module's Admin tab. */
+/** The live enquiry list in the Front door feature's Admin tab. */
 export function WebsiteEnquiries({ companyId, siteId }: { companyId: string; siteId: string }) {
   const queryClient = useQueryClient();
   const queryKey = ["website", companyId, "enquiries", siteId];
