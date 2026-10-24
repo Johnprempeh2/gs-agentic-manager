@@ -30,6 +30,7 @@ import { companySearchQuerySchema, type WebsitePageDetail, type WebsiteSite } fr
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "../routes/website-module.js";
+import { websiteModuleService } from "../services/website/module.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
 import { companySearchService } from "../services/company-search.js";
 
@@ -150,7 +151,12 @@ describeEmbeddedPostgres("website module routes", () => {
       .expect(201)).body as WebsitePageDetail;
     const entry = (await http
       .post(`/api/companies/${company.id}/website/sites/${site.id}/entries`)
-      .send({ collection: "product", entryKey: "aspose-pdf-net", content: { name: `${name} product` } })
+      .send({ collection: "product", entryKey: "aspose-pdf-net", content: { data: {
+        id: "product-1", slug: "aspose-pdf-net", name: `${name} product`, short_description: "Test product",
+        from_price_minor: null, from_price_currency: null, featured: false, platforms: [], type: "product",
+        attributes: {}, vendor: { id: "vendor-1", name: "Aspose", slug: "aspose", logo_url: "" },
+        category: { id: "category-1", name: "PDF", slug: "pdf" },
+      } } })
       .expect(201)).body;
     return { company, site, page, entry };
   }
@@ -285,6 +291,37 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(history.map((row: { revisionNumber: number }) => row.revisionNumber)).toEqual([2, 1]);
   });
 
+  it("validates collection fields before save and approves only a reviewed revision", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const { company, site, entry } = await seedWorld("Fields", "fields.test");
+    const http = request(app());
+    const base = `/api/companies/${company.id}/website/sites/${site.id}/entries/${entry.id}`;
+    await http.put(`${base}/content`).send({ baseRevisionId: entry.latestRevisionId, content: { data: { name: "Incomplete" } } }).expect(422);
+    expect(await revisionCount(entry.documentId)).toBe(1);
+    await http.post(`${base}/approve`).send({}).expect(422);
+    await http.post(`${base}/submit`).send({}).expect(200);
+    const approved = await http.post(`${base}/approve`).send({}).expect(200);
+    expect(approved.body).toMatchObject({ status: "approved", approvedRevisionId: entry.latestRevisionId });
+    const saved = await http.put(`${base}/content`).send({ baseRevisionId: entry.latestRevisionId, content: entry.content }).expect(200);
+    expect(saved.body.state).toBe("saved");
+    const changed = await http.get(base).expect(200);
+    expect(changed.body).toMatchObject({ status: "draft", approvedRevisionId: null });
+  });
+
+  it("imports the dated public snapshot once as drafts", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const { company, site } = await seedWorld("Import", "import.test");
+    const http = request(app());
+    const path = `/api/companies/${company.id}/website/sites/${site.id}/entries/import-public-drafts`;
+    const first = await http.post(path).send({}).expect(200);
+    expect(first.body).toMatchObject({ imported: 75, skipped: 0 });
+    const second = await http.post(path).send({}).expect(200);
+    expect(second.body).toMatchObject({ imported: 0, skipped: 75 });
+    const team = await http.get(`/api/companies/${company.id}/website/sites/${site.id}/entries?collection=public-person`).expect(200);
+    expect(team.body).toHaveLength(6);
+    expect(JSON.stringify(team.body)).not.toContain("inviteToken");
+  });
+
   it("isolation 9: page and entry documents never show in company search", async () => {
     await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
     const a = await seedWorld("Alpha", "alpha.test");
@@ -348,6 +385,82 @@ describeEmbeddedPostgres("website module routes", () => {
     // Agents have no default: they need an explicit grant.
     const { actor } = await seedAgent(a.company.id, []);
     await request(app(actor)).get(`${base}/${a.site.id}`).expect(403);
+  });
+
+  it("isolation 11 for a person: a scoped website:edit grant edits one site and gets 404 on another", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const second = (await request(app())
+      .post(`/api/companies/${a.company.id}/website/sites`)
+      .send({ name: "Second", domain: "second.alpha.test", netlifySiteId: "n2" })
+      .expect(201)).body as WebsiteSite;
+    // An operator edits every site by role default; a scoped grant row narrows that to one site.
+    const person = await seedUser(a.company.id, "operator", [{ key: "website:edit", scope: { siteIds: [a.site.id] } }]);
+    const http = request(app(person));
+    const base = `/api/companies/${a.company.id}/website/sites`;
+    await http.post(`${base}/${a.site.id}/pages`).send({ slug: "/about", title: "About" }).expect(201);
+    await http.post(`${base}/${second.id}/pages`).send({ slug: "/about", title: "About" }).expect(404);
+    // View has no grant row, so the role default still shows both sites.
+    await http.get(`${base}/${second.id}`).expect(200);
+  });
+
+  it("a disconnected (archived) site answers 409 to page and entry writes; reads still work", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const base = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    await http.patch(base).send({ archived: true }).expect(200);
+    const writes = [
+      http.post(`${base}/pages`).send({ slug: "/about", title: "About" }),
+      http.patch(`${base}/pages/${a.page.id}`).send({ title: "Renamed" }),
+      http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 } }),
+      http.post(`${base}/pages/${a.page.id}/archive`),
+      // The editor's save and restore are page writes too.
+      http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 }, editorOrigin: "https://editor.alpha.test" }),
+      http.post(`${base}/pages/${a.page.id}/revisions/${a.page.latestRevisionId}/restore`).send({ baseRevisionId: a.page.latestRevisionId }),
+      http.post(`${base}/entries`).send({ collection: "product", entryKey: "other" }),
+      http.patch(`${base}/entries/${a.entry.id}`).send({ sortOrder: 2 }),
+      http.put(`${base}/entries/${a.entry.id}/content`).send({ baseRevisionId: a.entry.latestRevisionId, content: { v: 2 } }),
+      http.post(`${base}/entries/${a.entry.id}/archive`),
+    ];
+    for (const write of writes) {
+      const response = await write;
+      expect(response.status, response.req.path).toBe(409);
+      expect(response.body.code).toBe("website_site_disconnected");
+    }
+    expect(await revisionCount(a.page.documentId)).toBe(1);
+    expect(await revisionCount(a.entry.documentId)).toBe(1);
+    const [page] = await db.select().from(websitePage).where(eq(websitePage.id, a.page.id));
+    expect(page!.archivedAt).toBeNull();
+    expect(page!.title).toBe("Alpha home");
+    await http.get(`${base}/pages/${a.page.id}`).expect(200);
+    await http.get(`${base}/entries`).expect(200);
+    // Connecting it again lets edits through.
+    await http.patch(base).send({ archived: false }).expect(200);
+    await http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 } }).expect(200);
+  });
+
+  it("restores an archived page and entry; a taken path answers 409", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const base = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const about = (await http.post(`${base}/pages`).send({ slug: "/about", title: "About", parentPageId: a.page.id }).expect(201)).body;
+    await http.post(`${base}/pages/${about.id}/archive`).expect(200);
+    const archivedSave = await http.put(`${base}/pages/${about.id}/content`).send({ baseRevisionId: about.latestRevisionId, content: { v: 2 } }).expect(422);
+    expect(archivedSave.body.message).toContain("Restore it");
+    const replacement = (await http.post(`${base}/pages`).send({ slug: "/about", title: "About again" }).expect(201)).body;
+    const clash = await http.patch(`${base}/pages/${about.id}`).send({ archived: false }).expect(409);
+    expect(clash.body.code).toBe("website_page_slug_taken");
+    expect(clash.body.error).toContain("/about");
+    await http.post(`${base}/pages/${replacement.id}/archive`).expect(200);
+    const restored = (await http.patch(`${base}/pages/${about.id}`).send({ archived: false }).expect(200)).body;
+    expect(restored).toMatchObject({ archivedAt: null, parentPageId: null, slug: "/about" });
+    await http.put(`${base}/pages/${about.id}/content`).send({ baseRevisionId: about.latestRevisionId, content: { v: 2 } }).expect(200);
+
+    await http.post(`${base}/entries/${a.entry.id}/archive`).expect(200);
+    const entry = (await http.patch(`${base}/entries/${a.entry.id}`).send({ archived: false }).expect(200)).body;
+    expect(entry.archivedAt).toBeNull();
   });
 
   it("keeps the sitemap fields: parent in the same site, no cycles, archive moves sub-pages up", async () => {
@@ -522,10 +635,12 @@ describeEmbeddedPostgres("website module routes", () => {
 
     const own = await seedAsset(a.company.id, "hero");
     const foreign = await seedAsset(b.company.id, "bravo-logo");
-    const entries = `${siteUrl}/entries`;
-    await http.post(entries).send({ collection: "media", entryKey: "hero", content: { assetId: own.id, alt: "Our team", width: 1600, height: 900 } }).expect(201);
-    await http.post(entries).send({ collection: "media", entryKey: "stolen", content: { assetId: foreign.id, alt: "Not ours" } }).expect(201);
-    await http.post(entries).send({ collection: "media", entryKey: "empty", content: { alt: "No asset" } }).expect(201);
+    // The release schema has no media collection yet, so these are stored as an import would store them.
+    const addMedia = (entryKey: string, content: Record<string, unknown>) =>
+      websiteModuleService(db).createEntry(a.company.id, a.site.id, { collection: "media", entryKey, content }, { agentId: null, userId: "local-board" });
+    await addMedia("hero", { assetId: own.id, alt: "Our team", width: 1600, height: 900 });
+    await addMedia("stolen", { assetId: foreign.id, alt: "Not ours" });
+    await addMedia("empty", { alt: "No asset" });
 
     const load = (await http.get(editorUrl).expect(200)).body;
     expect(load).toMatchObject({

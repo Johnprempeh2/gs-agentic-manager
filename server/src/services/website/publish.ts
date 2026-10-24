@@ -12,6 +12,7 @@ import type {
   WebsiteReleaseKind,
   WebsiteReleaseStatus,
 } from "@greatstone/shared";
+import { websiteCollectionDefinition } from "@greatstone/shared";
 import { conflict, unprocessable } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { getStorageService } from "../../storage/index.js";
@@ -394,7 +395,8 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     for (const { entry, revisionId } of releasedEntries) {
       const fields = parse(revisionId, `${entry.collection}/${entry.entryKey}`);
       const item = { id: entry.id, key: entry.entryKey, orgId: entry.orgId, sortOrder: entry.sortOrder, fields };
-      (collections[entry.collection] ??= []).push(item);
+      const releaseKey = websiteCollectionDefinition(entry.collection)?.releaseKey ?? entry.collection;
+      (collections[releaseKey] ??= []).push(item);
       if (entry.collection === "redirect") redirects.push(fields);
       if (entry.collection === "media" && fields && typeof (fields as { assetId?: unknown }).assetId === "string") {
         mediaAssetIds.push((fields as { assetId: string }).assetId);

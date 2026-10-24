@@ -76,6 +76,16 @@ const EMPTY_TREE: WebsiteSitemapTree = {
   journeys: [],
 };
 
+/** "{name} + mix", with a number on the end when an option already has that name. */
+export function mixName(baseName: string, options: Pick<WebsiteSitemapOption, "name">[]): string {
+  const taken = new Set(options.map((entry) => entry.name));
+  const stem = `${baseName.slice(0, 108)} + mix`;
+  if (!taken.has(stem)) return stem;
+  let count = 2;
+  while (taken.has(`${stem} ${count}`)) count += 1;
+  return `${stem} ${count}`;
+}
+
 function statusPill(option: WebsiteSitemapOption) {
   if (option.status === "approved" && option.changedSinceApproval) {
     return <Pill className="bg-status-warning-soft text-status-warning-foreground">Approved, changes not applied</Pill>;
@@ -222,6 +232,19 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
       setNotice(`Made ${created.name}. Change it, then compare it with the others.`);
     },
   });
+  // A mix is always a new option, so the two options compared stay as they were (GRE-2143).
+  const mix = useMutation({
+    mutationFn: ({ baseName, tree: mixTree }: { baseName: string; tree: WebsiteSitemapTree }) =>
+      websiteModuleApi.createSitemapOption(companyId, site.id, { name: mixName(baseName, options), tree: mixTree }),
+    onSuccess: (created) => {
+      queryClient.setQueryData<WebsiteSitemapOption[]>(
+        queryKeys.website.sitemapOptions(companyId, site.id),
+        (current) => (current ? [...current, created] : current),
+      );
+      refresh();
+      setNotice(`Your mix is saved as a new option, ${created.name}. The options you compared do not change.`);
+    },
+  });
   const approve = useMutation({
     mutationFn: (id: string) => websiteModuleApi.approveSitemapOption(companyId, site.id, id),
     onSuccess: (result) => {
@@ -241,8 +264,8 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
     },
   });
   // Approve errors show in the dialog while it is open.
-  const error = save.error ?? copy.error ?? (approvingId ? null : approve.error) ?? archive.error;
-  const busy = save.isPending || copy.isPending || approve.isPending || archive.isPending;
+  const error = save.error ?? copy.error ?? mix.error ?? (approvingId ? null : approve.error) ?? archive.error;
+  const busy = save.isPending || copy.isPending || mix.isPending || approve.isPending || archive.isPending;
 
   const canApproveThis = canApprove && option.status !== "archived" && (option.status !== "approved" || option.changedSinceApproval);
 
@@ -352,10 +375,10 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
             canEdit={canEdit}
             busy={busy}
             onApprove={(id) => { approve.reset(); setApprovingId(id); }}
-            onCopy={(targetId, nextTree) => {
+            onCopy={async (targetId, nextTree) => {
               const target = options.find((entry) => entry.id === targetId)!;
-              save.mutate({ optionId: targetId, tree: nextTree, baseUpdatedAt: target.updatedAt });
-              setNotice(`Copied the branch into ${target.name}.`);
+              const created = await mix.mutateAsync({ baseName: target.name, tree: nextTree }).catch(() => null);
+              return created?.id ?? null;
             }}
           />
         ) : null}

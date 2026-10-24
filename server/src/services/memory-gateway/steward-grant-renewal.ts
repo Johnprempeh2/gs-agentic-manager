@@ -11,7 +11,7 @@ export const STEWARD_GRANT_RENEW_NOTICE_MS = 3 * 24 * 60 * 60 * 1000;
  * The agent that leads the company: role `ceo`, else the agent at the top of
  * the org chart (Everest has role `general` and reports to nobody).
  */
-async function findChiefAgent(db: Db, companyId: string) {
+export async function findChiefAgent(db: Db, companyId: string) {
   const active = and(eq(agents.companyId, companyId), ne(agents.status, "terminated"));
   const [ceo] = await db
     .select({ id: agents.id })

@@ -88,7 +88,7 @@ async function userName(db: Pick<Db, "select">, userId: string | null | undefine
   return row?.name?.trim() || row?.email || userId;
 }
 
-async function principalName(db: Pick<Db, "select">, principal: IssueExecutionStagePrincipal) {
+export async function principalName(db: Pick<Db, "select">, principal: IssueExecutionStagePrincipal) {
   if (principal.type === "user") return userName(db, principal.userId);
   if (!principal.agentId) return "an agent";
   const [row] = await db.select({ name: agents.name }).from(agents).where(eq(agents.id, principal.agentId)).limit(1);

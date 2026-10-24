@@ -324,7 +324,7 @@ describe("Website hub tabs", () => {
     await render("/website");
     await waitForText("Link the website project");
     const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
-    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Pages", "Preview", "Traffic"]);
+    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Pages", "Collections", "Preview", "Traffic"]);
     expect(text()).toContain("Live site");
     expect(text()).toContain("greatstone.example");
     expect(websiteApiMock.report).not.toHaveBeenCalled();

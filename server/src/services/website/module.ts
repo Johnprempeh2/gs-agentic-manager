@@ -178,6 +178,7 @@ export function websiteDocumentStore(db: Db) {
     baseRevisionId: string;
     changeSummary?: string | null;
     actor: WebsiteActor;
+    afterSave?: (tx: Tx) => Promise<void>;
   }): Promise<WebsiteSaveResult> {
     const serialised = serialiseWebsiteContent(input.content);
     if ("error" in serialised) return { state: "failed", message: serialised.error };
@@ -225,6 +226,7 @@ export function websiteDocumentStore(db: Db) {
             updatedAt: now,
           })
           .where(eq(documents.id, doc.id));
+        await input.afterSave?.(tx);
         return { state: "saved", revisionId: revision.id, revisionNumber } as const;
       });
     } catch (err) {
@@ -251,6 +253,13 @@ export function websiteDocumentStore(db: Db) {
     return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
   }
 
+  async function readRevision(companyId: string, documentId: string, revisionId: string) {
+    const [revision] = await db.select({ body: documentRevisions.body, revisionNumber: documentRevisions.revisionNumber })
+      .from(documentRevisions)
+      .where(and(eq(documentRevisions.companyId, companyId), eq(documentRevisions.documentId, documentId), eq(documentRevisions.id, revisionId)));
+    return revision ? { revisionNumber: revision.revisionNumber, content: parseBody(revision.body) } : null;
+  }
+
   async function readDocument(companyId: string, documentId: string) {
     const [doc] = await db
       .select()
@@ -259,7 +268,8 @@ export function websiteDocumentStore(db: Db) {
     return doc ?? null;
   }
 
-  async function readRevision(companyId: string, documentId: string, revisionId: string) {
+  /** The whole revision row (id, author, time), for page history and restore. */
+  async function readRevisionRow(companyId: string, documentId: string, revisionId: string) {
     const [row] = await db
       .select()
       .from(documentRevisions)
@@ -273,7 +283,7 @@ export function websiteDocumentStore(db: Db) {
     return row ?? null;
   }
 
-  return { createDocument, saveRevision, listRevisions, readDocument, readRevision };
+  return { createDocument, saveRevision, listRevisions, readRevision, readRevisionRow, readDocument };
 }
 
 function parseBody(body: string): unknown {
@@ -365,8 +375,14 @@ export function websiteModuleService(db: Db) {
       throw err;
     }
     if (input.netlifyToken) {
-      const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
-      [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId }).where(eq(websiteSite.id, row.id)).returning();
+      // The secret lives in its own store, so a failure removes the new site row rather than leaving it without a token.
+      try {
+        const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
+        [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId }).where(eq(websiteSite.id, row.id)).returning();
+      } catch (err) {
+        await db.delete(websiteSite).where(and(eq(websiteSite.companyId, companyId), eq(websiteSite.id, row.id)));
+        throw err;
+      }
     }
     return row;
   }
@@ -471,19 +487,21 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updatePage(row: PageRow, input: UpdateWebsitePage) {
-    if (input.parentPageId !== undefined) await assertParent(row.companyId, row.siteId, row.id, input.parentPageId);
+    const { archived, ...fields } = input;
+    if (fields.parentPageId !== undefined) await assertParent(row.companyId, row.siteId, row.id, fields.parentPageId);
+    const slug = fields.slug ?? row.slug;
     try {
       const [updated] = await db
         .update(websitePage)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(websitePage.companyId, row.companyId), eq(websitePage.id, row.id)))
         .returning();
-      if (input.title !== undefined) {
-        await db.update(documents).set({ title: input.title }).where(and(eq(documents.id, row.documentId), eq(documents.companyId, row.companyId)));
+      if (fields.title !== undefined) {
+        await db.update(documents).set({ title: fields.title }).where(and(eq(documents.id, row.documentId), eq(documents.companyId, row.companyId)));
       }
       return updated;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`A page with the path ${input.slug} already exists on this site`, { code: "website_page_slug_taken" });
+      if (isUniqueViolation(err)) throw conflict(`A page with the path ${slug} already exists on this site`, { code: "website_page_slug_taken" });
       throw err;
     }
   }
@@ -558,6 +576,7 @@ export function websiteModuleService(db: Db) {
 
   async function approveEntry(row: EntryRow) {
     assertReviewable(row);
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.not_in_review"], { code: "website_review_not_in_review" });
     return setEntryReview(row, { status: "approved", approvedRevisionId: await latestRevisionId(row) });
   }
 
@@ -637,15 +656,16 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updateEntry(row: EntryRow, input: UpdateWebsiteEntry) {
+    const { archived, ...fields } = input;
     try {
       const [updated] = await db
         .update(websiteEntry)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)))
         .returning();
       return updated;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`${row.collection} already has an entry ${input.entryKey}`, { code: "website_entry_key_taken" });
+      if (isUniqueViolation(err)) throw conflict(`${row.collection} already has an entry ${fields.entryKey ?? row.entryKey}`, { code: "website_entry_key_taken" });
       throw err;
     }
   }
@@ -663,7 +683,7 @@ export function websiteModuleService(db: Db) {
 
   /** A revision of this page's own document, or null (another page's or company's revision is not found). */
   async function pageRevision(row: PageRow, revisionId: string) {
-    const revision = await store.readRevision(row.companyId, row.documentId, revisionId);
+    const revision = await store.readRevisionRow(row.companyId, row.documentId, revisionId);
     if (!revision) return null;
     return {
       revision: {
@@ -760,6 +780,21 @@ export function websiteModuleService(db: Db) {
     };
   }
 
+  async function saveEntryRevision(row: EntryRow, input: {
+    content: unknown; baseRevisionId: string; changeSummary?: string; actor: WebsiteActor;
+  }) {
+    return store.saveRevision({
+      companyId: row.companyId,
+      documentId: row.documentId,
+      ...input,
+      afterSave: async (tx) => {
+        await tx.update(websiteEntry)
+          .set({ status: "draft", approvedRevisionId: null, updatedAt: new Date() })
+          .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)));
+      },
+    });
+  }
+
   return {
     store,
     pageRevision,
@@ -786,6 +821,7 @@ export function websiteModuleService(db: Db) {
     createEntry,
     updateEntry,
     archiveEntry,
+    saveEntryRevision,
     submitEntry,
     approveEntry,
     sendBackEntry,

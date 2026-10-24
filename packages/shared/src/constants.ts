@@ -402,6 +402,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "looks_finished_review",
   // Decisions: the lead agent's list of agent-side stalls to recover before a person sees them. originId: the company id.
   "decision_stall_recovery",
+  // Website: a release Pending for 30 minutes (GRE-2132, copy `alert.pending_long`). originId: the release id.
+  "website_pending_long",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

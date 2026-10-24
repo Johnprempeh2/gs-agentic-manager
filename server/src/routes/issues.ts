@@ -341,13 +341,13 @@ import {
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
-import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
 import { userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
 import {
   authorizeReviewOverride,
   describeReviewOverride,
   issueReviewOverrideFieldsSchema,
 } from "../services/review-override.js";
+import { prepareReviewLoopNotice } from "../services/review-loop-notice.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -3045,7 +3045,6 @@ function diffExecutionParticipants(
 }
 
 const STAGE_PARTICIPANT_REFUSALS = [
-  "Only the escalated reviewer can advance the current execution stage",
   "Only the active reviewer or approver can advance the current execution stage",
 ];
 
@@ -14575,11 +14574,6 @@ export function issueRoutes(
         req.body.executionPolicy !== undefined && monitorChanged,
       );
 
-      // Only a resubmission after changes-requested escalates (GRE-2049); bind a legacy board id to the real owner (GRE-870).
-      const reviewEscalationUserId =
-        parseIssueExecutionState(existing.executionState)?.status === "changes_requested"
-          ? await resolveReviewEscalationUserId(db, existing)
-          : undefined;
       // An owner decides a stage that waits on the legacy `local-board` user.
       const actorUserIdAliases = await stageParticipantAliasesForActor(
         db,
@@ -14621,7 +14615,6 @@ export function issueRoutes(
         },
         allowBoardOverride: req.actor.type === "board",
         commentBody: reviewOverride ? (commentBody || reviewOverride.reason) : commentBody,
-        reviewEscalationUserId,
         actorUserIdAliases,
         reviewOverride: Boolean(reviewOverride),
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
@@ -15133,6 +15126,17 @@ export function issueRoutes(
       });
       const decision =
         transition.decision && decisionId ? transition.decision : null;
+      // The 3rd agent change request in a row tells the author's manager, or
+      // the responsible person, without moving the stage (GRE-2164).
+      let reviewLoopNotice: Awaited<ReturnType<typeof prepareReviewLoopNotice>> = null;
+      if (decision && transition.reviewLoopNotice) {
+        try {
+          reviewLoopNotice = await prepareReviewLoopNotice(db, existing, transition.reviewLoopNotice);
+        } catch (err) {
+          logger.warn({ err, issueId: existing.id }, "failed to prepare the review loop notice");
+        }
+      }
+      let reviewLoopNoticeCommentId: string | null = null;
       let attachmentComment: Awaited<ReturnType<typeof svc.addComment>> | null =
         null;
       const attachmentCommentSourceTrust = commentAttachmentIds?.length
@@ -15198,6 +15202,11 @@ export function issueRoutes(
               if (transition.skippedStageNote) {
                 // Say why a later stage never ran (GRE-1903).
                 await svc.addComment(updated.id, transition.skippedStageNote, {}, { authorType: "system" }, tx);
+              }
+              if (reviewLoopNotice) {
+                // Commits with the round's decision, so a loop gets one notice.
+                const noticeComment = await svc.addComment(updated.id, reviewLoopNotice.body, {}, { authorType: "system" }, tx);
+                reviewLoopNoticeCommentId = noticeComment.id;
               }
               if (reviewOverride) {
                 // The waiting reviewer sees who decided for them and why.
@@ -16345,6 +16354,25 @@ export function issueRoutes(
               },
             });
           }
+        }
+
+        if (reviewLoopNoticeCommentId && reviewLoopNotice?.recipient.type === "agent") {
+          addWakeup(reviewLoopNotice.recipient.agentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_comment_mentioned",
+            payload: { issueId: issue.id, commentId: reviewLoopNoticeCommentId },
+            requestedByActorType: "system",
+            requestedByActorId: null,
+            contextSnapshot: {
+              issueId: issue.id,
+              taskId: issue.id,
+              commentId: reviewLoopNoticeCommentId,
+              wakeCommentId: reviewLoopNoticeCommentId,
+              wakeReason: "issue_comment_mentioned",
+              source: "review.loop_notice",
+            },
+          });
         }
 
         for (const dependent of blockerHandoffResult.value?.dependents ?? []) {

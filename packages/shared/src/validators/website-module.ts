@@ -9,12 +9,25 @@ const domainSchema = z
   .max(253)
   .regex(/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/, "Use the bare domain, e.g. www.example.com");
 
-const httpsUrl = z
+const GITHUB_URL_RE = /^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i;
+const OWNER_NAME_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/**
+ * The site's code repository: `owner/site-name` (copy `connect.repo`). A GitHub
+ * address is stored as `owner/site-name`; any other http(s) address is kept as is.
+ */
+export const websiteRepoSchema = z
   .string()
   .trim()
-  .url()
   .max(500)
-  .refine((value) => /^https?:\/\//i.test(value), "Use an http or https address");
+  .transform((value) => {
+    const github = GITHUB_URL_RE.exec(value);
+    return github ? `${github[1]}/${github[2]}` : value;
+  })
+  .refine(
+    (value) => OWNER_NAME_RE.test(value) || /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(value),
+    "Use owner/site-name, for example acme/website",
+  );
 
 /** A URL path a visitor can open: `/` or `/a/b-c`. */
 export const websiteStaticPathSchema = z
@@ -55,7 +68,7 @@ export const createWebsiteSiteSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     domain: domainSchema,
-    repoUrl: httpsUrl.nullable().optional(),
+    repoUrl: websiteRepoSchema.nullable().optional(),
     netlifySiteId: z.string().trim().min(1).max(120),
     /** Stored in the company's secrets; never returned. */
     netlifyToken: z.string().trim().min(10).max(500).optional(),
@@ -101,6 +114,8 @@ export const updateWebsitePageSchema = z
     title: z.string().trim().min(1).max(200).optional(),
     status: z.enum(WEBSITE_PAGE_STATUSES).exclude(["approved", "published"]).optional(),
     seo: seoSchema.optional(),
+    /** `false` restores an archived page at the top level. Archive with the archive route. */
+    archived: z.literal(false).optional(),
     ...sitemapFields,
   })
   .strict()
@@ -154,6 +169,8 @@ export const updateWebsiteEntrySchema = z
     orgId: z.string().trim().max(120).nullable().optional(),
     sortOrder: z.number().int().min(0).max(100_000).nullable().optional(),
     status: z.enum(WEBSITE_ENTRY_STATUSES).exclude(["approved", "published"]).optional(),
+    /** `false` restores an archived entry. Archive with the archive route. */
+    archived: z.literal(false).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });

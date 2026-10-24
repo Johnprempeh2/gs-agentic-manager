@@ -275,6 +275,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageSendBack: "/companies/:companyId/website/sites/:siteId/pages/:pageId/send-back",
   /** GET → `WebsiteEntry[]` (`?collection=product`). POST `CreateWebsiteEntry` → 201 `WebsiteEntryDetail`. */
   entries: "/companies/:companyId/website/sites/:siteId/entries",
+  /** POST → imported draft counts from the dated public snapshot. */
+  entryImport: "/companies/:companyId/website/sites/:siteId/entries/import-public-drafts",
   /** GET → `WebsiteEntryDetail`. PATCH `UpdateWebsiteEntry` → `WebsiteEntry`. */
   entry: "/companies/:companyId/website/sites/:siteId/entries/:entryId",
   /** PUT `SaveWebsiteContent` → `WebsiteSaveResult`. */
@@ -283,6 +285,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   entryArchive: "/companies/:companyId/website/sites/:siteId/entries/:entryId/archive",
   /** GET → `WebsiteRevision[]`. */
   entryRevisions: "/companies/:companyId/website/sites/:siteId/entries/:entryId/revisions",
+  /** GET → one historic entry's JSON fields, scoped to the entry's document. */
+  entryRevision: "/companies/:companyId/website/sites/:siteId/entries/:entryId/revisions/:revisionId",
   /**
    * GET → `WebsiteRelease[]`, newest first (website:view). POST → 202
    * `WebsiteRelease` (website:publish, a person's click only; 409 while a
