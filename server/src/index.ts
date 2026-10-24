@@ -1949,6 +1949,16 @@ async function startServerWithDatabaseTeardown(
           );
         }
 
+        const answeredCardBlocksReconciled = await recoveryStep("reconcileAnsweredCardBlocks", () =>
+          heartbeat.reconcileAnsweredCardBlocks(),
+        );
+        if (answeredCardBlocksReconciled && answeredCardBlocksReconciled.issueIds.length > 0) {
+          logger.warn(
+            { ...answeredCardBlocksReconciled },
+            "startup answered-card reconciliation freed tasks still blocked on an answered card",
+          );
+        }
+
         const taskWatchdogsReconciled = await recoveryStep("reconcileTaskWatchdogs", () =>
           heartbeat.reconcileTaskWatchdogs(),
         );
@@ -2263,6 +2273,12 @@ async function startServerWithDatabaseTeardown(
               const reconciled = await heartbeat.reconcileWaitingDatesPassed();
               if (reconciled.issueIds.length > 0) {
                 logger.info({ ...reconciled }, "periodic waiting-date sweep woke assignees whose expected date passed");
+              }
+            })
+            .then(async () => {
+              const reconciled = await heartbeat.reconcileAnsweredCardBlocks();
+              if (reconciled.issueIds.length > 0) {
+                logger.warn({ ...reconciled }, "periodic answered-card sweep freed tasks still blocked on an answered card");
               }
             })
             .then(async () => {
