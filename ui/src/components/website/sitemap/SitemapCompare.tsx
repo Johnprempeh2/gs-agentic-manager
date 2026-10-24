@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { Copy } from "lucide-react";
-import { diffSitemapTrees, type SitemapChange, type WebsiteSitemapOption } from "@greatstone/shared";
+import { diffSitemapTrees, type SitemapChange, type WebsitePage, type WebsiteSitemapOption } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
-import { copyBranch, flatten, type Tree } from "./model";
-import { Pill } from "./SitemapViews";
+import { copyBranch, flatten, nodeStatus, type Tree } from "./model";
+import { MENU_LABELS, Pill, StatusPill, plannedHiddenNote } from "./SitemapViews";
 
 const CHANGE_LABELS: Record<SitemapChange, { label: string; className: string }> = {
   added: { label: "Added", className: "bg-status-success-soft text-status-success-foreground" },
@@ -14,10 +14,11 @@ const CHANGE_LABELS: Record<SitemapChange, { label: string; className: string }>
   renamed: { label: "Renamed", className: "bg-status-warning-soft text-status-warning-foreground" },
 };
 
-function OptionColumn({ option, tree, changesById, side }: {
+function OptionColumn({ option, tree, changesById, pagesById, side }: {
   option: WebsiteSitemapOption;
   tree: Tree;
   changesById: Map<string, SitemapChange[]>;
+  pagesById: Map<string, WebsitePage>;
   side: "a" | "b";
 }) {
   const rows = flatten(tree);
@@ -27,6 +28,7 @@ function OptionColumn({ option, tree, changesById, side }: {
       <ul className="space-y-1" aria-label={`Pages in ${option.name}`}>
         {rows.map(({ node, depth }) => {
           const changes = changesById.get(node.id) ?? [];
+          const status = nodeStatus(node, pagesById);
           return (
             <li
               key={node.id}
@@ -35,9 +37,12 @@ function OptionColumn({ option, tree, changesById, side }: {
             >
               <span className="min-w-0 font-medium">{node.title}</span>
               <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">{node.path}</span>
+              <StatusPill status={status} />
+              {node.menu !== "none" ? <Pill className="bg-muted text-foreground">{MENU_LABELS[node.menu]}</Pill> : null}
               {changes.map((change) => (
                 <Pill key={change} className={CHANGE_LABELS[change].className}>{CHANGE_LABELS[change].label}</Pill>
               ))}
+              {status === "planned" && node.menu !== "none" ? <p className="w-full text-xs text-muted-foreground">{plannedHiddenNote(node.title)}</p> : null}
             </li>
           );
         })}
@@ -52,8 +57,9 @@ function OptionColumn({ option, tree, changesById, side }: {
  * option into a copy of the other to mix them: the mix is a new option, shown
  * on the right, and the two options compared do not change (GRE-2143).
  */
-export function SitemapCompareView({ options, initialA, initialB, canApprove, canEdit, onApprove, onCopy, busy }: {
+export function SitemapCompareView({ options, pagesById, initialA, initialB, canApprove, canEdit, onApprove, onCopy, busy }: {
   options: WebsiteSitemapOption[];
+  pagesById: Map<string, WebsitePage>;
   initialA: string | null;
   initialB: string | null;
   canApprove: boolean;
@@ -118,15 +124,15 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
       {a && b ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="min-w-0 space-y-2">
-            <OptionColumn option={a} tree={a.tree} changesById={aChanges} side="a" />
+            <OptionColumn option={a} tree={a.tree} changesById={aChanges} pagesById={pagesById} side="a" />
             {canApprove && a.status !== "approved" ? (
-              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(a.id)}>Use {a.name}</Button>
+              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(a.id)}>Use this option</Button>
             ) : null}
           </div>
           <div className="min-w-0 space-y-2">
-            <OptionColumn option={b} tree={b.tree} changesById={bChanges} side="b" />
+            <OptionColumn option={b} tree={b.tree} changesById={bChanges} pagesById={pagesById} side="b" />
             {canApprove && b.status !== "approved" ? (
-              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(b.id)}>Use {b.name}</Button>
+              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(b.id)}>Use this option</Button>
             ) : null}
           </div>
         </div>

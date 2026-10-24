@@ -21,6 +21,7 @@ import {
 } from "@greatstone/shared";
 import { conflict, unprocessable } from "../../errors.js";
 import { secretService } from "../secrets.js";
+import { WEBSITE_MESSAGES } from "./messages.js";
 
 // Website module (GRE-2105, ADR GRE-1914). Every function takes the company
 // id and reads rows by (company_id, id): a row of another company is simply
@@ -471,6 +472,68 @@ export function websiteModuleService(db: Db) {
     });
   }
 
+  // ---- review (GRE-2109): submit is website:edit; approve and send back are website:publish, people only ----
+
+  function assertReviewable(row: PageRow | EntryRow) {
+    if (row.archivedAt) throw unprocessable(WEBSITE_MESSAGES["review.archived"], { code: "website_review_archived" });
+    if (row.status === "planned") throw unprocessable(WEBSITE_MESSAGES["review.planned"], { code: "website_review_planned" });
+  }
+
+  async function setPageReview(row: PageRow, patch: Partial<typeof websitePage.$inferInsert>) {
+    const [updated] = await db
+      .update(websitePage)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(websitePage.companyId, row.companyId), eq(websitePage.id, row.id)))
+      .returning();
+    return updated;
+  }
+
+  async function setEntryReview(row: EntryRow, patch: Partial<typeof websiteEntry.$inferInsert>) {
+    const [updated] = await db
+      .update(websiteEntry)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)))
+      .returning();
+    return updated;
+  }
+
+  /** The approved revision is the latest one at the moment a person approves. */
+  async function latestRevisionId(row: PageRow | EntryRow) {
+    const doc = await store.readDocument(row.companyId, row.documentId);
+    if (!doc?.latestRevisionId) throw unprocessable("There is no saved version to approve.", { code: "website_review_no_revision" });
+    return doc.latestRevisionId;
+  }
+
+  async function submitPage(row: PageRow) {
+    assertReviewable(row);
+    return setPageReview(row, { status: "review" });
+  }
+
+  async function approvePage(row: PageRow) {
+    assertReviewable(row);
+    return setPageReview(row, { status: "approved", approvedRevisionId: await latestRevisionId(row) });
+  }
+
+  async function sendBackPage(row: PageRow) {
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.not_in_review"], { code: "website_review_not_in_review" });
+    return setPageReview(row, { status: "draft" });
+  }
+
+  async function submitEntry(row: EntryRow) {
+    assertReviewable(row);
+    return setEntryReview(row, { status: "review" });
+  }
+
+  async function approveEntry(row: EntryRow) {
+    assertReviewable(row);
+    return setEntryReview(row, { status: "approved", approvedRevisionId: await latestRevisionId(row) });
+  }
+
+  async function sendBackEntry(row: EntryRow) {
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.not_in_review"], { code: "website_review_not_in_review" });
+    return setEntryReview(row, { status: "draft" });
+  }
+
   async function withDoc<T extends PageRow | EntryRow>(row: T) {
     const doc = await store.readDocument(row.companyId, row.documentId);
     return { row, doc: doc ?? { latestRevisionId: null, latestRevisionNumber: 0 } };
@@ -576,6 +639,9 @@ export function websiteModuleService(db: Db) {
     createPage,
     updatePage,
     archivePage,
+    submitPage,
+    approvePage,
+    sendBackPage,
     withDoc,
     listEntries,
     getEntryRow,
@@ -583,6 +649,9 @@ export function websiteModuleService(db: Db) {
     createEntry,
     updateEntry,
     archiveEntry,
+    submitEntry,
+    approveEntry,
+    sendBackEntry,
   };
 }
 
