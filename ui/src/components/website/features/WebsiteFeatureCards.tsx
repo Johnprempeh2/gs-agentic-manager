@@ -1,10 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Blocks,
   Briefcase,
   DoorOpen,
   FileText,
   Globe,
+  Plus,
   KeyRound,
   Radar,
   ShoppingBag,
@@ -12,20 +14,21 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { WebsiteModuleCard, WebsiteModuleHealthState, WebsiteModuleIcon, WebsiteSite } from "@greatstone/shared";
-import { websiteModulesApi } from "../../../api/website-modules";
+import type { WebsiteFeatureCard, WebsiteFeatureHealthState, WebsiteFeatureIcon, WebsiteSite } from "@greatstone/shared";
+import { websiteFeaturesApi } from "../../../api/website-features";
 import { queryKeys } from "../../../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "../../ErrorState";
 import { releaseDate, releaseTime } from "../WebsiteReleases";
+import { AddFeatureDialog } from "./AddFeatureDialog";
 
-// The Modules section of Website Home (GRE-2325): one card per module of the
+// The Features section of Website Home (GRE-2325): one card per feature of the
 // site. A card shows only what is set: no "Owner: none" line, and no tasks
 // line when there is no project or nothing open.
 
-const MODULE_ICONS: Record<WebsiteModuleIcon, LucideIcon> = {
+const FEATURE_ICONS: Record<WebsiteFeatureIcon, LucideIcon> = {
   blocks: Blocks,
   globe: Globe,
   "shopping-bag": ShoppingBag,
@@ -38,62 +41,62 @@ const MODULE_ICONS: Record<WebsiteModuleIcon, LucideIcon> = {
   briefcase: Briefcase,
 };
 
-export function ModuleIcon({ icon, className }: { icon: WebsiteModuleIcon; className?: string }) {
-  const Icon = MODULE_ICONS[icon] ?? Blocks;
+export function FeatureIcon({ icon, className }: { icon: WebsiteFeatureIcon; className?: string }) {
+  const Icon = FEATURE_ICONS[icon] ?? Blocks;
   return <Icon className={className} aria-hidden="true" />;
 }
 
-const HEALTH_COPY: Record<WebsiteModuleHealthState, { label: string; dot: string }> = {
+const HEALTH_COPY: Record<WebsiteFeatureHealthState, { label: string; dot: string }> = {
   ok: { label: "Healthy", dot: "bg-status-success" },
   attention: { label: "Needs a look", dot: "bg-status-warning" },
   unknown: { label: "No data yet", dot: "bg-status-neutral" },
 };
 
 /** The health dot with its meaning in words for screen readers and on hover. */
-export function HealthDot({ health, showLabel = false }: { health: WebsiteModuleCard["health"]; showLabel?: boolean }) {
+export function HealthDot({ health, showLabel = false }: { health: WebsiteFeatureCard["health"]; showLabel?: boolean }) {
   const copy = HEALTH_COPY[health.state];
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" title={health.reason} data-testid="website-module-health" data-state={health.state}>
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" title={health.reason} data-testid="website-feature-health" data-state={health.state}>
       <span aria-hidden="true" className={cn("size-2 rounded-full", copy.dot)} />
       <span className={showLabel ? undefined : "sr-only"}>{copy.label}</span>
     </span>
   );
 }
 
-export function moduleHref(siteId: string, moduleId: string) {
-  return `/website/sites/${siteId}/modules/${moduleId}`;
+export function featureHref(siteId: string, featureId: string) {
+  return `/website/sites/${siteId}/features/${featureId}`;
 }
 
 /** "3 open tasks · 1 needs a person", or why there is no count. */
-export function taskLine(card: Pick<WebsiteModuleCard, "openTasks" | "needsPerson">): { text: string; needsPerson: number } {
+export function taskLine(card: Pick<WebsiteFeatureCard, "openTasks" | "needsPerson">): { text: string; needsPerson: number } {
   if (card.openTasks === null) return { text: "No project linked", needsPerson: 0 };
   const open = card.openTasks === 1 ? "1 open task" : `${formatNumber(card.openTasks)} open tasks`;
   const needs = card.needsPerson ?? 0;
   return { text: needs > 0 ? `${open} · ${formatNumber(needs)} need${needs === 1 ? "s" : ""} a person` : open, needsPerson: needs };
 }
 
-function ModuleCardLink({ card, siteId }: { card: WebsiteModuleCard; siteId: string }) {
-  const { module } = card;
+function FeatureCardLink({ card, siteId }: { card: WebsiteFeatureCard; siteId: string }) {
+  const { feature } = card;
   const tasks = taskLine(card);
   const people = [card.ownerName ? `Owner: ${card.ownerName}` : null, card.leadAgentName ? `Lead: ${card.leadAgentName}` : null].filter(Boolean);
   return (
     <Link
-      to={moduleHref(siteId, module.id)}
-      data-testid="website-module-card"
-      data-module={module.key}
+      to={featureHref(siteId, feature.id)}
+      data-testid="website-feature-card"
+      data-feature={feature.key}
       className={cn(
         "gs-glass-card flex min-w-0 flex-col gap-3 rounded-xl border p-4 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        !module.enabled && "opacity-70",
+        !feature.enabled && "opacity-70",
       )}
     >
       <span className="flex min-w-0 items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
-          <ModuleIcon icon={module.icon} className="size-4 text-foreground" />
+          <FeatureIcon icon={feature.icon} className="size-4 text-foreground" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-semibold">{module.name}</span>
-            {module.enabled ? null : (
+            <span className="truncate text-sm font-semibold">{feature.name}</span>
+            {feature.enabled ? null : (
               <span className="shrink-0 rounded-full bg-status-neutral-soft px-2 py-0.5 text-xs font-medium text-status-neutral-foreground">Off</span>
             )}
           </span>
@@ -117,54 +120,62 @@ function ModuleCardLink({ card, siteId }: { card: WebsiteModuleCard; siteId: str
   );
 }
 
-/** The Modules section: cards, or a way to add the starting set for a person with Publish rights. */
-export function WebsiteModulesSection({ companyId, site, canChange }: { companyId: string; site: WebsiteSite | null; canChange: boolean }) {
-  const queryClient = useQueryClient();
+/** The Features section: the site's own features, or "Add your first feature" for a person with Publish rights. */
+export function WebsiteFeaturesSection({ companyId, site, canChange }: { companyId: string; site: WebsiteSite | null; canChange: boolean }) {
+  const [adding, setAdding] = useState(false);
   const cardsQuery = useQuery({
-    queryKey: queryKeys.website.moduleCards(companyId, site?.id ?? ""),
-    queryFn: () => websiteModulesApi.cards(companyId, site!.id),
+    queryKey: queryKeys.website.featureCards(companyId, site?.id ?? ""),
+    queryFn: () => websiteFeaturesApi.cards(companyId, site!.id),
     enabled: !!site,
-  });
-  const addStarting = useMutation({
-    mutationFn: () => websiteModulesApi.addStartingSet(companyId, site!.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.website.modules(companyId, site!.id) }),
   });
   const cards = cardsQuery.data ?? [];
 
   return (
-    <section className="space-y-4" aria-labelledby="website-home-modules" data-testid="website-home-modules">
-      <div className="space-y-1">
-        <h2 id="website-home-modules" className="text-lg font-semibold">Modules</h2>
-        <p className="text-sm text-muted-foreground">The big parts of the site. Open one to see its pages, tasks and settings.</p>
+    <section className="space-y-4" aria-labelledby="website-home-features" data-testid="website-home-features">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h2 id="website-home-features" className="text-lg font-semibold">Features</h2>
+          <p className="text-sm text-muted-foreground">The big parts of the site. Open one to see its pages, tasks and settings.</p>
+        </div>
+        {site && canChange && cards.length > 0 ? (
+          <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+            <Plus aria-hidden="true" />
+            Add feature
+          </Button>
+        ) : null}
       </div>
       {!site ? (
-        <p className="text-sm text-muted-foreground">Connect the site under Releases to see its modules.</p>
+        <p className="text-sm text-muted-foreground">Connect the site under Releases to see its features.</p>
       ) : cardsQuery.error ? (
         <ErrorState error={cardsQuery.error} onRetry={() => cardsQuery.refetch()} retrying={cardsQuery.isFetching} compact />
       ) : cardsQuery.isLoading ? (
-        <p className="text-sm text-muted-foreground" role="status">Loading modules</p>
+        <p className="text-sm text-muted-foreground" role="status">Loading features</p>
       ) : cards.length === 0 ? (
-        <div className="gs-glass-card flex flex-col gap-3 rounded-xl border px-4 py-4 sm:flex-row sm:items-center sm:justify-between" data-testid="website-home-modules-empty">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">No modules yet</p>
-            <p className="text-xs text-muted-foreground">
+        <div className="gs-glass-card flex flex-col items-center gap-3 rounded-xl border px-6 py-8 text-center" data-testid="website-home-features-empty">
+          <span className="flex size-10 items-center justify-center rounded-full bg-muted">
+            <Blocks className="size-5 text-muted-foreground" aria-hidden="true" />
+          </span>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">{canChange ? "Add your first feature" : "No features yet"}</p>
+            <p className="max-w-md text-xs text-muted-foreground">
               {canChange
-                ? "Add the six starting modules: Public site, Shop and licences, Client portal, Deep Dive portal, Front door and enquiries, and Intelligence hub."
-                : "A person with Publish rights adds the site's modules."}
+                ? "A feature is one big part of the site, like a shop or a client portal, with its own pages, tasks and owner."
+                : "A person with Publish rights adds the site's features."}
             </p>
           </div>
           {canChange ? (
-            <Button type="button" size="sm" onClick={() => addStarting.mutate()} disabled={addStarting.isPending}>
-              {addStarting.isPending ? "Adding" : "Add the starting modules"}
+            <Button type="button" size="sm" onClick={() => setAdding(true)}>
+              <Plus aria-hidden="true" />
+              Add your first feature
             </Button>
           ) : null}
-          {addStarting.error ? <ErrorState error={addStarting.error} compact /> : null}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map((card) => <ModuleCardLink key={card.module.id} card={card} siteId={site.id} />)}
+          {cards.map((card) => <FeatureCardLink key={card.feature.id} card={card} siteId={site.id} />)}
         </div>
       )}
+      {site && canChange ? <AddFeatureDialog companyId={companyId} siteId={site.id} open={adding} onOpenChange={setAdding} /> : null}
     </section>
   );
 }

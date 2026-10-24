@@ -1,32 +1,29 @@
 import { api } from "./client";
 import type {
-  CreateWebsiteModule,
-  UpdateWebsiteModule,
-  WebsiteModule,
-  WebsiteModuleCard,
-  WebsiteModuleDetail,
+  CreateWebsiteFeature,
+  UpdateWebsiteFeature,
+  WebsiteFeature,
+  WebsiteFeatureCard,
+  WebsiteFeatureDetail,
 } from "@greatstone/shared";
 
-const modulesPath = (companyId: string, siteId: string) =>
-  `/companies/${encodeURIComponent(companyId)}/website/sites/${encodeURIComponent(siteId)}/modules`;
-const modulePath = (companyId: string, siteId: string, moduleId: string) =>
-  `${modulesPath(companyId, siteId)}/${encodeURIComponent(moduleId)}`;
+const featuresPath = (companyId: string, siteId: string) =>
+  `/companies/${encodeURIComponent(companyId)}/website/sites/${encodeURIComponent(siteId)}/features`;
+const featurePath = (companyId: string, siteId: string, featureId: string) =>
+  `${featuresPath(companyId, siteId)}/${encodeURIComponent(featureId)}`;
 
-/** Website module registry client (GRE-2325). Reads need website:view; changes need website:publish. */
-export const websiteModulesApi = {
-  list: (companyId: string, siteId: string) => api.get<WebsiteModule[]>(modulesPath(companyId, siteId)),
-  /** The Modules cards of Website Home, with their counts and health. */
+/** Website feature registry client (GRE-2325). Reads need website:view; changes need website:publish. */
+export const websiteFeaturesApi = {
+  list: (companyId: string, siteId: string) => api.get<WebsiteFeature[]>(featuresPath(companyId, siteId)),
+  /** The Features cards of Website Home, with their counts and health. */
   cards: (companyId: string, siteId: string) =>
-    api.get<WebsiteModuleCard[]>(`/companies/${encodeURIComponent(companyId)}/website/sites/${encodeURIComponent(siteId)}/module-cards`),
-  detail: (companyId: string, siteId: string, moduleId: string) =>
-    api.get<WebsiteModuleDetail>(modulePath(companyId, siteId, moduleId)),
-  create: (companyId: string, siteId: string, input: CreateWebsiteModule) =>
-    api.post<WebsiteModule>(modulesPath(companyId, siteId), input),
-  /** Adds the starting modules the site does not have yet. */
-  addStartingSet: (companyId: string, siteId: string) =>
-    api.post<WebsiteModule[]>(`${modulesPath(companyId, siteId)}/starting-set`, {}),
-  update: (companyId: string, siteId: string, moduleId: string, patch: UpdateWebsiteModule) =>
-    api.patch<WebsiteModule>(modulePath(companyId, siteId, moduleId), patch),
-  remove: (companyId: string, siteId: string, moduleId: string) =>
-    api.delete<void>(modulePath(companyId, siteId, moduleId)),
+    api.get<WebsiteFeatureCard[]>(`/companies/${encodeURIComponent(companyId)}/website/sites/${encodeURIComponent(siteId)}/feature-cards`),
+  detail: (companyId: string, siteId: string, featureId: string) =>
+    api.get<WebsiteFeatureDetail>(featurePath(companyId, siteId, featureId)),
+  create: (companyId: string, siteId: string, input: CreateWebsiteFeature) =>
+    api.post<WebsiteFeature>(featuresPath(companyId, siteId), input),
+  update: (companyId: string, siteId: string, featureId: string, patch: UpdateWebsiteFeature) =>
+    api.patch<WebsiteFeature>(featurePath(companyId, siteId, featureId), patch),
+  remove: (companyId: string, siteId: string, featureId: string) =>
+    api.delete<void>(featurePath(companyId, siteId, featureId)),
 };

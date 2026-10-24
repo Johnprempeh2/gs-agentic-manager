@@ -2,15 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Construction, FileText, ListChecks } from "lucide-react";
 import {
-  GREATSTONE_STARTING_MODULES,
-  WEBSITE_MODULE_ADMIN_SCREENS,
-  WEBSITE_MODULE_ICONS,
-  type UpdateWebsiteModule,
-  type WebsiteModuleDetail,
-  type WebsiteModuleIcon,
+  WEBSITE_FEATURE_ICONS,
+  type UpdateWebsiteFeature,
+  type WebsiteFeatureDetail,
+  type WebsiteFeatureIcon,
   type WebsitePageStatus,
 } from "@greatstone/shared";
-import { websiteModulesApi } from "../api/website-modules";
+import { websiteFeaturesApi } from "../api/website-features";
 import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
@@ -32,18 +30,18 @@ import { PageTabBar } from "../components/PageTabBar";
 import { useCanPublishWebsite } from "../components/website/WebsiteSiteConnection";
 import { When } from "../components/website/WebsiteHub";
 import { activityActor, activityVerb } from "../components/website/WebsiteHome";
-import { HealthDot, ModuleIcon, taskLine } from "../components/website/modules/WebsiteModuleCards";
-import { parseCollections, parseLines } from "../components/website/modules/module-settings";
+import { HealthDot, FeatureIcon, taskLine } from "../components/website/features/WebsiteFeatureCards";
+import { parseCollections, parseLines } from "../components/website/features/feature-settings";
 import { releaseDate, releaseTime } from "../components/website/WebsiteReleases";
 import { WebsiteEnquiries } from "../components/website/WebsiteEnquiries";
 import { ProjectTreeView } from "./ProjectTree";
 
-// One website module's page (GRE-2325): Overview (its pages, tasks and recent
+// One website feature's page (GRE-2325): Overview (its pages, tasks and recent
 // changes), Admin (the screens later phases move here) and Settings (owner,
 // lead agent, project, routes, on/off).
 
-type ModuleTab = "overview" | "admin" | "settings";
-const MODULE_TABS: { value: ModuleTab; label: string }[] = [
+type FeatureTab = "overview" | "admin" | "settings";
+const FEATURE_TABS: { value: FeatureTab; label: string }[] = [
   { value: "overview", label: "Overview" },
   { value: "admin", label: "Admin" },
   { value: "settings", label: "Settings" },
@@ -69,14 +67,14 @@ function Section({ title, icon: Icon, children, testId }: { title: string; icon:
   );
 }
 
-function Overview({ detail }: { detail: WebsiteModuleDetail }) {
-  const { module } = detail;
+function Overview({ detail }: { detail: WebsiteFeatureDetail }) {
+  const { feature } = detail;
   return (
     <div className="space-y-8">
       <div className="grid gap-8 lg:grid-cols-2">
-        <Section title="Pages in this module" icon={FileText} testId="website-module-pages">
+        <Section title="Pages in this feature" icon={FileText} testId="website-feature-pages">
           {detail.pages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No page of the site sits under this module's routes yet.</p>
+            <p className="text-sm text-muted-foreground">No page of the site sits under this feature's routes yet.</p>
           ) : (
             <ul className="gs-glass-card divide-y divide-border rounded-xl border">
               {detail.pages.map((page) => (
@@ -93,9 +91,9 @@ function Overview({ detail }: { detail: WebsiteModuleDetail }) {
             </ul>
           )}
         </Section>
-        <Section title="Recent changes" icon={ListChecks} testId="website-module-changes">
+        <Section title="Recent changes" icon={ListChecks} testId="website-feature-changes">
           {detail.recentChanges.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing yet. Saves, approvals and releases of this module's pages show here.</p>
+            <p className="text-sm text-muted-foreground">Nothing yet. Saves, approvals and releases of this feature's pages show here.</p>
           ) : (
             <ol className="gs-glass-card divide-y divide-border rounded-xl border">
               {detail.recentChanges.map((event) => (
@@ -112,27 +110,27 @@ function Overview({ detail }: { detail: WebsiteModuleDetail }) {
           )}
         </Section>
       </div>
-      <Section title="Tasks" icon={ListChecks} testId="website-module-tasks">
-        {module.projectId ? (
+      <Section title="Tasks" icon={ListChecks} testId="website-feature-tasks">
+        {feature.projectId ? (
           <div className="flex min-h-96 flex-col">
-            <ProjectTreeView projectRef={module.projectId} embedded />
+            <ProjectTreeView projectRef={feature.projectId} embedded />
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Link a project under Settings to see this module's tasks here.</p>
+          <p className="text-sm text-muted-foreground">Link a project under Settings to see this feature's tasks here.</p>
         )}
       </Section>
     </div>
   );
 }
 
-function Admin({ companyId, detail, onOpenSettings }: { companyId: string; detail: WebsiteModuleDetail; onOpenSettings: () => void }) {
-  const screens = WEBSITE_MODULE_ADMIN_SCREENS[detail.module.key] ?? [];
+function Admin({ companyId, detail, onOpenSettings }: { companyId: string; detail: WebsiteFeatureDetail; onOpenSettings: () => void }) {
+  const screens = detail.feature.adminScreens;
   const [chosen, setChosen] = useState(screens[0]?.name ?? "");
-  if (!detail.module.enabled) {
+  if (!detail.feature.enabled) {
     return (
       <EmptyState
         icon={Construction}
-        title="This module is off"
+        title="This feature is off"
         message="Its screens are hidden. Its pages, entries and tasks are kept. Switch it on under Settings to see them."
         action="Open Settings"
         onAction={onOpenSettings}
@@ -141,21 +139,26 @@ function Admin({ companyId, detail, onOpenSettings }: { companyId: string; detai
     );
   }
   if (screens.length === 0) {
-    return <EmptyState icon={Construction} title="No admin screens yet" message="Screens for this module show here once a task builds them." />;
+    return <EmptyState icon={Construction} title="No admin screens yet" message="Screens for this feature show here once a task builds them." />;
   }
   const screen = screens.find((entry) => entry.name === chosen) ?? screens[0]!;
-  const enquiryScreen = detail.module.key === "front-door" && screen.name === "Enquiries";
+  const enquiryScreen = screen.name === "Enquiries";
   return (
-    <div className="space-y-4" data-testid="website-module-admin">
+    <div className="space-y-4" data-testid="website-feature-admin">
       <Tabs value={screen.name} onValueChange={setChosen}>
         <PageTabBar items={screens.map((entry) => ({ value: entry.name, label: entry.name }))} value={screen.name} onValueChange={setChosen} align="start" ariaLabel="Admin screens" />
       </Tabs>
-      {enquiryScreen ? <WebsiteEnquiries companyId={companyId} siteId={detail.module.siteId} /> : <div className="gs-glass-card flex flex-col items-center gap-2 rounded-xl border px-6 py-10 text-center">
+      {enquiryScreen ? <WebsiteEnquiries companyId={companyId} siteId={detail.feature.siteId} /> : <div className="gs-glass-card flex flex-col items-center gap-2 rounded-xl border px-6 py-10 text-center">
         <Construction className="size-5 text-muted-foreground" aria-hidden="true" />
         <p className="text-sm font-medium">{screen.name} moves here</p>
         <p className="max-w-md text-xs text-muted-foreground">
-          This screen still lives where it is today. It moves into this module in{" "}
-          <Link to={`/issues/${screen.issue}`} className="whitespace-nowrap font-medium text-foreground underline underline-offset-2">{screen.issue}</Link>.
+          This screen still lives where it is today.{" "}
+          {screen.issue ? (
+            <>
+              It moves into this feature in{" "}
+              <Link to={`/issues/${screen.issue}`} className="whitespace-nowrap font-medium text-foreground underline underline-offset-2">{screen.issue}</Link>.
+            </>
+          ) : "It moves into this feature in a later task."}
         </p>
       </div>}
     </div>
@@ -172,8 +175,8 @@ function Field({ id, label, help, children }: { id: string; label: string; help?
   );
 }
 
-function Settings({ companyId, detail, canChange }: { companyId: string; detail: WebsiteModuleDetail; canChange: boolean }) {
-  const { module } = detail;
+function Settings({ companyId, detail, canChange }: { companyId: string; detail: WebsiteFeatureDetail; canChange: boolean }) {
+  const { feature } = detail;
   const queryClient = useQueryClient();
   const membersQuery = useQuery({
     queryKey: queryKeys.access.companyMembers(companyId),
@@ -184,22 +187,22 @@ function Settings({ companyId, detail, canChange }: { companyId: string; detail:
   const agentsQuery = useQuery({ queryKey: queryKeys.agents.list(companyId), queryFn: () => agentsApi.list(companyId) });
   const projectsQuery = useQuery({ queryKey: queryKeys.projects.list(companyId), queryFn: () => projectsApi.list(companyId) });
 
-  const [name, setName] = useState(module.name);
-  const [purpose, setPurpose] = useState(module.purpose);
-  const [icon, setIcon] = useState<WebsiteModuleIcon>(module.icon);
-  const [ownerUserId, setOwnerUserId] = useState(module.ownerUserId ?? "");
-  const [leadAgentId, setLeadAgentId] = useState(module.leadAgentId ?? "");
-  const [projectId, setProjectId] = useState(module.projectId ?? "");
-  const [routes, setRoutes] = useState(module.routePrefixes.join("\n"));
-  const [collections, setCollections] = useState(module.collections.join(", "));
-  const [enabled, setEnabled] = useState(module.enabled);
+  const [name, setName] = useState(feature.name);
+  const [purpose, setPurpose] = useState(feature.purpose);
+  const [icon, setIcon] = useState<WebsiteFeatureIcon>(feature.icon);
+  const [ownerUserId, setOwnerUserId] = useState(feature.ownerUserId ?? "");
+  const [leadAgentId, setLeadAgentId] = useState(feature.leadAgentId ?? "");
+  const [projectId, setProjectId] = useState(feature.projectId ?? "");
+  const [routes, setRoutes] = useState(feature.routePrefixes.join("\n"));
+  const [collections, setCollections] = useState(feature.collections.join(", "));
+  const [enabled, setEnabled] = useState(feature.enabled);
   const [saved, setSaved] = useState(false);
 
   const save = useMutation({
-    mutationFn: (patch: UpdateWebsiteModule) => websiteModulesApi.update(companyId, module.siteId, module.id, patch),
+    mutationFn: (patch: UpdateWebsiteFeature) => websiteFeaturesApi.update(companyId, feature.siteId, feature.id, patch),
     onSuccess: async () => {
       setSaved(true);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.website.modules(companyId, module.siteId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.website.features(companyId, feature.siteId) });
     },
   });
   const submit = () => {
@@ -218,14 +221,14 @@ function Settings({ companyId, detail, canChange }: { companyId: string; detail:
   };
 
   const people = (membersQuery.data?.members ?? []).filter((member) => member.status === "active" && member.user);
-  const agents = (agentsQuery.data ?? []).filter((agent) => agent.status !== "terminated" || agent.id === module.leadAgentId);
-  const suggested = GREATSTONE_STARTING_MODULES.find((entry) => entry.key === module.key)?.suggestedOwner;
+  const agents = (agentsQuery.data ?? []).filter((agent) => agent.status !== "terminated" || agent.id === feature.leadAgentId);
+  const suggested = feature.suggestedOwner;
   const disabled = !canChange || save.isPending;
 
   return (
     <form
       className="max-w-2xl space-y-6"
-      data-testid="website-module-settings"
+      data-testid="website-feature-settings"
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -238,54 +241,54 @@ function Settings({ companyId, detail, canChange }: { companyId: string; detail:
       )}
       <div className="flex items-start justify-between gap-4 rounded-xl border border-border p-4">
         <div className="min-w-0 space-y-1">
-          <p id="module-enabled-label" className="text-sm font-medium">Module is {enabled ? "on" : "off"}</p>
-          <p className="text-xs text-muted-foreground">Off hides this module's screens. It never deletes its pages, entries or tasks.</p>
+          <p id="feature-enabled-label" className="text-sm font-medium">Feature is {enabled ? "on" : "off"}</p>
+          <p className="text-xs text-muted-foreground">Off hides this feature's screens. It never deletes its pages, entries or tasks.</p>
         </div>
-        <ToggleSwitch checked={enabled} onCheckedChange={setEnabled} disabled={disabled} aria-labelledby="module-enabled-label" />
+        <ToggleSwitch checked={enabled} onCheckedChange={setEnabled} disabled={disabled} aria-labelledby="feature-enabled-label" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="module-name" label="Name">
-          <Input id="module-name" value={name} onChange={(event) => setName(event.target.value)} disabled={disabled} required maxLength={80} />
+        <Field id="feature-name" label="Name">
+          <Input id="feature-name" value={name} onChange={(event) => setName(event.target.value)} disabled={disabled} required maxLength={80} />
         </Field>
-        <Field id="module-icon" label="Icon">
-          <NativeSelect id="module-icon" value={icon} onChange={(event) => setIcon(event.target.value as WebsiteModuleIcon)} disabled={disabled}>
-            {WEBSITE_MODULE_ICONS.map((entry) => <option key={entry} value={entry}>{entry.replace(/-/g, " ")}</option>)}
+        <Field id="feature-icon" label="Icon">
+          <NativeSelect id="feature-icon" value={icon} onChange={(event) => setIcon(event.target.value as WebsiteFeatureIcon)} disabled={disabled}>
+            {WEBSITE_FEATURE_ICONS.map((entry) => <option key={entry} value={entry}>{entry.replace(/-/g, " ")}</option>)}
           </NativeSelect>
         </Field>
       </div>
-      <Field id="module-purpose" label="Purpose" help="One or two sentences: what this part of the site is for.">
-        <Textarea id="module-purpose" value={purpose} onChange={(event) => setPurpose(event.target.value)} disabled={disabled} maxLength={280} rows={2} aria-describedby="module-purpose-help" />
+      <Field id="feature-purpose" label="Purpose" help="One or two sentences: what this part of the site is for.">
+        <Textarea id="feature-purpose" value={purpose} onChange={(event) => setPurpose(event.target.value)} disabled={disabled} maxLength={280} rows={2} aria-describedby="feature-purpose-help" />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="module-owner" label="Owner (optional)" help={suggested && !module.ownerUserId ? `Suggested owner: ${suggested}.` : "The person who answers for this module."}>
-          <NativeSelect id="module-owner" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} disabled={disabled} aria-describedby="module-owner-help">
+        <Field id="feature-owner" label="Owner (optional)" help={suggested && !feature.ownerUserId ? `Suggested owner: ${suggested}.` : "The person who answers for this feature."}>
+          <NativeSelect id="feature-owner" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} disabled={disabled} aria-describedby="feature-owner-help">
             <option value="">No owner</option>
-            {module.ownerUserId && !people.some((member) => member.principalId === module.ownerUserId) ? (
-              <option value={module.ownerUserId}>{detail.ownerName ?? "Current owner"}</option>
+            {feature.ownerUserId && !people.some((member) => member.principalId === feature.ownerUserId) ? (
+              <option value={feature.ownerUserId}>{detail.ownerName ?? "Current owner"}</option>
             ) : null}
             {people.map((member) => (
               <option key={member.principalId} value={member.principalId}>{member.user?.name ?? member.user?.email ?? member.principalId}</option>
             ))}
           </NativeSelect>
         </Field>
-        <Field id="module-lead" label="Lead agent (optional)">
-          <NativeSelect id="module-lead" value={leadAgentId} onChange={(event) => setLeadAgentId(event.target.value)} disabled={disabled}>
+        <Field id="feature-lead" label="Lead agent (optional)">
+          <NativeSelect id="feature-lead" value={leadAgentId} onChange={(event) => setLeadAgentId(event.target.value)} disabled={disabled}>
             <option value="">No lead agent</option>
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </NativeSelect>
         </Field>
       </div>
-      <Field id="module-project" label="Project (optional)" help="Its tasks show on the Overview and count on the module's card.">
-        <NativeSelect id="module-project" value={projectId} onChange={(event) => setProjectId(event.target.value)} disabled={disabled} aria-describedby="module-project-help">
+      <Field id="feature-project" label="Project (optional)" help="Its tasks show on the Overview and count on the feature's card.">
+        <NativeSelect id="feature-project" value={projectId} onChange={(event) => setProjectId(event.target.value)} disabled={disabled} aria-describedby="feature-project-help">
           <option value="">No project</option>
           {(projectsQuery.data ?? []).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
         </NativeSelect>
       </Field>
-      <Field id="module-routes" label="Routes" help="One path per line, like /dev-tools or /portal/:client/deep-dive. A page belongs to the module with the longest matching route.">
-        <Textarea id="module-routes" value={routes} onChange={(event) => setRoutes(event.target.value)} disabled={disabled} rows={5} className="font-mono text-xs" aria-describedby="module-routes-help" />
+      <Field id="feature-routes" label="Routes" help="One path per line, like /dev-tools or /portal/:client/deep-dive. A page belongs to the feature with the longest matching route.">
+        <Textarea id="feature-routes" value={routes} onChange={(event) => setRoutes(event.target.value)} disabled={disabled} rows={5} className="font-mono text-xs" aria-describedby="feature-routes-help" />
       </Field>
-      <Field id="module-collections" label="Collections" help="Collection keys, separated by commas, like product, vendor.">
-        <Input id="module-collections" value={collections} onChange={(event) => setCollections(event.target.value)} disabled={disabled} className="font-mono text-xs" aria-describedby="module-collections-help" />
+      <Field id="feature-collections" label="Collections" help="Collection keys, separated by commas, like product, vendor.">
+        <Input id="feature-collections" value={collections} onChange={(event) => setCollections(event.target.value)} disabled={disabled} className="font-mono text-xs" aria-describedby="feature-collections-help" />
       </Field>
       {save.error ? <ErrorState error={save.error} compact /> : null}
       <div className="flex items-center justify-end gap-3">
@@ -296,28 +299,28 @@ function Settings({ companyId, detail, canChange }: { companyId: string; detail:
   );
 }
 
-export function WebsiteModulePage() {
+export function WebsiteFeaturePage() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { siteId = "", moduleId = "" } = useParams<{ siteId: string; moduleId: string }>();
+  const { siteId = "", featureId = "" } = useParams<{ siteId: string; featureId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab");
-  const tab: ModuleTab = MODULE_TABS.some((entry) => entry.value === requested) ? (requested as ModuleTab) : "overview";
+  const tab: FeatureTab = FEATURE_TABS.some((entry) => entry.value === requested) ? (requested as FeatureTab) : "overview";
   const companyId = selectedCompanyId ?? "";
   const { canPublish } = useCanPublishWebsite(companyId, siteId, !!companyId && !!siteId);
 
   const detailQuery = useQuery({
-    queryKey: queryKeys.website.module(companyId, siteId, moduleId),
-    queryFn: () => websiteModulesApi.detail(companyId, siteId, moduleId),
-    enabled: !!companyId && !!siteId && !!moduleId,
+    queryKey: queryKeys.website.feature(companyId, siteId, featureId),
+    queryFn: () => websiteFeaturesApi.detail(companyId, siteId, featureId),
+    enabled: !!companyId && !!siteId && !!featureId,
   });
   const detail = detailQuery.data;
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Website", href: "/website" }, { label: detail?.module.name ?? "Module" }]);
-  }, [setBreadcrumbs, detail?.module.name]);
+    setBreadcrumbs([{ label: "Website", href: "/website" }, { label: detail?.feature.name ?? "Feature" }]);
+  }, [setBreadcrumbs, detail?.feature.name]);
 
-  const openTab = (next: ModuleTab) => {
+  const openTab = (next: FeatureTab) => {
     const params = new URLSearchParams(searchParams);
     if (next === "overview") params.delete("tab");
     else params.set("tab", next);
@@ -327,15 +330,15 @@ export function WebsiteModulePage() {
   if (!selectedCompanyId) return <EmptyState icon={FileText} message="Choose an organisation to view its website." />;
   if (detailQuery.isLoading) return <PageSkeleton variant="dashboard" />;
   if (detailQuery.error || !detail) {
-    return <ErrorState error={detailQuery.error ?? new Error("This module was not found.")} onRetry={() => detailQuery.refetch()} retrying={detailQuery.isFetching} />;
+    return <ErrorState error={detailQuery.error ?? new Error("This feature was not found.")} onRetry={() => detailQuery.refetch()} retrying={detailQuery.isFetching} />;
   }
 
-  const { module } = detail;
+  const { feature } = detail;
   const tasks = taskLine(detail);
   const people = [detail.ownerName ? `Owner: ${detail.ownerName}` : null, detail.leadAgentName ? `Lead agent: ${detail.leadAgentName}` : null].filter(Boolean);
 
   return (
-    <div className="w-full max-w-7xl space-y-6" data-testid="website-module-page">
+    <div className="w-full max-w-7xl space-y-6" data-testid="website-feature-page">
       <Link to="/website" className="inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <ArrowLeft className="size-4" aria-hidden="true" />
         Website Home
@@ -343,16 +346,16 @@ export function WebsiteModulePage() {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
-            <ModuleIcon icon={module.icon} className="size-5 text-foreground" />
+            <FeatureIcon icon={feature.icon} className="size-5 text-foreground" />
           </span>
           <div className="min-w-0 space-y-1">
             <h1 className="flex flex-wrap items-center gap-2 text-xl font-bold">
-              {module.name}
-              {module.enabled ? null : (
+              {feature.name}
+              {feature.enabled ? null : (
                 <span className="rounded-full bg-status-neutral-soft px-2 py-0.5 text-xs font-medium text-status-neutral-foreground">Off</span>
               )}
             </h1>
-            {module.purpose ? <p className="max-w-2xl text-sm text-muted-foreground">{module.purpose}</p> : null}
+            {feature.purpose ? <p className="max-w-2xl text-sm text-muted-foreground">{feature.purpose}</p> : null}
             {people.length ? <p className="text-xs text-muted-foreground">{people.join(" · ")}</p> : null}
           </div>
         </div>
@@ -381,15 +384,15 @@ export function WebsiteModulePage() {
       </header>
       <p className="sr-only">{detail.health.reason}</p>
       <div>
-        <Tabs value={tab} onValueChange={(value) => openTab(value as ModuleTab)} className="mb-4">
-          <PageTabBar items={MODULE_TABS} value={tab} onValueChange={(value) => openTab(value as ModuleTab)} align="start" ariaLabel="Module section" />
+        <Tabs value={tab} onValueChange={(value) => openTab(value as FeatureTab)} className="mb-4">
+          <PageTabBar items={FEATURE_TABS} value={tab} onValueChange={(value) => openTab(value as FeatureTab)} align="start" ariaLabel="Feature section" />
         </Tabs>
         {tab === "overview" ? <Overview detail={detail} /> : null}
         {tab === "admin" ? <Admin companyId={companyId} detail={detail} onOpenSettings={() => openTab("settings")} /> : null}
-        {tab === "settings" ? <Settings key={module.id} companyId={companyId} detail={detail} canChange={canPublish} /> : null}
+        {tab === "settings" ? <Settings key={feature.id} companyId={companyId} detail={detail} canChange={canPublish} /> : null}
       </div>
     </div>
   );
 }
 
-export default WebsiteModulePage;
+export default WebsiteFeaturePage;

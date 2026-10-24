@@ -20,7 +20,7 @@ vi.mock("../../api/website", async () => {
   return { ...actual, websiteApi: websiteApiMock, websiteModuleApi: moduleApiMock };
 });
 vi.mock("../../api/projects", () => ({ projectsApi: projectsMock }));
-vi.mock("../../api/website-modules", () => ({ websiteModulesApi: { cards: vi.fn().mockResolvedValue([]), addStartingSet: vi.fn() } }));
+vi.mock("../../api/website-features", () => ({ websiteFeaturesApi: { cards: vi.fn().mockResolvedValue([]) } }));
 vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return { Link: actual.Link };

@@ -36,7 +36,7 @@ import { ErrorState } from "../ErrorState";
 import { pickLivePreviewService } from "../LivePreviewCard";
 import { RELEASE_STATUS_COPY, isReleaseActive, releaseDate, releaseTime } from "./WebsiteReleases";
 import { useCanPublishWebsite, useWebsiteSite } from "./WebsiteSiteConnection";
-import { WebsiteModulesSection } from "./modules/WebsiteModuleCards";
+import { WebsiteFeaturesSection } from "./features/WebsiteFeatureCards";
 import {
   LinkProjectFirst,
   PreviewStage,
@@ -769,7 +769,7 @@ export function WebsiteHomeTab({
     <div className="space-y-6" data-testid="website-home">
       <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
-      <WebsiteModulesSection companyId={companyId} site={site} canChange={canPublish} />
+      <WebsiteFeaturesSection companyId={companyId} site={site} canChange={canPublish} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}
       <div className="grid gap-6 lg:grid-cols-2">
