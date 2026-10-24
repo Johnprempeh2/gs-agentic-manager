@@ -50,7 +50,7 @@ export function BlockLoopMark({ className }: { className?: string }) {
       data-block-loop-mark=""
       title="Blocking loop: this task waits on a task that waits on it"
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full bg-status-danger-soft px-1.5 text-xs font-medium text-status-danger-foreground",
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-status-review-soft px-1.5 text-xs font-medium text-status-review-foreground",
         className,
       )}
     >
@@ -141,11 +141,10 @@ export function TaskTreeCard({
         <div className="flex items-center gap-1.5">
           <StatusIcon status={node.status} size="sm" queued={runState?.kind === "queued"} />
           {node.identifier ? (
-            <span className="truncate font-mono text-xs text-muted-foreground">{node.identifier}</span>
+            <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{node.identifier}</span>
           ) : null}
           {node.isKeyTask ? <KeyTaskMark /> : null}
           {inLoop ? <BlockLoopMark /> : null}
-          {projectName ? <OutsideProjectMark projectName={projectName} /> : null}
           {showPriority ? <PriorityIcon priority={node.priority} /> : null}
           {node.childCount > 0 ? (
             <ProgressRing done={node.doneChildCount} total={node.childCount} className="ml-auto" />
@@ -161,11 +160,14 @@ export function TaskTreeCard({
         <div className="mt-auto flex min-w-0 items-center gap-2">
           {isGroup ? (
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">Dashed lines show what they block</span>
+          ) : projectName ? (
+            // An outside task names its project where the owner goes; the hover card still names the owner.
+            <OutsideProjectMark projectName={projectName} className="min-w-0 flex-1" />
           ) : (
             <TaskTreeOwner people={people} owner={node} className="min-w-0 flex-1" />
           )}
           {runState ? <TaskRunStateChip state={runState} short /> : null}
-          {isRootBlocker ? (
+          {isRootBlocker && !blockReason?.unexplained ? (
             <span className="shrink-0 rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">
               Root blocker
             </span>

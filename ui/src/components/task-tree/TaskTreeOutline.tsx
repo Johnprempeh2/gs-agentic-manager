@@ -134,7 +134,7 @@ export function TaskTreeOutline({
           <StatusIcon status={node.status} size="sm" queued={runStateForTask(runStates, node)?.kind === "queued"} />
           <Link to={hrefFor(item)} className="min-w-0 flex-1 py-2 text-sm">
             <span className={cn("line-clamp-2 text-foreground", depth === 0 ? "font-semibold" : "font-medium")}>{node.title}</span>
-            <span className="mt-0.5 flex min-w-0 items-center gap-2">
+            <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
               {node.identifier ? <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{node.identifier}</span> : null}
               {node.isKeyTask ? <KeyTaskMark /> : null}
               {loopIds?.has(node.id) ? <BlockLoopMark /> : null}
@@ -142,9 +142,9 @@ export function TaskTreeOutline({
               <TaskTreeOwner people={people} owner={node} className="min-w-0" />
               {runStateForTask(runStates, node) ? <TaskRunStateChip state={runStateForTask(runStates, node)!} /> : null}
             </span>
-            {isRootBlocker || waitingOn ? (
+            {(isRootBlocker && !blockReason?.unexplained) || waitingOn ? (
               <span className="mt-1 inline-flex max-w-full truncate rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">
-                {isRootBlocker ? "Root blocker" : `Waiting on ${waitingOn}`}
+                {isRootBlocker && !blockReason?.unexplained ? "Root blocker" : `Waiting on ${waitingOn}`}
               </span>
             ) : null}
           </Link>
