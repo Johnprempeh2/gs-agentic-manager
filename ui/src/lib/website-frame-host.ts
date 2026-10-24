@@ -1,15 +1,19 @@
 import {
   WEBSITE_FRAME_HELLO_INTERVAL_MS,
   WEBSITE_FRAME_HELLO_TIMEOUT_MS,
+  WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS,
   WEBSITE_FRAME_PROTOCOLS,
   inspectWebsitePuckData,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
   websiteFrameHelloMessage,
+  websiteFrameInsertMediaSchema,
   websiteFrameMessage,
   type WebsiteFrameBlockPicked,
   type WebsiteFrameHelloAck,
   type WebsiteFrameHostMessageType,
+  type WebsiteFrameInsertMedia,
+  type WebsiteFrameInsertMediaResult,
   type WebsiteFrameMode,
   type WebsiteFrameSave,
   type WebsiteFrameSaveResult,
@@ -111,6 +115,9 @@ export class WebsiteFrameHostSession<Source> {
   private engineTypes: Set<string> | null = null;
   private shownBlocks = new Map<string, WebsitePuckBlockInfo>();
   private shownRevisionId: string | null = null;
+  private shownData: unknown = null;
+  /** `insert-media` requests waiting for their `insert-media-result`, by message id. */
+  private inserts = new Map<string, { resolve: (result: WebsiteFrameInsertMediaResult | null) => void; timer: ReturnType<typeof setTimeout> }>();
   /** Saves by `pageId:requestId`. Scoped to this session (one nonce). */
   private saves = new Map<string, Promise<WebsiteFrameSaveResult>>();
   private inFlight: string | null = null;
@@ -184,6 +191,9 @@ export class WebsiteFrameHostSession<Source> {
       case "error":
         this.options.onFrameError?.(message.payload);
         return;
+      case "insert-media-result":
+        this.insertMediaResult(message.payload);
+        return;
     }
   }
 
@@ -206,10 +216,46 @@ export class WebsiteFrameHostSession<Source> {
     this.send("highlight", { blockId });
   }
 
+  /** The page data the frame was last given or last saved, for the host's own lookups. */
+  get shownPageData(): unknown {
+    return this.shownData;
+  }
+
+  /**
+   * Put a media entry in a block of the open draft. Resolves with the frame's
+   * `insert-media-result`, or null when the frame cannot be asked (not the
+   * editor, not ready, invalid payload) or does not answer in time: a site on
+   * an older engine drops `insert-media` without a reply.
+   */
+  insertMedia(payload: WebsiteFrameInsertMedia): Promise<WebsiteFrameInsertMediaResult | null> {
+    if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null) {
+      return Promise.resolve(null);
+    }
+    const parsed = websiteFrameInsertMediaSchema.safeParse(payload);
+    if (!parsed.success) {
+      this.drop("insert-media payload GSAM made is invalid");
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      const id = this.send("insert-media", parsed.data);
+      if (!id) return resolve(null);
+      const timer = setTimeout(() => {
+        this.inserts.delete(id);
+        resolve(null);
+      }, WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS);
+      this.inserts.set(id, { resolve, timer });
+    });
+  }
+
   /** The user leaves the editor. The frame drops the draft; this session stops listening. */
   teardown() {
     if (this.connection.phase === "closed") return;
     this.stopHello();
+    for (const pending of this.inserts.values()) {
+      clearTimeout(pending.timer);
+      pending.resolve(null);
+    }
+    this.inserts.clear();
     this.send("teardown", {});
     this.setConnection({ phase: "closed" });
   }
@@ -347,18 +393,30 @@ export class WebsiteFrameHostSession<Source> {
     });
   }
 
+  private insertMediaResult(result: WebsiteFrameInsertMediaResult) {
+    const pending = this.inserts.get(result.requestId);
+    if (!pending) return this.drop("insert-media-result for no open request");
+    clearTimeout(pending.timer);
+    this.inserts.delete(result.requestId);
+    pending.resolve(result);
+  }
+
   private rememberShown(revisionId: string, data: unknown) {
     const inspected = inspectWebsitePuckData(data);
     this.shownRevisionId = revisionId;
+    this.shownData = data;
     this.shownBlocks = inspected.ok ? inspected.blocks : new Map();
   }
 
-  private send(type: WebsiteFrameHostMessageType, payload: Record<string, unknown>) {
-    if (this.protocol === null) return;
+  /** Returns the message id, or null before the handshake. */
+  private send(type: WebsiteFrameHostMessageType, payload: Record<string, unknown>): string | null {
+    if (this.protocol === null) return null;
+    const id = this.createId();
     this.options.post(
-      websiteFrameMessage({ id: this.createId(), protocol: this.protocol, session: this.options.nonce, type, payload }),
+      websiteFrameMessage({ id, protocol: this.protocol, session: this.options.nonce, type, payload }),
       this.options.editorOrigin,
     );
+    return id;
   }
 
   private stopHello() {

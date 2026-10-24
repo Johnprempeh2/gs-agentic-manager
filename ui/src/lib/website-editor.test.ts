@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WebsitePageEditorLoad, WebsiteRevision } from "@greatstone/shared";
 import { ApiError } from "../api/client";
-import { editorOpenProblem, frameConnectionMessage, frameDraft, saveThroughGsam } from "./website-editor";
+import {
+  editorOpenProblem,
+  frameConnectionMessage,
+  frameDraft,
+  insertMediaAssetUrl,
+  insertMediaField,
+  insertMediaMessage,
+  saveThroughGsam,
+} from "./website-editor";
 
 const request = { pageId: "page-1", baseRevisionId: "rev-1", data: { root: {} }, editorOrigin: "https://editor.example.com" };
 const revision = (id: string, extra: Partial<WebsiteRevision> = {}): WebsiteRevision => ({
@@ -102,5 +110,39 @@ describe("frameConnectionMessage", () => {
     expect(frameConnectionMessage({ phase: "refused-protocol", supported: [2] }, "x")).toContain("protocol 2");
     expect(frameConnectionMessage({ phase: "refused-site" }, "x")).toBe("This address serves a different site.");
     expect(frameConnectionMessage({ phase: "connecting" }, "x")).toBeNull();
+  });
+});
+
+describe("insert-media helpers (GRE-2206)", () => {
+  const data = {
+    root: { props: {} },
+    content: [
+      { type: "Hero", props: { id: "h1", heading: "Hi", backdrop: "media:asset-1" } },
+      { type: "Grid", props: { id: "g1", items: [{ type: "Card", props: { id: "c1", title: "x", photo: "" } }] } },
+      { type: "Text", props: { id: "t1", body: "words" } },
+    ],
+  };
+
+  it("picks the field that already holds a media reference, then a usual media name, then the kind's default", () => {
+    expect(insertMediaField(data, "h1", "image")).toBe("backdrop");
+    expect(insertMediaField(data, "c1", "image")).toBe("photo");
+    expect(insertMediaField(data, "t1", "image")).toBe("image");
+    expect(insertMediaField(data, "t1", "animation")).toBe("video");
+    expect(insertMediaField(null, "missing", "image")).toBe("image");
+  });
+
+  it("sends an absolute https asset URL, or the path when GSAM is not on https", () => {
+    expect(insertMediaAssetUrl("/api/assets/a/content", "https://gsam.example.com")).toBe("https://gsam.example.com/api/assets/a/content");
+    expect(insertMediaAssetUrl("/api/assets/a/content", "http://localhost:3100")).toBe("/api/assets/a/content");
+  });
+
+  it("says why in plain words, and that the entry is kept", () => {
+    expect(insertMediaMessage({ requestId: "r", ok: true })).toContain("Save the page");
+    for (const code of ["block_not_found", "field_not_found", "field_not_media", "invalid_payload", "error"] as const) {
+      const text = insertMediaMessage({ requestId: "r", ok: false, code });
+      expect(text).toContain("It is in Website media");
+      expect(text).not.toContain(code);
+    }
+    expect(insertMediaMessage({ requestId: "r", ok: false, code: "error", message: "Draft locked" })).toContain(": Draft locked");
   });
 });

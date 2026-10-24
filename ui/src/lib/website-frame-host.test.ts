@@ -332,3 +332,51 @@ describe("teardown", () => {
     expect(t.session.state).toEqual({ phase: "closed" });
   });
 });
+
+describe("insert-media (GRE-2206)", () => {
+  const payload = { blockId: "h1", field: "image", mediaEntryId: "asset-7", assetUrl: "/api/assets/asset-7/content", alt: "Boats" };
+  const ready = async () => {
+    const t = setup();
+    t.session.start();
+    t.ack();
+    await flush();
+    return t;
+  };
+  const insertId = (t: ReturnType<typeof setup>) => (t.sentOf("insert-media")[0]!.message as unknown as { id: string }).id;
+
+  it("resolves with the reply whose requestId is the insert-media message id; other replies are dropped", async () => {
+    const t = await ready();
+    const pending = t.session.insertMedia(payload);
+    expect(t.sentOf("insert-media")[0]!.message.payload).toEqual(payload);
+    t.msg("insert-media-result", { requestId: "someone-else", ok: true });
+    t.msg("insert-media-result", { requestId: insertId(t), ok: false, code: "block_not_found" });
+    await expect(pending).resolves.toEqual({ requestId: insertId(t), ok: false, code: "block_not_found" });
+  });
+
+  it("resolves null when the frame does not answer in time", async () => {
+    const t = await ready();
+    const pending = t.session.insertMedia(payload);
+    vi.advanceTimersByTime(5_000);
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it("sends nothing and resolves null before the handshake, in preview, or for an invalid payload", async () => {
+    const before = setup();
+    await expect(before.session.insertMedia(payload)).resolves.toBeNull();
+    const preview = setup({ mode: "preview" });
+    preview.session.start();
+    preview.ack();
+    await flush();
+    await expect(preview.session.insertMedia(payload)).resolves.toBeNull();
+    const t = await ready();
+    await expect(t.session.insertMedia({ ...payload, assetUrl: "javascript:alert(1)" })).resolves.toBeNull();
+    expect([...before.sentOf("insert-media"), ...preview.sentOf("insert-media"), ...t.sentOf("insert-media")]).toHaveLength(0);
+  });
+
+  it("teardown resolves an open request with null", async () => {
+    const t = await ready();
+    const pending = t.session.insertMedia(payload);
+    t.session.teardown();
+    await expect(pending).resolves.toBeNull();
+  });
+});
