@@ -748,7 +748,7 @@ describeEmbeddedPostgres("website module routes", () => {
 
     const own = await seedAsset(a.company.id, "hero");
     const foreign = await seedAsset(b.company.id, "bravo-logo");
-    // The release schema has no media collection yet, so these are stored as an import would store them.
+    // The route refuses the bad ones, so these are stored as an import would store them.
     const addMedia = (entryKey: string, content: Record<string, unknown>) =>
       websiteModuleService(db).createEntry(a.company.id, a.site.id, { collection: "media", entryKey, content }, { agentId: null, userId: "local-board" });
     await addMedia("hero", { assetId: own.id, alt: "Our team", width: 1600, height: 900 });
@@ -768,6 +768,50 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(JSON.stringify(load)).not.toContain(foreign.id);
     const media = (await http.get(`${siteUrl}/media`).expect(200)).body;
     expect(media.map((item: { entryKey: string }) => item.entryKey)).toEqual(["hero"]);
+  });
+
+  it("media entries (GRE-2202): the route takes a same-company asset with alt text and refuses the rest", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const own = await seedAsset(a.company.id, "harbour");
+    const foreign = await seedAsset(b.company.id, "bravo-logo");
+    const post = (entryKey: string, content: unknown) => http.post(`${siteUrl}/entries`).send({ collection: "media", entryKey, content });
+    const valid = { assetId: own.id, alt: "Boats in a harbour at dawn", caption: null, focalPoint: { x: 0.5, y: 0.25 } };
+
+    const created = (await post("studio-image-1", valid).expect(201)).body;
+    expect(created).toMatchObject({ collection: "media", entryKey: "studio-image-1" });
+    const media = (await http.get(`${siteUrl}/media`).expect(200)).body;
+    expect(media).toEqual([expect.objectContaining({ entryKey: "studio-image-1", assetId: own.id, alt: "Boats in a harbour at dawn", caption: null })]);
+    // Caption and focal point are optional.
+    await post("bare", { assetId: own.id, alt: "Harbour" }).expect(201);
+
+    const refused = async (entryKey: string, content: unknown, code: string) => {
+      const response = await post(entryKey, content).expect(422);
+      expect(JSON.stringify(response.body), entryKey).toContain(code);
+    };
+    await refused("stolen", { ...valid, assetId: foreign.id }, "website_media_asset_not_found");
+    await refused("missing-asset", { ...valid, assetId: randomUUID() }, "website_media_asset_not_found");
+    await refused("not-uuid", { ...valid, assetId: "asset-1" }, "website_media_fields_invalid");
+    await refused("empty-alt", { ...valid, alt: "" }, "website_media_fields_invalid");
+    await refused("blank-alt", { ...valid, alt: "   " }, "website_media_fields_invalid");
+    await refused("no-alt", { assetId: own.id }, "website_media_fields_invalid");
+    await refused("focal-high", { ...valid, focalPoint: { x: 1.5, y: 0.5 } }, "website_media_fields_invalid");
+    await refused("focal-low", { ...valid, focalPoint: { x: 0.5, y: -0.1 } }, "website_media_fields_invalid");
+    await refused("focal-half", { ...valid, focalPoint: { x: 0.5 } }, "website_media_fields_invalid");
+    await refused("caption-number", { ...valid, caption: 3 }, "website_media_fields_invalid");
+    await refused("no-content", undefined, "website_media_fields_invalid");
+    const keys = (await http.get(`${siteUrl}/entries?collection=media`).expect(200)).body.map((item: { entryKey: string }) => item.entryKey);
+    expect(keys.sort()).toEqual(["bare", "studio-image-1"]);
+
+    // A save of the entry is checked the same way.
+    const entryUrl = `${siteUrl}/entries/${created.id}`;
+    const detail = (await http.get(entryUrl).expect(200)).body;
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, assetId: foreign.id }, baseRevisionId: detail.latestRevisionId }).expect(422);
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, alt: "" }, baseRevisionId: detail.latestRevisionId }).expect(422);
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, alt: "Fishing boats" }, baseRevisionId: detail.latestRevisionId }).expect(200);
   });
 
   it("gsamServedOrigins lists the public URL and each allowed hostname", () => {
