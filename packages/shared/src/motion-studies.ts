@@ -54,6 +54,23 @@ export function isTextSafeTheme(theme: readonly string[]): boolean {
 export const MOTION_STUDY_HTML_MAX_BYTES = 2 * 1024 * 1024;
 export const MOTION_STUDIES_IMPORT_MAX = 100;
 
+/** A card's poster: one still frame of the study, so the grid shows pictures without running every study. */
+export const MOTION_STUDY_POSTER_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+export type MotionStudyPosterType = (typeof MOTION_STUDY_POSTER_TYPES)[number];
+export const MOTION_STUDY_POSTER_MAX_BYTES = 512 * 1024;
+
+const posterSchema = z.object({
+  contentType: z.enum(MOTION_STUDY_POSTER_TYPES),
+  /** The image, base64 encoded. */
+  dataBase64: z
+    .string()
+    .min(1)
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/, "Give the poster as base64")
+    .refine((value) => Math.floor((value.length * 3) / 4) <= MOTION_STUDY_POSTER_MAX_BYTES, {
+      message: "Keep the poster under 512 KB",
+    }),
+});
+
 const slugSchema = z
   .string()
   .trim()
@@ -92,6 +109,8 @@ const studyFieldsSchema = z.object({
     }),
   /** Left out, it follows the theme: a study tagged Text-safe is text-safe. */
   textSafe: z.boolean().optional(),
+  /** A still frame for the card. Left out on a re-import, the poster already kept stays. */
+  poster: posterSchema.nullable().optional(),
 });
 
 /** One new study, from the daily routine or by hand. It always starts as New and Undecided. */
@@ -179,6 +198,9 @@ export interface MotionStudy {
   assetId: string | null;
   /** Where the sandboxed study page is served; null if its file is missing. */
   previewPath: string | null;
+  posterAssetId: string | null;
+  /** The card's still frame; null until one is captured. */
+  posterPath: string | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
   createdAt: string;

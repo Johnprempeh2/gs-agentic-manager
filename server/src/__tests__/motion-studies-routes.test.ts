@@ -126,6 +126,37 @@ describeEmbeddedPostgres("motion studies routes", () => {
     expect(csp).toContain("frame-ancestors 'self'");
   });
 
+  it("serves a study's poster and keeps it when a re-import sends none", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Motion poster");
+    const server = app(actor, memoryStorage().storage);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);
+
+    const none = await request(server).post(`/api/companies/${companyId}/motion-studies`).send(labStudy({ slug: "weave" }));
+    expect((none.body as MotionStudy).posterPath).toBeNull();
+    await request(server).get(`/api/motion-studies/${(none.body as MotionStudy).id}/poster`).expect(404);
+
+    const imported = await request(server)
+      .post(`/api/companies/${companyId}/motion-studies/import`)
+      .send({ studies: [labStudy({ poster: { contentType: "image/jpeg", dataBase64: jpeg.toString("base64") } })] });
+    expect(imported.status, JSON.stringify(imported.body)).toBe(200);
+    const study = (imported.body.studies as MotionStudy[])[0]!;
+    expect(study.posterPath).toBe(`/api/motion-studies/${study.id}/poster?v=${study.posterAssetId}`);
+
+    const poster = await request(server).get(study.posterPath!).buffer(true);
+    expect(poster.status).toBe(200);
+    expect(poster.headers["content-type"]).toBe("image/jpeg");
+    expect(poster.headers["x-content-type-options"]).toBe("nosniff");
+    expect(Buffer.compare(poster.body as Buffer, jpeg)).toBe(0);
+
+    const again = await request(server).post(`/api/companies/${companyId}/motion-studies/import`).send({ studies: [labStudy()] });
+    expect((again.body.studies as MotionStudy[])[0]!.posterAssetId).toBe(study.posterAssetId);
+
+    const wrongType = await request(server)
+      .post(`/api/companies/${companyId}/motion-studies/import`)
+      .send({ studies: [labStudy({ poster: { contentType: "text/html", dataBase64: "PGI+" } })] });
+    expect(wrongType.status).toBe(400);
+  });
+
   it("numbers a new study after the highest, starts it New and Undecided, and refuses a taken slug", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Motion create");
     const storage = memoryStorage().storage;

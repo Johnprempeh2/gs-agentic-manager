@@ -4871,6 +4871,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/motion-studies/{id}/poster",
+  tags: ["assets"],
+  summary: "The study's poster, one still frame shown on its card. 404 until a poster is captured",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/motion-studies/{id}",
   tags: ["assets"],

@@ -95,6 +95,22 @@ export function motionStudyRoutes(db: Db, storage: StorageService) {
     file.stream.pipe(res);
   });
 
+  // The card's still frame. An image only; nothing in it runs.
+  router.get("/motion-studies/:id/poster", async (req, res, next) => {
+    const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Study not found");
+    if (!row) return;
+    const file = await svc.readPoster(row);
+    if (!file) throw notFound("This study has no poster");
+    res.setHeader("Content-Type", file.asset.contentType);
+    res.setHeader("Content-Length", String(file.asset.byteSize));
+    res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    file.stream.on("error", (err) => next(err));
+    file.stream.pipe(res);
+  });
+
   router.patch("/motion-studies/:id", validate(updateMotionStudySchema), async (req, res) => {
     const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Study not found");
     if (!row) return;

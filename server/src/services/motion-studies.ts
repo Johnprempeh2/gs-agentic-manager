@@ -9,6 +9,7 @@ import {
   type MotionStudiesQuery,
   type MotionStudy,
   type MotionStudyDecision,
+  type MotionStudyPosterType,
   type MotionStudySource,
   type MotionStudyStatus,
   type UpdateMotionStudy,
@@ -40,6 +41,7 @@ type StudyFields = {
   sourceUrl?: string | null;
   html: string;
   textSafe?: boolean;
+  poster?: { contentType: MotionStudyPosterType; dataBase64: string } | null;
 };
 
 export const MOTION_STUDY_CONTENT_TYPE = "text/html; charset=utf-8";
@@ -97,6 +99,9 @@ export function toMotionStudy(row: MotionStudyRow): MotionStudy {
     source: row.source as MotionStudySource,
     assetId: row.assetId,
     previewPath: row.assetId ? `/api/motion-studies/${row.id}/preview` : null,
+    posterAssetId: row.posterAssetId,
+    // The asset id in the path changes with a new poster, so the browser can cache each one for long.
+    posterPath: row.posterAssetId ? `/api/motion-studies/${row.id}/poster?v=${row.posterAssetId}` : null,
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt.toISOString(),
@@ -108,14 +113,24 @@ function studyFilename(slug: string) {
   return `${slug}.html`;
 }
 
+const POSTER_EXTENSIONS: Record<MotionStudyPosterType, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
 export function motionStudyService(db: Db, storage: StorageService) {
-  async function storeHtml(companyId: string, slug: string, html: string, actor: MotionStudyActor) {
+  async function storeFile(
+    companyId: string,
+    file: { filename: string; contentType: string; body: Buffer },
+    actor: MotionStudyActor,
+  ) {
     const stored = await storage.putFile({
       companyId,
       namespace: "assets/motion-studies",
-      originalFilename: studyFilename(slug),
-      contentType: MOTION_STUDY_CONTENT_TYPE,
-      body: Buffer.from(html, "utf8"),
+      originalFilename: file.filename,
+      contentType: file.contentType,
+      body: file.body,
     });
     const [asset] = await db
       .insert(assets)
@@ -132,6 +147,41 @@ export function motionStudyService(db: Db, storage: StorageService) {
       })
       .returning();
     return asset!;
+  }
+
+  function storeHtml(companyId: string, slug: string, html: string, actor: MotionStudyActor) {
+    return storeFile(
+      companyId,
+      { filename: studyFilename(slug), contentType: MOTION_STUDY_CONTENT_TYPE, body: Buffer.from(html, "utf8") },
+      actor,
+    );
+  }
+
+  /** The poster's asset id, or undefined when none was given (an import then keeps the one it has). */
+  async function storePoster(companyId: string, fields: StudyFields, actor: MotionStudyActor) {
+    if (!fields.poster) return undefined;
+    const asset = await storeFile(
+      companyId,
+      {
+        filename: `${fields.slug}-poster.${POSTER_EXTENSIONS[fields.poster.contentType]}`,
+        contentType: fields.poster.contentType,
+        body: Buffer.from(fields.poster.dataBase64, "base64"),
+      },
+      actor,
+    );
+    return asset.id;
+  }
+
+  async function readAsset(companyId: string, assetId: string | null) {
+    if (!assetId) return null;
+    const asset = await db
+      .select()
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .then((rows) => rows[0] ?? null);
+    if (!asset || asset.companyId !== companyId) return null;
+    const object = await storage.getObject(asset.companyId, asset.objectKey);
+    return { asset, stream: object.stream };
   }
 
   async function nextNumber(companyId: string): Promise<string> {
@@ -197,6 +247,7 @@ export function motionStudyService(db: Db, storage: StorageService) {
         throw conflict(`A study called "${input.slug}" is already in Motion`);
       }
       const asset = await storeHtml(companyId, input.slug, input.html, actor);
+      const posterAssetId = await storePoster(companyId, input as StudyFields, actor);
       const [row] = await db
         .insert(motionStudies)
         .values({
@@ -207,6 +258,7 @@ export function motionStudyService(db: Db, storage: StorageService) {
           decision: "undecided",
           source: input.source ?? "manual",
           assetId: asset.id,
+          posterAssetId: posterAssetId ?? null,
           createdByAgentId: actor.agentId,
           createdByUserId: actor.actorType === "user" ? actor.actorId : null,
         })
@@ -233,12 +285,19 @@ export function motionStudyService(db: Db, storage: StorageService) {
       const rows: MotionStudyRow[] = [];
       for (const study of input.studies) {
         const asset = await storeHtml(companyId, study.slug, study.html, actor);
+        const posterAssetId = await storePoster(companyId, study as StudyFields, actor);
         const fields = catalogueFields(study as StudyFields);
         const existing = await getBySlug(companyId, study.slug);
         if (existing) {
           const [row] = await db
             .update(motionStudies)
-            .set({ ...fields, number: padStudyNumber(study.number), assetId: asset.id, updatedAt: new Date() })
+            .set({
+              ...fields,
+              number: padStudyNumber(study.number),
+              assetId: asset.id,
+              ...(posterAssetId ? { posterAssetId } : {}),
+              updatedAt: new Date(),
+            })
             .where(eq(motionStudies.id, existing.id))
             .returning();
           rows.push(row!);
@@ -254,6 +313,7 @@ export function motionStudyService(db: Db, storage: StorageService) {
               decision: study.decision ?? "undecided",
               source: "lab_import",
               assetId: asset.id,
+              posterAssetId: posterAssetId ?? null,
               createdByAgentId: actor.agentId,
               createdByUserId: actor.actorType === "user" ? actor.actorId : null,
             })
@@ -309,17 +369,9 @@ export function motionStudyService(db: Db, storage: StorageService) {
       return updated!;
     },
 
-    async readHtml(row: MotionStudyRow) {
-      if (!row.assetId) return null;
-      const asset = await db
-        .select()
-        .from(assets)
-        .where(eq(assets.id, row.assetId))
-        .then((rows) => rows[0] ?? null);
-      if (!asset || asset.companyId !== row.companyId) return null;
-      const object = await storage.getObject(asset.companyId, asset.objectKey);
-      return { asset, stream: object.stream };
-    },
+    readHtml: (row: MotionStudyRow) => readAsset(row.companyId, row.assetId),
+
+    readPoster: (row: MotionStudyRow) => readAsset(row.companyId, row.posterAssetId),
 
     async remove(id: string) {
       await db.delete(motionStudies).where(eq(motionStudies.id, id));

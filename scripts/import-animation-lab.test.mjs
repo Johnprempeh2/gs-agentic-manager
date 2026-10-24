@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { catalogueByNumber, externalScriptNote, inlineRelativeImages, parseAnims, toImportStudy } from "./import-animation-lab.mjs";
+import { capturePosters, catalogueByNumber, externalScriptNote, inBatches, inlineRelativeImages, parseAnims, toImportStudy } from "./import-animation-lab.mjs";
 
 const GALLERY = `<script>
 /* LIBRARY, newest first */
@@ -59,4 +59,36 @@ test("writes relative images into the page as data URIs and leaves absolute ones
   assert.deepEqual(asked, ["https://lab.example/assets/logo.png"]);
   assert.match(result, /<img src="data:image\/png;base64,AQID" alt="Greatstone">/);
   assert.match(result, /https:\/\/example.com\/a.png/);
+});
+
+test("splits the import into batches", () => {
+  assert.deepEqual(inBatches([1, 2, 3, 4, 5, 6, 7], 5), [[1, 2, 3, 4, 5], [6, 7]]);
+});
+
+test("captures a poster per study with the network cut, and skips a study that fails", async () => {
+  const routed = [];
+  const closed = [];
+  const launch = async () => ({
+    newPage: async (options) => ({
+      route: async (pattern) => routed.push(pattern),
+      setContent: async (html) => {
+        if (html === "broken") throw new Error("crashed");
+      },
+      waitForTimeout: async () => {},
+      screenshot: async () => Buffer.from([1, 2, 3]),
+      close: async () => closed.push(options.viewport.width),
+    }),
+    close: async () => closed.push("browser"),
+  });
+  const posters = await capturePosters(
+    [
+      { slug: "bedrock", html: "<canvas></canvas>" },
+      { slug: "summit", html: "broken" },
+    ],
+    { launch },
+  );
+  assert.deepEqual([...posters.keys()], ["bedrock"]);
+  assert.deepEqual(posters.get("bedrock"), { contentType: "image/jpeg", dataBase64: "AQID" });
+  assert.deepEqual(routed, ["**/*", "**/*"]);
+  assert.deepEqual(closed, [1280, 1280, "browser"]);
 });

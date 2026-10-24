@@ -5,7 +5,10 @@
 // (JSON rows with "No.", Notes, Status, Decision) adds the notes; without it,
 // every study arrives New and Undecided.
 //
-//   node scripts/import-animation-lab.mjs --company <companyId> [--catalogue rows.json] [--dry-run out.json]
+//   node scripts/import-animation-lab.mjs --company <companyId> [--catalogue rows.json] [--dry-run out.json] [--no-posters]
+//
+// Each study is also rendered once in headless Chromium, with no network, and
+// a still frame about two seconds in becomes its card poster.
 //
 // Uses GSAM_API_URL and GSAM_API_KEY. Matching is by slug on the server, so
 // running it again refreshes files and fields and keeps decisions made since.
@@ -111,6 +114,45 @@ export function toImportStudy(anim, html, galleryUrl, catalogue) {
   };
 }
 
+/** The stage a study is drawn on, as in the Motion section. */
+export const POSTER_STAGE = { width: 1280, height: 720 };
+export const POSTER_DELAY_MS = 2000;
+
+/**
+ * Renders each study the way the sandbox does (no network) and keeps one JPEG
+ * frame. Returns posters by slug; a study that fails to render has none.
+ */
+export async function capturePosters(studies, { delayMs = POSTER_DELAY_MS, launch } = {}) {
+  const browser = await (launch ?? (async () => (await import("@playwright/test")).chromium.launch()))();
+  const posters = new Map();
+  try {
+    for (const study of studies) {
+      const page = await browser.newPage({ viewport: POSTER_STAGE, deviceScaleFactor: 0.5 });
+      try {
+        await page.route("**/*", (route) => route.abort());
+        await page.setContent(study.html, { waitUntil: "load", timeout: 10_000 });
+        await page.waitForTimeout(delayMs);
+        const bytes = await page.screenshot({ type: "jpeg", quality: 80 });
+        posters.set(study.slug, { contentType: "image/jpeg", dataBase64: Buffer.from(bytes).toString("base64") });
+      } catch (error) {
+        console.warn(`No poster for ${study.slug}: ${error instanceof Error ? error.message : error}`);
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+  return posters;
+}
+
+/** Splits the import so each request stays well under the server's body limit. */
+export function inBatches(items, size) {
+  const batches = [];
+  for (let index = 0; index < items.length; index += size) batches.push(items.slice(index, index + size));
+  return batches;
+}
+
 function argValue(args, name) {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
@@ -146,6 +188,12 @@ async function main(args) {
   }
   console.log(`Read ${studies.length} studies from ${galleryUrl}${catalogue ? ` with ${catalogue.size} catalogue rows` : ""}`);
 
+  if (!args.includes("--no-posters")) {
+    const posters = await capturePosters(studies);
+    for (const study of studies) study.poster = posters.get(study.slug) ?? null;
+    console.log(`Captured ${posters.size} posters`);
+  }
+
   if (dryRun) {
     await writeFile(dryRun, JSON.stringify({ studies }, null, 2));
     console.log(`Wrote the import to ${dryRun}; nothing was sent`);
@@ -153,18 +201,24 @@ async function main(args) {
   }
 
   const base = (process.env.GSAM_API_URL ?? "http://localhost:3100").replace(/\/+$/, "").replace(/\/api$/, "");
-  const response = await fetch(`${base}/api/companies/${companyId}/motion-studies/import`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(process.env.GSAM_API_KEY ? { Authorization: `Bearer ${process.env.GSAM_API_KEY}` } : {}),
-      ...(process.env.GSAM_RUN_ID ? { "X-Paperclip-Run-Id": process.env.GSAM_RUN_ID } : {}),
-    },
-    body: JSON.stringify({ studies }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Import answered ${response.status}: ${JSON.stringify(body)}`);
-  console.log(`Imported: ${body.created} new, ${body.updated} refreshed`);
+  let created = 0;
+  let updated = 0;
+  for (const batch of inBatches(studies, 5)) {
+    const response = await fetch(`${base}/api/companies/${companyId}/motion-studies/import`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.GSAM_API_KEY ? { Authorization: `Bearer ${process.env.GSAM_API_KEY}` } : {}),
+        ...(process.env.GSAM_RUN_ID ? { "X-Paperclip-Run-Id": process.env.GSAM_RUN_ID } : {}),
+      },
+      body: JSON.stringify({ studies: batch }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`Import answered ${response.status}: ${JSON.stringify(body)}`);
+    created += body.created;
+    updated += body.updated;
+  }
+  console.log(`Imported: ${created} new, ${updated} refreshed`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

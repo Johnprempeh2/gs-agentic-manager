@@ -34,6 +34,8 @@ export const motionStudies = pgTable(
     /** lab_import, routine or manual. */
     source: text("source").notNull().default("manual"),
     assetId: uuid("asset_id").references(() => assets.id, { onDelete: "set null" }),
+    /** A still frame of the study, shown on its card. */
+    posterAssetId: uuid("poster_asset_id").references(() => assets.id, { onDelete: "set null" }),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
