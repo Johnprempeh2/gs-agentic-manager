@@ -123,15 +123,21 @@ export function toWebsiteRelease(row: ReleaseRow): WebsiteRelease {
   };
 }
 
-/** The release number a live page reports: `x-gsam-release`, `<meta name="gsam-release">` or `/_release` JSON. */
+/**
+ * The release number a live page reports: `x-gsam-release`, `<meta name="gsam-release">`
+ * or `/_release` JSON. The site engine's `/_release` sends `{ number, releaseId, engine }`;
+ * `{ release }` is the older shape.
+ */
 export function reportedRelease(page: FetchedPage): string | null {
   const header = page.headers.get(RELEASE_HEADER);
   if (header) return header.trim();
   const meta = page.body.match(RELEASE_META_RE) ?? page.body.match(RELEASE_META_REVERSED_RE);
   if (meta) return meta[1].trim();
   try {
-    const json = JSON.parse(page.body) as { release?: unknown };
-    if (json && (typeof json.release === "number" || typeof json.release === "string")) return String(json.release);
+    const json = JSON.parse(page.body) as { number?: unknown; release?: unknown };
+    for (const value of [json?.number, json?.release]) {
+      if (typeof value === "number" || typeof value === "string") return String(value);
+    }
   } catch {
     // not JSON
   }
