@@ -158,3 +158,15 @@ export const updateWebsiteEntrySchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
 export type UpdateWebsiteEntry = z.infer<typeof updateWebsiteEntrySchema>;
+
+/**
+ * Retry and Rollback bodies (GRE-2108). A click that would start a rebuild
+ * (one production deploy, about 15 credits) must say so with
+ * `confirmRebuild: true`; a free verify or restore needs nothing.
+ */
+export const websiteReleaseActionSchema = z
+  .object({
+    confirmRebuild: z.boolean().optional(),
+  })
+  .strict();
+export type WebsiteReleaseAction = z.infer<typeof websiteReleaseActionSchema>;

@@ -62,6 +62,10 @@ export function StatusPill({ status }: { status: SitemapPageStatus }) {
   return <Pill className={STATUS_CLASSES[status]}>{SITEMAP_STATUS_LABELS[status]}</Pill>;
 }
 
+/** Agreed strings (GRE-2081): `menus.planned_hidden` and `journeys.gap`. */
+export const plannedHiddenNote = (page: string) => `${page} is planned, so it stays out of this menu until it is live.`;
+export const journeyGapNote = (page: string) => `${page} is planned, not live. Visitors cannot take this step yet.`;
+
 function IconAction({ label, icon: Icon, onClick, disabled }: { label: string; icon: typeof ArrowUp; onClick: () => void; disabled?: boolean }) {
   return (
     <Button type="button" variant="ghost" size="icon-xs" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
@@ -351,7 +355,7 @@ export function SitemapListView({ tree, pagesById }: SitemapViewProps) {
 
 const MENU_ORDER: WebsitePageMenu[] = ["header", "footer", "none"];
 
-export function SitemapMenusView({ tree, onChange, readOnly }: SitemapViewProps) {
+export function SitemapMenusView({ tree, onChange, pagesById, readOnly }: SitemapViewProps) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ menu: WebsitePageMenu; index: number } | null>(null);
   const byId = useMemo(() => new Map(tree.nodes.map((node) => [node.id, node])), [tree]);
@@ -399,6 +403,7 @@ export function SitemapMenusView({ tree, onChange, readOnly }: SitemapViewProps)
                 <ul className="space-y-1.5">
                   {groupItems.map((item) => {
                     const index = items.findIndex((entry) => entry.id === item.id);
+                    const status = nodeStatus(item, pagesById);
                     return (
                       <li
                         key={item.id}
@@ -430,6 +435,8 @@ export function SitemapMenusView({ tree, onChange, readOnly }: SitemapViewProps)
                       >
                         {readOnly ? null : <GripVertical aria-hidden="true" className="size-4 shrink-0 cursor-grab text-muted-foreground" />}
                         <span className="min-w-0 flex-1 break-words font-medium" title={item.path}>{item.title}</span>
+                        <StatusPill status={status} />
+                        {status === "planned" && menu !== "none" ? <p className="w-full text-xs text-muted-foreground">{plannedHiddenNote(item.title)}</p> : null}
                         {readOnly ? null : (
                           <div className="flex w-full flex-wrap items-center gap-1">
                             {menu === "none" ? null : (
@@ -477,7 +484,7 @@ export function SitemapMenusView({ tree, onChange, readOnly }: SitemapViewProps)
 
 /* ---- Journeys ---- */
 
-export function SitemapJourneysView({ tree, onChange, readOnly }: SitemapViewProps) {
+export function SitemapJourneysView({ tree, onChange, pagesById, readOnly }: SitemapViewProps) {
   const byId = useMemo(() => new Map(tree.nodes.map((node) => [node.id, node])), [tree]);
   const [newName, setNewName] = useState("");
   const [dragging, setDragging] = useState<{ journeyId: string; index: number } | null>(null);
@@ -545,6 +552,7 @@ export function SitemapJourneysView({ tree, onChange, readOnly }: SitemapViewPro
           <ol className="flex flex-wrap items-center gap-2" aria-label={`${journey.name} steps`}>
             {journey.steps.map((step, index) => {
               const node = byId.get(step);
+              const status = node ? nodeStatus(node, pagesById) : null;
               return (
                 <li
                   key={`${step}-${index}`}
@@ -562,9 +570,10 @@ export function SitemapJourneysView({ tree, onChange, readOnly }: SitemapViewPro
                   }}
                 >
                   {index > 0 ? <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" /> : null}
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-sm">
+                  <span className={cn("inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-sm", status === "planned" && "border-dashed")}>
                     <span className="text-xs text-muted-foreground">{index + 1}</span>
                     <span className="font-medium">{node?.title ?? "Removed page"}</span>
+                    {status ? <StatusPill status={status} /> : null}
                     {readOnly ? null : (
                       <>
                         <IconAction label={`Move ${node?.title ?? "step"} earlier`} icon={ArrowLeft} disabled={index === 0} onClick={() => updateSteps(journey.id, moveStep(journey.steps, index, index - 1))} />
@@ -577,6 +586,7 @@ export function SitemapJourneysView({ tree, onChange, readOnly }: SitemapViewPro
               );
             })}
           </ol>
+          <JourneyGaps tree={tree} steps={journey.steps} pagesById={pagesById} />
           {readOnly ? null : (
             <label className="flex max-w-sm flex-col gap-1 text-sm">
               <span className="font-medium">Add a step</span>
@@ -596,5 +606,18 @@ export function SitemapJourneysView({ tree, onChange, readOnly }: SitemapViewPro
         </section>
       ))}
     </div>
+  );
+}
+
+/** One line per planned step, so the gaps in a journey read without hovering. */
+function JourneyGaps({ tree, steps, pagesById }: { tree: Tree; steps: string[]; pagesById: Map<string, WebsitePage> }) {
+  const planned = [...new Set(steps)]
+    .map((step) => tree.nodes.find((node) => node.id === step))
+    .filter((node): node is Node => !!node && nodeStatus(node, pagesById) === "planned");
+  if (planned.length === 0) return null;
+  return (
+    <ul className="space-y-1 text-xs text-muted-foreground" aria-label="Steps visitors cannot take yet">
+      {planned.map((node) => <li key={node.id}>{journeyGapNote(node.title)}</li>)}
+    </ul>
   );
 }

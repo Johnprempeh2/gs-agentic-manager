@@ -142,6 +142,81 @@ export interface WebsitePageEditorLoad {
   media: WebsiteMediaItem[];
 }
 
+/**
+ * Release statuses (ADR GRE-1914 section 2.4). `pending` = `current` points at
+ * this release but the rebuild or the check pages have not passed yet.
+ */
+export const WEBSITE_RELEASE_STATUSES = [
+  "building",
+  "checks_failed",
+  "uploading",
+  "switched",
+  "pending",
+  "live",
+  "superseded",
+  "failed",
+] as const;
+export type WebsiteReleaseStatus = (typeof WEBSITE_RELEASE_STATUSES)[number];
+
+export type WebsiteReleaseKind = "publish" | "rollback";
+
+/** Why a release is Pending; the UI shows it next to Retry. */
+export type WebsitePendingReason = "build_failed" | "build_timeout" | "verify_failed" | "server_restarted" | "build_not_started";
+
+/**
+ * How Netlify serves a release (GRE-2108). `build` is a content-only rebuild
+ * (one production deploy, about 15 credits); `restore` publishes an earlier
+ * deploy again (0 credits).
+ */
+export interface WebsiteReleaseDeploy {
+  method: "build" | "restore";
+  requestedAt: string;
+  deployId: string | null;
+  commitRef: string | null;
+  state: "requested" | "building" | "ready" | "error";
+  errorMessage?: string | null;
+}
+
+/** One pre-upload check or one verify fetch. */
+export interface WebsiteReleaseCheck {
+  kind: "check" | "verify";
+  name: string;
+  ok: boolean;
+  message?: string;
+}
+
+export interface WebsiteRelease {
+  id: string;
+  companyId: string;
+  siteId: string;
+  number: number;
+  kind: WebsiteReleaseKind;
+  rollbackOfReleaseId: string | null;
+  status: WebsiteReleaseStatus;
+  pendingReason: WebsitePendingReason | null;
+  blobsKey: string | null;
+  releaseSha256: string | null;
+  checks: WebsiteReleaseCheck[];
+  deploy: WebsiteReleaseDeploy | null;
+  publishedByUserId: string | null;
+  switchedAt: string | null;
+  liveAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * What a person's click on Retry or Rollback will do, shown before the click.
+ * `verify` and `restore` are free; `build` is one production deploy (about 15
+ * credits) and the request must carry `confirmRebuild: true`.
+ */
+export interface WebsiteReleaseActionPlan {
+  action: "verify" | "build" | "restore";
+  costsCredits: boolean;
+  reason: string;
+}
+
 /** Approval type of a proposed Publish (GRE-2109, ADR GRE-1914 section 6). */
 export const WEBSITE_PUBLISH_APPROVAL_TYPE = "website_publish";
 
@@ -208,6 +283,18 @@ export const WEBSITE_MODULE_API_ROUTES = {
   entryArchive: "/companies/:companyId/website/sites/:siteId/entries/:entryId/archive",
   /** GET → `WebsiteRevision[]`. */
   entryRevisions: "/companies/:companyId/website/sites/:siteId/entries/:entryId/revisions",
+  /**
+   * GET → `WebsiteRelease[]`, newest first (website:view). POST → 202
+   * `WebsiteRelease` (website:publish, a person's click only; 409 while a
+   * publish or rollback runs for the site).
+   */
+  releases: "/companies/:companyId/website/sites/:siteId/releases",
+  /** GET → `WebsiteRelease`. */
+  release: "/companies/:companyId/website/sites/:siteId/releases/:releaseId",
+  /** GET → `WebsiteReleaseActionPlan`. POST `{ confirmRebuild? }` → 202 `WebsiteRelease` (a Pending release only). */
+  releaseRetry: "/companies/:companyId/website/sites/:siteId/releases/:releaseId/retry",
+  /** GET → `WebsiteReleaseActionPlan`. POST `{ confirmRebuild? }` → 202 `WebsiteRelease` (the new rollback release). */
+  releaseRollback: "/companies/:companyId/website/sites/:siteId/releases/:releaseId/rollback",
   /** POST → `WebsiteEntry` (website:edit). */
   entrySubmit: "/companies/:companyId/website/sites/:siteId/entries/:entryId/submit",
   /** POST → `WebsiteEntry` (website:publish, people only). */

@@ -1,5 +1,5 @@
 {
-  "id": "8ad1f1b7-c6aa-45a0-b890-076d6b39dc95",
+  "id": "0af199ea-0747-484a-bd8e-ddd6457c4b3b",
   "prevId": "ecec1a04-a5f2-4985-9b4d-556712eb14f7",
   "version": "7",
   "dialect": "postgresql",
@@ -62527,6 +62527,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "deploy": {
+          "name": "deploy",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "switched_at": {
           "name": "switched_at",
           "type": "timestamp with time zone",
@@ -62771,12 +62777,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::text[]"
-        },
-        "editor_frame_origin": {
-          "name": "editor_frame_origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "check_paths": {
           "name": "check_paths",

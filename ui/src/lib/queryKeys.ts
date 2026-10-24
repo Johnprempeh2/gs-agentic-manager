@@ -687,6 +687,11 @@ export const queryKeys = {
     revisions: (companyId: string, siteId: string, pageId: string) =>
       ["website", companyId, "revisions", siteId, pageId] as const,
     media: (companyId: string, siteId: string) => ["website", companyId, "media", siteId] as const,
+    releases: (companyId: string, siteId: string) => ["website", companyId, "releases", siteId] as const,
+    release: (companyId: string, siteId: string, releaseId: string) =>
+      ["website", companyId, "releases", siteId, releaseId] as const,
+    releasePlan: (companyId: string, siteId: string, releaseId: string, action: "retry" | "rollback") =>
+      ["website", companyId, "releases", siteId, releaseId, action] as const,
     sitemapOptions: (companyId: string, siteId: string) => ["website", companyId, "sitemap-options", siteId] as const,
     sitemapXml: (companyId: string, siteId: string) => ["website", companyId, "sitemap-xml", siteId] as const,
   },

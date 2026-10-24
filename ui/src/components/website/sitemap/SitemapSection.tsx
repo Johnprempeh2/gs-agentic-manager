@@ -4,10 +4,20 @@ import { Check, Copy, Pencil } from "lucide-react";
 import type { WebsitePage, WebsiteSite, WebsiteSitemapOption, WebsiteSitemapTree } from "@greatstone/shared";
 import { websiteModuleApi } from "../../../api/website";
 import { queryKeys } from "../../../lib/queryKeys";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs } from "@/components/ui/tabs";
+import { useConfirm } from "@/context/ConfirmContext";
 import { formatDateTime } from "@/lib/utils";
 import { PageTabBar } from "../../PageTabBar";
 import { ErrorState, errorStateMessage } from "../../ErrorState";
@@ -75,6 +85,47 @@ function statusPill(option: WebsiteSitemapOption) {
   return <Pill className="bg-muted text-foreground">Draft</Pill>;
 }
 
+/** What approving a tree does to the site's current pages: pages it plans and pages it archives. */
+export function approvalImpact(tree: WebsiteSitemapTree, pages: WebsitePage[]) {
+  const liveIds = new Set(pages.map((page) => page.id));
+  const liveSlugs = new Set(pages.map((page) => page.slug));
+  const matched = new Set(tree.nodes.flatMap((node) => (node.pageId && liveIds.has(node.pageId) ? [node.pageId] : [])));
+  for (const page of pages) if (tree.nodes.some((node) => !node.pageId && node.path === page.slug)) matched.add(page.id);
+  const created = tree.nodes.filter((node) => !(node.pageId && liveIds.has(node.pageId)) && !liveSlugs.has(node.path)).length;
+  return { created, archived: pages.filter((page) => !matched.has(page.id)).length };
+}
+
+/** The one approve step, opened from the header and from Compare alike. */
+function ApproveDialog({ option, pages, pending, error, onCancel, onApprove }: {
+  option: WebsiteSitemapOption | null;
+  pages: WebsitePage[];
+  pending: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onApprove: (optionId: string) => void;
+}) {
+  const impact = useMemo(() => (option ? approvalImpact(option.tree, pages) : null), [option, pages]);
+  return (
+    <AlertDialog open={!!option} onOpenChange={(open) => { if (!open && !pending) onCancel(); }}>
+      <AlertDialogContent data-testid="sitemap-approve-dialog" className="sm:max-w-md">
+        <AlertDialogHeader className="text-left sm:text-left">
+          <AlertDialogTitle className="text-base leading-snug">Approve {option?.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Its pages become the site's pages and menus: {impact?.created ?? 0} new pages are planned and {impact?.archived ?? 0} pages that are not in it are archived (not deleted). Visitors see it after the next Publish.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(error)}</p> : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <Button type="button" disabled={pending || !option} onClick={() => option && onApprove(option.id)}>
+            {pending ? "Approving" : "Approve"}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export function useSitemapData(companyId: string, siteId: string | null) {
   const options = useQuery({
     queryKey: queryKeys.website.sitemapOptions(companyId, siteId ?? ""),
@@ -132,16 +183,16 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
   const [view, setView] = useState<SitemapView>("tree");
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(option.name);
-  const [confirming, setConfirming] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const tree = draft ?? option.tree;
   const pagesById = useMemo(() => pagesLookup(pages), [pages]);
   const readOnly = !canEdit || option.status === "archived";
+  const confirm = useConfirm();
 
   useEffect(() => {
     setDraft(null);
     setRenaming(false);
-    setConfirming(false);
     setName(option.name);
   }, [option.id, option.name]);
 
@@ -174,7 +225,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
   const approve = useMutation({
     mutationFn: (id: string) => websiteModuleApi.approveSitemapOption(companyId, site.id, id),
     onSuccess: (result) => {
-      setConfirming(false);
+      setApprovingId(null);
       setOptionId(result.option.id);
       setNotice(
         `Approved ${result.option.name}: ${result.summary.created} new pages planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live with the next Publish.`,
@@ -189,18 +240,10 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
       refresh();
     },
   });
-  const error = save.error ?? copy.error ?? approve.error ?? archive.error;
+  // Approve errors show in the dialog while it is open.
+  const error = save.error ?? copy.error ?? (approvingId ? null : approve.error) ?? archive.error;
   const busy = save.isPending || copy.isPending || approve.isPending || archive.isPending;
 
-  // What approving does to the site, before a person confirms it.
-  const impact = useMemo(() => {
-    const liveIds = new Set(pages.map((page) => page.id));
-    const liveSlugs = new Set(pages.map((page) => page.slug));
-    const matched = new Set(tree.nodes.flatMap((node) => (node.pageId && liveIds.has(node.pageId) ? [node.pageId] : [])));
-    for (const page of pages) if (tree.nodes.some((node) => !node.pageId && node.path === page.slug)) matched.add(page.id);
-    const created = tree.nodes.filter((node) => !(node.pageId && liveIds.has(node.pageId)) && !liveSlugs.has(node.path)).length;
-    return { created, archived: pages.filter((page) => !matched.has(page.id)).length };
-  }, [tree, pages]);
   const canApproveThis = canApprove && option.status !== "archived" && (option.status !== "approved" || option.changedSinceApproval);
 
   return (
@@ -211,9 +254,10 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
             <span className="font-medium">Option</span>
             <NativeSelect
               value={option.id}
-              onChange={(event) => {
-                if (draft && !window.confirm("Leave this option without saving your changes?")) return;
-                setOptionId(event.target.value);
+              onChange={async (event) => {
+                const nextId = event.target.value;
+                if (draft && !(await confirm({ title: "Leave this option without saving your changes?", confirmLabel: "Leave without saving", tone: "destructive" }))) return;
+                setOptionId(nextId);
               }}
               className="max-w-full sm:w-80"
             >
@@ -254,7 +298,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
             </>
           ) : null}
           {canApproveThis && !draft ? (
-            <Button type="button" size="sm" variant={confirming ? "outline" : "default"} disabled={busy} onClick={() => setConfirming(true)}>
+            <Button type="button" size="sm" disabled={busy} onClick={() => { approve.reset(); setApprovingId(option.id); }}>
               <Check aria-hidden="true" />
               {option.status === "approved" ? "Apply changes to the site" : "Approve this option"}
             </Button>
@@ -277,20 +321,14 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
             </>
           ) : null}
         </div>
-        {confirming ? (
-          <div role="alertdialog" aria-labelledby="sitemap-approve-title" className="gs-glass-card space-y-3 rounded-xl border p-4">
-            <h3 id="sitemap-approve-title" className="text-sm font-semibold">Approve {option.name}?</h3>
-            <p className="text-sm text-muted-foreground">
-              Its pages become the site's pages and menus: {impact.created} new pages are planned and {impact.archived} pages that are not in it are archived (not deleted). Visitors see it after the next Publish.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
-              <Button type="button" size="sm" disabled={busy} onClick={() => approve.mutate(option.id)}>
-                {approve.isPending ? "Approving" : "Approve"}
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <ApproveDialog
+          option={options.find((entry) => entry.id === approvingId) ?? null}
+          pages={pages}
+          pending={approve.isPending}
+          error={approve.error}
+          onCancel={() => setApprovingId(null)}
+          onApprove={(id) => approve.mutate(id)}
+        />
         {notice ? <p role="status" className="text-sm text-status-success-foreground">{notice}</p> : null}
         {error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(error)}</p> : null}
       </div>
@@ -307,17 +345,13 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
         {view === "compare" ? (
           <SitemapCompareView
             options={options.map((entry) => (entry.id === option.id && draft ? { ...entry, tree: draft } : entry))}
+            pagesById={pagesById}
             initialA={approved && approved.id !== option.id ? approved.id : option.id}
             initialB={approved && approved.id !== option.id ? option.id : options.find((entry) => entry.id !== option.id)?.id ?? null}
             canApprove={canApprove && !draft}
             canEdit={canEdit}
             busy={busy}
-            onApprove={(id) => {
-              const chosen = options.find((entry) => entry.id === id);
-              if (!window.confirm(`Approve ${chosen?.name ?? "this option"}? Its pages become the site's pages and menus. Pages it does not name are archived, not deleted.`)) return;
-              setOptionId(id);
-              approve.mutate(id);
-            }}
+            onApprove={(id) => { approve.reset(); setApprovingId(id); }}
             onCopy={(targetId, nextTree) => {
               const target = options.find((entry) => entry.id === targetId)!;
               save.mutate({ optionId: targetId, tree: nextTree, baseUpdatedAt: target.updatedAt });
