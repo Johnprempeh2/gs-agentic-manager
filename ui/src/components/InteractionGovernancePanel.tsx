@@ -25,6 +25,7 @@ const INTERACTION_KIND_LABELS: Record<IssueThreadInteractionKind, string> = {
   connection_intent: "Connection requests",
   ask_agent: "Questions for other agents",
   request_draft_review: "Draft reviews",
+  request_steps: "Step-by-step cards",
 };
 
 /**

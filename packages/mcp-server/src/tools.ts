@@ -10,7 +10,7 @@ import {
   createApprovalSchema,
   createIssueInputSchema,
   issueThreadInteractionContinuationPolicySchema,
-  requestCheckboxConfirmationPayloadSchema, requestDraftReviewPayloadSchema,
+  requestCheckboxConfirmationPayloadSchema, requestDraftReviewPayloadSchema, requestStepsInputPayloadSchema,
   requestConfirmationPayloadSchema,
   suggestTasksPayloadSchema,
   updateIssueSchema,
@@ -737,6 +737,19 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
+      REQUEST_STEPS_TOOL_NAME,
+      REQUEST_STEPS_TOOL_DESCRIPTION,
+      mcpToolHints("write"),
+      createRequestStepsToolSchema,
+      async ({ issueId, ...body }) =>
+        client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/interactions`, {
+          body: {
+            kind: "request_steps",
+            ...body,
+          },
+        }),
+    ),
+    makeTool(
       "request_draft_review",
       REQUEST_DRAFT_REVIEW_TOOL_DESCRIPTION,
       mcpToolHints("write"),
@@ -767,3 +780,23 @@ const createRequestDraftReviewToolSchema = z.object({
 // connection tools are, so the frozen legacy capability inventory is unchanged.
 const REQUEST_DRAFT_REVIEW_TOOL_DESCRIPTION =
   "Post an editable draft card (email, client message, post, document section) for a person to edit, approve or send back for a redraft. You wake with their final text and what they changed.";
+
+const createRequestStepsToolSchema = z.object({
+  issueId: issueIdSchema,
+  /** Any person in the company; omit for the task's responsible person. */
+  addresseeUserId: z.string().trim().min(1).nullable().optional(),
+  idempotencyKey: z.string().trim().max(255).nullable().optional(),
+  sourceCommentId: z.string().guid().nullable().optional(),
+  sourceRunId: z.string().guid().nullable().optional(),
+  title: z.string().trim().max(240).nullable().optional(),
+  summary: z.string().trim().max(1000).nullable().optional(),
+  continuationPolicy: issueThreadInteractionContinuationPolicySchema.optional().default("wake_assignee"),
+  payload: requestStepsInputPayloadSchema,
+});
+
+// Held in a constant on purpose: the legacy capability inventory is frozen at
+// 42 `paperclip*` aliases and counts literal names, so this newer tool stays
+// outside it (as request_draft_review does) while keeping the name agents use.
+const REQUEST_STEPS_TOOL_NAME = "paperclipRequestSteps";
+const REQUEST_STEPS_TOOL_DESCRIPTION =
+  "Guide a person through steps only a person can do (a dashboard setting, an API key, a payment or account change) with a step-by-step card. Write it the guiding-john way: one action per step, exact menu paths in bold with arrows, values to paste in copy, an https link, and what they should see in expect. Set minutes and risk (safe, careful, money_or_live). Addressed to the task's responsible person unless addresseeUserId names someone. Need a key or token back? Add secret: the person types it into a secure field and it is saved straight into the company secrets (optionally linked to agents as access.<adapterEnvKey>); you never see the value, only { secretId, secretName, linkedAgentIds }. Check payload.secretAccess on the created card: if addresseeCanSave is false, address someone in whoCan instead. You wake when they press Done, or with their reason if they press I can't do this.";

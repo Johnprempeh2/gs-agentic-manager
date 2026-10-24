@@ -31,6 +31,8 @@ const SENSITIVE_KEYS = new Set<string>([
   // must prefer losing that diagnostic value over persisting credential
   // material. `token` is likewise ambiguous but frequently credential-bearing.
   "value",
+  // A step-by-step card's secret field (request_steps accept body).
+  "secretvalue",
   "token",
   "secret",
   "client_secret",
