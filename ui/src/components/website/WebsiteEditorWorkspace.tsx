@@ -30,7 +30,7 @@ import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
-import { WebsiteMediaPicker, type MediaPickerKind } from "./WebsiteStudioMedia";
+import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind } from "./WebsiteStudioMedia";
 
 // The Website page's editor workspace (GRE-2118, plan 3.4): the site's pages,
 // the site's own Puck editor in a frame (GRE-1916 contract), save states,
@@ -667,17 +667,7 @@ function MediaPanel({
       ) : (
         <ul className="grid grid-cols-2 gap-2">
           {media.map((item) => (
-            <li key={item.entryId} className="min-w-0 space-y-1">
-              <div className="aspect-video overflow-hidden rounded-md border border-border bg-muted">
-                {item.contentType.startsWith("image/") ? (
-                  <img src={item.contentPath} alt={item.alt} loading="lazy" className="size-full object-cover" />
-                ) : (
-                  <div className="flex size-full items-center justify-center text-muted-foreground"><ImageIcon className="size-5" aria-hidden="true" /></div>
-                )}
-              </div>
-              <p className="truncate text-xs font-medium" title={item.entryKey}>{item.entryKey}</p>
-              <p className="truncate text-micro text-muted-foreground" title={item.alt}>{item.alt || "No alt text"}</p>
-            </li>
+            <WebsiteMediaCard key={item.entryId} item={item} />
           ))}
         </ul>
       )}

@@ -11,6 +11,7 @@ import {
   STUDIO_MEDIA_SOURCE_LABEL,
   focalPointFromClick,
   hasAltText,
+  mediaItemTitle,
   studioClipItems,
   studioImageItems,
   studioMediaEntry,
@@ -65,12 +66,33 @@ function StudioPreview({ item, className }: { item: StudioMediaItem; className?:
   );
 }
 
+/** One of the site's media entries, titled by its alt text. The key stays in the tooltip. */
+export function WebsiteMediaCard({ item }: { item: WebsiteMediaItem }) {
+  const hasAlt = hasAltText(item.alt);
+  return (
+    <li className="min-w-0 space-y-1" title={item.entryKey}>
+      <div className="aspect-video overflow-hidden rounded-md border border-border bg-muted">
+        {item.contentType.startsWith("image/") ? (
+          <img src={item.contentPath} alt={item.alt} loading="lazy" className="size-full object-cover" />
+        ) : (
+          <div className="flex size-full items-center justify-center text-muted-foreground"><Film className="size-5" aria-hidden="true" /></div>
+        )}
+      </div>
+      <p className="truncate text-xs font-medium">{mediaItemTitle(item)}</p>
+      {item.caption || !hasAlt ? (
+        <p className="truncate text-micro text-muted-foreground">{hasAlt ? item.caption : "No alt text"}</p>
+      ) : null}
+    </li>
+  );
+}
+
 /** Alt text (required), caption and, for images, the focus point. */
 function MediaFields({
   item,
   alt,
   caption,
   focalPoint,
+  altTouched,
   onAlt,
   onCaption,
   onFocalPoint,
@@ -79,12 +101,14 @@ function MediaFields({
   alt: string;
   caption: string;
   focalPoint: FocalPoint;
+  altTouched: boolean;
   onAlt: (value: string) => void;
   onCaption: (value: string) => void;
   onFocalPoint: (value: FocalPoint) => void;
 }) {
   const id = useId();
-  const missingAlt = !hasAltText(alt);
+  // Neutral until the person types and clears it; "Use" stays off either way.
+  const missingAlt = altTouched && !hasAltText(alt);
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {item.source === "studio" ? (
@@ -133,7 +157,7 @@ function MediaFields({
             data-testid="media-alt"
           />
           <p id={`${id}-alt-help`} className="text-xs text-muted-foreground">
-            {missingAlt ? "Add alt text before you use this. " : null}
+            {missingAlt ? <span className="text-destructive">Add alt text before you use this. </span> : null}
             Describe what the image shows for people who cannot see it. Leave out "image of".
           </p>
         </div>
@@ -152,12 +176,18 @@ function useMediaFields(item: StudioMediaItem | null) {
   const [alt, setAlt] = useState("");
   const [caption, setCaption] = useState("");
   const [focalPoint, setFocalPoint] = useState<FocalPoint>(CENTRE_FOCAL_POINT);
+  const [altTouched, setAltTouched] = useState(false);
   useEffect(() => {
     setAlt("");
     setCaption("");
     setFocalPoint(CENTRE_FOCAL_POINT);
+    setAltTouched(false);
   }, [item?.id]);
-  return { alt, setAlt, caption, setCaption, focalPoint, setFocalPoint };
+  const changeAlt = (value: string) => {
+    setAlt(value);
+    setAltTouched(true);
+  };
+  return { alt, setAlt: changeAlt, caption, setCaption, focalPoint, setFocalPoint, altTouched };
 }
 
 /** The editor's media picker: the site's own media, plus finished studio items. */
@@ -197,7 +227,7 @@ export function WebsiteMediaPicker({
   const studioItems = (studioQuery.data ?? []).filter((item) => !needle || item.label.toLowerCase().includes(needle));
   const libraryItems = media
     .filter((item) => (kind === "animation" ? item.contentType.startsWith("video/") : item.contentType.startsWith("image/")))
-    .filter((item) => !needle || `${item.entryKey} ${item.alt}`.toLowerCase().includes(needle));
+    .filter((item) => !needle || `${item.alt} ${item.caption ?? ""} ${item.entryKey}`.toLowerCase().includes(needle));
   const canUse = picked !== null && hasAltText(fields.alt) && !add.isPending;
   const sourceLabel = STUDIO_MEDIA_SOURCE_LABEL[source];
 
@@ -216,7 +246,22 @@ export function WebsiteMediaPicker({
 
   return (
     <Dialog open={kind !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
-      <DialogContent className="max-h-(--sz-90vh) sm:max-w-3xl" scrollBody data-testid="website-media-picker">
+      <DialogContent
+        className="max-h-(--sz-90vh) sm:max-w-3xl"
+        scrollBody
+        footer={
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            {tab === "studio" ? (
+              <Button type="button" disabled={!canUse} onClick={use} data-testid="media-use">
+                {kind === "animation" ? <Film /> : <ImageIcon />}
+                Use
+              </Button>
+            ) : null}
+          </DialogFooter>
+        }
+        data-testid="website-media-picker"
+      >
         <DialogHeader>
           <DialogTitle>{kind === "animation" ? "Add animation" : "Add image"}</DialogTitle>
           <DialogDescription className="sr-only">Pick an item, add alt text, then use it.</DialogDescription>
@@ -256,17 +301,7 @@ export function WebsiteMediaPicker({
               <p className="text-xs text-muted-foreground">The site's images. The editor's image fields pick from these.</p>
               <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="media-picker-library">
                 {libraryItems.map((item) => (
-                  <li key={item.entryId} className="min-w-0 space-y-1">
-                    <div className="aspect-video overflow-hidden rounded-md border border-border bg-muted">
-                      {item.contentType.startsWith("image/") ? (
-                        <img src={item.contentPath} alt={item.alt} loading="lazy" className="size-full object-cover" />
-                      ) : (
-                        <div className="flex size-full items-center justify-center text-muted-foreground"><Film className="size-5" aria-hidden="true" /></div>
-                      )}
-                    </div>
-                    <p className="truncate text-xs font-medium" title={item.entryKey}>{item.entryKey}</p>
-                    <p className="truncate text-micro text-muted-foreground" title={item.alt}>{item.alt || "No alt text"}</p>
-                  </li>
+                  <WebsiteMediaCard key={item.entryId} item={item} />
                 ))}
               </ul>
             </>
@@ -311,6 +346,7 @@ export function WebsiteMediaPicker({
             alt={fields.alt}
             caption={fields.caption}
             focalPoint={fields.focalPoint}
+            altTouched={fields.altTouched}
             onAlt={fields.setAlt}
             onCaption={fields.setCaption}
             onFocalPoint={fields.setFocalPoint}
@@ -318,15 +354,6 @@ export function WebsiteMediaPicker({
         ) : null}
         {add.error ? <p role="alert" className="text-sm text-destructive">{errorStateMessage(add.error)}</p> : null}
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          {tab === "studio" ? (
-            <Button type="button" disabled={!canUse} onClick={use} data-testid="media-use">
-              {kind === "animation" ? <Film /> : <ImageIcon />}
-              Use
-            </Button>
-          ) : null}
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -378,7 +405,19 @@ export function UseOnWebsiteDialog({
 
   return (
     <Dialog open={item !== null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
-      <DialogContent className="max-h-(--sz-90vh) sm:max-w-2xl" scrollBody data-testid="use-on-website">
+      <DialogContent
+        className="max-h-(--sz-90vh) sm:max-w-2xl"
+        scrollBody
+        footer={
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" disabled={!canSend} onClick={send} data-testid="use-on-website-send">
+              Use on website
+            </Button>
+          </DialogFooter>
+        }
+        data-testid="use-on-website"
+      >
         <DialogHeader>
           <DialogTitle>Use on website</DialogTitle>
           <DialogDescription className="line-clamp-2">{item?.label}</DialogDescription>
@@ -411,6 +450,7 @@ export function UseOnWebsiteDialog({
                 alt={fields.alt}
                 caption={fields.caption}
                 focalPoint={fields.focalPoint}
+                altTouched={fields.altTouched}
                 onAlt={fields.setAlt}
                 onCaption={fields.setCaption}
                 onFocalPoint={fields.setFocalPoint}
@@ -419,12 +459,6 @@ export function UseOnWebsiteDialog({
           </>
         )}
         {add.error ? <p role="alert" className="text-sm text-destructive">{errorStateMessage(add.error)}</p> : null}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="button" disabled={!canSend} onClick={send} data-testid="use-on-website-send">
-            Use on website
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -127,9 +127,15 @@ describe("WebsiteMediaPicker", () => {
     expect(use.disabled).toBe(true);
 
     await click(items[0]!);
-    expect(document.body.textContent).toContain("Add alt text before you use this.");
+    // Neutral on open: no error before the person has done anything.
+    const alt = byTestId("media-alt") as HTMLInputElement;
+    expect(document.body.textContent).not.toContain("Add alt text before you use this.");
+    expect(alt.getAttribute("aria-invalid")).toBeNull();
     expect(use.disabled).toBe(true);
-    await type(byTestId("media-alt") as HTMLInputElement, "   ");
+    await type(alt, "Boats");
+    await type(alt, "   ");
+    expect(document.body.textContent).toContain("Add alt text before you use this.");
+    expect(alt.getAttribute("aria-invalid")).toBe("true");
     expect(use.disabled).toBe(true);
     await type(byTestId("media-alt") as HTMLInputElement, "Boats in a harbour at dawn");
     expect(use.disabled).toBe(false);
@@ -140,6 +146,27 @@ describe("WebsiteMediaPicker", () => {
     expect([companyId, siteId]).toEqual(["co-1", "site-1"]);
     expect(input).toMatchObject({ collection: "media", content: { assetId: "asset-1", alt: "Boats in a harbour at dawn", caption: null, focalPoint: { x: 0.5, y: 0.5 } } });
     expect(onAdded).toHaveBeenCalledWith("Added from GS Studio. It is now in Website media and goes live with the next Publish.");
+  });
+
+  it("keeps Cancel and Use outside the scroll body, so they stay in view", async () => {
+    await show(picker("image"));
+    const scrollBody = document.body.querySelector('[data-slot="dialog-scroll-body"]')!;
+    expect(scrollBody.contains(byTestId("media-use"))).toBe(false);
+    expect(byTestId("website-media-picker")!.contains(byTestId("media-use"))).toBe(true);
+  });
+
+  it("titles Website media cards by alt text, not the entry key", async () => {
+    const media = [
+      { entryId: "e-1", entryKey: "studio-image-img-1111-abc", assetId: "a-1", alt: "Boats in a harbour", caption: "At dawn", contentType: "image/png", byteSize: 1, width: null, height: null, contentPath: "/a-1" },
+      { entryId: "e-2", entryKey: "hero-photo", assetId: "a-2", alt: "", caption: null, contentType: "image/png", byteSize: 1, width: null, height: null, contentPath: "/a-2" },
+    ];
+    await show(<WebsiteMediaPicker companyId="co-1" site={site} kind="image" media={media} onClose={vi.fn()} onAdded={vi.fn()} />);
+    await click([...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === "Website media")!);
+    const cards = [...byTestId("media-picker-library")!.querySelectorAll("li")];
+    expect(cards.map((card) => card.querySelector("p")?.textContent)).toEqual(["Boats in a harbour", "hero-photo"]);
+    expect(cards[0]!.textContent).not.toContain("studio-image");
+    expect(cards[0]!.getAttribute("title")).toBe("studio-image-img-1111-abc");
+    expect(cards[1]!.textContent).toContain("No alt text");
   });
 
   it("lists finished Animate clips under Add animation", async () => {

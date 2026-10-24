@@ -1,4 +1,4 @@
-import type { CreateWebsiteEntry, GeneratedImage, GeneratedVideo } from "@greatstone/shared";
+import type { CreateWebsiteEntry, GeneratedImage, GeneratedVideo, WebsiteMediaItem } from "@greatstone/shared";
 
 // GS Studio images and Animate clips as website media (GRE-2114, plan 2.12).
 // A studio item is already a company asset, so a website media entry only
@@ -44,6 +44,11 @@ export function studioClipItems(videos: GeneratedVideo[]): StudioMediaItem[] {
       ? [{ source: "animation" as const, id: video.id, assetId: video.assetId, contentPath: video.contentPath, label: video.prompt }]
       : [],
   );
+}
+
+/** A media card's title: the alt text a person wrote, not the machine key. */
+export function mediaItemTitle(item: Pick<WebsiteMediaItem, "alt" | "entryKey">) {
+  return item.alt.trim() || item.entryKey;
 }
 
 /** "Use" needs alt text: an image on the site is never left without one. */
