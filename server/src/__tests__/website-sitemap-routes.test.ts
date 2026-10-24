@@ -19,6 +19,10 @@ import {
 } from "@greatstone/db";
 import {
   diffSitemapTrees,
+  importWebsiteSitemapOptionSchema,
+  sitemapTreeFromImport,
+  sitemapTreeProblems,
+  websiteSitemapTreeSchema,
   type ImportWebsiteSitemapOption,
   type WebsitePage,
   type WebsiteSitemapApproveResult,
@@ -28,6 +32,7 @@ import {
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
+import { buildSitemapXml } from "../services/website/sitemap.js";
 import { instanceSettingsService } from "../services/index.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -55,6 +60,49 @@ describe("diffSitemapTrees", () => {
     expect(byPath.get("/new")).toEqual(["added"]);
     // Same site page under a new path and parent: one moved page, not a remove and an add.
     expect(byPath.get("/about/team")).toEqual(["moved"]);
+  });
+});
+
+describe("private pattern pages", () => {
+  const portal: ImportWebsiteSitemapOption = {
+    name: "Portal lane",
+    pages: [
+      {
+        title: "Home",
+        path: "/",
+        children: [
+          { title: "Portal overview", path: "/portal/:client/overview" },
+          { title: "Insight", path: "/insights/:slug" },
+        ],
+      },
+    ],
+  };
+
+  it("accepts :param paths and still refuses badly formed ones", () => {
+    expect(importWebsiteSitemapOptionSchema.safeParse(portal).success).toBe(true);
+    for (const path of ["/portal/:/overview", "/portal/:1client", "/Portal", "/portal/#packages", "/portal/"]) {
+      expect(importWebsiteSitemapOptionSchema.safeParse({ name: "x", pages: [{ title: "x", path }] }).success, path).toBe(false);
+    }
+  });
+
+  it("imports pattern pages as noindex and never as menu links", () => {
+    const tree = sitemapTreeFromImport(portal);
+    expect(tree.nodes.find((node) => node.path === "/portal/:client/overview")).toMatchObject({ menu: "none", noindex: true });
+    expect(tree.nodes.find((node) => node.path === "/")!.noindex).toBe(false);
+    expect(websiteSitemapTreeSchema.safeParse(tree).success).toBe(true);
+    const inMenu = structuredClone(tree);
+    inMenu.nodes[1]!.menu = "header";
+    expect(sitemapTreeProblems(inMenu)).toEqual(["Portal overview is a private page (/portal/:client/overview) and cannot be a menu link."]);
+  });
+
+  it("leaves pattern pages out of sitemap.xml even when not marked noindex", () => {
+    const updatedAt = new Date("2026-10-23T00:00:00Z");
+    const xml = buildSitemapXml("www.example.test", [
+      { slug: "/", seo: {}, updatedAt },
+      { slug: "/portal/:client/overview", seo: {}, updatedAt },
+    ]);
+    expect(xml).toContain("<loc>https://www.example.test/</loc>");
+    expect(xml).not.toContain("portal");
   });
 });
 
@@ -225,6 +273,23 @@ describeEmbeddedPostgres("website sitemap routes", () => {
     expect(xml.text).toContain("<loc>https://www.greatstone.test/consultancy/deep-dive</loc>");
     expect(xml.text).not.toContain("/portal");
     expect(xml.text.match(/<url>/g)).toHaveLength(7);
+  });
+
+  it("imports and approves a private portal page, which sitemap.xml leaves out and no menu may link", async () => {
+    const { base } = await seedSite("Greatstone", "www.greatstone.test");
+    const http = request(app());
+    const withPortal = structuredClone(optionA);
+    withPortal.pages[0]!.children!.push({ title: "Portal overview", path: "/portal/:client/overview" });
+    const a = (await http.post(`${base}/sitemap/options/import`).send(withPortal).expect(201)).body as WebsiteSitemapOption;
+    const approved = (await http.post(`${base}/sitemap/options/${a.id}/approve`).expect(200)).body as WebsiteSitemapApproveResult;
+    expect(approved.pages.find((page) => page.slug === "/portal/:client/overview")).toMatchObject({ menu: "none", seo: { noindex: true } });
+    const xml = await http.get(`${base}/sitemap.xml`).expect(200);
+    expect(xml.text).not.toContain(":client");
+    expect(xml.text.match(/<url>/g)).toHaveLength(7);
+    const inMenu = structuredClone(approved.option.tree);
+    inMenu.nodes.find((node) => node.path === "/portal/:client/overview")!.menu = "footer";
+    await http.put(`${base}/sitemap/options/${a.id}`).send({ tree: inMenu }).expect(400);
+    await http.post(`${base}/sitemap/options/import`).send({ name: "Bad", pages: [{ title: "Portal", path: "/portal/:client", menu: "header" }] }).expect(422);
   });
 
   it("keeps options inside their company: A gets 404 for B's options", async () => {
