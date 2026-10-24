@@ -62093,8 +62093,8 @@
       },
       "isRLSEnabled": false
     },
-    "public.website_module": {
-      "name": "website_module",
+    "public.website_feature": {
+      "name": "website_feature",
       "schema": "",
       "columns": {
         "id": {
@@ -62148,6 +62148,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "suggested_owner": {
+          "name": "suggested_owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "lead_agent_id": {
           "name": "lead_agent_id",
           "type": "uuid",
@@ -62159,6 +62165,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "admin_screens": {
+          "name": "admin_screens",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "route_prefixes": {
           "name": "route_prefixes",
@@ -62210,8 +62223,8 @@
         }
       },
       "indexes": {
-        "website_module_site_idx": {
-          "name": "website_module_site_idx",
+        "website_feature_site_idx": {
+          "name": "website_feature_site_idx",
           "columns": [
             {
               "expression": "company_id",
@@ -62231,8 +62244,8 @@
           "method": "btree",
           "with": {}
         },
-        "website_module_site_key_uq": {
-          "name": "website_module_site_key_uq",
+        "website_feature_site_key_uq": {
+          "name": "website_feature_site_key_uq",
           "columns": [
             {
               "expression": "site_id",
@@ -62248,16 +62261,16 @@
             }
           ],
           "isUnique": true,
-          "where": "\"website_module\".\"archived_at\" is null",
+          "where": "\"website_feature\".\"archived_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "website_module_company_id_companies_id_fk": {
-          "name": "website_module_company_id_companies_id_fk",
-          "tableFrom": "website_module",
+        "website_feature_company_id_companies_id_fk": {
+          "name": "website_feature_company_id_companies_id_fk",
+          "tableFrom": "website_feature",
           "tableTo": "companies",
           "columnsFrom": [
             "company_id"
@@ -62268,9 +62281,9 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "website_module_lead_agent_id_agents_id_fk": {
-          "name": "website_module_lead_agent_id_agents_id_fk",
-          "tableFrom": "website_module",
+        "website_feature_lead_agent_id_agents_id_fk": {
+          "name": "website_feature_lead_agent_id_agents_id_fk",
+          "tableFrom": "website_feature",
           "tableTo": "agents",
           "columnsFrom": [
             "lead_agent_id"
@@ -62281,9 +62294,9 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "website_module_project_id_projects_id_fk": {
-          "name": "website_module_project_id_projects_id_fk",
-          "tableFrom": "website_module",
+        "website_feature_project_id_projects_id_fk": {
+          "name": "website_feature_project_id_projects_id_fk",
+          "tableFrom": "website_feature",
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
@@ -62294,9 +62307,9 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "website_module_company_site_fk": {
-          "name": "website_module_company_site_fk",
-          "tableFrom": "website_module",
+        "website_feature_company_site_fk": {
+          "name": "website_feature_company_site_fk",
+          "tableFrom": "website_feature",
           "tableTo": "website_site",
           "columnsFrom": [
             "company_id",
@@ -62312,8 +62325,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "website_module_company_id_uq": {
-          "name": "website_module_company_id_uq",
+        "website_feature_company_id_uq": {
+          "name": "website_feature_company_id_uq",
           "nullsNotDistinct": false,
           "columns": [
             "company_id",

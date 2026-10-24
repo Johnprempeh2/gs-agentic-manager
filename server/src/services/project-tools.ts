@@ -10,15 +10,15 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   list_project_repositories: mcpToolHints("read"),
   create_project: mcpToolHints("write", { idempotent: true }),
   create_task: mcpToolHints("write", { idempotent: true }),
-  list_website_modules: mcpToolHints("read"),
+  list_website_features: mcpToolHints("read"),
   website_data_list: mcpToolHints("read"),
   website_data_get: mcpToolHints("read"),
 };
-/** Read-only tool outside the runner catalog: the website module registry (GRE-2325). Needs website:view. */
-const WEBSITE_MODULES_TOOL = {
-  name: "list_website_modules",
-  description: "Read the website module registry: each connected site's modules with their route prefixes, collections, owner, lead agent, linked project and on/off state.",
-  annotations: PROJECT_TOOL_HINTS.list_website_modules,
+/** Read-only tool outside the runner catalog: the website feature registry (GRE-2325). Needs website:view. */
+const WEBSITE_FEATURES_TOOL = {
+  name: "list_website_features",
+  description: "Read the website feature registry: each connected site's features with their route prefixes, collections, owner, lead agent, linked project and on/off state.",
+  annotations: PROJECT_TOOL_HINTS.list_website_features,
   inputSchema: {
     type: "object",
     properties: { siteId: { type: "string", description: "Only this site. Leave out to read every site the agent can view." } },
@@ -39,7 +39,7 @@ const WEBSITE_DATA_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        siteId: { type: "string", description: "The website site id (list_website_modules shows them)." },
+        siteId: { type: "string", description: "The website site id (list_website_features shows them)." },
         resource: { type: "string", enum: [...WEBSITE_DATA_RESOURCES] },
         customer: { type: "string", description: "Only this customer's records (a customer id). Not for enquiries." },
         updatedSince: { type: "string", description: "ISO time: only records changed since then." },
@@ -76,7 +76,7 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_MODULES_TOOL, ...WEBSITE_DATA_TOOLS];
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -85,12 +85,12 @@ async function apiGet(apiUrl: string, token: string, path: string) {
     signal: AbortSignal.timeout(60_000),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : `Website modules read failed (${response.status})`);
+  if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : `Website features read failed (${response.status})`);
   return result;
 }
 
-/** Sites the agent can view, each with its modules, through the normal authenticated API. */
-async function listWebsiteModules(input: { apiUrl: string; token: string; companyId: string; siteId?: unknown }) {
+/** Sites the agent can view, each with its features, through the normal authenticated API. */
+async function listWebsiteFeatures(input: { apiUrl: string; token: string; companyId: string; siteId?: unknown }) {
   const company = encodeURIComponent(input.companyId);
   const sites = (await apiGet(input.apiUrl, input.token, `/companies/${company}/website/sites`)) as Array<{ id: string; name: string; domain: string }>;
   const wanted = typeof input.siteId === "string" && input.siteId ? sites.filter((site) => site.id === input.siteId) : sites;
@@ -99,7 +99,7 @@ async function listWebsiteModules(input: { apiUrl: string; token: string; compan
       id: site.id,
       name: site.name,
       domain: site.domain,
-      modules: await apiGet(input.apiUrl, input.token, `/companies/${company}/website/sites/${encodeURIComponent(site.id)}/modules`),
+      features: await apiGet(input.apiUrl, input.token, `/companies/${company}/website/sites/${encodeURIComponent(site.id)}/features`),
     }))),
   };
 }
@@ -127,8 +127,8 @@ export async function callProjectTool(input: {
   companyId: string; issueId: string; agentId: string; conversation: boolean;
 }) {
   const args = input.arguments;
-  if (input.name === "list_website_modules") {
-    return listWebsiteModules({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, siteId: args.siteId });
+  if (input.name === "list_website_features") {
+    return listWebsiteFeatures({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, siteId: args.siteId });
   }
   if (input.name === "website_data_list" || input.name === "website_data_get") {
     return readWebsiteData({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });

@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, companyMemberships, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, websiteModule, websiteProperties, websiteSite } from "@greatstone/db";
+import { companies, companyMemberships, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, websiteFeature, websiteProperties, websiteSite } from "@greatstone/db";
 import { pipelineService } from "../pipelines.js";
 import { logActivity } from "../activity-log.js";
 import { issueService } from "../issues.js";
@@ -74,10 +74,10 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
       eq(websiteSite.companyId, companyId), eq(websiteSite.id, siteId),
     )).limit(1);
     if (!site) return; // Service tests may import against a fake site id.
-    const [module] = await db.select({ ownerUserId: websiteModule.ownerUserId, projectId: websiteModule.projectId })
-      .from(websiteModule).where(and(
-        eq(websiteModule.companyId, companyId), eq(websiteModule.siteId, siteId),
-        eq(websiteModule.key, "front-door"), isNull(websiteModule.archivedAt),
+    const [feature] = await db.select({ ownerUserId: websiteFeature.ownerUserId, projectId: websiteFeature.projectId })
+      .from(websiteFeature).where(and(
+        eq(websiteFeature.companyId, companyId), eq(websiteFeature.siteId, siteId),
+        eq(websiteFeature.key, "front-door"), isNull(websiteFeature.archivedAt),
       )).limit(1);
     const [property] = site.propertyId
       ? await db.select({ projectId: websiteProperties.projectId }).from(websiteProperties).where(and(
@@ -86,7 +86,7 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
       : [];
     const [company] = await db.select({ defaultResponsibleUserId: companies.defaultResponsibleUserId })
       .from(companies).where(eq(companies.id, companyId)).limit(1);
-    const ownerCandidates = [module?.ownerUserId, company?.defaultResponsibleUserId].filter((id): id is string => Boolean(id));
+    const ownerCandidates = [feature?.ownerUserId, company?.defaultResponsibleUserId].filter((id): id is string => Boolean(id));
     let ownerUserId: string | null = null;
     for (const candidate of ownerCandidates) {
       const [member] = await db.select({ id: companyMemberships.id }).from(companyMemberships).where(and(
@@ -102,7 +102,7 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
       status: "todo",
       priority: "medium",
       assigneeUserId: ownerUserId,
-      projectId: module?.projectId ?? property?.projectId ?? null,
+      projectId: feature?.projectId ?? property?.projectId ?? null,
       originKind: "website_enquiry",
       originId: caseId,
       idempotencyKey: `website-enquiry-inbox:${caseId}`,

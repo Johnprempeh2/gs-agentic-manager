@@ -73,7 +73,7 @@ import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
-import { websiteModulesRoutes } from "./routes/website-modules.js";
+import { websiteFeaturesRoutes } from "./routes/website-features.js";
 import { websiteDataBridgeRoutes } from "./routes/website-data-bridge.js";
 import { websiteDataBridgeService } from "./services/website/data-bridge.js";
 import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
@@ -779,7 +779,7 @@ export async function createApp(
       enquiryReader: opts.websiteEnquiryReader ?? websiteDataBridgeService(db).enquiryReader,
     }),
   );
-  api.use(websiteModulesRoutes(db));
+  api.use(websiteFeaturesRoutes(db));
   api.use(websiteDataBridgeRoutes(db));
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));

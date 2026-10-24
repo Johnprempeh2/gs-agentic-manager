@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activityLog, companies, companyMemberships, createDb, crmSyncBindings, crmSyncRecordLinks, issues, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, toolApplications, toolConnections, websiteModule, websiteSite } from "@greatstone/db";
+import { activityLog, companies, companyMemberships, createDb, crmSyncBindings, crmSyncRecordLinks, issues, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, toolApplications, toolConnections, websiteFeature, websiteSite } from "@greatstone/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { websiteEnquiryService, type WebsiteEnquiry, type WebsiteEnquiryReader } from "../services/website/enquiries.js";
 import { pipedriveWebsiteOriginId, websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
@@ -26,7 +26,7 @@ describeDb("website enquiries", () => {
     await db.delete(crmSyncBindings);
     await db.delete(pipelines);
     await db.delete(organisations);
-    await db.delete(websiteModule);
+    await db.delete(websiteFeature);
     await db.delete(websiteSite);
     await db.delete(toolConnections);
     await db.delete(toolApplications);
@@ -104,7 +104,7 @@ describeDb("website enquiries", () => {
     const [site] = await db.insert(websiteSite).values({
       companyId, name: "Greatstone", domain: "greatstone.test", netlifySiteId: "staging",
     }).returning();
-    await db.insert(websiteModule).values({
+    await db.insert(websiteFeature).values({
       companyId, siteId: site!.id, key: "front-door", name: "Front door and enquiries", ownerUserId,
     });
     const service = websiteEnquiryService(db);

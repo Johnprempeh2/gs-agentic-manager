@@ -22,7 +22,7 @@ describe("our own MCP tools declare effect hints", () => {
     );
     expect(effects.list_projects).toMatchObject({ readOnlyHint: true });
     expect(effects.list_project_repositories).toMatchObject({ readOnlyHint: true });
-    expect(effects.list_website_modules).toMatchObject({ readOnlyHint: true });
+    expect(effects.list_website_features).toMatchObject({ readOnlyHint: true });
     expect(effects.website_data_list).toMatchObject({ readOnlyHint: true });
     expect(effects.website_data_get).toMatchObject({ readOnlyHint: true });
     expect(effects.create_project).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });

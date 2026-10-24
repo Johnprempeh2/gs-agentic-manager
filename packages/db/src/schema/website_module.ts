@@ -257,25 +257,29 @@ export const websiteSitemapOption = pgTable(
 );
 
 /**
- * Website modules (GRE-2325, plan of 24 Oct 2026): the big parts of a site,
+ * Website features (GRE-2325, plan of 24 Oct 2026): the big parts of a site,
  * each with its slice of the sitemap (route prefixes) and collections. Owner
- * and lead agent are optional. Switching a module off hides its screens and
+ * and lead agent are optional. Switching a feature off hides its screens and
  * never deletes data; removing one archives the registry row only.
  */
-export const websiteModule = pgTable(
-  "website_module",
+export const websiteFeature = pgTable(
+  "website_feature",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     siteId: uuid("site_id").notNull(),
-    /** Stable key per site, for example `shop`; the starting modules use theirs. */
+    /** Stable key per site, for example `shop`. */
     key: text("key").notNull(),
     name: text("name").notNull(),
     purpose: text("purpose").notNull().default(""),
     icon: text("icon").notNull().default("blocks"),
     ownerUserId: text("owner_user_id"),
+    /** A name shown as a hint in Settings; never sets the owner on its own. */
+    suggestedOwner: text("suggested_owner"),
     leadAgentId: uuid("lead_agent_id").references(() => agents.id, { onDelete: "set null" }),
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** Admin screens planned for this feature, each naming the task that moves it in: `{ name, issue }[]`. */
+    adminScreens: jsonb("admin_screens").$type<Array<{ name: string; issue: string | null }>>().notNull().default([]),
     routePrefixes: text("route_prefixes").array().notNull().default(sql`'{}'::text[]`),
     collections: text("collections").array().notNull().default(sql`'{}'::text[]`),
     enabled: boolean("enabled").notNull().default(true),
@@ -285,13 +289,13 @@ export const websiteModule = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique("website_module_company_id_uq").on(t.companyId, t.id),
+    unique("website_feature_company_id_uq").on(t.companyId, t.id),
     foreignKey({
       columns: [t.companyId, t.siteId],
       foreignColumns: [websiteSite.companyId, websiteSite.id],
-      name: "website_module_company_site_fk",
+      name: "website_feature_company_site_fk",
     }).onDelete("cascade"),
-    index("website_module_site_idx").on(t.companyId, t.siteId),
-    uniqueIndex("website_module_site_key_uq").on(t.siteId, t.key).where(sql`${t.archivedAt} is null`),
+    index("website_feature_site_idx").on(t.companyId, t.siteId),
+    uniqueIndex("website_feature_site_key_uq").on(t.siteId, t.key).where(sql`${t.archivedAt} is null`),
   ],
 );

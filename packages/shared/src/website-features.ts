@@ -2,13 +2,13 @@ import { z } from "zod";
 import type { WebsiteHomeActivity, WebsitePageStatus, WebsiteReleaseStatus } from "./types/website-module.js";
 import { websitePagePathSchema } from "./validators/website-module.js";
 
-// Website modules (GRE-2325, plan of 24 Oct 2026). A module is one big part
+// Website features (GRE-2325, plan of 24 Oct 2026). A feature is one big part
 // of a site: its slice of the sitemap (route prefixes), its collections, an
-// optional owner and lead agent, and an on/off switch. Off hides the module's
-// screens and never deletes data. A page belongs to the module with the
+// optional owner and lead agent, and an on/off switch. Off hides the feature's
+// screens and never deletes data. A page belongs to the feature with the
 // longest prefix that matches its path, so `/` catches what no other claims.
 
-export const WEBSITE_MODULE_ICONS = [
+export const WEBSITE_FEATURE_ICONS = [
   "blocks",
   "globe",
   "shopping-bag",
@@ -20,118 +20,134 @@ export const WEBSITE_MODULE_ICONS = [
   "file-text",
   "briefcase",
 ] as const;
-export type WebsiteModuleIcon = (typeof WEBSITE_MODULE_ICONS)[number];
+export type WebsiteFeatureIcon = (typeof WEBSITE_FEATURE_ICONS)[number];
 
-export interface WebsiteModule {
+export interface WebsiteFeatureAdminScreen {
+  name: string;
+  /** The task that moves this screen into GSAM, for example `GRE-2326`. */
+  issue: string | null;
+}
+
+export interface WebsiteFeature {
   id: string;
   companyId: string;
   siteId: string;
   key: string;
   name: string;
   purpose: string;
-  icon: WebsiteModuleIcon;
+  icon: WebsiteFeatureIcon;
   ownerUserId: string | null;
+  /** A name shown as a hint in Settings; never sets the owner on its own. */
+  suggestedOwner: string | null;
   leadAgentId: string | null;
   projectId: string | null;
   routePrefixes: string[];
   collections: string[];
+  /** Admin screens planned for this feature, each naming the task that moves it in. Placeholders until those tasks land. */
+  adminScreens: WebsiteFeatureAdminScreen[];
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
 
-/** `attention`: the last release that touched the module failed or is pending. `unknown`: no traffic or release data yet. */
-export type WebsiteModuleHealthState = "ok" | "attention" | "unknown";
+/** `attention`: the last release that touched the feature failed or is pending. `unknown`: no traffic or release data yet. */
+export type WebsiteFeatureHealthState = "ok" | "attention" | "unknown";
 
-export interface WebsiteModuleHealth {
-  state: WebsiteModuleHealthState;
+export interface WebsiteFeatureHealth {
+  state: WebsiteFeatureHealthState;
   /** One plain sentence: why the dot has this colour. */
   reason: string;
 }
 
-export interface WebsiteModuleRelease {
+export interface WebsiteFeatureRelease {
   id: string;
   number: number;
   status: WebsiteReleaseStatus;
   at: string;
 }
 
-/** A module as its card on Website Home shows it. Counts are null when they cannot be known (no linked project). */
-export interface WebsiteModuleCard {
-  module: WebsiteModule;
+/** A feature as its card on Website Home shows it. Counts are null when they cannot be known (no linked project). */
+export interface WebsiteFeatureCard {
+  feature: WebsiteFeature;
   ownerName: string | null;
   leadAgentName: string | null;
   pageCount: number;
   openTasks: number | null;
   /** Open tasks waiting on a person: assigned to a person, or with a question or approval card open. */
   needsPerson: number | null;
-  lastRelease: WebsiteModuleRelease | null;
-  /** Page views in the latest Google Analytics pull, over the top pages in the module's slice; null without a pull. */
+  lastRelease: WebsiteFeatureRelease | null;
+  /** Page views in the latest Google Analytics pull, over the top pages in the feature's slice; null without a pull. */
   views: number | null;
-  health: WebsiteModuleHealth;
+  health: WebsiteFeatureHealth;
 }
 
-export interface WebsiteModulePageSummary {
+export interface WebsiteFeaturePageSummary {
   id: string;
   slug: string;
   title: string;
   status: WebsitePageStatus;
 }
 
-/** The module page: its card, the pages in its slice and its recent changes. */
-export interface WebsiteModuleDetail extends WebsiteModuleCard {
-  pages: WebsiteModulePageSummary[];
+/** The feature page: its card, the pages in its slice and its recent changes. */
+export interface WebsiteFeatureDetail extends WebsiteFeatureCard {
+  pages: WebsiteFeaturePageSummary[];
   recentChanges: WebsiteHomeActivity[];
 }
 
-export const WEBSITE_MODULES_API_ROUTES = {
-  /** GET → `WebsiteModule[]`, the site's registry in order (website:view). POST `CreateWebsiteModule` → 201 `WebsiteModule` (website:publish, people only). */
-  modules: "/companies/:companyId/website/sites/:siteId/modules",
-  /** GET → `WebsiteModuleCard[]` for the Modules section of Website Home (website:view). */
-  moduleCards: "/companies/:companyId/website/sites/:siteId/module-cards",
-  /** POST → `WebsiteModule[]`: adds the starting modules the site does not have yet (website:publish, people only). */
-  moduleSeed: "/companies/:companyId/website/sites/:siteId/modules/starting-set",
-  /** GET → `WebsiteModuleDetail`. PATCH `UpdateWebsiteModule` → `WebsiteModule`. DELETE → 204, archives the registry row only (website:publish, people only). */
-  module: "/companies/:companyId/website/sites/:siteId/modules/:moduleId",
+export const WEBSITE_FEATURES_API_ROUTES = {
+  /** GET → `WebsiteFeature[]`, the site's registry in order (website:view). POST `CreateWebsiteFeature` → 201 `WebsiteFeature` (website:publish, people only). */
+  features: "/companies/:companyId/website/sites/:siteId/features",
+  /** GET → `WebsiteFeatureCard[]` for the Features section of Website Home (website:view). */
+  featureCards: "/companies/:companyId/website/sites/:siteId/feature-cards",
+  /** GET → `WebsiteFeatureDetail`. PATCH `UpdateWebsiteFeature` → `WebsiteFeature`. DELETE → 204, archives the registry row only (website:publish, people only). */
+  feature: "/companies/:companyId/website/sites/:siteId/features/:featureId",
 } as const;
 
 const routePrefixSchema = websitePagePathSchema;
+const adminScreenSchema = z
+  .object({ name: z.string().trim().min(1).max(80), issue: z.string().trim().regex(/^[A-Z][A-Z0-9]*-\d+$/, "Use a task id like GRE-2326").nullable() })
+  .strict();
 const collectionKeySchema = z.string().trim().min(1).max(60).regex(/^[a-z][a-z0-9-]*$/, "Use a collection key like product or public-person");
 
-export const createWebsiteModuleSchema = z
+export const createWebsiteFeatureSchema = z
   .object({
-    key: z.string().trim().min(1).max(40).regex(/^[a-z][a-z0-9-]*$/, "Use a key like shop or client-portal"),
+    /** Leave out to make one from the name. */
+    key: z.string().trim().min(1).max(40).regex(/^[a-z][a-z0-9-]*$/, "Use a key like shop or client-portal").optional(),
     name: z.string().trim().min(1).max(80),
     purpose: z.string().trim().max(280).optional().default(""),
-    icon: z.enum(WEBSITE_MODULE_ICONS).optional().default("blocks"),
+    icon: z.enum(WEBSITE_FEATURE_ICONS).optional().default("blocks"),
     ownerUserId: z.string().trim().min(1).nullable().optional(),
+    suggestedOwner: z.string().trim().min(1).max(80).nullable().optional(),
     leadAgentId: z.string().uuid().nullable().optional(),
     projectId: z.string().uuid().nullable().optional(),
     routePrefixes: z.array(routePrefixSchema).max(50).optional().default([]),
     collections: z.array(collectionKeySchema).max(30).optional().default([]),
+    adminScreens: z.array(adminScreenSchema).max(20).optional().default([]),
     enabled: z.boolean().optional().default(true),
     sortOrder: z.number().int().min(0).max(1000).optional(),
   })
   .strict();
-export type CreateWebsiteModule = z.input<typeof createWebsiteModuleSchema>;
+export type CreateWebsiteFeature = z.input<typeof createWebsiteFeatureSchema>;
 
-export const updateWebsiteModuleSchema = z
+export const updateWebsiteFeatureSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
     purpose: z.string().trim().max(280),
-    icon: z.enum(WEBSITE_MODULE_ICONS),
+    icon: z.enum(WEBSITE_FEATURE_ICONS),
     ownerUserId: z.string().trim().min(1).nullable(),
+    suggestedOwner: z.string().trim().min(1).max(80).nullable(),
     leadAgentId: z.string().uuid().nullable(),
     projectId: z.string().uuid().nullable(),
     routePrefixes: z.array(routePrefixSchema).max(50),
     collections: z.array(collectionKeySchema).max(30),
+    adminScreens: z.array(adminScreenSchema).max(20),
     enabled: z.boolean(),
     sortOrder: z.number().int().min(0).max(1000),
   })
   .partial()
   .strict();
-export type UpdateWebsiteModule = z.infer<typeof updateWebsiteModuleSchema>;
+export type UpdateWebsiteFeature = z.infer<typeof updateWebsiteFeatureSchema>;
 
 /** True when `path` is `prefix` or below it. `/` holds every path. */
 export function routePrefixMatches(prefix: string, path: string): boolean {
@@ -140,121 +156,20 @@ export function routePrefixMatches(prefix: string, path: string): boolean {
 }
 
 /**
- * The module a page belongs to: the longest matching prefix wins, so
- * `/account/orders` (Shop) beats `/account` (Client portal). Off modules
- * still own their routes. Ties go to the earlier module in `modules`.
+ * The feature a page belongs to: the longest matching prefix wins, so
+ * `/account/orders` (Shop) beats `/account` (Client portal). Off features
+ * still own their routes. Ties go to the earlier feature in `features`.
  */
-export function websiteModuleForPath<T extends Pick<WebsiteModule, "routePrefixes">>(path: string, modules: readonly T[]): T | null {
+export function websiteFeatureForPath<T extends Pick<WebsiteFeature, "routePrefixes">>(path: string, features: readonly T[]): T | null {
   let best: T | null = null;
   let bestLength = -1;
-  for (const module of modules) {
-    for (const prefix of module.routePrefixes) {
+  for (const feature of features) {
+    for (const prefix of feature.routePrefixes) {
       if (routePrefixMatches(prefix, path) && prefix.length > bestLength) {
-        best = module;
+        best = feature;
         bestLength = prefix.length;
       }
     }
   }
   return best;
 }
-
-export interface WebsiteStartingModule {
-  key: string;
-  name: string;
-  purpose: string;
-  icon: WebsiteModuleIcon;
-  routePrefixes: string[];
-  collections: string[];
-  /** Who John named as the natural owner. A hint in Settings; never set on its own. */
-  suggestedOwner?: string;
-}
-
-/**
- * Greatstone's six starting modules. Route prefixes come from the accepted
- * sitemap (GRE-2081 plan revision 10, 23 Oct 2026), not from guesses: the
- * shop lives under `/dev-tools`, and `/org` became `/account/organisation`.
- */
-export const GREATSTONE_STARTING_MODULES: readonly WebsiteStartingModule[] = [
-  {
-    key: "public-site",
-    name: "Public site",
-    purpose: "The home page and the content pages a visitor reads: consultancy, proof, insights, about, support and legal.",
-    icon: "globe",
-    routePrefixes: ["/", "/consultancy", "/proof", "/insights", "/about", "/support", "/search", "/privacy", "/cookies", "/terms", "/refunds"],
-    collections: ["public-person", "redirect"],
-  },
-  {
-    key: "shop",
-    name: "Shop and licences",
-    purpose: "Developer tools: brands, products, trials, basket and checkout, and a customer's orders, quotes and licences.",
-    icon: "shopping-bag",
-    routePrefixes: ["/dev-tools", "/account/orders", "/account/quotes", "/account/licences"],
-    collections: ["product", "category", "vendor"],
-  },
-  {
-    key: "client-portal",
-    name: "Client portal",
-    purpose: "Client sign-in, My account and the organisation hub, and each client's private portal.",
-    icon: "key-round",
-    routePrefixes: ["/account", "/portal"],
-    collections: [],
-  },
-  {
-    key: "deep-dive",
-    name: "Deep Dive portal",
-    purpose: "The paid Deep Dive: its public page, and the client's discovery, progress and blueprint in the portal.",
-    icon: "telescope",
-    routePrefixes: ["/consultancy/deep-dive", "/portal/:client/deep-dive", "/portal/:client/discovery", "/portal/:client/blueprint"],
-    collections: [],
-    suggestedOwner: "Ben",
-  },
-  {
-    key: "front-door",
-    name: "Front door and enquiries",
-    purpose: "How a visitor starts a conversation: Begin the Conversation, Executive Discovery and the newsletter.",
-    icon: "door-open",
-    routePrefixes: ["/contact", "/consultancy/executive-discovery", "/newsletter"],
-    collections: ["form"],
-  },
-  {
-    key: "intelligence-hub",
-    name: "Intelligence hub",
-    purpose: "AI Market Intelligence: the briefings and market signals Greatstone offers leaders.",
-    icon: "radar",
-    routePrefixes: ["/consultancy/ai-market-intelligence"],
-    collections: [],
-  },
-];
-
-export interface WebsiteModuleAdminScreen {
-  name: string;
-  /** The phase task that moves this screen into GSAM. */
-  issue: string;
-}
-
-/** The admin screens each starting module gets in later phases (GRE-2321). Placeholders until those tasks land. */
-export const WEBSITE_MODULE_ADMIN_SCREENS: Record<string, WebsiteModuleAdminScreen[]> = {
-  "public-site": [
-    { name: "Pages and editor", issue: "GRE-2321" },
-    { name: "Team and redirects", issue: "GRE-2321" },
-  ],
-  shop: [
-    { name: "Catalogue", issue: "GRE-2326" },
-    { name: "Vendors and pricing rules", issue: "GRE-2326" },
-    { name: "Orders, quotes and invoices", issue: "GRE-2326" },
-    { name: "Licences", issue: "GRE-2326" },
-  ],
-  "client-portal": [
-    { name: "Accounts and organisations", issue: "GRE-2323" },
-    { name: "Portal documents and acceptances", issue: "GRE-2327" },
-  ],
-  "deep-dive": [
-    { name: "Deep Dive workspace", issue: "GRE-2327" },
-    { name: "Portal publishing", issue: "GRE-2327" },
-  ],
-  "front-door": [
-    { name: "Enquiries", issue: "GRE-2324" },
-    { name: "Forms", issue: "GRE-2324" },
-  ],
-  "intelligence-hub": [{ name: "Briefings", issue: "GRE-2321" }],
-};
