@@ -41,20 +41,28 @@ export function framingFromHeaders(headers: Pick<Headers, "get">, gsamOrigins: r
 }
 
 const FRAMING_TTL_MS = 10 * 60_000;
+const FRAMING_MISS_TTL_MS = 30_000;
 const framingCache = new Map<string, { at: number; value: Framing }>();
 
-/** One HEAD request to an address set by a person with Publish rights, cached ten minutes per address and asking origin. */
-async function framingOf(url: string | null, gsamOrigins: readonly string[]): Promise<Framing> {
+/**
+ * HEAD the address set by a person with Publish rights, cached per address and asking origin.
+ * One slow answer (a cold Netlify function) used to hide the site for ten minutes, so a miss
+ * gets a second, longer try and is only remembered briefly.
+ */
+export async function framingOf(url: string | null, gsamOrigins: readonly string[]): Promise<Framing> {
   if (!url) return "unknown";
   const key = `${url} ${gsamOrigins.join(" ")}`;
   const cached = framingCache.get(key);
-  if (cached && Date.now() - cached.at < FRAMING_TTL_MS) return cached.value;
+  if (cached && Date.now() - cached.at < (cached.value === "unknown" ? FRAMING_MISS_TTL_MS : FRAMING_TTL_MS)) return cached.value;
   let value: Framing = "unknown";
-  try {
-    const res = await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(3_000) });
-    value = framingFromHeaders(res.headers, gsamOrigins);
-  } catch {
-    // Unreachable or slow: the page falls back to its own load timer.
+  for (const timeoutMs of [3_000, 8_000]) {
+    try {
+      const res = await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
+      value = framingFromHeaders(res.headers, gsamOrigins);
+      break;
+    } catch {
+      // Unreachable or slow: try once more, then the page falls back to its own load timer.
+    }
   }
   framingCache.set(key, { at: Date.now(), value });
   return value;
