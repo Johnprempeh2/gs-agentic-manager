@@ -933,7 +933,7 @@ function SaveStatePill({
   return (
     <span
       role="status"
-      className={cn("hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium sm:inline-flex", tone)}
+      className={cn("inline-flex max-w-24 shrink-0 truncate rounded-full px-2 py-0.5 text-xs font-medium sm:max-w-none", tone)}
       data-testid="website-save-state"
     >
       {text}
