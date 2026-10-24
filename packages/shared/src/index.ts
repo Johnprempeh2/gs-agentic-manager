@@ -2296,6 +2296,8 @@ export {
   type CompanySearchExtractQuery,
   type CompanySearchQuery,
   createIssueSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
+  describeUnknownIssueFields,
   createIssueInputSchema,
   createChildIssueSchema,
   createAcceptedPlanDecompositionSchema,

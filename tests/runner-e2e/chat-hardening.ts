@@ -151,6 +151,7 @@ export async function runChatHardeningFlow(context: {
     const blocker = `VENUE${marker}`, staleBlocker = `BUDGET${marker}`;
     const source = await api.post<ChatIssue>(`${companyPath}/issues`, {
       title: `Launch brief ${nonce}`, status: "blocked", projectId: project.id,
+      unblockDescriptor: { owner: "board", action: "Confirm the venue" },
       description: "The launch brief is waiting for its recorded blocker to be resolved.",
       initialPlan: "The approved launch day is Tuesday.",
     });

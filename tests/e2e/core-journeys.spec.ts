@@ -13,7 +13,9 @@ async function createCompany(request: APIRequestContext, label: string): Promise
 }
 
 async function createTask(request: APIRequestContext, company: Company, title: string, status = "todo") {
-  return json(await request.post(`/api/companies/${company.id}/issues`, { data: { title, status } })) as Promise<{
+  // A blocked task must say what blocks it (GRE-2329).
+  const unblockDescriptor = status === "blocked" ? { owner: "board", action: "Unblock the task" } : undefined;
+  return json(await request.post(`/api/companies/${company.id}/issues`, { data: { title, status, unblockDescriptor } })) as Promise<{
     id: string;
     identifier: string;
   }>;

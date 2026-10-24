@@ -202,7 +202,7 @@ Done
 MD
 ```
 
-Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `blockedByIssueIds`.
+Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `blockedByIssueIds`. Unknown fields are refused with `400` and the error names them (a misspelt `blockedByIds` is not dropped). Creating or moving a task to `blocked` with no open `blockedByIssueIds`, no `unblockDescriptor` and no pending card is refused with `400` ("Say what is blocking it").
 
 ### Status Quick Guide
 
