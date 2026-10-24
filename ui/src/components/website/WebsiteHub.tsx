@@ -301,7 +301,15 @@ export function WebsiteProgressTab({ companyId, property }: { companyId: string;
  * pages or sitemap options; until then the sitemap file attached to the
  * project's tasks (the website hub), with a way to start the section.
  */
-export function WebsiteSitemapTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
+export function WebsiteSitemapTab({
+  companyId,
+  property,
+  onEditPage,
+}: {
+  companyId: string;
+  property: WebsiteProperty;
+  onEditPage?: (pageId: string) => void;
+}) {
   const { site, isLoading: siteLoading } = useWebsiteSite(companyId, property.id);
   const { options, pages } = useSitemapData(companyId, site?.id ?? null);
   const { canManage } = useCanManageWebsite(companyId);
@@ -315,7 +323,7 @@ export function WebsiteSitemapTab({ companyId, property }: { companyId: string; 
   }
   if (site && optionList.length > 0) {
     // Board users who are not viewers can edit; the server checks website:edit on every save.
-    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit />;
+    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit onEditPage={site.editorFrameOrigin ? onEditPage : undefined} />;
   }
   // A site with pages but no option yet: start from its pages. No pages: the attached sitemap file stays.
   if (site && pageList.length > 0) return <StartSitemap companyId={companyId} site={site} pages={pageList} />;
