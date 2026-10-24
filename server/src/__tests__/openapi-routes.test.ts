@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { WEBSITE_API_ROUTES, WEBSITE_MODULE_API_ROUTES, WEBSITE_SITEMAP_API_ROUTES } from "@greatstone/shared";
+import { WEBSITE_API_ROUTES, WEBSITE_MODULE_API_ROUTES, WEBSITE_MODULES_API_ROUTES, WEBSITE_SITEMAP_API_ROUTES } from "@greatstone/shared";
 import { COMPANY_IMPORT_TRANSFERS_ROUTE_PATH } from "@greatstone/shared/company-import-transfer";
 import { errorHandler } from "../middleware/index.js";
 import { buildOpenApiSpec, openApiRoutes } from "../routes/openapi.js";
@@ -32,6 +32,7 @@ const apiPrefixes: Record<string, string> = {
   "pipeline-access.ts": "/api",
   "website.ts": "/api",
   "website-module.ts": "/api",
+  "website-modules.ts": "/api",
   "workflow-templates.ts": "/api",
   "billing-account.ts": "/api",
   "support.ts": "/api",
@@ -193,6 +194,12 @@ const routePathIdentifiers: Record<string, string> = {
   ...Object.fromEntries(
     Object.entries(WEBSITE_MODULE_API_ROUTES).map(([key, value]) => [
       `WEBSITE_MODULE_API_ROUTES.${key}`,
+      value,
+    ]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(WEBSITE_MODULES_API_ROUTES).map(([key, value]) => [
+      `WEBSITE_MODULES_API_ROUTES.${key}`,
       value,
     ]),
   ),

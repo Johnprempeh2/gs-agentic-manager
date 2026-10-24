@@ -73,6 +73,7 @@ import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
+import { websiteModulesRoutes } from "./routes/website-modules.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
 import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
@@ -769,6 +770,7 @@ export async function createApp(
       heartbeat: connectionIntentHeartbeat,
     }),
   );
+  api.use(websiteModulesRoutes(db));
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));

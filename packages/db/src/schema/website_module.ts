@@ -20,6 +20,7 @@ import { companySecrets } from "./company_secrets.js";
 import { documents } from "./documents.js";
 import { documentRevisions } from "./document_revisions.js";
 import { approvals } from "./approvals.js";
+import { projects } from "./projects.js";
 import { websiteProperties } from "./website.js";
 
 /**
@@ -242,5 +243,45 @@ export const websiteSitemapOption = pgTable(
     index("website_sitemap_option_site_idx").on(t.companyId, t.siteId),
     uniqueIndex("website_sitemap_option_site_approved_uq").on(t.siteId).where(sql`${t.status} = 'approved'`),
     check("website_sitemap_option_status_chk", sql`${t.status} in ('draft', 'approved', 'archived')`),
+  ],
+);
+
+/**
+ * Website modules (GRE-2325, plan of 24 Oct 2026): the big parts of a site,
+ * each with its slice of the sitemap (route prefixes) and collections. Owner
+ * and lead agent are optional. Switching a module off hides its screens and
+ * never deletes data; removing one archives the registry row only.
+ */
+export const websiteModule = pgTable(
+  "website_module",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id").notNull(),
+    /** Stable key per site, for example `shop`; the starting modules use theirs. */
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    purpose: text("purpose").notNull().default(""),
+    icon: text("icon").notNull().default("blocks"),
+    ownerUserId: text("owner_user_id"),
+    leadAgentId: uuid("lead_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    routePrefixes: text("route_prefixes").array().notNull().default(sql`'{}'::text[]`),
+    collections: text("collections").array().notNull().default(sql`'{}'::text[]`),
+    enabled: boolean("enabled").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("website_module_company_id_uq").on(t.companyId, t.id),
+    foreignKey({
+      columns: [t.companyId, t.siteId],
+      foreignColumns: [websiteSite.companyId, websiteSite.id],
+      name: "website_module_company_site_fk",
+    }).onDelete("cascade"),
+    index("website_module_site_idx").on(t.companyId, t.siteId),
+    uniqueIndex("website_module_site_key_uq").on(t.siteId, t.key).where(sql`${t.archivedAt} is null`),
   ],
 );

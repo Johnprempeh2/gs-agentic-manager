@@ -410,6 +410,8 @@ import {
   createWebsiteSitemapOptionSchema,
   importWebsiteSitemapOptionSchema,
   updateWebsiteSitemapOptionSchema,
+  createWebsiteModuleSchema,
+  updateWebsiteModuleSchema,
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
@@ -16348,6 +16350,66 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Preview the sitemap.xml made from the site's live, non-noindex pages (website:view); publishing it is a separate step",
   responses: websiteModuleResponses,
+});
+
+// ─── Website modules (GRE-2325) ───────────────────────────────────────────────
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/modules`,
+  tags: ["website"],
+  summary: "List the site's module registry in order: route prefixes, collections, owner, lead agent, project and on/off (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/modules`,
+  tags: ["website"],
+  summary: "Add a module to the site's registry (website:publish, people only)",
+  body: createWebsiteModuleSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/modules/starting-set`,
+  tags: ["website"],
+  summary: "Add the starting modules the site does not have yet; 200 when there is nothing to add (website:publish, people only)",
+  responses: { ...websiteModuleResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/module-cards`,
+  tags: ["website"],
+  summary: "The Modules cards of Website Home: pages, open tasks, what needs a person, the last release that touched each module and a health dot (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/modules/{moduleId}`,
+  tags: ["website"],
+  summary: "A module with the pages in its slice and its recent changes (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/modules/{moduleId}`,
+  tags: ["website"],
+  summary: "Change a module: owner, lead agent, project, routes, collections or on/off. Off hides its screens and deletes nothing (website:publish, people only)",
+  body: updateWebsiteModuleSchema,
+  responses: { ...websiteModuleResponses, 400: r.badRequest, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: `${siteParams}/modules/{moduleId}`,
+  tags: ["website"],
+  summary: "Remove a module from the registry; its pages, entries and tasks stay (website:publish, people only)",
+  responses: { 204: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 // ─── Workflow templates ───────────────────────────────────────────────────────
