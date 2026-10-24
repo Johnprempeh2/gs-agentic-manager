@@ -28,6 +28,8 @@ import type { VisibleBlockLink } from "./useTaskTreeView";
 
 /** How a "blocks" line is drawn: dashed, with an arrow on the task it holds up. */
 const BLOCK_DASH = "6 5";
+/** Loop links are dotted, so they never read as the red "leads to a block" line. */
+const LOOP_DASH = "1 5";
 
 const DONE_PILL = { width: 112, height: 32 };
 const LAYOUT = { siblingGap: 28, levelGap: 72, padding: 48 };
@@ -348,8 +350,8 @@ export function TaskTreeCanvas({
                 d={blockLinkPath(from, to)}
                 fill="none"
                 strokeLinecap="round"
-                strokeWidth={link.loop ? 2.25 : 1.75}
-                strokeDasharray={BLOCK_DASH}
+                strokeWidth={link.loop ? 2.5 : 1.75}
+                strokeDasharray={link.loop ? LOOP_DASH : BLOCK_DASH}
                 strokeOpacity={link.folded ? 0.6 : 1}
                 markerEnd={`url(#${markerId}-${link.loop ? "loop" : "block"})`}
                 className={link.loop ? "stroke-status-danger" : "stroke-status-warning"}
@@ -468,7 +470,7 @@ export function TaskTreeCanvas({
           {layer}
         </div>
 
-        {blockLinks.length > 0 ? <TaskTreeLinkLegend loops={blockLinks.some((link) => link.loop)} /> : null}
+        {blockLinks.length > 0 ? <TaskTreeLinkLegend loops={blockLinks.some((link) => link.loop)} paths={trace.pathEdges.size > 0} /> : null}
 
         {hoverItem?.kind === "task" && !hoverItem.group && hoverBox ? (
           <TaskTreeHoverCard
@@ -486,7 +488,7 @@ export function TaskTreeCanvas({
 }
 
 /** What the lines mean, in the corner of the canvas. */
-function TaskTreeLinkLegend({ loops }: { loops: boolean }) {
+function TaskTreeLinkLegend({ loops, paths }: { loops: boolean; paths: boolean }) {
   const sample = (className: string, dash?: string) => (
     <svg aria-hidden="true" width="28" height="8" className="shrink-0">
       <line x1="1" y1="4" x2="27" y2="4" strokeWidth="2" strokeLinecap="round" strokeDasharray={dash} className={className} />
@@ -499,7 +501,8 @@ function TaskTreeLinkLegend({ loops }: { loops: boolean }) {
     >
       <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Sub-task</span>
       <span className="inline-flex items-center gap-1.5">{sample("stroke-status-warning", "4 3")}Blocks</span>
-      {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger", "4 3")}Loop</span> : null}
+      {paths ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger")}Leads to a block</span> : null}
+      {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger", "0.5 4")}Loop</span> : null}
     </div>
   );
 }

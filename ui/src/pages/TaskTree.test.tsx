@@ -374,7 +374,13 @@ describe("Task tree navigation", () => {
       const outsideCard = canvas.querySelector('[data-tree-node="x1"]')!;
       expect(outsideCard.querySelector("[data-outside-project]")?.textContent).toBe("Website");
       expect(outsideCard.querySelector("[data-block-loop-mark]")).not.toBeNull();
-      expect(canvas.querySelector('[data-slot="task-tree-link-legend"]')?.textContent).toContain("Blocks");
+      const legend = canvas.querySelector('[data-slot="task-tree-link-legend"]')?.textContent;
+      expect(legend).toContain("Blocks");
+      expect(legend).toContain("Loop");
+      // A loop line is dotted, unlike a plain "blocks" line.
+      expect(canvas.querySelector('[data-block-link="x1>x2"]')?.getAttribute("stroke-dasharray")).not.toBe(
+        canvas.querySelector('[data-block-link="4>3"]')?.getAttribute("stroke-dasharray"),
+      );
     });
 
     it("shows only what is blocked and why when the reader asks", async () => {
