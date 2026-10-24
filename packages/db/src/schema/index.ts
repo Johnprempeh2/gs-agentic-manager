@@ -153,6 +153,7 @@ export { assets } from "./assets.js";
 export { assetTexts } from "./asset_texts.js";
 export { generatedImages } from "./generated_images.js";
 export { generatedVideos } from "./generated_videos.js";
+export { motionStudies } from "./motion_studies.js";
 export { studioLooks } from "./studio_looks.js";
 export { issueAttachments } from "./issue_attachments.js";
 export { documents } from "./documents.js";

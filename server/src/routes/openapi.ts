@@ -63,6 +63,11 @@ import {
   updateHiggsfieldPlanSettingsSchema,
   generatedImagesQuerySchema,
   generatedVideosQuerySchema,
+  createMotionStudySchema,
+  importMotionStudiesSchema,
+  motionStudiesQuerySchema,
+  resolveMotionStudyProposalSchema,
+  updateMotionStudySchema,
   createGeneratedVideoSchema,
   createStudioLookSchema,
   updateStudioLookSchema,
@@ -1515,6 +1520,8 @@ const BOARD_ONLY_PREFIXES = [
 const BOARD_ONLY_OPERATIONS = new Set([
   "DELETE /api/generated-images/{id}",
   "DELETE /api/generated-videos/{id}",
+  "DELETE /api/motion-studies/{id}",
+  "POST /api/motion-studies/{id}/proposal",
   "PATCH /api/companies/{companyId}/higgsfield-plan",
   "POST /api/companies/{companyId}/pause",
   "POST /api/companies/{companyId}/resume",
@@ -4816,6 +4823,87 @@ registry.registerPath({
   summary: "Stop a clip that is waiting or being made; it is marked failed with a cancelled note. 422 code generated_video_not_pending when it has already finished",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/motion-studies",
+  tags: ["assets"],
+  summary: "List the Motion section's studies (the Animation Lab), highest number first, with concept, theme, tech, textSafe, Status, Decision, any open agent proposal and previewPath",
+  request: { params: z.object({ companyId: z.string() }), query: motionStudiesQuerySchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/motion-studies",
+  tags: ["assets"],
+  summary: "Add one new motion study (a self-contained HTML page in html). It always starts as New and Undecided; number defaults to the next one. The daily study routine sends source routine. 409 when the slug is taken",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createMotionStudySchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/motion-studies/import",
+  tags: ["assets"],
+  summary: "Import the Animation Lab's existing studies, matched by slug. A study already here keeps its Status and Decision and gets the new file and fields. Studies an agent imports arrive New and Undecided",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(importMotionStudiesSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/motion-studies/{id}",
+  tags: ["assets"],
+  summary: "Get one motion study",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/motion-studies/{id}/preview",
+  tags: ["assets"],
+  summary: "The study page as HTML, sandboxed: its own inline scripts run, but it has no network, no forms and an opaque origin",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/motion-studies/{id}/poster",
+  tags: ["assets"],
+  summary: "The study's poster, one still frame shown on its card. 404 until a poster is captured",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/motion-studies/{id}",
+  tags: ["assets"],
+  summary: "Change a study's Status, Decision or notes. From a person it takes effect; from an agent, Status and Decision are saved as a proposal (with reason) for a person to accept",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateMotionStudySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/motion-studies/{id}/proposal",
+  tags: ["assets"],
+  summary: "Accept (accept true) or decline an agent's open proposal on a study (board only). 404 when there is none",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(resolveMotionStudyProposalSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/motion-studies/{id}",
+  tags: ["assets"],
+  summary: "Delete a motion study (board only). Its stored page stays as a company asset",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

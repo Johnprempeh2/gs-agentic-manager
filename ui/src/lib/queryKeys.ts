@@ -661,6 +661,9 @@ export const queryKeys = {
   studioLooks: {
     list: (companyId: string) => ["studio-looks", companyId] as const,
   },
+  motionStudies: {
+    list: (companyId: string) => ["motion-studies", companyId] as const,
+  },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
     list: (companyId: string, params: Record<string, string | undefined>) =>

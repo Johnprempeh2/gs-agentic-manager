@@ -1,0 +1,2 @@
+ALTER TABLE "motion_studies" ADD COLUMN "poster_asset_id" uuid;--> statement-breakpoint
+ALTER TABLE "motion_studies" ADD CONSTRAINT "motion_studies_poster_asset_id_assets_id_fk" FOREIGN KEY ("poster_asset_id") REFERENCES "public"."assets"("id") ON DELETE set null ON UPDATE no action;

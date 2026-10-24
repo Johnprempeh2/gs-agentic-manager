@@ -3201,6 +3201,7 @@ export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";
 export * from "./video-generation.js";
+export * from "./motion-studies.js";
 export {
   AGENT_TEAM_COLORS,
   addAgentTeamMemberSchema,

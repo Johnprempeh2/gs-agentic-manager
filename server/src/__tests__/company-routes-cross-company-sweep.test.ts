@@ -9,7 +9,7 @@ import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
   companyMemberships, companySecretProviderConfigs, companySecrets, crmSyncBindings, crmSyncConflicts,
   decisions, decisionTrainingExamples, intelligenceRecommendations, workflowTemplates,
-  environmentLeases, environments, executionWorkspaces, generatedImages, generatedVideos, studioLooks, feedbackExports, feedbackVotes, goals, heartbeatRuns,
+  environmentLeases, environments, executionWorkspaces, generatedImages, generatedVideos, motionStudies, studioLooks, feedbackExports, feedbackVotes, goals, heartbeatRuns,
   invites, issueAttachments, issues, goalWhyRequests, strategyBoardPacks,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
@@ -336,7 +336,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const inviteId = id(), decisionId = id();
     const boardPackId = id(), whyRequestId = id();
     const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
-    const teamChatId = id(), generatedImageId = id(), generatedVideoId = id(), studioLookId = id();
+    const teamChatId = id(), generatedImageId = id(), generatedVideoId = id(), studioLookId = id(), motionStudyId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -450,6 +450,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       ...A, id: generatedVideoId, prompt: "Company A clip", model: "hailuo-2.3", provider: "mock", durationSeconds: 6,
     });
     await ctx.db.insert(studioLooks).values({ ...A, id: studioLookId, name: "Company A look" });
+    await ctx.db.insert(motionStudies).values({ ...A, id: motionStudyId, number: "001", slug: "a-study", title: "Company A study" });
 
     // Team chats are issues with the team_chat origin kind.
     await ctx.db.insert(issues).values({
@@ -486,6 +487,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/generated-images/:id": generatedImageId,
       "/api/generated-videos/:id": generatedVideoId,
       "/api/studio-looks/:id": studioLookId,
+      "/api/motion-studies/:id": motionStudyId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
