@@ -1,5 +1,6 @@
 import type { DraftDiffSegment } from "../draft-diff.js";
 import type { AskType } from "../ask-types.js";
+import type { RequestStepsRisk } from "../constants.js";
 import type { ExecutionProjection, ExecutionBlocker } from "./execution-projection.js";
 import type {
   IssueCommentAuthorType,
@@ -1581,6 +1582,62 @@ export interface RequestDraftReviewResult extends RequestConfirmationResult {
   draft?: RequestDraftReviewResultDraft | null;
 }
 
+/**
+ * A step-by-step card (request_steps): an agent guides a person through
+ * steps only a person can do (a dashboard, a key, a payment setting). Done
+ * resolves it through accept; "I can't do this" through reject with a reason.
+ */
+export interface RequestStepsStep {
+  /** Markdown: bold menu paths with arrows, `code`. */
+  text: string;
+  /** Non-secret values shown as click-to-copy chips. */
+  copy?: string[];
+  /** https only. */
+  link?: { label: string; url: string } | null;
+  /** What the person should see once the step worked. */
+  expect?: string | null;
+}
+
+export interface RequestStepsSecretField {
+  /** Saved under this name in the company secrets. */
+  secretName: string;
+  description: string;
+  /** Warn (never block) when the value does not start with this. */
+  expectedPrefix?: string | null;
+  linkToAgentIds?: string[];
+  /** Linked as `access.<adapterEnvKey>` on each agent in linkToAgentIds. */
+  adapterEnvKey?: string | null;
+}
+
+export interface RequestStepsPayload {
+  version: 1;
+  title: string;
+  why: string;
+  minutes: number;
+  risk: RequestStepsRisk;
+  steps: RequestStepsStep[];
+  secret?: RequestStepsSecretField | null;
+  afterDone?: string | null;
+  supersedeOnUserComment?: boolean;
+  /** Server-owned: the ticks a person made so far, by step index. */
+  progress?: { tickedSteps: number[] } | null;
+  /** Server-owned at create: whether the addressee may save the secret, and who can. */
+  secretAccess?: { addresseeCanSave: boolean; whoCan: string[] } | null;
+}
+
+/** The only secret facts a steps result ever holds; never the value. */
+export interface RequestStepsResultSecret {
+  secretId: string;
+  secretName: string;
+  linkedAgentIds: string[];
+  /** Set when linking was asked for but the person may not configure agents. */
+  linkingNeedsOwner?: boolean;
+}
+
+export interface RequestStepsResult extends RequestConfirmationResult {
+  secret?: RequestStepsResultSecret | null;
+}
+
 export interface RequestConfirmationResult {
   version: 1;
   outcome:
@@ -1716,6 +1773,12 @@ export interface RequestDraftReviewInteraction extends IssueThreadInteractionBas
   result?: RequestDraftReviewResult | null;
 }
 
+export interface RequestStepsInteraction extends IssueThreadInteractionBase {
+  kind: "request_steps";
+  payload: RequestStepsPayload;
+  result?: RequestStepsResult | null;
+}
+
 export interface ConnectionIntentInteraction extends IssueThreadInteractionBase {
   kind: "connection_intent";
   payload: ConnectionIntentPayload;
@@ -1736,7 +1799,8 @@ export type IssueThreadInteraction =
   | RequestCheckboxConfirmationInteraction
   | RequestItemVerdictsInteraction
   | ConnectionIntentInteraction
-  | RequestDraftReviewInteraction;
+  | RequestDraftReviewInteraction
+  | RequestStepsInteraction;
 
 export type IssueThreadInteractionPayload =
   | AskAgentPayload
@@ -1746,7 +1810,8 @@ export type IssueThreadInteractionPayload =
   | RequestCheckboxConfirmationPayload
   | RequestItemVerdictsPayload
   | ConnectionIntentPayload
-  | RequestDraftReviewPayload;
+  | RequestDraftReviewPayload
+  | RequestStepsPayload;
 
 export type IssueThreadInteractionResult =
   | AskAgentResult
@@ -1756,7 +1821,8 @@ export type IssueThreadInteractionResult =
   | RequestCheckboxConfirmationResult
   | RequestItemVerdictsResult
   | ConnectionIntentResult
-  | RequestDraftReviewResult;
+  | RequestDraftReviewResult
+  | RequestStepsResult;
 
 export interface IssueAttachment {
   id: string;

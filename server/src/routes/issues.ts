@@ -1,4 +1,5 @@
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
+import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
@@ -71,6 +72,7 @@ import {
 import {
   addIssueCommentSchema,
   acceptIssueThreadInteractionSchema,
+  stepsProgressSchema,
   attachmentArtifactWorkProductMetadataSchema,
   cancelIssueThreadInteractionSchema,
   skipIssueThreadInteractionSchema,
@@ -2855,12 +2857,19 @@ async function queueResolvedInteractionContinuationWakeup(input: {
       ? readNonEmptyString(readObject(input.interaction.result).reason)
       : null;
   const draftReviewMessage = buildDraftReviewAgentMessage(input.interaction);
+  const stepsMessage = buildStepsAgentMessage(input.interaction);
   const rejectionAgentMessage = draftReviewMessage
     ? {
         text: draftReviewMessage,
         source: "draft_review",
         sessionId: input.interaction.id,
       }
+    : stepsMessage
+      ? {
+          text: stepsMessage,
+          source: "request_steps",
+          sessionId: input.interaction.id,
+        }
     : genericRejectionReason
       ? {
           text: genericRejectionReason,
@@ -6000,9 +6009,10 @@ export function issueRoutes(
         interaction,
         additionalRestriction: resolverPolicyRestriction,
         governedAction:
-          interaction.kind === "request_confirmation" &&
-          (payload?.toolAction !== undefined ||
-            payload?.secretProposal !== undefined),
+          interaction.kind === "request_steps" ||
+          (interaction.kind === "request_confirmation" &&
+            (payload?.toolAction !== undefined ||
+              payload?.secretProposal !== undefined)),
       });
     if (!decision.allowed) {
       return denyIssueThreadInteractionResolution(res, {
@@ -17981,15 +17991,55 @@ export function issueRoutes(
         throw unprocessable(
           "Remembered permission is only supported for tool reviews",
         );
-      const { interaction, createdIssues, continuationIssue } =
-        await interactionSvc.acceptInteraction(issue, interactionId, req.body, {
-          agentId: actor.agentId,
-          runId: actor.runId,
-          userId: actor.actorType === "user" ? actor.actorId : null,
-          resolverPolicyRestriction:
-            resolutionAuthorization.resolverPolicyRestriction,
-          suggestedTaskEffectsAuthorized,
-        });
+      // The typed secret never travels past this point: it is taken off the
+      // body, saved by the steps service and only its id and name come back.
+      const { secretValue, ...acceptBody } = req.body as typeof req.body & {
+        secretValue?: string;
+      };
+      if (
+        secretValue !== undefined &&
+        (current.kind !== "request_steps" || !current.payload.secret)
+      ) {
+        throw unprocessable("secretValue is only accepted on step-by-step cards that ask for a secret");
+      }
+      let acceptOptions: Parameters<typeof interactionSvc.acceptInteraction>[4];
+      if (current.kind === "request_steps") {
+        if (req.actor.type !== "board") {
+          throw forbidden("Only a person can finish a step-by-step card");
+        }
+        const stepsSecret = current.payload.secret ?? null;
+        if (stepsSecret) {
+          if (!secretValue?.trim()) {
+            throw unprocessable(`Enter ${stepsSecret.secretName} to finish these steps`);
+          }
+          await assertCanSaveStepsSecret(db, req.actor, issue.companyId);
+          acceptOptions = {
+            acceptResultExtrasInTransaction: async (tx, locked) => ({
+              secret: await saveStepsSecret({
+                db,
+                tx: tx as unknown as Db,
+                actor: req.actor,
+                companyId: issue.companyId,
+                interactionId: locked.id,
+                issueId: issue.id,
+                secret: stepsSecret,
+                value: secretValue,
+              }),
+            }),
+          };
+        }
+      }
+      const acceptActor = {
+        agentId: actor.agentId,
+        runId: actor.runId,
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        resolverPolicyRestriction:
+          resolutionAuthorization.resolverPolicyRestriction,
+        suggestedTaskEffectsAuthorized,
+      };
+      const { interaction, createdIssues, continuationIssue } = acceptOptions
+        ? await interactionSvc.acceptInteraction(issue, interactionId, acceptBody, acceptActor, acceptOptions)
+        : await interactionSvc.acceptInteraction(issue, interactionId, acceptBody, acceptActor);
       await markIssueReadByAnsweringUser(req, issue);
       const toolAction =
         interaction.payload && typeof interaction.payload === "object"
@@ -18264,6 +18314,34 @@ export function issueRoutes(
   );
 
   router.post(
+    "/issues/:id/interactions/:interactionId/steps-progress",
+    validate(stepsProgressSchema),
+    async (req, res) => {
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(req.params.id as string),
+        "Issue not found",
+      );
+      if (!issue) return;
+      const authorizedResolution =
+        await getIssueThreadInteractionResolutionAuthorization(
+          req,
+          res,
+          issue,
+          req.params.interactionId as string,
+        );
+      if (!authorizedResolution) return;
+      const updated = await authorizedResolution.interactionSvc.saveStepsProgress(
+        issue,
+        authorizedResolution.current.id,
+        req.body.tickedSteps,
+      );
+      res.json(updated);
+    },
+  );
+
+  router.post(
     "/issues/:id/interactions/:interactionId/reject",
     validate(rejectIssueThreadInteractionSchema),
     async (req, res) => {
@@ -18356,7 +18434,8 @@ export function issueRoutes(
             interaction.kind === "suggest_tasks"
               ? (interaction.result?.rejectionReason ?? null)
               : interaction.kind === "request_confirmation" ||
-                  interaction.kind === "request_checkbox_confirmation"
+                  interaction.kind === "request_checkbox_confirmation" ||
+                  interaction.kind === "request_steps"
                 ? (interaction.result?.reason ?? null)
                 : null,
         },

@@ -61,12 +61,14 @@ export function projectHumanInteractionResponse(row: {
       const answer = object(value);
       return { questionId: answer.questionId, optionIds: answer.optionIds, otherText: answer.otherText };
     }) };
-  } else if (["request_confirmation", "request_checkbox_confirmation", "request_draft_review"].includes(row.kind)
+  } else if (["request_confirmation", "request_checkbox_confirmation", "request_draft_review", "request_steps"].includes(row.kind)
     && ["accepted", "rejected"].includes(row.status) && result.outcome === row.status) {
     const draft = object(result.draft);
     response = { outcome: result.outcome, reason: result.reason,
       ...(Array.isArray(result.selectedOptionIds) ? { selectedOptionIds: result.selectedOptionIds } : {}),
-      ...(typeof draft.finalBody === "string" ? { finalBody: draft.finalBody, edited: draft.edited === true } : {}) };
+      ...(typeof draft.finalBody === "string" ? { finalBody: draft.finalBody, edited: draft.edited === true } : {}),
+      // request_steps: ids only, the value is never on the result.
+      ...(typeof object(result.secret).secretId === "string" ? { secret: result.secret } : {}) };
   } else return null;
   return { id: row.id, kind: row.kind, status: row.status, resolvedByUserId: row.resolvedByUserId,
     resolvedAt: row.resolvedAt.toISOString(), result: response };

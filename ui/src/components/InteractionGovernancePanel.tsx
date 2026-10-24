@@ -25,6 +25,7 @@ const INTERACTION_KIND_LABELS: Record<IssueThreadInteractionKind, string> = {
   connection_intent: "Connection requests",
   ask_agent: "Questions for other agents",
   request_draft_review: "Draft reviews",
+  request_steps: "Step-by-step cards",
 };
 
 /**
@@ -272,7 +273,7 @@ export function InteractionGovernancePanel({
           <div className="hidden text-xs font-medium text-muted-foreground uppercase tracking-wide sm:block">
             Cap
           </div>
-          {ISSUE_THREAD_INTERACTION_KINDS.map((kind) => {
+          {ISSUE_THREAD_INTERACTION_KINDS.filter((kind) => kind !== "request_steps").map((kind) => {
             const entry = governance[kind] ?? {};
             const kindLabel = INTERACTION_KIND_LABELS[kind];
             return (

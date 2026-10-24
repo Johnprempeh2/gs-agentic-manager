@@ -30,6 +30,9 @@ export type {
   RequestDraftReviewInteraction,
   RequestDraftReviewPayload,
   RequestDraftReviewResult,
+  RequestStepsInteraction,
+  RequestStepsPayload,
+  RequestStepsResult,
   RequestItemVerdictsInteraction,
   RequestItemVerdictsItem,
   RequestItemVerdictsPayload,
@@ -79,6 +82,7 @@ export function interactionReplacesComposerSkip(
   return interaction.kind === "request_confirmation"
     || interaction.kind === "request_checkbox_confirmation"
     || interaction.kind === "request_draft_review"
+    || interaction.kind === "request_steps"
     || interaction.kind === "suggest_tasks";
 }
 
@@ -99,6 +103,7 @@ export function isIssueThreadInteraction(
       || candidate.kind === "connection_intent"
       || candidate.kind === "request_draft_review"
       || candidate.kind === "ask_agent"
+      || candidate.kind === "request_steps"
     );
 }
 
@@ -283,6 +288,14 @@ export function buildIssueThreadInteractionSummary(
     if (interaction.status === "rejected") return `Asked for a redraft: ${purpose}`;
     if (interaction.status === "expired") return `Draft expired: ${purpose}`;
     return `Draft to review: ${purpose}`;
+  }
+
+  if (interaction.kind === "request_steps") {
+    const title = interaction.payload.title;
+    if (interaction.status === "accepted") return `Done: ${title}`;
+    if (interaction.status === "rejected") return `Could not do: ${title}`;
+    if (interaction.status === "expired") return `Steps closed: ${title}`;
+    return `Steps to do: ${title}`;
   }
 
   if (interaction.kind === "connection_intent") {
