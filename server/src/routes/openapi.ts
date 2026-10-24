@@ -15849,6 +15849,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/home`,
+  tags: ["website"],
+  summary: "The Website Home at a glance (website:view): page counts by status, entry counts by collection (media excluded), the approved sitemap option and how many options await review, the latest and live releases with who published them, the open website_publish proposal, and the last 8 website events with actor names",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/pages`,
   tags: ["website"],
   summary: "List a site's pages with their sitemap fields (parent, menu, menu order, status planned to published); includeArchived=true adds archived pages (website:view)",

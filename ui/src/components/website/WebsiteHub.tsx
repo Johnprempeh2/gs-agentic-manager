@@ -12,11 +12,11 @@ import {
   Smartphone,
   Tablet,
 } from "lucide-react";
-import type { Agent, DecisionCard, Project, ProjectTree, WebsiteProperty } from "@greatstone/shared";
+import type { Agent, DecisionCard, ProjectTree, WebsiteProperty } from "@greatstone/shared";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
 import { projectsApi } from "../../api/projects";
-import { websiteApi, type WebsiteHubPreviewLink, type WebsiteHubSitemap, type WebsiteHubWorkItem } from "../../api/website";
+import { websiteApi, type WebsiteHubPreviewLink, type WebsiteHubSitemap } from "../../api/website";
 import { useDialogActions } from "../../context/DialogContext";
 import { useDecisionsFeed } from "../../hooks/useDecisionsFeed";
 import { queryKeys } from "../../lib/queryKeys";
@@ -30,36 +30,36 @@ import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 import { LivePreviewCard, pickLivePreviewService } from "../LivePreviewCard";
 import { ScaledFrame } from "../AttachmentPreviewPanel";
-import { StatusIcon } from "../StatusIcon";
-import { ProgressRing } from "../task-tree/ProgressRing";
-import { TaskTreeProgress } from "../task-tree/TaskTreeHeader";
 import { ProjectTreeView } from "../../pages/ProjectTree";
 import { WebsiteSiteConnection, useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteReleases } from "./WebsiteReleases";
 import { useCanManageWebsite } from "./WebsiteSetup";
 import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapSection";
 
-// The website hub (23 Oct 2026): the Website page's Overview, Progress,
+// The website hub (23 Oct 2026): the Website page's Releases, Progress,
 // Sitemap and Preview tabs. Everything is read from what GSAM already keeps:
 // the linked project's tree, the decisions feed, the project's tasks' work
 // products, attachments and comments, and the project workspace's preview.
 
-export type WebsiteTab = "overview" | "progress" | "sitemap" | "editor" | "collections" | "preview" | "traffic";
+export type WebsiteTab = "home" | "preview" | "progress" | "sitemap" | "editor" | "collections" | "releases" | "traffic";
 
-/** The site itself leads (John, 24 Oct 2026): Preview first, and the hub opens on it. */
-export const WEBSITE_DEFAULT_TAB: WebsiteTab = "preview";
+/** The admin's at-a-glance Home leads (John, 24 Oct 2026), with the live site as its hero. */
+export const WEBSITE_DEFAULT_TAB: WebsiteTab = "home";
 
 export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
+  { value: "home", label: "Home" },
   { value: "preview", label: "Preview" },
-  { value: "overview", label: "Overview" },
   { value: "progress", label: "Progress" },
   { value: "sitemap", label: "Sitemap" },
   { value: "editor", label: "Pages" },
   { value: "collections", label: "Collections" },
+  { value: "releases", label: "Releases" },
   { value: "traffic", label: "Traffic" },
 ];
 
+/** The tab named in `?tab=`. The old Overview became Home, so `?tab=overview` opens Home. */
 export function websiteTabFrom(value: string | null): WebsiteTab {
+  if (value === "overview") return "home";
   return WEBSITE_TABS.some((tab) => tab.value === value) ? (value as WebsiteTab) : WEBSITE_DEFAULT_TAB;
 }
 
@@ -92,7 +92,7 @@ export function websiteDecisionCards(cards: DecisionCard[], projectId: string, p
   });
 }
 
-const WORK_TYPE_LABELS: Record<string, string> = {
+export const WORK_TYPE_LABELS: Record<string, string> = {
   deliverable: "Deliverable",
   preview_url: "Preview",
   runtime_service: "Preview service",
@@ -118,11 +118,11 @@ export function sitemapApprovalState(sitemap: WebsiteHubSitemap, hasApprovalCard
   return "none";
 }
 
-function taskHref(task: { id: string; identifier: string | null }) {
+export function taskHref(task: { id: string; identifier: string | null }) {
   return `/issues/${task.identifier ?? task.id}`;
 }
 
-function When({ at }: { at: string }) {
+export function When({ at }: { at: string }) {
   return (
     <time dateTime={at} title={formatDateTime(at)}>
       {relativeTime(at)}
@@ -146,7 +146,6 @@ function Panel({ title, action, children, className }: { title: string; action?:
   );
 }
 
-const textLink = "font-medium text-foreground underline underline-offset-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /* ---- Linking the website to its project ---- */
 
@@ -211,7 +210,7 @@ export function WebsiteProjectLink({
   );
 }
 
-function LinkProjectFirst({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
+export function LinkProjectFirst({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   return (
     <Panel title="Link the website project">
       <p className="text-sm text-muted-foreground">
@@ -224,7 +223,7 @@ function LinkProjectFirst({ companyId, property }: { companyId: string; property
 
 /* ---- Shared data ---- */
 
-function useHub(companyId: string, propertyId: string, enabled: boolean) {
+export function useHub(companyId: string, propertyId: string, enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.website.hub(companyId, propertyId),
     queryFn: () => websiteApi.hub(companyId, propertyId),
@@ -234,7 +233,7 @@ function useHub(companyId: string, propertyId: string, enabled: boolean) {
 }
 
 /** Everything a decision card needs besides the card. */
-function useDecisionCardContext(companyId: string) {
+export function useDecisionCardContext(companyId: string) {
   const agentsQuery = useQuery({
     queryKey: queryKeys.agents.list(companyId),
     queryFn: () => agentsApi.list(companyId),
@@ -249,7 +248,7 @@ function useDecisionCardContext(companyId: string) {
   return { agentMap, currentUserId: session?.user?.id ?? session?.session?.userId ?? null };
 }
 
-function useWebsiteCards(companyId: string, projectId: string, tree: ProjectTree | undefined) {
+export function useWebsiteCards(companyId: string, projectId: string, tree: ProjectTree | undefined) {
   const feed = useDecisionsFeed(companyId);
   const cards = useMemo(() => {
     if (!feed.data) return [];
@@ -259,158 +258,13 @@ function useWebsiteCards(companyId: string, projectId: string, tree: ProjectTree
   return { cards, assignableAgents: feed.data?.assignableAgents ?? [], isLoading: feed.isLoading, error: feed.error };
 }
 
-/* ---- Overview ---- */
+/* ---- Releases ---- */
 
-function LiveSitePanel({ property, project }: { property: WebsiteProperty; project: Project | undefined }) {
-  const url = liveSiteUrl(property.siteUrl);
-  const preview = pickLivePreviewService(project?.workspaces.flatMap((workspace) => workspace.runtimeServices ?? []));
-  const google = property.connectionStatus === "connected"
-    ? { label: "Google connected", className: "bg-status-success-soft text-status-success-foreground" }
-    : property.connectionStatus === "needs_reconnect"
-      ? { label: "Google needs reconnecting", className: "bg-status-warning-soft text-status-warning-foreground" }
-      : { label: "Google not connected", className: "bg-muted text-muted-foreground" };
-  return (
-    <Panel title="Live site">
-      {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className={cn(textLink, "inline-flex max-w-full items-center gap-1.5 break-all font-mono text-sm")}>
-          {url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-          <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="sr-only">(opens in a new tab)</span>
-        </a>
-      ) : (
-        <p className="break-all font-mono text-sm">{property.siteUrl}</p>
-      )}
-      <ul className="space-y-1.5 text-xs text-muted-foreground">
-        <li className="flex flex-wrap items-center gap-2">
-          <Pill className={google.className}>{google.label}</Pill>
-          <span>
-            Last traffic pull:{" "}
-            <span className="text-foreground">{property.lastPullAt ? <When at={property.lastPullAt} /> : "never"}</span>
-          </span>
-        </li>
-        <li className="flex flex-wrap items-center gap-2">
-          {preview ? (
-            <Pill className="bg-status-success-soft text-status-success-foreground">Preview running</Pill>
-          ) : (
-            <Pill className="bg-muted text-muted-foreground">No preview running</Pill>
-          )}
-          {project ? <span>Project status: <span className="text-foreground">{project.status.replace(/_/g, " ")}</span></span> : null}
-        </li>
-      </ul>
-    </Panel>
-  );
-}
-
-function ProgressPanel({ tree, onOpenTree }: { tree: ProjectTree; onOpenTree: () => void }) {
-  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
-  const keyTasks = tree.keyTaskIds.map((id) => byId.get(id)).filter((node) => node !== undefined);
-  return (
-    <Panel
-      title="Progress"
-      action={<Button type="button" variant="outline" size="sm" onClick={onOpenTree}>Open the tree</Button>}
-    >
-      <TaskTreeProgress counts={tree.counts} />
-      {keyTasks.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No key tasks yet. The project lead marks the tasks that drive the website.</p>
-      ) : (
-        <ul className="divide-y divide-border/60" aria-label="Key tasks">
-          {keyTasks.map((node) => {
-            const progress = tree.keyTaskProgress[node.id] ?? { done: 0, total: 0 };
-            return (
-              <li key={node.id} className="flex min-w-0 items-center gap-2 py-2">
-                <StatusIcon status={node.status} size="sm" />
-                <Link to={taskHref(node)} className="min-w-0 flex-1 truncate rounded-sm text-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {node.identifier ? <span className="font-mono text-xs text-muted-foreground">{node.identifier} </span> : null}
-                  {node.title}
-                </Link>
-                <ProgressRing done={progress.done} total={progress.total} />
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
-function workItemIcon(type: string) {
+export function workItemIcon(type: string) {
   if (type === "screenshot") return ImageIcon;
   if (type === "pull_request" || type === "branch" || type === "commit") return GitPullRequest;
   if (type === "preview_url" || type === "runtime_service") return MonitorPlay;
   return FileText;
-}
-
-function RecentWorkPanel({ items }: { items: WebsiteHubWorkItem[] }) {
-  return (
-    <Panel title="Latest work">
-      {items.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nothing made yet. Deliverables, previews and screenshots from the website tasks show here.</p>
-      ) : (
-        <ul className="divide-y divide-border/60" aria-label="Latest website work">
-          {items.map((item) => {
-            const Icon = workItemIcon(item.type);
-            const href = item.url ?? item.contentPath;
-            const isImage = item.contentPath && item.contentType?.startsWith("image/");
-            return (
-              <li key={item.id} className="flex min-w-0 items-center gap-3 py-2">
-                {isImage ? (
-                  <img src={item.contentPath!} alt="" className="size-10 shrink-0 rounded-md border border-border object-cover" loading="lazy" />
-                ) : (
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-                    <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  {href ? (
-                    <a href={href} target="_blank" rel="noreferrer" className="block truncate rounded-sm text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {item.title}
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                  ) : (
-                    <p className="truncate text-sm font-medium">{item.title}</p>
-                  )}
-                  <p className="truncate text-xs text-muted-foreground">
-                    {WORK_TYPE_LABELS[item.type] ?? item.type} ·{" "}
-                    <Link to={taskHref(item.task)} className="hover:underline">{item.task.identifier ?? item.task.title}</Link> · <When at={item.createdAt} />
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
-function NeedsYouPanel({ companyId, projectId, tree }: { companyId: string; projectId: string; tree: ProjectTree | undefined }) {
-  const { cards, assignableAgents, isLoading, error } = useWebsiteCards(companyId, projectId, tree);
-  const { agentMap, currentUserId } = useDecisionCardContext(companyId);
-  return (
-    <section className="space-y-4" aria-labelledby="website-needs-you">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="website-needs-you" className="text-lg font-semibold">What needs you</h2>
-        <Link to="/decisions" className={cn(textLink, "text-sm")}>All decisions</Link>
-      </div>
-      {error ? <ErrorState error={error} compact /> : null}
-      {isLoading ? <p className="text-sm text-muted-foreground">Loading decisions</p> : null}
-      {!isLoading && !error && cards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing on the website needs you right now.</p>
-      ) : null}
-      <div className="space-y-4">
-        {cards.map((card) => (
-          <DecisionFeedCard
-            key={card.id}
-            card={card}
-            companyId={companyId}
-            assignableAgents={assignableAgents}
-            agentMap={agentMap}
-            currentUserId={currentUserId}
-          />
-        ))}
-      </div>
-    </section>
-  );
 }
 
 /** Releases and Publish, once the site is connected (GRE-2133). */
@@ -419,58 +273,12 @@ function SiteReleases({ companyId, property }: { companyId: string; property: We
   return site ? <WebsiteReleases companyId={companyId} site={site} /> : null;
 }
 
-export function WebsiteOverviewTab({
-  companyId,
-  property,
-  onOpenTab,
-}: {
-  companyId: string;
-  property: WebsiteProperty;
-  onOpenTab: (tab: WebsiteTab) => void;
-}) {
-  const projectId = property.projectId;
-  const projectQuery = useQuery({
-    queryKey: [...queryKeys.projects.detail(projectId ?? ""), companyId],
-    queryFn: () => projectsApi.get(projectId!, companyId),
-    enabled: !!projectId,
-  });
-  const treeQuery = useQuery({
-    queryKey: queryKeys.projectTree(projectId ?? "", false),
-    queryFn: () => projectsApi.getTree(projectId!, false),
-    enabled: !!projectId,
-  });
-  const hubQuery = useHub(companyId, property.id, !!projectId);
-
-  if (!projectId) {
-    return (
-      <div className="space-y-6">
-        <LiveSitePanel property={property} project={undefined} />
-        <WebsiteSiteConnection companyId={companyId} property={property} />
-        <SiteReleases companyId={companyId} property={property} />
-        <LinkProjectFirst companyId={companyId} property={property} />
-      </div>
-    );
-  }
+/** The Releases tab: the site connection, then Releases and Publish (moved here from the old Overview). */
+export function WebsiteReleasesTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <LiveSitePanel property={property} project={projectQuery.data} />
-        {treeQuery.data ? (
-          <ProgressPanel tree={treeQuery.data} onOpenTree={() => onOpenTab("progress")} />
-        ) : treeQuery.error ? (
-          <ErrorState error={treeQuery.error} compact onRetry={() => void treeQuery.refetch()} />
-        ) : (
-          <Panel title="Progress"><p className="text-xs text-muted-foreground">Loading progress</p></Panel>
-        )}
-      </div>
+    <div className="space-y-6" data-testid="website-releases-tab">
       <WebsiteSiteConnection companyId={companyId} property={property} />
       <SiteReleases companyId={companyId} property={property} />
-      <NeedsYouPanel companyId={companyId} projectId={projectId} tree={treeQuery.data} />
-      {hubQuery.error ? (
-        <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
-      ) : (
-        <RecentWorkPanel items={hubQuery.data?.recentWork ?? []} />
-      )}
     </div>
   );
 }
@@ -666,7 +474,13 @@ const PREVIEW_SLOW_MS = 8_000;
  * and, if it has not loaded after a while (most often a site that refuses
  * to be framed), a clear message with "Open in new tab".
  */
-function PreviewStage({ url, device, width }: { url: string; device: Device; width: number }) {
+export function PreviewStage({ url, device, width, className = "h-(--sz-80vh) min-h-96 rounded-xl border border-border" }: {
+  url: string;
+  device: Device;
+  width: number;
+  /** The stage's size and frame; the Home hero sets its own. */
+  className?: string;
+}) {
   const [state, setState] = useState<"loading" | "loaded" | "slow">("loading");
   useEffect(() => {
     setState("loading");
@@ -675,7 +489,7 @@ function PreviewStage({ url, device, width }: { url: string; device: Device; wid
   }, [url]);
   const host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
   return (
-    <div className="relative h-(--sz-80vh) min-h-96 overflow-hidden rounded-xl border border-border bg-muted" data-preview-state={state}>
+    <div className={cn("relative overflow-hidden bg-muted", className)} data-preview-state={state}>
       <ScaledFrame
         key={url}
         src={url}

@@ -21,6 +21,7 @@ import {
   type CreateWebsiteChangeRequest,
   type WebsiteChangeRequestResult,
   type WebsiteRelease,
+  type WebsiteHomeSummary,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
   type WebsiteTokenSecretOption,
@@ -157,6 +158,8 @@ export const websiteModuleApi = {
     if (!res.ok) throw new ApiError(plainHttpErrorMessage(res.status), res.status, null);
     return res.text();
   },
+  /** The Website Home at a glance: counts, releases and the last 8 events in one read. */
+  home: (companyId: string, siteId: string) => api.get<WebsiteHomeSummary>(`${sitePath(companyId, siteId)}/home`),
   /** Releases of a site, newest first (GRE-2108). */
   releases: (companyId: string, siteId: string) => api.get<WebsiteRelease[]>(`${sitePath(companyId, siteId)}/releases`),
   release: (companyId: string, siteId: string, releaseId: string) =>

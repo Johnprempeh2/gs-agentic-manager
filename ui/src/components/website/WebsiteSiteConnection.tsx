@@ -246,7 +246,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Overview panel: the connected site, or a "Connect a site" form for people with Publish rights. */
+/** Releases tab panel: the connected site, or a "Connect a site" form for people with Publish rights. */
 export function WebsiteSiteConnection({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const { site, isLoading, error } = useWebsiteSite(companyId, property.id);
   const { canManage } = useCanManageWebsite(companyId);
