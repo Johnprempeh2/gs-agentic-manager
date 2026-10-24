@@ -70,7 +70,9 @@ echo "Database backup from before this release: /backups/before.sql.gz"
 `,
 };
 
-async function sandbox(t, { running = () => 0 } = {}) {
+// liveRuns(fake): the queued and running runs live reports on each poll (by default `running()` runs with no task).
+// The worker reads them from heartbeat-runs, where issueId sits in contextSnapshot.
+async function sandbox(t, { running = () => 0, liveRuns = null, issues = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "gs-release-queue-"));
   const origin = join(root, "origin.git");
   const dev = join(root, "dev");
@@ -106,9 +108,16 @@ async function sandbox(t, { running = () => 0 } = {}) {
     return git(other, "rev-parse", "HEAD");
   };
 
-  const fake = { draining: false, events: [], running };
-  const server = createServer((req, res) => {
-    const send = (v) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify(v)); };
+  // `calls` records what the worker asked of live, with whether runs were held at the time.
+  const fake = { draining: false, events: [], running, issues, cancelled: new Set(), calls: [] };
+  const defaultRuns = () => Array.from({ length: fake.running() }, (_, i) => ({ id: `r${i}`, status: "running", agentId: "a1", agentName: "Ann", issueId: null }));
+  const server = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : null;
+    const send = (v, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(v)); };
+    const record = (what, extra = {}) => fake.calls.push({ what, draining: fake.draining, ...extra });
+    let m;
     if (req.url === "/api/health") return send({ status: "ok" });
     if (req.url === "/api/instance/task-drain") {
       if (req.method === "POST") { fake.draining = true; fake.events.push("drain"); }
@@ -116,8 +125,29 @@ async function sandbox(t, { running = () => 0 } = {}) {
       return send({ draining: fake.draining });
     }
     if (req.url === "/api/companies") return send([{ id: "c1" }]);
+    // The worker asks for running and queued runs; active_runs in greatstone-common.sh (the
+    // worker before GRE-2274) asks for all. A cancelled run is gone, unless it is `slow` to stop.
     if (req.url.startsWith("/api/companies/c1/heartbeat-runs")) {
-      return send(Array.from({ length: fake.running() }, (_, i) => ({ id: `r${i}`, status: "running" })));
+      const statuses = new URL(req.url, "http://x").searchParams.get("status")?.split(",") ?? null;
+      return send((liveRuns ? liveRuns(fake) : defaultRuns())
+        .filter((r) => (r.slow || !fake.cancelled.has(r.id)) && (!statuses || statuses.includes(r.status)))
+        .map(({ issueId, ...r }) => ({ ...r, contextSnapshot: issueId ? { issueId } : null })));
+    }
+    if ((m = /^\/api\/heartbeat-runs\/([^/]+)\/cancel$/.exec(req.url)) && req.method === "POST") {
+      fake.cancelled.add(m[1]);
+      record("cancel", { runId: m[1] });
+      return send({ id: m[1], status: "cancelled" });
+    }
+    if ((m = /^\/api\/issues\/([^/]+)$/.exec(req.url)) && req.method === "GET") {
+      return fake.issues[m[1]] ? send({ id: m[1], ...fake.issues[m[1]] }) : send({ error: "not found" }, 404);
+    }
+    if ((m = /^\/api\/issues\/([^/]+)\/comments$/.exec(req.url)) && req.method === "POST") {
+      record("comment", { issueId: m[1], body });
+      return send({ id: `comment-${fake.calls.length}` }, 201);
+    }
+    if ((m = /^\/api\/agents\/([^/]+)\/wakeup$/.exec(req.url)) && req.method === "POST") {
+      record("wake", { agentId: m[1], body });
+      return send({ id: `run-${fake.calls.length}` });
     }
     res.statusCode = 404;
     res.end("{}");
@@ -349,23 +379,104 @@ test("drain: new runs are held while running runs finish, the release runs drain
   assert.match(item.reason, /the live app did not report it/);
 });
 
-test("drain: runs still running at the cap are never stopped; it resumes runs, waits, and gives up without releasing", async (t) => {
-  const box = await sandbox(t, { running: () => 1 });
+// GRE-2274 (24 Oct): the drain lifted between tries, new runs started in the
+// gap, and four releases stalled. Now runs stay held for the whole window; a run
+// that does not finish is asked to stop, then cancelled; and every stopped or
+// held task is woken again with a comment once runs are back on.
+test("drain: with runs that keep arriving and runs that never finish, it still releases, and wakes every paused task", async (t) => {
+  let arrivals = 0;
+  const arrived = [];
+  const box = await sandbox(t, {
+    issues: {
+      i1: { identifier: "GRE-1", status: "in_progress", assigneeAgentId: "keystone" },
+      i2: { identifier: "GRE-2", status: "in_review", assigneeAgentId: "ridge" },
+      i3: { identifier: "GRE-3", status: "todo", assigneeAgentId: "summit" },
+      i4: { identifier: "GRE-4", status: "done", assigneeAgentId: "flint" },
+    },
+    liveRuns: (fake) => {
+      // A new wake on every poll: held as a queued run while runs are paused, else it starts.
+      arrivals += 1;
+      arrived.push({ id: `new${arrivals}`, status: fake.draining ? "queued" : "running", agentId: "summit", agentName: "Summit", issueId: "i3" });
+      return [
+        // Neither finishes on its own: Keystone works on its task, Flint reviews Ridge's.
+        { id: "stuck", status: "running", agentId: "keystone", agentName: "Keystone", issueId: "i1" },
+        { id: "review", status: "running", agentId: "flint", agentName: "Flint", issueId: "i2" },
+        { id: "late", status: "queued", agentId: "flint", agentName: "Flint", issueId: "i4" },
+        ...arrived,
+      ];
+    },
+  });
   box.merge("change");
   enqueue(box, "main", "Change");
+  // The old settings too, so the worker from before GRE-2274 fails here as it did on live (it lifted the pause between tries).
   const { code, out } = await box.worker({
-    GSAM_RELEASE_DRAIN_CAP_SECONDS: "0.5",
+    GSAM_RELEASE_DRAIN_GRACE_SECONDS: "0.4",
+    GSAM_RELEASE_DRAIN_STOP_SECONDS: "0.4",
+    GSAM_RELEASE_DRAIN_CAP_SECONDS: "0.4",
     GSAM_RELEASE_DRAIN_RETRY_SECONDS: "0.2",
     GSAM_RELEASE_DRAIN_ATTEMPTS: "2",
   }).done;
   assert.equal(code, 0, out);
-  assert.deepEqual(box.fake.events, ["drain", "lift", "drain", "lift"]);
-  assert.ok(!box.callLines().some((c) => c.startsWith("release ")));
+
+  // Paused once, for the whole window, and released with runs paused.
+  assert.deepEqual(box.fake.events, ["drain", "lift"]);
+  assert.match(box.callLines().find((c) => c.startsWith("release ")), /draining=true /);
+  assert.ok(arrived.every((r) => r.status === "queued"), "no new run started during the drain");
   const item = box.state().items[0];
-  assert.equal(item.status, "failed");
-  assert.match(item.reason, /still running after 2 waits/);
-  // The preview it started is stopped again.
-  assert.equal(box.callLines().filter((c) => c === "preview stop").length, 2);
+  assert.equal(item.status, "released", item.reason);
+
+  const calls = box.fake.calls;
+  const comments = (issueId) => calls.filter((c) => c.what === "comment" && c.issueId === issueId);
+  // The assignee's run is asked on its task to save its work, while runs are held; the reviewer's is not (that would wake Ridge).
+  const ask = comments("i1")[0];
+  assert.match(ask.body.body, /^Release rc-\S+ is waiting for this run\. Please save your work/);
+  assert.equal(ask.draining, true);
+  assert.equal(comments("i2").filter((c) => c.draining).length, 0);
+  // Then both are cancelled, and recorded with their task.
+  assert.deepEqual(calls.filter((c) => c.what === "cancel").map((c) => c.runId).sort(), ["review", "stuck"]);
+  assert.ok(calls.indexOf(ask) < calls.findIndex((c) => c.what === "cancel"));
+  const paused = Object.fromEntries(item.paused.map((p) => [p.runId, p]));
+  assert.deepEqual([paused.stuck.how, paused.stuck.issueId, paused.review.how, paused.review.issueId], ["stopped", "i1", "stopped", "i2"]);
+
+  // After the switch, with runs back on, every paused task is woken, once.
+  const after = calls.filter((c) => !c.draining);
+  const resumed = (issueId) => after.filter((c) => c.what === "comment" && c.issueId === issueId);
+  assert.equal(resumed("i1").length, 1);
+  assert.deepEqual(resumed("i1")[0].body, { body: "Paused for release live-2026-10-18.9; resuming.", resume: true });
+  // The reviewer: a comment on the task, and a wake for the reviewer itself.
+  assert.deepEqual(resumed("i2").map((c) => c.body), [{ body: "Paused for release live-2026-10-18.9; resuming." }]);
+  const wake = after.find((c) => c.what === "wake");
+  assert.equal(wake.agentId, "flint");
+  assert.deepEqual(wake.body.payload, { issueId: "i2", taskId: "i2", resumeIntent: true, interruptedRunId: "review" });
+  assert.equal(wake.body.idempotencyKey, "release-resume:review");
+  // The held wakes on GRE-3 (its assignee's): one comment for the task, not one per wake.
+  assert.equal(resumed("i3").length, 1);
+  assert.equal(resumed("i3")[0].body.resume, undefined);
+  // A held run on a finished task: nothing to say.
+  assert.equal(resumed("i4").length, 0);
+  assert.ok(item.paused.every((p) => p.resumedAt), JSON.stringify(item.paused));
+  assert.ok(calls.filter((c) => c.what === "comment" || c.what === "wake").length === 5, JSON.stringify(calls));
+});
+
+test("drain: a request cancelled while it drains lifts the pause and still wakes the task it stopped", async (t) => {
+  const box = await sandbox(t, {
+    issues: { i1: { identifier: "GRE-1", status: "in_progress", assigneeAgentId: "keystone" } },
+    liveRuns: () => [{ id: "stuck", status: "running", agentId: "keystone", agentName: "Keystone", issueId: "i1", slow: true }],
+  });
+  box.merge("change");
+  const a = enqueue(box, "main", "Change");
+  const w = box.worker({ GSAM_RELEASE_DRAIN_GRACE_SECONDS: "0", GSAM_RELEASE_DRAIN_STOP_SECONDS: "0" });
+  await waitFor("the run to be stopped", () => box.fake.calls.some((c) => c.what === "cancel"));
+  assert.equal(box.cli(["cancel", a.id]).status, 0);
+  const { code, out } = await w.done;
+  assert.equal(code, 0, out);
+  const item = box.state().items[0];
+  assert.equal(item.status, "cancelled", JSON.stringify(item));
+  assert.deepEqual(box.fake.events, ["drain", "lift"]);
+  assert.ok(!box.callLines().some((c) => c.startsWith("release ")));
+  const resumed = box.fake.calls.filter((c) => c.what === "comment" && !c.draining);
+  assert.equal(resumed.length, 1);
+  assert.match(resumed[0].body.body, /^Paused for release rc-\S+; resuming\.$/);
 });
 
 test("a failed switch test stops the request before any run is held, and the cut tag is deleted", async (t) => {

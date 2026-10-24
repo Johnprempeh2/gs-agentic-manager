@@ -7832,6 +7832,23 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/block-check",
+  tags: ["issues"],
+  summary: "Block check for project leads: unexplained or stale blocks, conditions in titles, and asks to a person older than a day",
+  description:
+    "Grouped by project, biggest first. Item kinds: `unexplained` (blocked, no open blocker, no pending card, no recorded reason), `blockers_closed` (every blocker done or cancelled), `card_answered` (a card on it was answered after it was blocked, nothing open holds it), `condition_in_title` (the title names a condition such as \"(after John accepts the proof)\") and `old_human_ask` (a card or a recorded ask to a person or the board older than a day). Each project has a `fingerprint` that changes only when its items change. Pass `leadAgentId=me` to get only the projects the calling agent leads.",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      projectId: z.string().uuid().optional(),
+      leadAgentId: z.string().optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/recovery-holds",
   tags: ["issues"],
   summary: "Tasks held until someone records what their last run did",
@@ -15916,6 +15933,15 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/website/token-secrets",
   tags: ["website"],
   summary: "List the company's active secrets ({ id, name } only, never values) that a site can use as its Netlify token (website:publish, people only)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website/access",
+  tags: ["website"],
+  summary: "Say what the caller may do on the website: { view, edit, publish } booleans. With no siteId it is the company-wide right (connect a site); with siteId it is that site's right, so scoped grants count. Another company's or a malformed siteId answers all false. Agents never get publish",
+  query: z.object({ siteId: z.string().optional() }),
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 

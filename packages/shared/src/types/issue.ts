@@ -585,6 +585,11 @@ export interface IssueUnblockDescriptor {
   /** The calendar day (YYYY-MM-DD, UTC) the task expects to hear back by. */
   expectedBy?: string;
   /**
+   * The card (issue-thread interaction) the task waits on. When that card is
+   * answered, the task goes back to todo and its assignee is woken (GRE-2286).
+   */
+  interactionId?: string;
+  /**
    * Set by the server only: the `expectedBy` day the assignee was already woken
    * for, so the "date passed" wake fires once per date.
    */

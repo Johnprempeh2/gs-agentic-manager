@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IssueTreeNode, ProjectTree } from "@greatstone/shared";
 import { initiallyCollapsed, projectRootId, projectTreeAsTaskTree, unsortedId } from "./project-tree";
-import { indexTaskTree, visibleTaskTree } from "./task-tree";
+import { indexTaskTree, traceBlockedPaths, visibleTaskTree } from "./task-tree";
 
 function node(id: string, parentId: string | null, values: Partial<IssueTreeNode> = {}): IssueTreeNode {
   return {
@@ -71,6 +71,18 @@ describe("project tree as a task tree", () => {
 
   it("starts finished key tasks folded", () => {
     expect([...initiallyCollapsed(tree)]).toEqual(["k2"]);
+  });
+
+  it("never makes the project its own blocker when all its open work is blocked (GRE-2290)", () => {
+    const stuck: ProjectTree = {
+      ...tree,
+      nodes: [...tree.nodes.filter((entry) => entry.id !== "k1"), node("k1", null, { status: "blocked", isKeyTask: true, unblockAction: "Sign the contract" })],
+      counts: { done: 7, active: 0, blocked: 1, waiting: 2 },
+    };
+    const { tree: shaped, hiddenDone } = projectTreeAsTaskTree(stuck);
+    expect(shaped.nodes.find((entry) => entry.id === projectRootId("p"))?.status).not.toBe("blocked");
+    const trace = traceBlockedPaths(indexTaskTree(shaped, hiddenDone)!);
+    expect(trace.rootBlockers.map((blocker) => blocker.id)).toEqual(["k1"]);
   });
 
   it("leaves out the Unsorted card when everything is placed", () => {

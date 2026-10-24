@@ -29,6 +29,7 @@ import {
   updateWebsiteSiteSchema,
   websiteReleaseActionSchema,
   type PermissionKey,
+  type WebsiteAccess,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
 import { HttpError, conflict, unprocessable } from "../errors.js";
@@ -176,6 +177,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
   router.use(WEBSITE_MODULE_API_ROUTES.tokenSecrets, requireEntitlement(db, "enableWebsiteView"));
+  router.use(WEBSITE_MODULE_API_ROUTES.access, requireEntitlement(db, "enableWebsiteView"));
 
   function actorOf(req: Request): WebsiteActor {
     const info = getActorInfo(req);
@@ -306,6 +308,32 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       if (await allowed(req, companyId, "website:view", row.id)) visible.push(await siteView(row));
     }
     res.json(visible);
+  });
+
+  // What the caller may do, so the page shows only the buttons the routes above will accept (GRE-2136).
+  // Same decision as `allowed`: with no siteId it is the company-wide right (connect a site), with one
+  // it is that site's right (change it). A site outside this company answers all false.
+  router.get(WEBSITE_MODULE_API_ROUTES.access, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const siteId = typeof req.query.siteId === "string" && req.query.siteId ? req.query.siteId : undefined;
+    const none: WebsiteAccess = { view: false, edit: false, publish: false };
+    if (siteId && !(UUID_RE.test(siteId) && (await service.getSite(companyId, siteId)))) {
+      res.json(none);
+      return;
+    }
+    const can = async (permission: WebsitePermission) => {
+      if (permission === "website:publish" && req.actor.type === "agent") return false;
+      const decision = await access.decide({
+        actor: req.actor,
+        action: permission,
+        resource: { type: "company", companyId },
+        scope: siteId ? { siteId } : null,
+      });
+      return decision.allowed;
+    };
+    const result: WebsiteAccess = { view: await can("website:view"), edit: await can("website:edit"), publish: await can("website:publish") };
+    res.json(result);
   });
 
   // Saved secrets a person with Publish rights can choose as a site's Netlify token: names only.

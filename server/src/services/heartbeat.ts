@@ -21380,6 +21380,10 @@ export function heartbeatService(
     return recovery.reconcileWaitingDatesPassed(opts);
   }
 
+  async function reconcileAnsweredCardBlocks(opts?: { companyId?: string | null }) {
+    return recovery.reconcileAnsweredCardBlocks(opts);
+  }
+
   async function updateRuntimeState(
     agent: typeof agents.$inferSelect,
     run: typeof heartbeatRuns.$inferSelect,
@@ -33025,6 +33029,7 @@ export function heartbeatService(
 
     reconcileOverdueHumanWaits,
     reconcileWaitingDatesPassed,
+    reconcileAnsweredCardBlocks,
 
     scanSilentActiveRuns,
     stopSilentRuns,

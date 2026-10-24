@@ -370,6 +370,54 @@ describeEmbeddedPostgres("website module routes", () => {
     ).rejects.toThrow(/Agents cannot have Publish rights/);
   });
 
+  // GRE-2136: the page shows Connect a site and Change from this answer, so it must match what the site routes accept.
+  it("access: says what the caller may do, for the company or one site, and matches what the site routes accept", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const second = (await request(app())
+      .post(`/api/companies/${a.company.id}/website/sites`)
+      .send({ name: "Second", domain: "second.alpha.test", netlifySiteId: "n2" })
+      .expect(201)).body as WebsiteSite;
+    const accessUrl = `/api/companies/${a.company.id}/website/access`;
+    const sites = `/api/companies/${a.company.id}/website/sites`;
+    const ask = async (actor: Actor, siteId?: string) =>
+      (await request(app(actor)).get(siteId ? `${accessUrl}?siteId=${siteId}` : accessUrl).expect(200)).body;
+
+    const owner = await seedUser(a.company.id, "owner");
+    expect(await ask(owner)).toEqual({ view: true, edit: true, publish: true });
+    expect(await ask(owner, a.site.id)).toEqual({ view: true, edit: true, publish: true });
+
+    // An operator granted website:publish for the company may connect a site.
+    const granted = await seedUser(a.company.id, "operator", [{ key: "website:publish" }]);
+    expect(await ask(granted)).toEqual({ view: true, edit: true, publish: true });
+    await request(app(granted)).post(sites).send({ name: "Third", domain: "third.alpha.test", netlifySiteId: "n3" }).expect(201);
+
+    // A grant scoped to one site: Change on that site only, and no Connect a site.
+    const scoped = await seedUser(a.company.id, "operator", [{ key: "website:publish", scope: { siteIds: [a.site.id] } }]);
+    expect((await ask(scoped)).publish).toBe(false);
+    await request(app(scoped)).post(sites).send({ name: "Fourth", domain: "fourth.alpha.test", netlifySiteId: "n4" }).expect(403);
+    expect((await ask(scoped, a.site.id)).publish).toBe(true);
+    await request(app(scoped)).patch(`${sites}/${a.site.id}`).send({ name: "Renamed" }).expect(200);
+    expect((await ask(scoped, second.id)).publish).toBe(false);
+    await request(app(scoped)).patch(`${sites}/${second.id}`).send({ name: "Nope" }).expect(404);
+
+    const operator = await seedUser(a.company.id, "operator");
+    expect(await ask(operator, a.site.id)).toEqual({ view: true, edit: true, publish: false });
+    const viewer = await seedUser(a.company.id, "viewer");
+    expect(await ask(viewer)).toEqual({ view: true, edit: false, publish: false });
+
+    // Agents never hold website:publish, even with a grant row.
+    const { actor: agent } = await seedAgent(a.company.id, ["website:view", "website:edit", "website:publish"]);
+    expect(await ask(agent, a.site.id)).toEqual({ view: true, edit: true, publish: false });
+
+    // Another company's site, or a malformed id, is all false.
+    expect(await ask(owner, b.site.id)).toEqual({ view: false, edit: false, publish: false });
+    expect(await ask(owner, "not-a-uuid")).toEqual({ view: false, edit: false, publish: false });
+    // And company B's access is not company A's to ask about.
+    await request(app(owner)).get(`/api/companies/${b.company.id}/website/access`).expect(403);
+  });
+
   it("role defaults: owner publishes, operator edits but cannot publish, viewer only views", async () => {
     await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
     const a = await seedWorld("Alpha", "alpha.test");
@@ -649,10 +697,12 @@ describeEmbeddedPostgres("website module routes", () => {
     await http.patch(url).send({ editorFrameOrigin: "https://edit2.alpha.test" }).expect(200);
 
     const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"));
-    expect(changes.map((row) => row.details)).toEqual([
+    // No ORDER BY: compare as a set.
+    expect(changes).toHaveLength(2);
+    expect(changes.map((row) => row.details)).toEqual(expect.arrayContaining([
       { from: null, to: "https://editor.alpha.test" },
       { from: "https://editor.alpha.test", to: "https://edit2.alpha.test" },
-    ]);
+    ]));
     // The public domain cannot be moved onto the editor host either.
     await http.patch(url).send({ domain: "edit2.alpha.test" }).expect(422);
   });
