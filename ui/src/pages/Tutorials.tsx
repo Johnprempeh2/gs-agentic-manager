@@ -42,7 +42,8 @@ async function resolveStart(tour: TourDefinition, companyId: string): Promise<St
     case "strategy-board":
       return { path: "/strategy-board" };
     case "website":
-      return { path: "/website" };
+      // The tour points at the traffic report, which no longer opens first.
+      return { path: "/website?tab=traffic" };
     case "pipeline-board":
     case "client-case": {
       const pipelines = (await pipelinesApi.list(companyId)).filter((pipeline) => !pipeline.archivedAt);

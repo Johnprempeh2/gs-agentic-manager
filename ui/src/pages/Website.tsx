@@ -45,6 +45,7 @@ import {
   WebsiteProgressTab,
   WebsiteProjectLink,
   WebsiteSitemapTab,
+  WEBSITE_DEFAULT_TAB,
   liveSiteUrl,
   websiteTabFrom,
   type WebsiteTab,
@@ -627,7 +628,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
   const siteUrl = liveSiteUrl(property.siteUrl);
   const openTab = (next: WebsiteTab) => {
     const params = new URLSearchParams(searchParams);
-    if (next === "overview") params.delete("tab");
+    if (next === WEBSITE_DEFAULT_TAB) params.delete("tab");
     else params.set("tab", next);
     setSearchParams(params, { replace: true });
   };
@@ -727,7 +728,7 @@ export function Website() {
           <WebsiteSetupForm
             companyId={selectedCompanyId}
             onCreated={(created) => {
-              // The hub opens on Overview.
+              // The hub opens on Preview, the site itself.
               setPropertyId(created.id);
               const next = new URLSearchParams(searchParams);
               next.delete("tab");

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { IssueTreeNode, ProjectTree as ProjectTreeData } from "@greatstone/shared";
-import { List, Sparkles } from "lucide-react";
+import { List, Maximize2, Sparkles } from "lucide-react";
 import { Link, useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -81,16 +81,18 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
   const data: ProjectTreeData | undefined = treeQuery.data;
   const shaped = useMemo(() => (data ? projectTreeAsTaskTree(data) : null), [data]);
   const index = useMemo(() => (shaped ? indexTaskTree(shaped.tree, shaped.hiddenDone) : null), [shaped]);
-  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished });
-  const { setCollapsed } = view;
+  const storageKey = projectRef ? `project-tree.${projectRef}` : undefined;
+  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished, storageKey });
+  const { setCollapsed, restored } = view;
+  const [diagramOpen, setDiagramOpen] = useState(false);
 
-  // Key tasks whose work is all done start folded, once per visit.
+  // Key tasks whose work is all done start folded, once per visit, unless the viewer's own fold is remembered.
   const [foldedFor, setFoldedFor] = useState<string | null>(null);
   useEffect(() => {
     if (!data || foldedFor === data.project.id) return;
     setFoldedFor(data.project.id);
-    setCollapsed(initiallyCollapsed(data));
-  }, [data, foldedFor, setCollapsed]);
+    if (!restored) setCollapsed(initiallyCollapsed(data));
+  }, [data, foldedFor, setCollapsed, restored]);
 
   const ref = project ? projectRouteRef(project) : projectRef;
   const listHref = `/projects/${ref}/issues`;
@@ -243,7 +245,15 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
           </Link>
         </div>
       ) : null}
-      {isPhone ? (
+      {isPhone && !diagramOpen ? (
+        <div className="flex">
+          <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
+            <Maximize2 />
+            Open the diagram full screen
+          </Button>
+        </div>
+      ) : null}
+      {isPhone && !diagramOpen ? (
         <TaskTreeOutline
           visibleRoot={visibleRoot}
           trace={trace}
@@ -267,6 +277,13 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
           onShowFinished={() => setShowFinished(true)}
           focusRequest={view.focusRequest}
           actionFor={tidyAction}
+          storageKey={storageKey}
+          findItems={view.findItems}
+          onFind={view.reveal}
+          onCollapseAll={view.collapseAll}
+          onExpandAll={view.expandAll}
+          startFullscreen={isPhone}
+          onExitFullscreen={() => setDiagramOpen(false)}
         />
       )}
     </div>
