@@ -91,7 +91,7 @@ export function WebsiteChangeRequestPanel({
       aria-label="Ask for a change"
       data-testid="website-change-request"
       data-step={step}
-      className="space-y-3 rounded-lg border border-primary/40 bg-card p-3 shadow-xs"
+      className="scroll-mt-20 space-y-3 rounded-lg border border-primary/40 bg-card p-3 shadow-xs"
     >
       <div className="flex flex-wrap items-start gap-2">
         <span className="mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">Selected block</span>
