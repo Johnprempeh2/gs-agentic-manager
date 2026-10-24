@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
   COMPANY_STATUSES,
+  ISSUE_THREAD_INTERACTION_KINDS,
   ISSUE_THREAD_INTERACTION_RESOLVER_POLICIES,
+  type IssueThreadInteractionKind,
 } from "../constants.js";
 import { objectWithoutDefaults } from "./partial.js";
 
@@ -13,15 +15,13 @@ const interactionResolverKindGovernanceSchema = z.object({
   cap: z.enum(ISSUE_THREAD_INTERACTION_RESOLVER_POLICIES).optional(),
 }).strict();
 
-export const interactionResolverGovernanceSchema = z.object({
-  suggest_tasks: interactionResolverKindGovernanceSchema.optional(),
-  ask_user_questions: interactionResolverKindGovernanceSchema.optional(),
-  request_confirmation: interactionResolverKindGovernanceSchema.optional(),
-  request_checkbox_confirmation: interactionResolverKindGovernanceSchema.optional(),
-  request_item_verdicts: interactionResolverKindGovernanceSchema.optional(),
-  request_draft_review: interactionResolverKindGovernanceSchema.optional(),
-  request_steps: interactionResolverKindGovernanceSchema.optional(),
-}).strict().default({});
+// One optional entry per interaction kind, built from the constant so a new
+// kind is accepted here as soon as it is added (GRE-2255).
+export const interactionResolverGovernanceSchema = z.object(
+  Object.fromEntries(
+    ISSUE_THREAD_INTERACTION_KINDS.map((kind) => [kind, interactionResolverKindGovernanceSchema.optional()]),
+  ) as Record<IssueThreadInteractionKind, z.ZodOptional<typeof interactionResolverKindGovernanceSchema>>,
+).strict().default({});
 
 export const createCompanySchema = z.object({
   name: z.string().min(1),

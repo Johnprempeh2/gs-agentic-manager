@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   createCompanySchema,
+  interactionResolverGovernanceSchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
 } from "./company.js";
 import { portabilityCompanyManifestEntrySchema } from "./company-portability.js";
+import { ISSUE_THREAD_INTERACTION_KINDS } from "../constants.js";
 
 describe("company schemas without the retired settings", () => {
   it("strips brandColor and attachmentMaxBytes from a create payload", () => {
@@ -70,5 +72,26 @@ describe("portability company manifest tolerance", () => {
     expect(parsed).not.toHaveProperty("brandColor");
     expect(parsed).not.toHaveProperty("attachmentMaxBytes");
     expect(parsed.name).toBe("Acme");
+  });
+});
+
+describe("interactionResolverGovernanceSchema (GRE-2255)", () => {
+  it("has a schema entry for every interaction kind", () => {
+    const schemaKinds = Object.keys(interactionResolverGovernanceSchema.removeDefault().shape).sort();
+
+    expect(schemaKinds).toEqual([...ISSUE_THREAD_INTERACTION_KINDS].sort());
+  });
+
+  it("accepts a setting for every interaction kind", () => {
+    for (const kind of ISSUE_THREAD_INTERACTION_KINDS) {
+      const result = interactionResolverGovernanceSchema.safeParse({ [kind]: { cap: "human_only" } });
+      expect(result.success, kind).toBe(true);
+    }
+  });
+
+  it("rejects an unknown kind", () => {
+    const result = interactionResolverGovernanceSchema.safeParse({ not_a_kind: { cap: "human_only" } });
+
+    expect(result.success).toBe(false);
   });
 });
