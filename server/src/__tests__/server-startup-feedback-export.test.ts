@@ -78,6 +78,7 @@ const {
     reconcileResolvedDependencyWakes: vi.fn(async () => ({ healed: 0 })),
     reconcileOverdueHumanWaits: vi.fn(async () => ({ issueIds: [] })),
     reconcileWaitingDatesPassed: vi.fn(async () => ({ issueIds: [] })),
+    reconcileAnsweredCardBlocks: vi.fn(async () => ({ issueIds: [] })),
     reconcileTaskWatchdogs: vi.fn(async () => ({ triggered: 0 })),
     scanSilentActiveRuns: vi.fn(async () => ({ created: 0, escalated: 0, silentStops: { stopped: 0, retried: 0, escalated: 0, runIds: [] } })),
     stopSilentRuns: vi.fn(async () => ({
@@ -574,6 +575,31 @@ describe("startServer feedback export wiring", () => {
       expect(retiredDetector).not.toHaveBeenCalled();
     } finally {
       delete (runtime as Partial<typeof runtime>).reconcileProductivityReviews;
+      setIntervalSpy.mockRestore();
+    }
+  });
+
+  it("keeps sweeping stale locks when the answered-card sweep throws", async () => {
+    loadConfigMock.mockReturnValue(buildTestConfig({
+      heartbeatSchedulerEnabled: true,
+      heartbeatSchedulerIntervalMs: 30000,
+    }));
+    heartbeatServiceMock.reconcileAnsweredCardBlocks.mockRejectedValue(new Error("answered-card sweep failed"));
+    let intervalCallback: (() => void) | null = null;
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(((callback: () => void) => {
+      intervalCallback = callback;
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    }) as typeof setInterval);
+    try {
+      await startServer();
+      expect(heartbeatServiceMock.sweepStaleIssueLocks).toHaveBeenCalledTimes(1);
+      intervalCallback?.();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(heartbeatServiceMock.reconcileAnsweredCardBlocks).toHaveBeenCalledTimes(2);
+      expect(heartbeatServiceMock.scanSilentActiveRuns).toHaveBeenCalled();
+      expect(heartbeatServiceMock.sweepStaleIssueLocks).toHaveBeenCalledTimes(2);
+    } finally {
+      heartbeatServiceMock.reconcileAnsweredCardBlocks.mockResolvedValue({ issueIds: [] });
       setIntervalSpy.mockRestore();
     }
   });

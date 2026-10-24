@@ -2276,9 +2276,14 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
-              const reconciled = await heartbeat.reconcileAnsweredCardBlocks();
-              if (reconciled.issueIds.length > 0) {
-                logger.warn({ ...reconciled }, "periodic answered-card sweep freed tasks still blocked on an answered card");
+              // A failure here must not skip the run-output watchdog and stale-lock sweep below.
+              try {
+                const reconciled = await heartbeat.reconcileAnsweredCardBlocks();
+                if (reconciled.issueIds.length > 0) {
+                  logger.warn({ ...reconciled }, "periodic answered-card sweep freed tasks still blocked on an answered card");
+                }
+              } catch (err) {
+                logger.error({ err }, "periodic answered-card sweep failed; continuing recovery");
               }
             })
             .then(async () => {
