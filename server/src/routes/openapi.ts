@@ -15986,6 +15986,22 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/enquiries`,
+  tags: ["website"],
+  summary: "List website enquiries in GSAM, newest first (website:view; pipelines:cases for the enquiry pipeline)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/enquiries/check`,
+  tags: ["website"],
+  summary: "Import new website enquiries from the read-only admin bridge (website:edit, board users only); 409 when the bridge is not connected",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/pages`,
   tags: ["website"],
   summary: "List a site's pages with their sitemap fields (parent, menu, menu order, status planned to published); includeArchived=true adds archived pages (website:view)",
