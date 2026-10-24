@@ -97,6 +97,16 @@ describe("IssueRow", () => {
     container.remove();
   });
 
+  it("a task whose run is queued shows a clock, not the spinner (GRE-2246)", () => {
+    const root = createRoot(container);
+    act(() => root.render(<IssueRow issue={createIssue({ status: "in_progress" })} runQueued />));
+    expect(container.innerHTML).not.toContain("animate-spin");
+    expect(container.innerHTML).toContain("lucide-clock");
+    act(() => root.render(<IssueRow issue={createIssue({ status: "in_progress" })} />));
+    expect(container.innerHTML).toContain("animate-spin");
+    act(() => root.unmount());
+  });
+
   it("says why a blocked task is stuck", () => {
     const root = createRoot(container);
     const blockerAttention = {

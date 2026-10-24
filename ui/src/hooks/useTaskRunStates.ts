@@ -54,3 +54,15 @@ export const TaskRunStatesContext = createContext<ReadonlyMap<string, TaskRunSta
 export function useTaskRunStateFor(task: { id: string; status?: string | null }): TaskRunState | null {
   return runStateForTask(useContext(TaskRunStatesContext), task);
 }
+
+/**
+ * True when the task's agent run is queued, not running. Status icons pass this
+ * as `queued` so a waiting task shows a clock, never the in-progress spinner.
+ */
+export function useTaskQueued(
+  companyId: string | null | undefined,
+  task: { id: string; status?: string | null } | null | undefined,
+): boolean {
+  const states = useTaskRunStates(companyId);
+  return task ? runStateForTask(states, task)?.kind === "queued" : false;
+}
