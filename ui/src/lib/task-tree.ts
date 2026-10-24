@@ -442,11 +442,21 @@ function blockLinkCurve(from: Box, to: Box): [CurvePoint, CurvePoint, CurvePoint
   const rightward = toCx > fromCx;
   const x1 = rightward ? from.x + from.width : from.x;
   const x2 = rightward ? to.x : to.x + to.width;
-  const pull = Math.max(40, Math.abs(x2 - x1) / 3);
-  // Cards on one row bow up over the row, so the line clears the cards between.
-  const lift = Math.abs(y2 - y1) < from.height ? Math.min(160, 30 + Math.abs(x2 - x1) / 6) : 0;
-  const step = rightward ? pull : -pull;
-  return [{ x: x1, y: y1 }, { x: x1 + step, y: y1 - lift }, { x: x2 - step, y: y2 - lift }, { x: x2, y: y2 }];
+  const span = Math.abs(x2 - x1);
+  const sign = rightward ? 1 : -1;
+  const pull = Math.max(40, span / 3);
+  // Near cards on different rows: a gentle S from side to side.
+  if (Math.abs(y2 - y1) >= from.height && span < from.width * 3) {
+    return [{ x: x1, y: y1 }, { x: x1 + sign * pull, y: y1 }, { x: x2 - sign * pull, y: y2 }, { x: x2, y: y2 }];
+  }
+  // Cards on one row, or far apart: an arch over the cards between, higher
+  // the further it goes. It leaves and enters the cards steeply, so each end
+  // reads as a line rising out of its card even when the other end is far
+  // off screen, and never lies flat along a row of cards.
+  const lift = Math.min(900, 30 + span / 6);
+  const top = Math.min(y1, y2) - (lift * 4) / 3;
+  const reach = Math.min(pull, 240);
+  return [{ x: x1, y: y1 }, { x: x1 + sign * reach, y: top }, { x: x2 - sign * reach, y: top }, { x: x2, y: y2 }];
 }
 
 // ---------------------------------------------------------------------------
