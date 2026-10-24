@@ -32,6 +32,14 @@ export const WEBSITE_MESSAGES = {
 
 export type WebsiteMessageKey = keyof typeof WEBSITE_MESSAGES;
 
+/** alert.pending_long (copy section 15), to the website team. */
+export function pendingLongAlertText(input: { number: number; site: string; reason: string }) {
+  return {
+    title: `Release ${input.number} of ${input.site} pending for 30 minutes`,
+    body: `Release ${input.number} of ${input.site} pending for 30 minutes. Reason: ${input.reason}. Rollback is offered to the person who started the Publish.`,
+  };
+}
+
 /** proposal.publish.title and proposal.publish.body (with the _one form). */
 export function publishProposalText(proposer: string, count: number) {
   return {
