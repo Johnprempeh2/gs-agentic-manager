@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { TaskRunStateChip } from "./TaskRunStateChip";
 import { runStateForTask } from "../lib/task-run-state";
 import { useImageCovers } from "./ImageCoverControls";
 import { startTransition, useDeferredValue, useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -2561,6 +2562,7 @@ export function IssuesList({
                             checklistStepNumber={checklistStepNumber}
                           />
                         ) : undefined}
+                        mobileRunState={runStateForTask(runStateByIssueId, issue) ? <TaskRunStateChip state={runStateForTask(runStateByIssueId, issue)!} issueLabel={issueLabelById} /> : null}
                         showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
                         mobileLeading={<>{rowLeading}{
                           hasChildren ? (

@@ -65,6 +65,8 @@ export interface IssueRowProps {
   mobileMeta?: ReactNode;
   /** Compact mobile timestamp beside the title in canonical task lists. */
   mobileTitleMeta?: ReactNode;
+  /** Phone only: the run state chip beside the status word (GRE-2246); the desktop shows it in `metadata`. */
+  mobileRunState?: ReactNode;
   desktopTrailing?: ReactNode;
   /**
    * Optional pre-fetched external-object summary. Renders a compact severity
@@ -160,6 +162,7 @@ export function IssueRow({
   desktopLeadingSpacer = false,
   mobileMeta,
   mobileTitleMeta,
+  mobileRunState,
   desktopTrailing,
   externalObjectSummary: allExternalObjects,
   trailingMeta,
@@ -432,6 +435,7 @@ export function IssueRow({
               <span className="font-mono">{identifier}</span>
               <span aria-hidden="true">&middot;</span>
               <span className="font-medium text-foreground">{statusDisplayLabel(issue.status, issue.externalConversationState)}</span>
+              {mobileRunState}
             </span>
             {strategicBadge}
             {overdueBadge}

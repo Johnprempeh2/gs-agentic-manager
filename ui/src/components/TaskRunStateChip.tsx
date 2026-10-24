@@ -82,7 +82,7 @@ function FullTaskRunState({ state: derived, issueLabel, hideLabelOnPhone = false
 
   return (
     <span
-      className={cn("inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground", className)}
+      className={cn("inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground sm:flex-nowrap", className)}
       data-testid="task-run-state"
     >
       <RunStateChip state={state} label={copy.label} hideLabelOnPhone={hideLabelOnPhone} />
@@ -140,10 +140,10 @@ function RunStateDetail({
   const label = blockingIssueId ? issueLabel?.(blockingIssueId) ?? "another task" : null;
   const at = label ? detail.indexOf(label) : -1;
   if (!blockingIssueId || !label || at < 0) {
-    return <span className="min-w-0 truncate" title={detail}>{detail}</span>;
+    return <span className="min-w-0 sm:truncate" title={detail}>{detail}</span>;
   }
   return (
-    <span className="min-w-0 truncate" title={detail}>
+    <span className="min-w-0 sm:truncate" title={detail}>
       {detail.slice(0, at)}
       <Link
         to={createIssueDetailPath(blockingIssueId)}

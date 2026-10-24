@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TaskRunStateChip } from "../components/TaskRunStateChip";
 import { runStateForTask } from "../lib/task-run-state";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -3007,6 +3008,7 @@ export function Inbox() {
                           showIdentifier={false}
                         />
                       )}
+                      mobileRunState={runStateForTask(runStateByIssueId, issue) ? <TaskRunStateChip state={runStateForTask(runStateByIssueId, issue)!} issueLabel={inboxIssueLabel} /> : null}
                       showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
                       titleSuffix={hasChildren && !isExpanded ? (
                         <span className="ml-1.5 text-xs text-muted-foreground">
