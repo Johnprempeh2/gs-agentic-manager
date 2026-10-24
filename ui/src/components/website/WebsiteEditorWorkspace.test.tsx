@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
   revision: vi.fn(),
   restoreRevision: vi.fn(),
   media: vi.fn(),
+  requestChange: vi.fn(),
 }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
@@ -65,6 +66,16 @@ const revisions = [
   { id: "rev-1", revisionNumber: 1, changeSummary: "Created", createdByAgentId: null, createdByUserId: "u", createdAt: "2026-10-23T09:00:00.000Z" },
 ];
 
+const pickRef = {
+  siteId: "site-1",
+  pageId: "page-1",
+  pageRevisionId: "rev-2",
+  blockId: "h1",
+  blockType: "Hero",
+  engine: { version: "1.0.0", commit: "b".repeat(40) },
+  source: { file: "src/blocks/Hero.tsx", line: 12 },
+};
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -108,6 +119,22 @@ async function render() {
 
 const text = () => container.textContent ?? "";
 const button = (label: string) => [...container.querySelectorAll("button")].find((el) => el.textContent?.trim() === label)!;
+const textarea = () => container.querySelector<HTMLTextAreaElement>('[data-testid="website-change-request"] textarea')!;
+const panel = () => container.querySelector<HTMLElement>('[data-testid="website-change-request"]');
+
+async function type(value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    setter.call(textarea(), value);
+    textarea().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function openPreview() {
+  await act(async () => button("Preview").click());
+  await flush();
+}
+
 const frame = () => container.querySelector<HTMLIFrameElement>('[data-testid="website-editor-frame"]');
 
 /** Load the frame and complete the handshake as the site's editor would. */
@@ -132,7 +159,17 @@ async function connect() {
   });
   const sent = (type: string) => posted.mock.calls.map((call) => call[0] as { type: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
   const save = (requestId: string) => fromFrame({ protocol: 1, session: nonce, type: "save", payload: { requestId, pageId: "page-1", baseRevisionId: "rev-2", data } });
-  return { posted, sent, save, fromFrame };
+  const pickBlock = async (origin = EDITOR) => {
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        origin,
+        source: frameWindow,
+        data: { gs: "website-frame", id: `m-${Math.random()}`, protocol: 1, session: nonce, type: "block-picked", payload: { ref: pickRef, label: "Hero banner", rect: { x: 0, y: 0, width: 100, height: 40 } } },
+      }));
+    });
+    await flush();
+  };
+  return { posted, sent, save, fromFrame, pickBlock };
 }
 
 describe("WebsiteEditorTab", () => {
@@ -226,6 +263,85 @@ describe("WebsiteEditorTab", () => {
     const image = container.querySelector<HTMLImageElement>('[data-testid="website-media"] img')!;
     expect(image.getAttribute("src")).toBe("/api/assets/asset-1/content");
     expect(image.alt).toBe("Team");
+  });
+
+  it("click to change: pick, describe, confirm creates exactly one task with the durable reference", async () => {
+    api.requestChange.mockResolvedValue({ issueId: "issue-1", identifier: "GRE-9001", title: "Website change: Hero banner on Home", assigneeAgentId: "lintel", projectId: "proj-1" });
+    await render();
+    await openPreview();
+    const { pickBlock, sent } = await connect();
+    expect(text()).toContain("Click a block in the preview");
+    await pickBlock();
+    expect(sent("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
+    expect(panel()!.dataset.step).toBe("describe");
+    expect(panel()!.textContent).toContain("Hero banner");
+    expect(panel()!.textContent).toContain("Hero · h1");
+    expect(button("Review").disabled).toBe(true);
+
+    await type("Make the heading shorter.");
+    await act(async () => button("Review").click());
+    expect(panel()!.dataset.step).toBe("confirm");
+    expect(container.querySelector('[data-testid="website-change-summary"]')!.textContent).toBe("Make the heading shorter.");
+    expect(api.requestChange).not.toHaveBeenCalled();
+
+    await act(async () => button("Create task").click());
+    await flush();
+    expect(api.requestChange).toHaveBeenCalledTimes(1);
+    const [companyId, siteId, pageId, input] = api.requestChange.mock.calls[0]!;
+    expect([companyId, siteId, pageId]).toEqual(["co-1", "site-1", "page-1"]);
+    expect(input).toEqual({
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      pageRevisionId: "rev-2",
+      blockId: "h1",
+      blockType: "Hero",
+      blockLabel: "Hero banner",
+      engine: { version: "1.0.0", commit: "b".repeat(40) },
+      source: { file: "src/blocks/Hero.tsx", line: 12 },
+      request: "Make the heading shorter.",
+    });
+    expect(panel()!.dataset.step).toBe("created");
+    expect(container.querySelector<HTMLAnchorElement>('[data-testid="website-change-request"] a')!.getAttribute("href")).toBe("/issues/GRE-9001");
+    expect(text()).toContain("is with the website agent");
+  });
+
+  it("click to change: Cancel at describe or confirm creates nothing and clears the highlight", async () => {
+    await render();
+    await openPreview();
+    const { pickBlock, sent } = await connect();
+    await pickBlock();
+    await act(async () => button("Cancel").click());
+    expect(panel()).toBeNull();
+    expect(sent("highlight").at(-1)!.payload).toEqual({ blockId: null });
+
+    await pickBlock();
+    await type("Change the photo.");
+    await act(async () => button("Review").click());
+    await act(async () => button("Cancel").click());
+    expect(panel()).toBeNull();
+    expect(api.requestChange).not.toHaveBeenCalled();
+  });
+
+  it("click to change: a block-picked from a wrong origin is ignored", async () => {
+    await render();
+    await openPreview();
+    const { pickBlock, sent } = await connect();
+    await pickBlock("https://evil.example.com");
+    expect(panel()).toBeNull();
+    expect(sent("highlight")).toHaveLength(0);
+  });
+
+  it("click to change: Edit words or image myself opens the block in the editor", async () => {
+    await render();
+    await openPreview();
+    const preview = await connect();
+    await preview.pickBlock();
+    await act(async () => button("Edit words or image myself").click());
+    await flush();
+    expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/editor/page-1`);
+    const editor = await connect();
+    expect(editor.sent("load-draft")).toHaveLength(1);
+    expect(editor.sent("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
+    expect(api.requestChange).not.toHaveBeenCalled();
   });
 
   it("does not open an editor until the editor address is set", async () => {

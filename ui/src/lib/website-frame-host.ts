@@ -88,6 +88,8 @@ export interface WebsiteFrameHostOptions<Source> {
   onSaveState?: (state: WebsiteFrameSaveState) => void;
   onDirty?: (dirty: boolean) => void;
   onBlockPicked?: (pick: WebsiteFrameBlockPick) => void;
+  /** The frame has the draft (after `load-draft`), so `highlight` can reach a block. */
+  onDraftLoaded?: () => void;
   onFrameError?: (error: { code: string; message: string }) => void;
   /** Drop reasons, for the console. Never shown as HTML. */
   onDrop?: (reason: string) => void;
@@ -249,6 +251,7 @@ export class WebsiteFrameHostSession<Source> {
       media: draft.media,
       site: draft.site,
     });
+    this.options.onDraftLoaded?.();
   }
 
   private save(save: WebsiteFrameSave): Promise<WebsiteFrameSaveResult> {

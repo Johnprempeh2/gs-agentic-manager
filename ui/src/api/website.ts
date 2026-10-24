@@ -18,6 +18,8 @@ import {
   type WebsiteEntry,
   type WebsiteEntryDetail,
   type CreateWebsiteEntry,
+  type CreateWebsiteChangeRequest,
+  type WebsiteChangeRequestResult,
   type WebsiteRelease,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
@@ -108,6 +110,9 @@ export const websiteModuleApi = {
         { baseRevisionId },
       ),
     ),
+  /** Click to change: one task for the website agent (website:edit). The same requestId returns the same task. */
+  requestChange: (companyId: string, siteId: string, pageId: string, input: CreateWebsiteChangeRequest) =>
+    api.post<WebsiteChangeRequestResult>(`${pagePath(companyId, siteId, pageId)}/change-requests`, input),
   media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
   entries: (companyId: string, siteId: string, collection: string) =>
     api.get<WebsiteEntry[]>(`${sitePath(companyId, siteId)}/entries?collection=${encodeURIComponent(collection)}`),

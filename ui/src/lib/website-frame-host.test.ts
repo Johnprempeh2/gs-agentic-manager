@@ -281,6 +281,34 @@ describe("block-picked in preview (test 8)", () => {
     expect(t.picks).toEqual([expect.objectContaining({ label: "<img onerror=x>", ref: expect.objectContaining({ blockId: "h1", source: null }) })]);
   });
 
+  it("drops a block-picked from a wrong origin or window, and one before the handshake (GRE-2121)", async () => {
+    const early: unknown[] = [];
+    const before = setup({ mode: "preview", onBlockPicked: (pick) => early.push(pick) });
+    before.session.start();
+    before.msg("block-picked", { ref: ref(), label: "x", rect });
+    expect(early).toHaveLength(0);
+
+    const t = await preview();
+    const message = { gs: "website-frame", protocol: 1, session: t.nonce, id: "p1", type: "block-picked", payload: { ref: ref(), label: "x", rect } };
+    t.fromFrame(message, { origin: "https://evil.example.com" });
+    t.fromFrame(message, { origin: "https://editor.example.com.evil.test" });
+    t.fromFrame(message, { source: { name: "other" } });
+    expect(t.picks).toHaveLength(0);
+    t.fromFrame(message);
+    expect(t.picks).toHaveLength(1);
+  });
+
+  it("tells the host when the frame has the draft, so a block can be highlighted", async () => {
+    const onDraftLoaded = vi.fn();
+    const t = setup({ onDraftLoaded });
+    t.session.start();
+    t.ack();
+    await flush();
+    expect(onDraftLoaded).toHaveBeenCalledTimes(1);
+    t.session.highlight("h1");
+    expect(t.sentOf("highlight").at(-1)!.message.payload).toEqual({ blockId: "h1" });
+  });
+
   it("drops an unknown block, a type mismatch and another revision", async () => {
     const t = await preview();
     t.msg("block-picked", { ref: ref({ blockId: "nope" }), label: "x", rect });
