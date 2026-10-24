@@ -1,10 +1,11 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { issueRelations, issueThreadInteractions, issues, projects } from "@greatstone/db";
 import type {
   IssuePriority,
   IssueStatus,
   IssueTree,
+  IssueTreeBlockLink,
   IssueTreeExternalBlocker,
   IssueTreeNode,
   IssueTreePendingCard,
@@ -13,8 +14,11 @@ import type {
 import type { CanReadIssue } from "./issue-follows.js";
 import { issueService, terminalExplicitBlockersByRoot } from "./issues.js";
 
-/** A task tree stops at this many tasks; the page says so when it does. */
-export const ISSUE_TREE_MAX_NODES = 300;
+/**
+ * A task tree stops at this many tasks; the page says so when it does. High
+ * enough that a whole project's work fits (GRE-2290).
+ */
+export const ISSUE_TREE_MAX_NODES = 2000;
 /** And this many levels below the root, so a bad parent loop cannot run away. */
 export const ISSUE_TREE_MAX_DEPTH = 12;
 
@@ -40,6 +44,31 @@ export const treeNodeColumns = {
 
 export type TreeRow = Pick<typeof issues.$inferSelect, keyof typeof treeNodeColumns>;
 
+/** The columns a task outside the tree is named from. */
+const outsideColumns = {
+  id: issues.id,
+  companyId: issues.companyId,
+  projectId: issues.projectId,
+  parentId: issues.parentId,
+  identifier: issues.identifier,
+  title: issues.title,
+  status: issues.status,
+  assigneeAgentId: issues.assigneeAgentId,
+  assigneeUserId: issues.assigneeUserId,
+  unblockDescriptor: issues.unblockDescriptor,
+  hiddenAt: issues.hiddenAt,
+};
+
+type OutsideRow = Pick<typeof issues.$inferSelect, keyof typeof outsideColumns>;
+
+const QUERY_CHUNK = 500;
+
+function chunked<T>(list: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += QUERY_CHUNK) out.push(list.slice(i, i + QUERY_CHUNK));
+  return out;
+}
+
 export function rowsOf(result: unknown): Record<string, unknown>[] {
   return Array.isArray(result) ? (result as Record<string, unknown>[]) : [];
 }
@@ -58,11 +87,11 @@ export async function buildTreeNodes(
     parentIdOf: (row: TreeRow) => string | null;
     canRead?: CanReadIssue;
   },
-): Promise<{ nodes: IssueTreeNode[]; externalBlockers: IssueTreeExternalBlocker[] }> {
+): Promise<{ nodes: IssueTreeNode[]; externalBlockers: IssueTreeExternalBlocker[]; blockLinks: IssueTreeBlockLink[] }> {
   const { canRead } = options;
   const keptIds = new Set(kept.map((row) => row.id));
   const ids = [...keptIds];
-  if (ids.length === 0) return { nodes: [], externalBlockers: [] };
+  if (ids.length === 0) return { nodes: [], externalBlockers: [], blockLinks: [] };
 
   const [childCounts, relations, attention] = await Promise.all([
     db
@@ -75,22 +104,7 @@ export async function buildTreeNodes(
       .where(and(eq(issues.companyId, companyId), inArray(issues.parentId, ids), isNull(issues.hiddenAt)))
       .groupBy(issues.parentId),
     db
-      .select({
-        blockedId: issueRelations.relatedIssueId,
-        blocker: {
-          id: issues.id,
-          companyId: issues.companyId,
-          projectId: issues.projectId,
-          parentId: issues.parentId,
-          identifier: issues.identifier,
-          title: issues.title,
-          status: issues.status,
-          assigneeAgentId: issues.assigneeAgentId,
-          assigneeUserId: issues.assigneeUserId,
-          unblockDescriptor: issues.unblockDescriptor,
-          hiddenAt: issues.hiddenAt,
-        },
-      })
+      .select({ blockedId: issueRelations.relatedIssueId, blocker: outsideColumns })
       .from(issueRelations)
       .innerJoin(issues, eq(issueRelations.issueId, issues.id))
       .where(
@@ -111,26 +125,98 @@ export async function buildTreeNodes(
   const blockedBy = new Map<string, string[]>();
   const external = new Map<string, IssueTreeExternalBlocker>();
   const externalDescriptors = new Map<string, IssueUnblockDescriptor | null>();
+  const unreadable = new Set<string>();
+  const links = new Map<string, IssueTreeBlockLink>();
+  const addLink = (blockerId: string, blockedId: string) => {
+    if (blockerId !== blockedId) links.set(`${blockerId}>${blockedId}`, { blockerId, blockedId });
+  };
+  /** Names an open task outside the tree, once, when the viewer may read it. */
+  const nameOutside = async (row: OutsideRow) => {
+    if (external.has(row.id)) return true;
+    if (unreadable.has(row.id) || row.hiddenAt || TERMINAL.has(row.status)) return false;
+    if (canRead && !(await canRead(row))) {
+      unreadable.add(row.id);
+      return false;
+    }
+    external.set(row.id, {
+      id: row.id,
+      identifier: row.identifier,
+      title: row.title,
+      status: row.status as IssueStatus,
+      assigneeAgentId: row.assigneeAgentId,
+      assigneeUserId: row.assigneeUserId,
+      projectId: row.projectId,
+      projectName: null,
+    });
+    externalDescriptors.set(row.id, row.unblockDescriptor);
+    return true;
+  };
+
   for (const { blockedId, blocker } of relations) {
     if (blocker.hiddenAt) continue;
-    if (!keptIds.has(blocker.id)) {
-      // A blocker outside the tree is named only while it is open and the
-      // viewer may read it.
-      if (TERMINAL.has(blocker.status)) continue;
-      if (canRead && !(await canRead(blocker))) continue;
-      external.set(blocker.id, {
-        id: blocker.id,
-        identifier: blocker.identifier,
-        title: blocker.title,
-        status: blocker.status as IssueStatus,
-        assigneeAgentId: blocker.assigneeAgentId,
-        assigneeUserId: blocker.assigneeUserId,
-      });
-      externalDescriptors.set(blocker.id, blocker.unblockDescriptor);
-    }
+    // A blocker outside the tree is named only while it is open and the
+    // viewer may read it.
+    if (!keptIds.has(blocker.id) && !(await nameOutside(blocker))) continue;
     const list = blockedBy.get(blockedId) ?? [];
     list.push(blocker.id);
     blockedBy.set(blockedId, list);
+    if (!TERMINAL.has(blocker.status)) addLink(blocker.id, blockedId);
+  }
+
+  // Tasks outside the tree that an open task in it holds up (GRE-2290).
+  const openKeptIds = kept.filter((row) => !TERMINAL.has(row.status)).map((row) => row.id);
+  for (const chunk of chunked(openKeptIds)) {
+    const held = await db
+      .select({ blockerId: issueRelations.issueId, blocked: outsideColumns })
+      .from(issueRelations)
+      .innerJoin(issues, eq(issueRelations.relatedIssueId, issues.id))
+      .where(
+        and(
+          eq(issueRelations.companyId, companyId),
+          eq(issueRelations.type, "blocks"),
+          inArray(issueRelations.issueId, chunk),
+          eq(issues.companyId, companyId),
+          isNull(issues.hiddenAt),
+          notInArray(issues.status, [...TERMINAL]),
+        ),
+      );
+    for (const { blockerId, blocked } of held) {
+      if (keptIds.has(blocked.id) || (await nameOutside(blocked))) addLink(blockerId, blocked.id);
+    }
+  }
+
+  // Every chain up from the tasks outside the tree, to its end however far:
+  // no depth limit, and each task is walked once, so a loop ends (GRE-2290).
+  let frontier = [...external.keys()];
+  while (frontier.length > 0) {
+    const next: string[] = [];
+    for (const chunk of chunked(frontier)) {
+      const up = await db
+        .select({ blockedId: issueRelations.relatedIssueId, blocker: outsideColumns })
+        .from(issueRelations)
+        .innerJoin(issues, eq(issueRelations.issueId, issues.id))
+        .where(
+          and(
+            eq(issueRelations.companyId, companyId),
+            eq(issueRelations.type, "blocks"),
+            inArray(issueRelations.relatedIssueId, chunk),
+            eq(issues.companyId, companyId),
+            isNull(issues.hiddenAt),
+            notInArray(issues.status, [...TERMINAL]),
+          ),
+        );
+      for (const { blockedId, blocker } of up) {
+        if (keptIds.has(blocker.id)) {
+          addLink(blocker.id, blockedId);
+          continue;
+        }
+        const known = external.has(blocker.id);
+        if (!(await nameOutside(blocker))) continue;
+        addLink(blocker.id, blockedId);
+        if (!known) next.push(blocker.id);
+      }
+    }
+    frontier = next;
   }
 
   // The task at the bottom of each blocked task's chain: what the whole chain
@@ -170,22 +256,24 @@ export async function buildTreeNodes(
   ];
   if (farTerminalIds.length > 0) {
     const far = await db
-      .select({ ...treeNodeColumns, hiddenAt: issues.hiddenAt })
+      .select(outsideColumns)
       .from(issues)
       .where(and(eq(issues.companyId, companyId), inArray(issues.id, farTerminalIds)));
-    for (const row of far) {
-      if (row.hiddenAt || TERMINAL.has(row.status)) continue;
-      if (canRead && !(await canRead(row))) continue;
-      external.set(row.id, {
-        id: row.id,
-        identifier: row.identifier,
-        title: row.title,
-        status: row.status as IssueStatus,
-        assigneeAgentId: row.assigneeAgentId,
-        assigneeUserId: row.assigneeUserId,
-      });
-      externalDescriptors.set(row.id, row.unblockDescriptor);
-    }
+    for (const row of far) await nameOutside(row);
+  }
+
+  // Where each outside task lives, so one from another project says so.
+  const projectIds = [...new Set([...external.values()].map((row) => row.projectId).filter((id): id is string => !!id))];
+  if (projectIds.length > 0) {
+    const names = new Map(
+      (
+        await db
+          .select({ id: projects.id, name: projects.name })
+          .from(projects)
+          .where(and(eq(projects.companyId, companyId), inArray(projects.id, projectIds)))
+      ).map((row) => [row.id, row.name]),
+    );
+    for (const row of external.values()) row.projectName = row.projectId ? names.get(row.projectId) ?? null : null;
   }
 
   // The card each blocked task waits on, oldest first.
@@ -262,7 +350,7 @@ export async function buildTreeNodes(
       updatedAt: row.updatedAt,
     };
   });
-  return { nodes, externalBlockers: [...external.values()] };
+  return { nodes, externalBlockers: [...external.values()], blockLinks: [...links.values()] };
 }
 
 export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NODES, maxDepth: ISSUE_TREE_MAX_DEPTH }) {
@@ -317,7 +405,7 @@ export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NOD
       if (!keptIds.has(rootId)) return null;
 
       const root = byId.get(rootId)!;
-      const [{ nodes, externalBlockers }, project] = await Promise.all([
+      const [{ nodes, externalBlockers, blockLinks }, project] = await Promise.all([
         buildTreeNodes(db, companyId, kept, {
           depthOf: (row) => depthById.get(row.id) ?? 0,
           parentIdOf: (row) => (row.id === rootId ? null : row.parentId),
@@ -336,6 +424,7 @@ export function issueTreeService(db: Db, limits = { maxNodes: ISSUE_TREE_MAX_NOD
         rootId,
         nodes,
         externalBlockers,
+        blockLinks,
         truncated: cut,
         limits: { ...limits },
         project,

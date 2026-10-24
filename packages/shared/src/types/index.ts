@@ -1089,7 +1089,7 @@ export type {
   IssueFollowState,
   RecentlyOpenedIssue,
 } from "./issue-follow.js";
-export type { IssueTree, IssueTreeExternalBlocker, IssueTreeNode, IssueTreePendingCard, IssueTreeWaitReason, ProjectTree, ProjectTreeLead } from "./issue-tree.js";
+export type { IssueTree, IssueTreeBlockLink, IssueTreeExternalBlocker, IssueTreeNode, IssueTreePendingCard, IssueTreeWaitReason, ProjectTree, ProjectTreeLead } from "./issue-tree.js";
 export type {
   DecisionEffectStaleness,
   DecisionOptionStyle,

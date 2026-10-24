@@ -58,7 +58,10 @@ export interface IssueTreeNode {
   updatedAt: Date;
 }
 
-/** A task that blocks something in the tree but sits outside it. */
+/**
+ * A task outside the tree that is linked to it by a "blocks" link: anything
+ * up a blocked task's chain, however far, or a task the tree holds up.
+ */
 export interface IssueTreeExternalBlocker {
   id: string;
   identifier: string | null;
@@ -66,6 +69,9 @@ export interface IssueTreeExternalBlocker {
   status: IssueStatus;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  /** Its project, so a task from elsewhere says where it lives. */
+  projectId?: string | null;
+  projectName?: string | null;
   /**
    * Why it waits, when it is blocked. Set for the tasks the tree names as a
    * root blocker too, so "Root: GRE-12, waiting on John" can be shown.
@@ -73,11 +79,22 @@ export interface IssueTreeExternalBlocker {
   waitReason?: IssueTreeWaitReason | null;
 }
 
+/** One "blocks" link: `blockerId` holds up `blockedId`. */
+export interface IssueTreeBlockLink {
+  blockerId: string;
+  blockedId: string;
+}
+
 export interface IssueTree {
   rootId: string;
   /** Root first, then breadth first. */
   nodes: IssueTreeNode[];
   externalBlockers: IssueTreeExternalBlocker[];
+  /**
+   * Every open "blocks" link between the tasks sent (nodes and outside
+   * tasks), full chains included, loops included (GRE-2290).
+   */
+  blockLinks?: IssueTreeBlockLink[];
   /** True when the tree was cut at the node or depth limit. */
   truncated: boolean;
   limits: { maxNodes: number; maxDepth: number };
@@ -106,6 +123,8 @@ export interface ProjectTree {
   /** Tasks, parents before children. A branch top has `parentId` null. */
   nodes: IssueTreeNode[];
   externalBlockers: IssueTreeExternalBlocker[];
+  /** Every open "blocks" link between the tasks sent, as on the task tree. */
+  blockLinks?: IssueTreeBlockLink[];
   /** Finished tasks left out, by the task they sit under (their own sub-tasks included). */
   hiddenDoneByParent: Record<string, number>;
   /** Work under each key task (not counting it), cancelled left out. */

@@ -1608,6 +1608,7 @@ export type {
   IssueFollowState,
   RecentlyOpenedIssue,
   IssueTree,
+  IssueTreeBlockLink,
   IssueTreeExternalBlocker,
   IssueTreeNode,
   IssueTreePendingCard,
