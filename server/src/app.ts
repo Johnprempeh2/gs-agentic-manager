@@ -73,6 +73,8 @@ import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
 import { websiteModuleRoutes } from "./routes/website-module.js";
+import { registerWebsitePublishStarter } from "./services/website/publish-approval.js";
+import { websitePublishStarter } from "./services/website/publish.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
 import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
@@ -761,6 +763,8 @@ export async function createApp(
   api.use(statusCardRoutes(db));
   api.use(websiteRoutes(db));
   api.use(websiteModuleRoutes(db));
+  // "Approve and Publish" on a website_publish card starts the Publish (GRE-2139).
+  registerWebsitePublishStarter(websitePublishStarter(db));
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));

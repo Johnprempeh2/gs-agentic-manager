@@ -12,11 +12,13 @@ import type {
   WebsiteReleaseKind,
   WebsiteReleaseStatus,
 } from "@greatstone/shared";
-import { conflict, unprocessable } from "../../errors.js";
+import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { getStorageService } from "../../storage/index.js";
 import { secretService } from "../secrets.js";
+import { WEBSITE_MESSAGES } from "./messages.js";
 import type { SiteRow } from "./module.js";
+import type { WebsitePublishStarter } from "./publish-approval.js";
 import { createNetlifyPublishClient, type NetlifyDeploy, type WebsiteNetlifyClient } from "./netlify-publish-client.js";
 
 // Website Publish and rollback (GRE-2108; plan GRE-1831 rev 7 section 3.2;
@@ -31,8 +33,10 @@ import { createNetlifyPublishClient, type NetlifyDeploy, type WebsiteNetlifyClie
 //
 // Only a person starts these. Every entry point takes a `WebsitePerson`; the
 // routes build it only from a signed-in person's click (never an agent key, a
-// board API key, an approval, a routine or a timer). Startup recovery never
-// builds, restores or verifies; it only marks rows so a person can Retry.
+// board API key, a routine or a timer). "Approve and Publish" is that click
+// too: the approver, never the agent that proposed it (GRE-2139). Startup
+// recovery never builds, restores or verifies; it only marks rows so a person
+// can Retry.
 
 export type ReleaseRow = typeof websiteRelease.$inferSelect;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -40,6 +44,13 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 /** A person who clicked Publish, Retry or Rollback in GSAM. */
 export interface WebsitePerson {
   userId: string;
+}
+
+/** The website_publish approval a Publish came from, and who proposed it. */
+export interface WebsitePublishApprovalOrigin {
+  approvalId: string;
+  requestedByAgentId: string | null;
+  requestedByUserId: string | null;
 }
 
 export interface FetchedPage {
@@ -722,7 +733,11 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   // ---- entry points (a person's click only) ----
 
-  async function startPublish(site: SiteRow, person: WebsitePerson) {
+  /**
+   * `fromApproval`: "Approve and Publish" (GRE-2139). The approver is `person`;
+   * the proposer (often an agent) is recorded as the requester, never the publisher.
+   */
+  async function startPublish(site: SiteRow, person: WebsitePerson, fromApproval?: WebsitePublishApprovalOrigin) {
     if (!site.netlifyTokenSecretId) throw unprocessable("This site has no Netlify token. Add it in the site settings first.", { code: "website_netlify_token_missing" });
     if (site.archivedAt) throw unprocessable("This site is archived.", { code: "website_site_archived" });
     const releaseId = randomUUID();
@@ -740,7 +755,9 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
           kind: "publish",
           manifest: {},
           status: "building",
-          requestedByUserId: person.userId,
+          approvalId: fromApproval?.approvalId ?? null,
+          requestedByAgentId: fromApproval ? fromApproval.requestedByAgentId : null,
+          requestedByUserId: fromApproval ? fromApproval.requestedByUserId : person.userId,
           publishedByUserId: person.userId,
         })
         .returning();
@@ -929,5 +946,29 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     rollbackPlan,
     rollback,
     recoverOnStartup,
+  };
+}
+
+/**
+ * The starter "Approve and Publish" calls (GRE-2139), registered at server
+ * start. The approvals route calls it only after `assertCanDecide` checked a
+ * signed-in person with website:publish for the site clicked Approve, so the
+ * approver is the click. It takes the lease on the same `startPublish` path:
+ * a running Publish answers 409 and no release is made.
+ */
+export function websitePublishStarter(db: Db, options: WebsitePublishOptions = {}): WebsitePublishStarter {
+  const service = websitePublishService(db, options);
+  return async (input) => {
+    if (!input.publishedByUserId) {
+      throw forbidden(WEBSITE_MESSAGES["proposal.publish.person_only"], { code: "website_publish_person_only" });
+    }
+    const site = await service.getSite(input.companyId, input.siteId);
+    if (!site) throw notFound("Website site not found");
+    const release = await service.startPublish(site, { userId: input.publishedByUserId }, {
+      approvalId: input.approvalId,
+      requestedByAgentId: input.requestedByAgentId,
+      requestedByUserId: input.requestedByUserId,
+    });
+    return { releaseId: release.id };
   };
 }
