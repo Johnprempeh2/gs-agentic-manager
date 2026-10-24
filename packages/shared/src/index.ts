@@ -513,7 +513,7 @@ export * from "./types/website-module.js";
 export * from "./website-collections.js";
 export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
-export * from "./website-modules.js";
+export * from "./website-features.js";
 export * from "./website-frame.js";
 export * from "./types/website-data-bridge.js";
 export * from "./types/intelligence.js";

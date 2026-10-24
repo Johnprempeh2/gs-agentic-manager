@@ -410,9 +410,9 @@ import {
   createWebsiteSitemapOptionSchema,
   importWebsiteSitemapOptionSchema,
   updateWebsiteSitemapOptionSchema,
-  createWebsiteModuleSchema,
+  createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
-  updateWebsiteModuleSchema,
+  updateWebsiteFeatureSchema,
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
@@ -16390,63 +16390,55 @@ registerCurrentRoute({
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
 });
 
-// ─── Website modules (GRE-2325) ───────────────────────────────────────────────
+// ─── Website features (GRE-2325) ───────────────────────────────────────────────
 
 registerCurrentRoute({
   method: "get",
-  path: `${siteParams}/modules`,
+  path: `${siteParams}/features`,
   tags: ["website"],
-  summary: "List the site's module registry in order: route prefixes, collections, owner, lead agent, project and on/off (website:view)",
+  summary: "List the site's feature registry in order: route prefixes, collections, owner, lead agent, project and on/off (website:view)",
   responses: websiteModuleResponses,
 });
 
 registerCurrentRoute({
   method: "post",
-  path: `${siteParams}/modules`,
+  path: `${siteParams}/features`,
   tags: ["website"],
-  summary: "Add a module to the site's registry (website:publish, people only)",
-  body: createWebsiteModuleSchema,
+  summary: "Add a feature to the site's registry; the key is made from the name when left out (website:publish, people only)",
+  body: createWebsiteFeatureSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
 });
 
 registerCurrentRoute({
-  method: "post",
-  path: `${siteParams}/modules/starting-set`,
-  tags: ["website"],
-  summary: "Add the starting modules the site does not have yet; 200 when there is nothing to add (website:publish, people only)",
-  responses: { ...websiteModuleResponses, 201: r.ok() },
-});
-
-registerCurrentRoute({
   method: "get",
-  path: `${siteParams}/module-cards`,
+  path: `${siteParams}/feature-cards`,
   tags: ["website"],
-  summary: "The Modules cards of Website Home: pages, open tasks, what needs a person, the last release that touched each module and a health dot (website:view)",
+  summary: "The Features cards of Website Home: pages, open tasks, what needs a person, the last release that touched each feature and a health dot (website:view)",
   responses: websiteModuleResponses,
 });
 
 registerCurrentRoute({
   method: "get",
-  path: `${siteParams}/modules/{moduleId}`,
+  path: `${siteParams}/features/{featureId}`,
   tags: ["website"],
-  summary: "A module with the pages in its slice and its recent changes (website:view)",
+  summary: "A feature with the pages in its slice and its recent changes (website:view)",
   responses: websiteModuleResponses,
 });
 
 registerCurrentRoute({
   method: "patch",
-  path: `${siteParams}/modules/{moduleId}`,
+  path: `${siteParams}/features/{featureId}`,
   tags: ["website"],
-  summary: "Change a module: owner, lead agent, project, routes, collections or on/off. Off hides its screens and deletes nothing (website:publish, people only)",
-  body: updateWebsiteModuleSchema,
+  summary: "Change a feature: owner, lead agent, project, routes, collections or on/off. Off hides its screens and deletes nothing (website:publish, people only)",
+  body: updateWebsiteFeatureSchema,
   responses: { ...websiteModuleResponses, 400: r.badRequest, 422: r.unprocessable },
 });
 
 registerCurrentRoute({
   method: "delete",
-  path: `${siteParams}/modules/{moduleId}`,
+  path: `${siteParams}/features/{featureId}`,
   tags: ["website"],
-  summary: "Remove a module from the registry; its pages, entries and tasks stay (website:publish, people only)",
+  summary: "Remove a feature from the registry; its pages, entries and tasks stay (website:publish, people only)",
   responses: { 204: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
