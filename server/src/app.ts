@@ -166,6 +166,7 @@ import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { generatedImageRoutes } from "./routes/generated-images.js";
 import { generatedVideoRoutes } from "./routes/generated-videos.js";
+import { motionStudyRoutes } from "./routes/motion-studies.js";
 import { studioLookRoutes } from "./routes/studio-looks.js";
 import { accessRoutes } from "./routes/access.js";
 import { legacyBoardRoutes } from "./routes/legacy-board.js";
@@ -856,6 +857,7 @@ export async function createApp(
   api.use(assetRoutes(db, opts.storageService));
   api.use(generatedImageRoutes(db, opts.storageService));
   api.use(generatedVideoRoutes(db, opts.storageService));
+  api.use(motionStudyRoutes(db, opts.storageService));
   api.use(studioLookRoutes(db));
   api.use(deliverableRoutes(db, opts.storageService, { publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(projectToolRoutes(db));
