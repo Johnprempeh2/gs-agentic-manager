@@ -6,6 +6,7 @@ import { useSecondTick } from "@/hooks/useSecondTick";
 import { formatDurationWords } from "@/lib/issue-chat-messages";
 import { isCommandTool } from "@/lib/transcriptPresentation";
 import { isTerminalRunStatus } from "@/components/task-chat/transcript-adapter";
+import { runSilenceNote } from "../../lib/task-run-state";
 
 /**
  * "ran N commands, called M tools" for the live tail's status pill, counted off
@@ -49,6 +50,7 @@ export function TaskChatLiveRunPill({
   finishedAtMs,
   toolSummary,
   statusMessage = null,
+  lastOutputAtMs = null,
 }: {
   status: string;
   execution?: ExecutionProjection | null;
@@ -57,10 +59,13 @@ export function TaskChatLiveRunPill({
   /** Run finish in ms once terminal; drives the settled elapsed readout. */
   finishedAtMs?: number | null;
   toolSummary: string | null;
-  /** Runtime status line; a queued run held by admission shows it instead of "Working" (GRE-198). */
+  /** Runtime status line; a queued run held by admission shows it in place of "Queued" (GRE-198). */
   statusMessage?: string | null;
+  /** Last output from the run (latest event, else start); a long silence adds "no output for 12 min" (GRE-2246). */
+  lastOutputAtMs?: number | null;
 }) {
-  const waiting = status === "queued" && Boolean(statusMessage);
+  // A queued run waits for its agent's slot; it never reads as "Working" (GRE-2246).
+  const waiting = status === "queued";
   const active = !isTerminalRunStatus(status) && !waiting;
   // One shared page-wide ticker drives the live elapsed readout, matching the
   // default view's `useLiveElapsed`.
@@ -73,9 +78,10 @@ export function TaskChatLiveRunPill({
     : null;
   const failed = ["failed", "timed_out", "cancelled", "interrupted"].includes(status);
   const verb = waiting
-    ? statusMessage
+    ? statusMessage || "Queued"
     : active ? "Working" : failed ? "Stopped" : "Worked";
   const suffix = elapsed && !waiting ? `for ${elapsed}` : null;
+  const silence = active ? runSilenceNote(lastOutputAtMs, Date.now()) : null;
 
   return (
     <div
@@ -96,6 +102,7 @@ export function TaskChatLiveRunPill({
       </span>
       {suffix ? <span className="text-xs text-subtle-foreground">{suffix}</span> : null}
       {toolSummary ? <span className="text-xs text-subtle-foreground">· {toolSummary}</span> : null}
+      {silence ? <span className="text-xs text-status-warning-foreground">· {silence}</span> : null}
     </div>
   );
 }

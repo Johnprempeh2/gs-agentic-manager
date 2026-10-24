@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { TaskRunStatesContext, useTaskRunStates } from "../hooks/useTaskRunStates";
 import { useQuery } from "@tanstack/react-query";
 import type { IssueTreeNode } from "@greatstone/shared";
 import { FileText, Maximize2, Network } from "lucide-react";
@@ -40,6 +41,8 @@ export function TaskTree() {
   const navigate = useNavigate();
   const location = useLocation();
   const isPhone = useIsPhone();
+  // Working, queued or stuck per node (GRE-2246).
+  const taskRunStates = useTaskRunStates(selectedCompanyId);
   const people = useTaskTreePeople(selectedCompanyId);
 
   const treeQuery = useQuery({
@@ -117,55 +120,57 @@ export function TaskTree() {
 
   return (
     // The task route drops the shell's top padding for the thread; the tree puts it back so its header sits where every other page's does.
-    <div className="flex h-full min-h-0 w-full flex-col gap-6 md:pt-6" data-task-tree-page="">
-      <TaskTreeHeader
-        root={root}
-        counts={countTreeStatuses(index.byId.values(), root.id)}
-        rootBlockers={trace.rootBlockers}
-        people={people}
-        onSelectBlocker={selectBlocker}
-        truncatedNote={truncatedNote}
-        actions={actions}
-      />
-      {isPhone && !diagramOpen ? (
-        <div className="flex">
-          <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
-            <Maximize2 />
-            Open the diagram full screen
-          </Button>
-        </div>
-      ) : null}
-      {isPhone && !diagramOpen ? (
-        <TaskTreeOutline
-          visibleRoot={visibleRoot}
-          trace={trace}
+    <TaskRunStatesContext.Provider value={taskRunStates}>
+      <div className="flex h-full min-h-0 w-full flex-col gap-6 md:pt-6" data-task-tree-page="">
+        <TaskTreeHeader
+          root={root}
+          counts={countTreeStatuses(index.byId.values(), root.id)}
+          rootBlockers={trace.rootBlockers}
           people={people}
-          hrefFor={(item: VisibleTaskItem) => taskHref(item.node)}
-          waitingOnById={waitingOnById}
-          onToggleCollapsed={toggleCollapsed}
-          onShowFinished={() => setShowFinished(true)}
-          highlightId={focusRequest?.id ?? null}
+          onSelectBlocker={selectBlocker}
+          truncatedNote={truncatedNote}
+          actions={actions}
         />
-      ) : (
-        <TaskTreeCanvas
-          className="min-h-96 flex-1"
-          visibleRoot={visibleRoot}
-          trace={trace}
-          people={people}
-          waitingOnById={waitingOnById}
-          onOpen={(node) => navigate(taskHref(node))}
-          onToggleCollapsed={toggleCollapsed}
-          onShowFinished={() => setShowFinished(true)}
-          focusRequest={focusRequest}
-          storageKey={storageKey}
-          findItems={view.findItems}
-          onFind={view.reveal}
-          onCollapseAll={view.collapseAll}
-          onExpandAll={view.expandAll}
-          startFullscreen={isPhone}
-          onExitFullscreen={() => setDiagramOpen(false)}
-        />
-      )}
-    </div>
+        {isPhone && !diagramOpen ? (
+          <div className="flex">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
+              <Maximize2 />
+              Open the diagram full screen
+            </Button>
+          </div>
+        ) : null}
+        {isPhone && !diagramOpen ? (
+          <TaskTreeOutline
+            visibleRoot={visibleRoot}
+            trace={trace}
+            people={people}
+            hrefFor={(item: VisibleTaskItem) => taskHref(item.node)}
+            waitingOnById={waitingOnById}
+            onToggleCollapsed={toggleCollapsed}
+            onShowFinished={() => setShowFinished(true)}
+            highlightId={focusRequest?.id ?? null}
+          />
+        ) : (
+          <TaskTreeCanvas
+            className="min-h-96 flex-1"
+            visibleRoot={visibleRoot}
+            trace={trace}
+            people={people}
+            waitingOnById={waitingOnById}
+            onOpen={(node) => navigate(taskHref(node))}
+            onToggleCollapsed={toggleCollapsed}
+            onShowFinished={() => setShowFinished(true)}
+            focusRequest={focusRequest}
+            storageKey={storageKey}
+            findItems={view.findItems}
+            onFind={view.reveal}
+            onCollapseAll={view.collapseAll}
+            onExpandAll={view.expandAll}
+            startFullscreen={isPhone}
+            onExitFullscreen={() => setDiagramOpen(false)}
+          />
+        )}
+      </div>
+    </TaskRunStatesContext.Provider>
   );
 }

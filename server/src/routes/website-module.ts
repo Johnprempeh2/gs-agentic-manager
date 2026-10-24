@@ -262,13 +262,17 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     if (!row) throw unprocessable("That website property is not in this company", { code: "website_property_not_found" });
   }
 
+  /** The origins GSAM is served from: the configured ones and this request's. */
+  function gsamOriginsFor(req: Request) {
+    const host = req.get("host");
+    return [...(options.gsamOrigins ?? []), ...(host ? [`${req.protocol}://${host}`] : [])];
+  }
+
   /** Rule C1.1, on every save of the setting and again when the editor opens. */
   function editorOriginProblem(req: Request, site: Pick<SiteRow, "domain">, editorFrameOrigin: string) {
-    const host = req.get("host");
-    const requestOrigin = host ? `${req.protocol}://${host}` : null;
     return checkWebsiteEditorOrigin(editorFrameOrigin, {
       publicOrigin: `https://${site.domain}`,
-      gsamOrigins: [...(options.gsamOrigins ?? []), ...(requestOrigin ? [requestOrigin] : [])],
+      gsamOrigins: gsamOriginsFor(req),
       allowLocalhost: options.allowLocalhostEditor,
     });
   }
@@ -366,7 +370,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   router.get(WEBSITE_MODULE_API_ROUTES.home, async (req, res) => {
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
-    res.json(await home.summary(site));
+    res.json(await home.summary(site, gsamOriginsFor(req)));
   });
 
   // ---- pages ----

@@ -33,6 +33,13 @@ describe("StatusIcon", () => {
     expect(renderToStaticMarkup(<StatusIcon status="in_progress" />)).toContain("animate-spin");
   });
 
+  it("shows a still clock, not the spinner, for a task whose run is queued (GRE-2246)", () => {
+    const queued = renderToStaticMarkup(<StatusIcon status="in_progress" queued showLabel />);
+    expect(queued).toContain("lucide-clock");
+    expect(queued).not.toContain("animate-spin");
+    expect(queued).toContain("queued for its agent");
+  });
+
   it("maps covered-blocked → In queue (blue in_queue var, no cyan markers)", () => {
     const html = renderToStaticMarkup(
       <StatusIcon

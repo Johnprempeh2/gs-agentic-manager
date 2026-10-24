@@ -69,6 +69,8 @@ function SiteForm({ companyId, property, site, onDone }: {
     : "";
   const secretId = chosenSecretId ?? linkedSecretId;
   const [editorFrameOrigin, setEditorFrameOrigin] = useState(site?.editorFrameOrigin ?? "");
+  const [livePreviewUrl, setLivePreviewUrl] = useState(site?.livePreviewUrl ?? "");
+  const [devPreviewUrl, setDevPreviewUrl] = useState(site?.devPreviewUrl ?? "");
   const save = useMutation({
     mutationFn: () => {
       const token =
@@ -83,6 +85,8 @@ function SiteForm({ companyId, property, site, onDone }: {
         ...token,
         // Sent only when it changes: a change ends open editor sessions (frame contract rule C2.3).
         ...((site?.editorFrameOrigin ?? "") !== editorFrameOrigin.trim() ? { editorFrameOrigin: editorFrameOrigin.trim() || null } : {}),
+        ...((site?.livePreviewUrl ?? "") !== livePreviewUrl.trim() ? { livePreviewUrl: livePreviewUrl.trim() || null } : {}),
+        ...((site?.devPreviewUrl ?? "") !== devPreviewUrl.trim() ? { devPreviewUrl: devPreviewUrl.trim() || null } : {}),
       };
       return site
         ? websiteModuleApi.updateSite(companyId, site.id, fields)
@@ -225,6 +229,40 @@ function SiteForm({ companyId, property, site, onDone }: {
             autoComplete="off"
           />
         </Field>
+        <Field
+          id={`${idPrefix}-live-preview`}
+          label="Live site view"
+          help="Optional. A copy of the live site that GSAM may show in a frame, for the Preview tab's Live view. It must be an exact copy of the live deploy, for example a Netlify deploy address of the same build. Empty: the live address."
+        >
+          <Input
+            id={`${idPrefix}-live-preview`}
+            type="url"
+            pattern="https://.*"
+            title="An address starting https://"
+            value={livePreviewUrl}
+            onChange={(event) => setLivePreviewUrl(event.target.value)}
+            aria-describedby={`${idPrefix}-live-preview-help`}
+            placeholder={`https://${domain.trim() || "www.example.com"}/`}
+            autoComplete="off"
+          />
+        </Field>
+        <Field
+          id={`${idPrefix}-dev-preview`}
+          label="In development"
+          help="Optional. Where the next version of the site runs, for the Preview tab's In development view. Empty: the editor address."
+        >
+          <Input
+            id={`${idPrefix}-dev-preview`}
+            type="url"
+            pattern="https://.*"
+            title="An address starting https://"
+            value={devPreviewUrl}
+            onChange={(event) => setDevPreviewUrl(event.target.value)}
+            aria-describedby={`${idPrefix}-dev-preview-help`}
+            placeholder={editorFrameOrigin.trim() || "https://next.example.com"}
+            autoComplete="off"
+          />
+        </Field>
       </fieldset>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="ghost" onClick={onDone} disabled={save.isPending}>Cancel</Button>
@@ -280,6 +318,8 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
                 : "Not saved yet. Publish needs it."}
           </Detail>
           <Detail label="Editor address">{site.editorFrameOrigin ? <span className="font-mono">{site.editorFrameOrigin}</span> : "Not set. Editing pages needs it."}</Detail>
+          <Detail label="Live site view">{site.livePreviewUrl ? <span className="font-mono">{site.livePreviewUrl}</span> : "The live address"}</Detail>
+          <Detail label="In development">{site.devPreviewUrl ? <span className="font-mono">{site.devPreviewUrl}</span> : site.editorFrameOrigin ? "The editor address" : "Not set"}</Detail>
         </dl>
       ) : (
         <div className="space-y-3">

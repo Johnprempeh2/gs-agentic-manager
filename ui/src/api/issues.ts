@@ -466,6 +466,8 @@ export const issuesApi = {
       rememberAction?: boolean;
       editedBody?: string;
       learnFromEdits?: boolean;
+      /** request_steps: saved straight into Secrets, never returned. */
+      secretValue?: string;
     },
     options?: RequestOptions,
   ) =>
@@ -473,6 +475,11 @@ export const issuesApi = {
       `/issues/${id}/interactions/${interactionId}/accept`,
       data ?? {},
       options,
+    ),
+  saveStepsProgress: (id: string, interactionId: string, tickedSteps: number[]) =>
+    api.post<IssueThreadInteraction>(
+      `/issues/${id}/interactions/${interactionId}/steps-progress`,
+      { tickedSteps },
     ),
   rejectInteraction: (id: string, interactionId: string, reason?: string) =>
     api.post<IssueThreadInteraction>(

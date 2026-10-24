@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
+import { TaskRunStateChip } from "@/components/TaskRunStateChip";
+import { TaskRunStatesContext } from "@/hooks/useTaskRunStates";
+import { runStateForTask } from "@/lib/task-run-state";
 import type { IssueTreeNode } from "@greatstone/shared";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Link } from "@/lib/router";
@@ -40,6 +43,7 @@ export function TaskTreeOutline({
   actionFor,
   className,
 }: TaskTreeOutlineProps) {
+  const runStates = useContext(TaskRunStatesContext);
   const row = (item: VisibleItem, depth: number) => {
     const indent = { paddingLeft: depth * 16 + 4 };
     if (item.kind === "done") {
@@ -95,13 +99,14 @@ export function TaskTreeOutline({
           ) : (
             <span className="inline-block size-5 shrink-0" aria-hidden="true" />
           )}
-          <StatusIcon status={node.status} size="sm" />
+          <StatusIcon status={node.status} size="sm" queued={runStateForTask(runStates, node)?.kind === "queued"} />
           <Link to={hrefFor(item)} className="min-w-0 flex-1 py-2 text-sm">
             <span className={cn("line-clamp-2 text-foreground", depth === 0 ? "font-semibold" : "font-medium")}>{node.title}</span>
             <span className="mt-0.5 flex min-w-0 items-center gap-2">
               {node.identifier ? <span className="font-mono text-xs text-muted-foreground">{node.identifier}</span> : null}
               {node.isKeyTask ? <KeyTaskMark /> : null}
               <TaskTreeOwner people={people} owner={node} className="min-w-0" />
+              {runStateForTask(runStates, node) ? <TaskRunStateChip state={runStateForTask(runStates, node)!} /> : null}
             </span>
             {isRootBlocker || waitingOn ? (
               <span className="mt-1 inline-flex max-w-full truncate rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">

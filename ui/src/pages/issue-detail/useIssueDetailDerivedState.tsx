@@ -16,6 +16,7 @@ import { useIssuePlanDocument } from "../../hooks/useIssuePlanDocument";
 import { useTaskArtifactArrival } from "../../hooks/useTaskArtifactArrival";
 import type { MentionOption } from "../../components/MarkdownEditor";
 import { StatusIcon } from "../../components/StatusIcon";
+import { useTaskQueued } from "../../hooks/useTaskRunStates";
 import { buildIssuePropertiesPanelKey } from "../../lib/issue-properties-panel-key";
 import { shouldSuppressTaskPanelUntilPlan, openSkillPanelState } from "../../lib/task-side-panel-state";
 import { shouldRenderRichSubIssuesSection, buildIssueSiblingNavigation } from "../../lib/issue-detail-subissues";
@@ -362,12 +363,14 @@ export function useIssueDetailDerivedState({
     issue?.identifier ?? issueHeaderSeed?.identifier ?? undefined;
   const breadcrumbStatus = issue?.status;
   const breadcrumbBlockerAttention = issue?.blockerAttention;
+  // A queued run shows a clock in the breadcrumb, not the spinner (GRE-2246).
+  const breadcrumbQueued = useTaskQueued(issue?.companyId, issue);
   // Stable identity for the breadcrumb status glyph. The glyph's shape/colour
   // depend on status (+ covered state), and its accessible label is derived
   // from the blocker counts — so the key signs over the full blockerAttention,
   // not just `state`, to avoid a stale label when counts change.
   const breadcrumbStatusKey = breadcrumbStatus
-    ? `${breadcrumbStatus}|${issue?.externalConversationState ?? ""}|${JSON.stringify(breadcrumbBlockerAttention ?? null)}`
+    ? `${breadcrumbStatus}|${issue?.externalConversationState ?? ""}|${JSON.stringify(breadcrumbBlockerAttention ?? null)}|${breadcrumbQueued}`
     : undefined;
   const breadcrumbStatusLeading = useMemo(
     () =>
@@ -375,6 +378,7 @@ export function useIssueDetailDerivedState({
         <StatusIcon
           status={breadcrumbStatus}
           externalConversationState={issue?.externalConversationState}
+          queued={breadcrumbQueued}
           className="size-3"
           blockerAttention={breadcrumbBlockerAttention}
         />

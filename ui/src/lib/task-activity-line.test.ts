@@ -36,6 +36,21 @@ describe("describeTaskActivity", () => {
     expect(line({ input: { hasLiveRuns: true } })).toBe("Mica is working on it");
   });
 
+  it("a queued run is not work in hand (GRE-2246)", () => {
+    expect(line({ input: { hasLiveRuns: true, runStateKind: "queued" } })).toBe("Mica is queued; not started yet");
+    expect(line({ input: { hasLiveRuns: true, runStateKind: "running" } })).toBe("Mica is working on it");
+  });
+
+  it("a stuck run says so beside the working line (GRE-2246)", () => {
+    expect(
+      line({ input: { hasLiveRuns: true, runStateKind: "stuck", runSilenceNote: "no output for 12 min" } }),
+    ).toBe("Mica is working on it; no output for 12 min");
+    // The note only belongs to a stuck run.
+    expect(
+      line({ input: { hasLiveRuns: true, runStateKind: "running", runSilenceNote: "no output for 12 min" } }),
+    ).toBe("Mica is working on it");
+  });
+
   it("uses the run phase in plain words, never the raw code", () => {
     const text = line({
       issue: {

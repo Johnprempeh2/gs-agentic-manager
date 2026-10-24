@@ -91,8 +91,16 @@ describe("TaskChatRunnerTurn", () => {
     },
   });
 
-  it("shows a stable Working header with Thinking at the turn tail", () => {
+  it("a queued run says Queued, not Working, and has no Thinking tail (GRE-2246)", () => {
     render([], "queued");
+    expect(
+      container.querySelector('[data-testid="task-chat-turn-status-header"]')?.textContent,
+    ).toBe("Queued; waiting for the agent to start");
+    expect(container.querySelector('[data-testid="task-chat-current-activity"]')).toBeNull();
+  });
+
+  it("shows a stable Working header with Thinking at the turn tail", () => {
+    render([], "running");
     expect(container.textContent).toContain("Thinking");
     expect(container.textContent).toContain("Runner");
     expect(

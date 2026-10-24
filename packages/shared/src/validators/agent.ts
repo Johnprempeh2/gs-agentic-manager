@@ -13,6 +13,7 @@ import { trustAuthorizationPolicySchema, trustPresetSchema } from "./trust-polic
 import { agentDesiredSkillSelectionSchema } from "./adapter-skills.js";
 import { objectWithoutDefaults } from "./partial.js";
 import { PIPELINE_ACCESS_LEVELS } from "../pipeline-access.js";
+import { AGENT_WEBSITE_ACCESS_LEVELS } from "../agent-website-access.js";
 import { RUN_CAPABILITY_KEYS, isRunCapabilityKey } from "../run-capabilities.js";
 
 export const agentPermissionsSchema = z.object({
@@ -330,6 +331,9 @@ export const updateAgentPermissionsSchema = z.object({
   canApproveMemory: z.boolean().optional(),
   // Board users with users:manage_permissions only; agents are refused.
   pipelineAccess: agentPipelineAccessSchema.optional(),
+  // Website access (GRE-2239): board users with users:manage_permissions
+  // only. No publish level; website:publish is for people only.
+  websiteAccess: z.enum(AGENT_WEBSITE_ACCESS_LEVELS).optional(),
   trustPreset: trustPresetSchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
 });

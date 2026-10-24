@@ -58,6 +58,8 @@ export function toWebsiteSite(row: SiteRow, secretName: string | null = null): W
     propertyId: row.propertyId,
     editorOrigins: row.editorOrigins,
     editorFrameOrigin: row.editorFrameOrigin,
+    livePreviewUrl: row.livePreviewUrl,
+    devPreviewUrl: row.devPreviewUrl,
     checkPaths: row.checkPaths,
     liveReleaseId: row.liveReleaseId,
     archivedAt: row.archivedAt?.toISOString() ?? null,
@@ -418,6 +420,8 @@ export function websiteModuleService(db: Db) {
           propertyId: input.propertyId ?? null,
           editorOrigins: input.editorOrigins ?? [],
           editorFrameOrigin: input.editorFrameOrigin ?? null,
+          livePreviewUrl: input.livePreviewUrl ?? null,
+          devPreviewUrl: input.devPreviewUrl ?? null,
           checkPaths: input.checkPaths ?? ["/"],
         })
         .returning();

@@ -110,6 +110,14 @@ describe("framingFromHeaders", () => {
     expect(framingFromHeaders(new Headers({ "content-security-policy": "default-src 'self'" }))).toBe("allowed");
     expect(framingFromHeaders(new Headers())).toBe("allowed");
   });
+
+  it("allows a frame-ancestors list that names GSAM's own origin", () => {
+    const csp = new Headers({ "content-security-policy": "frame-ancestors 'self' https://gsam.example.test:3100" });
+    expect(framingFromHeaders(csp, ["https://gsam.example.test:3100"])).toBe("allowed");
+    expect(framingFromHeaders(csp, ["https://gsam.example.test:3100/"])).toBe("allowed");
+    expect(framingFromHeaders(csp, ["http://localhost:3121"])).toBe("refused");
+    expect(framingFromHeaders(csp)).toBe("refused");
+  });
 });
 
 describe("private pattern pages", () => {
@@ -252,6 +260,8 @@ describeEmbeddedPostgres("website sitemap routes", () => {
     expect(empty.sitemap).toEqual({ approved: null, awaitingReview: 0 });
     expect(empty.releases).toEqual({ latest: null, live: null });
     expect(empty.publishApproval).toBeNull();
+    // No editor address and no development address: nothing to check.
+    expect(empty.devFraming).toBe("unknown");
 
     const a = (await http.post(`${base}/sitemap/options/import`).send(optionA).expect(201)).body as WebsiteSitemapOption;
     await http.post(`${base}/sitemap/options/${a.id}/approve`).expect(200);

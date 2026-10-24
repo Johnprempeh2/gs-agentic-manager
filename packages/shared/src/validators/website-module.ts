@@ -64,6 +64,18 @@ const seoSchema = z
   })
   .strict();
 
+/** A preview address the Preview tab frames: https only, no credentials. */
+export const websitePreviewUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .url("Enter a full address, starting https://")
+  .refine((value) => {
+    // The refinement runs even when `.url()` has already failed.
+    const url = URL.canParse(value) ? new URL(value) : null;
+    return !!url && url.protocol === "https:" && !url.username && !url.password;
+  }, "Use an https address without a user name or password");
+
 const websiteSiteFields = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -81,6 +93,9 @@ const websiteSiteFields = z
     editorOrigins: z.array(z.string().trim().url().max(300)).max(10).optional(),
     /** The dedicated editor host. The route checks rule C1.1 and that the caller may publish. */
     editorFrameOrigin: z.string().trim().min(1).max(300).nullable().optional(),
+    /** Preview addresses (24 Oct 2026); null clears one back to its default. */
+    livePreviewUrl: websitePreviewUrlSchema.nullable().optional(),
+    devPreviewUrl: websitePreviewUrlSchema.nullable().optional(),
     checkPaths: z.array(websiteStaticPathSchema).min(1).max(20).optional(),
   })
   .strict();

@@ -25,6 +25,8 @@ interface StatusIconProps {
   size?: StatusGlyphSize;
   /** Open work that is only waiting for a scheduled check: shows a clock, not a spinner. */
   waiting?: boolean;
+  /** Its agent run is queued, not running (GRE-2246): a clock, not a spinner. */
+  queued?: boolean;
 }
 
 /** The status word a person sees beside the glyph (a review waiting on an outside reply reads "Idle"). */
@@ -92,13 +94,16 @@ export function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | 
  * glyph — the blocked shape recoloured blue — while the full blocked reason
  * still rides on the accessible label.
  */
-export function StatusIcon({ status, externalConversationState, blockerAttention, onChange, className, glyphContainerClassName, showLabel, size = "md", waiting = false }: StatusIconProps) {
+export function StatusIcon({ status, externalConversationState, blockerAttention, onChange, className, glyphContainerClassName, showLabel, size = "md", waiting = false, queued = false }: StatusIconProps) {
   const [open, setOpen] = useState(false);
   const displayStatus = status === "in_review" && externalConversationState === "waiting" ? "idle" : status;
   const isCoveredBlocked = status === "blocked" && blockerAttention?.state === "covered";
-  const isWaiting = waiting && (status === "in_progress" || status === "in_review");
+  const isOpenWork = status === "in_progress" || status === "in_review";
+  const isQueued = queued && isOpenWork;
+  const isWaiting = (waiting || queued) && isOpenWork;
   const ariaLabel = status === "blocked"
     ? blockedAttentionLabel(blockerAttention)
+    : isQueued ? `${statusLabel(displayStatus)} · queued for its agent`
     : isWaiting ? `${statusLabel(displayStatus)} · waiting for a scheduled check` : statusLabel(displayStatus);
   const glyphStatus = isCoveredBlocked ? "in_queue" : isWaiting ? "waiting" : displayStatus;
 
