@@ -74,6 +74,8 @@ import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
 import { websiteModulesRoutes } from "./routes/website-modules.js";
+import { websiteDataBridgeRoutes } from "./routes/website-data-bridge.js";
+import { websiteDataBridgeService } from "./services/website/data-bridge.js";
 import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
 import { websiteEnquiryPipedriveCopy } from "./services/website/enquiry-pipedrive.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
@@ -772,10 +774,13 @@ export async function createApp(
       gsamOrigins: gsamServedOrigins(opts.authPublicBaseUrl, opts.allowedHostnames),
       allowLocalhostEditor: process.env.NODE_ENV !== "production",
       heartbeat: connectionIntentHeartbeat,
-      enquiryReader: opts.websiteEnquiryReader,
+      // The signed admin bridge (GRE-2323) answers "Check for enquiries". The 5-minute pull below stays off
+      // unless a reader is passed in, so connecting a read key does not start background imports by itself.
+      enquiryReader: opts.websiteEnquiryReader ?? websiteDataBridgeService(db).enquiryReader,
     }),
   );
   api.use(websiteModulesRoutes(db));
+  api.use(websiteDataBridgeRoutes(db));
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
