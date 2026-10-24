@@ -35,7 +35,7 @@ const nameOf = treeNameOf({
 
 function reasonFor(nodes: IssueTreeNode[], id: string, externalBlockers: IssueTreeExternalBlocker[] = []) {
   const tree: IssueTree = { rootId: "1", nodes, externalBlockers, truncated: false, limits: { maxNodes: 300, maxDepth: 12 } };
-  const index = indexTaskTree(tree);
+  const index = indexTaskTree(tree)!;
   return describeTreeBlock(index.byId.get(id)!, index, nameOf);
 }
 
