@@ -29,8 +29,8 @@ export const WEBSITE_FRAME_HANDSHAKE_TYPES: readonly WebsiteFrameHandshakeType[]
   "hello-refused",
 ];
 
-export type WebsiteFrameHostMessageType = "load-draft" | "save-result" | "highlight" | "teardown";
-export type WebsiteFrameFrameMessageType = "dirty" | "save" | "block-picked" | "error";
+export type WebsiteFrameHostMessageType = "load-draft" | "save-result" | "highlight" | "teardown" | "insert-media";
+export type WebsiteFrameFrameMessageType = "dirty" | "save" | "block-picked" | "error" | "insert-media-result";
 
 // ---------------------------------------------------------------- nonce
 
@@ -231,11 +231,114 @@ export type WebsiteFrameBlockPicked = z.infer<typeof websiteFrameBlockPickedSche
 
 export const websiteFrameErrorSchema = z.object({ code: z.string().max(100), message: z.string().max(2000) });
 
+// ---------------------------------------------------------------- insert-media
+
+/**
+ * How long the host waits for `insert-media-result`. A site on an older engine
+ * ignores `insert-media` without an answer (unknown host types are dropped,
+ * protocol 1 is kept), so no reply in time means "not supported here".
+ */
+export const WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS = 5_000;
+
+const MAX_ASSET_URL_LENGTH = 2048;
+
+/**
+ * An `assetUrl` the frame may put in a block: an absolute `https://` URL with
+ * no credentials, or a root-relative path on the site's own (media) origin,
+ * such as `/media/hero.webp`. Protocol-relative (`//host`), backslashes and
+ * every other scheme (`http:`, `javascript:`, `data:`, `blob:`) are refused.
+ */
+export function isWebsiteFrameAssetUrl(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_ASSET_URL_LENGTH) return false;
+  if (/[\s\\]/.test(value)) return false;
+  if (value.startsWith("/")) return !value.startsWith("//");
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && !parsed.username && !parsed.password && parsed.hostname.length > 0;
+}
+
+/** A top-level Puck prop name on the block, for example `image`. */
+const blockFieldSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/);
+
+const dimensionSchema = z.number().int().nonnegative().nullable();
+
+/**
+ * One media entry as the frame gets it, the same shape as a `load-draft.media`
+ * entry: the image itself as a `Blob`, so the frame never calls GSAM.
+ */
+export const websiteFrameMediaEntrySchema = z
+  .object({
+    blob: z.custom<Blob>((value) => typeof Blob !== "undefined" && value instanceof Blob),
+    alt: z.string().max(500),
+    width: dimensionSchema,
+    height: dimensionSchema,
+  })
+  .strict();
+export type WebsiteFrameMediaEntry = z.infer<typeof websiteFrameMediaEntrySchema>;
+
+/**
+ * `insert-media` payload, host to frame: put this media entry in this field of this block.
+ * - `mediaEntryId` carries the GSAM asset id (the key of `load-draft.media`), not a
+ *   Website media entry id. The frame stores it in the block as `media:<assetId>`.
+ *   The name stays as it is: sites already on protocol 1 read it.
+ * - `media` is optional (added in protocol 1, GRE-2226): the image as a `Blob`, so
+ *   the frame can show it before the page is saved and loaded again. The host leaves
+ *   it out when it cannot fetch the image; the frame then falls back to `assetUrl`.
+ */
+export const websiteFrameInsertMediaSchema = z
+  .object({
+    blockId: blockIdSchema,
+    field: blockFieldSchema,
+    mediaEntryId: idString,
+    assetUrl: z.string().max(MAX_ASSET_URL_LENGTH).refine(isWebsiteFrameAssetUrl),
+    alt: z.string().max(500),
+    media: websiteFrameMediaEntrySchema.optional(),
+  })
+  .strict();
+export type WebsiteFrameInsertMedia = z.infer<typeof websiteFrameInsertMediaSchema>;
+
+/**
+ * Why the frame did not insert the media:
+ * - `block_not_found`: no block with `blockId` on the open page.
+ * - `field_not_found`: the block type has no field named `field`.
+ * - `field_not_media`: the field exists but does not take media.
+ * - `invalid_payload`: the frame's own checks refused the payload.
+ * - `error`: anything else; `message` says what.
+ */
+export const WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES = [
+  "block_not_found",
+  "field_not_found",
+  "field_not_media",
+  "invalid_payload",
+  "error",
+] as const;
+export type WebsiteFrameInsertMediaErrorCode = (typeof WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES)[number];
+
+/**
+ * `insert-media-result` payload, frame to host. `requestId` is the `id` of the
+ * `insert-media` message it answers. A refusal always carries a `code`.
+ */
+export const websiteFrameInsertMediaResultSchema = z.discriminatedUnion("ok", [
+  z.object({ requestId: idString, ok: z.literal(true), message: z.string().max(2000).optional() }),
+  z.object({
+    requestId: idString,
+    ok: z.literal(false),
+    code: z.enum(WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES),
+    message: z.string().max(2000).optional(),
+  }),
+]);
+export type WebsiteFrameInsertMediaResult = z.infer<typeof websiteFrameInsertMediaResultSchema>;
+
 const framePayloadSchemas = {
   dirty: websiteFrameDirtySchema,
   save: websiteFrameSaveSchema,
   "block-picked": websiteFrameBlockPickedSchema,
   error: websiteFrameErrorSchema,
+  "insert-media-result": websiteFrameInsertMediaResultSchema,
 } as const;
 
 /**
@@ -259,7 +362,8 @@ export type WebsiteFrameIncoming =
   | { type: "dirty"; id: string; payload: z.infer<typeof websiteFrameDirtySchema> }
   | { type: "save"; id: string; payload: WebsiteFrameSave }
   | { type: "block-picked"; id: string; payload: WebsiteFrameBlockPicked }
-  | { type: "error"; id: string; payload: z.infer<typeof websiteFrameErrorSchema> };
+  | { type: "error"; id: string; payload: z.infer<typeof websiteFrameErrorSchema> }
+  | { type: "insert-media-result"; id: string; payload: WebsiteFrameInsertMediaResult };
 
 export interface WebsiteFrameReceiveContext<Source> {
   /** The site's `editorOrigin`. */

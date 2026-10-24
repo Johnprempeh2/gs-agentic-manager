@@ -145,7 +145,12 @@ describe("WebsiteMediaPicker", () => {
     const [companyId, siteId, input] = api.createEntry.mock.calls[0]!;
     expect([companyId, siteId]).toEqual(["co-1", "site-1"]);
     expect(input).toMatchObject({ collection: "media", content: { assetId: "asset-1", alt: "Boats in a harbour at dawn", caption: null, focalPoint: { x: 0.5, y: 0.5 } } });
-    expect(onAdded).toHaveBeenCalledWith("Added from GS Studio. It is now in Website media and goes live with the next Publish.");
+    expect(onAdded).toHaveBeenCalledWith("Added from GS Studio. It is now in Website media and goes live with the next Publish.", {
+      assetId: "asset-1",
+      contentPath: "/api/assets/asset-1/content",
+      alt: "Boats in a harbour at dawn",
+      created: true,
+    });
   });
 
   it("keeps Cancel and Use outside the scroll body, so they stay in view", async () => {
@@ -163,10 +168,13 @@ describe("WebsiteMediaPicker", () => {
     await show(<WebsiteMediaPicker companyId="co-1" site={site} kind="image" media={media} onClose={vi.fn()} onAdded={vi.fn()} />);
     await click([...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === "Website media")!);
     const cards = [...byTestId("media-picker-library")!.querySelectorAll("li")];
-    expect(cards.map((card) => card.querySelector("p")?.textContent)).toEqual(["Boats in a harbour", "hero-photo"]);
+    expect(cards.map((card) => card.querySelector(".font-medium")?.textContent)).toEqual(["Boats in a harbour", "hero-photo"]);
     expect(cards[0]!.textContent).not.toContain("studio-image");
     expect(cards[0]!.getAttribute("title")).toBe("studio-image-img-1111-abc");
     expect(cards[1]!.textContent).toContain("No alt text");
+    // No block selected: the cards are for looking only, and there is no Use.
+    expect(byTestId("media-picker-entry")).toBeNull();
+    expect(byTestId("media-use")).toBeNull();
   });
 
   it("lists finished Animate clips under Add animation", async () => {

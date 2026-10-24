@@ -42,7 +42,7 @@ export function WebsiteChangeRequestPanel({
   /** Clears the pick. Nothing is created. */
   onCancel: () => void;
   /** Opens the block in the editor for a words or image change. */
-  onEditBlock: (blockId: string) => void;
+  onEditBlock: (blockId: string, blockName: string) => void;
 }) {
   const [step, setStep] = useState<Step>("describe");
   const [request, setRequest] = useState("");
@@ -120,7 +120,7 @@ export function WebsiteChangeRequestPanel({
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={!request.trim()}>Review</Button>
             <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-            <Button type="button" size="sm" variant="outline" className="sm:ml-auto" onClick={() => onEditBlock(ref.blockId)}>
+            <Button type="button" size="sm" variant="outline" className="sm:ml-auto" onClick={() => onEditBlock(ref.blockId, blockName)}>
               <PenLine />
               Edit words or image myself
             </Button>

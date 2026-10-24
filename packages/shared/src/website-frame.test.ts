@@ -3,10 +3,13 @@ import {
   checkWebsiteEditorOrigin,
   createWebsiteFrameNonce,
   inspectWebsitePuckData,
+  isWebsiteFrameAssetUrl,
   isWebsiteFrameNonce,
   parseWebsiteEditorOrigin,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
+  WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES,
+  websiteFrameInsertMediaSchema,
   websiteFrameSrc,
 } from "./website-frame.js";
 
@@ -126,5 +129,117 @@ describe("source hint (test 8)", () => {
     expect(sanitizeWebsiteFrameSourceHint({ file: "src/<b>.tsx", line: 1 })).toBeNull();
     expect(sanitizeWebsiteFrameSourceHint({ file: "src/a.tsx", line: 0 })).toBeNull();
     expect(sanitizeWebsiteFrameSourceHint(null)).toBeNull();
+  });
+});
+
+describe("insert-media (host to frame)", () => {
+  const valid = {
+    blockId: "hero-1",
+    field: "image",
+    mediaEntryId: "entry-1",
+    assetUrl: "https://media.example.com/hero.webp",
+    alt: "A stone bridge at dawn",
+  };
+  const parses = (overrides: Record<string, unknown>) =>
+    websiteFrameInsertMediaSchema.safeParse({ ...valid, ...overrides }).success;
+
+  it("parses a valid payload, with an https URL or a site-relative path", () => {
+    expect(websiteFrameInsertMediaSchema.parse(valid)).toEqual(valid);
+    expect(parses({ assetUrl: "/media/hero.webp" })).toBe(true);
+    expect(parses({ alt: "" })).toBe(true);
+  });
+
+  it("refuses a bad block id or field", () => {
+    expect(parses({ blockId: "" })).toBe(false);
+    expect(parses({ blockId: "hero 1" })).toBe(false);
+    expect(parses({ blockId: "a".repeat(97) })).toBe(false);
+    expect(parses({ field: "items[0].image" })).toBe(false);
+    expect(parses({ field: "__proto__.x" })).toBe(false);
+  });
+
+  it("refuses a bad URL", () => {
+    for (const url of [
+      "http://media.example.com/a.png",
+      "javascript:alert(1)",
+      "data:image/png;base64,AAAA",
+      "blob:https://media.example.com/1",
+      "//evil.example/a.png",
+      "/\\evil.example/a.png",
+      "https://u:p@media.example.com/a.png",
+      "hero.webp",
+      "",
+    ]) {
+      expect(isWebsiteFrameAssetUrl(url)).toBe(false);
+      expect(parses({ assetUrl: url })).toBe(false);
+    }
+  });
+
+  it("refuses oversized fields and unknown keys", () => {
+    expect(parses({ alt: "a".repeat(501) })).toBe(false);
+    expect(parses({ mediaEntryId: "a".repeat(201) })).toBe(false);
+    expect(parses({ field: "a".repeat(65) })).toBe(false);
+    expect(parses({ assetUrl: `https://media.example.com/${"a".repeat(2048)}` })).toBe(false);
+    expect(parses({ extra: true })).toBe(false);
+  });
+
+  it("parses a payload with the media blob, and the old payload without it", () => {
+    const media = { blob: new Blob(["png"], { type: "image/png" }), alt: "A stone bridge at dawn", width: 1600, height: 900 };
+    const parsed = websiteFrameInsertMediaSchema.parse({ ...valid, media });
+    expect(parsed.media?.blob).toBe(media.blob);
+    expect(parsed.media).toMatchObject({ alt: media.alt, width: 1600, height: 900 });
+    expect(parses({ media: { ...media, width: null, height: null } })).toBe(true);
+    expect(websiteFrameInsertMediaSchema.parse(valid).media).toBeUndefined();
+  });
+
+  it("refuses a media entry that is not a blob or has unknown keys", () => {
+    const media = { blob: new Blob(["png"]), alt: "", width: null, height: null };
+    expect(parses({ media: { ...media, blob: "data:image/png;base64,AAAA" } })).toBe(false);
+    expect(parses({ media: { ...media, blob: undefined } })).toBe(false);
+    expect(parses({ media: { ...media, width: -1 } })).toBe(false);
+    expect(parses({ media: { ...media, alt: "a".repeat(501) } })).toBe(false);
+    expect(parses({ media: { ...media, url: "https://media.example.com/a.png" } })).toBe(false);
+  });
+});
+
+describe("insert-media-result (frame to host)", () => {
+  const message = (payload: unknown) => ({
+    gs: "website-frame",
+    protocol: 1,
+    session: nonce,
+    id: "m9",
+    type: "insert-media-result",
+    payload,
+  });
+  const receive = (payload: unknown) =>
+    receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: message(payload) }, ctx(1));
+
+  it("accepts ok", () => {
+    expect(receive({ requestId: "m8", ok: true })).toEqual({
+      ok: true,
+      message: { type: "insert-media-result", id: "m9", payload: { requestId: "m8", ok: true } },
+    });
+  });
+
+  it("accepts each refusal code", () => {
+    expect(WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES).toEqual([
+      "block_not_found",
+      "field_not_found",
+      "field_not_media",
+      "invalid_payload",
+      "error",
+    ]);
+    for (const code of WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES) {
+      expect(receive({ requestId: "m8", ok: false, code, message: "No such block." }).ok).toBe(true);
+    }
+  });
+
+  it("drops a refusal with no code or an unknown code, and anything before hello-ack", () => {
+    expect(receive({ requestId: "m8", ok: false }).ok).toBe(false);
+    expect(receive({ requestId: "m8", ok: false, code: "nope" }).ok).toBe(false);
+    expect(receive({ ok: true }).ok).toBe(false);
+    expect(receive({ requestId: "m8", ok: false, code: "error", message: "a".repeat(2001) }).ok).toBe(false);
+    expect(
+      receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: message({ requestId: "m8", ok: true }) }, ctx(null)).ok,
+    ).toBe(false);
   });
 });
