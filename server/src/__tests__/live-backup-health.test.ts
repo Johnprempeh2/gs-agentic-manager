@@ -195,7 +195,11 @@ describe("inspectLiveBackupHealth", () => {
 
 describe("createCachedLiveBackupHealth", () => {
   it("reads the folder once per ttl", () => {
-    const { stateFile, backupDir } = setup({ artifacts: fullSet(new Date()) });
+    // Real clock here, so the offsite copy must be fresh too, not the fixed 22 Oct copy.
+    const { stateFile, backupDir } = setup({
+      artifacts: fullSet(new Date()),
+      offsite: { ...GOOD_COPY, lastCopyAt: new Date().toISOString() },
+    });
     const inspect = createCachedLiveBackupHealth({ stateFile, maxAgeHours: 30 }, 60_000);
     expect(inspect().status).toBe("ok");
     fs.rmSync(path.join(backupDir, "files-20261022-023000.tar.gz"));
