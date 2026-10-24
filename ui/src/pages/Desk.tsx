@@ -29,6 +29,8 @@ import { NeedsMeList } from "../components/NeedsMeList";
 import { decisionsCountOf, useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
 import { AtDeskGroup, splitAtDeskCards } from "../components/decisions-feed/AtDeskGroup";
 import { useCompany } from "../context/CompanyContext";
+import { useTaskRunStates } from "../hooks/useTaskRunStates";
+import { runStateForTask } from "../lib/task-run-state";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
@@ -934,6 +936,8 @@ export function Desk() {
 
 /** Open tasks with no work for a week: out of the way, one click to look. */
 function DeskGoneQuiet({ issues }: { issues: Issue[] }) {
+  const { selectedCompanyId } = useCompany();
+  const runStates = useTaskRunStates(selectedCompanyId);
   return (
     <details className="group" data-desk-gone-quiet>
       <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
@@ -948,7 +952,7 @@ function DeskGoneQuiet({ issues }: { issues: Issue[] }) {
             <EntityRow
               key={issue.id}
               to={`/issues/${issue.identifier ?? issue.id}`}
-              leading={<StatusIcon status={issue.status} size="md" />}
+              leading={<StatusIcon status={issue.status} size="md" queued={runStateForTask(runStates, issue)?.kind === "queued"} />}
               identifier={issue.identifier ?? undefined}
               title={issue.title}
               trailing={last ? (
@@ -1007,12 +1011,13 @@ function DeskPinned({
   renderActions: (issueId: string) => ReactNode;
   renderFooter: (issueId: string) => ReactNode;
 }) {
+  const runStates = useTaskRunStates(companyId);
   return (
     <ul className="grid gap-3 lg:grid-cols-2">
       {pinned.map(({ issueId, issue, counts, latestUpdates }) => (
         <li key={issueId} className="min-w-0 rounded-lg border border-border p-3" data-desk-follow={issueId}>
           <div className="mb-2 flex min-w-0 items-center gap-2">
-            <StatusIcon status={issue.status} size="md" />
+            <StatusIcon status={issue.status} size="md" queued={runStateForTask(runStates, { id: issueId, status: issue.status })?.kind === "queued"} />
             {SHOW_TASK_PRIORITY_UI && issue.priority !== "medium" ? <PriorityIcon priority={issue.priority} /> : null}
             <Link
               to={`/issues/${issue.identifier ?? issueId}`}
@@ -1054,6 +1059,9 @@ function DeskPinned({
 }
 
 function DeskRecent({ entries }: { entries: RecentlyOpenedIssue[] }) {
+  const { selectedCompanyId } = useCompany();
+  // A queued run shows a clock, not the in-progress spinner (GRE-2246).
+  const runStates = useTaskRunStates(selectedCompanyId);
   if (entries.length === 0) {
     return <p className="text-sm text-muted-foreground">Tasks you open show up here, on any device.</p>;
   }
@@ -1063,7 +1071,7 @@ function DeskRecent({ entries }: { entries: RecentlyOpenedIssue[] }) {
         <EntityRow
           key={issueId}
           to={`/issues/${issue.identifier ?? issueId}`}
-          leading={<StatusIcon status={issue.status} size="md" />}
+          leading={<StatusIcon status={issue.status} size="md" queued={runStateForTask(runStates, { id: issueId, status: issue.status })?.kind === "queued"} />}
           identifier={issue.identifier ?? undefined}
           title={issue.title}
           trailing={<span className="shrink-0 text-xs text-muted-foreground">{relativeTime(viewedAt)}</span>}

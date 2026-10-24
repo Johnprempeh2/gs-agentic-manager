@@ -24,6 +24,7 @@ export function TaskActivityLine({ className, ...input }: TaskActivityLineProps)
       className={cn("min-w-0 truncate text-sm text-foreground", className)}
     >
       {line.doing}
+      {line.silence ? <span className="text-status-warning-foreground">; {line.silence}</span> : null}
       {line.waitingFor ? (
         <span className="text-muted-foreground"> · waiting for {line.waitingFor}</span>
       ) : null}

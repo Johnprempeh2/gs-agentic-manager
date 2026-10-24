@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { TaskRunStateChip } from "@/components/TaskRunStateChip";
+import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
 import { CircleCheck } from "lucide-react";
 import { StatusIcon } from "@/components/StatusIcon";
@@ -63,6 +65,7 @@ export function TaskTreeHeader({
   actions,
   className,
 }: TaskTreeHeaderProps) {
+  const runState = useTaskRunStateFor(root);
   return (
     <section
       data-slot="task-tree-header"
@@ -72,8 +75,9 @@ export function TaskTreeHeader({
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2">
-            <StatusIcon status={root.status} size="sm" />
+            <StatusIcon status={root.status} size="sm" queued={runState?.kind === "queued"} />
             {root.identifier ? <span className="font-mono text-xs text-muted-foreground">{root.identifier}</span> : null}
+            {runState ? <TaskRunStateChip state={runState} variant="full" /> : null}
           </div>
           <h1 className="text-xl font-bold leading-tight text-foreground">{root.title}</h1>
           {subtitle ? <div className="text-sm text-muted-foreground">{subtitle}</div> : null}

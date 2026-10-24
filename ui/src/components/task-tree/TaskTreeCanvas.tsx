@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { TaskRunStateChip } from "@/components/TaskRunStateChip";
+import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
 import { DiagramFrame, type DiagramFindItem } from "@/components/diagram/DiagramFrame";
 import { fitView, useDiagramViewport, type DiagramView } from "@/components/diagram/useDiagramViewport";
@@ -436,6 +438,7 @@ function TaskTreeHoverCard({
   left: number;
   top: number;
 }) {
+  const runState = useTaskRunStateFor(node);
   return (
     <div
       role="tooltip"
@@ -444,9 +447,10 @@ function TaskTreeHoverCard({
       style={{ left, top }}
     >
       <div className="flex items-center gap-1.5 text-xs font-medium">
-        <StatusIcon status={node.status} size="sm" />
+        <StatusIcon status={node.status} size="sm" queued={runState?.kind === "queued"} />
         {taskStatusLabel(node.status)}
       </div>
+      {runState ? <TaskRunStateChip state={runState} variant="full" className="flex-wrap" /> : null}
       <p className="text-xs text-muted-foreground">
         Owner: <span className="text-foreground">{ownerName(people, node) ?? "No owner yet"}</span>
       </p>

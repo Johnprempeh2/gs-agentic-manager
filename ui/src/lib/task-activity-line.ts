@@ -17,6 +17,8 @@ export interface TaskActivityLine {
   doing: string;
   /** "Keystone's review", "your answer", "GRE-306". Null when nothing blocks the task. */
   waitingFor: string | null;
+  /** "no output for 12 min" beside a working line whose run has gone quiet (GRE-2246). */
+  silence?: string | null;
 }
 
 export interface TaskActivityLineInput {
@@ -33,6 +35,13 @@ export interface TaskActivityLineInput {
     | "activeRun"
   >;
   hasLiveRuns: boolean;
+  /**
+   * What the live run is doing (GRE-2246). A queued run waits for its agent and
+   * must not read as "working on it".
+   */
+  runStateKind?: "running" | "queued" | "stuck" | null;
+  /** "no output for 12 min" when the run is stuck; shown after the working line. */
+  runSilenceNote?: string | null;
   /** True when a monitor holds the task (see isWaitingOnMonitor). */
   waitingOnMonitor: boolean;
   monitorServiceName?: string | null;
@@ -148,6 +157,10 @@ function describeDoing(input: TaskActivityLineInput, waitingFor: string | null):
 
   if (issue.tabledAt) return `Set aside for now; ${assignee.name} will come back to it`;
 
+  if (input.hasLiveRuns && input.runStateKind === "queued") {
+    return `${subject} ${be} queued; not started yet`;
+  }
+
   if (input.hasLiveRuns) {
     const phase = issue.activeRun?.execution?.phase;
     const phrase = phase ? RUN_PHASE_DOING[phase] : undefined;
@@ -180,9 +193,13 @@ export function describeTaskActivity(input: TaskActivityLineInput): TaskActivity
   const stage = describePendingStage(input);
   if (stage) return stage;
   const waitingFor = input.hasLiveRuns ? null : describeWaitingFor(input);
-  return { doing: describeDoing(input, waitingFor), waitingFor };
+  const doing = describeDoing(input, waitingFor);
+  const silence =
+    input.hasLiveRuns && input.runStateKind === "stuck" && !input.issue.tabledAt ? input.runSilenceNote ?? null : null;
+  return silence ? { doing, waitingFor, silence } : { doing, waitingFor };
 }
 
 export function formatTaskActivityLine(line: TaskActivityLine): string {
-  return line.waitingFor ? `${line.doing} · waiting for ${line.waitingFor}` : line.doing;
+  const doing = line.silence ? `${line.doing}; ${line.silence}` : line.doing;
+  return line.waitingFor ? `${doing} · waiting for ${line.waitingFor}` : doing;
 }

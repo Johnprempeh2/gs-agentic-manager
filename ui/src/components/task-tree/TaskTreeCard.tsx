@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { TaskRunStateChip } from "@/components/TaskRunStateChip";
+import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
 import { ChevronDown, ChevronUp, KeyRound } from "lucide-react";
 import { PriorityIcon } from "@/components/PriorityIcon";
@@ -67,6 +69,7 @@ export function TaskTreeCard({
   className,
 }: TaskTreeCardProps) {
   const showPriority = SHOW_TASK_PRIORITY_UI && node.priority !== "medium";
+  const runState = useTaskRunStateFor(node);
   return (
     <div
       data-slot="task-tree-card"
@@ -89,7 +92,7 @@ export function TaskTreeCard({
       />
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 py-2.5 pl-4 pr-3">
         <div className="flex items-center gap-1.5">
-          <StatusIcon status={node.status} size="sm" />
+          <StatusIcon status={node.status} size="sm" queued={runState?.kind === "queued"} />
           {node.identifier ? (
             <span className="truncate font-mono text-xs text-muted-foreground">{node.identifier}</span>
           ) : null}
@@ -104,6 +107,7 @@ export function TaskTreeCard({
         </p>
         <div className="mt-auto flex min-w-0 items-center gap-2">
           <TaskTreeOwner people={people} owner={node} className="min-w-0 flex-1" />
+          {runState ? <TaskRunStateChip state={runState} short /> : null}
           {isRootBlocker ? (
             <span className="shrink-0 rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">
               Root blocker

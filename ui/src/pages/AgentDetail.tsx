@@ -1,4 +1,7 @@
 import { useConfirm } from "@/context/ConfirmContext";
+import { TaskRunStateChip } from "../components/TaskRunStateChip";
+import { useTaskRunStates } from "../hooks/useTaskRunStates";
+import { runStateForTask } from "../lib/task-run-state";
 import { AgentAppearanceEditor } from "../components/AgentAppearanceEditor";
 import { mergeRunLogChunks, readChunkSeq } from "../lib/run-log-chunks";
 import { getPageVisibility, usePageVisibility } from "../lib/page-visibility";
@@ -1642,8 +1645,10 @@ function LatestRunCard({
     [runs]
   );
 
-  const liveRun = sorted.find((r) => r.status === "running" || r.status === "queued");
+  // A running run is the work in hand; a queued one only waits for a slot (GRE-2246).
+  const liveRun = sorted.find((r) => r.status === "running") ?? sorted.find((r) => r.status === "queued");
   const run = liveRun ?? sorted[0];
+  const taskRunStates = useTaskRunStates(run?.companyId);
 
   // The assigned-issues list this card resolves against is bounded (server page
   // limit), so a live run can reference a valid issue that isn't on the loaded
@@ -1686,6 +1691,9 @@ function LatestRunCard({
   if (!run) return null;
 
   const isLive = run.status === "running" || run.status === "queued";
+  const isQueued = run.status === "queued";
+  // The shared run-state chip is the card's one live signal, worded as on every other surface.
+  const liveState = isLive && snapshotIssueId ? taskRunStates.get(snapshotIssueId) ?? null : null;
   // Fold any directly-fetched fallback issue into the lookup, keyed by the same
   // snapshot id used to resolve the row so it hits regardless of id-vs-slug.
   const effectiveIssuesById =
@@ -1709,30 +1717,38 @@ function LatestRunCard({
           className="no-underline"
         >
           <h3 className="flex items-center gap-2 text-sm font-medium transition-colors hover:text-foreground">
-            {isLive && (
+            {isLive && !isQueued && !liveState && (
               <span className="relative flex h-2 w-2">
                 <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
             )}
-            <span title={`Run ${run.id.slice(0, 8)}`}>{isLive ? "Working now" : "Latest work"}</span>
+            {isQueued && !liveState && <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
+            <span title={`Run ${run.id.slice(0, 8)}`}>
+              {isQueued ? "Queued" : isLive ? "Working now" : "Latest work"}
+            </span>
           </h3>
         </Link>
+        {liveState ? <TaskRunStateChip state={liveState} variant="full" className="min-w-0 justify-end" /> : null}
       </div>
 
       <Link
         to={rowHref}
         className={cn(
           "block border rounded-lg p-4 space-y-2 w-full no-underline transition-colors hover:bg-muted/50 cursor-pointer",
-          isLive ? "border-blue-500/30 shadow-(--shadow-extract-14)" : "border-border"
+          isLive && !isQueued ? "border-blue-500/30 shadow-(--shadow-extract-14)" : "border-border"
         )}
       >
         <div className="flex items-center gap-2">
-          <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
-          <StatusBadge status={run.status} />
+          {liveState ? null : (
+            <>
+              <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
+              <StatusBadge status={run.status} />
+            </>
+          )}
           {task ? (
             <>
-              <StatusGlyph status={task.status} size="sm" />
+              {liveState ? null : <StatusGlyph status={task.status} size="sm" />}
               <span className="font-mono text-xs text-muted-foreground">
                 {task.identifier ?? task.id.slice(0, 8)}
               </span>
@@ -1799,6 +1815,7 @@ export function AgentOverview({
   const budgetUse = budgetUseLabel(agent);
   const monthLine = agentMonthLine(agent);
   const workloadLine = agentWorkloadLine(assignedIssues, agent.id);
+  const taskRunStates = useTaskRunStates(agent.companyId);
 
   return (
     <div className="space-y-6">
@@ -1901,6 +1918,7 @@ export function AgentOverview({
                 key={issue.id}
                 issue={issue}
                 presentation="task"
+                runQueued={runStateForTask(taskRunStates, issue)?.kind === "queued"}
                 metadata={<span className="text-xs text-muted-foreground">{relativeTime(issue.updatedAt)}</span>}
                 showDivider
               />

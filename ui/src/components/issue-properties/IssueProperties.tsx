@@ -63,6 +63,7 @@ import { formatRetryReason } from "../../lib/runRetryState";
 import { useRetryNowMutation } from "../../hooks/useRetryNowMutation";
 import { RetryErrorBand } from "../IssueScheduledRetryCard";
 import { StatusIcon } from "../StatusIcon";
+import { useTaskQueued } from "../../hooks/useTaskRunStates";
 import { PriorityIcon } from "../PriorityIcon";
 import { SHOW_TASK_PRIORITY_UI } from "../../lib/ui-flags";
 import { Identity } from "../Identity";
@@ -256,6 +257,8 @@ export function IssueProperties({
   const { isMobile } = useSidebar();
   const queryClient = useQueryClient();
   const companyId = issue.companyId ?? selectedCompanyId;
+  // A queued run shows a clock, not the in-progress spinner (GRE-2246).
+  const runQueued = useTaskQueued(companyId, issue);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -2478,6 +2481,7 @@ export function IssueProperties({
           <StatusIcon
             status={issue.status}
             externalConversationState={issue.externalConversationState}
+            queued={runQueued}
             glyphContainerClassName="inline-flex size-6 shrink-0 items-center justify-center"
             blockerAttention={issue.blockerAttention}
             onChange={(status) => onUpdate({ status })}

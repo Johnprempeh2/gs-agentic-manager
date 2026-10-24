@@ -1,4 +1,6 @@
 
+import { useTaskRunStates } from "../hooks/useTaskRunStates";
+import { refreshTaskRunState, runSilenceNote } from "../lib/task-run-state";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
 import {
   PaperclipIcon,
@@ -123,6 +125,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
   const draftIssue = useMemo(() => conversation ? agentChatDraft(conversation.agent, draftWorkMode) : undefined, [conversation?.agent, draftWorkMode]);
   const pendingDraftWorkMode = useRef<IssueWorkMode | null>(null);
   const { companies, selectedCompanyId } = useCompany();
+  // Working, queued or stuck for this task's agent run (GRE-2246).
+  const taskRunStates = useTaskRunStates(selectedCompanyId);
   // Classic Task Interface remains the sole task-chat-vs-pre-chat switch from
   // master. Streamlined UI only layers the new task-detail presentation onto
   // master's default task-chat shell.
@@ -959,10 +963,19 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       </nav>
     ) : null;
 
+  const derivedTaskRunState =
+    issue.status === "done" || issue.status === "cancelled" ? null : taskRunStates.get(issue.id) ?? null;
+  // Re-read against the clock so the line under the title agrees with the chip.
+  const taskRunState = derivedTaskRunState ? refreshTaskRunState(derivedTaskRunState, Date.now()) : null;
+  const taskRunSilenceNote =
+    taskRunState && taskRunState.kind !== "queued" && taskRunState.lastOutputAt
+      ? runSilenceNote(new Date(taskRunState.lastOutputAt).getTime(), Date.now())
+      : null;
   const issueStatusControl = (
     <StatusIcon
       status={issue.status} externalConversationState={issue.externalConversationState}
       waiting={isWaitingOnMonitor(issue)}
+      queued={taskRunState?.kind === "queued"}
       size="lg"
       blockerAttention={issue.blockerAttention}
       onChange={(status) => updateIssue.mutate({ status })}
@@ -979,6 +992,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           <TaskActivityLine
             issue={issue}
             hasLiveRuns={hasLiveRuns}
+            runStateKind={taskRunState?.kind ?? null}
+            runSilenceNote={taskRunSilenceNote}
             waitingOnMonitor={isWaitingOnMonitor(issue)}
             monitorServiceName={
               issue.executionState?.monitor?.serviceName ??
@@ -1029,6 +1044,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       issue={issue}
       updateIssue={updateIssue}
       hasLiveRuns={hasLiveRuns}
+      runState={taskRunState}
       taskChatShellEnabled={taskChatShellEnabled}
       resolvedProject={resolvedProject}
       agentMap={agentMap}

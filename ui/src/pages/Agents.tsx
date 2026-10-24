@@ -35,7 +35,7 @@ import type { AgentTeam, ApiEquivalentAgentRow } from "@greatstone/shared";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Bot, Check, ClipboardList, Download, Plus, List, Network, Users } from "lucide-react";
+import { AlertTriangle, Bot, Check, ClipboardList, Clock, Download, Plus, List, Network, Users } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@greatstone/shared";
 import {
   isStarred,
@@ -319,17 +319,20 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
 
-  // Map agentId -> first live run + live run count
+  // Map agentId -> the run to open + running and queued counts (GRE-2246: a
+  // queued run waits for a slot and must not read as live work).
   const liveRunByAgent = useMemo(() => {
-    const map = new Map<string, { runId: string; liveCount: number }>();
+    const map = new Map<string, LiveRunSummary>();
     for (const r of runs ?? []) {
       if (r.status !== "running" && r.status !== "queued") continue;
-      const existing = map.get(r.agentId);
-      if (existing) {
-        existing.liveCount += 1;
-        continue;
+      const entry = map.get(r.agentId) ?? { runId: r.id, runningCount: 0, queuedCount: 0 };
+      if (r.status === "running") {
+        if (entry.runningCount === 0) entry.runId = r.id;
+        entry.runningCount += 1;
+      } else {
+        entry.queuedCount += 1;
       }
-      map.set(r.agentId, { runId: r.id, liveCount: 1 });
+      map.set(r.agentId, entry);
     }
     return map;
   }, [runs]);
@@ -478,8 +481,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                 <LiveRunIndicator
                   agentRef={agentRouteRef(agent)}
                   agentName={agent.name}
-                  runId={liveRunByAgent.get(agent.id)!.runId}
-                  liveCount={liveRunByAgent.get(agent.id)!.liveCount}
+                  summary={liveRunByAgent.get(agent.id)!}
                 />
               )}
               {(() => {
@@ -760,7 +762,7 @@ function OrgTreeNode({
   node: OrgNode;
   depth: number;
   agentMap: Map<string, Agent>;
-  liveRunByAgent: Map<string, { runId: string; liveCount: number }>;
+  liveRunByAgent: Map<string, LiveRunSummary>;
   environmentByAgentId: Map<string, EnvironmentDescriptor>;
   environmentDataLoading: boolean;
   showEnvironment: boolean;
@@ -833,8 +835,7 @@ function OrgTreeNode({
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
                 agentName={node.name}
-                runId={liveRunByAgent.get(node.id)!.runId}
-                liveCount={liveRunByAgent.get(node.id)!.liveCount}
+                summary={liveRunByAgent.get(node.id)!}
               />
             ) : (
               <AgentStatusBadge status={node.status} />
@@ -845,8 +846,7 @@ function OrgTreeNode({
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
                 agentName={node.name}
-                runId={liveRunByAgent.get(node.id)!.runId}
-                liveCount={liveRunByAgent.get(node.id)!.liveCount}
+                summary={liveRunByAgent.get(node.id)!}
               />
             )}
             {agent && (
@@ -1001,38 +1001,62 @@ function AgentMetaColumns({
   );
 }
 
+interface LiveRunSummary {
+  /** The run the indicator opens: the oldest running one, else the first queued. */
+  runId: string;
+  runningCount: number;
+  queuedCount: number;
+}
+
 // Rendered inside the agent row link, so it is a button that navigates rather
 // than a nested <a> (invalid markup and a hydration error, GRE-1664).
 function LiveRunIndicator({
   agentRef,
   agentName,
-  runId,
-  liveCount,
+  summary,
 }: {
   agentRef: string;
   agentName: string;
-  runId: string;
-  liveCount: number;
+  summary: LiveRunSummary;
 }) {
   const navigate = useNavigate();
+  const { runId, runningCount, queuedCount } = summary;
+  const working = runningCount > 0;
+  const queuedText = `${queuedCount} queued`;
   return (
     <button
       type="button"
-      aria-label={`Open live run for ${agentName}`}
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+      aria-label={
+        working
+          ? `Open live run for ${agentName}${queuedCount > 0 ? `; ${queuedText}` : ""}`
+          : `Open queued run for ${agentName}`
+      }
+      className={cn(
+        "flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-colors",
+        working ? "bg-blue-500/10 hover:bg-blue-500/20" : "border border-border hover:bg-accent",
+      )}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
         navigate(`/agents/${agentRef}/runs/${runId}`);
       }}
     >
-      <span className="relative flex h-2 w-2">
-        <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-      </span>
-      <span className="text-(length:--text-micro) font-medium text-blue-700 dark:text-blue-400">
-        Live{liveCount > 1 ? ` (${liveCount})` : ""}
-      </span>
+      {working ? (
+        <span className="relative flex h-2 w-2">
+          <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+        </span>
+      ) : (
+        <Clock className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+      )}
+      {working ? (
+        <span className="text-(length:--text-micro) font-medium text-blue-700 dark:text-blue-400">
+          Live{runningCount > 1 ? ` (${runningCount})` : ""}
+          {queuedCount > 0 ? <span className="font-normal text-muted-foreground"> · {queuedText}</span> : null}
+        </span>
+      ) : (
+        <span className="text-(length:--text-micro) font-medium text-muted-foreground">{queuedText}</span>
+      )}
     </button>
   );
 }

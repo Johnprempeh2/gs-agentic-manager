@@ -789,6 +789,7 @@ export const queryKeys = {
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
     billingAccount: ["instance", "billing-account"] as const,
     fleetInstances: ["instance", "fleet-instances"] as const,
+    taskDrain: ["instance", "task-drain"] as const,
   },
   clientSupport: {
     tickets: (companyId: string) => ["client-support", companyId, "tickets"] as const,
