@@ -21,7 +21,7 @@ vi.mock("../../../api/website", async () => {
 });
 vi.mock("../../../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 
-import { SitemapSection, treeFromPages } from "./SitemapSection";
+import { SitemapSection, mixName, treeFromPages } from "./SitemapSection";
 
 const site = { id: "site-1", companyId: "co-1", domain: "www.example.test" } as WebsiteSite;
 
@@ -138,6 +138,47 @@ describe("SitemapSection", () => {
   it("hides approval from people who cannot publish", async () => {
     await render({ canApprove: false });
     expect(button("Approve this option")).toBeUndefined();
+  });
+
+  it("saves a Compare mix as a new option and leaves both compared options as they were", async () => {
+    const full = option({ id: "opt-full", name: "Full build map, rev 10" });
+    const launch = option({
+      id: "opt-launch",
+      name: "Launch set, rev 10",
+      tree: { nodes: [{ id: "n1", title: "DX Consultancy", path: "/dx", parentId: null, order: 0, menu: "header", menuOrder: 1 }], journeys: [] },
+    });
+    const created = option({ id: "opt-mix", name: "Full build map, rev 10 + mix" });
+    moduleMock.createSitemapOption.mockResolvedValue(created);
+    await render({ options: [full, launch] });
+
+    const compareTab = [...container.querySelectorAll("[role=tab]")].find((tab) => tab.textContent === "Compare")!;
+    await act(async () => compareTab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
+    const form = container.querySelector("form[aria-labelledby=sitemap-copy-branch]")!;
+    const [, pageSelect] = [...form.querySelectorAll("select")];
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(pageSelect, "n1");
+      pageSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => form.querySelector<HTMLButtonElement>("button[type=submit]")!.click());
+
+    expect(moduleMock.updateSitemapOption).not.toHaveBeenCalled();
+    const [, , input] = moduleMock.createSitemapOption.mock.calls[0]!;
+    expect(input.name).toBe("Full build map, rev 10 + mix");
+    expect(input.tree.nodes.map((node: { title: string }) => node.title)).toEqual(["Home", "Consultancy", "Tools", "DX Consultancy"]);
+    expect(full.tree.nodes).toHaveLength(3);
+    expect(container.querySelector("[role=status]")!.textContent).toBe(
+      "Your mix is saved as a new option, Full build map, rev 10 + mix. The options you compared do not change.",
+    );
+
+    await render({ options: [full, launch, created] });
+    const [left, right] = [...container.querySelectorAll<HTMLSelectElement>("[data-testid=sitemap-compare] > div > div > label select")];
+    expect(left!.value).toBe("opt-full");
+    expect(right!.value).toBe("opt-mix");
+  });
+
+  it("numbers a mix name that is already taken", () => {
+    expect(mixName("Plan", [{ name: "Plan" }])).toBe("Plan + mix");
+    expect(mixName("Plan", [{ name: "Plan + mix" }, { name: "Plan + mix 2" }])).toBe("Plan + mix 3");
   });
 
   it("starts an option from the site's pages with their parents and menus", () => {
