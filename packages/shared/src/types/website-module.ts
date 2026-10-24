@@ -15,6 +15,14 @@ export type WebsitePageMenu = (typeof WEBSITE_PAGE_MENUS)[number];
 /** Largest page or entry body GSAM saves (ADR section 3: about 280 times today's largest page). */
 export const WEBSITE_CONTENT_MAX_BYTES = 2 * 1024 * 1024;
 
+export type WebsiteNetlifyTokenSource = "own" | "shared";
+
+/** A company secret a site can use as its Netlify token: id and name only. */
+export interface WebsiteTokenSecretOption {
+  id: string;
+  name: string;
+}
+
 export interface WebsiteSite {
   id: string;
   companyId: string;
@@ -24,6 +32,10 @@ export interface WebsiteSite {
   netlifySiteId: string;
   /** True when a Netlify token is stored in the company's secrets. The token is never returned. */
   hasNetlifyToken: boolean;
+  /** `own`: a token pasted for this site, in its own secret. `shared`: a company secret the site uses but never changes. */
+  netlifyTokenSource: WebsiteNetlifyTokenSource | null;
+  /** The linked secret's name, never its value. */
+  netlifyTokenSecretName: string | null;
   blobsStoreName: string;
   engineVersion: string | null;
   releaseSchemaVersion: number;
@@ -247,6 +259,8 @@ export interface WebsitePublishApprovalPayload {
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
+  /** GET → `WebsiteTokenSecretOption[]`: the company's active secrets by name, to use as a site's Netlify token (website:publish, people only). */
+  tokenSecrets: "/companies/:companyId/website/token-secrets",
   /** GET → `WebsiteSite`. PATCH `UpdateWebsiteSite` → `WebsiteSite` (website:publish). */
   site: "/companies/:companyId/website/sites/:siteId",
   /** GET → `WebsitePage[]` (`?includeArchived=true`). POST `CreateWebsitePage` → 201 `WebsitePageDetail` (website:edit). */

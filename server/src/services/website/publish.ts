@@ -181,7 +181,8 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   async function defaultNetlifyFor(site: SiteRow): Promise<WebsiteNetlifyClient> {
     if (!site.netlifyTokenSecretId) throw unprocessable("This site has no Netlify token. Add it in the site settings first.", { code: "website_netlify_token_missing" });
-    // Only this site's own token, read for this company (ADR 4.4). Never the shared agent token.
+    // Only the secret this site names, read for this company (ADR 4.4): its own pasted token or a company secret a
+    // person with Publish rights chose for it. Read only; the job never rotates or deletes it, owned or shared.
     const token = await secrets.resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
       accessContext: {
         consumerType: "system",

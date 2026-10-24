@@ -21,6 +21,7 @@ import {
   type WebsiteRelease,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
+  type WebsiteTokenSecretOption,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
   type WebsiteOverview,
@@ -79,6 +80,9 @@ const releasePath = (companyId: string, siteId: string, releaseId: string) =>
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
   sites: (companyId: string) => api.get<WebsiteSite[]>(sitesPath(companyId)),
+  /** Saved company secrets a site can use as its Netlify token: names only (website:publish). */
+  tokenSecrets: (companyId: string) =>
+    api.get<WebsiteTokenSecretOption[]>(`/companies/${encodeURIComponent(companyId)}/website/token-secrets`),
   /** Connect a site (website:publish). The Netlify token goes to the company's secrets and is never returned. */
   createSite: (companyId: string, input: CreateWebsiteSite) => api.post<WebsiteSite>(sitesPath(companyId), input),
   updateSite: (companyId: string, siteId: string, patch: UpdateWebsiteSite) =>

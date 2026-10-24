@@ -33,6 +33,7 @@ import { gsamServedOrigins, websiteModuleRoutes } from "../routes/website-module
 import { websiteModuleService } from "../services/website/module.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
 import { companySearchService } from "../services/company-search.js";
+import { secretService } from "../services/secrets.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -485,6 +486,118 @@ describeEmbeddedPostgres("website module routes", () => {
     const all = (await http.get(`${pages}?includeArchived=true`).expect(200)).body as Array<{ id: string }>;
     expect(all.map((row) => row.id)).toContain(consultancy.id);
   });
+
+  describe("a saved company secret as the Netlify token", () => {
+    const SHARED_VALUE = "nfp_fake_shared_agent_token_456";
+
+    async function seedSharedSecret(companyId: string, name = "Netlify PAT (agents)") {
+      return secretService(db).create(companyId, { name, provider: "local_encrypted", value: SHARED_VALUE }, { userId: "local-board" });
+    }
+
+    /** The secret row and every version, as stored, to compare byte for byte. */
+    async function snapshot(secretId: string) {
+      const [secret] = await db.select().from(companySecrets).where(eq(companySecrets.id, secretId));
+      const versions = await db.select().from(companySecretVersions).where(eq(companySecretVersions.secretId, secretId));
+      return JSON.stringify({ secret, versions: versions.sort((x, y) => x.version - y.version) });
+    }
+
+    it("links a shared secret by id, names it, and never returns its value", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const company = await seedCompany("Greatstone");
+      const shared = await seedSharedSecret(company.id);
+      const http = request(app());
+      const options = (await http.get(`/api/companies/${company.id}/website/token-secrets`).expect(200)).body;
+      expect(options).toEqual([{ id: shared.id, name: "Netlify PAT (agents)" }]);
+      const created = await http
+        .post(`/api/companies/${company.id}/website/sites`)
+        .send({ name: "Site", domain: "www.greatstone.test", netlifySiteId: "netlify-site", netlifyTokenSecretId: shared.id })
+        .expect(201);
+      expect(created.body).toMatchObject({ hasNetlifyToken: true, netlifyTokenSource: "shared", netlifyTokenSecretName: "Netlify PAT (agents)" });
+      const listed = await http.get(`/api/companies/${company.id}/website/sites`).expect(200);
+      const fetched = await http.get(`/api/companies/${company.id}/website/sites/${created.body.id}`).expect(200);
+      for (const body of [options, created.body, listed.body, fetched.body]) expect(JSON.stringify(body)).not.toContain(SHARED_VALUE);
+      const [row] = await db.select().from(websiteSite).where(eq(websiteSite.id, created.body.id));
+      expect(row).toMatchObject({ netlifyTokenSecretId: shared.id, netlifyTokenSecretOwned: false });
+      await http
+        .post(`/api/companies/${company.id}/website/sites`)
+        .send({ name: "Both", domain: "both.test", netlifySiteId: "x", netlifyToken: "nfp_test_token_value_123", netlifyTokenSecretId: shared.id })
+        .expect(400);
+    });
+
+    it("refuses another company's secret with 404, on create and update", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const a = await seedWorld("Alpha", "alpha.test");
+      const b = await seedCompany("Bravo");
+      const foreign = await seedSharedSecret(b.id);
+      const http = request(app());
+      await http
+        .post(`/api/companies/${a.company.id}/website/sites`)
+        .send({ name: "Other", domain: "other.test", netlifySiteId: "x", netlifyTokenSecretId: foreign.id })
+        .expect(404);
+      const response = await http.patch(`/api/companies/${a.company.id}/website/sites/${a.site.id}`).send({ netlifyTokenSecretId: foreign.id }).expect(404);
+      expect(response.body.details?.code ?? response.body.code).toBe("website_token_secret_not_found");
+      const options = (await http.get(`/api/companies/${a.company.id}/website/token-secrets`).expect(200)).body as Array<{ id: string }>;
+      expect(options.map((option) => option.id)).not.toContain(foreign.id);
+      const [row] = await db.select().from(websiteSite).where(eq(websiteSite.id, a.site.id));
+      expect(row!.netlifyTokenSecretId).not.toBe(foreign.id);
+    });
+
+    it("an agent cannot list token secrets or link one, even with a website:publish grant", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const a = await seedWorld("Alpha", "alpha.test");
+      const shared = await seedSharedSecret(a.company.id);
+      const { actor } = await seedAgent(a.company.id, ["website:view", "website:edit", "website:publish"]);
+      const http = request(app(actor));
+      await http.get(`/api/companies/${a.company.id}/website/token-secrets`).expect(403);
+      const response = await http.patch(`/api/companies/${a.company.id}/website/sites/${a.site.id}`).send({ netlifyTokenSecretId: shared.id }).expect(403);
+      expect(JSON.stringify(response.body)).toContain("website_publish_agent_refused");
+      const [row] = await db.select().from(websiteSite).where(eq(websiteSite.id, a.site.id));
+      expect(row!.netlifyTokenSecretId).not.toBe(shared.id);
+    });
+
+    it("pasting a token while linked to a shared secret makes a new site secret and leaves the shared one unchanged", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const a = await seedWorld("Alpha", "alpha.test");
+      const shared = await seedSharedSecret(a.company.id);
+      const http = request(app());
+      const site = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+      await http.patch(site).send({ netlifyTokenSecretId: shared.id }).expect(200);
+      const before = await snapshot(shared.id);
+      const pasted = (await http.patch(site).send({ netlifyToken: "nfp_fake_pasted_token_789" }).expect(200)).body;
+      expect(pasted).toMatchObject({ hasNetlifyToken: true, netlifyTokenSource: "own" });
+      expect(JSON.stringify(pasted)).not.toContain("nfp_fake_pasted_token_789");
+      const [row] = await db.select().from(websiteSite).where(eq(websiteSite.id, a.site.id));
+      expect(row!.netlifyTokenSecretId).not.toBe(shared.id);
+      expect(row!.netlifyTokenSecretOwned).toBe(true);
+      expect(await snapshot(shared.id)).toBe(before);
+      // Pasting again now rotates the site's own secret, still without touching the shared one.
+      const ownId = row!.netlifyTokenSecretId!;
+      await http.patch(site).send({ netlifyToken: "nfp_fake_pasted_token_790" }).expect(200);
+      const [again] = await db.select().from(websiteSite).where(eq(websiteSite.id, a.site.id));
+      expect(again!.netlifyTokenSecretId).toBe(ownId);
+      const [own] = await db.select().from(companySecrets).where(eq(companySecrets.id, ownId));
+      expect(own!.latestVersion).toBe(2);
+      expect(await snapshot(shared.id)).toBe(before);
+    });
+
+    it("unlinking a shared secret keeps the secret", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const a = await seedWorld("Alpha", "alpha.test");
+      const shared = await seedSharedSecret(a.company.id);
+      const http = request(app());
+      const site = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+      await http.patch(site).send({ netlifyTokenSecretId: shared.id }).expect(200);
+      const before = await snapshot(shared.id);
+      const unlinked = (await http.patch(site).send({ netlifyTokenSecretId: null }).expect(200)).body;
+      expect(unlinked).toMatchObject({ hasNetlifyToken: false, netlifyTokenSource: null, netlifyTokenSecretName: null });
+      expect(await snapshot(shared.id)).toBe(before);
+      const [secret] = await db.select().from(companySecrets).where(eq(companySecrets.id, shared.id));
+      expect(secret!.status).toBe("active");
+      const activity = await db.select().from(activityLog).where(eq(activityLog.entityId, a.site.id));
+      expect(JSON.stringify(activity)).not.toContain(SHARED_VALUE);
+    });
+  });
+
   // ---- GRE-2118: editor frame origin, history, restore, editor load and media ----
 
   async function seedAsset(companyId: string, name: string) {

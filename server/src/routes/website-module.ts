@@ -128,6 +128,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   const publishApprovals = websitePublishApprovals(db);
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
+  router.use(WEBSITE_MODULE_API_ROUTES.tokenSecrets, requireEntitlement(db, "enableWebsiteView"));
 
   function actorOf(req: Request): WebsiteActor {
     const info = getActorInfo(req);
@@ -240,15 +241,28 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
 
   // ---- sites ----
 
+  /** The site as the API returns it: the token secret's name, never its value. */
+  async function siteView(row: SiteRow) {
+    return toWebsiteSite(row, await service.tokenSecretName(row));
+  }
+
   router.get(WEBSITE_MODULE_API_ROUTES.sites, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const rows = await service.listSites(companyId);
     const visible = [];
     for (const row of rows) {
-      if (await allowed(req, companyId, "website:view", row.id)) visible.push(toWebsiteSite(row));
+      if (await allowed(req, companyId, "website:view", row.id)) visible.push(await siteView(row));
     }
     res.json(visible);
+  });
+
+  // Saved secrets a person with Publish rights can choose as a site's Netlify token: names only.
+  router.get(WEBSITE_MODULE_API_ROUTES.tokenSecrets, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    await allowed(req, companyId, "website:publish", undefined, { person: "perm.settings" });
+    res.json(await service.listTokenSecrets(companyId));
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.sites, validate(createWebsiteSiteSchema), async (req, res) => {
@@ -261,15 +275,16 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     await log(req, companyId, "website.site_connected", "website_site", row.id, {
       domain: row.domain,
       netlifyToken: Boolean(row.netlifyTokenSecretId),
+      netlifyTokenSource: row.netlifyTokenSecretId ? (row.netlifyTokenSecretOwned ? "own" : "shared") : null,
       editorFrameOrigin: row.editorFrameOrigin,
     });
-    res.status(201).json(toWebsiteSite(row));
+    res.status(201).json(await siteView(row));
   });
 
   router.get(WEBSITE_MODULE_API_ROUTES.site, async (req, res) => {
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
-    res.json(toWebsiteSite(site));
+    res.json(await siteView(site));
   });
 
   router.patch(WEBSITE_MODULE_API_ROUTES.site, validate(updateWebsiteSiteSchema), async (req, res) => {
@@ -283,7 +298,11 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       throw unprocessable(EDITOR_ORIGIN_PROBLEMS["public-origin"], { code: "website_editor_origin_refused", problem: "public-origin" });
     }
     const row = await service.updateSite(site, input, actorOf(req));
-    const fields = Object.keys(req.body).map((key) => (key === "netlifyToken" ? "netlifyToken (rotated)" : key));
+    const fields = Object.keys(req.body).map((key) => {
+      if (key === "netlifyToken") return site.netlifyTokenSecretId && site.netlifyTokenSecretOwned ? "netlifyToken (rotated)" : "netlifyToken (new site secret)";
+      if (key === "netlifyTokenSecretId") return req.body.netlifyTokenSecretId ? "netlifyTokenSecretId (shared secret linked)" : "netlifyTokenSecretId (unlinked)";
+      return key;
+    });
     await log(req, site.companyId, "website.site_updated", "website_site", site.id, { fields });
     // Rule C2.2 and C2.3: old and new value in the log; the live event tells open editors to close.
     if (row.editorFrameOrigin !== site.editorFrameOrigin) {
@@ -292,7 +311,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
         to: row.editorFrameOrigin,
       });
     }
-    res.json(toWebsiteSite(row));
+    res.json(await siteView(row));
   });
 
   // ---- pages ----
