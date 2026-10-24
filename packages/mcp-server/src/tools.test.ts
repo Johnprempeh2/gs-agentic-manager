@@ -404,6 +404,36 @@ describe("paperclip MCP tools", () => {
     });
   });
 
+  it("creates request_steps cards for a person with paperclipRequestSteps", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockJsonResponse({ id: "interaction-3", kind: "request_steps" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("paperclipRequestSteps");
+    expect(tool.description).toContain("a person");
+    expect(tool.description).toContain("guiding-john");
+    const payload = {
+      version: 1,
+      title: "Stripe test key",
+      why: "So the agents can test checkout.",
+      minutes: 2,
+      risk: "safe",
+      steps: [{ text: "Open **Developers → API keys**.", copy: ["GSAM agents"] }],
+      secret: { secretName: "stripe/sandbox-agents", description: "Stripe sandbox key", expectedPrefix: "rk_test_" },
+    };
+    await tool.execute({ issueId: "PAP-1135", addresseeUserId: "user-2", payload });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/issues/PAP-1135/interactions");
+    expect(JSON.parse(String(init.body))).toEqual({
+      kind: "request_steps",
+      addresseeUserId: "user-2",
+      continuationPolicy: "wake_assignee",
+      payload,
+    });
+  });
+
   it("creates approvals with the expected company-scoped payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       mockJsonResponse({ id: "approval-1" }),

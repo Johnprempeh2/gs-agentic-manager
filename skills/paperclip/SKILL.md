@@ -772,3 +772,44 @@ and collection entries (products, team, redirects, forms) under
 - Approve, send back, Publish, retry, roll back and site settings answer `403` for agents. Do not
   ask for `website:publish`: it cannot be granted to an agent. Another company's site, or a site
   outside your grant, answers `404`.
+
+**Step-by-step cards (`request_steps`).** When a person has to do something only a person can do (a dashboard setting, a new API key, a
+payment or account change), guide them with a step-by-step card instead of a comment. Write it
+with the `guiding-john` method (it works for anyone): one action per step, exact menu paths in
+bold with arrows (`**Settings → API keys → Create**`), values to paste in `copy`, an https
+`link`, and what they should see in `expect`. Use the MCP tool `paperclipRequestSteps`, or:
+
+```json
+POST /api/issues/{issueId}/interactions
+{
+  "kind": "request_steps",
+  "idempotencyKey": "steps:{issueId}:stripe-sandbox-key:v1",
+  "payload": {
+    "version": 1,
+    "title": "Stripe test key for the agents",
+    "why": "So the agents can test checkout on the staging site.",
+    "minutes": 2,
+    "risk": "safe",
+    "steps": [
+      { "text": "Open the Stripe dashboard in **Sandbox** mode.", "link": { "label": "Open Stripe", "url": "https://dashboard.stripe.com/test/apikeys" }, "expect": "An orange Sandbox banner at the top." },
+      { "text": "Open **Developers → API keys → Create restricted key** and name it:", "copy": ["GSAM agents"] },
+      { "text": "Copy the key and paste it below.", "expect": "The key starts `rk_test_`." }
+    ],
+    "secret": { "secretName": "stripe/sandbox-agents", "description": "Stripe sandbox restricted key for the agents", "expectedPrefix": "rk_test_", "linkToAgentIds": ["{agentId}"], "adapterEnvKey": "STRIPE_SECRET_KEY" },
+    "afterDone": "I create the staging webhook and run the payment tests."
+  }
+}
+```
+
+- Up to 12 steps. `risk` is `safe`, `careful` or `money_or_live`. Links must be https. Never put a
+  secret in `copy`, `text` or `expect`.
+- It goes to the task's responsible person; set `addresseeUserId` to ask anyone else in the
+  company. The card has "Copy steps", so they can pass it to someone outside GSAM.
+- `secret`: the person types the value into a secure field; it is saved straight into the
+  company secrets (a new version if the name exists) and, with `linkToAgentIds` and
+  `adapterEnvKey`, linked to those agents as `access.<adapterEnvKey>`. You never see the value.
+  If the created card's `payload.secretAccess.addresseeCanSave` is false, address someone in
+  `whoCan` instead.
+- Human-only, wakes you by default. Done: `result.secret` is `{ secretId, secretName,
+  linkedAgentIds }` (plus `linkingNeedsOwner` when an owner must link it). "I can't do this":
+  `result.reason` says why; find another way and say what you will do.

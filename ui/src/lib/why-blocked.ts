@@ -180,6 +180,8 @@ function describeAsk(interactions: ReadonlyArray<{ kind: string; payload?: unkno
     switch (interactions[0]!.kind) {
       case "request_draft_review":
         return "review a draft";
+      case "request_steps":
+        return "do some steps";
       case "suggest_tasks":
         return "look at some suggested tasks";
       case "connection_intent":

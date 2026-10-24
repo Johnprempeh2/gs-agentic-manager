@@ -215,6 +215,7 @@ const INTERACTION_ACCEPTED_LABELS: Record<string, string> = {
   suggest_tasks: "accepted the task suggestions",
   ask_user_questions: "accepted the answers",
   request_draft_review: "approved the draft",
+  request_steps: "finished the steps",
 };
 
 const INTERACTION_REJECTED_LABELS: Record<string, string> = {
@@ -223,6 +224,7 @@ const INTERACTION_REJECTED_LABELS: Record<string, string> = {
   suggest_tasks: "declined the task suggestions",
   ask_user_questions: "declined the questions",
   request_draft_review: "asked for a redraft",
+  request_steps: "could not do the steps",
 };
 
 /**

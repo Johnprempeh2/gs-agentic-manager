@@ -11,6 +11,7 @@ const FOCUS_INTERACTION_KINDS = new Set<string>([
   "request_confirmation",
   "request_checkbox_confirmation",
   "suggest_tasks",
+  "request_steps",
 ]);
 
 export function focusItemKind(item: AttentionItem): string | null {
@@ -33,6 +34,7 @@ export function isFocusItem(item: AttentionItem): boolean {
 export function focusKindLabel(kind: string | null): string {
   if (kind === "ask_user_questions") return "Question";
   if (kind === "suggest_tasks") return "Tasks";
+  if (kind === "request_steps") return "Steps";
   return "Confirm";
 }
 

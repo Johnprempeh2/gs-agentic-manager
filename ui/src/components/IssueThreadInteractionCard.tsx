@@ -52,6 +52,7 @@ import { ConnectionIntentInteractionBody } from "@/features/connections/Connecti
 import { ReauthCancelledError } from "./ReauthDialog";
 import { IssueDocumentSheet } from "./IssueDocumentSheet";
 import { DraftReviewCard } from "./DraftReviewCard";
+import { StepsCard } from "./StepsCard";
 
 const OTHER_ANSWER_ID = "__paperclip_other__";
 
@@ -224,6 +225,8 @@ function interactionKindLabel(kind: IssueThreadInteraction["kind"]) {
       return "Connection request";
     case "request_draft_review":
       return "Draft";
+    case "request_steps":
+      return "Steps";
     case "ask_agent":
       return "Question for an agent";
     default:
@@ -3943,6 +3946,8 @@ export function IssueThreadInteractionCard({
                         ? "Review these items"
                       : interaction.kind === "request_draft_review"
                         ? "Review this draft"
+                      : interaction.kind === "request_steps"
+                        ? interaction.payload.title
                         : isPlan
                           ? "Plan review"
                           : "Confirmation requested")}
@@ -4028,6 +4033,12 @@ export function IssueThreadInteractionCard({
               currentUserId={currentUserId}
               addresseeLabel={addresseeLabel ?? "the addressed person"}
             />
+          ) : interaction.kind === "request_steps" ? (
+            <StepsCard
+              interaction={interaction}
+              resolvedByLabel={resolvedByLabel}
+              errorMessage={resolutionErrorMessage}
+            />
           ) : interaction.kind === "request_draft_review" ? (
             <DraftReviewCard
               interaction={interaction}
@@ -4078,7 +4089,7 @@ export function IssueThreadInteractionCard({
           >
             {formatShortDate(interaction.resolvedAt)}
           </div>
-        ) : resolvedByLabel && !isToolAction && !connectionAuthorization && interaction.kind !== "request_draft_review" ? (
+        ) : resolvedByLabel && !isToolAction && !connectionAuthorization && interaction.kind !== "request_draft_review" && interaction.kind !== "request_steps" ? (
           // The connection-authorization card states its own resolver and
           // timestamp inside the "Gmail connected" block, so the shared footer
           // would repeat it.

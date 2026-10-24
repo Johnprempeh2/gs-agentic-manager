@@ -243,6 +243,7 @@ import {
   skipIssueThreadInteractionSchema,
   submitIssueThreadInteractionVerdictsSchema,
   withdrawIssueThreadInteractionSchema,
+  stepsProgressSchema,
   // Auth / profile
   updateCurrentUserProfileSchema,
   updateCurrentUserPreferencesSchema,
@@ -1679,6 +1680,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/issues/{issueId}/file-resources/resolve",
   "POST /api/issues/{id}/interactions/{interactionId}/accept",
   "POST /api/issues/{id}/interactions/{interactionId}/reject",
+  "POST /api/issues/{id}/interactions/{interactionId}/steps-progress",
   "POST /api/issues/{id}/interactions/{interactionId}/respond",
   "POST /api/issues/{id}/interactions/{interactionId}/skip",
   "POST /api/issues/{id}/interactions/{interactionId}/withdraw",
@@ -10232,7 +10234,7 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Create an issue thread interaction",
   description:
-    "Resolver policy defaults to canonical `anyone` for every interaction kind. `not_creator` and `human_only` are opt-in restrictions; deprecated `board_or_agents` and `board_only` inputs are accepted as compatibility aliases. Optional `recommendation` (up to 1000 characters) is what the asking agent recommends and why; the person's decision card shows it beside the options. When a person must act (reply to an email, sign in, choose), ask through an interaction like this one rather than only in a comment, so the ask reaches their Decisions as a structured card.",
+    "Resolver policy defaults to canonical `anyone` for every interaction kind. `not_creator` and `human_only` are opt-in restrictions; deprecated `board_or_agents` and `board_only` inputs are accepted as compatibility aliases. Optional `recommendation` (up to 1000 characters) is what the asking agent recommends and why; the person's decision card shows it beside the options. When a person must act (reply to an email, sign in, choose), ask through an interaction like this one rather than only in a comment, so the ask reaches their Decisions as a structured card. Use kind `request_steps` to guide a person through steps only a person can do (numbered steps with copy chips, https links and what they should see; optional secret field saved straight into the company secrets, never returned). It is human-only, addressed to the task's responsible person unless `addresseeUserId` names someone, wakes you on Done with `{ secretId, secretName, linkedAgentIds }` and on \"I can't do this\" with the reason.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(createIssueThreadInteractionSchema),
@@ -13259,6 +13261,14 @@ registerCurrentRoute({
   tags: ["issues"],
   summary: "Withdraw a pending issue thread interaction",
   body: withdrawIssueThreadInteractionSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/interactions/{interactionId}/steps-progress",
+  tags: ["issues"],
+  summary: "Save which steps a person has ticked on a pending step-by-step card (request_steps)",
+  body: stepsProgressSchema,
 });
 
 registerCurrentRoute({

@@ -20,6 +20,7 @@ export const interactionResolverGovernanceSchema = z.object({
   request_checkbox_confirmation: interactionResolverKindGovernanceSchema.optional(),
   request_item_verdicts: interactionResolverKindGovernanceSchema.optional(),
   request_draft_review: interactionResolverKindGovernanceSchema.optional(),
+  request_steps: interactionResolverKindGovernanceSchema.optional(),
 }).strict().default({});
 
 export const createCompanySchema = z.object({

@@ -30,6 +30,7 @@ import type {
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { DraftReviewCard } from "@/components/DraftReviewCard";
+import { StepsCard } from "@/components/StepsCard";
 import { AgentQuestionCard } from "@/components/AgentQuestionCard";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
@@ -130,6 +131,11 @@ const KIND_COPY = {
     fallbackTitle: "Review draft",
     label: "Draft",
     icon: PenLine,
+  },
+  request_steps: {
+    fallbackTitle: "Steps to do",
+    label: "Steps",
+    icon: ListChecks,
   },
   ask_agent: {
     fallbackTitle: "Question for an agent",
@@ -546,6 +552,10 @@ function ReceiptDisclosure({
         {interaction.payload.requestingAgentName} requested access to{" "}
         {interaction.payload.serviceName}.
       </p>
+    );
+  } else if (interaction.kind === "request_steps") {
+    request = (
+      <p className="text-sm text-foreground">{interaction.payload.why}</p>
     );
   } else if (interaction.kind === "request_draft_review") {
     request = (
@@ -2030,6 +2040,28 @@ export function TaskChatCompactInteractionCard({
     interaction.kind === "request_confirmation" &&
     interaction.payload.target?.type === "issue_document" &&
     interaction.payload.target.key === "plan";
+
+  if (interaction.kind === "request_steps") {
+    return (
+      <InteractionShell
+        interaction={interaction}
+        audienceLabel={audienceLabel}
+        presentation={presentation}
+      >
+        <StepsCard
+          interaction={interaction}
+          resolvedByLabel={
+            interaction.resolvedByUserId
+              ? interaction.resolvedByUserId === currentUserId
+                ? "you"
+                : (userLabelMap?.get(interaction.resolvedByUserId) ?? null)
+              : null
+          }
+          errorMessage={errorMessage}
+        />
+      </InteractionShell>
+    );
+  }
 
   if (interaction.kind === "request_draft_review") {
     return (
