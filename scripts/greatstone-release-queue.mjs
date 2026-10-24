@@ -13,12 +13,19 @@
 //   preview    the candidate on a copy of the live data, then its switch tests;
 //              skipped when the release changes nothing in the database
 //              (db_change_check in greatstone-common.sh; when unsure it runs)
-//   draining   new agent runs are held (the task drain); running runs finish,
-//              at most GSAM_RELEASE_DRAIN_CAP_SECONDS (10 min); nothing is killed
+//   draining   new agent runs are held (the task drain) for the whole release
+//              window; it is never lifted between tries (GRE-2274: runs started
+//              in that gap and the drain never finished). Running runs get
+//              GSAM_RELEASE_DRAIN_GRACE_SECONDS (5 min) to finish, are then asked
+//              on their task to save their work and stop, and after
+//              GSAM_RELEASE_DRAIN_STOP_SECONDS (3 min) more are cancelled. Each
+//              stopped run is recorded on the request with its task.
 //   releasing  scripts/greatstone-release.sh <rc-tag>: backup, tag, switch, restart.
 //              The worker holds the release lock (~/GSAM/locks/release.lock)
 //              from before the drain to the end, so a release by hand never overlaps.
-//              The drain is lifted afterwards, also when the release fails.
+//              The drain is lifted afterwards, also when the release fails or
+//              is cancelled, and every stopped or held task is woken again
+//              with a comment ("Paused for release live-…; resuming").
 //
 // Requests for main that wait next to each other become one release of the
 // newest main. With nothing queued, the worker records what GitHub says about
@@ -63,9 +70,8 @@ export function config() {
     liveUrl: env.GSAM_LIVE_URL || "http://localhost:3100",
     keyFile: env.GSAM_LIVE_BOARD_KEY_FILE || join(root, "release-board-key"),
     pollMs: num("GSAM_RELEASE_QUEUE_POLL_SECONDS", 30) * 1000,
-    drainCapMs: num("GSAM_RELEASE_DRAIN_CAP_SECONDS", 600) * 1000,
-    drainRetryMs: num("GSAM_RELEASE_DRAIN_RETRY_SECONDS", 600) * 1000,
-    drainAttempts: num("GSAM_RELEASE_DRAIN_ATTEMPTS", 3),
+    drainGraceMs: num("GSAM_RELEASE_DRAIN_GRACE_SECONDS", 300) * 1000,
+    drainStopMs: num("GSAM_RELEASE_DRAIN_STOP_SECONDS", 180) * 1000,
     stepWaitMs: num("GSAM_RELEASE_QUEUE_STEP_WAIT_SECONDS", 3600) * 1000,
     githubWaitMs: num("GSAM_GITHUB_GATE_WAIT_SECONDS", 1800) * 1000,
     nice: num("GSAM_RELEASE_QUEUE_NICE", 15),
@@ -79,6 +85,11 @@ const SHA = /^[0-9a-f]{7,40}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const nowIso = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 const oneLine = (v) => String(v ?? "").replace(/[\r\n]+/g, " ").trim();
+const LIVE_TAG_LINE = /^Tagged \S+ as (live-\S+?):/m;
+/** After the drain's runs are cancelled, how long they may take to show as stopped. */
+const STOP_CONFIRM_MS = 60_000;
+/** How many times a paused task is tried before the worker leaves it in the log. */
+const RESUME_ATTEMPTS = 5;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -282,11 +293,33 @@ async function liveApi(cfg, method, path, body) {
   return { ok: res.ok, status: res.status, text: await res.text() };
 }
 
-/** Running agent runs on live, counted as greatstone-release.sh counts them; null when it cannot tell. */
-function activeRuns(cfg) {
-  const r = spawnSync("bash", ["-c", 'source "$0/greatstone-common.sh" && active_runs "$1"', cfg.scripts, cfg.liveUrl], { encoding: "utf8", env });
-  const n = Number(r.stdout.trim());
-  return r.status === 0 && Number.isInteger(n) ? n : null;
+const liveJson = async (cfg, method, path, body) => {
+  const r = await liveApi(cfg, method, path, body).catch((e) => ({ ok: false, status: 0, text: e.message }));
+  let json = null;
+  try { json = JSON.parse(r.text); } catch {}
+  return { ...r, json };
+};
+
+/**
+ * Queued and running agent runs on live, each with its task (issueId may be
+ * null); [] when live is down (as active_runs in greatstone-common.sh counts),
+ * null when it cannot tell.
+ */
+async function liveRunList(cfg) {
+  try { await fetch(`${cfg.liveUrl}/api/health`, { signal: AbortSignal.timeout(15_000) }); } catch { return []; }
+  const companies = await liveJson(cfg, "GET", "/api/companies");
+  if (!companies.ok || !Array.isArray(companies.json)) return null;
+  const runs = [];
+  for (const company of companies.json) {
+    // Filtered by status, so held wakes cannot push an older running run past the limit.
+    const list = await liveJson(cfg, "GET", `/api/companies/${encodeURIComponent(company.id)}/heartbeat-runs?status=running,queued&summary=true&limit=1000`);
+    if (!list.ok || !Array.isArray(list.json)) return null;
+    for (const r of list.json) {
+      if (r.status !== "running" && r.status !== "queued") continue;
+      runs.push({ runId: r.id, status: r.status, agentId: r.agentId, agentName: r.agentName ?? null, issueId: r.contextSnapshot?.issueId ?? null, companyId: company.id });
+    }
+  }
+  return runs;
 }
 
 /**
@@ -464,51 +497,189 @@ function createWorker(cfg) {
     }
   };
 
-  const drainAndRelease = async (item, tag, releaseArgs) => {
-    const freeLock = await takeReleaseLock(item);
-    try {
-      return await drainAndReleaseLocked(item, tag, releaseArgs);
-    } finally {
-      freeLock();
+  /** Adds runs to the request's paused list, once per run, so they are woken again after the release. */
+  const recordPaused = (item, runs, how) => {
+    if (runs.length === 0) return;
+    mutate(cfg, (s) => {
+      const it = s.items.find((i) => i.id === item.id);
+      if (!it) return;
+      it.paused ??= [];
+      for (const r of runs) {
+        if (it.paused.some((p) => p.runId === r.runId)) continue;
+        it.paused.push({ runId: r.runId, how, agentId: r.agentId, agentName: r.agentName, issueId: r.issueId, companyId: r.companyId, at: nowIso(), commentedAt: null, resumedAt: null, attempts: 0, note: null });
+      }
+    });
+  };
+
+  /** Asks a running run, on its own task, to save its work before it is stopped. Only the task's assignee is asked, so no one else is woken. */
+  const askToStop = async (item, r, tag) => {
+    if (!r.issueId) return;
+    const issue = await liveJson(cfg, "GET", `/api/issues/${encodeURIComponent(r.issueId)}`);
+    if (!issue.ok || issue.json?.assigneeAgentId !== r.agentId || ["done", "cancelled"].includes(issue.json?.status)) return;
+    const body = `Release ${tag} is waiting for this run. Please save your work and leave a short note on this task now: the run is stopped in about ${Math.max(1, Math.round(cfg.drainStopMs / 60000))} min and woken again after the release.`;
+    const posted = await liveJson(cfg, "POST", `/api/issues/${encodeURIComponent(r.issueId)}/comments`, { body });
+    logLine(item.log, `asked run ${r.runId} (${r.agentName ?? r.agentId}) on ${issue.json.identifier ?? r.issueId} to stop${posted.ok ? "" : `: the comment failed (${posted.status})`}`);
+  };
+
+  /**
+   * Waits, with new runs held, until no agent run runs: a grace period for runs
+   * to finish, then each is asked on its task to save its work and stop, then
+   * the ones left are cancelled and recorded with their task. Bounded: a minute
+   * past the stop deadline with runs still running it fails the request.
+   */
+  const drainRuns = async (item, tag) => {
+    const graceEnd = Date.now() + cfg.drainGraceMs;
+    const stopAt = graceEnd + cfg.drainStopMs;
+    const giveUpAt = stopAt + STOP_CONFIRM_MS;
+    const asked = new Set();
+    const cancelled = new Set();
+    const min = (ms) => Math.max(1, Math.round(ms / 60000));
+    for (;;) {
+      const runs = await liveRunList(cfg);
+      // A wake that arrives now is held as a queued run; its task is told why it waited.
+      if (runs) recordPaused(item, runs.filter((r) => r.status === "queued" && r.issueId), "held");
+      const running = runs ? runs.filter((r) => r.status === "running") : null;
+      if (running && running.length === 0) return;
+      const now = Date.now();
+      if (now >= giveUpAt) {
+        throw new Stop("failed", running
+          ? `${running.length} agent run(s) still running after they were cancelled (${running.map((r) => r.runId).join(", ")}); nothing was released`
+          : `could not count the agent runs on ${cfg.liveUrl}; nothing was released`);
+      }
+      if (running && now >= stopAt) {
+        for (const r of running.filter((x) => !cancelled.has(x.runId))) {
+          const res = await liveJson(cfg, "POST", `/api/heartbeat-runs/${encodeURIComponent(r.runId)}/cancel`, {});
+          if (!res.ok) {
+            logLine(item.log, `could not stop run ${r.runId} (${res.status} ${res.text.slice(0, 200)}); trying again`);
+            continue;
+          }
+          cancelled.add(r.runId);
+          recordPaused(item, [r], "stopped");
+          logLine(item.log, `stopped run ${r.runId} (${r.agentName ?? r.agentId}) on ${r.issueId ? `task ${r.issueId}` : "no task"}`);
+        }
+        step(item, "draining", `Releasing: new agent runs paused. Stopped ${cancelled.size} run(s) that did not finish in ${min(cfg.drainGraceMs + cfg.drainStopMs)} min; their tasks are woken again after the release.`);
+      } else if (running && now >= graceEnd) {
+        for (const r of running.filter((x) => !asked.has(x.runId))) {
+          asked.add(r.runId);
+          await askToStop(item, r, tag);
+        }
+        step(item, "draining", `Releasing: new agent runs paused. ${running.length} run(s) still running after ${min(cfg.drainGraceMs)} min were asked to save their work; they are stopped in ${min(stopAt - now)} min.`);
+      } else {
+        step(item, "draining", `Releasing: new agent runs paused. Waiting for ${running?.length ?? "an unknown number of"} running run(s) to finish (${min(Math.max(0, graceEnd - now))} min, then they are asked to stop).`);
+      }
+      await sleep(Math.min(cfg.pollMs, 15_000));
+      if (cancelAsked(item.id)) checkCancel(item);
     }
   };
 
-  const drainAndReleaseLocked = async (item, tag, releaseArgs) => {
-    for (let attempt = 1; attempt <= cfg.drainAttempts; attempt += 1) {
-      checkCancel(item);
-      const held = await liveApi(cfg, "POST", "/api/instance/task-drain", { ttlMs: cfg.drainCapMs + 30 * 60_000 }).catch((e) => ({ ok: false, status: 0, text: e.message }));
-      if (!held.ok) throw new Stop("failed", `could not pause new agent runs on ${cfg.liveUrl} (${held.status} ${held.text.slice(0, 200)}); nothing was released`);
-      const lift = async () => {
-        for (let i = 0; i < 5; i += 1) {
-          const r = await liveApi(cfg, "DELETE", "/api/instance/task-drain").catch(() => null);
-          if (r?.ok) return;
-          await sleep(3000);
-        }
-        logLine(item.log, "could not lift the task drain; it lapses on its own when its time runs out");
-      };
-      try {
-        const deadline = Date.now() + cfg.drainCapMs;
-        let n = activeRuns(cfg);
-        while (n !== 0 && Date.now() < deadline) {
-          step(item, "draining", `Releasing: new agent runs paused. Waiting for ${n ?? "an unknown number of"} running run(s) to finish (at most ${Math.round(cfg.drainCapMs / 60000)} min).`);
-          await sleep(Math.min(cfg.pollMs, 15_000));
-          if (cancelAsked(item.id)) checkCancel(item);
-          n = activeRuns(cfg);
-        }
-        if (n === 0) {
-          step(item, "releasing", `Releasing ${tag}: new agent runs paused`);
-          return await run(cfg, "bash", [join(cfg.scripts, "greatstone-release.sh"), ...releaseArgs, tag], { log: item.log, extraEnv: { GSAM_RELEASE_LOCK_INHERITED: "1" } });
-        }
-        logLine(item.log, `${n ?? "some"} run(s) still running after ${Math.round(cfg.drainCapMs / 60000)} min; nothing was stopped`);
-      } finally {
-        await lift();
-      }
-      if (attempt < cfg.drainAttempts) {
-        step(item, "draining", `Runs still running after ${Math.round(cfg.drainCapMs / 60000)} min. Agent runs resumed; trying again in ${Math.round(cfg.drainRetryMs / 60000)} min (try ${attempt} of ${cfg.drainAttempts}).`);
-        await sleep(cfg.drainRetryMs);
+  /**
+   * The paused runs of one task, woken again: one comment on the task (with
+   * resume: true when a stopped run was its assignee's, which wakes it), and a
+   * wake for each stopped run of another agent (a reviewer) or with no task.
+   * A held run starts on its own once runs are back on; the comment only says
+   * why it waited, so it is posted for a held run only when it is the
+   * assignee's (a comment wakes the assignee; that wake joins the held run).
+   * Returns { ok, note } per run; a retry skips a comment already posted.
+   */
+  const resumeTask = async (entries, label) => {
+    const all = (ok, note) => entries.map(() => ({ ok, note }));
+    const issueId = entries[0].issueId;
+    let issue = null;
+    if (issueId) {
+      const got = await liveJson(cfg, "GET", `/api/issues/${encodeURIComponent(issueId)}`);
+      if (got.status === 404) return all(true, "the task is gone");
+      if (!got.ok || !got.json) return all(false, `could not read the task (${got.status})`);
+      issue = got.json;
+      if (["done", "cancelled"].includes(issue.status)) return all(true, `the task is ${issue.status}`);
+    }
+    const name = issue?.identifier ?? issueId;
+    const isAssignee = (p) => issue?.assigneeAgentId === p.agentId;
+    if (issue && entries.some((p) => p.how === "stopped" || isAssignee(p)) && !entries.some((p) => p.commentedAt)) {
+      const wake = entries.some((p) => p.how === "stopped" && isAssignee(p));
+      const c = await liveJson(cfg, "POST", `/api/issues/${encodeURIComponent(issueId)}/comments`, { body: `Paused for release ${label}; resuming.`, ...(wake ? { resume: true } : {}) });
+      if (!c.ok) return all(false, `the comment on ${name} failed (${c.status})`);
+      for (const p of entries) p.commentedAt = nowIso();
+    }
+    const out = [];
+    for (const p of entries) {
+      if (p.how === "held") out.push({ ok: true, note: isAssignee(p) ? `commented on ${name}; the held run starts now` : "the held run starts on its own" });
+      else if (isAssignee(p)) out.push({ ok: true, note: `commented on ${name}; ${p.agentName ?? "its agent"} is woken` });
+      else {
+        const w = await liveJson(cfg, "POST", `/api/agents/${encodeURIComponent(p.agentId)}/wakeup`, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "release_resumed",
+          payload: p.issueId ? { issueId: p.issueId, taskId: p.issueId, resumeIntent: true, interruptedRunId: p.runId } : { interruptedRunId: p.runId },
+          idempotencyKey: `release-resume:${p.runId}`,
+        });
+        out.push(w.ok ? { ok: true, note: `${issue ? `commented on ${name}; ` : ""}${p.agentName ?? "its agent"} is woken` } : { ok: false, note: `could not wake ${p.agentName ?? p.agentId} (${w.status})` });
       }
     }
-    throw new Stop("failed", `agent runs were still running after ${cfg.drainAttempts} waits of ${Math.round(cfg.drainCapMs / 60000)} min; nothing was released and agent runs are on`);
+    return out;
+  };
+
+  /**
+   * Wakes every stopped or held task of a request again, after the drain is
+   * lifted. Each run once; a failure is tried again by the next worker (the
+   * watchdog starts one every minute), at most RESUME_ATTEMPTS times.
+   */
+  const resumePaused = async (id, label) => {
+    const item = load(cfg).items.find((i) => i.id === id);
+    const tasks = new Map();
+    for (const p of item?.paused ?? []) {
+      if (p.resumedAt || p.attempts >= RESUME_ATTEMPTS) continue;
+      const key = p.issueId ?? `run:${p.runId}`;
+      tasks.set(key, [...(tasks.get(key) ?? []), p]);
+    }
+    for (const entries of tasks.values()) {
+      const results = await resumeTask(entries, label).catch((e) => entries.map(() => ({ ok: false, note: oneLine(e.message) })));
+      mutate(cfg, (s) => {
+        const paused = s.items.find((i) => i.id === id)?.paused ?? [];
+        entries.forEach((p, n) => {
+          const q = paused.find((x) => x.runId === p.runId);
+          if (q) Object.assign(q, { attempts: q.attempts + 1, commentedAt: p.commentedAt, note: results[n].note, ...(results[n].ok ? { resumedAt: nowIso() } : {}) });
+        });
+      });
+      entries.forEach((p, n) => logLine(item.log, `${p.how} run ${p.runId}: ${results[n].ok ? "" : "not woken yet: "}${results[n].note}`));
+    }
+  };
+
+  const drainAndRelease = async (item, tag, releaseArgs) => {
+    const freeLock = await takeReleaseLock(item);
+    let result = null;
+    try {
+      result = await drainAndReleaseLocked(item, tag, releaseArgs);
+      return result;
+    } finally {
+      freeLock();
+      // Runs are back on (the drain is lifted, or the restart cleared it): wake the paused tasks.
+      const liveTag = result?.code === 0 ? LIVE_TAG_LINE.exec(result.out)?.[1] : null;
+      await resumePaused(item.id, liveTag ?? tag);
+    }
+  };
+
+  /** New runs stay held from here to the end of the release, also between checks (GRE-2274). */
+  const drainAndReleaseLocked = async (item, tag, releaseArgs) => {
+    checkCancel(item);
+    const ttlMs = cfg.drainGraceMs + cfg.drainStopMs + STOP_CONFIRM_MS + 30 * 60_000;
+    const held = await liveApi(cfg, "POST", "/api/instance/task-drain", { ttlMs }).catch((e) => ({ ok: false, status: 0, text: e.message }));
+    if (!held.ok) throw new Stop("failed", `could not pause new agent runs on ${cfg.liveUrl} (${held.status} ${held.text.slice(0, 200)}); nothing was released`);
+    try {
+      await drainRuns(item, tag);
+      checkCancel(item);
+      step(item, "releasing", `Releasing ${tag}: new agent runs paused`);
+      return await run(cfg, "bash", [join(cfg.scripts, "greatstone-release.sh"), ...releaseArgs, tag], { log: item.log, extraEnv: { GSAM_RELEASE_LOCK_INHERITED: "1" } });
+    } finally {
+      for (let i = 0; ; i += 1) {
+        const r = await liveApi(cfg, "DELETE", "/api/instance/task-drain").catch(() => null);
+        if (r?.ok) break;
+        if (i === 4) {
+          logLine(item.log, "could not lift the task drain; it lapses on its own when its time runs out");
+          break;
+        }
+        await sleep(3000);
+      }
+    }
   };
 
   const processItem = async (head, mergedIds) => {
@@ -583,7 +754,7 @@ function createWorker(cfg) {
       const result = await drainAndRelease(item, tag, gateUsed === "pc" ? ["--pc-gate"] : []);
       const rollback = /^Roll back with: (.+)$/m.exec(result.out)?.[1]?.trim() ?? null;
       const backupFile = /^Database backup from before this release: (.+)$/m.exec(result.out)?.[1]?.trim() ?? null;
-      const liveTag = /^Tagged \S+ as (live-\S+?):/m.exec(result.out)?.[1] ?? null;
+      const liveTag = LIVE_TAG_LINE.exec(result.out)?.[1] ?? null;
       if (result.code !== 0) {
         cutTag = null; // the release script owns the tags once it ran
         throw Object.assign(new Stop("failed", lastLine(result.out, "release:").replace(/^release: /, "")), { rollback, backupFile });
@@ -619,6 +790,10 @@ function createWorker(cfg) {
           else Object.assign(i, { status: "failed", reason: `the worker stopped during ${i.step}; check live (curl ${cfg.liveUrl}/api/health) and the log ${i.log}`, finishedAt: nowIso() });
         }
       });
+      // Paused tasks a past request could not wake yet (live was down, or the worker stopped).
+      for (const i of load(cfg).items.filter((x) => FINAL.has(x.status) && x.paused?.some((p) => !p.resumedAt && p.attempts < RESUME_ATTEMPTS))) {
+        await resumePaused(i.id, i.liveTag ?? i.tag ?? i.ref);
+      }
       for (;;) {
         heartbeat(cfg);
         git(cfg, "fetch", "--quiet", "origin", "main");
