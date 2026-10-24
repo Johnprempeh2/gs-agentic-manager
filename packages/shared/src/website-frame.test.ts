@@ -9,6 +9,8 @@ import {
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
   WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES,
+  WEBSITE_FRAME_SET_MOTION_ERROR_CODES,
+  websiteFrameSetMotionSchema,
   websiteFrameInsertMediaSchema,
   websiteFrameSrc,
 } from "./website-frame.js";
@@ -241,5 +243,69 @@ describe("insert-media-result (frame to host)", () => {
     expect(
       receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: message({ requestId: "m8", ok: true }) }, ctx(null)).ok,
     ).toBe(false);
+  });
+});
+
+describe("set-motion (GRE-2232)", () => {
+  const receive = (type: string, payload: unknown) =>
+    receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: { gs: "website-frame", protocol: 1, session: nonce, id: "m9", type, payload } },
+      ctx(1),
+    );
+
+  it("reads the engine's motion choices from hello-ack, the same shape the site sends", () => {
+    const motion = { effects: ["none", "bg.ascent"], default: { effect: "none", intensity: "off" } };
+    const motionEffects = [
+      { id: "hero.stone", label: "Hero stone", still: "/motion/stone-still.png" },
+      { id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" },
+    ];
+    const received = receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: ack({ blocks: [{ type: "Hero", label: "Hero", motion }], motionEffects }) },
+      ctx(null),
+    );
+    expect(received.ok && received.message.type === "hello-ack" && received.message.payload).toMatchObject({
+      blocks: [{ type: "Hero", motion }],
+      motionEffects,
+    });
+  });
+
+  it("drops a bad motion list but keeps the handshake", () => {
+    const received = receiveWebsiteFrameMessage(
+      {
+        origin: ORIGIN,
+        source: frameWindow,
+        data: ack({
+          blocks: [{ type: "Hero", label: "Hero", motion: { effects: ["BG ASCENT"], default: {} } }],
+          motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "https://elsewhere.example/a.webp" }],
+        }),
+      },
+      ctx(null),
+    );
+    expect(received.ok).toBe(true);
+    const payload = received.ok && received.message.type === "hello-ack" ? received.message.payload : null;
+    expect(payload?.blocks[0]?.motion).toBeUndefined();
+    expect(payload?.motionEffects).toBeUndefined();
+  });
+
+  it("sends only a block id and a release choice", () => {
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "subtle" } }).success).toBe(true);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "extreme" } }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "<b>", intensity: "full" } }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "none", intensity: "off" }, code: "x" }).success).toBe(false);
+  });
+
+  it("accepts set-motion-result with each refusal code the site sends", () => {
+    expect(WEBSITE_FRAME_SET_MOTION_ERROR_CODES).toEqual([
+      "block_not_found",
+      "block_has_no_motion",
+      "effect_not_allowed",
+      "invalid_payload",
+      "error",
+    ]);
+    expect(receive("set-motion-result", { requestId: "m8", ok: true }).ok).toBe(true);
+    for (const code of WEBSITE_FRAME_SET_MOTION_ERROR_CODES) {
+      expect(receive("set-motion-result", { requestId: "m8", ok: false, code, message: "No." }).ok).toBe(true);
+    }
+    expect(receive("set-motion-result", { requestId: "m8", ok: false, code: "field_not_media" }).ok).toBe(false);
   });
 });

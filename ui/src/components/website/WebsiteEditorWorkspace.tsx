@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileText, Film, History, Image as ImageIcon, PenLine, Plus, RefreshCw } from "lucide-react";
+import { CheckCircle2, FileText, Film, History, Image as ImageIcon, PenLine, Plus, RefreshCw, Waves } from "lucide-react";
 import {
   WEBSITE_FRAME_SANDBOX,
   createWebsiteFrameNonce,
   websiteFrameSrc,
   type WebsiteFrameInsertMediaResult,
+  type WebsiteFrameSetMotionResult,
+  type WebsiteMotionChoice,
+  type WebsiteMotionIntensity,
   type WebsiteMediaItem,
   type WebsitePage,
   type WebsiteProperty,
@@ -26,6 +29,8 @@ import {
   type WebsiteFrameSaveState,
 } from "../../lib/website-frame-host";
 import {
+  MOTION_INTENSITY_LABELS,
+  blockMotionOptions,
   editorOpenProblem,
   fetchAssetBlob,
   frameConnectionMessage,
@@ -34,7 +39,12 @@ import {
   insertMediaEntry,
   insertMediaField,
   insertMediaMessage,
+  motionChoice,
+  motionOptionFor,
   saveThroughGsam,
+  setMotionMessage,
+  type BlockMotionOptions,
+  type MotionOption,
 } from "../../lib/website-editor";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -55,7 +65,7 @@ const ORIGIN_CHANGED_NOTICE = "The editor address for this site changed. Reload 
 
 type Mode = "edit" | "preview";
 type Source = "draft" | "live";
-type Panel = "history" | "media" | null;
+type Panel = "history" | "media" | "motion" | null;
 
 export function WebsiteEditorTab({
   companyId,
@@ -107,7 +117,11 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
   const [mode, setMode] = useState<Mode>("edit");
   const [source, setSource] = useState<Source>("draft");
   const [device, setDevice] = useState<WebsitePreviewDevice>("laptop");
-  const [panel, setPanel] = useState<Panel>(null);
+  /** GS Studio's Use on website: the study number or effect to place, from `?motion=`. */
+  const wantedMotion = searchParams.get("motion");
+  const [panel, setPanel] = useState<Panel>(() => (wantedMotion ? "motion" : null));
+  /** Counts draft loads, so the Motion panel reads the engine's choices once the frame has them. */
+  const [draftLoads, setDraftLoads] = useState(0);
   const [frameKey, setFrameKey] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -206,6 +220,17 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
     });
   };
 
+  const setMotion = async (choice: WebsiteMotionChoice): Promise<WebsiteFrameSetMotionResult | null> => {
+    const session = sessionRef.current;
+    if (!session || !insertBlockId) return null;
+    return session.setMotion({ blockId: insertBlockId, motion: choice });
+  };
+  const session = sessionRef.current;
+  const motionReady = mode === "edit" && draftLoads > 0 && session !== null;
+  const motionOptions =
+    motionReady && insertBlockId ? blockMotionOptions(session.motionCapabilities, session.shownPageData, insertBlockId) : null;
+  const engineEffects = motionReady ? session.motionCapabilities.effects : [];
+
   const width = mode === "preview" ? WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width : null;
 
   return (
@@ -253,6 +278,10 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
             <ImageIcon />
             Media
           </Button>
+          <Button type="button" size="sm" variant={panel === "motion" ? "secondary" : "outline"} aria-pressed={panel === "motion"} onClick={() => setPanel(panel === "motion" ? null : "motion")}>
+            <Waves />
+            Motion
+          </Button>
         </div>
         {notice ? (
           <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-status-warning/40 bg-status-warning-soft px-4 py-3 text-sm text-status-warning-foreground">
@@ -274,6 +303,7 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
             focusBlockId={mode === "edit" ? focusBlockId : null}
             onEditBlock={(blockId, blockName) => void editBlock(blockId, blockName)}
             onDirty={setDirty}
+            onDraftLoaded={() => setDraftLoads((count) => count + 1)}
             onOriginChanged={() => setNotice(ORIGIN_CHANGED_NOTICE)}
             onReload={reload}
           />
@@ -304,6 +334,21 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
             // The frame gets the site's media with load-draft, so a clean editor reloads to pick up the new item.
             if (!dirty) setFrameKey((key) => key + 1);
           }}
+        />
+      ) : null}
+      {panel === "motion" ? (
+        <MotionPanel
+          key={`${page.id}:${insertBlockId ?? ""}:${draftLoads}`}
+          editorOrigin={site.editorFrameOrigin!}
+          mode={mode}
+          ready={motionReady}
+          blockId={insertBlockId}
+          blockName={focusBlockName}
+          options={motionOptions}
+          engineEffects={engineEffects.length}
+          wanted={wantedMotion}
+          setMotion={setMotion}
+          onApplied={() => setDirty(true)}
         />
       ) : null}
     </div>
@@ -387,6 +432,7 @@ function EditorFrame({
   focusBlockId,
   onEditBlock,
   onDirty,
+  onDraftLoaded,
   onOriginChanged,
   onReload,
 }: {
@@ -402,6 +448,7 @@ function EditorFrame({
   focusBlockId: string | null;
   onEditBlock: (blockId: string, blockName: string) => void;
   onDirty: (dirty: boolean) => void;
+  onDraftLoaded: () => void;
   onOriginChanged: () => void;
   onReload: () => void;
 }) {
@@ -472,6 +519,7 @@ function EditorFrame({
       },
       onDraftLoaded: () => {
         if (focusBlockId) sessionRef.current?.highlight(focusBlockId);
+        onDraftLoaded();
       },
       onFrameError: (error) => setFrameError(error.message),
       onDrop: (reason) => console.warn(`[website editor] dropped a frame message: ${reason}`),
@@ -832,5 +880,179 @@ function MediaPanel({
         onAdded={(text, item) => void use(text, item, picker ?? "image")}
       />
     </aside>
+  );
+}
+
+const EFFECT_INTENSITIES: { value: WebsiteMotionIntensity; label: string }[] = [
+  { value: "subtle", label: MOTION_INTENSITY_LABELS.subtle },
+  { value: "full", label: MOTION_INTENSITY_LABELS.full },
+];
+
+/**
+ * Motion (GRE-2219): put one of the engine's effects in the selected block.
+ * The engine owns the effects, their stills and the checks; GSAM sends only
+ * the choice (`set-motion`), and the person saves the page in the editor.
+ */
+function MotionPanel({
+  editorOrigin,
+  mode,
+  ready,
+  blockId,
+  blockName,
+  options,
+  engineEffects,
+  wanted,
+  setMotion,
+  onApplied,
+}: {
+  editorOrigin: string;
+  mode: Mode;
+  /** The editor has the draft and said what motion it takes. */
+  ready: boolean;
+  blockId: string | null;
+  blockName: string;
+  options: BlockMotionOptions | null;
+  /** How many effects the engine described; 0 for an engine from before GRE-2232. */
+  engineEffects: number;
+  wanted: string | null;
+  setMotion: (choice: WebsiteMotionChoice) => Promise<WebsiteFrameSetMotionResult | null>;
+  onApplied: () => void;
+}) {
+  const name = blockName || "The selected block";
+  const wantedOption = options ? motionOptionFor(options.options, wanted) : null;
+  const [effect, setEffect] = useState(wantedOption?.id ?? options?.current.effect ?? "none");
+  const [intensity, setIntensity] = useState<WebsiteMotionIntensity>(
+    options && options.current.intensity !== "off" ? options.current.intensity : "subtle",
+  );
+  const [applied, setApplied] = useState<WebsiteMotionChoice | null>(options?.current ?? null);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<{ text: string; tone: "success" | "warn" } | null>(null);
+  const chosen = options?.options.find((option) => option.id === effect) ?? null;
+  const choice = motionChoice(effect, intensity);
+  const unchanged = applied !== null && applied.effect === choice.effect && applied.intensity === choice.intensity;
+
+  const apply = async () => {
+    if (!chosen) return;
+    setPending(true);
+    setMessage(null);
+    const result = await setMotion(choice);
+    setPending(false);
+    setMessage({ text: setMotionMessage(result, name, chosen.label, choice.intensity), tone: result?.ok ? "success" : "warn" });
+    if (result?.ok) {
+      setApplied(choice);
+      onApplied();
+    }
+  };
+
+  let hint: string;
+  if (mode !== "edit") hint = "Switch to Edit to put motion in a block.";
+  else if (!blockId) hint = "Pick a block first: open Preview, click the block, then choose Edit block. Its motion choices show here.";
+  else if (!ready) hint = "Waiting for the site's editor.";
+  else if (engineEffects === 0) hint = "This site's engine does not offer motion choices yet. Set motion in the block's own fields.";
+  else if (!options) hint = `${name} takes no motion. Pick a hero or a section block.`;
+  else hint = `Selected block: ${name}. Pick an effect, then Use in block.`;
+
+  return (
+    <aside className="gs-glass-card min-w-0 space-y-3 rounded-xl border p-4 lg:w-80 lg:shrink-0" aria-labelledby="website-motion-title" data-testid="website-motion">
+      <div className="space-y-1">
+        <h3 id="website-motion-title" className="text-sm font-semibold">Motion</h3>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+        {wanted ? (
+          <p className="text-xs text-muted-foreground" data-testid="website-motion-wanted">
+            {wantedOption
+              ? `From GS Studio: ${wantedOption.study ? `study ${wantedOption.study}, ` : ""}${wantedOption.label}.`
+              : options
+                ? `From GS Studio: ${/^\d{3}$/.test(wanted) ? `study ${wanted}` : wanted} is not offered for ${name}.`
+                : `From GS Studio: ${/^\d{3}$/.test(wanted) ? `study ${wanted}` : wanted}.`}
+          </p>
+        ) : null}
+      </div>
+      {options ? (
+        <>
+          <div role="radiogroup" aria-label="Effect" className="grid grid-cols-2 gap-2" data-testid="website-motion-effects">
+            {options.options.map((option) => (
+              <MotionOptionTile
+                key={option.id}
+                option={option}
+                editorOrigin={editorOrigin}
+                checked={option.id === effect}
+                current={applied?.effect === option.id}
+                onSelect={() => setEffect(option.id)}
+              />
+            ))}
+          </div>
+          {effect !== "none" ? (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-foreground">Strength</span>
+              <Segmented label="Strength" value={choice.intensity} options={EFFECT_INTENSITIES} onChange={setIntensity} />
+            </div>
+          ) : null}
+          <Button type="button" size="sm" className="w-full" disabled={pending || unchanged || !chosen} onClick={() => void apply()} data-testid="website-motion-apply">
+            {pending ? "Putting it in the block" : unchanged ? "In the block" : "Use in block"}
+          </Button>
+        </>
+      ) : null}
+      {message ? (
+        message.tone === "success" ? (
+          <p role="status" className="flex gap-1.5 rounded-md border border-status-success/30 bg-status-success-soft px-2.5 py-2 text-xs text-status-success-foreground">
+            <CheckCircle2 className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span>{message.text}</span>
+          </p>
+        ) : (
+          <p role="alert" className="rounded-md border border-status-warning/40 bg-status-warning-soft px-2.5 py-2 text-xs text-status-warning-foreground">
+            {message.text}
+          </p>
+        )
+      ) : null}
+    </aside>
+  );
+}
+
+function MotionOptionTile({
+  option,
+  editorOrigin,
+  checked,
+  current,
+  onSelect,
+}: {
+  option: MotionOption;
+  editorOrigin: string;
+  checked: boolean;
+  current: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onSelect}
+      className={cn(
+        "flex min-w-0 flex-col gap-1 rounded-lg border p-1 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        checked ? "border-foreground bg-accent" : "border-border hover:bg-accent/50",
+      )}
+      data-testid={`website-motion-effect-${option.id}`}
+    >
+      <span className="relative block aspect-video w-full overflow-hidden rounded-md bg-muted">
+        {option.still ? (
+          // The engine's own still, from the editor origin: GSAM keeps no copy.
+          <img
+            src={`${editorOrigin}${option.still}`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <span className="absolute inset-0 grid place-items-center text-xs text-muted-foreground">No motion</span>
+        )}
+      </span>
+      <span className="flex min-w-0 items-baseline gap-1.5 px-1 pb-0.5">
+        {option.study ? <span className="shrink-0 font-mono text-micro text-muted-foreground">{option.study}</span> : null}
+        <span className="truncate text-xs font-medium text-foreground">{option.label}</span>
+        {current ? <span className="ml-auto shrink-0 text-micro text-muted-foreground">Now</span> : null}
+      </span>
+    </button>
   );
 }

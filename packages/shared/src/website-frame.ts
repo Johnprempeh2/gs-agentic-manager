@@ -29,8 +29,14 @@ export const WEBSITE_FRAME_HANDSHAKE_TYPES: readonly WebsiteFrameHandshakeType[]
   "hello-refused",
 ];
 
-export type WebsiteFrameHostMessageType = "load-draft" | "save-result" | "highlight" | "teardown" | "insert-media";
-export type WebsiteFrameFrameMessageType = "dirty" | "save" | "block-picked" | "error" | "insert-media-result";
+export type WebsiteFrameHostMessageType = "load-draft" | "save-result" | "highlight" | "teardown" | "insert-media" | "set-motion";
+export type WebsiteFrameFrameMessageType =
+  | "dirty"
+  | "save"
+  | "block-picked"
+  | "error"
+  | "insert-media-result"
+  | "set-motion-result";
 
 // ---------------------------------------------------------------- nonce
 
@@ -183,7 +189,39 @@ export function inspectWebsitePuckData(
 // ---------------------------------------------------------------- payloads
 
 const idString = z.string().min(1).max(200);
+const MAX_ASSET_URL_LENGTH = 2048;
 const protocolNumber = z.number().int().positive();
+
+// ---------------------------------------------------------------- motion (GRE-2232)
+
+/** Release intensities a block's motion takes (GRE-2215). `none` is always `off`. */
+export const WEBSITE_MOTION_INTENSITIES = ["off", "subtle", "full"] as const;
+export type WebsiteMotionIntensity = (typeof WEBSITE_MOTION_INTENSITIES)[number];
+
+/** An engine effect id, for example `bg.ascent`, or `none`. The engine owns the list. */
+const motionEffectIdSchema = z.string().regex(/^(none|[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9-]{0,47})$/);
+
+const motionChoiceSchema = z.object({ effect: motionEffectIdSchema, intensity: z.enum(WEBSITE_MOTION_INTENSITIES) });
+export type WebsiteMotionChoice = z.infer<typeof motionChoiceSchema>;
+
+/** `hello-ack.blocks[].motion`: the effects one block type takes, and what a new block starts with. */
+const blockMotionSchema = z.object({
+  effects: z.array(motionEffectIdSchema).min(1).max(50),
+  default: motionChoiceSchema,
+});
+
+/**
+ * `hello-ack.motionEffects`: one effect the engine can draw. `still` is a path on
+ * the editor origin. `study` is the Animation Lab study number it comes from, for
+ * a `bg.*` effect made from a text-safe study (015 to 020 today).
+ */
+export const websiteMotionEffectSchema = z.object({
+  id: motionEffectIdSchema,
+  label: z.string().min(1).max(100),
+  still: z.string().max(MAX_ASSET_URL_LENGTH).refine((value) => value.startsWith("/") && isWebsiteFrameAssetUrl(value)),
+  study: z.string().regex(/^\d{3}$/).optional(),
+});
+export type WebsiteMotionEffect = z.infer<typeof websiteMotionEffectSchema>;
 
 export const websiteFrameHelloAckSchema = z.object({
   protocol: protocolNumber,
@@ -191,7 +229,12 @@ export const websiteFrameHelloAckSchema = z.object({
   siteId: idString,
   engine: z.object({ version: z.string().max(100), commit: z.string().regex(/^[0-9a-f]{40}$/) }),
   supportedReleaseSchemas: z.array(protocolNumber).min(1),
-  blocks: z.array(z.object({ type: blockTypeSchema, label: z.string().max(200) })).max(500),
+  blocks: z
+    .array(z.object({ type: blockTypeSchema, label: z.string().max(200), motion: blockMotionSchema.optional().catch(undefined) }))
+    .max(500),
+  /** Added in protocol 1 (GRE-2232). An older engine leaves it out: no motion choices. */
+  // A malformed motion list is dropped, never the handshake: the editor still opens.
+  motionEffects: z.array(websiteMotionEffectSchema).max(100).optional().catch(undefined),
 });
 export type WebsiteFrameHelloAck = z.infer<typeof websiteFrameHelloAckSchema>;
 
@@ -239,8 +282,6 @@ export const websiteFrameErrorSchema = z.object({ code: z.string().max(100), mes
  * protocol 1 is kept), so no reply in time means "not supported here".
  */
 export const WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS = 5_000;
-
-const MAX_ASSET_URL_LENGTH = 2048;
 
 /**
  * An `assetUrl` the frame may put in a block: an absolute `https://` URL with
@@ -333,12 +374,55 @@ export const websiteFrameInsertMediaResultSchema = z.discriminatedUnion("ok", [
 ]);
 export type WebsiteFrameInsertMediaResult = z.infer<typeof websiteFrameInsertMediaResultSchema>;
 
+// ---------------------------------------------------------------- set-motion (GRE-2232)
+
+/** How long the host waits for `set-motion-result`. An older engine drops `set-motion` without a reply. */
+export const WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS = 5_000;
+
+/**
+ * `set-motion` payload, host to frame: put this motion choice in this block of
+ * the open draft. The frame checks the effect against the block's own list and
+ * marks the draft unsaved; nothing is saved until the person saves.
+ */
+export const websiteFrameSetMotionSchema = z.object({ blockId: blockIdSchema, motion: motionChoiceSchema }).strict();
+export type WebsiteFrameSetMotion = z.infer<typeof websiteFrameSetMotionSchema>;
+
+/**
+ * Why the frame did not set the motion:
+ * - `block_not_found`: no block with `blockId` on the open page.
+ * - `block_has_no_motion`: the block type takes no motion.
+ * - `effect_not_allowed`: the block takes motion, but not this effect.
+ * - `invalid_payload`: the frame's own checks refused the payload.
+ * - `error`: anything else; `message` says what.
+ */
+export const WEBSITE_FRAME_SET_MOTION_ERROR_CODES = [
+  "block_not_found",
+  "block_has_no_motion",
+  "effect_not_allowed",
+  "invalid_payload",
+  "error",
+] as const;
+export type WebsiteFrameSetMotionErrorCode = (typeof WEBSITE_FRAME_SET_MOTION_ERROR_CODES)[number];
+
+/** `set-motion-result` payload, frame to host. `requestId` is the `id` of the `set-motion` it answers. */
+export const websiteFrameSetMotionResultSchema = z.discriminatedUnion("ok", [
+  z.object({ requestId: idString, ok: z.literal(true), message: z.string().max(2000).optional() }),
+  z.object({
+    requestId: idString,
+    ok: z.literal(false),
+    code: z.enum(WEBSITE_FRAME_SET_MOTION_ERROR_CODES),
+    message: z.string().max(2000).optional(),
+  }),
+]);
+export type WebsiteFrameSetMotionResult = z.infer<typeof websiteFrameSetMotionResultSchema>;
+
 const framePayloadSchemas = {
   dirty: websiteFrameDirtySchema,
   save: websiteFrameSaveSchema,
   "block-picked": websiteFrameBlockPickedSchema,
   error: websiteFrameErrorSchema,
   "insert-media-result": websiteFrameInsertMediaResultSchema,
+  "set-motion-result": websiteFrameSetMotionResultSchema,
 } as const;
 
 /**
@@ -363,7 +447,8 @@ export type WebsiteFrameIncoming =
   | { type: "save"; id: string; payload: WebsiteFrameSave }
   | { type: "block-picked"; id: string; payload: WebsiteFrameBlockPicked }
   | { type: "error"; id: string; payload: z.infer<typeof websiteFrameErrorSchema> }
-  | { type: "insert-media-result"; id: string; payload: WebsiteFrameInsertMediaResult };
+  | { type: "insert-media-result"; id: string; payload: WebsiteFrameInsertMediaResult }
+  | { type: "set-motion-result"; id: string; payload: WebsiteFrameSetMotionResult };
 
 export interface WebsiteFrameReceiveContext<Source> {
   /** The site's `editorOrigin`. */
