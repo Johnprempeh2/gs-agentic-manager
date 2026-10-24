@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { IssueTree, IssueTreeNode } from "@greatstone/shared";
 import {
+  blockLinkMidpoint,
+  blockLinkPath,
   connectorPath,
   doneItemId,
   edgeKey,
@@ -126,6 +128,26 @@ describe("tidy tree layout", () => {
     expect(connectorPath({ x: 0, y: 0, width: 100, height: 50 }, { x: 200, y: 150, width: 100 })).toBe(
       "M 50 50 C 50 100, 250 100, 250 150",
     );
+  });
+});
+
+describe("blocks lines", () => {
+  const card = (x: number, y = 0) => ({ x, y, width: 248, height: 112 });
+  const numbers = (d: string) => d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+
+  it("arches a long link high over the row, ending on the side of each card", () => {
+    const [x1, y1, , c1y, , c2y, x2, y2] = numbers(blockLinkPath(card(0), card(30000)));
+    expect([x1, y1]).toEqual([248, 56]);
+    expect([x2, y2]).toEqual([30000, 56]);
+    // It climbs well clear of the cards rather than lying flat along them.
+    expect(c1y).toBeLessThan(-1000);
+    expect(c2y).toBe(c1y);
+    expect(blockLinkMidpoint(card(0), card(30000)).y).toBeLessThan(-800);
+  });
+
+  it("joins near cards on different rows with a gentle curve", () => {
+    const [, y1, , c1y, , c2y, , y2] = numbers(blockLinkPath(card(0), card(400, 300)));
+    expect([c1y, c2y]).toEqual([y1, y2]);
   });
 });
 

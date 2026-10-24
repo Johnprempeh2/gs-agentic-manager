@@ -1,4 +1,5 @@
 import type { IssueTree, IssueTreeExternalBlocker, IssueTreeNode } from "@greatstone/shared";
+import { buildLinkGraph, treeLinksFrom, type TreeLinkGraph } from "./task-tree-links";
 
 /**
  * The task tree: index the flat subtree from GET /issues/:id/tree, decide
@@ -23,6 +24,8 @@ export interface TaskTreeIndex {
   limits: IssueTree["limits"];
   /** Finished tasks the server counted but did not send, by the task they sit under. */
   hiddenDone: ReadonlyMap<string, number>;
+  /** Every open "blocks" link between tasks in the tree and outside it (GRE-2290). */
+  graph: TreeLinkGraph;
 }
 
 const keyCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -46,14 +49,49 @@ export function indexTaskTree(
     children.set(node.parentId, list);
   }
   for (const list of children.values()) list.sort(compareNodes);
+  const external = new Map(tree.externalBlockers.map((blocker) => [blocker.id, blocker]));
+  const isOpen = (id: string) => {
+    const task = byId.get(id) ?? external.get(id);
+    return !!task && !isFinished(task.status);
+  };
   return {
     root,
     byId,
     children,
-    external: new Map(tree.externalBlockers.map((blocker) => [blocker.id, blocker])),
+    external,
     truncated: tree.truncated,
     limits: tree.limits,
     hiddenDone,
+    graph: buildLinkGraph(treeLinksFrom(tree.blockLinks, tree.nodes, isOpen)),
+  };
+}
+
+/** The card that gathers the tasks outside the tree that link to it. */
+export function outsideGroupId(rootId: string) {
+  return `${rootId}:outside`;
+}
+
+/** A task outside the tree, drawn as a card like the rest. */
+export function outsideAsNode(task: IssueTreeExternalBlocker, rootId: string): IssueTreeNode {
+  return {
+    id: task.id,
+    identifier: task.identifier,
+    title: task.title,
+    status: task.status,
+    priority: "medium",
+    assigneeAgentId: task.assigneeAgentId,
+    assigneeUserId: task.assigneeUserId,
+    parentId: outsideGroupId(rootId),
+    depth: 2,
+    blockedByIds: [],
+    childCount: 0,
+    doneChildCount: 0,
+    terminalBlockerId: null,
+    unblockAction: task.waitReason?.unblockAction ?? null,
+    unblockOwner: task.waitReason?.unblockOwner ?? null,
+    pendingCard: task.waitReason?.pendingCard ?? null,
+    isKeyTask: false,
+    updatedAt: new Date(0),
   };
 }
 
@@ -101,6 +139,10 @@ export type VisibleTaskItem = {
   collapsed: boolean;
   /** Tasks under this one, shown or not. */
   descendants: number;
+  /** The card that gathers the tasks outside the tree; it folds, it does not open. */
+  group?: boolean;
+  /** A task outside the tree, linked to it by "blocks". */
+  outside?: { projectName: string | null };
 };
 
 export type VisibleDoneItem = {
@@ -120,15 +162,33 @@ export function doneItemId(parentId: string) {
 
 export function visibleTaskTree(
   index: TaskTreeIndex,
-  options: { showFinished: boolean; collapsed: ReadonlySet<string> },
+  options: {
+    showFinished: boolean;
+    collapsed: ReadonlySet<string>;
+    /** Show only these tasks (and the way down to them); null shows everything. */
+    only?: ReadonlySet<string> | null;
+  },
 ): VisibleTaskItem {
+  const only = options.only ?? null;
+  const kept = new Map<string, boolean>();
+  // A task stays under the filter when it is wanted or something under it is.
+  const wanted = (node: IssueTreeNode): boolean => {
+    if (!only) return true;
+    const known = kept.get(node.id);
+    if (known !== undefined) return known;
+    const result = only.has(node.id) || (index.children.get(node.id) ?? []).some(wanted);
+    kept.set(node.id, result);
+    return result;
+  };
   const build = (node: IssueTreeNode): VisibleTaskItem => {
-    const all = index.children.get(node.id) ?? [];
-    const descendants = descendantCount(index, node.id) + hiddenDoneUnder(index, node.id);
+    const all = (index.children.get(node.id) ?? []).filter(wanted);
+    const descendants = only
+      ? all.reduce((sum, child) => sum + 1 + descendantCount(index, child.id), 0)
+      : descendantCount(index, node.id) + hiddenDoneUnder(index, node.id);
     const collapsed = options.collapsed.has(node.id) && descendants > 0;
     const children: VisibleItem[] = [];
     if (!collapsed) {
-      let folded = index.hiddenDone.get(node.id) ?? 0;
+      let folded = only ? 0 : (index.hiddenDone.get(node.id) ?? 0);
       for (const child of all) {
         if (!options.showFinished && wholeBranchFinished(index, child)) {
           folded += 1 + descendantCount(index, child.id) + hiddenDoneUnder(index, child.id);
@@ -140,7 +200,47 @@ export function visibleTaskTree(
     }
     return { kind: "task", id: node.id, node, children, collapsed, descendants };
   };
-  return build(index.root);
+  const root = build(index.root);
+
+  // Tasks outside the tree that link to it, gathered on one card under the
+  // root and shown open: nothing linked is hidden unless the reader folds it.
+  const outside = [...index.external.values()]
+    .filter((task) => !only || only.has(task.id))
+    .map((task) => outsideAsNode(task, index.root.id))
+    .sort(compareNodes);
+  if (outside.length > 0 && !root.collapsed) {
+    const groupId = outsideGroupId(index.root.id);
+    const collapsed = options.collapsed.has(groupId);
+    const byId = new Map([...index.external.values()].map((task) => [task.id, task]));
+    root.children.push({
+      kind: "task",
+      id: groupId,
+      group: true,
+      node: {
+        ...outsideAsNode(
+          { id: groupId, identifier: null, title: "", status: "todo", assigneeAgentId: null, assigneeUserId: null },
+          index.root.id,
+        ),
+        title: `Linked from outside this tree: ${outside.length} ${outside.length === 1 ? "task" : "tasks"}`,
+        parentId: index.root.id,
+        depth: 1,
+      },
+      collapsed,
+      descendants: outside.length,
+      children: collapsed
+        ? []
+        : outside.map((node) => ({
+            kind: "task" as const,
+            id: node.id,
+            node,
+            children: [],
+            collapsed: false,
+            descendants: 0,
+            outside: { projectName: byId.get(node.id)?.projectName ?? null },
+          })),
+    });
+  }
+  return root;
 }
 
 /** Ids of every visible item, parent before child. */
@@ -305,6 +405,60 @@ export function connectorPath(from: Pick<LayoutBox, "x" | "y" | "width" | "heigh
   return `M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`;
 }
 
+type Box = Pick<LayoutBox, "x" | "y" | "width" | "height">;
+
+/**
+ * A "blocks" line from the blocker's side to the blocked task's side, bowed
+ * so it reads apart from the straight-down sub-task lines. Cards side by
+ * side join at their facing edges; cards stacked in one column join on the
+ * right, with a bow out to the side.
+ */
+export function blockLinkPath(from: Box, to: Box) {
+  const [p0, c1, c2, p3] = blockLinkCurve(from, to);
+  return `M ${p0.x} ${p0.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p3.x} ${p3.y}`;
+}
+
+/** The middle of a "blocks" line, where a loop link carries its mark. */
+export function blockLinkMidpoint(from: Box, to: Box) {
+  const [p0, c1, c2, p3] = blockLinkCurve(from, to);
+  return { x: (p0.x + 3 * c1.x + 3 * c2.x + p3.x) / 8, y: (p0.y + 3 * c1.y + 3 * c2.y + p3.y) / 8 };
+}
+
+type CurvePoint = { x: number; y: number };
+
+/** Start, two control points and end of a "blocks" line. */
+function blockLinkCurve(from: Box, to: Box): [CurvePoint, CurvePoint, CurvePoint, CurvePoint] {
+  const fromCx = from.x + from.width / 2;
+  const toCx = to.x + to.width / 2;
+  const y1 = from.y + from.height / 2;
+  const y2 = to.y + to.height / 2;
+  const overlap = Math.min(from.x + from.width, to.x + to.width) - Math.max(from.x, to.x);
+  if (overlap > 0) {
+    const x1 = from.x + from.width;
+    const x2 = to.x + to.width;
+    const bow = Math.max(x1, x2) + Math.min(120, 40 + Math.abs(y2 - y1) / 4);
+    return [{ x: x1, y: y1 }, { x: bow, y: y1 }, { x: bow, y: y2 }, { x: x2, y: y2 }];
+  }
+  const rightward = toCx > fromCx;
+  const x1 = rightward ? from.x + from.width : from.x;
+  const x2 = rightward ? to.x : to.x + to.width;
+  const span = Math.abs(x2 - x1);
+  const sign = rightward ? 1 : -1;
+  const pull = Math.max(40, span / 3);
+  // Near cards on different rows: a gentle S from side to side.
+  if (Math.abs(y2 - y1) >= from.height && span < from.width * 3) {
+    return [{ x: x1, y: y1 }, { x: x1 + sign * pull, y: y1 }, { x: x2 - sign * pull, y: y2 }, { x: x2, y: y2 }];
+  }
+  // Cards on one row, or far apart: an arch over the cards between, higher
+  // the further it goes. It leaves and enters the cards steeply, so each end
+  // reads as a line rising out of its card even when the other end is far
+  // off screen, and never lies flat along a row of cards.
+  const lift = Math.min(900, 30 + span / 6);
+  const top = Math.min(y1, y2) - (lift * 4) / 3;
+  const reach = Math.min(pull, 240);
+  return [{ x: x1, y: y1 }, { x: x1 + sign * reach, y: top }, { x: x2 - sign * reach, y: top }, { x: x2, y: y2 }];
+}
+
 // ---------------------------------------------------------------------------
 // Blocked path
 // ---------------------------------------------------------------------------
@@ -353,14 +507,22 @@ export function blockerNeed(task: BlockerLike): string {
 }
 
 export function traceBlockedPaths(index: TaskTreeIndex, viewerUserId?: string | null): BlockedTrace {
+  const statusOf = (id: string) => index.byId.get(id)?.status ?? index.external.get(id)?.status ?? null;
   const isOpen = (id: string) => {
-    const node = index.byId.get(id);
-    if (node) return !isFinished(node.status);
-    return index.external.has(id);
+    const status = statusOf(id);
+    return status !== null && !isFinished(status);
   };
-  const openBlockers = (node: IssueTreeNode) =>
-    [...new Set([...node.blockedByIds, ...(node.terminalBlockerId ? [node.terminalBlockerId] : [])])]
-      .filter((id) => id !== node.id && isOpen(id));
+  // A task's open blockers: its links, inside the tree and out, however far.
+  const openBlockers = (id: string) => {
+    const node = index.byId.get(id);
+    return [
+      ...new Set([
+        ...(index.graph.blockersOf.get(id) ?? []),
+        ...(node?.blockedByIds ?? []),
+        ...(node?.terminalBlockerId ? [node.terminalBlockerId] : []),
+      ]),
+    ].filter((blockerId) => blockerId !== id && isOpen(blockerId));
+  };
 
   const found = new Map<string, { anchors: Set<string>; holdsUp: Set<string> }>();
   const blockLinks = new Map<string, { from: string; to: string }>();
@@ -374,30 +536,28 @@ export function traceBlockedPaths(index: TaskTreeIndex, viewerUserId?: string | 
   for (const start of index.byId.values()) {
     if (start.status !== "blocked") continue;
     const seen = new Set<string>();
-    const visit = (node: IssueTreeNode) => {
-      if (seen.has(node.id)) return;
-      seen.add(node.id);
-      const blockers = openBlockers(node);
+    // `anchor` is the nearest task in the tree on the way: where an outside
+    // task is shown when the outside card is folded.
+    const visit = (id: string, anchor: string) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const blockers = openBlockers(id);
       if (blockers.length === 0) {
-        record(node.id, node.id, start.id);
+        record(id, anchor, start.id);
         return;
       }
       for (const blockerId of blockers) {
-        const blocker = index.byId.get(blockerId);
-        if (!blocker) {
-          // Outside the tree: shown on the task it holds up.
-          record(blockerId, node.id, start.id);
-          continue;
-        }
-        blockLinks.set(edgeKey(blockerId, node.id), { from: blockerId, to: node.id });
-        if (blocker.status === "blocked") visit(blocker);
-        else if (!seen.has(blocker.id)) {
-          seen.add(blocker.id);
-          record(blocker.id, blocker.id, start.id);
+        const inTree = index.byId.has(blockerId);
+        if (inTree) blockLinks.set(edgeKey(blockerId, id), { from: blockerId, to: id });
+        const next = inTree ? blockerId : anchor;
+        if (statusOf(blockerId) === "blocked") visit(blockerId, next);
+        else if (!seen.has(blockerId)) {
+          seen.add(blockerId);
+          record(blockerId, next, start.id);
         }
       }
     };
-    visit(start);
+    visit(start.id, start.id);
   }
 
   const pathNodeIds = new Set<string>();
@@ -443,6 +603,11 @@ export function traceBlockedPaths(index: TaskTreeIndex, viewerUserId?: string | 
 
 /** The visible item that stands for a task: itself, or the nearest shown ancestor. */
 export function visibleStandIn(index: TaskTreeIndex, visibleIds: ReadonlySet<string>, id: string): string | null {
+  if (index.external.has(id)) {
+    if (visibleIds.has(id)) return id;
+    const groupId = outsideGroupId(index.root.id);
+    return visibleIds.has(groupId) ? groupId : visibleIds.has(index.root.id) ? index.root.id : null;
+  }
   let node = index.byId.get(id);
   while (node) {
     if (visibleIds.has(node.id)) return node.id;
@@ -456,6 +621,7 @@ export function visibleStandIn(index: TaskTreeIndex, visibleIds: ReadonlySet<str
 
 /** Ancestors of a task, root first, not counting it. */
 export function ancestorIds(index: TaskTreeIndex, id: string): string[] {
+  if (index.external.has(id)) return [index.root.id, outsideGroupId(index.root.id)];
   const out: string[] = [];
   let node = index.byId.get(id);
   while (node?.parentId) {

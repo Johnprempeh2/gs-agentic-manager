@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { issueComments, issueRelations, issues } from "@greatstone/db";
+import { issueComments, issueRelations, issues, issueThreadInteractions } from "@greatstone/db";
 import { unprocessable } from "../errors.js";
 import type { issueService } from "./issues.js";
 
@@ -404,4 +404,130 @@ export async function releaseReadyDependents(
   };
   // On a caller's transaction this nests as a savepoint.
   return db.transaction((tx) => run(tx as unknown as Tx));
+}
+
+/** Card outcomes that answer it. A withdrawn or expired card frees nothing. */
+const ANSWERED_CARD_STATUSES = ["accepted", "rejected", "answered"];
+
+export type ReleasedCardWaiter = ReleasedDependent & {
+  assigneeAgentId: string | null;
+  interactionId: string;
+  interactionStatus: string;
+};
+
+function cardLabel(card: { title: string | null; kind: string }) {
+  const title = card.title?.trim();
+  if (title) return `The card "${title}"`;
+  return card.kind === "ask_user_questions" ? "The question card" : "The card";
+}
+
+function cardOutcomeNote(card: {
+  title: string | null;
+  kind: string;
+  status: string;
+  result: unknown;
+}) {
+  const opening = `${cardLabel(card)} this task waited on was ${card.status}, and no open blockers are left, so this task is back in todo.`;
+  const result = card.result && typeof card.result === "object" ? (card.result as Record<string, unknown>) : {};
+  const reason = typeof result.reason === "string" ? result.reason.trim() : "";
+  return card.status === "rejected" && reason ? `${opening}\n\nReason given:\n\n${quote(reason)}` : opening;
+}
+
+/**
+ * GRE-2286: a `blocked` task whose unblock note links the card it waits on goes
+ * back to `todo` once that card is answered (accepted, rejected or answered)
+ * and no open blocker is left. The note is cleared and a system comment says
+ * what happened. The caller wakes agent assignees once with that comment.
+ *
+ * Pass `interactionIds` when cards were just answered, or `issueIds` (the
+ * backstop) to check the tasks themselves. Running it twice moves nothing the
+ * second time.
+ */
+export async function releaseTasksWaitingOnCards(
+  svc: IssueService,
+  db: Db,
+  input: {
+    companyId: string;
+    interactionIds?: string[];
+    issueIds?: string[];
+    actor: { agentId?: string | null; userId?: string | null };
+  },
+): Promise<Map<string, ReleasedCardWaiter>> {
+  const released = new Map<string, ReleasedCardWaiter>();
+  if (!input.interactionIds?.length && !input.issueIds?.length) return released;
+  const linkedCardId = sql<string>`(${issues.unblockDescriptor} ->> 'interactionId')`;
+  const waiting = async (dbOrTx: Pick<Db, "select">, lock: boolean) => {
+    const query = dbOrTx
+      .select({
+        id: issues.id,
+        assigneeAgentId: issues.assigneeAgentId,
+        blockedTransitionAt: issues.blockedTransitionAt,
+        interactionId: issueThreadInteractions.id,
+        kind: issueThreadInteractions.kind,
+        title: issueThreadInteractions.title,
+        status: issueThreadInteractions.status,
+        result: issueThreadInteractions.result,
+      })
+      .from(issues)
+      .innerJoin(
+        issueThreadInteractions,
+        and(
+          eq(issueThreadInteractions.companyId, issues.companyId),
+          sql`${issueThreadInteractions.id}::text = ${linkedCardId}`,
+        ),
+      )
+      .where(
+        and(
+          eq(issues.companyId, input.companyId),
+          eq(issues.status, "blocked"),
+          isNull(issues.conversationAgentId),
+          inArray(issueThreadInteractions.status, ANSWERED_CARD_STATUSES),
+          input.interactionIds?.length
+            ? inArray(issueThreadInteractions.id, input.interactionIds)
+            : undefined,
+          input.issueIds?.length ? inArray(issues.id, input.issueIds) : undefined,
+        ),
+      )
+      .orderBy(issues.id);
+    return lock ? query.for("update", { of: issues }) : query;
+  };
+  // Most answered cards free nothing; only open a transaction when one does.
+  if ((await waiting(db, false)).length === 0) return released;
+  return db.transaction(async (rawTx) => {
+    const tx = rawTx as unknown as Tx;
+    const rows = await waiting(rawTx as unknown as Db, true);
+    if (rows.length === 0) return released;
+    const readiness = await svc.listDependencyReadiness(
+      input.companyId,
+      rows.map((row) => row.id),
+      tx,
+    );
+    for (const row of rows) {
+      const state = readiness.get(row.id);
+      if (state && !state.isDependencyReady) continue;
+      await svc.update(
+        row.id,
+        {
+          status: "todo",
+          actorAgentId: input.actor.agentId ?? null,
+          actorUserId: input.actor.userId ?? null,
+        },
+        tx,
+      );
+      const comment = await svc.addComment(row.id, cardOutcomeNote(row), {}, { authorType: "system" }, tx);
+      released.set(row.id, {
+        commentId: comment.id,
+        blockedTransitionAt: row.blockedTransitionAt,
+        assigneeAgentId: row.assigneeAgentId,
+        interactionId: row.interactionId,
+        interactionStatus: row.status,
+      });
+    }
+    return released;
+  });
+}
+
+/** One wake key per task and card, so a retry or the backstop wakes once. */
+export function buildCardAnsweredWakeKey(issueId: string, interactionId: string) {
+  return `card_answered_unblocked:${issueId}:${interactionId}`;
 }

@@ -191,6 +191,23 @@ describe("issue validators", () => {
     }
   });
 
+  it("accepts a link to the card a task waits on (GRE-2286)", () => {
+    const owner = { agentId: "00000000-0000-4000-8000-000000000001" };
+    const interactionId = "00000000-0000-4000-8000-000000000002";
+    expect(
+      updateIssueSchema.parse({
+        status: "blocked",
+        unblockDescriptor: { owner, action: "Answer the upload card", interactionId },
+      }).unblockDescriptor,
+    ).toEqual({ owner, action: "Answer the upload card", interactionId });
+    expect(
+      updateIssueSchema.safeParse({
+        status: "blocked",
+        unblockDescriptor: { owner, action: "Answer the card", interactionId: "card-1" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates structured unblock descriptors", () => {
     expect(
       updateIssueSchema.parse({

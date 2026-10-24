@@ -116,7 +116,11 @@ import {
   buildIssueBlockersResolvedWakeStateKey,
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../issue-dependency-wakeups.js";
-import { releaseReadyDependents } from "../issue-blocker-handoff.js";
+import {
+  buildCardAnsweredWakeKey,
+  releaseReadyDependents,
+  releaseTasksWaitingOnCards,
+} from "../issue-blocker-handoff.js";
 import { getExecutionBlocker } from "../execution-blocker.js";
 import { evaluateAgentInvokabilityFromDb } from "../agent-invokability.js";
 import { isHeartbeatWakeOnDemandEnabled } from "../heartbeat-policy.js";
@@ -207,6 +211,7 @@ const DISPOSITION_REPAIR_IDEMPOTENCY_INDEX =
 const RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT = 500;
 const HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT = 200;
 const WAITING_DATE_PASSED_CANDIDATE_LIMIT = 200;
+const ANSWERED_CARD_BLOCK_CANDIDATE_LIMIT = 200;
 
 // GGU-809: when a stranded `in_progress` issue would otherwise hit the
 // `isRepeatedProductiveContinuationRecovery` escalation path, exempt the
@@ -6761,6 +6766,106 @@ export function recoveryService(
     return result;
   }
 
+  // GRE-2286 backstop: a blocked task whose unblock note links a card that is
+  // already answered. The answer route frees it at once; this pass covers an
+  // answer from another path (merged-PR sweep, chat) or one whose freeing or
+  // wake was lost to a release or a cancelled run.
+  async function reconcileAnsweredCardBlocks(opts?: { companyId?: string | null }) {
+    const result = {
+      checked: 0,
+      released: 0,
+      woken: 0,
+      pauseHoldSkipped: 0,
+      deferred: 0,
+      enqueueFailed: 0,
+      issueIds: [] as string[],
+    };
+    const filters = [
+      eq(issues.status, "blocked"),
+      visibleIssueCondition(),
+      isNull(issues.conversationAgentId),
+      sql`${issues.unblockDescriptor} ->> 'interactionId' is not null`,
+      sql`exists (select 1 from ${issueThreadInteractions} where ${issueThreadInteractions.companyId} = ${issues.companyId} and ${issueThreadInteractions.id}::text = ${issues.unblockDescriptor} ->> 'interactionId' and ${issueThreadInteractions.status} in ('accepted', 'rejected', 'answered'))`,
+    ];
+    if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+    const candidates = await db
+      .select({ id: issues.id, companyId: issues.companyId })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.updatedAt))
+      .limit(ANSWERED_CARD_BLOCK_CANDIDATE_LIMIT);
+    result.checked = candidates.length;
+
+    for (const candidate of candidates) {
+      if (
+        await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          candidate.companyId,
+          candidate.id,
+          treeControlSvc,
+        )
+      ) {
+        result.pauseHoldSkipped += 1;
+        continue;
+      }
+      let released: Awaited<ReturnType<typeof releaseTasksWaitingOnCards>>;
+      try {
+        released = await releaseTasksWaitingOnCards(issuesSvc, db, {
+          companyId: candidate.companyId,
+          issueIds: [candidate.id],
+          actor: {},
+        });
+      } catch (err) {
+        logger.warn({ err, issueId: candidate.id }, "failed to free a task waiting on an answered card");
+        continue;
+      }
+      const freed = released.get(candidate.id);
+      if (!freed) continue;
+      result.released += 1;
+      result.issueIds.push(candidate.id);
+      if (!freed.assigneeAgentId) continue;
+      try {
+        const wake = await deps.enqueueWakeup(freed.assigneeAgentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "issue_status_changed",
+          payload: {
+            issueId: candidate.id,
+            interactionId: freed.interactionId,
+            interactionStatus: freed.interactionStatus,
+            commentId: freed.commentId,
+            mutation: "card_answered",
+            backstop: "answered_card_block_reconciliation",
+          },
+          idempotencyKey: buildCardAnsweredWakeKey(candidate.id, freed.interactionId),
+          requestedByActorType: "system",
+          requestedByActorId: "answered_card_backstop",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            interactionId: freed.interactionId,
+            interactionStatus: freed.interactionStatus,
+            commentId: freed.commentId,
+            wakeCommentId: freed.commentId,
+            wakeReason: "issue_status_changed",
+            source: "issue.card_answered_backstop",
+          },
+        });
+        // A deferred wake is fine: the task is in todo now, so the stranded
+        // work pass picks it up if nothing else does.
+        if (wake) result.woken += 1;
+        else result.deferred += 1;
+      } catch (err) {
+        result.enqueueFailed += 1;
+        logger.warn(
+          { err, issueId: candidate.id, interactionId: freed.interactionId },
+          "failed to wake assignee of a task freed by an answered card",
+        );
+      }
+    }
+    return result;
+  }
+
   function readRecoveryTimerIntervalMs(raw: unknown, fallback: number) {
     return Math.max(1, Math.floor(asNumber(raw, fallback)));
   }
@@ -7208,6 +7313,7 @@ export function recoveryService(
     reconcileResolvedDependencyWakeBackstop,
     reconcileOverdueHumanWaits,
     reconcileWaitingDatesPassed,
+    reconcileAnsweredCardBlocks,
     readRecoveryTimerIntervalMs,
   };
 }

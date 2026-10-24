@@ -298,11 +298,14 @@ import {
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../services/issue-dependency-wakeups.js";
 import {
+  buildCardAnsweredWakeKey,
   handOffBlockedDependents,
   releaseReadyDependents,
+  releaseTasksWaitingOnCards,
   resolveDuplicateOfFromComment,
   type BlockerHandoff,
   type BlockerHandoffResult,
+  type ReleasedCardWaiter,
   type ReleasedDependent,
 } from "../services/issue-blocker-handoff.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -2697,6 +2700,73 @@ async function readBlockedPathLostAfterResolution(
   });
 }
 
+/**
+ * Frees the blocked tasks that wait on an answered card and wakes each agent
+ * assignee once with the note that says so. Failures are logged; the card
+ * backstop retries on its next pass. Returns the freed task ids.
+ */
+async function releaseAndWakeTasksWaitingOnCard(input: {
+  db: Db;
+  heartbeat: ReturnType<typeof heartbeatService>;
+  companyId: string;
+  interactionId: string;
+  actor: { actorType: "user" | "agent"; actorId: string };
+  skipWakeForIssueId: string | null;
+}): Promise<Set<string>> {
+  let released = new Map<string, ReleasedCardWaiter>();
+  try {
+    released = await releaseTasksWaitingOnCards(issueService(input.db), input.db, {
+      companyId: input.companyId,
+      interactionIds: [input.interactionId],
+      actor: {
+        agentId: input.actor.actorType === "agent" ? input.actor.actorId : null,
+        userId: input.actor.actorType === "user" ? input.actor.actorId : null,
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      { err, interactionId: input.interactionId },
+      "failed to free tasks waiting on an answered card",
+    );
+  }
+  for (const [issueId, freed] of released) {
+    if (!freed.assigneeAgentId || issueId === input.skipWakeForIssueId) continue;
+    await input.heartbeat
+      .wakeup(freed.assigneeAgentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "issue_status_changed",
+        payload: {
+          issueId,
+          interactionId: freed.interactionId,
+          interactionStatus: freed.interactionStatus,
+          commentId: freed.commentId,
+          mutation: "card_answered",
+        },
+        idempotencyKey: buildCardAnsweredWakeKey(issueId, freed.interactionId),
+        requestedByActorType: input.actor.actorType,
+        requestedByActorId: input.actor.actorId,
+        contextSnapshot: {
+          issueId,
+          taskId: issueId,
+          interactionId: freed.interactionId,
+          interactionStatus: freed.interactionStatus,
+          commentId: freed.commentId,
+          wakeCommentId: freed.commentId,
+          wakeReason: "issue_status_changed",
+          source: "issue.card_answered",
+        },
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, issueId, interactionId: freed.interactionId },
+          "failed to wake assignee of a task freed by an answered card",
+        ),
+      );
+  }
+  return new Set(released.keys());
+}
+
 async function queueResolvedInteractionContinuationWakeup(input: {
   db: Db;
   heartbeat: ReturnType<typeof heartbeatService>;
@@ -2723,6 +2793,25 @@ async function queueResolvedInteractionContinuationWakeup(input: {
   newlyResolvedItemIds?: string[];
   idempotencyKey?: string | null;
 }) {
+  // GRE-2286: tasks whose unblock note links this card leave `blocked` now.
+  // The card's own task keeps its continuation wake below when it has one.
+  const freedOwnTask = await releaseAndWakeTasksWaitingOnCard({
+    db: input.db,
+    heartbeat: input.heartbeat,
+    companyId: input.issue.companyId,
+    interactionId: input.interaction.id,
+    actor: input.actor,
+    skipWakeForIssueId:
+      input.interaction.continuationPolicy === "wake_assignee" ||
+      (input.interaction.continuationPolicy === "wake_assignee_on_accept" &&
+        (input.interaction.status === "accepted" ||
+          input.interaction.status === "answered"))
+        ? input.issue.id
+        : null,
+  });
+  if (freedOwnTask.has(input.issue.id)) {
+    input = { ...input, issue: { ...input.issue, status: "todo" } };
+  }
   if (!input.issue.assigneeAgentId || isClosedIssueStatus(input.issue.status))
     return;
 
@@ -14708,6 +14797,28 @@ export function issueRoutes(
           if (!member)
             throw unprocessable(
               "Unblock owner user must be an active company member",
+            );
+        }
+        // GRE-2286: the linked card is what frees the task, so it must be a
+        // card in this company that is still waiting for an answer.
+        if (descriptor.interactionId) {
+          const card = await db
+            .select({ status: issueThreadInteractions.status })
+            .from(issueThreadInteractions)
+            .where(
+              and(
+                eq(issueThreadInteractions.id, descriptor.interactionId),
+                eq(issueThreadInteractions.companyId, existing.companyId),
+              ),
+            )
+            .then((rows) => rows[0] ?? null);
+          if (!card)
+            throw unprocessable(
+              "unblockDescriptor.interactionId must be a card in the issue company",
+            );
+          if (card.status !== "pending")
+            throw unprocessable(
+              `unblockDescriptor.interactionId names a card that is already ${card.status}`,
             );
         }
       }
