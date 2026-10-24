@@ -714,58 +714,66 @@ export function createSecretProposalsService(db: Db) {
     });
   }
 
-  async function approve(companyId: string, proposalId: string, input: {
+  type ApproveInput = {
     resolvedByUserId: string;
     cascade?: boolean;
     overrides?: { name?: string; description?: string | null; providerConfigId?: string | null };
     assertCanResolve?: (proposal: Proposal, txDb: Db) => Promise<void>;
-  }) {
-    return db.transaction(async (tx) => {
-      const txDb = tx as unknown as Db;
-      const proposal = await requirePending(companyId, proposalId, txDb, true);
-      assertNotExpired(proposal);
-      await input.assertCanResolve?.(proposal, txDb);
-      await assertBindingSnapshotCurrent(proposal, txDb, true);
-      if (proposal.kind === "secret") {
-        const created = await applySecretApproval(txDb, proposal, input);
-        return markApproved(txDb, proposal, {
+  };
+
+  async function approve(companyId: string, proposalId: string, input: ApproveInput) {
+    return db.transaction(async (tx) => approveInTransaction(tx as unknown as Db, companyId, proposalId, input));
+  }
+
+  // Runs inside the caller's transaction, so a card accept and the approval it
+  // triggers commit or roll back together.
+  async function approveInTransaction(txDb: Db, companyId: string, proposalId: string, input: ApproveInput) {
+    const proposal = await requirePending(companyId, proposalId, txDb, true);
+    assertNotExpired(proposal);
+    await input.assertCanResolve?.(proposal, txDb);
+    await assertBindingSnapshotCurrent(proposal, txDb, true);
+    if (proposal.kind === "secret") {
+      const created = await applySecretApproval(txDb, proposal, input);
+      return markApproved(txDb, proposal, {
+        resolvedByUserId: input.resolvedByUserId,
+        createdSecretId: created.id,
+      });
+    }
+
+    let secretId = proposal.secretId;
+    if (proposal.secretProposalId) {
+      const dependency = await getById(companyId, proposal.secretProposalId, txDb, true);
+      if (!dependency || dependency.kind !== "secret") throw notFound("Prerequisite secret proposal not found");
+      if (dependency.status !== "pending") {
+        if (dependency.status !== "approved" || !dependency.createdSecretId) {
+          throw conflict(`Prerequisite secret proposal ${dependency.id} is not approvable`);
+        }
+        secretId = dependency.createdSecretId;
+      } else {
+        if (!input.cascade) {
+          throw conflict(`Binding proposal requires pending secret proposal ${dependency.id}; retry with cascade=true`);
+        }
+        assertNotExpired(dependency);
+        // Cascading approves the secret too, so its resolver needs the same
+        // authority as approving that secret proposal on its own.
+        await input.assertCanResolve?.(dependency, txDb);
+        const created = await applySecretApproval(txDb, dependency, input);
+        await markApproved(txDb, dependency, {
           resolvedByUserId: input.resolvedByUserId,
           createdSecretId: created.id,
         });
+        secretId = created.id;
       }
-
-      let secretId = proposal.secretId;
-      if (proposal.secretProposalId) {
-        const dependency = await getById(companyId, proposal.secretProposalId, txDb, true);
-        if (!dependency || dependency.kind !== "secret") throw notFound("Prerequisite secret proposal not found");
-        if (dependency.status !== "pending") {
-          if (dependency.status !== "approved" || !dependency.createdSecretId) {
-            throw conflict(`Prerequisite secret proposal ${dependency.id} is not approvable`);
-          }
-          secretId = dependency.createdSecretId;
-        } else {
-          if (!input.cascade) {
-            throw conflict(`Binding proposal requires pending secret proposal ${dependency.id}; retry with cascade=true`);
-          }
-          assertNotExpired(dependency);
-          const created = await applySecretApproval(txDb, dependency, input);
-          await markApproved(txDb, dependency, {
-            resolvedByUserId: input.resolvedByUserId,
-            createdSecretId: created.id,
-          });
-          secretId = created.id;
-        }
-      }
-      if (!secretId) throw conflict("Binding proposal has no approved secret");
-      const liveSecret = await secretService(txDb).getById(secretId);
-      if (!liveSecret || liveSecret.companyId !== companyId || liveSecret.status !== "active") {
-        throw conflict("Binding proposal secret is not active");
-      }
-      await applyBindingApproval(txDb, proposal, liveSecret, input.resolvedByUserId);
-      return markApproved(txDb, proposal, {
-        resolvedByUserId: input.resolvedByUserId,
-        appliedBindingConfigPath: proposal.configPath,
-      });
+    }
+    if (!secretId) throw conflict("Binding proposal has no approved secret");
+    const liveSecret = await secretService(txDb).getById(secretId);
+    if (!liveSecret || liveSecret.companyId !== companyId || liveSecret.status !== "active") {
+      throw conflict("Binding proposal secret is not active");
+    }
+    await applyBindingApproval(txDb, proposal, liveSecret, input.resolvedByUserId);
+    return markApproved(txDb, proposal, {
+      resolvedByUserId: input.resolvedByUserId,
+      appliedBindingConfigPath: proposal.configPath,
     });
   }
 
@@ -874,5 +882,5 @@ export function createSecretProposalsService(db: Db) {
     return expiredCount;
   }
 
-  return { getById, view: enrich, createSecret, createBinding, listForAgent, listForBoard, assertBindingSnapshotCurrent, approve, transition, sweepExpired };
+  return { getById, view: enrich, createSecret, createBinding, listForAgent, listForBoard, assertBindingSnapshotCurrent, approve, approveInTransaction, transition, sweepExpired };
 }
