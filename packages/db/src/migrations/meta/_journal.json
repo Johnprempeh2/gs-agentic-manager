@@ -2696,6 +2696,13 @@
       "when": 1792793835064,
       "tag": "0386_website_release_deploy",
       "breakpoints": true
+    },
+    {
+      "idx": 387,
+      "version": "7",
+      "when": 1792802052545,
+      "tag": "0387_website_editor_frame_origin",
+      "breakpoints": true
     }
   ]
 }

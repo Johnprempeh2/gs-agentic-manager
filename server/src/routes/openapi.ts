@@ -395,6 +395,7 @@ import {
   websiteReleaseActionSchema,
   createWebsitePageSchema,
   updateWebsitePageSchema,
+  restoreWebsiteRevisionSchema,
   saveWebsiteContentSchema,
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
@@ -15894,6 +15895,39 @@ registerCurrentRoute({
   path: `${siteParams}/pages/{pageId}/revisions`,
   tags: ["website"],
   summary: "List a page's revisions, newest first (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}/revisions/{revisionId}`,
+  tags: ["website"],
+  summary: "Read one revision of a page with its content (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/revisions/{revisionId}/restore`,
+  tags: ["website"],
+  summary: "Restore a page revision as a new revision; 409 when baseRevisionId is not the latest (website:edit)",
+  body: restoreWebsiteRevisionSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}/editor`,
+  tags: ["website"],
+  summary: "Load a page for the editor frame: draft, theme, site, navigation and media; 422 until the editor address is set and allowed (website:view)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/media`,
+  tags: ["website"],
+  summary: "List a site's media entries whose asset is in the same company (website:view)",
   responses: websiteModuleResponses,
 });
 

@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
+  assets,
   companies,
   companyMemberships,
   companySecrets,
@@ -28,7 +29,8 @@ import {
 import { companySearchQuerySchema, type WebsitePageDetail, type WebsiteSite } from "@greatstone/shared";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
-import { websiteModuleRoutes } from "../routes/website-module.js";
+import { gsamServedOrigins, websiteModuleRoutes } from "../routes/website-module.js";
+import { websiteModuleService } from "../services/website/module.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
 import { companySearchService } from "../services/company-search.js";
 
@@ -64,6 +66,7 @@ describeEmbeddedPostgres("website module routes", () => {
     await db.delete(websiteProperties);
     await db.delete(documentRevisions);
     await db.delete(documents);
+    await db.delete(assets);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
     await db.delete(heartbeatRuns);
@@ -91,7 +94,7 @@ describeEmbeddedPostgres("website module routes", () => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", websiteModuleRoutes(db));
+    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"] }));
     instance.use(errorHandler);
     return instance;
   }
@@ -412,6 +415,9 @@ describeEmbeddedPostgres("website module routes", () => {
       http.patch(`${base}/pages/${a.page.id}`).send({ title: "Renamed" }),
       http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 } }),
       http.post(`${base}/pages/${a.page.id}/archive`),
+      // The editor's save and restore are page writes too.
+      http.put(`${base}/pages/${a.page.id}/content`).send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 }, editorOrigin: "https://editor.alpha.test" }),
+      http.post(`${base}/pages/${a.page.id}/revisions/${a.page.latestRevisionId}/restore`).send({ baseRevisionId: a.page.latestRevisionId }),
       http.post(`${base}/entries`).send({ collection: "product", entryKey: "other" }),
       http.patch(`${base}/entries/${a.entry.id}`).send({ sortOrder: 2 }),
       http.put(`${base}/entries/${a.entry.id}/content`).send({ baseRevisionId: a.entry.latestRevisionId, content: { v: 2 } }),
@@ -478,5 +484,184 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(live.map((row) => row.id)).not.toContain(consultancy.id);
     const all = (await http.get(`${pages}?includeArchived=true`).expect(200)).body as Array<{ id: string }>;
     expect(all.map((row) => row.id)).toContain(consultancy.id);
+  });
+  // ---- GRE-2118: editor frame origin, history, restore, editor load and media ----
+
+  async function seedAsset(companyId: string, name: string) {
+    const [asset] = await db
+      .insert(assets)
+      .values({
+        companyId,
+        provider: "local_disk",
+        objectKey: `${companyId}/website/${randomUUID()}.png`,
+        contentType: "image/png",
+        byteSize: 1234,
+        sha256: randomUUID().replace(/-/g, ""),
+        originalFilename: `${name}.png`,
+      })
+      .returning();
+    return asset!;
+  }
+
+  it("editor frame origin: only a person who may publish sets it, C1.1 is checked, and the change is logged with old and new", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const url = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const operator = await seedUser(a.company.id, "operator");
+    const { actor: agentActor } = await seedAgent(a.company.id, ["website:view", "website:edit"]);
+    await request(app(operator)).patch(url).send({ editorFrameOrigin: "https://editor.alpha.test" }).expect(403);
+    await request(app(agentActor)).patch(url).send({ editorFrameOrigin: "https://editor.alpha.test" }).expect(403);
+
+    const owner = await seedUser(a.company.id, "owner");
+    const http = request(app(owner));
+    for (const refused of ["https://alpha.test", "https://gsam.example.test", "http://editor.alpha.test", "https://editor.alpha.test/editor", "https://*.alpha.test"]) {
+      const response = await http.patch(url).send({ editorFrameOrigin: refused });
+      expect(response.status, refused).toBe(422);
+      expect(response.body.details?.code ?? response.body.code).toBe("website_editor_origin_refused");
+    }
+    const set = (await http.patch(url).send({ editorFrameOrigin: "https://editor.alpha.test/" }).expect(200)).body as WebsiteSite;
+    expect(set.editorFrameOrigin).toBe("https://editor.alpha.test");
+    await http.patch(url).send({ editorFrameOrigin: "https://edit2.alpha.test" }).expect(200);
+
+    const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"));
+    expect(changes.map((row) => row.details)).toEqual([
+      { from: null, to: "https://editor.alpha.test" },
+      { from: "https://editor.alpha.test", to: "https://edit2.alpha.test" },
+    ]);
+    // The public domain cannot be moved onto the editor host either.
+    await http.patch(url).send({ domain: "edit2.alpha.test" }).expect(422);
+  });
+
+  it("origin-changed (C2.4): a save from a session opened on the old editor address is refused and writes nothing", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    await http.patch(siteUrl).send({ editorFrameOrigin: "https://editor.alpha.test" }).expect(200);
+    const content = `${siteUrl}/pages/${a.page.id}/content`;
+
+    const saved = await http
+      .put(content)
+      .send({ baseRevisionId: a.page.latestRevisionId, content: { v: 2 }, editorOrigin: "https://editor.alpha.test" })
+      .expect(200);
+    expect(saved.body.state).toBe("saved");
+
+    await http.patch(siteUrl).send({ editorFrameOrigin: "https://edit2.alpha.test" }).expect(200);
+    const refused = await http
+      .put(content)
+      .send({ baseRevisionId: saved.body.revisionId, content: { v: 3 }, editorOrigin: "https://editor.alpha.test" })
+      .expect(422);
+    expect(refused.body).toMatchObject({ state: "failed", code: "origin-changed" });
+    expect(await revisionCount(a.page.documentId)).toBe(2);
+  });
+
+  it("history and restore: restore makes a new revision with the old content, checks the base, and is company-scoped", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const http = request(app());
+    const pageUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}/pages/${a.page.id}`;
+    const first = a.page.latestRevisionId!;
+    const second = (await http.put(`${pageUrl}/content`).send({ baseRevisionId: first, content: { v: 2 } }).expect(200)).body;
+
+    const old = (await http.get(`${pageUrl}/revisions/${first}`).expect(200)).body;
+    expect(old.revision.revisionNumber).toBe(1);
+    expect(old.content).toEqual({ root: { props: { title: "Alpha secret draft" } }, content: [] });
+
+    // A stale base is a conflict and nothing is restored.
+    const stale = await http.post(`${pageUrl}/revisions/${first}/restore`).send({ baseRevisionId: first }).expect(409);
+    expect(stale.body.state).toBe("conflict");
+    expect(await revisionCount(a.page.documentId)).toBe(2);
+
+    const restored = (await http.post(`${pageUrl}/revisions/${first}/restore`).send({ baseRevisionId: second.revisionId }).expect(200)).body;
+    expect(restored).toMatchObject({ state: "saved", revisionNumber: 3 });
+    const detail = (await http.get(pageUrl).expect(200)).body;
+    expect(detail.content).toEqual(old.content);
+    const history = (await http.get(`${pageUrl}/revisions`).expect(200)).body;
+    expect(history[0]).toMatchObject({ revisionNumber: 3, changeSummary: "Restored version 1" });
+
+    // Another page's revision, B's revision, a malformed id: all 404 and nothing written.
+    await http.get(`${pageUrl}/revisions/${b.page.latestRevisionId}`).expect(404);
+    await http.post(`${pageUrl}/revisions/${b.page.latestRevisionId}/restore`).send({ baseRevisionId: restored.revisionId }).expect(404);
+    await http.get(`${pageUrl}/revisions/not-a-uuid`).expect(404);
+    const viewer = await seedUser(a.company.id, "viewer");
+    await request(app(viewer)).post(`${pageUrl}/revisions/${first}/restore`).send({ baseRevisionId: restored.revisionId }).expect(403);
+    expect(await revisionCount(a.page.documentId)).toBe(3);
+  });
+
+  it("isolation: company A's people and agents get 404 for B's history, restore, editor load and media", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    await request(app()).patch(`/api/companies/${b.company.id}/website/sites/${b.site.id}`).send({ editorFrameOrigin: "https://editor.bravo.test" }).expect(200);
+    const owner = await seedUser(a.company.id, "owner");
+    const { actor: agentActor } = await seedAgent(a.company.id, ["website:view", "website:edit"]);
+    const base = `/api/companies/${a.company.id}/website/sites`;
+    for (const actor of [owner, agentActor]) {
+      const http = request(app(actor));
+      for (const url of [
+        `${base}/${b.site.id}/pages/${b.page.id}/revisions/${b.page.latestRevisionId}`,
+        `${base}/${a.site.id}/pages/${b.page.id}/revisions/${b.page.latestRevisionId}`,
+        `${base}/${b.site.id}/pages/${b.page.id}/editor`,
+        `${base}/${a.site.id}/pages/${b.page.id}/editor`,
+        `${base}/${b.site.id}/media`,
+      ]) {
+        const response = await http.get(url);
+        expect(response.status, url).toBe(404);
+        expect(JSON.stringify(response.body)).not.toContain("Bravo");
+      }
+      await http
+        .post(`${base}/${b.site.id}/pages/${b.page.id}/revisions/${b.page.latestRevisionId}/restore`)
+        .send({ baseRevisionId: b.page.latestRevisionId })
+        .expect(404);
+    }
+    expect(await revisionCount(b.page.documentId)).toBe(1);
+  });
+
+  it("editor load: refused without a valid frame origin; sends draft, site, navigation and only same-company media", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const editorUrl = `${siteUrl}/pages/${a.page.id}/editor`;
+    const missing = await http.get(editorUrl).expect(422);
+    expect(JSON.stringify(missing.body)).toContain("website_editor_origin_missing");
+
+    // A value stored before the check (or by a bad import) is checked again on open.
+    await db.update(websiteSite).set({ editorFrameOrigin: "https://alpha.test" }).where(eq(websiteSite.id, a.site.id));
+    await http.get(editorUrl).expect(422);
+    await http.patch(siteUrl).send({ editorFrameOrigin: "https://editor.alpha.test" }).expect(200);
+
+    const own = await seedAsset(a.company.id, "hero");
+    const foreign = await seedAsset(b.company.id, "bravo-logo");
+    // The release schema has no media collection yet, so these are stored as an import would store them.
+    const addMedia = (entryKey: string, content: Record<string, unknown>) =>
+      websiteModuleService(db).createEntry(a.company.id, a.site.id, { collection: "media", entryKey, content }, { agentId: null, userId: "local-board" });
+    await addMedia("hero", { assetId: own.id, alt: "Our team", width: 1600, height: 900 });
+    await addMedia("stolen", { assetId: foreign.id, alt: "Not ours" });
+    await addMedia("empty", { alt: "No asset" });
+
+    const load = (await http.get(editorUrl).expect(200)).body;
+    expect(load).toMatchObject({
+      revisionId: a.page.latestRevisionId,
+      data: { root: { props: { title: "Alpha secret draft" } }, content: [] },
+      editorFrameOrigin: "https://editor.alpha.test",
+      site: { name: "Alpha site", settings: { domain: "alpha.test" }, navigation: [{ pageId: a.page.id, menu: "header" }] },
+    });
+    expect(load.media).toEqual([
+      expect.objectContaining({ entryKey: "hero", assetId: own.id, alt: "Our team", width: 1600, height: 900, contentPath: `/api/assets/${own.id}/content` }),
+    ]);
+    expect(JSON.stringify(load)).not.toContain(foreign.id);
+    const media = (await http.get(`${siteUrl}/media`).expect(200)).body;
+    expect(media.map((item: { entryKey: string }) => item.entryKey)).toEqual(["hero"]);
+  });
+
+  it("gsamServedOrigins lists the public URL and each allowed hostname", () => {
+    expect(gsamServedOrigins("https://gsam.example.test/app", ["gsam.tail.ts.net", " "])).toEqual([
+      "https://gsam.example.test",
+      "https://gsam.tail.ts.net",
+      "http://gsam.tail.ts.net",
+    ]);
   });
 });

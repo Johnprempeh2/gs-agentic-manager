@@ -288,6 +288,9 @@ export function ScaledFrame({
   sandbox,
   testId,
   viewport,
+  frameRef,
+  onLoad,
+  allow,
 }: {
   src: string;
   title: string;
@@ -295,6 +298,11 @@ export function ScaledFrame({
   sandbox?: string;
   testId?: string;
   viewport?: string;
+  /** The iframe element, for a host that talks to the frame by postMessage. */
+  frameRef?: React.Ref<HTMLIFrameElement>;
+  onLoad?: () => void;
+  /** The iframe `allow` (Permissions Policy) value. */
+  allow?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
@@ -331,8 +339,11 @@ export function ScaledFrame({
     <div ref={containerRef} className="absolute inset-0 overflow-hidden">
       <iframe
         title={title}
+        ref={frameRef}
         src={src}
         sandbox={sandbox}
+        allow={allow}
+        onLoad={onLoad}
         referrerPolicy="no-referrer"
         data-testid={testId}
         data-viewport={viewport}
