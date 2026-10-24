@@ -150,7 +150,7 @@ describe("Task tree page", () => {
     expect(canvas.querySelector('[data-tree-edge="1>4"]')?.hasAttribute("data-blocked-path")).toBe(true);
     expect(canvas.querySelector('[data-tree-edge="1>3"]')?.hasAttribute("data-blocked-path")).toBe(false);
     // A blocked task names what it waits on.
-    expect(canvas.querySelector('[data-tree-node="3"]')?.textContent).toContain("Waiting on GRE-4");
+    expect(canvas.querySelector('[data-tree-node="3"]')?.textContent).toContain("Blocked by GRE-4");
 
     // Agent owner by name; the viewer's own task reads "You".
     expect(canvas.querySelector('[data-tree-node="3"]')?.textContent).toContain("Mica");
@@ -200,6 +200,56 @@ describe("Task tree page", () => {
     expect(outline.querySelector('[data-outline-node="4"]')?.textContent).toContain("Root blocker");
     expect(outline.querySelector('[data-outline-node="3"] a')?.getAttribute("href")).toBe("/issues/GRE-3?view=task");
     expect(outline.textContent).toContain("+2 done");
+  });
+
+  it("says why each blocked task is blocked, down to the root of the chain", async () => {
+    // Build (3) waits on Review (4), which waits on Ops outside the tree,
+    // which waits on John's card. Tidy (7) is blocked with nothing recorded.
+    tree = {
+      ...tree,
+      nodes: [
+        ...tree.nodes.filter((entry) => entry.id !== "3" && entry.id !== "4"),
+        node("3", "1", { title: "Build", status: "blocked", blockedByIds: ["4"], rootBlockerId: "ops" }),
+        node("4", "1", { title: "Review", status: "blocked", blockedByIds: ["ops"] }),
+        node("7", "1", { title: "Tidy", status: "blocked" }),
+      ],
+      externalBlockers: [
+        {
+          id: "ops",
+          identifier: "GRE-1989",
+          title: "Staging upload",
+          status: "blocked",
+          assigneeAgentId: null,
+          assigneeUserId: null,
+          waitReason: {
+            unblockAction: null,
+            unblockOwner: null,
+            pendingCard: {
+              id: "card-1",
+              kind: "request_confirmation",
+              title: "approve staging upload",
+              addresseeAgentId: null,
+              addresseeUserId: "user-naa",
+              createdAt: new Date("2026-10-24T10:00:00Z"),
+            },
+          },
+        },
+      ],
+    };
+    await renderPage();
+    const build = container.querySelector('[data-tree-node="3"] [data-slot="task-tree-block-line"]')!;
+    expect(build.textContent).toBe("Root: GRE-1989, waiting on Naa Mensah: approve staging upload");
+    expect(build.getAttribute("href")).toBe("/issues/GRE-1989#interaction-card-1");
+    expect(container.querySelector('[data-tree-node="4"] [data-slot="task-tree-block-line"]')?.textContent).toBe("Blocked by GRE-1989");
+    const tidy = container.querySelector('[data-tree-node="7"] [data-slot="task-tree-block-reason"]')!;
+    expect(tidy.hasAttribute("data-unexplained")).toBe(true);
+    expect(tidy.textContent).toBe("Blocked, but nothing recorded is blocking it");
+
+    // On a phone both lines show under the row.
+    phone = true;
+    await renderPage();
+    const lines = [...container.querySelectorAll('[data-outline-node="3"] [data-slot="task-tree-block-line"]')].map((line) => line.textContent);
+    expect(lines).toEqual(["Blocked by GRE-4", "Root: GRE-1989, waiting on Naa Mensah: approve staging upload"]);
   });
 
   it("leads back up to its project tree", async () => {

@@ -60,8 +60,9 @@ export function TaskTree() {
     isPhone,
     showFinished,
     storageKey,
+    people,
   });
-  const { toggleCollapsed, visibleRoot, trace, waitingOnById, focusRequest, selectBlocker } = view;
+  const { toggleCollapsed, visibleRoot, trace, waitingOnById, blockReasonById, focusRequest, selectBlocker } = view;
   const [diagramOpen, setDiagramOpen] = useState(false);
 
   const root = index?.root;
@@ -146,6 +147,7 @@ export function TaskTree() {
             people={people}
             hrefFor={(item: VisibleTaskItem) => taskHref(item.node)}
             waitingOnById={waitingOnById}
+            blockReasonById={blockReasonById}
             onToggleCollapsed={toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             highlightId={focusRequest?.id ?? null}
@@ -157,6 +159,7 @@ export function TaskTree() {
             trace={trace}
             people={people}
             waitingOnById={waitingOnById}
+            blockReasonById={blockReasonById}
             onOpen={(node) => navigate(taskHref(node))}
             onToggleCollapsed={toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}

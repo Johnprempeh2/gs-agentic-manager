@@ -8,7 +8,9 @@ import { StatusIcon } from "@/components/StatusIcon";
 import { issueStatusAccent, issueStatusAccentDefault } from "@/lib/status-colors";
 import { SHOW_TASK_PRIORITY_UI } from "@/lib/ui-flags";
 import { cn } from "@/lib/utils";
+import type { TreeBlockReason } from "@/lib/task-tree-block-reason";
 import { ProgressRing } from "./ProgressRing";
+import { TaskTreeBlockReason } from "./TaskTreeBlockReason";
 import { TaskTreeOwner, type TaskTreePeople } from "./TaskTreeOwner";
 
 /** Fixed card size, so the layout can place cards before they render. */
@@ -24,6 +26,8 @@ export interface TaskTreeCardProps {
   isRootBlocker?: boolean;
   /** Key of a blocker outside the tree that this task waits on. */
   waitingOn?: string | null;
+  /** Why it is blocked; replaces the "Waiting on" pill when set. */
+  blockReason?: TreeBlockReason | null;
   /** Tasks under this one; 0 hides the collapse toggle. */
   descendants?: number;
   collapsed?: boolean;
@@ -53,7 +57,8 @@ export function KeyTaskMark({ className }: { className?: string }) {
 /**
  * One task in the tree: status edge, key, title (two lines), owner, sub-task
  * progress and priority. Danger ring and a "Root blocker" pill when it is the
- * task holding the work up.
+ * task holding the work up. A blocked task gives its title one line and says
+ * why it is blocked on the next.
  */
 export function TaskTreeCard({
   node,
@@ -62,6 +67,7 @@ export function TaskTreeCard({
   onBlockedPath = false,
   isRootBlocker = false,
   waitingOn = null,
+  blockReason = null,
   descendants = 0,
   collapsed = false,
   onToggleCollapsed,
@@ -102,9 +108,13 @@ export function TaskTreeCard({
             <ProgressRing done={node.doneChildCount} total={node.childCount} className="ml-auto" />
           ) : null}
         </div>
-        <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground" title={node.title}>
+        <p
+          className={cn("text-sm font-medium leading-snug text-foreground", blockReason ? "line-clamp-1" : "line-clamp-2")}
+          title={node.title}
+        >
           {node.title}
         </p>
+        {blockReason ? <TaskTreeBlockReason reason={blockReason} compact /> : null}
         <div className="mt-auto flex min-w-0 items-center gap-2">
           <TaskTreeOwner people={people} owner={node} className="min-w-0 flex-1" />
           {runState ? <TaskRunStateChip state={runState} short /> : null}
@@ -112,7 +122,7 @@ export function TaskTreeCard({
             <span className="shrink-0 rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">
               Root blocker
             </span>
-          ) : waitingOn ? (
+          ) : waitingOn && !blockReason ? (
             <span className="shrink-0 truncate rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">
               Waiting on {waitingOn}
             </span>

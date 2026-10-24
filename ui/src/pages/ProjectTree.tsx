@@ -85,7 +85,7 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
   const shaped = useMemo(() => (data ? projectTreeAsTaskTree(data) : null), [data]);
   const index = useMemo(() => (shaped ? indexTaskTree(shaped.tree, shaped.hiddenDone) : null), [shaped]);
   const storageKey = projectRef ? `project-tree.${projectRef}` : undefined;
-  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished, storageKey });
+  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished, storageKey, people });
   const { setCollapsed, restored } = view;
   const [diagramOpen, setDiagramOpen] = useState(false);
 
@@ -264,6 +264,7 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
             people={people}
             hrefFor={hrefFor}
             waitingOnById={view.waitingOnById}
+            blockReasonById={view.blockReasonById}
             onToggleCollapsed={view.toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             highlightId={view.focusRequest?.id ?? null}
@@ -276,6 +277,7 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
             trace={trace}
             people={people}
             waitingOnById={view.waitingOnById}
+            blockReasonById={view.blockReasonById}
             onOpen={openTask}
             onToggleCollapsed={view.toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}

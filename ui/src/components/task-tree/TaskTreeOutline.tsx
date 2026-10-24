@@ -7,7 +7,9 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Link } from "@/lib/router";
 import { StatusIcon } from "@/components/StatusIcon";
 import type { BlockedTrace, VisibleItem, VisibleTaskItem } from "@/lib/task-tree";
+import type { TreeBlockReason } from "@/lib/task-tree-block-reason";
 import { cn } from "@/lib/utils";
+import { TaskTreeBlockReason } from "./TaskTreeBlockReason";
 import { ProgressRing } from "./ProgressRing";
 import { KeyTaskMark } from "./TaskTreeCard";
 import { TaskTreeOwner, type TaskTreePeople } from "./TaskTreeOwner";
@@ -18,6 +20,8 @@ export interface TaskTreeOutlineProps {
   people: TaskTreePeople;
   hrefFor: (item: VisibleTaskItem) => string;
   waitingOnById?: ReadonlyMap<string, string>;
+  /** Why each blocked task is blocked, by task id. */
+  blockReasonById?: ReadonlyMap<string, TreeBlockReason>;
   onToggleCollapsed: (id: string) => void;
   onShowFinished: () => void;
   /** Row to bring into view and highlight. */
@@ -37,6 +41,7 @@ export function TaskTreeOutline({
   people,
   hrefFor,
   waitingOnById,
+  blockReasonById,
   onToggleCollapsed,
   onShowFinished,
   highlightId,
@@ -64,7 +69,9 @@ export function TaskTreeOutline({
     const node = item.node;
     const onPath = trace.pathNodeIds.has(node.id);
     const isRootBlocker = trace.rootBlockers.some((blocker) => blocker.inTree && blocker.id === node.id);
-    const waitingOn = waitingOnById?.get(node.id);
+    const blockReason = blockReasonById?.get(node.id) ?? null;
+    // The reason line says what it waits on, so the pill only marks a root blocker.
+    const waitingOn = blockReason ? undefined : waitingOnById?.get(node.id);
     const hasChildren = item.descendants > 0;
     return (
       <li
@@ -117,6 +124,10 @@ export function TaskTreeOutline({
           {actionFor?.(node)}
           {node.childCount > 0 ? <ProgressRing done={node.doneChildCount} total={node.childCount} /> : null}
         </div>
+        {blockReason ? (
+          // Beside the title, under the row: a link inside the row's link is not allowed.
+          <TaskTreeBlockReason reason={blockReason} className="pb-2 pr-2" style={{ paddingLeft: depth * 16 + 4 + 56 }} />
+        ) : null}
         {item.children.length > 0 ? (
           <ul role="group">{item.children.map((child) => row(child, depth + 1))}</ul>
         ) : null}

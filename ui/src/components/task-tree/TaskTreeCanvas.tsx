@@ -18,7 +18,9 @@ import {
   type VisibleTaskItem,
 } from "@/lib/task-tree";
 import { taskStatusLabel } from "@/lib/task-status-labels";
+import type { TreeBlockReason } from "@/lib/task-tree-block-reason";
 import { cn, relativeTime } from "@/lib/utils";
+import { TaskTreeBlockReason } from "./TaskTreeBlockReason";
 import { TASK_TREE_CARD_HEIGHT, TASK_TREE_CARD_WIDTH, TaskTreeCard } from "./TaskTreeCard";
 import { ownerName, type TaskTreePeople } from "./TaskTreeOwner";
 
@@ -37,6 +39,8 @@ export interface TaskTreeCanvasProps {
   people: TaskTreePeople;
   /** Blocker outside the tree that each task waits on, by task id. */
   waitingOnById?: ReadonlyMap<string, string>;
+  /** Why each blocked task is blocked, by task id. */
+  blockReasonById?: ReadonlyMap<string, TreeBlockReason>;
   onOpen: (node: IssueTreeNode) => void;
   onToggleCollapsed: (id: string) => void;
   onShowFinished: () => void;
@@ -116,6 +120,7 @@ export function TaskTreeCanvas({
   trace,
   people,
   waitingOnById,
+  blockReasonById,
   onOpen,
   onToggleCollapsed,
   onShowFinished,
@@ -364,6 +369,7 @@ export function TaskTreeCanvas({
                 onBlockedPath={trace.pathNodeIds.has(node.id)}
                 isRootBlocker={trace.rootBlockers.some((blocker) => blocker.inTree && blocker.id === node.id)}
                 waitingOn={waitingOnById?.get(node.id) ?? null}
+                blockReason={blockReasonById?.get(node.id) ?? null}
                 descendants={item.descendants}
                 collapsed={item.collapsed}
                 onToggleCollapsed={() => onToggleCollapsed(node.id)}
@@ -376,7 +382,7 @@ export function TaskTreeCanvas({
     ),
     // The handlers inside read current state through setters and refs; the layer redraws when what it shows changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
   );
 
   return (
@@ -418,6 +424,7 @@ export function TaskTreeCanvas({
           <TaskTreeHoverCard
             node={hoverItem.node}
             people={people}
+            blockReason={blockReasonById?.get(hoverItem.node.id) ?? null}
             left={(hoverBox.x + hoverBox.width) * view.k + view.x + 10}
             top={hoverBox.y * view.k + view.y}
           />
@@ -430,11 +437,13 @@ export function TaskTreeCanvas({
 function TaskTreeHoverCard({
   node,
   people,
+  blockReason,
   left,
   top,
 }: {
   node: IssueTreeNode;
   people: TaskTreePeople;
+  blockReason: TreeBlockReason | null;
   left: number;
   top: number;
 }) {
@@ -454,7 +463,9 @@ function TaskTreeHoverCard({
       <p className="text-xs text-muted-foreground">
         Owner: <span className="text-foreground">{ownerName(people, node) ?? "No owner yet"}</span>
       </p>
-      {node.unblockAction ? (
+      {blockReason ? (
+        <TaskTreeBlockReason reason={blockReason} className="[&_span]:whitespace-normal [&_span]:break-words" />
+      ) : node.unblockAction ? (
         <p className="text-xs text-muted-foreground">
           Needs: <span className="text-foreground">{node.unblockAction}</span>
         </p>

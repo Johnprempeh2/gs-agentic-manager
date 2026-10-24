@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { readDiagramPrefs, writeDiagramPrefs } from "@/components/diagram/useDiagramViewport";
 import type { DiagramFindItem } from "@/components/diagram/DiagramFrame";
+import { describeTreeBlocks, type TreeNamePeople } from "@/lib/task-tree-block-reason";
 import {
   ancestorIds,
   flattenVisible,
@@ -24,9 +25,11 @@ export function useTaskTreeView(
     initialCollapsed?: () => ReadonlySet<string>;
     /** Remembers folded branches for this tree; `restored` says a remembered fold was used. */
     storageKey?: string;
+    /** Names the people a blocked task waits on. */
+    people?: TreeNamePeople;
   },
 ) {
-  const { viewerUserId, isPhone, showFinished, storageKey } = options;
+  const { viewerUserId, isPhone, showFinished, storageKey, people } = options;
   const [restored] = useState(() => Array.isArray(readDiagramPrefs(storageKey).collapsed));
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => {
     const stored = readDiagramPrefs(storageKey).collapsed;
@@ -58,6 +61,12 @@ export function useTaskTreeView(
     }
     return map;
   }, [trace, index]);
+
+  // Why each blocked task is blocked, in one line (GRE-2277).
+  const blockReasonById = useMemo(
+    () => (index ? describeTreeBlocks(index, people ?? { agents: new Map(), users: new Map(), viewerUserId }) : new Map()),
+    [index, people, viewerUserId],
+  );
 
   const toggleCollapsed = useCallback((id: string) => {
     setCollapsed((current) => {
@@ -118,6 +127,7 @@ export function useTaskTreeView(
     visibleRoot,
     trace,
     waitingOnById,
+    blockReasonById,
     focusRequest,
     selectBlocker,
   };

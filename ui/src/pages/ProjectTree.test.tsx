@@ -162,7 +162,7 @@ describe("Project tree page", () => {
     expect(keyCard.querySelector('[aria-label="3 of 5 sub-tasks done"]')).not.toBeNull();
     expect(container.querySelector(`[data-tree-node="${UNSORTED}"]`)?.textContent).toContain("Unsorted: 1 open task");
     // The blocked path runs from Tax rules to the unsorted task it waits on.
-    expect(container.querySelector('[data-tree-node="12"]')?.textContent).toContain("Waiting on GRE-30");
+    expect(container.querySelector('[data-tree-node="12"]')?.textContent).toContain("Blocked by GRE-30");
   });
 
   it("folds and unfolds a branch", async () => {
