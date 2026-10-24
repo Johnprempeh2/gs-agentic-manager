@@ -1,22 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { WebsiteProperty } from "@greatstone/shared";
+import type { WebsiteEnquiryLead } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
 import { Link } from "@/lib/router";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState, errorStateMessage } from "../ErrorState";
-import { useWebsiteSite } from "./WebsiteSiteConnection";
 
-/** The front door list reads GSAM leads. The site remains the source for raw form submissions. */
-export function WebsiteEnquiriesForProperty({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
-  const { site, isLoading, error } = useWebsiteSite(companyId, property.id);
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading site…</p>;
-  if (error) return <ErrorState error={error} />;
-  if (!site) return <p className="text-sm text-muted-foreground">Connect this website before checking enquiries.</p>;
-  return <WebsiteEnquiries companyId={companyId} siteId={site.id} />;
-}
-
-/** Reused on the Front door module page as well as the site's interim tab. */
+/** The live enquiry list in the Front door module's Admin tab. */
 export function WebsiteEnquiries({ companyId, siteId }: { companyId: string; siteId: string }) {
   const queryClient = useQueryClient();
   const queryKey = ["website", companyId, "enquiries", siteId];
@@ -29,6 +19,29 @@ export function WebsiteEnquiries({ companyId, siteId }: { companyId: string; sit
     onSuccess: () => void queryClient.invalidateQueries({ queryKey }),
   });
 
+  return <WebsiteEnquiriesView
+    leads={enquiries.data}
+    loading={enquiries.isLoading}
+    loadError={enquiries.error}
+    onRetry={() => void enquiries.refetch()}
+    onCheck={() => check.mutate()}
+    checking={check.isPending}
+    checkError={check.error}
+    checkResult={check.data}
+  />;
+}
+
+/** Presentational view also used for laptop and phone review in Storybook. */
+export function WebsiteEnquiriesView({ leads, loading = false, loadError, onRetry, onCheck, checking = false, checkError, checkResult }: {
+  leads?: WebsiteEnquiryLead[];
+  loading?: boolean;
+  loadError?: unknown;
+  onRetry?: () => void;
+  onCheck: () => void;
+  checking?: boolean;
+  checkError?: unknown;
+  checkResult?: { created: number; skipped: number };
+}) {
   return (
     <section className="space-y-4" aria-labelledby="website-enquiries-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -36,18 +49,18 @@ export function WebsiteEnquiries({ companyId, siteId }: { companyId: string; sit
           <h2 id="website-enquiries-heading" className="text-lg font-semibold">Front door and enquiries</h2>
           <p className="text-sm text-muted-foreground">Website submissions filed as leads in GSAM.</p>
         </div>
-        <Button type="button" onClick={() => check.mutate()} disabled={check.isPending}>
-          {check.isPending ? "Checking…" : "Check now"}
+        <Button type="button" onClick={onCheck} disabled={checking}>
+          {checking ? "Checking…" : "Check now"}
         </Button>
       </div>
-      {check.isError ? <p role="alert" className="text-sm text-destructive">{errorStateMessage(check.error)}</p> : null}
-      {check.isSuccess ? <p role="status" className="text-sm text-muted-foreground">{check.data.created} new, {check.data.skipped} already filed.</p> : null}
-      {enquiries.isLoading ? <p className="text-sm text-muted-foreground">Loading enquiries…</p> : null}
-      {enquiries.isError ? <ErrorState error={enquiries.error} onRetry={() => void enquiries.refetch()} /> : null}
-      {enquiries.data?.length === 0 ? <p className="text-sm text-muted-foreground">No enquiries have been imported yet.</p> : null}
-      {enquiries.data?.length ? (
+      {checkError ? <p role="alert" className="text-sm text-destructive">{errorStateMessage(checkError)}</p> : null}
+      {checkResult ? <p role="status" className="text-sm text-muted-foreground">{checkResult.created} new, {checkResult.skipped} already filed.</p> : null}
+      {loading ? <p className="text-sm text-muted-foreground">Loading enquiries…</p> : null}
+      {loadError ? <ErrorState error={loadError} onRetry={onRetry} /> : null}
+      {leads?.length === 0 ? <p className="text-sm text-muted-foreground">No enquiries have been imported yet.</p> : null}
+      {leads?.length ? (
         <ul className="divide-y rounded-lg border" aria-label="Website enquiries">
-          {enquiries.data.map((lead) => (
+          {leads.map((lead) => (
             <li key={lead.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
               <div className="min-w-0">
                 <Link to={`/pipelines/${lead.pipelineId}/cases/${lead.id}`} className="font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
