@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MotionStudy } from "@greatstone/shared";
 import { MotionStudio, filterMotionStudies } from "./MotionStudio";
@@ -11,6 +12,7 @@ import { MotionStudio, filterMotionStudies } from "./MotionStudio";
 
 const motionApiMock = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), resolveProposal: vi.fn() }));
 vi.mock("../api/motionStudies", () => ({ motionStudiesApi: motionApiMock }));
+vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompany: null }) }));
 
 function study(overrides: Partial<MotionStudy>): MotionStudy {
   return {
@@ -59,9 +61,11 @@ async function render() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root.render(
-      <QueryClientProvider client={client}>
-        <MotionStudio companyId="company-1" />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <MotionStudio companyId="company-1" />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
   });
   await settle();
@@ -163,6 +167,22 @@ describe("MotionStudio", () => {
     await settle();
     expect(motionApiMock.update).toHaveBeenCalledWith("study-15", { decision: "implement" });
     expect(card("bedrock")!.textContent).toContain("Implement");
+  });
+
+  it("offers Use on website only on a text-safe study, linking the editor's Motion panel to its number", async () => {
+    motionApiMock.list.mockResolvedValue({ studies: [study({ number: "016", slug: "ascent", title: "Ascent" }), WEAVE] });
+    await render();
+    await act(async () => card("ascent")!.click());
+    await settle();
+    const use = document.querySelector('[data-testid="motion-use-on-website"]')!;
+    expect(use.textContent).toBe("Use on website");
+    expect(use.getAttribute("href")).toBe("/website?tab=editor&motion=016");
+
+    await act(async () => root.render(<></>));
+    await render();
+    await act(async () => card("weave")!.click());
+    await settle();
+    expect(document.querySelector('[data-testid="motion-use-on-website"]')).toBeNull();
   });
 
   it("shows an agent's proposal and accepts it", async () => {

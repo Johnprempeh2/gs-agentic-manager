@@ -396,3 +396,57 @@ describe("insert-media (GRE-2206)", () => {
     await expect(pending).resolves.toBeNull();
   });
 });
+
+describe("set-motion (GRE-2219)", () => {
+  const motionAck = {
+    blocks: [
+      { type: "Hero", label: "Hero", motion: { effects: ["none", "bg.ascent"], default: { effect: "none", intensity: "off" } } },
+      { type: "Prose", label: "Prose" },
+    ],
+    motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" }],
+  };
+  const ready = async (ack: Record<string, unknown> = motionAck) => {
+    const t = setup();
+    t.session.start();
+    t.ack(ack);
+    await flush();
+    return t;
+  };
+  const motionId = (t: ReturnType<typeof setup>) => (t.sentOf("set-motion")[0]!.message as unknown as { id: string }).id;
+  const payload = { blockId: "h1", motion: { effect: "bg.ascent", intensity: "subtle" as const } };
+
+  it("keeps the engine's motion choices from hello-ack", async () => {
+    const t = await ready();
+    expect(t.session.motionCapabilities.blocks.get("Hero")).toEqual(motionAck.blocks[0]!.motion);
+    expect(t.session.motionCapabilities.blocks.has("Prose")).toBe(false);
+    expect(t.session.motionCapabilities.effects).toEqual(motionAck.motionEffects);
+  });
+
+  it("an older engine, or a malformed motion list, still connects with no motion choices", async () => {
+    const old = await ready({});
+    expect(old.session.state.phase).toBe("ready");
+    expect(old.session.motionCapabilities.effects).toEqual([]);
+    const bad = await ready({ ...motionAck, motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "javascript:alert(1)" }] });
+    expect(bad.session.state.phase).toBe("ready");
+    expect(bad.session.motionCapabilities.effects).toEqual([]);
+    expect(bad.session.motionCapabilities.blocks.has("Hero")).toBe(true);
+  });
+
+  it("resolves with the set-motion-result for its own request; an insert-media-result with that id is dropped", async () => {
+    const t = await ready();
+    const pending = t.session.setMotion(payload);
+    expect(t.sentOf("set-motion")[0]!.message.payload).toEqual(payload);
+    t.msg("insert-media-result", { requestId: motionId(t), ok: true });
+    t.msg("set-motion-result", { requestId: motionId(t), ok: false, code: "effect_not_allowed" });
+    await expect(pending).resolves.toEqual({ requestId: motionId(t), ok: false, code: "effect_not_allowed" });
+  });
+
+  it("resolves null when the frame does not answer in time, or for an invalid choice", async () => {
+    const t = await ready();
+    const pending = t.session.setMotion(payload);
+    vi.advanceTimersByTime(5_000);
+    await expect(pending).resolves.toBeNull();
+    await expect(t.session.setMotion({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "extreme" as never } })).resolves.toBeNull();
+    expect(t.sentOf("set-motion")).toHaveLength(1);
+  });
+});
