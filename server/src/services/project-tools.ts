@@ -10,9 +10,22 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   list_project_repositories: mcpToolHints("read"),
   create_project: mcpToolHints("write", { idempotent: true }),
   create_task: mcpToolHints("write", { idempotent: true }),
+  list_website_modules: mcpToolHints("read"),
+};
+/** Read-only tool outside the runner catalog: the website module registry (GRE-2325). Needs website:view. */
+const WEBSITE_MODULES_TOOL = {
+  name: "list_website_modules",
+  description: "Read the website module registry: each connected site's modules with their route prefixes, collections, owner, lead agent, linked project and on/off state.",
+  annotations: PROJECT_TOOL_HINTS.list_website_modules,
+  inputSchema: {
+    type: "object",
+    properties: { siteId: { type: "string", description: "Only this site. Leave out to read every site the agent can view." } },
+    required: [],
+    additionalProperties: false,
+  },
 };
 export function projectToolDefinitions(workMode: string, includeTask = false) {
-  return CAPABILITY_SEMANTIC_TOOL_CATALOG.filter(tool =>
+  const catalog: Array<{ name: string; description: string; annotations: McpToolHints | undefined; inputSchema: unknown }> = CAPABILITY_SEMANTIC_TOOL_CATALOG.filter(tool =>
     (PROJECT_TOOL_NAMES.includes(tool.operationId) || includeTask && tool.operationId === "create_task")
     && tool.allowedModes.includes(workMode as "standard"),
   ).map(tool => ({ name: tool.operationId, description: tool.description,
@@ -21,6 +34,32 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_MODULES_TOOL];
+}
+
+async function apiGet(apiUrl: string, token: string, path: string) {
+  const response = await fetch(`${apiUrl.replace(/\/+$/, "").replace(/\/api$/, "")}/api${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : `Website modules read failed (${response.status})`);
+  return result;
+}
+
+/** Sites the agent can view, each with its modules, through the normal authenticated API. */
+async function listWebsiteModules(input: { apiUrl: string; token: string; companyId: string; siteId?: unknown }) {
+  const company = encodeURIComponent(input.companyId);
+  const sites = (await apiGet(input.apiUrl, input.token, `/companies/${company}/website/sites`)) as Array<{ id: string; name: string; domain: string }>;
+  const wanted = typeof input.siteId === "string" && input.siteId ? sites.filter((site) => site.id === input.siteId) : sites;
+  return {
+    sites: await Promise.all(wanted.map(async (site) => ({
+      id: site.id,
+      name: site.name,
+      domain: site.domain,
+      modules: await apiGet(input.apiUrl, input.token, `/companies/${company}/website/sites/${encodeURIComponent(site.id)}/modules`),
+    }))),
+  };
 }
 
 /** All transports use the normal authenticated API, including its validation and audit path. */
@@ -29,6 +68,9 @@ export async function callProjectTool(input: {
   companyId: string; issueId: string; agentId: string; conversation: boolean;
 }) {
   const args = input.arguments;
+  if (input.name === "list_website_modules") {
+    return listWebsiteModules({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, siteId: args.siteId });
+  }
   let path = `/companies/${input.companyId}/projects`;
   let body: unknown;
   if (input.name === "list_project_repositories") path = `/companies/${input.companyId}/project-repositories`;
