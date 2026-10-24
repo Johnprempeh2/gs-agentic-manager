@@ -71,6 +71,25 @@ export function externalScriptNote(html) {
     : null;
 }
 
+/**
+ * The sandbox has no network, so images a study links by relative path (the
+ * Greatstone logo) are fetched once and written into the page as data URIs.
+ */
+export async function inlineRelativeImages(html, pageUrl, fetchBytes) {
+  const sources = new Set();
+  for (const match of html.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["']/gi)) {
+    const source = match[1];
+    if (!/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(source)) sources.add(source);
+  }
+  let inlined = html;
+  for (const source of sources) {
+    const { bytes, contentType } = await fetchBytes(new URL(source, pageUrl));
+    const dataUri = `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+    inlined = inlined.split(`"${source}"`).join(`"${dataUri}"`).split(`'${source}'`).join(`'${dataUri}'`);
+  }
+  return inlined;
+}
+
 /** One import entry: title, concept, theme and tech from ANIMS; notes and decisions from Notion when given. */
 export function toImportStudy(anim, html, galleryUrl, catalogue) {
   const number = String(anim.no).padStart(3, "0");
@@ -103,6 +122,13 @@ async function fetchText(url) {
   return response.text();
 }
 
+async function fetchBytes(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  const contentType = (response.headers.get("content-type") ?? "application/octet-stream").split(";")[0].trim();
+  return { bytes: new Uint8Array(await response.arrayBuffer()), contentType };
+}
+
 async function main(args) {
   const galleryUrl = argValue(args, "--gallery") ?? DEFAULT_GALLERY_URL;
   const companyId = argValue(args, "--company") ?? process.env.GSAM_COMPANY_ID;
@@ -114,7 +140,8 @@ async function main(args) {
   const catalogue = cataloguePath ? catalogueByNumber(JSON.parse(await readFile(cataloguePath, "utf8"))) : null;
   const studies = [];
   for (const anim of anims) {
-    const html = await fetchText(new URL(`anims/${anim.slug}.html`, galleryUrl));
+    const pageUrl = new URL(`anims/${anim.slug}.html`, galleryUrl);
+    const html = await inlineRelativeImages(await fetchText(pageUrl), pageUrl, fetchBytes);
     studies.push(toImportStudy(anim, html, galleryUrl, catalogue));
   }
   console.log(`Read ${studies.length} studies from ${galleryUrl}${catalogue ? ` with ${catalogue.size} catalogue rows` : ""}`);

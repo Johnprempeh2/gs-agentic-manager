@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MOTION_STUDY_DECISION_LABELS,
@@ -77,21 +77,52 @@ export function proposalSummary(study: MotionStudy): string | null {
   return parts.join(", ");
 }
 
+/** Studies are laid out for a full screen; each is drawn at this size and scaled to fit its box. */
+const STUDY_STAGE = { width: 1280, height: 720 };
+
+function useBoxWidth() {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!node) return;
+    setWidth(node.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => setWidth(entries[0]?.contentRect.width ?? node.clientWidth));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return { ref: setNode, width };
+}
+
+/**
+ * The study, sandboxed: scripts only, no same-origin, forms, pop-ups or top
+ * navigation (the server's CSP also blocks the network). It renders at the
+ * full stage size and is scaled down, so a card shows a true thumbnail.
+ */
 function StudyFrame({ study, interactive, className }: { study: MotionStudy; interactive?: boolean; className?: string }) {
-  if (!study.previewPath) {
-    return <div className={cn("grid h-full w-full place-items-center text-xs text-muted-foreground", className)}>No study page</div>;
-  }
+  const box = useBoxWidth();
+  const scale = box.width > 0 ? box.width / STUDY_STAGE.width : 0;
   return (
-    <iframe
-      src={study.previewPath}
-      title={`${study.title}, motion study ${study.number}`}
-      // Scripts only: no same-origin, forms, pop-ups or top navigation. The server's CSP also blocks the network.
-      sandbox="allow-scripts"
-      referrerPolicy="no-referrer"
-      loading="lazy"
-      tabIndex={interactive ? 0 : -1}
-      className={cn("h-full w-full border-0 bg-background", !interactive && "pointer-events-none", className)}
-    />
+    <div
+      ref={box.ref}
+      className={cn("relative w-full overflow-hidden bg-background", className)}
+      style={{ height: box.width > 0 ? Math.round(box.width * (STUDY_STAGE.height / STUDY_STAGE.width)) : undefined }}
+    >
+      {!study.previewPath ? (
+        <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">No study page</div>
+      ) : (
+        <iframe
+          src={study.previewPath}
+          title={`${study.title}, motion study ${study.number}`}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          tabIndex={interactive ? 0 : -1}
+          className={cn("absolute left-0 top-0 origin-top-left border-0", !interactive && "pointer-events-none")}
+          style={{ width: STUDY_STAGE.width, height: STUDY_STAGE.height, transform: `scale(${scale})` }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -133,14 +164,19 @@ function MotionCard({ study, onOpen }: { study: MotionStudy; onOpen: () => void 
       >
         <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-muted ring-1 ring-border transition-shadow group-hover:ring-ring">
           {playing ? (
-            <StudyFrame study={study} />
+            <StudyFrame study={study} className="absolute inset-0 h-full" />
           ) : (
-            <div className="flex h-full w-full flex-col justify-between p-3">
-              <span className="font-mono text-xs text-muted-foreground">No. {study.number}</span>
-              <span className="flex items-center gap-1.5 self-end text-xs text-muted-foreground">
-                <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="pointer-coarse:hidden">Hover to play</span>
-                <span className="hidden pointer-coarse:inline">Tap to open</span>
+            // A still poster until the card is hovered or focused, so a page of studies is not a page of running canvases.
+            <div className="flex h-full w-full flex-col justify-between bg-card p-3">
+              <span className="text-xs text-muted-foreground">{study.theme[0] ?? study.tech}</span>
+              <span className="font-mono text-4xl font-semibold text-foreground">{study.number}</span>
+              <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span className="truncate">{study.tech}</span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="pointer-coarse:hidden">Hover to play</span>
+                  <span className="hidden pointer-coarse:inline">Tap to open</span>
+                </span>
               </span>
             </div>
           )}
@@ -192,9 +228,7 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
           <DialogDescription>{study.concept}</DialogDescription>
         </DialogHeader>
 
-        <div className="aspect-video w-full overflow-hidden rounded-lg ring-1 ring-border">
-          <StudyFrame study={study} interactive />
-        </div>
+        <StudyFrame study={study} interactive className="rounded-lg ring-1 ring-border" />
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <StudyPills study={study} />

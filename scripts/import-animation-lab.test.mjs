@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { catalogueByNumber, externalScriptNote, parseAnims, toImportStudy } from "./import-animation-lab.mjs";
+import { catalogueByNumber, externalScriptNote, inlineRelativeImages, parseAnims, toImportStudy } from "./import-animation-lab.mjs";
 
 const GALLERY = `<script>
 /* LIBRARY, newest first */
@@ -47,4 +47,16 @@ test("notes a study that loads code from the internet", () => {
   const importMap = '<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js" } }</script>';
   assert.match(externalScriptNote(importMap), /sandbox blocks/);
   assert.equal(externalScriptNote('<link href="https://fonts.googleapis.com" rel="preconnect"><script>draw()</script>'), null);
+});
+
+test("writes relative images into the page as data URIs and leaves absolute ones alone", async () => {
+  const asked = [];
+  const html = '<img src="../assets/logo.png" alt="Greatstone"><img src="data:image/png;base64,AA==" alt=""><img src="https://example.com/a.png" alt="">';
+  const result = await inlineRelativeImages(html, new URL("https://lab.example/anims/flux.html"), async (url) => {
+    asked.push(url.toString());
+    return { bytes: new Uint8Array([1, 2, 3]), contentType: "image/png" };
+  });
+  assert.deepEqual(asked, ["https://lab.example/assets/logo.png"]);
+  assert.match(result, /<img src="data:image\/png;base64,AQID" alt="Greatstone">/);
+  assert.match(result, /https:\/\/example.com\/a.png/);
 });
