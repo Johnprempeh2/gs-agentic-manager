@@ -1033,7 +1033,8 @@ function MotionOptionTile({
       )}
       data-testid={`website-motion-effect-${option.id}`}
     >
-      <span className="relative block aspect-video w-full overflow-hidden rounded-md bg-muted">
+      {/* The engine draws its effects for the site's dark surface, so the still sits on the dark theme's background in both themes. */}
+      <span className="dark relative block aspect-video w-full overflow-hidden rounded-md bg-background">
         {option.still ? (
           // The engine's own still, from the editor origin: GSAM keeps no copy.
           <img
@@ -1049,9 +1050,9 @@ function MotionOptionTile({
         )}
       </span>
       <span className="flex min-w-0 items-baseline gap-1.5 px-1 pb-0.5">
-        {option.study ? <span className="shrink-0 font-mono text-micro text-muted-foreground">{option.study}</span> : null}
+        {option.study ? <span className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground">{option.study}</span> : null}
         <span className="truncate text-xs font-medium text-foreground">{option.label}</span>
-        {current ? <span className="ml-auto shrink-0 text-micro text-muted-foreground">Now</span> : null}
+        {current ? <span className="ml-auto shrink-0 text-(length:--text-micro) text-muted-foreground">Now</span> : null}
       </span>
     </button>
   );
