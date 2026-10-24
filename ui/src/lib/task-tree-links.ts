@@ -45,14 +45,18 @@ export function treeLinksFrom(
   return [...out.values()];
 }
 
-/** Strongly connected parts of more than one task are loops (Tarjan). */
+/**
+ * Strongly connected parts of more than one task are loops (Tarjan). Returns
+ * the loop each task sits in, keyed by task id.
+ */
 function findLoops(ids: string[], blocksOf: ReadonlyMap<string, string[]>) {
   const order = new Map<string, number>();
   const low = new Map<string, number>();
   const stack: string[] = [];
   const onStack = new Set<string>();
-  const loopNodeIds = new Set<string>();
+  const loopOf = new Map<string, number>();
   let counter = 0;
+  let loops = 0;
 
   // Iterative, so a chain of thousands cannot overflow the call stack.
   for (const start of ids) {
@@ -92,44 +96,41 @@ function findLoops(ids: string[], blocksOf: ReadonlyMap<string, string[]>) {
           onStack.delete(id);
           part.push(id);
         } while (id !== frame.id);
-        if (part.length > 1) for (const member of part) loopNodeIds.add(member);
+        if (part.length > 1) {
+          for (const member of part) loopOf.set(member, loops);
+          loops += 1;
+        }
       }
     }
   }
-  return loopNodeIds;
+  return loopOf;
+}
+
+function pushTo(map: Map<string, string[]>, key: string, value: string) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
 }
 
 export function buildLinkGraph(links: TreeLink[]): TreeLinkGraph {
   const blockersOf = new Map<string, string[]>();
   const blocksOf = new Map<string, string[]>();
   for (const { from, to } of links) {
-    blockersOf.set(to, [...(blockersOf.get(to) ?? []), from]);
-    blocksOf.set(from, [...(blocksOf.get(from) ?? []), to]);
+    pushTo(blockersOf, to, from);
+    pushTo(blocksOf, from, to);
   }
   for (const list of blockersOf.values()) list.sort();
   for (const list of blocksOf.values()) list.sort();
   const ids = [...new Set(links.flatMap((link) => [link.from, link.to]))].sort();
-  const loopNodeIds = findLoops(ids, blocksOf);
+  const loopOf = findLoops(ids, blocksOf);
+  // A link closes a loop when both its tasks sit in the same loop: then its
+  // blocked task leads back to its blocker.
   const loopLinks = new Set(
-    links.filter((link) => loopNodeIds.has(link.from) && loopNodeIds.has(link.to) && sameLoop(link, blocksOf)).map((link) => linkKey(link.from, link.to)),
+    links
+      .filter((link) => loopOf.has(link.from) && loopOf.get(link.from) === loopOf.get(link.to))
+      .map((link) => linkKey(link.from, link.to)),
   );
-  return { links, blockersOf, blocksOf, loopNodeIds, loopLinks };
-}
-
-/** A link closes a loop when its blocked task leads back to its blocker. */
-function sameLoop(link: TreeLink, blocksOf: ReadonlyMap<string, string[]>) {
-  const seen = new Set<string>([link.to]);
-  const queue = [link.to];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    if (id === link.from) return true;
-    for (const next of blocksOf.get(id) ?? []) {
-      if (seen.has(next)) continue;
-      seen.add(next);
-      queue.push(next);
-    }
-  }
-  return false;
+  return { links, blockersOf, blocksOf, loopNodeIds: new Set(loopOf.keys()), loopLinks };
 }
 
 /**
@@ -155,8 +156,8 @@ export function loopThrough(graph: TreeLinkGraph, id: string): string[] | null {
   // Breadth first along "is blocked by", inside the loop, back to the task.
   const previous = new Map<string, string>();
   const queue = [id];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
+  for (let head = 0; head < queue.length; head += 1) {
+    const current = queue[head]!;
     for (const blocker of graph.blockersOf.get(current) ?? []) {
       if (!graph.loopNodeIds.has(blocker)) continue;
       if (blocker === id) {
@@ -193,7 +194,7 @@ export function blockedAndWhyIds(
     queue.push(task.id);
   }
   while (queue.length > 0) {
-    const id = queue.shift()!;
+    const id = queue.pop()!;
     for (const blocker of graph.blockersOf.get(id) ?? []) {
       if (keep.has(blocker)) continue;
       keep.add(blocker);

@@ -93,6 +93,7 @@ describe("tree links", () => {
     const ids = Array.from({ length: 5000 }, (_, index) => `n${index}`);
     const graph = buildLinkGraph(ids.map((id, at) => ({ from: id, to: ids[(at + 1) % ids.length]! })));
     expect(graph.loopNodeIds.size).toBe(5000);
+    expect(graph.loopLinks.size).toBe(5000);
   });
 
   it("reads links off open blockers when an older server sends none", () => {
