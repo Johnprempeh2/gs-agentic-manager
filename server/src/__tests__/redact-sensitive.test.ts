@@ -31,6 +31,22 @@ describe("redactSensitive", () => {
     ).toBe("[REDACTED]");
   });
 
+  it("redacts any key that ends in token, such as a site's netlifyToken", () => {
+    const out = redactSensitive({
+      netlifyToken: "a",
+      githubToken: "b",
+      netlifyTokenSecretId: "kept",
+      maxTokens: 5,
+    }) as Record<string, unknown>;
+
+    expect(out).toEqual({
+      netlifyToken: "[REDACTED]",
+      githubToken: "[REDACTED]",
+      netlifyTokenSecretId: "kept",
+      maxTokens: 5,
+    });
+  });
+
   it("redacts known credential-shaped keys", () => {
     const out = redactSensitive({
       currentPassword: "a",

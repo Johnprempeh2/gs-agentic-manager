@@ -31,6 +31,8 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import { errorHandler } from "../middleware/error-handler.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "../routes/website-module.js";
 import { websiteModuleService } from "../services/website/module.js";
+import { checkWebsiteConnection, type WebsiteConnectInput, type WebsiteConnectionChecker } from "../services/website/connect-check.js";
+import { fakeNetlifyConnect, type FakeNetlifyConnect } from "./helpers/fake-netlify-connect.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
 import { companySearchService } from "../services/company-search.js";
 import { secretService } from "../services/secrets.js";
@@ -90,6 +92,13 @@ describeEmbeddedPostgres("website module routes", () => {
 
   const localBoard: Actor = { type: "board", userId: "local-board", source: "local_implicit", isInstanceAdmin: true };
 
+  // The connect check (GRE-2137) calls Netlify and the site: every test gets a passing fake unless it sets its own.
+  const passingCheck: WebsiteConnectionChecker = async () => ({ ok: true, engineVersion: "0.1.0" });
+  let connectCheck: WebsiteConnectionChecker = passingCheck;
+  afterEach(() => {
+    connectCheck = passingCheck;
+  });
+
   function app(actor: Actor = localBoard) {
     const instance = express();
     instance.use(express.json({ limit: "10mb" }));
@@ -97,7 +106,7 @@ describeEmbeddedPostgres("website module routes", () => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"] }));
+    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"], checkConnection: (input) => connectCheck(input) }));
     instance.use(errorHandler);
     return instance;
   }
@@ -183,6 +192,92 @@ describeEmbeddedPostgres("website module routes", () => {
       .post(`/api/companies/${company.id}/website/sites`)
       .send({ name: "Again", domain: "www.greatstone.test", netlifySiteId: "x" })
       .expect(409);
+  });
+
+  // GRE-2137: the connect check against a mocked Netlify. Each refusal shows the GRE-2107 copy and saves nothing.
+  function withFakeNetlify(fake: FakeNetlifyConnect) {
+    const netlify = fakeNetlifyConnect(fake);
+    connectCheck = (input: WebsiteConnectInput) => checkWebsiteConnection(input, { fetchImpl: netlify.fetchImpl });
+    return netlify;
+  }
+
+  const connectBody = { name: "Check", domain: "www.check.test", netlifySiteId: "netlify-site", netlifyToken: "nfp_check_token_value_1" };
+
+  it("connect check: stores the engine version /_release reports, and checks with the pasted token", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const company = await seedCompany("Checked");
+    const netlify = withFakeNetlify({});
+    const site = (await request(app()).post(`/api/companies/${company.id}/website/sites`).send(connectBody).expect(201)).body as WebsiteSite;
+    expect(site.engineVersion).toBe("0.2.0");
+    const [row] = await db.select().from(websiteSite).where(eq(websiteSite.id, site.id));
+    expect(row!.engineVersion).toBe("0.2.0");
+    expect(netlify.calls.map((call) => call.url)).toEqual([
+      "https://api.netlify.com/api/v1/sites/netlify-site",
+      "https://www.check.test/_release",
+    ]);
+    expect(netlify.calls[0]!.authorization).toBe("Bearer nfp_check_token_value_1");
+    // The site's own answer never sees the token.
+    expect(netlify.calls[1]!.authorization).toBeNull();
+  });
+
+  const refusals: Array<{ name: string; fake: FakeNetlifyConnect; code: string; error: string; detail: string | null }> = [
+    { name: "netlify_not_found", fake: { siteStatus: 404 }, code: "website_connect_netlify_not_found", error: "Netlify cannot find that site ID. Check it in Netlify under Site configuration.", detail: null },
+    { name: "token", fake: { siteStatus: 401 }, code: "website_connect_token", error: "Netlify refused the token. Make a new token in Netlify and paste it here.", detail: null },
+    { name: "token_scope", fake: { siteStatus: 403 }, code: "website_connect_token_scope", error: "The token works but cannot reach this site. Use a token from the team that owns the site.", detail: null },
+    { name: "domain", fake: { site: { id: "netlify-site", name: "other-site", custom_domain: "www.other.test" } }, code: "website_connect_domain", error: "That address does not reach this Netlify site. Check the live address.", detail: null },
+    { name: "no_release_route", fake: { release: { status: 404, body: "<html>Not found</html>" } }, code: "website_connect_no_release_route", error: "This site is not set up for GSAM yet. Ask your website team to set it up, then connect again.", detail: "Details: no answer at /_release." },
+    { name: "engine_old", fake: { release: { status: 200, body: { engine: { version: "0.0.9" }, supportedReleaseSchemas: [1] } } }, code: "website_connect_engine_old", error: "This site needs an update before it can connect. Ask your website team to update it.", detail: "Details: site version 0.0.9. GSAM needs 0.1.0 or later." },
+  ];
+
+  for (const refusal of refusals) {
+    it(`connect check refuses connect.err.${refusal.name} with the copy and saves no site and no token`, async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const company = await seedCompany(`Refused ${refusal.name}`);
+      withFakeNetlify(refusal.fake);
+      const res = await request(app()).post(`/api/companies/${company.id}/website/sites`).send(connectBody).expect(422);
+      expect(res.body.error).toBe(refusal.error);
+      expect(res.body.details).toMatchObject({ code: refusal.code, messageKey: `connect.err.${refusal.name}`, detail: refusal.detail });
+      expect(await db.select().from(websiteSite).where(eq(websiteSite.companyId, company.id))).toHaveLength(0);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toHaveLength(0);
+    });
+  }
+
+  it("connect check: a Netlify outage answers 502 and saves nothing", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const company = await seedCompany("Outage");
+    withFakeNetlify({ siteStatus: 503 });
+    const res = await request(app()).post(`/api/companies/${company.id}/website/sites`).send(connectBody).expect(502);
+    expect(res.body.details).toMatchObject({ code: "website_connect_netlify_unavailable" });
+    expect(await db.select().from(websiteSite).where(eq(websiteSite.companyId, company.id))).toHaveLength(0);
+  });
+
+  it("connect check on token change: a refused token keeps the old one; a good one records the new engine version", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const company = await seedCompany("Rotate");
+    withFakeNetlify({});
+    const site = (await request(app()).post(`/api/companies/${company.id}/website/sites`).send(connectBody).expect(201)).body as WebsiteSite;
+    const base = `/api/companies/${company.id}/website/sites/${site.id}`;
+    const [before] = await db.select().from(websiteSite).where(eq(websiteSite.id, site.id));
+    const versionsBefore = await db.select().from(companySecretVersions).where(eq(companySecretVersions.secretId, before!.netlifyTokenSecretId!));
+
+    withFakeNetlify({ siteStatus: 401 });
+    const refused = await request(app()).patch(base).send({ netlifyToken: "nfp_bad_token_value_22" }).expect(422);
+    expect(refused.body.details).toMatchObject({ code: "website_connect_token" });
+    expect(await db.select().from(companySecretVersions).where(eq(companySecretVersions.secretId, before!.netlifyTokenSecretId!))).toHaveLength(versionsBefore.length);
+
+    // A rename alone does not call Netlify.
+    const quiet = withFakeNetlify({ siteStatus: 500 });
+    await request(app()).patch(base).send({ name: "Renamed" }).expect(200);
+    expect(quiet.calls).toHaveLength(0);
+
+    // The live address changed: checked again with the saved token.
+    const moved = withFakeNetlify({ site: { id: "netlify-site", name: "check-site", custom_domain: "check.test" } });
+    await request(app()).patch(base).send({ domain: "check.test" }).expect(200);
+    expect(moved.calls[0]!.authorization).toBe("Bearer nfp_check_token_value_1");
+
+    withFakeNetlify({ site: { id: "netlify-site", name: "check-site", custom_domain: "check.test" }, release: { status: 200, body: { engine: { version: "0.3.1" }, supportedReleaseSchemas: [1] } } });
+    const updated = await request(app()).patch(base).send({ netlifyToken: "nfp_good_token_value_33" }).expect(200);
+    expect(updated.body.engineVersion).toBe("0.3.1");
   });
 
   it("isolation 1, 2, 8: company A cannot read or list company B's site, page, entry or revisions", async () => {
@@ -648,7 +743,8 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(set.editorFrameOrigin).toBe("https://editor.alpha.test");
     await http.patch(url).send({ editorFrameOrigin: "https://edit2.alpha.test" }).expect(200);
 
-    const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"));
+    const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"))
+      .orderBy(activityLog.createdAt);
     expect(changes.map((row) => row.details)).toEqual([
       { from: null, to: "https://editor.alpha.test" },
       { from: "https://editor.alpha.test", to: "https://edit2.alpha.test" },

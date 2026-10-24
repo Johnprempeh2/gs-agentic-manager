@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { WebsiteProperty, WebsiteSite } from "@greatstone/shared";
+import { ApiError } from "../../api/client";
 import { websiteModuleApi } from "../../api/website";
 import { queryKeys } from "../../lib/queryKeys";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,13 @@ export function domainFromSiteUrl(siteUrl: string): string {
   } catch {
     return "";
   }
+}
+
+/** The details line of a `connect.err.*` refusal (GRE-2137), when the copy has one. */
+export function connectErrorDetail(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const details = (error.body as { details?: { detail?: unknown } } | null)?.details;
+  return typeof details?.detail === "string" ? details.detail : null;
 }
 
 /** The connected site of a website property, if any. */
@@ -49,7 +57,8 @@ function SiteForm({ companyId, property, site, onDone }: {
   companyId: string;
   property: WebsiteProperty;
   site: WebsiteSite | null;
-  onDone: () => void;
+  /** `saved` is the site after a save that ran the connect check. */
+  onDone: (saved?: WebsiteSite) => void;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(site?.name ?? property.name);
@@ -71,6 +80,10 @@ function SiteForm({ companyId, property, site, onDone }: {
   const [editorFrameOrigin, setEditorFrameOrigin] = useState(site?.editorFrameOrigin ?? "");
   const [livePreviewUrl, setLivePreviewUrl] = useState(site?.livePreviewUrl ?? "");
   const [devPreviewUrl, setDevPreviewUrl] = useState(site?.devPreviewUrl ?? "");
+  // The server checks Netlify and the site's /_release when a token is set or the site it points at changes.
+  const tokenChosen = tokenMode === "paste" ? Boolean(netlifyToken.trim()) : Boolean(secretId) && secretId !== linkedSecretId;
+  const targetChanged = Boolean(site) && (site!.domain !== domain.trim() || site!.netlifySiteId !== netlifySiteId.trim());
+  const willCheck = tokenChosen || (targetChanged && Boolean(site?.hasNetlifyToken));
   const save = useMutation({
     mutationFn: () => {
       const token =
@@ -92,10 +105,10 @@ function SiteForm({ companyId, property, site, onDone }: {
         ? websiteModuleApi.updateSite(companyId, site.id, fields)
         : websiteModuleApi.createSite(companyId, { ...fields, propertyId: property.id });
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       setNetlifyToken("");
       void queryClient.invalidateQueries({ queryKey: queryKeys.website.sites(companyId) });
-      onDone();
+      onDone(willCheck ? saved : undefined);
     },
   });
   const idPrefix = `website-site-${property.id}`;
@@ -265,10 +278,17 @@ function SiteForm({ companyId, property, site, onDone }: {
         </Field>
       </fieldset>
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="ghost" onClick={onDone} disabled={save.isPending}>Cancel</Button>
-        {save.isError ? <p role="alert" className="text-xs text-status-danger">{errorStateMessage(save.error)}</p> : null}
+        <Button type="button" variant="ghost" onClick={() => onDone()} disabled={save.isPending}>Cancel</Button>
+        {save.isPending && willCheck ? (
+          <p role="status" className="text-xs text-muted-foreground">Checking the site. This takes a few seconds.</p>
+        ) : save.isError ? (
+          <div role="alert" className="min-w-0 text-xs text-status-danger">
+            <p>{errorStateMessage(save.error)}</p>
+            {connectErrorDetail(save.error) ? <p className="text-muted-foreground">{connectErrorDetail(save.error)}</p> : null}
+          </div>
+        ) : null}
         <Button type="submit" className="ml-auto" disabled={save.isPending || !name.trim() || !domain.trim() || !netlifySiteId.trim()}>
-          {save.isPending ? "Saving" : site ? "Save" : "Connect site"}
+          {save.isPending ? (willCheck ? "Checking" : "Saving") : site ? "Save" : "Connect site"}
         </Button>
       </div>
     </form>
@@ -289,6 +309,7 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
   const { site, isLoading, error } = useWebsiteSite(companyId, property.id);
   const { canManage } = useCanManageWebsite(companyId);
   const [editing, setEditing] = useState(false);
+  const [checked, setChecked] = useState<WebsiteSite | null>(null);
 
   return (
     <section className="gs-glass-card min-w-0 space-y-3 rounded-xl border p-4" aria-labelledby={`website-site-${property.id}-title`} data-testid="website-site-connection">
@@ -303,24 +324,41 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
       ) : error ? (
         <p role="alert" className="text-xs text-status-danger">{errorStateMessage(error)}</p>
       ) : editing ? (
-        <SiteForm companyId={companyId} property={property} site={site} onDone={() => setEditing(false)} />
+        <SiteForm
+          companyId={companyId}
+          property={property}
+          site={site}
+          onDone={(saved) => {
+            setChecked(saved ?? null);
+            setEditing(false);
+          }}
+        />
       ) : site ? (
-        <dl className="space-y-1.5 text-xs">
-          <Detail label="Site name">{site.name}</Detail>
-          <Detail label="Live address"><span className="font-mono">{site.domain}</span></Detail>
-          <Detail label="Code repository">{site.repoUrl ? <span className="font-mono">{site.repoUrl}</span> : "Not set"}</Detail>
-          <Detail label="Netlify site ID"><span className="font-mono">{site.netlifySiteId}</span></Detail>
-          <Detail label="Netlify token">
-            {site.netlifyTokenSource === "shared"
-              ? <>Saved secret <span className="font-medium">{site.netlifyTokenSecretName ?? "(name unavailable)"}</span>. GSAM reads it and never changes it.</>
-              : site.hasNetlifyToken
-                ? "Token saved. Pasted for this site."
-                : "Not saved yet. Publish needs it."}
-          </Detail>
-          <Detail label="Editor address">{site.editorFrameOrigin ? <span className="font-mono">{site.editorFrameOrigin}</span> : "Not set. Editing pages needs it."}</Detail>
-          <Detail label="Live site view">{site.livePreviewUrl ? <span className="font-mono">{site.livePreviewUrl}</span> : "The live address"}</Detail>
-          <Detail label="In development">{site.devPreviewUrl ? <span className="font-mono">{site.devPreviewUrl}</span> : site.editorFrameOrigin ? "The editor address" : "Not set"}</Detail>
-        </dl>
+        <div className="space-y-3">
+          {checked && checked.id === site.id ? (
+            <div role="status" className="text-xs">
+              <p className="font-medium text-foreground">{checked.name} is connected.</p>
+              {checked.engineVersion ? <p className="text-muted-foreground">Details: site version {checked.engineVersion}.</p> : null}
+            </div>
+          ) : null}
+          <dl className="space-y-1.5 text-xs">
+            <Detail label="Site name">{site.name}</Detail>
+            <Detail label="Live address"><span className="font-mono">{site.domain}</span></Detail>
+            <Detail label="Code repository">{site.repoUrl ? <span className="font-mono">{site.repoUrl}</span> : "Not set"}</Detail>
+            <Detail label="Netlify site ID"><span className="font-mono">{site.netlifySiteId}</span></Detail>
+            <Detail label="Netlify token">
+              {site.netlifyTokenSource === "shared"
+                ? <>Saved secret <span className="font-medium">{site.netlifyTokenSecretName ?? "(name unavailable)"}</span>. GSAM reads it and never changes it.</>
+                : site.hasNetlifyToken
+                  ? "Token saved. Pasted for this site."
+                  : "Not saved yet. Publish needs it."}
+            </Detail>
+            <Detail label="Editor address">{site.editorFrameOrigin ? <span className="font-mono">{site.editorFrameOrigin}</span> : "Not set. Editing pages needs it."}</Detail>
+            <Detail label="Live site view">{site.livePreviewUrl ? <span className="font-mono">{site.livePreviewUrl}</span> : "The live address"}</Detail>
+            <Detail label="In development">{site.devPreviewUrl ? <span className="font-mono">{site.devPreviewUrl}</span> : site.editorFrameOrigin ? "The editor address" : "Not set"}</Detail>
+            <Detail label="Site version">{site.engineVersion ? <span className="font-mono">{site.engineVersion}</span> : "Not checked yet. Saving a token checks it."}</Detail>
+          </dl>
+        </div>
       ) : (
         <div className="space-y-3">
           <div className="space-y-1">

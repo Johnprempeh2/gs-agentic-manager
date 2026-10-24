@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebsiteProperty, WebsiteSite } from "@greatstone/shared";
+import { ApiError } from "../../api/client";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -214,6 +215,64 @@ describe("WebsiteSiteConnection", () => {
     const sent = moduleMock.updateSite.mock.calls[0]![2];
     expect(sent).toMatchObject({ livePreviewUrl: "https://abc--greatstone.netlify.app/" });
     expect(sent).not.toHaveProperty("devPreviewUrl");
+  });
+
+  async function replaceToken(token: string) {
+    const change = [...container.querySelectorAll("button")].find((button) => button.textContent === "Change")!;
+    await act(async () => change.click());
+    await act(async () => setValue(container.querySelector<HTMLInputElement>("#website-site-prop-1-token")!, token));
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+  }
+
+  it("GRE-2137: says it is checking the site while the server checks Netlify, then shows the site version", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    let finish!: (value: WebsiteSite) => void;
+    moduleMock.updateSite.mockReturnValue(new Promise<WebsiteSite>((resolve) => { finish = resolve; }));
+    await render();
+    expect(container.textContent).toContain("Site versionNot checked yet. Saving a token checks it.");
+    await replaceToken("nfp_new_token_value");
+    await flush();
+    expect(container.textContent).toContain("Checking the site. This takes a few seconds.");
+    expect(container.querySelector("button[type=submit]")!.textContent).toBe("Checking");
+    moduleMock.sites.mockResolvedValue([site({ engineVersion: "0.2.0" })]);
+    await act(async () => finish(site({ engineVersion: "0.2.0" })));
+    await flush();
+    expect(container.textContent).toContain("Greatstone is connected.");
+    expect(container.textContent).toContain("Details: site version 0.2.0.");
+    expect(container.textContent).toContain("Site version0.2.0");
+  });
+
+  it("GRE-2137: shows the connect.err copy and its details line, and keeps the form open", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    const message = "This site needs an update before it can connect. Ask your website team to update it.";
+    moduleMock.updateSite.mockRejectedValue(new ApiError(message, 422, {
+      error: message,
+      details: { code: "website_connect_engine_old", messageKey: "connect.err.engine_old", detail: "Details: site version 0.0.9. GSAM needs 0.1.0 or later." },
+    }));
+    await render();
+    await replaceToken("nfp_new_token_value");
+    await flush();
+    const alert = container.querySelector("[role=alert]")!;
+    expect(alert.textContent).toContain(message);
+    expect(alert.textContent).toContain("Details: site version 0.0.9. GSAM needs 0.1.0 or later.");
+    expect(container.querySelector("[data-testid=website-site-form]")).not.toBeNull();
+  });
+
+  it("GRE-2137: a save that changes no token or address says Saving, not Checking", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.updateSite.mockReturnValue(new Promise(() => {}));
+    await render();
+    const change = [...container.querySelectorAll("button")].find((button) => button.textContent === "Change")!;
+    await act(async () => change.click());
+    await act(async () => setValue(container.querySelector<HTMLInputElement>("#website-site-prop-1-name")!, "Renamed"));
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(container.querySelector("button[type=submit]")!.textContent).toBe("Saving");
+    expect(container.textContent).not.toContain("Checking the site.");
   });
 
   it("tells people without Publish rights who can connect it", async () => {
