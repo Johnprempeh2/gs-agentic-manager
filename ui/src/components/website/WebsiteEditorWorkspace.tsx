@@ -935,7 +935,7 @@ function SaveStatePill({
 }) {
   let text: string;
   // Full-strength text on a neutral fill: the state is a must-have, so never the faint grey.
-  let tone = "bg-status-neutral-soft text-foreground";
+  let tone = "border border-border bg-status-neutral-soft text-foreground";
   if (connection.phase === "connecting") text = "Connecting";
   else if (mode === "preview") text = "Preview";
   else if (saveState.status === "saving") text = "Saving";
@@ -948,7 +948,8 @@ function SaveStatePill({
   } else {
     const copy = PAGE_STATUS_COPY[status] ?? PAGE_STATUS_COPY.draft;
     text = copy.label;
-    if (status !== "planned") tone = copy.tone;
+    // Draft keeps the neutral pill: the draft token is green in this palette and read as Saved.
+    if (status !== "planned" && status !== "draft") tone = copy.tone;
   }
   return (
     <span
