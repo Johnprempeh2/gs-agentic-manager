@@ -85,6 +85,7 @@ const Billing = lazyPage(() => import("./pages/Billing"), "Billing");
 const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
 const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverables");
 const Website = lazyPage(() => import("./pages/Website"), "Website");
+const WebsiteModulePage = lazyPage(() => import("./pages/WebsiteModule"), "WebsiteModulePage");
 const Intelligence = lazyPage(() => import("./pages/Intelligence"), "Intelligence");
 const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
 const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
@@ -431,6 +432,7 @@ function boardRoutes() {
       <Route path="deliverables" element={<Deliverables />} />
       <Route path="images" element={<Images />} />
       <Route path="website" element={<Website />} />
+      <Route path="website/sites/:siteId/modules/:moduleId" element={<WebsiteModulePage />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
       <Route path="whats-new" element={<WhatsNew />} />

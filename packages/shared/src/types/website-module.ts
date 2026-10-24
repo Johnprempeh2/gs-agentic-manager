@@ -279,6 +279,18 @@ export interface WebsiteChangeRequestResult {
   projectId: string | null;
 }
 
+export interface WebsiteEnquiryLead {
+  id: string;
+  pipelineId: string;
+  title: string;
+  organisationId: string | null;
+  contactEmail: string | null;
+  source: string | null;
+  page: string | null;
+  submittedAt: string | null;
+  createdAt: string;
+}
+
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
@@ -288,6 +300,10 @@ export const WEBSITE_MODULE_API_ROUTES = {
   tokenSecrets: "/companies/:companyId/website/token-secrets",
   /** GET → `WebsiteSite`. PATCH `UpdateWebsiteSite` → `WebsiteSite` (website:publish). */
   site: "/companies/:companyId/website/sites/:siteId",
+  /** GET → website enquiry leads in GSAM, newest first (website:view). */
+  enquiries: "/companies/:companyId/website/sites/:siteId/enquiries",
+  /** POST → import counts from the read-only admin bridge (website:edit). */
+  enquiriesCheck: "/companies/:companyId/website/sites/:siteId/enquiries/check",
   /** GET → `WebsitePage[]` (`?includeArchived=true`). POST `CreateWebsitePage` → 201 `WebsitePageDetail` (website:edit). */
   pages: "/companies/:companyId/website/sites/:siteId/pages",
   /** GET → `WebsitePageDetail`. PATCH `UpdateWebsitePage` → `WebsitePage` (website:edit). */
