@@ -226,7 +226,7 @@ function DecisionPicker({
   onChange: (decision: MotionStudyDecision) => void;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-1.5">
       <span id="motion-decision-label" className="text-sm font-medium text-foreground">
         Decision
       </span>
@@ -247,7 +247,7 @@ function DecisionPicker({
               disabled={disabled}
               onClick={() => (checked ? undefined : onChange(decision))}
               className={cn(
-                "min-h-10 rounded-md px-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
+                "min-h-10 rounded-md px-1 text-xs font-medium sm:px-2 sm:text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
                 checked ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
@@ -301,7 +301,7 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
 
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <DecisionPicker value={study.decision} disabled={busy} onChange={(decision) => update.mutate({ decision })} />
-          <label className="space-y-1.5 text-sm">
+          <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-foreground">Status</span>
             <NativeSelect
               value={study.status}
