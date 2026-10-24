@@ -34,6 +34,8 @@ import { websiteModuleService } from "../services/website/module.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
 import { companySearchService } from "../services/company-search.js";
 import { secretService } from "../services/secrets.js";
+import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
+import { createStorageService } from "../storage/service.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -822,6 +824,63 @@ describeEmbeddedPostgres("website module routes", () => {
     await http.put(`${entryUrl}/content`).send({ content: { ...valid, assetId: foreign.id }, baseRevisionId: detail.latestRevisionId }).expect(422);
     await http.put(`${entryUrl}/content`).send({ content: { ...valid, alt: "" }, baseRevisionId: detail.latestRevisionId }).expect(422);
     await http.put(`${entryUrl}/content`).send({ content: { ...valid, alt: "Fishing boats" }, baseRevisionId: detail.latestRevisionId }).expect(200);
+  });
+
+  it("isolation 10 (GRE-2138): A's media entry naming B's asset is refused on save, and storage refuses B's object key", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const own = await seedAsset(a.company.id, "harbour");
+    const foreign = await seedAsset(b.company.id, "bravo-logo");
+
+    const create = await http.post(`${siteUrl}/entries`).send({ collection: "media", entryKey: "stolen", content: { assetId: foreign.id, alt: "Not ours" } }).expect(422);
+    expect(create.body.details).toMatchObject({ code: "website_media_asset_not_found" });
+    const created = (await http.post(`${siteUrl}/entries`).send({ collection: "media", entryKey: "hero", content: { assetId: own.id, alt: "Harbour" } }).expect(201)).body;
+    const detail = (await http.get(`${siteUrl}/entries/${created.id}`).expect(200)).body;
+    const save = await http.put(`${siteUrl}/entries/${created.id}/content`).send({ content: { assetId: foreign.id, alt: "Not ours" }, baseRevisionId: detail.latestRevisionId }).expect(422);
+    expect(save.body.details).toMatchObject({ code: "website_media_asset_not_found" });
+    const stored = await db.select().from(websiteEntry).where(eq(websiteEntry.companyId, a.company.id));
+    expect(JSON.stringify(stored)).not.toContain(foreign.id);
+
+    // The asset read path: A's storage calls refuse an object key under B's prefix.
+    const root = mkdtempSync(path.join(os.tmpdir(), "gsam-isolation-10-"));
+    try {
+      const storage = createStorageService(createLocalDiskStorageProvider(root));
+      for (const call of [storage.getObject, storage.headObject, storage.deleteObject]) {
+        await expect(call(a.company.id, foreign.objectKey)).rejects.toMatchObject({ status: 403 });
+      }
+      await expect(storage.getObject(a.company.id, `${a.company.id}/../${b.company.id}/x.png`)).rejects.toMatchObject({ status: 400 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("collection entries (GRE-2138): a wrong-shaped entry or an unknown collection answers 422", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const post = (collection: string, entryKey: string, content: unknown) => http.post(`${siteUrl}/entries`).send({ collection, entryKey, content });
+    const valid = { id: "old-about", from: "/about-us", to: "/about", status: 301 };
+
+    const created = (await post("redirect", "old-about", valid).expect(201)).body;
+    const refused = async (collection: string, entryKey: string, content: unknown, code: string) => {
+      const response = await post(collection, entryKey, content).expect(422);
+      expect(response.body.details, entryKey).toMatchObject({ code });
+    };
+    await refused("redirect", "no-status", { ...valid, status: undefined }, "website_collection_fields_invalid");
+    await refused("redirect", "bad-status", { ...valid, status: 200 }, "website_collection_fields_invalid");
+    await refused("redirect", "protocol-relative", { ...valid, to: "//evil.test" }, "website_collection_fields_invalid");
+    await refused("redirect", "extra-field", { ...valid, note: "x" }, "website_collection_fields_invalid");
+    await refused("public-person", "bad-kind", { name: "Ada", role: "Engineer", kind: "robot" }, "website_collection_fields_invalid");
+    await refused("not-a-collection", "x", { anything: true }, "website_collection_unknown");
+
+    const entryUrl = `${siteUrl}/entries/${created.id}`;
+    const detail = (await http.get(entryUrl).expect(200)).body;
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, status: 200 }, baseRevisionId: detail.latestRevisionId }).expect(422);
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, status: 308 }, baseRevisionId: detail.latestRevisionId }).expect(200);
   });
 
   it("gsamServedOrigins lists the public URL and each allowed hostname", () => {
