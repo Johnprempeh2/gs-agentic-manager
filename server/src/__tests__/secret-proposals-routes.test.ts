@@ -25,6 +25,7 @@ import {
 } from "@greatstone/db";
 import { conflict } from "../errors.js";
 import { errorHandler } from "../middleware/error-handler.js";
+import { issueRoutes } from "../routes/issues.js";
 import { secretRoutes } from "../routes/secrets.js";
 import { awsSecretsManagerProvider } from "../secrets/aws-secrets-manager-provider.js";
 import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
@@ -220,6 +221,104 @@ describeEmbeddedPostgres("secret proposal routes", () => {
     app.use(errorHandler);
     return app;
   }
+
+  function createBoardIssueApp(fixture: Awaited<ReturnType<typeof seedRun>>, options?: { admin?: boolean }) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.actor = {
+        type: "board",
+        userId: "board-user",
+        companyIds: [fixture.companyId],
+        source: options?.admin === false ? "session" : "local_implicit",
+        memberships: options?.admin === false
+          ? [{ companyId: fixture.companyId, status: "active", membershipRole: "member" }]
+          : undefined,
+      };
+      next();
+    });
+    app.use("/api", issueRoutes(db, {} as any));
+    app.use(errorHandler);
+    return app;
+  }
+
+  async function proposeSecretAndBinding(fixture: Awaited<ReturnType<typeof seedRun>>, name: string) {
+    const secret = await request(createAgentApp(fixture))
+      .post("/api/agents/me/secret-proposals")
+      .send({ kind: "secret", name, key: "CARD_TOKEN", value: "card-secret", justification: "Needed by task" });
+    expect(secret.status).toBe(201);
+    const binding = await request(createAgentApp(fixture))
+      .post("/api/agents/me/secret-proposals")
+      .send({
+        kind: "binding",
+        secretProposalId: secret.body.id,
+        configPath: "env.CARD_TOKEN",
+        justification: "Inject for the task",
+      });
+    expect(binding.status).toBe(201);
+    return { secretProposalId: secret.body.id as string, bindingProposalId: binding.body.id as string, interactionId: binding.body.interactionId as string };
+  }
+
+  // GRE-2313: accepting the binding card used to skip cascade, so a binding
+  // whose secret was still pending failed with http_409 and nothing applied.
+  it("accepting a binding card approves its pending secret and the binding together", async () => {
+    const fixture = await seedRun();
+    const { secretProposalId, bindingProposalId, interactionId } =
+      await proposeSecretAndBinding(fixture, "dev/card/token");
+
+    const accepted = await request(createBoardIssueApp(fixture))
+      .post(`/api/issues/${fixture.issueId}/interactions/${interactionId}/accept`)
+      .send({});
+
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({
+      status: "accepted",
+      result: { secretProposal: { status: "executed" } },
+    });
+    expect(await db.select().from(companySecretProposals)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: secretProposalId, status: "approved", valueCiphertext: null }),
+      expect.objectContaining({ id: bindingProposalId, status: "approved", appliedBindingConfigPath: "env.CARD_TOKEN" }),
+    ]));
+    const [secret] = await db.select().from(companySecrets);
+    expect(secret).toMatchObject({ name: "dev/card/token", status: "active", createdByUserId: "board-user" });
+    expect(await db.select().from(companySecretBindings)).toEqual([
+      expect.objectContaining({ secretId: secret.id, targetId: fixture.agentId, configPath: "env.CARD_TOKEN" }),
+    ]);
+    const [agent] = await db.select().from(agents).where(eq(agents.id, fixture.agentId));
+    expect(agent.adapterConfig).toMatchObject({
+      env: { CARD_TOKEN: { type: "secret_ref", secretId: secret.id, version: "latest" } },
+    });
+  });
+
+  it("keeps the binding card open with the reason when approval fails, so it can be retried", async () => {
+    const fixture = await seedRun();
+    const { secretProposalId, bindingProposalId, interactionId } =
+      await proposeSecretAndBinding(fixture, "dev/card-retry/token");
+
+    // A plain member may not create company secrets, so the cascade is refused.
+    const denied = await request(createBoardIssueApp(fixture, { admin: false }))
+      .post(`/api/issues/${fixture.issueId}/interactions/${interactionId}/accept`)
+      .send({});
+
+    expect(denied.status).toBe(403);
+    expect(denied.body.error).toEqual(expect.any(String));
+    expect(await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, interactionId)))
+      .toEqual([expect.objectContaining({ status: "pending", resolvedAt: null })]);
+    expect(await db.select().from(companySecretProposals)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: secretProposalId, status: "pending" }),
+      expect.objectContaining({ id: bindingProposalId, status: "pending" }),
+    ]));
+    expect(await db.select().from(companySecrets)).toHaveLength(0);
+    expect(await db.select().from(companySecretBindings)).toHaveLength(0);
+
+    const retried = await request(createBoardIssueApp(fixture))
+      .post(`/api/issues/${fixture.issueId}/interactions/${interactionId}/accept`)
+      .send({});
+
+    expect(retried.status).toBe(200);
+    expect(retried.body).toMatchObject({ status: "accepted", result: { secretProposal: { status: "executed" } } });
+    expect(await db.select().from(companySecretBindings)).toHaveLength(1);
+  });
 
   it("requires company admin access to reject secret proposals", async () => {
     const fixture = await seedRun();
