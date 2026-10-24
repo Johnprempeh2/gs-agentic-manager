@@ -50,6 +50,7 @@ function DialogContent({
   children,
   showCloseButton = true,
   scrollBody = false,
+  footer,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -59,6 +60,8 @@ function DialogContent({
    * it moves with the text. Use this with a `max-h-*` instead of `overflow-y-auto`.
    */
   scrollBody?: boolean
+  /** With `scrollBody`: stays below the scroll body, so its buttons are always in view. */
+  footer?: React.ReactNode
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -67,7 +70,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "gs-glass-float data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=closed]:slide-out-to-top-[1%] data-[state=open]:slide-in-from-top-[1%] fixed top-(--sz-calc-26) md:top-(--pct-50) left-(--pct-50) z-dialog grid w-full max-w-(--sz-calc-25) translate-x-(--pct-neg-50) translate-y-0 md:translate-y-(--pct-neg-50) gap-4 rounded-lg border p-6 shadow-lg duration-150 ease-(--e-cubic-bezier-0_16-1-0_3-1) outline-none sm:max-w-lg [&>*]:min-w-0 motion-reduce:animate-none motion-reduce:transition-none",
-          scrollBody && "grid-rows-[minmax(0,1fr)]",
+          scrollBody && (footer ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]"),
           className
         )}
         {...props}
@@ -83,6 +86,7 @@ function DialogContent({
         ) : (
           children
         )}
+        {footer}
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"

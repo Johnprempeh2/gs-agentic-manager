@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, History, Image as ImageIcon, PenLine, RefreshCw } from "lucide-react";
+import { FileText, Film, History, Image as ImageIcon, PenLine, Plus, RefreshCw } from "lucide-react";
 import {
   WEBSITE_FRAME_SANDBOX,
   createWebsiteFrameNonce,
@@ -30,6 +30,7 @@ import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
+import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind } from "./WebsiteStudioMedia";
 
 // The Website page's editor workspace (GRE-2118, plan 3.4): the site's pages,
 // the site's own Puck editor in a frame (GRE-1916 contract), save states,
@@ -237,7 +238,17 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
           }}
         />
       ) : null}
-      {panel === "media" ? <MediaPanel companyId={companyId} site={site} /> : null}
+      {panel === "media" ? (
+        <MediaPanel
+          companyId={companyId}
+          site={site}
+          dirty={dirty}
+          onMediaAdded={() => {
+            // The frame gets the site's media with load-draft, so a clean editor reloads to pick up the new item.
+            if (!dirty) setFrameKey((key) => key + 1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -612,7 +623,19 @@ function HistoryPanel({
   );
 }
 
-function MediaPanel({ companyId, site }: { companyId: string; site: WebsiteSite }) {
+function MediaPanel({
+  companyId,
+  site,
+  dirty,
+  onMediaAdded,
+}: {
+  companyId: string;
+  site: WebsiteSite;
+  dirty: boolean;
+  onMediaAdded: () => void;
+}) {
+  const [picker, setPicker] = useState<MediaPickerKind | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const mediaQuery = useQuery({
     queryKey: queryKeys.website.media(companyId, site.id),
     queryFn: () => websiteModuleApi.media(companyId, site.id),
@@ -624,6 +647,17 @@ function MediaPanel({ companyId, site }: { companyId: string; site: WebsiteSite 
         <h3 id="website-media-title" className="text-sm font-semibold">Media</h3>
         <p className="text-xs text-muted-foreground">The site's images. The editor's image fields pick from these.</p>
       </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="xs" variant="outline" onClick={() => setPicker("image")} data-testid="website-add-image">
+          <Plus />
+          Add image
+        </Button>
+        <Button type="button" size="xs" variant="outline" onClick={() => setPicker("animation")} data-testid="website-add-animation">
+          <Film />
+          Add animation
+        </Button>
+      </div>
+      {message ? <p role="status" className="text-xs text-muted-foreground">{message}</p> : null}
       {mediaQuery.isLoading ? (
         <p className="text-xs text-muted-foreground">Loading media</p>
       ) : mediaQuery.error ? (
@@ -633,20 +667,21 @@ function MediaPanel({ companyId, site }: { companyId: string; site: WebsiteSite 
       ) : (
         <ul className="grid grid-cols-2 gap-2">
           {media.map((item) => (
-            <li key={item.entryId} className="min-w-0 space-y-1">
-              <div className="aspect-video overflow-hidden rounded-md border border-border bg-muted">
-                {item.contentType.startsWith("image/") ? (
-                  <img src={item.contentPath} alt={item.alt} loading="lazy" className="size-full object-cover" />
-                ) : (
-                  <div className="flex size-full items-center justify-center text-muted-foreground"><ImageIcon className="size-5" aria-hidden="true" /></div>
-                )}
-              </div>
-              <p className="truncate text-xs font-medium" title={item.entryKey}>{item.entryKey}</p>
-              <p className="truncate text-micro text-muted-foreground" title={item.alt}>{item.alt || "No alt text"}</p>
-            </li>
+            <WebsiteMediaCard key={item.entryId} item={item} />
           ))}
         </ul>
       )}
+      <WebsiteMediaPicker
+        companyId={companyId}
+        site={site}
+        kind={picker}
+        media={media}
+        onClose={() => setPicker(null)}
+        onAdded={(text) => {
+          setMessage(dirty ? `${text} Save the page, then reload the editor to pick it.` : text);
+          onMediaAdded();
+        }}
+      />
     </aside>
   );
 }

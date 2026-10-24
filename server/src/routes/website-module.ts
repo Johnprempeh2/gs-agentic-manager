@@ -2,8 +2,9 @@ import { Router, type Request, type Response } from "express";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import publicImport from "../services/website/public-import-v1.json" with { type: "json" };
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { websiteProperties } from "@greatstone/db";
+import { assets, websiteProperties } from "@greatstone/db";
 import {
   WEBSITE_MODULE_API_ROUTES,
   websiteCollectionDefinition,
@@ -65,6 +66,19 @@ const REFUSAL: Record<WebsitePermission, WebsiteMessageKey> = {
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const unitInterval = z.number().min(0).max(1);
+/** A website `media` entry's content. `width` and `height` are kept when an import stored them. */
+const mediaContentSchema = z
+  .object({
+    assetId: z.string().regex(UUID_RE, "must be an asset id"),
+    alt: z.string().trim().min(1, "alt text is required"),
+    caption: z.string().nullable().optional(),
+    focalPoint: z.object({ x: unitInterval, y: unitInterval }).strict().optional(),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+  })
+  .strict();
+
 export interface WebsiteModuleRouteOptions {
   publish?: WebsitePublishOptions;
   /** Origins GSAM is served from (public URL, allowed hostnames). The editor frame may never be one of them (rule C1.1). */
@@ -111,6 +125,31 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   const access = accessService(db);
   const collectionValidator = new Ajv2020({ allErrors: true });
   const fieldValidators = new Map<string, ReturnType<typeof collectionValidator.compile>>();
+
+  /**
+   * A `media` entry is not in the release schema: it points at an asset GSAM
+   * already holds (ADR section 2: `{ assetId, alt, caption, focalPoint }`).
+   * The asset must be in the same company, and alt text is required (GRE-2107 copy section 7).
+   */
+  async function assertMediaFields(companyId: string, content: unknown) {
+    const parsed = mediaContentSchema.safeParse(content);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const where = first?.path.length ? `/${first.path.join("/")}` : "fields";
+      throw unprocessable(`The media fields are incomplete: ${where} ${first?.message ?? "is invalid"}`, { code: "website_media_fields_invalid" });
+    }
+    const [asset] = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(and(eq(assets.id, parsed.data.assetId), eq(assets.companyId, companyId)));
+    if (!asset) throw unprocessable("That asset is not in this company", { code: "website_media_asset_not_found" });
+  }
+
+  /** The entry's fields: `media` by its own check, every other collection by the release schema. */
+  async function assertEntryFields(companyId: string, collection: string, content: unknown) {
+    if (collection === "media") return assertMediaFields(companyId, content);
+    assertCollectionFields(collection, content);
+  }
 
   function assertCollectionFields(collection: string, content: unknown) {
     const definition = websiteCollectionDefinition(collection);
@@ -547,7 +586,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
     const site = await writableSiteFor(req, res);
     if (!site) return;
-    assertCollectionFields(req.body.collection, req.body.content);
+    await assertEntryFields(site.companyId, req.body.collection, req.body.content);
     const entry = await service.createEntry(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.entry_created", "website_entry", entry.id, { siteId: site.id, collection: entry.collection });
     res.status(201).json(entry);
@@ -591,7 +630,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       sendSave(res, { state: "failed", code: "archived", message: "This entry is archived. Restore it before editing." });
       return;
     }
-    assertCollectionFields(entry.collection, req.body.content);
+    await assertEntryFields(entry.companyId, entry.collection, req.body.content);
     const result = await service.saveEntryRevision(entry, {
       content: req.body.content,
       baseRevisionId: req.body.baseRevisionId,
@@ -726,7 +765,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const entry = await entryFor(req, res, "website:publish", APPROVER);
     if (!entry) return;
     const detail = await service.entryDetail(entry);
-    assertCollectionFields(entry.collection, detail?.content);
+    await assertEntryFields(entry.companyId, entry.collection, detail?.content);
     const updated = await service.approveEntry(entry);
     await log(req, entry.companyId, "website.entry_approved", "website_entry", entry.id, { siteId: entry.siteId, revisionId: updated.approvedRevisionId });
     const { doc } = await service.withDoc(updated);

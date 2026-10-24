@@ -19,10 +19,12 @@ import {
   type VideoModelId,
   type VideoMotionPresetId,
 } from "@greatstone/shared";
-import { Bookmark, Camera, CircleStop, Cpu, Download, Film, Loader2, Move3d, Star, Timer, Trash2, X } from "lucide-react";
+import { Bookmark, Camera, CircleStop, Cpu, Download, Film, Globe, Loader2, Move3d, Star, Timer, Trash2, X } from "lucide-react";
 import { videosApi } from "../api/videos";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
+import { studioClipItems, type StudioMediaItem } from "../lib/website-studio-media";
+import { UseOnWebsiteDialog } from "./website/WebsiteStudioMedia";
 import { StudioCameraFields } from "./StudioCameraFields";
 import { StudioLookPicker } from "./StudioLookPicker";
 import { StudioPlanBar } from "./StudioPlanBar";
@@ -71,6 +73,8 @@ interface VideoStudioProps {
   onClearSourceImage: () => void;
   onError: (message: string) => void;
   onDeleted?: () => void;
+  /** "Use on website" made a media entry from a clip. */
+  onSentToWebsite?: (message: string) => void;
 }
 
 /**
@@ -78,7 +82,7 @@ interface VideoStudioProps {
  * finished image brought to life. Clips take a few minutes, so the list keeps
  * checking while any is still being made.
  */
-export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onError, onDeleted }: VideoStudioProps) {
+export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onError, onDeleted, onSentToWebsite }: VideoStudioProps) {
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState("");
   const [modelId, setModelId] = useState<VideoModelId>("kling-2.5-turbo-pro");
@@ -91,6 +95,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [favouritesOnly, setFavouritesOnly] = useState(false);
+  const [websiteItem, setWebsiteItem] = useState<StudioMediaItem | null>(null);
   // With both Higgsfield services there, the studio uses the plan unless the person switches.
   const [preferPlan, setPreferPlan] = useState(true);
   const filters = favouritesOnly ? { favourite: true } : {};
@@ -491,6 +496,14 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
                         iconClassName={video.favourite ? "fill-current text-primary" : undefined}
                         data-testid="video-favourite"
                       />
+                      {video.assetId ? (
+                        <StudioMediaAction
+                          icon={Globe}
+                          label="Use on website"
+                          onClick={() => setWebsiteItem(studioClipItems([video])[0] ?? null)}
+                          data-testid="video-card-use-on-website"
+                        />
+                      ) : null}
                       <StudioMediaAction
                         icon={Download}
                         label="Download"
@@ -559,6 +572,12 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
           )}
         </div>
       </div>
+      <UseOnWebsiteDialog
+        companyId={companyId}
+        item={websiteItem}
+        onClose={() => setWebsiteItem(null)}
+        onSent={(message) => onSentToWebsite?.(message)}
+      />
     </div>
   );
 }
