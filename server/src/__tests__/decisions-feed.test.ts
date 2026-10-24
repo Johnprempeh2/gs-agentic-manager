@@ -1276,6 +1276,76 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       expect(task?.assigneeUserId).toBeNull();
     });
 
+    // GRE-2164: the loop still needs a signal, but for agent work it goes to
+    // the author's manager, not to John, and once per loop.
+    describe("review loop notice", () => {
+      const NOTICE_TEXT = "times in a row on this review";
+
+      async function noticeComments(issueId: string) {
+        const rows = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+        return rows.filter((row) => row.body.includes(NOTICE_TEXT));
+      }
+
+      async function loopRound(seeded: { companyId: string; issueId: string; keystoneId: string; masonId: string }, round: number) {
+        const verdict = await request(await agentAppFor(seeded, seeded.keystoneId)).patch(`/api/issues/${seeded.issueId}`)
+          .send({ status: "in_progress", comment: `Round ${round}: the branch conflicts with main.` });
+        expect(verdict.status, JSON.stringify(verdict.body)).toBe(200);
+        const resubmit = await request(await agentAppFor(seeded, seeded.masonId)).patch(`/api/issues/${seeded.issueId}`)
+          .send({ status: "in_review", comment: `Round ${round}: merged main.` });
+        expect(resubmit.status, JSON.stringify(resubmit.body)).toBe(200);
+      }
+
+      it("tells the author's manager agent once at round 3, not a board user, and keeps the stage with the reviewer", async () => {
+        const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: USER_ID, changesRequestedCount: 1 });
+        const everestId = randomUUID();
+        await db.insert(agents).values({
+          id: everestId, companyId: seeded.companyId, name: "Everest", role: "ceo", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+        });
+        await db.update(agents).set({ reportsTo: everestId }).where(eq(agents.id, seeded.masonId));
+
+        await loopRound(seeded, 2);
+        expect(await noticeComments(seeded.issueId)).toEqual([]);
+
+        await loopRound(seeded, 3);
+        const [notice, ...extra] = await noticeComments(seeded.issueId);
+        expect(extra).toEqual([]);
+        expect(notice?.authorAgentId).toBeNull();
+        expect(notice?.authorUserId).toBeNull();
+        expect(notice?.body).toContain(`(agent://${everestId}`);
+        expect(notice?.body).toContain("Keystone has asked Mason for changes 3 times in a row");
+        expect(notice?.body).not.toContain("user://");
+        await vi.waitFor(() => expect(wakeup).toHaveBeenCalledWith(everestId, expect.objectContaining({
+          reason: "issue_comment_mentioned",
+          payload: expect.objectContaining({ issueId: seeded.issueId, commentId: notice!.id }),
+        })));
+
+        wakeup.mockClear();
+        await loopRound(seeded, 4);
+        await loopRound(seeded, 5);
+        expect(await noticeComments(seeded.issueId)).toHaveLength(1);
+        expect(wakeup).not.toHaveBeenCalledWith(everestId, expect.anything());
+
+        const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+        const state = task?.executionState as { status?: string; changesRequestedCount?: number; currentParticipant?: { type: string; agentId: string | null } } | null;
+        expect(task?.status).toBe("in_review");
+        expect(task?.assigneeAgentId).toBe(seeded.keystoneId);
+        expect(task?.assigneeUserId).toBeNull();
+        expect(state?.changesRequestedCount).toBe(5);
+        expect(state?.currentParticipant).toEqual(expect.objectContaining({ type: "agent", agentId: seeded.keystoneId }));
+      });
+
+      it("tells John when John created the issue", async () => {
+        const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: USER_ID, changesRequestedCount: 2 });
+        await db.update(issues).set({ createdByUserId: USER_ID }).where(eq(issues.id, seeded.issueId));
+
+        await loopRound(seeded, 3);
+        const notices = await noticeComments(seeded.issueId);
+        expect(notices).toHaveLength(1);
+        expect(notices[0]?.body).toContain(`(user://${USER_ID})`);
+        expect(notices[0]?.body).not.toContain("agent://");
+      });
+    });
+
     it("lets the listed agent reviewer take back a stage left on a person outside it", async () => {
       // The GRE-2118 data: Keystone's stage, held by John after the old round cap.
       const seeded = await seedReview({ reviewer: { type: "agent" }, escalatedTo: USER_ID, changesRequestedCount: 3 });

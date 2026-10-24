@@ -78,6 +78,23 @@ type TransitionResult = {
   workflowControlledAssignment?: boolean;
   /** Set when an approval skipped later stages that only the work owner could take. */
   skippedStageNote?: string;
+  /** Set on the change request that makes an agent review loop (GRE-2164). */
+  reviewLoopNotice?: ReviewLoopNotice;
+};
+
+/**
+ * The agent changes-requested round on one stage that raises a review-loop
+ * notice (GRE-2164). Only this round raises it: later rounds of the same loop
+ * raise nothing more, and a human decision resets the count so a new loop
+ * can. The notice routes nothing; the stage stays with its reviewer.
+ */
+export const REVIEW_LOOP_NOTICE_ROUND = 3;
+
+export type ReviewLoopNotice = {
+  stageId: string;
+  rounds: number;
+  reviewer: IssueExecutionStagePrincipal;
+  author: IssueExecutionStagePrincipal;
 };
 
 const COMPLETED_STATUS: IssueExecutionState["status"] = "completed";
@@ -925,6 +942,16 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
           patch,
           decision,
           workflowControlledAssignment: true,
+          ...(nextRounds === REVIEW_LOOP_NOTICE_ROUND
+            ? {
+                reviewLoopNotice: {
+                  stageId: activeStage.id,
+                  rounds: nextRounds,
+                  reviewer: currentParticipant,
+                  author: existingState.returnAssignee,
+                },
+              }
+            : {}),
         };
       }
     }

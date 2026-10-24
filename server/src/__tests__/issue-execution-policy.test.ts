@@ -2252,6 +2252,142 @@ describe("review rounds", () => {
   });
 });
 
+// GRE-2164: once the round cap stopped handing the stage to a person
+// (GRE-2161), nothing said when an author and an agent reviewer loop. The
+// 3rd change request in a row raises one notice and moves nothing.
+describe("review loop notice (GRE-2164)", () => {
+  const policy = reviewOnlyPolicy();
+  const reviewStageId = policy.stages[0].id;
+
+  function reviewPendingIssue(changesRequestedCount = 0) {
+    return {
+      status: "in_review",
+      assigneeAgentId: qaAgentId,
+      assigneeUserId: null,
+      responsibleUserId: boardUserId,
+      executionPolicy: policy,
+      executionState: {
+        status: "pending",
+        currentStageId: reviewStageId,
+        currentStageIndex: 0,
+        currentStageType: "review",
+        currentParticipant: { type: "agent", agentId: qaAgentId },
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+        completedStageIds: [],
+        lastDecisionId: null,
+        lastDecisionOutcome: null,
+        changesRequestedCount,
+      },
+    };
+  }
+
+  function requestChanges(issue: Record<string, unknown>, round: number) {
+    return applyIssueExecutionPolicyTransition({
+      issue: issue as never,
+      policy,
+      requestedStatus: "in_progress",
+      requestedAssigneePatch: {},
+      actor: { agentId: qaAgentId },
+      commentBody: `Round ${round} feedback`,
+    });
+  }
+
+  it("raises exactly one notice, at round 3, through a six-round loop", () => {
+    let issue: Record<string, unknown> = reviewPendingIssue();
+    const notices: Array<{ round: number; notice: unknown }> = [];
+    for (let round = 1; round <= 6; round += 1) {
+      const verdict = requestChanges(issue, round);
+      if (verdict.reviewLoopNotice) notices.push({ round, notice: verdict.reviewLoopNotice });
+      issue = { ...issue, ...verdict.patch };
+
+      const resubmit = applyIssueExecutionPolicyTransition({
+        issue: issue as never,
+        policy,
+        requestedStatus: "in_review",
+        requestedAssigneePatch: {},
+        actor: { agentId: coderAgentId },
+        commentBody: `Fixed round ${round}`,
+      });
+      expect(resubmit.reviewLoopNotice).toBeUndefined();
+      expect(resubmit.patch.assigneeAgentId).toBe(qaAgentId);
+      issue = { ...issue, ...resubmit.patch };
+    }
+
+    expect(notices).toEqual([{
+      round: 3,
+      notice: {
+        stageId: reviewStageId,
+        rounds: 3,
+        reviewer: expect.objectContaining({ type: "agent", agentId: qaAgentId }),
+        author: expect.objectContaining({ type: "agent", agentId: coderAgentId }),
+      },
+    }]);
+  });
+
+  it("moves nothing: the round-3 verdict routes like rounds 2 and 4", () => {
+    const [second, third, fourth] = [1, 2, 3].map((count) => requestChanges(reviewPendingIssue(count), count + 1));
+
+    expect(second.reviewLoopNotice).toBeUndefined();
+    expect(third.reviewLoopNotice).toMatchObject({ rounds: 3 });
+    expect(fourth.reviewLoopNotice).toBeUndefined();
+    for (const verdict of [second, third, fourth]) {
+      expect(verdict.patch.status).toBe("in_progress");
+      expect(verdict.patch.assigneeAgentId).toBe(coderAgentId);
+      expect(verdict.patch.assigneeUserId).toBeNull();
+      expect(verdict.patch.executionState).toMatchObject({
+        currentStageId: reviewStageId,
+        currentParticipant: { type: "agent", agentId: qaAgentId },
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+      });
+    }
+    const withoutCount = (verdict: typeof third) => {
+      const { changesRequestedCount: _count, ...state } = verdict.patch.executionState as Record<string, unknown>;
+      return { ...verdict.patch, executionState: state };
+    };
+    expect(withoutCount(third)).toEqual(withoutCount(second));
+  });
+
+  it("raises a new notice for a new loop after a human decision resets the count", () => {
+    // A human decision sets the count back to 0; three more agent rounds are a new loop.
+    let issue: Record<string, unknown> = reviewPendingIssue(0);
+    const rounds: number[] = [];
+    for (let round = 1; round <= 3; round += 1) {
+      const verdict = requestChanges(issue, round);
+      if (verdict.reviewLoopNotice) rounds.push(round);
+      issue = { ...issue, ...verdict.patch, status: "in_review", assigneeAgentId: qaAgentId,
+        executionState: { ...(verdict.patch.executionState as object), status: "pending" } };
+    }
+    expect(rounds).toEqual([3]);
+  });
+
+  it("raises no notice for a listed human reviewer's change request", () => {
+    const humanPolicy = makePolicy([
+      { type: "review", participants: [{ type: "user", userId: boardUserId }] },
+    ]);
+    const base = reviewPendingIssue(2);
+    const result = applyIssueExecutionPolicyTransition({
+      issue: {
+        ...base,
+        assigneeAgentId: null,
+        assigneeUserId: boardUserId,
+        executionPolicy: humanPolicy,
+        executionState: {
+          ...base.executionState,
+          currentStageId: humanPolicy.stages[0].id,
+          currentParticipant: { type: "user", userId: boardUserId },
+        },
+      },
+      policy: humanPolicy,
+      requestedStatus: "in_progress",
+      requestedAssigneePatch: {},
+      actor: { userId: boardUserId },
+      commentBody: "Do it another way",
+    });
+    expect(result.decision).toMatchObject({ outcome: "changes_requested" });
+    expect(result.reviewLoopNotice).toBeUndefined();
+  });
+});
+
 // GRE-2161: a pending stage left on someone outside its participant list
 // (the GRE-2118 data: Keystone's stage, held by John after the old round cap)
 // must not need that person to free it.

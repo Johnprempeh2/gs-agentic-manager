@@ -78,4 +78,25 @@ describe("GRE-2049 / GRE-2161: a review stage stays with its listed participants
       });
     }
   });
+
+  // GRE-2164: the loop is signalled once, at round 3, without moving the stage.
+  it("flags one review-loop notice at the third verdict and none after", () => {
+    let issue = pendingWith({ type: "agent", agentId: reviewer });
+    const noticeRounds: number[] = [];
+    for (let round = 1; round <= 5; round += 1) {
+      const verdict = applyIssueExecutionPolicyTransition({
+        issue,
+        policy,
+        requestedStatus: "in_progress",
+        requestedAssigneePatch: {},
+        actor: { agentId: reviewer },
+        commentBody: `Round ${round}: fix it`,
+      });
+      if (verdict.reviewLoopNotice) noticeRounds.push(round);
+      expect(verdict.patch).toMatchObject({ assigneeAgentId: author, assigneeUserId: null });
+      issue = step({ ...issue, ...verdict.patch } as Issue, author, "in_review", `Fixed round ${round}`);
+      expect(issue).toMatchObject({ status: "in_review", assigneeAgentId: reviewer, assigneeUserId: null });
+    }
+    expect(noticeRounds).toEqual([3]);
+  });
 });

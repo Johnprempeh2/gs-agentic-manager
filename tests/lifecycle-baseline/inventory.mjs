@@ -13,7 +13,7 @@ export const lanes = {
       "tests/lifecycle-baseline/acknowledgement-reply.test.ts",
       // GRE-1903: approval does not strand on a stage only the work owner reviews.
       "tests/lifecycle-baseline/review-handoff-owner-stage.test.ts",
-      // GRE-2049 / GRE-2161: a review stage stays with its listed participants.
+      // GRE-2049 / GRE-2161 / GRE-2164: a review stage stays with its listed participants; a loop raises one notice.
       "tests/lifecycle-baseline/review-round-cap-returns-to-author.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
