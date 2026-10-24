@@ -336,9 +336,15 @@ export function motionStudyService(db: Db, storage: StorageService) {
       const proposes = actor.actorType === "agent";
       if (proposes) {
         if (input.status !== undefined || input.decision !== undefined) {
-          patch.proposedStatus = input.status !== undefined && input.status !== row.status ? input.status : null;
+          // A field the agent leaves out keeps any open proposal for it, even another agent's.
+          patch.proposedStatus =
+            input.status === undefined ? row.proposedStatus : input.status !== row.status ? input.status : null;
           patch.proposedDecision =
-            input.decision !== undefined && input.decision !== row.decision ? input.decision : null;
+            input.decision === undefined
+              ? row.proposedDecision
+              : input.decision !== row.decision
+                ? input.decision
+                : null;
           const changesSomething = patch.proposedStatus !== null || patch.proposedDecision !== null;
           patch.proposalReason = changesSomething ? (input.reason ?? null) : null;
           patch.proposedByAgentId = changesSomething ? actor.agentId : null;
