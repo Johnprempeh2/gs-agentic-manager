@@ -24,6 +24,7 @@ import {
 import { conflict, notFound, unprocessable } from "../../errors.js";
 import { secretService } from "../secrets.js";
 import { WEBSITE_MESSAGES } from "./messages.js";
+import { checkWebsiteConnection, websiteConnectRefusal, type WebsiteConnectionChecker, type WebsiteConnectInput } from "./connect-check.js";
 
 // Website module (GRE-2105, ADR GRE-1914). Every function takes the company
 // id and reads rows by (company_id, id): a row of another company is simply
@@ -315,9 +316,15 @@ function positiveInt(value: unknown): number | null {
 
 const EMPTY_PAGE = { root: { props: {} }, content: [], zones: {} };
 
-export function websiteModuleService(db: Db) {
+export interface WebsiteModuleServiceOptions {
+  /** The Netlify and `/_release` check on connect (GRE-2137). Tests pass a fake. */
+  checkConnection?: WebsiteConnectionChecker;
+}
+
+export function websiteModuleService(db: Db, options: WebsiteModuleServiceOptions = {}) {
   const store = websiteDocumentStore(db);
   const secrets = secretService(db);
+  const checkConnection = options.checkConnection ?? ((input: WebsiteConnectInput) => checkWebsiteConnection(input));
 
   // ---- sites ----
 
@@ -404,8 +411,30 @@ export function websiteModuleService(db: Db) {
     return created.id;
   }
 
+  /** A token secret's value, read only for the connect check. */
+  async function readToken(companyId: string, secretId: string, siteId: string | null) {
+    return secrets.resolveSecretValue(companyId, secretId, "latest", {
+      accessContext: {
+        consumerType: "system",
+        consumerId: `website-connect:${siteId ?? "new"}`,
+        configPath: "netlify.token",
+        actorType: "system",
+      },
+    });
+  }
+
+  /** The engine version when the site passes the connect check; otherwise the `connect.err.*` refusal. */
+  async function verifyConnection(input: WebsiteConnectInput) {
+    const result = await checkConnection(input);
+    if (!result.ok) throw websiteConnectRefusal(result);
+    return result.engineVersion;
+  }
+
   async function createSite(companyId: string, input: CreateWebsiteSite, actor: WebsiteActor) {
     if (input.netlifyTokenSecretId) await assertLinkableSecret(companyId, input.netlifyTokenSecretId);
+    // Without a token there is nothing to check yet; the check runs when a token is added.
+    const token = input.netlifyToken ?? (input.netlifyTokenSecretId ? await readToken(companyId, input.netlifyTokenSecretId, null) : null);
+    const engineVersion = token ? await verifyConnection({ netlifySiteId: input.netlifySiteId, domain: input.domain, token }) : null;
     let row: SiteRow;
     try {
       [row] = await db
@@ -423,6 +452,7 @@ export function websiteModuleService(db: Db) {
           livePreviewUrl: input.livePreviewUrl ?? null,
           devPreviewUrl: input.devPreviewUrl ?? null,
           checkPaths: input.checkPaths ?? ["/"],
+          engineVersion,
         })
         .returning();
     } catch (err) {
@@ -446,6 +476,16 @@ export function websiteModuleService(db: Db) {
     const { netlifyToken, netlifyTokenSecretId, archived, ...rest } = input;
     const patch: Partial<typeof websiteSite.$inferInsert> = { ...rest, updatedAt: new Date() };
     if (archived !== undefined) patch.archivedAt = archived ? new Date() : null;
+    const linksNewSecret = Boolean(netlifyTokenSecretId && netlifyTokenSecretId !== site.netlifyTokenSecretId);
+    if (linksNewSecret) await assertLinkableSecret(site.companyId, netlifyTokenSecretId!);
+    // Check again when the token, the Netlify site ID or the live address changes, before anything is saved.
+    const target = { netlifySiteId: rest.netlifySiteId ?? site.netlifySiteId, domain: rest.domain ?? site.domain };
+    const targetChanged = target.netlifySiteId !== site.netlifySiteId || target.domain !== site.domain;
+    if (netlifyToken || linksNewSecret || targetChanged) {
+      const secretId = linksNewSecret ? netlifyTokenSecretId! : netlifyTokenSecretId === null ? null : site.netlifyTokenSecretId;
+      const token = netlifyToken ?? (secretId ? await readToken(site.companyId, secretId, site.id) : null);
+      if (token) patch.engineVersion = await verifyConnection({ ...target, token });
+    }
     if (netlifyToken) {
       patch.netlifyTokenSecretId = await storeNetlifyToken(site.companyId, site, netlifyToken, actor.userId);
       patch.netlifyTokenSecretOwned = true;
@@ -453,8 +493,7 @@ export function websiteModuleService(db: Db) {
       // Unlink only. The secret stays in the company's secrets, shared or not.
       patch.netlifyTokenSecretId = null;
       patch.netlifyTokenSecretOwned = true;
-    } else if (netlifyTokenSecretId && netlifyTokenSecretId !== site.netlifyTokenSecretId) {
-      await assertLinkableSecret(site.companyId, netlifyTokenSecretId);
+    } else if (linksNewSecret) {
       patch.netlifyTokenSecretId = netlifyTokenSecretId;
       patch.netlifyTokenSecretOwned = false;
     }

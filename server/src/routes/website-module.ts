@@ -51,6 +51,7 @@ import {
   type WebsitePublishOptions,
 } from "../services/website/publish.js";
 import { websiteChangeRequestService } from "../services/website/change-request.js";
+import type { WebsiteConnectionChecker } from "../services/website/connect-check.js";
 import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
@@ -91,6 +92,8 @@ export interface WebsiteModuleRouteOptions {
   allowLocalhostEditor?: boolean;
   /** Wakes the website agent when click to change gives it a task. */
   heartbeat?: IssueAssignmentWakeupDeps;
+  /** The Netlify and `/_release` check when a site is connected (GRE-2137). Default: the real one. */
+  checkConnection?: WebsiteConnectionChecker;
 }
 
 /** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
@@ -125,7 +128,7 @@ const EDITOR_ORIGIN_PROBLEMS = {
 // cannot be probed.
 export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions = {}) {
   const router = Router();
-  const service = websiteModuleService(db);
+  const service = websiteModuleService(db, { checkConnection: options.checkConnection });
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
   const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
