@@ -2,13 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import type { WebsitePageEditorLoad, WebsiteRevision } from "@greatstone/shared";
 import { ApiError } from "../api/client";
 import {
+  blockMotionOptions,
   editorOpenProblem,
   frameConnectionMessage,
   frameDraft,
   insertMediaAssetUrl,
   insertMediaField,
   insertMediaMessage,
+  motionChoice,
+  motionOptionFor,
   saveThroughGsam,
+  setMotionMessage,
 } from "./website-editor";
 
 const request = { pageId: "page-1", baseRevisionId: "rev-1", data: { root: {} }, editorOrigin: "https://editor.example.com" };
@@ -166,5 +170,64 @@ describe("insert-media helpers (GRE-2206)", () => {
     expect(insertMediaMessage({ requestId: "r", ok: false, code: "error", message: "Draft locked" }, "Hero", "image")).not.toContain("Draft locked");
     expect(warn).toHaveBeenCalledWith("insert-media refused:", "Draft locked");
     warn.mockRestore();
+  });
+});
+
+describe("set-motion helpers (GRE-2219)", () => {
+  const capabilities = {
+    blocks: new Map([
+      ["Hero", { effects: ["none", "hero.stone", "bg.ascent", "bg.unknown"], default: { effect: "none", intensity: "off" as const } }],
+      ["Band", { effects: ["none"], default: { effect: "none", intensity: "off" as const } }],
+    ]),
+    effects: [
+      { id: "hero.stone", label: "Hero stone", still: "/motion/stone-still.png" },
+      { id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" },
+    ],
+  };
+  const data = {
+    root: { props: {} },
+    content: [
+      { type: "Hero", props: { id: "h1", motion: { effect: "bg.ascent", intensity: "full", quietAnchor: "copy" } } },
+      { type: "Hero", props: { id: "h2" } },
+      { type: "Band", props: { id: "b1" } },
+      { type: "Prose", props: { id: "p1" } },
+    ],
+  };
+
+  it("lists the block's effects in the engine's order, leaving out effects the engine does not describe", () => {
+    const options = blockMotionOptions(capabilities, data, "h2")!;
+    expect(options.options.map((option) => option.id)).toEqual(["none", "hero.stone", "bg.ascent"]);
+    expect(options.options[2]).toEqual({ id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" });
+    expect(options.current).toEqual({ effect: "none", intensity: "off" });
+    expect(blockMotionOptions(capabilities, data, "h1")!.current).toEqual({ effect: "bg.ascent", intensity: "full" });
+  });
+
+  it("is null for a block that takes no motion, only None, or is not on the page", () => {
+    expect(blockMotionOptions(capabilities, data, "p1")).toBeNull();
+    expect(blockMotionOptions(capabilities, data, "b1")).toBeNull();
+    expect(blockMotionOptions(capabilities, data, "gone")).toBeNull();
+  });
+
+  it("finds a GS Studio hand-off by study number or effect id", () => {
+    const { options } = blockMotionOptions(capabilities, data, "h2")!;
+    expect(motionOptionFor(options, "016")?.id).toBe("bg.ascent");
+    expect(motionOptionFor(options, "hero.stone")?.id).toBe("hero.stone");
+    expect(motionOptionFor(options, "019")).toBeNull();
+    expect(motionOptionFor(options, null)).toBeNull();
+  });
+
+  it("keeps None off and an effect on", () => {
+    expect(motionChoice("none", "full")).toEqual({ effect: "none", intensity: "off" });
+    expect(motionChoice("bg.ascent", "off")).toEqual({ effect: "bg.ascent", intensity: "subtle" });
+    expect(motionChoice("bg.ascent", "full")).toEqual({ effect: "bg.ascent", intensity: "full" });
+  });
+
+  it("names the block and the effect in every answer", () => {
+    expect(setMotionMessage({ requestId: "r", ok: true }, "Hero", "Ascent", "subtle")).toBe(
+      "Ascent, Subtle, is in Hero. Save the page in the editor to keep it.",
+    );
+    expect(setMotionMessage({ requestId: "r", ok: false, code: "effect_not_allowed" }, "Hero", "Ascent", "subtle")).toMatch(/does not take Ascent/);
+    expect(setMotionMessage({ requestId: "r", ok: false, code: "block_not_found" }, "Hero", "Ascent", "subtle")).toMatch(/no longer on this page/);
+    expect(setMotionMessage(null, "Hero", "Ascent", "subtle")).toMatch(/did not answer/);
   });
 });

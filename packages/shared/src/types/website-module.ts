@@ -23,6 +23,16 @@ export interface WebsiteTokenSecretOption {
   name: string;
 }
 
+/**
+ * What the caller may do on the website: for the company (no `siteId`) or for one site.
+ * Connecting a site needs `publish` for the company; changing a site needs `publish` for that site.
+ */
+export interface WebsiteAccess {
+  view: boolean;
+  edit: boolean;
+  publish: boolean;
+}
+
 export interface WebsiteSite {
   id: string;
   companyId: string;
@@ -272,6 +282,8 @@ export interface WebsiteChangeRequestResult {
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
+  /** GET → `WebsiteAccess` for the caller (`?siteId=` for one site). Never 403: a missing right is `false`. */
+  access: "/companies/:companyId/website/access",
   /** GET → `WebsiteTokenSecretOption[]`: the company's active secrets by name, to use as a site's Netlify token (website:publish, people only). */
   tokenSecrets: "/companies/:companyId/website/token-secrets",
   /** GET → `WebsiteSite`. PATCH `UpdateWebsiteSite` → `WebsiteSite` (website:publish). */

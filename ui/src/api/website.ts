@@ -25,6 +25,7 @@ import {
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
   type WebsiteTokenSecretOption,
+  type WebsiteAccess,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
   type WebsiteOverview,
@@ -83,6 +84,11 @@ const releasePath = (companyId: string, siteId: string, releaseId: string) =>
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
   sites: (companyId: string) => api.get<WebsiteSite[]>(sitesPath(companyId)),
+  /** What the caller may do: for the company, or for one site when `siteId` is given. */
+  access: (companyId: string, siteId?: string | null) =>
+    api.get<WebsiteAccess>(
+      `/companies/${encodeURIComponent(companyId)}/website/access${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`,
+    ),
   /** Saved company secrets a site can use as its Netlify token: names only (website:publish). */
   tokenSecrets: (companyId: string) =>
     api.get<WebsiteTokenSecretOption[]>(`/companies/${encodeURIComponent(companyId)}/website/token-secrets`),

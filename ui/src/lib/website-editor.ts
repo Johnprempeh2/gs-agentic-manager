@@ -3,6 +3,9 @@ import {
   isWebsiteFrameAssetUrl,
   type WebsiteFrameInsertMediaResult,
   type WebsiteFrameMediaEntry,
+  type WebsiteFrameSetMotionResult,
+  type WebsiteMotionChoice,
+  type WebsiteMotionIntensity,
   type WebsiteMediaItem,
   type WebsitePageEditorLoad,
   type WebsiteRevision,
@@ -10,7 +13,13 @@ import {
   type WebsiteSite,
 } from "@greatstone/shared";
 import { ApiError } from "../api/client";
-import type { WebsiteFrameConnection, WebsiteFrameDraft, WebsiteFrameSaveAnswer, WebsiteFrameSaveRequest } from "./website-frame-host";
+import type {
+  WebsiteFrameConnection,
+  WebsiteFrameDraft,
+  WebsiteFrameMotionCapabilities,
+  WebsiteFrameSaveAnswer,
+  WebsiteFrameSaveRequest,
+} from "./website-frame-host";
 
 // Glue between the Website editor workspace and the frame host session
 // (GRE-2118): what GSAM sends the frame, and how GSAM's save answers become
@@ -151,19 +160,23 @@ const MEDIA_PATH_PATTERNS: Record<InsertMediaKind, RegExp> = {
   animation: /^[^\s]+\.(?:gif|m4v|mov|mp4|ogv|webm)(?:[?#][^\s]*)?$/i,
 };
 
-function findBlockProps(items: unknown, blockId: string, depth = 0): Record<string, unknown> | null {
+function findBlock(items: unknown, blockId: string, depth = 0): { type: unknown; props: Record<string, unknown> } | null {
   if (!Array.isArray(items) || depth > 20) return null;
   for (const item of items) {
     const props = (item as { props?: unknown } | null)?.props;
     if (typeof props !== "object" || props === null) continue;
     const record = props as Record<string, unknown>;
-    if (record.id === blockId) return record;
+    if (record.id === blockId) return { type: (item as { type?: unknown }).type, props: record };
     for (const value of Object.values(record)) {
-      const found = findBlockProps(value, blockId, depth + 1);
+      const found = findBlock(value, blockId, depth + 1);
       if (found) return found;
     }
   }
   return null;
+}
+
+function findBlockProps(items: unknown, blockId: string): Record<string, unknown> | null {
+  return findBlock(items, blockId)?.props ?? null;
 }
 
 /**
@@ -223,5 +236,91 @@ export function insertMediaMessage(result: WebsiteFrameInsertMediaResult, blockN
     default:
       if (result.message) console.warn("insert-media refused:", result.message);
       return `The site's editor did not put the ${noun} in ${blockName}, so nothing changed. ${kept}`;
+  }
+}
+
+// ---------------------------------------------------------------- set-motion (GRE-2219)
+
+/** One choice in the Motion panel. `still` is a path on the editor origin; None has none. */
+export interface MotionOption {
+  id: string;
+  label: string;
+  still: string | null;
+  /** The Animation Lab study the effect comes from, for example `016`. */
+  study: string | null;
+}
+
+export interface BlockMotionOptions {
+  options: MotionOption[];
+  /** What the block holds in the page GSAM last loaded, or the block's default. */
+  current: WebsiteMotionChoice;
+}
+
+export const MOTION_INTENSITY_LABELS: Record<WebsiteMotionIntensity, string> = { off: "Off", subtle: "Subtle", full: "Full" };
+
+const NONE_OPTION: MotionOption = { id: "none", label: "None", still: null, study: null };
+
+/**
+ * The effects the engine lets this block take, in the engine's order, with
+ * their names and stills. Null when the block is not on the page or takes no
+ * motion. An effect the engine lists for the block but does not describe is
+ * left out: GSAM keeps no copy of the effect list.
+ */
+export function blockMotionOptions(
+  capabilities: WebsiteFrameMotionCapabilities,
+  data: unknown,
+  blockId: string,
+): BlockMotionOptions | null {
+  const block = findBlock((data as { content?: unknown } | null)?.content, blockId);
+  if (!block || typeof block.type !== "string") return null;
+  const allowed = capabilities.blocks.get(block.type);
+  if (!allowed) return null;
+  const options = allowed.effects.flatMap((id): MotionOption[] => {
+    if (id === "none") return [NONE_OPTION];
+    const effect = capabilities.effects.find((entry) => entry.id === id);
+    return effect ? [{ id, label: effect.label, still: effect.still, study: effect.study ?? null }] : [];
+  });
+  if (!options.some((option) => option.id !== "none")) return null;
+  const saved = block.props.motion as Partial<WebsiteMotionChoice> | undefined;
+  const current =
+    saved && typeof saved.effect === "string" && options.some((option) => option.id === saved.effect) && saved.intensity && saved.intensity in MOTION_INTENSITY_LABELS
+      ? { effect: saved.effect, intensity: saved.intensity }
+      : allowed.default;
+  return { options, current };
+}
+
+/** The option a GS Studio hand-off names: an effect id, or a Lab study number such as `016`. */
+export function motionOptionFor(options: readonly MotionOption[], wanted: string | null): MotionOption | null {
+  if (!wanted) return null;
+  return options.find((option) => option.id === wanted || option.study === wanted) ?? null;
+}
+
+/** A choice the frame accepts: None is always Off, and an effect is never Off. */
+export function motionChoice(effect: string, intensity: WebsiteMotionIntensity): WebsiteMotionChoice {
+  if (effect === "none") return { effect, intensity: "off" };
+  return { effect, intensity: intensity === "off" ? "subtle" : intensity };
+}
+
+/**
+ * What the Motion panel says after `set-motion`, naming the block. Null means
+ * the frame did not answer: an older engine. The site's own `message` goes to the console.
+ */
+export function setMotionMessage(result: WebsiteFrameSetMotionResult | null, blockName: string, effectLabel: string, intensity: WebsiteMotionIntensity): string {
+  if (!result) return "The site's editor did not answer, so nothing changed. Set the motion in the block's own fields.";
+  if (result.ok) {
+    return effectLabel === "None"
+      ? `${blockName} has no motion now. Save the page in the editor to keep it.`
+      : `${effectLabel}, ${MOTION_INTENSITY_LABELS[intensity]}, is in ${blockName}. Save the page in the editor to keep it.`;
+  }
+  switch (result.code) {
+    case "block_not_found":
+      return `${blockName} is no longer on this page, so nothing changed.`;
+    case "block_has_no_motion":
+      return `${blockName} takes no motion, so nothing changed.`;
+    case "effect_not_allowed":
+      return `${blockName} does not take ${effectLabel}, so nothing changed. Pick another effect.`;
+    default:
+      if (result.message) console.warn("set-motion refused:", result.message);
+      return `The site's editor did not set the motion in ${blockName}, so nothing changed.`;
   }
 }
