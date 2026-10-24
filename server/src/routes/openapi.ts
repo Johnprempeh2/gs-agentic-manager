@@ -411,6 +411,7 @@ import {
   importWebsiteSitemapOptionSchema,
   updateWebsiteSitemapOptionSchema,
   createWebsiteModuleSchema,
+  createWebsiteDataBridgeKeySchema,
   updateWebsiteModuleSchema,
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
@@ -1588,6 +1589,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/website/sites/{siteId}/releases",
   "POST /api/companies/{companyId}/website/sites/{siteId}/releases/{releaseId}/retry",
   "POST /api/companies/{companyId}/website/sites/{siteId}/releases/{releaseId}/rollback",
+  // The website data bridge's read key is made by a person (GRE-2323).
+  "POST /api/companies/{companyId}/website/sites/{siteId}/data-bridge/key",
   "POST /api/companies/{companyId}/workflow-templates",
   "PATCH /api/workflow-templates/{id}",
   "GET /api/companies/{companyId}/releases",
@@ -16350,6 +16353,41 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Preview the sitemap.xml made from the site's live, non-noindex pages (website:view); publishing it is a separate step",
   responses: websiteModuleResponses,
+});
+
+// ─── Website data bridge (GRE-2323) ───────────────────────────────────────────
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/status`,
+  tags: ["website"],
+  summary: "Whether GSAM can read the site's own records through the signed admin bridge: not_set_up, connected or failing, with the read key's id (website:view). Checked at most once a minute",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/data-bridge/key`,
+  tags: ["website"],
+  summary: "Make a new Ed25519 read key for the site's admin bridge (website:publish, people only). The private key goes to the company's secrets; the answer is the public key to add to the site's GSAM_BRIDGE_KEYS",
+  body: createWebsiteDataBridgeKeySchema,
+  responses: { ...websiteModuleResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data/{resource}`,
+  tags: ["website"],
+  summary: "List the site's own records, read only, through the signed admin bridge: customers, quotes, orders, invoices, licences, portal-documents, portal-acceptances or enquiries (website:view). Filters: customer, updatedSince, cursor, limit",
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data/{resource}/{itemId}`,
+  tags: ["website"],
+  summary: "Read one of the site's own records by id through the signed admin bridge (website:view)",
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
 });
 
 // ─── Website modules (GRE-2325) ───────────────────────────────────────────────
