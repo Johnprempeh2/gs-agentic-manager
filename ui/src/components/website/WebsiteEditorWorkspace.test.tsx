@@ -270,12 +270,12 @@ describe("WebsiteEditorTab", () => {
     await render();
     await openPreview();
     const { pickBlock, sent } = await connect();
-    expect(text()).toContain("Click a block in the preview");
+    expect(text()).toContain("Preview. Click a block to ask for a change");
     await pickBlock();
     expect(sent("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
     expect(panel()!.dataset.step).toBe("describe");
-    expect(panel()!.textContent).toContain("Hero banner");
-    expect(panel()!.textContent).toContain("Hero · h1");
+    expect(panel()!.textContent).toContain("Hero banner on Home");
+    expect(panel()!.textContent).not.toContain("h1");
     expect(button("Review").disabled).toBe(true);
 
     await type("Make the heading shorter.");

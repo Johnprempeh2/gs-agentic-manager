@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { MousePointerClick, PenLine } from "lucide-react";
+import { PenLine } from "lucide-react";
 import type { WebsiteChangeRequestResult, WebsitePage } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
 import { Link } from "@/lib/router";
@@ -27,16 +27,6 @@ function newRequestId() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** Shown in preview before a pick: how click to change works. */
-export function WebsiteChangeHint() {
-  return (
-    <p className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="website-change-hint">
-      <MousePointerClick className="size-3.5 shrink-0" aria-hidden />
-      Click a block in the preview to ask the website agent for a change.
-    </p>
-  );
-}
-
 export function WebsiteChangeRequestPanel({
   companyId,
   siteId,
@@ -61,6 +51,12 @@ export function WebsiteChangeRequestPanel({
   const [created, setCreated] = useState<WebsiteChangeRequestResult | null>(null);
   const { ref } = pick;
   const blockName = pick.label.trim() || ref.blockType;
+  const panelRef = useRef<HTMLElement>(null);
+
+  // On a phone the panel sits below the page controls; bring it into view on each pick.
+  useEffect(() => {
+    panelRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, []);
 
   const submit = useMutation({
     mutationFn: () =>
@@ -82,15 +78,16 @@ export function WebsiteChangeRequestPanel({
 
   const block = (
     <div className="min-w-0">
-      <p className="truncate text-sm font-medium" data-testid="website-change-block">{blockName}</p>
-      <p className="truncate font-mono text-xs text-muted-foreground">
-        {ref.blockType} · {ref.blockId}
+      <p className="truncate text-sm font-medium" data-testid="website-change-block">
+        {blockName} on {page.title}
       </p>
+      <p className="truncate text-xs text-muted-foreground">{ref.blockType}</p>
     </div>
   );
 
   return (
     <section
+      ref={panelRef}
       aria-label="Ask for a change"
       data-testid="website-change-request"
       data-step={step}
@@ -139,7 +136,7 @@ export function WebsiteChangeRequestPanel({
               {request.trim()}
             </blockquote>
             <p className="text-xs text-muted-foreground">
-              On {page.title} ({page.slug}). The task names this block by its id, so it still finds it if the code moves.
+              The website agent will change this on {page.title} ({page.slug}). Nothing goes live until a person publishes it.
             </p>
           </div>
           {submit.error ? (

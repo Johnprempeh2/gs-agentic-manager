@@ -29,7 +29,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { ScaledFrame } from "../AttachmentPreviewPanel";
 import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
-import { WebsiteChangeHint, WebsiteChangeRequestPanel } from "./WebsiteChangeRequest";
+import { WebsiteChangeRequestPanel } from "./WebsiteChangeRequest";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
 
@@ -451,23 +451,19 @@ function EditorFrame({
         onRetrySave={() => void sessionRef.current?.retry()}
         onReconnect={onReload}
       />
-      {mode === "preview" && connection.phase === "ready" ? (
-        pick ? (
-          <WebsiteChangeRequestPanel
-            key={pick.n}
-            companyId={companyId}
-            siteId={site.id}
-            page={page}
-            pick={pick.pick}
-            onCancel={() => {
-              setPick(null);
-              sessionRef.current?.highlight(null);
-            }}
-            onEditBlock={onEditBlock}
-          />
-        ) : (
-          <WebsiteChangeHint />
-        )
+      {mode === "preview" && connection.phase === "ready" && pick ? (
+        <WebsiteChangeRequestPanel
+          key={pick.n}
+          companyId={companyId}
+          siteId={site.id}
+          page={page}
+          pick={pick.pick}
+          onCancel={() => {
+            setPick(null);
+            sessionRef.current?.highlight(null);
+          }}
+          onEditBlock={onEditBlock}
+        />
       ) : null}
       <div className={cn("relative overflow-hidden rounded-xl border border-border bg-muted", mode === "edit" ? "h-(--sz-80vh)" : "h-(--sz-70vh)")}>
         <ScaledFrame
@@ -528,7 +524,7 @@ function SaveBanner({
     text = frameError;
     action = { label: "Reload", onClick: onReconnect };
   } else if (mode === "preview") {
-    text = "Preview. Switch to Edit to change the page.";
+    text = "Preview. Click a block to ask for a change, or switch to Edit to change it yourself.";
   } else if (saveState.status === "saving") {
     text = "Saving";
   } else if (saveState.status === "saved") {
