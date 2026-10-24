@@ -222,6 +222,11 @@ describe("Project tree page", () => {
     await renderPage();
     expect(container.querySelector("[data-project-lead]")?.textContent).toContain("covering");
     expect(container.querySelector("[data-no-key-tasks]")).not.toBeNull();
+    // The counts cover key tasks only, so with none they would say "0 of 0 done"
+    // over open tasks (GRE-2325): they are left out.
+    const header = container.querySelector('[data-slot="task-tree-header"]')!;
+    expect(header.textContent).not.toContain("done");
+    expect(header.textContent).not.toContain("Nothing is blocked");
   });
 
   it("shows an outline with the Tidy button on a phone", async () => {
