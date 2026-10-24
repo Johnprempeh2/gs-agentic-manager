@@ -64,6 +64,16 @@ export const websiteSite = pgTable(
     livePreviewUrl: text("live_preview_url"),
     devPreviewUrl: text("dev_preview_url"),
     checkPaths: jsonb("check_paths").$type<string[]>().notNull().default(["/"]),
+    /**
+     * The website admin bridge (GRE-2323): GSAM reads the site's customer
+     * records by calling `<url>/api/admin/v1/*`, signed with an Ed25519 read
+     * key. Null url: `https://<domain>`. The private key lives only in the
+     * vault; the key id is shown so a person can match it to the site's
+     * `GSAM_BRIDGE_KEYS`.
+     */
+    dataBridgeUrl: text("data_bridge_url"),
+    dataBridgeReadKeyId: text("data_bridge_read_key_id"),
+    dataBridgeReadSecretId: uuid("data_bridge_read_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
     liveReleaseId: uuid("live_release_id"),
     publishLeaseId: uuid("publish_lease_id"),
     publishLeaseKind: text("publish_lease_kind"),
