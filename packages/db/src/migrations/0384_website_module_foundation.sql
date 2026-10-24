@@ -1,7 +1,19 @@
 -- Website module foundation (GRE-2105, ADR GRE-1914 section 2): four new company-scoped tables; children
 -- are tied to their site by a composite (company_id, site_id) foreign key. Additive only.
--- Rollback: DROP TABLE "website_release", "website_entry", "website_page", "website_site"; then delete the
--- documents their document_id columns named (document_id is ON DELETE restrict, so website rows go first).
+-- Rollback, in one transaction, in this order (tested on a sandbox copy, GRE-2126). Collect the page and
+-- entry documents first: once the tables are gone nothing names them. document_id is ON DELETE restrict,
+-- so the website rows must go before their documents; revisions cascade with the documents. Later
+-- migrations that point at these tables (0385 website_sitemap_option) are rolled back first.
+--   BEGIN;
+--   DROP TABLE IF EXISTS "website_sitemap_option";
+--   DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792790160161;
+--   CREATE TEMP TABLE _wm_docs ON COMMIT DROP AS
+--     SELECT document_id FROM "website_page" UNION SELECT document_id FROM "website_entry";
+--   DROP TABLE "website_release", "website_entry", "website_page", "website_site";
+--   DELETE FROM "documents" WHERE "id" IN (SELECT document_id FROM _wm_docs);
+--   DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792789172049;
+--   COMMIT;
+-- Netlify token secrets ("Website Netlify token ...") stay in company_secrets; remove them in Settings.
 CREATE TABLE "website_entry" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" uuid NOT NULL,

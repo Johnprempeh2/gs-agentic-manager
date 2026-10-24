@@ -15815,7 +15815,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/website/sites",
   tags: ["website"],
-  summary: "Connect a site: name, domain, repo, Netlify site id and an optional Netlify token stored in the company's secrets (website:publish, people only)",
+  summary: "Connect a site: name, domain, repo (owner/site-name; a GitHub address is stored as owner/site-name), Netlify site id and an optional Netlify token stored in the company's secrets (website:publish, people only)",
   body: createWebsiteSiteSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
 });
@@ -15867,7 +15867,7 @@ registerCurrentRoute({
   method: "patch",
   path: `${siteParams}/pages/{pageId}`,
   tags: ["website"],
-  summary: "Change a page's path, title, SEO, status (planned, draft or review) or sitemap place: parent page, menu and menu order (website:edit)",
+  summary: "Change a page's path, title, SEO, status (planned, draft or review) or sitemap place: parent page, menu and menu order; archived false restores an archived page at the top level (website:edit). 409 when the path is taken or the site is disconnected",
   body: updateWebsitePageSchema,
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
 });
@@ -15876,7 +15876,7 @@ registerCurrentRoute({
   method: "put",
   path: `${siteParams}/pages/{pageId}/content`,
   tags: ["website"],
-  summary: "Save a page revision from baseRevisionId: 200 saved, 409 conflict (a newer revision exists; nothing written) or 422 failed (website:edit)",
+  summary: "Save a page revision from baseRevisionId: 200 saved, 409 conflict (a newer revision exists, or the site is disconnected; nothing written) or 422 failed (website:edit)",
   body: saveWebsiteContentSchema,
   responses: websiteSaveResponses,
 });
@@ -15885,8 +15885,8 @@ registerCurrentRoute({
   method: "post",
   path: `${siteParams}/pages/{pageId}/archive`,
   tags: ["website"],
-  summary: "Archive a page (never deleted); its sub-pages move up to its parent (website:edit)",
-  responses: websiteModuleResponses,
+  summary: "Archive a page (never deleted); its sub-pages move up to its parent (website:edit). 409 when the site is disconnected",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
 });
 
 registerCurrentRoute({
@@ -15927,7 +15927,7 @@ registerCurrentRoute({
   method: "patch",
   path: `${siteParams}/entries/{entryId}`,
   tags: ["website"],
-  summary: "Change an entry's key, org id, sort order or status (draft or review) (website:edit)",
+  summary: "Change an entry's key, org id, sort order or status (draft or review); archived false restores an archived entry (website:edit). 409 when the key is taken or the site is disconnected",
   body: updateWebsiteEntrySchema,
   responses: { ...websiteModuleResponses, 409: r.conflict },
 });
@@ -15936,7 +15936,7 @@ registerCurrentRoute({
   method: "put",
   path: `${siteParams}/entries/{entryId}/content`,
   tags: ["website"],
-  summary: "Save an entry revision from baseRevisionId: 200 saved, 409 conflict or 422 failed (website:edit)",
+  summary: "Save an entry revision from baseRevisionId: 200 saved, 409 conflict (or the site is disconnected) or 422 failed (website:edit)",
   body: saveWebsiteContentSchema,
   responses: websiteSaveResponses,
 });
@@ -15945,8 +15945,8 @@ registerCurrentRoute({
   method: "post",
   path: `${siteParams}/entries/{entryId}/archive`,
   tags: ["website"],
-  summary: "Archive a collection entry (never deleted) (website:edit)",
-  responses: websiteModuleResponses,
+  summary: "Archive a collection entry (never deleted) (website:edit). 409 when the site is disconnected",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
 });
 
 registerCurrentRoute({

@@ -22,7 +22,7 @@ import {
   type PermissionKey,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
-import { HttpError, unprocessable } from "../errors.js";
+import { HttpError, conflict, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
@@ -124,6 +124,15 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     return site;
   }
 
+  /** Writes to pages and entries need a connected site: a disconnected (archived) site answers 409. */
+  async function writableSiteFor(req: Request, res: Response, refusal?: { person?: WebsiteMessageKey; agent?: WebsiteMessageKey }): Promise<SiteRow | null> {
+    const site = await siteFor(req, res, "website:edit", refusal);
+    if (site?.archivedAt) {
+      throw conflict("This site is disconnected. Connect it again before you edit or Publish.", { code: "website_site_disconnected" });
+    }
+    return site;
+  }
+
   async function log(req: Request, companyId: string, action: string, entityType: string, entityId: string, details?: Record<string, unknown>) {
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -204,7 +213,7 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.pages, validate(createWebsitePageSchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:edit");
+    const site = await writableSiteFor(req, res);
     if (!site) return;
     const page = await service.createPage(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.page_created", "website_page", page.id, { siteId: site.id, slug: page.slug });
@@ -212,7 +221,7 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   });
 
   async function pageFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
-    const site = await siteFor(req, res, permission, refusal);
+    const site = permission === "website:edit" ? await writableSiteFor(req, res, refusal) : await siteFor(req, res, permission, refusal);
     if (!site) return null;
     const page = await service.getPageRow(site.companyId, site.id, req.params.pageId as string);
     if (!page) {
@@ -319,7 +328,7 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:edit");
+    const site = await writableSiteFor(req, res);
     if (!site) return;
     const entry = await service.createEntry(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.entry_created", "website_entry", entry.id, { siteId: site.id, collection: entry.collection });
@@ -327,7 +336,7 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   });
 
   async function entryFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
-    const site = await siteFor(req, res, permission, refusal);
+    const site = permission === "website:edit" ? await writableSiteFor(req, res, refusal) : await siteFor(req, res, permission, refusal);
     if (!site) return null;
     const entry = await service.getEntryRow(site.companyId, site.id, req.params.entryId as string);
     if (!entry) {
