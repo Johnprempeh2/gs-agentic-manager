@@ -1882,6 +1882,97 @@ describe.sequential("agent permission routes", () => {
     expect(touchedKeys).not.toContain("skills:create");
   });
 
+  describe("website access (GRE-2239)", () => {
+    const boardActor = {
+      type: "board" as const,
+      userId: "board-user",
+      source: "local_implicit" as const,
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    };
+    const websiteCalls = () =>
+      mockAccessService.setPrincipalPermission.mock.calls
+        .filter((call) => String(call[3]).startsWith("website:"))
+        .map((call) => [call[3], call[4]]);
+
+    it("sets view, edit and none by adding or removing only the website grants", async () => {
+      const app = await createApp(boardActor);
+      for (const [level, expected] of [
+        ["view", [["website:view", true], ["website:edit", false]]],
+        ["edit", [["website:view", true], ["website:edit", true]]],
+        ["none", [["website:view", false], ["website:edit", false]]],
+      ] as const) {
+        mockAccessService.setPrincipalPermission.mockClear();
+        const res = await requestApp(app, (baseUrl) => request(baseUrl)
+          .patch(`/api/agents/${agentId}/permissions`)
+          .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess: level }));
+        expect(res.status).toBe(200);
+        expect(websiteCalls()).toEqual(expected);
+        const touchedKeys = mockAccessService.setPrincipalPermission.mock.calls.map((call) => call[3]);
+        expect(touchedKeys).not.toContain("agents:configure");
+        expect(touchedKeys).not.toContain("skills:create");
+        expect(touchedKeys).not.toContain("website:publish");
+      }
+      expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+        companyId, "agent", agentId, "website:view", false, "board-user",
+      );
+    });
+
+    it("leaves website grants alone when websiteAccess is not sent", async () => {
+      const app = await createApp(boardActor);
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, canConfigureAgents: true }));
+      expect(res.status).toBe(200);
+      expect(websiteCalls()).toEqual([]);
+    });
+
+    it("refuses a publish level for an agent", async () => {
+      const app = await createApp(boardActor);
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess: "publish" }));
+      expect(res.status).toBe(400);
+      expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+
+    it("refuses agent callers, even a CEO, before anything is written", async () => {
+      mockAgentService.getById.mockImplementation(async (id: string) =>
+        id === "ceo-agent" ? { ...baseAgent, id: "ceo-agent", role: "ceo" } : baseAgent);
+      const app = await createApp({
+        type: "agent",
+        agentId: "ceo-agent",
+        companyId,
+        runId: "run-1",
+        source: "agent_key",
+      });
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess: "edit" }));
+      expect(res.status).toBe(403);
+      expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+
+    it("refuses board users without users:manage_permissions", async () => {
+      mockAccessService.decide.mockImplementation(async (input: { action?: string }) => {
+        const allowed = input.action !== "users:manage_permissions";
+        return {
+          allowed,
+          reason: allowed ? "allow_explicit_grant" : "deny_missing_grant",
+          explanation: allowed ? "Allowed by test grant" : "Missing users:manage_permissions",
+        };
+      });
+      const app = await createApp({ ...boardActor, isInstanceAdmin: false, source: "session" as const });
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess: "edit" }));
+      expect(res.status).toBe(403);
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+  });
+
   it("refuses memory toggles with 422 instead of answering 200 for a change it cannot make (GRE-988)", async () => {
     const app = await createApp({
       type: "board",

@@ -220,6 +220,13 @@ export {
   type PipelineGrantScopeState,
 } from "./pipeline-access.js";
 export {
+  AGENT_WEBSITE_ACCESS_LEVELS,
+  WEBSITE_EDIT_PERMISSION_KEY,
+  WEBSITE_VIEW_PERMISSION_KEY,
+  agentWebsiteAccessLevel,
+  type AgentWebsiteAccessLevel,
+} from "./agent-website-access.js";
+export {
   caseTypeMatchesPipeline,
   deriveCaseType,
   type CaseTypePipelineRef,
