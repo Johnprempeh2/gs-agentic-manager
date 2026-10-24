@@ -36,6 +36,7 @@ import { ProgressRing } from "../task-tree/ProgressRing";
 import { TaskTreeProgress } from "../task-tree/TaskTreeHeader";
 import { ProjectTreeView } from "../../pages/ProjectTree";
 import { WebsiteSiteConnection, useWebsiteSite } from "./WebsiteSiteConnection";
+import { WebsiteReleases } from "./WebsiteReleases";
 import { useCanManageWebsite } from "./WebsiteSetup";
 import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapSection";
 
@@ -408,6 +409,12 @@ function NeedsYouPanel({ companyId, projectId, tree }: { companyId: string; proj
   );
 }
 
+/** Releases and Publish, once the site is connected (GRE-2133). */
+function SiteReleases({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
+  const { site } = useWebsiteSite(companyId, property.id);
+  return site ? <WebsiteReleases companyId={companyId} site={site} /> : null;
+}
+
 export function WebsiteOverviewTab({
   companyId,
   property,
@@ -435,6 +442,7 @@ export function WebsiteOverviewTab({
       <div className="space-y-6">
         <LiveSitePanel property={property} project={undefined} />
         <WebsiteSiteConnection companyId={companyId} property={property} />
+        <SiteReleases companyId={companyId} property={property} />
         <LinkProjectFirst companyId={companyId} property={property} />
       </div>
     );
@@ -452,6 +460,7 @@ export function WebsiteOverviewTab({
         )}
       </div>
       <WebsiteSiteConnection companyId={companyId} property={property} />
+      <SiteReleases companyId={companyId} property={property} />
       <NeedsYouPanel companyId={companyId} projectId={projectId} tree={treeQuery.data} />
       {hubQuery.error ? (
         <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />

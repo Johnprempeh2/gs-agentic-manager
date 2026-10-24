@@ -18,6 +18,7 @@ import {
   updateWebsiteEntrySchema,
   updateWebsitePageSchema,
   updateWebsiteSiteSchema,
+  websiteReleaseActionSchema,
   type PermissionKey,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
@@ -33,6 +34,12 @@ import {
   type SiteRow,
   type WebsiteActor,
 } from "../services/website/module.js";
+import {
+  toWebsiteRelease,
+  websitePublishService,
+  type WebsitePerson,
+  type WebsitePublishOptions,
+} from "../services/website/publish.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
@@ -55,9 +62,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // (company_id, id). A site, page or entry that is not in this company, or a
 // site outside the caller's scoped grant, answers 404, never 403, so ids
 // cannot be probed.
-export function websiteModuleRoutes(db: Db) {
+export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishOptions } = {}) {
   const router = Router();
   const service = websiteModuleService(db);
+  const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
   const access = accessService(db);
   const publishApprovals = websitePublishApprovals(db);
@@ -106,7 +114,7 @@ export function websiteModuleRoutes(db: Db) {
     const siteId = req.params.siteId as string;
     assertCompanyAccess(req, companyId);
     // A malformed id is simply not found (never a database error).
-    const idsValid = ["siteId", "pageId", "entryId", "optionId"].every((key) => req.params[key] === undefined || UUID_RE.test(req.params[key] as string));
+    const idsValid = ["siteId", "pageId", "entryId", "optionId", "releaseId"].every((key) => req.params[key] === undefined || UUID_RE.test(req.params[key] as string));
     const permitted = (await allowed(req, companyId, permission, siteId, refusal)) && idsValid;
     const site = permitted ? await service.getSite(companyId, siteId) : null;
     if (!site) {
@@ -383,6 +391,91 @@ export function websiteModuleRoutes(db: Db) {
     const entry = await entryFor(req, res, "website:view");
     if (!entry) return;
     res.json(await service.store.listRevisions(entry.companyId, entry.documentId));
+  });
+
+  // ---- releases: Publish, Retry, Rollback (GRE-2108) ----
+
+  /**
+   * Publish, Retry and Rollback are a signed-in person's click in GSAM only
+   * (John, GRE-2053). Agents never hold website:publish, so they stop at the
+   * permission check; a board API key is a script, not a click, so it is
+   * refused here too.
+   */
+  function personClick(req: Request): WebsitePerson {
+    const actor = req.actor;
+    if (actor.type === "board" && actor.userId && (actor.source === "session" || actor.source === "local_implicit")) {
+      return { userId: actor.userId };
+    }
+    throw new HttpError(403, "Only a person can publish, retry or roll back a website, by clicking in GSAM.", {
+      code: "website_publish_person_only",
+    });
+  }
+
+  async function releaseFor(req: Request, res: Response, permission: WebsitePermission) {
+    const site = await siteFor(req, res, permission);
+    if (!site) return null;
+    const release = await publish.getRelease(site.companyId, site.id, req.params.releaseId as string);
+    if (!release) {
+      res.status(404).json({ error: NOT_FOUND });
+      return null;
+    }
+    return { site, release };
+  }
+
+  router.get(WEBSITE_MODULE_API_ROUTES.releases, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json((await publish.listReleases(site.companyId, site.id)).map(toWebsiteRelease));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.releases, async (req, res) => {
+    const site = await siteFor(req, res, "website:publish");
+    if (!site) return;
+    const person = personClick(req);
+    const release = await publish.startPublish(site, person);
+    await log(req, site.companyId, "website.publish_started", "website_release", release.id, { siteId: site.id, number: release.number });
+    res.status(202).json(toWebsiteRelease(release));
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.release, async (req, res) => {
+    const found = await releaseFor(req, res, "website:view");
+    if (!found) return;
+    res.json(toWebsiteRelease(found.release));
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.releaseRetry, async (req, res) => {
+    const found = await releaseFor(req, res, "website:publish");
+    if (!found) return;
+    res.json((await publish.retryPlan(found.site, found.release)).plan);
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.releaseRetry, validate(websiteReleaseActionSchema), async (req, res) => {
+    const found = await releaseFor(req, res, "website:publish");
+    if (!found) return;
+    const person = personClick(req);
+    const { release, plan } = await publish.retry(found.site, found.release, person, req.body.confirmRebuild === true);
+    await log(req, found.site.companyId, "website.release_retried", "website_release", release.id, { siteId: found.site.id, number: release.number, action: plan.action });
+    res.status(202).json(toWebsiteRelease(release));
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.releaseRollback, async (req, res) => {
+    const found = await releaseFor(req, res, "website:publish");
+    if (!found) return;
+    res.json((await publish.rollbackPlan(found.site, found.release)).plan);
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.releaseRollback, validate(websiteReleaseActionSchema), async (req, res) => {
+    const found = await releaseFor(req, res, "website:publish");
+    if (!found) return;
+    const person = personClick(req);
+    const { release, plan } = await publish.rollback(found.site, found.release, person, req.body.confirmRebuild === true);
+    await log(req, found.site.companyId, "website.rollback_started", "website_release", release.id, {
+      siteId: found.site.id,
+      number: release.number,
+      rollbackOf: found.release.number,
+      action: plan.action,
+    });
+    res.status(202).json(toWebsiteRelease(release));
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.entrySubmit, async (req, res) => {
