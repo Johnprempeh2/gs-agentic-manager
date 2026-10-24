@@ -84,8 +84,12 @@ describe("deriveTaskRunState", () => {
   it("queued: release drain and instance holds", () => {
     const runs = [run({ id: "q", status: "queued", issueId: "a", startedAt: null, currentStatusMessage: "Waiting: low memory (1.2 GB free, floor 2 GB)" })];
     const release = deriveTaskRunState("a", runs, { now: NOW, releaseDraining: true })!;
-    expect(describeTaskRunState(release, { now: NOW }).detail).toBe("Waiting for a release to finish");
+    // GRE-2274: the chip itself says the task waits for a release.
+    const releaseCopy = describeTaskRunState(release, { now: NOW });
+    expect(releaseCopy.label).toBe("Waiting for release");
+    expect(releaseCopy.detail).toBe("Starts when the release is done");
     const hold = deriveTaskRunState("a", runs, { now: NOW })!;
+    expect(describeTaskRunState(hold, { now: NOW }).label).toBe("Queued");
     expect(describeTaskRunState(hold, { now: NOW }).detail).toBe("Waiting: low memory (1.2 GB free, floor 2 GB)");
   });
 
