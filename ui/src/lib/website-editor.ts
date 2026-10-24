@@ -146,6 +146,11 @@ const MEDIA_FIELD_NAMES: Record<InsertMediaKind, readonly string[]> = {
   animation: ["video", "animation", "clip", "media", "image", "background"],
 };
 
+const MEDIA_PATH_PATTERNS: Record<InsertMediaKind, RegExp> = {
+  image: /^[^\s]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#][^\s]*)?$/i,
+  animation: /^[^\s]+\.(?:gif|m4v|mov|mp4|ogv|webm)(?:[?#][^\s]*)?$/i,
+};
+
 function findBlockProps(items: unknown, blockId: string, depth = 0): Record<string, unknown> | null {
   if (!Array.isArray(items) || depth > 20) return null;
   for (const item of items) {
@@ -164,7 +169,9 @@ function findBlockProps(items: unknown, blockId: string, depth = 0): Record<stri
 /**
  * The block field `insert-media` names. GSAM does not know the site's block
  * schemas, so it guesses from the block's props: a field that already holds a
- * `media:` reference first, then a field with a usual media name. The frame
+ * `media:` reference first, then a field that holds a site path or URL of the
+ * kind's file type (for example `/images/before.jpg`), then a field with a
+ * usual media name. The frame
  * checks the field and answers `field_not_found` or `field_not_media` when the
  * guess is wrong.
  */
@@ -173,6 +180,8 @@ export function insertMediaField(data: unknown, blockId: string, kind: InsertMed
   const names = Object.keys(props).filter((name) => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name));
   const holdsMedia = names.find((name) => typeof props[name] === "string" && (props[name] as string).startsWith("media:"));
   if (holdsMedia) return holdsMedia;
+  const holdsPath = names.find((name) => typeof props[name] === "string" && MEDIA_PATH_PATTERNS[kind].test(props[name] as string));
+  if (holdsPath) return holdsPath;
   const preferred = MEDIA_FIELD_NAMES[kind];
   return preferred.find((name) => names.includes(name)) ?? preferred[0]!;
 }
@@ -201,8 +210,7 @@ const KIND_NOUN: Record<InsertMediaKind, string> = { image: "image", animation: 
  */
 export function insertMediaMessage(result: WebsiteFrameInsertMediaResult, blockName: string, kind: InsertMediaKind): string {
   const noun = KIND_NOUN[kind];
-  // Until GRE-2225 the frame cannot load GSAM's asset, so the block shows the item only after save and reload.
-  if (result.ok) return `Put in ${blockName}. The ${noun} shows after you save the page in the editor.`;
+  if (result.ok) return `Put in ${blockName}. Save the page to keep it.`;
   const kept = `The ${noun} is saved in Website media.`;
   switch (result.code) {
     case "block_not_found":
