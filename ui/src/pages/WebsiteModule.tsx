@@ -136,6 +136,7 @@ function Admin({ companyId, detail, onOpenSettings }: { companyId: string; detai
         message="Its screens are hidden. Its pages, entries and tasks are kept. Switch it on under Settings to see them."
         action="Open Settings"
         onAction={onOpenSettings}
+        hideActionIcon
       />
     );
   }
@@ -154,7 +155,7 @@ function Admin({ companyId, detail, onOpenSettings }: { companyId: string; detai
         <p className="text-sm font-medium">{screen.name} moves here</p>
         <p className="max-w-md text-xs text-muted-foreground">
           This screen still lives where it is today. It moves into this module in{" "}
-          <Link to={`/issues/${screen.issue}`} className="font-medium text-foreground underline underline-offset-2">{screen.issue}</Link>.
+          <Link to={`/issues/${screen.issue}`} className="whitespace-nowrap font-medium text-foreground underline underline-offset-2">{screen.issue}</Link>.
         </p>
       </div>}
     </div>
