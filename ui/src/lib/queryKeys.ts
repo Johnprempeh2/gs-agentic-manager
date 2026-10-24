@@ -707,10 +707,10 @@ export const queryKeys = {
     home: (companyId: string, siteId: string) => ["website", companyId, "home", siteId] as const,
     /** The website admin bridge's status (GRE-2323). */
     dataBridge: (companyId: string, siteId: string) => ["website", companyId, "data-bridge", siteId] as const,
-    /** Website modules (GRE-2325): the registry, the Home cards and one module page. */
-    modules: (companyId: string, siteId: string) => ["website", companyId, "modules", siteId] as const,
-    moduleCards: (companyId: string, siteId: string) => ["website", companyId, "modules", siteId, "cards"] as const,
-    module: (companyId: string, siteId: string, moduleId: string) => ["website", companyId, "modules", siteId, moduleId] as const,
+    /** Website features (GRE-2325): the registry, the Home cards and one feature page. */
+    features: (companyId: string, siteId: string) => ["website", companyId, "features", siteId] as const,
+    featureCards: (companyId: string, siteId: string) => ["website", companyId, "features", siteId, "cards"] as const,
+    feature: (companyId: string, siteId: string, featureId: string) => ["website", companyId, "features", siteId, featureId] as const,
   },
   budgets: {
     overview: (companyId: string) =>
