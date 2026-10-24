@@ -126,7 +126,8 @@ function StudyFrame({ study, interactive, className }: { study: MotionStudy; int
   );
 }
 
-function StudyPills({ study }: { study: MotionStudy }) {
+/** On a card every mark shows; the open study keeps only Text-safe, since its controls already show the rest. */
+function StudyPills({ study, withState = true }: { study: MotionStudy; withState?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {study.textSafe ? (
@@ -135,9 +136,9 @@ function StudyPills({ study }: { study: MotionStudy }) {
           Text-safe
         </Badge>
       ) : null}
-      <Badge className={STATUS_TONE[study.status]}>{MOTION_STUDY_STATUS_LABELS[study.status]}</Badge>
-      <Badge className={DECISION_TONE[study.decision]}>{MOTION_STUDY_DECISION_LABELS[study.decision]}</Badge>
-      {study.proposal ? (
+      {withState ? <Badge className={STATUS_TONE[study.status]}>{MOTION_STUDY_STATUS_LABELS[study.status]}</Badge> : null}
+      {withState ? <Badge className={DECISION_TONE[study.decision]}>{MOTION_STUDY_DECISION_LABELS[study.decision]}</Badge> : null}
+      {withState && study.proposal ? (
         <Badge variant="outline" title={proposalSummary(study) ?? undefined}>
           <Sparkles aria-hidden="true" />
           Agent proposal
@@ -184,10 +185,13 @@ function MotionCard({ study, onOpen }: { study: MotionStudy; onOpen: () => void 
                   <Play className="h-6 w-6" aria-hidden="true" />
                 </div>
               )}
+              {/* Chips sit on the top edge and the bottom right, clear of the title a study draws bottom left. */}
               <div className="absolute inset-0 flex flex-col justify-between p-2">
-                {study.theme[0] ? <span className={cn(CHIP_ON_FRAME, "self-start")}>{study.theme[0]}</span> : <span />}
-                <span className="flex items-end justify-between gap-2">
-                  {study.tech ? <span className={cn(CHIP_ON_FRAME, "truncate")}>{study.tech}</span> : <span />}
+                <span className="flex items-start justify-between gap-2">
+                  {study.theme[0] ? <span className={cn(CHIP_ON_FRAME, "truncate")}>{study.theme[0]}</span> : <span />}
+                  {study.tech ? <span className={cn(CHIP_ON_FRAME, "shrink-0")}>{study.tech}</span> : null}
+                </span>
+                <span className="flex justify-end">
                   <span className={cn(CHIP_ON_FRAME, "flex shrink-0 items-center gap-1")}>
                     <Play className="h-3 w-3" aria-hidden="true" />
                     <span className="pointer-coarse:hidden">Hover to play</span>
@@ -299,7 +303,8 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
 
         <StudyFrame study={study} interactive className="rounded-lg ring-1 ring-border" />
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        {/* Stretch, so the Status select matches the Decision row's height and both labels share a top line. */}
+        <div className="flex flex-col gap-3 sm:flex-row">
           <div className="min-w-0 flex-1">
             <DecisionPicker value={study.decision} disabled={busy} onChange={(decision) => update.mutate({ decision })} />
           </div>
@@ -309,7 +314,7 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
               value={study.status}
               disabled={busy}
               onChange={(event) => update.mutate({ status: event.target.value as MotionStudyStatus })}
-              className="sm:w-40"
+              className="sm:h-auto sm:w-40 sm:flex-1"
               data-testid="motion-status-select"
             >
               {MOTION_STUDY_STATUSES.map((status) => (
@@ -352,7 +357,7 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
         ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <StudyPills study={study} />
+          <StudyPills study={study} withState={false} />
           {study.previewPath ? (
             <Button asChild size="sm" variant="outline">
               <a href={study.previewPath} target="_blank" rel="noreferrer noopener">
