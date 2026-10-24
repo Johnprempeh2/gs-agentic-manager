@@ -277,7 +277,7 @@ export const WEBSITE_MODULE_API_ROUTES = {
   /** POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId. */
   pageChangeRequests: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
-  media:"/companies/:companyId/website/sites/:siteId/media",
+  media: "/companies/:companyId/website/sites/:siteId/media",
   /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */
   pageSubmit: "/companies/:companyId/website/sites/:siteId/pages/:pageId/submit",
   /** POST → `WebsitePage` (website:publish, people only). The latest revision becomes the approved one. */
