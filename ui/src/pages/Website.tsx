@@ -54,7 +54,6 @@ import { WebsiteEditorTab } from "../components/website/WebsiteEditorWorkspace";
 import { WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
 import { WebsiteCollectionsTab } from "../components/website/WebsiteCollections";
 import { WebsiteHomeTab } from "../components/website/WebsiteHome";
-import { WebsiteEnquiriesForProperty } from "../components/website/WebsiteEnquiries";
 
 /* ---- Formatting ---- */
 
@@ -675,7 +674,6 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} /> : null}
       {tab === "editor" ? <WebsiteEditorTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
       {tab === "collections" ? <WebsiteCollectionsTab companyId={companyId} property={property} /> : null}
-      {tab === "enquiries" ? <WebsiteEnquiriesForProperty companyId={companyId} property={property} /> : null}
       {tab === "releases" ? <WebsiteReleasesTab companyId={companyId} property={property} /> : null}
       {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
       {tab === "traffic" ? (

@@ -35,6 +35,7 @@ import { activityActor, activityVerb } from "../components/website/WebsiteHome";
 import { HealthDot, ModuleIcon, taskLine } from "../components/website/modules/WebsiteModuleCards";
 import { parseCollections, parseLines } from "../components/website/modules/module-settings";
 import { releaseDate, releaseTime } from "../components/website/WebsiteReleases";
+import { WebsiteEnquiries } from "../components/website/WebsiteEnquiries";
 import { ProjectTreeView } from "./ProjectTree";
 
 // One website module's page (GRE-2325): Overview (its pages, tasks and recent
@@ -124,7 +125,7 @@ function Overview({ detail }: { detail: WebsiteModuleDetail }) {
   );
 }
 
-function Admin({ detail, onOpenSettings }: { detail: WebsiteModuleDetail; onOpenSettings: () => void }) {
+function Admin({ companyId, detail, onOpenSettings }: { companyId: string; detail: WebsiteModuleDetail; onOpenSettings: () => void }) {
   const screens = WEBSITE_MODULE_ADMIN_SCREENS[detail.module.key] ?? [];
   const [chosen, setChosen] = useState(screens[0]?.name ?? "");
   if (!detail.module.enabled) {
@@ -142,19 +143,20 @@ function Admin({ detail, onOpenSettings }: { detail: WebsiteModuleDetail; onOpen
     return <EmptyState icon={Construction} title="No admin screens yet" message="Screens for this module show here once a task builds them." />;
   }
   const screen = screens.find((entry) => entry.name === chosen) ?? screens[0]!;
+  const enquiryScreen = detail.module.key === "front-door" && screen.name === "Enquiries";
   return (
     <div className="space-y-4" data-testid="website-module-admin">
       <Tabs value={screen.name} onValueChange={setChosen}>
         <PageTabBar items={screens.map((entry) => ({ value: entry.name, label: entry.name }))} value={screen.name} onValueChange={setChosen} align="start" ariaLabel="Admin screens" />
       </Tabs>
-      <div className="gs-glass-card flex flex-col items-center gap-2 rounded-xl border px-6 py-10 text-center">
+      {enquiryScreen ? <WebsiteEnquiries companyId={companyId} siteId={detail.module.siteId} /> : <div className="gs-glass-card flex flex-col items-center gap-2 rounded-xl border px-6 py-10 text-center">
         <Construction className="size-5 text-muted-foreground" aria-hidden="true" />
         <p className="text-sm font-medium">{screen.name} moves here</p>
         <p className="max-w-md text-xs text-muted-foreground">
           This screen still lives where it is today. It moves into this module in{" "}
           <Link to={`/issues/${screen.issue}`} className="font-medium text-foreground underline underline-offset-2">{screen.issue}</Link>.
         </p>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -382,7 +384,7 @@ export function WebsiteModulePage() {
           <PageTabBar items={MODULE_TABS} value={tab} onValueChange={(value) => openTab(value as ModuleTab)} align="start" ariaLabel="Module section" />
         </Tabs>
         {tab === "overview" ? <Overview detail={detail} /> : null}
-        {tab === "admin" ? <Admin detail={detail} onOpenSettings={() => openTab("settings")} /> : null}
+        {tab === "admin" ? <Admin companyId={companyId} detail={detail} onOpenSettings={() => openTab("settings")} /> : null}
         {tab === "settings" ? <Settings key={module.id} companyId={companyId} detail={detail} canChange={canPublish} /> : null}
       </div>
     </div>

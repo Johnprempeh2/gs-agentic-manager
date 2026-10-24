@@ -41,7 +41,7 @@ import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapS
 // the linked project's tree, the decisions feed, the project's tasks' work
 // products, attachments and comments, and the project workspace's preview.
 
-export type WebsiteTab = "home" | "preview" | "progress" | "sitemap" | "editor" | "collections" | "enquiries" | "releases" | "traffic";
+export type WebsiteTab = "home" | "preview" | "progress" | "sitemap" | "editor" | "collections" | "releases" | "traffic";
 
 /** The admin's at-a-glance Home leads (John, 24 Oct 2026), with the live site as its hero. */
 export const WEBSITE_DEFAULT_TAB: WebsiteTab = "home";
@@ -53,7 +53,6 @@ export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
   { value: "sitemap", label: "Sitemap" },
   { value: "editor", label: "Pages" },
   { value: "collections", label: "Collections" },
-  { value: "enquiries", label: "Front door and enquiries" },
   { value: "releases", label: "Releases" },
   { value: "traffic", label: "Traffic" },
 ];
