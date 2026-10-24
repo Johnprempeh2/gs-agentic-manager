@@ -186,6 +186,22 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   }
 
   /**
+   * Site create and update carry a Netlify token, so the error handler hides every 5xx body on them (GRE-2137).
+   * A Netlify outage is fixed, token-free copy the panel must still show, so the route answers it itself.
+   * Returns null when it has answered.
+   */
+  async function orNetlifyOutage<T>(res: Response, work: Promise<T>): Promise<T | null> {
+    try {
+      return await work;
+    } catch (err) {
+      const details = err instanceof HttpError ? (err.details as { code?: unknown } | undefined) : undefined;
+      if (!(err instanceof HttpError) || details?.code !== "website_connect_netlify_unavailable") throw err;
+      res.status(err.status).json({ error: err.message, code: details.code, details: err.details });
+      return null;
+    }
+  }
+
+  /**
    * Throws 403 when the caller has no such permission at all; returns false when only the site scope excludes it.
    * `refusal` names the message for this route when the generic one does not fit (people and agents).
    */
@@ -325,7 +341,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     await allowed(req, companyId, "website:publish", undefined, { person: "perm.settings" });
     await assertPropertyInCompany(companyId, req.body.propertyId);
     const editorFrameOrigin = normaliseEditorFrameOrigin(req, req.body.domain, req.body.editorFrameOrigin);
-    const row = await service.createSite(companyId, { ...req.body, editorFrameOrigin }, actorOf(req));
+    const row = await orNetlifyOutage(res, service.createSite(companyId, { ...req.body, editorFrameOrigin }, actorOf(req)));
+    if (!row) return;
     await log(req, companyId, "website.site_connected", "website_site", row.id, {
       domain: row.domain,
       netlifyToken: Boolean(row.netlifyTokenSecretId),
@@ -351,7 +368,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     } else if (input.domain !== undefined && site.editorFrameOrigin && editorOriginProblem(req, { domain: input.domain }, site.editorFrameOrigin)) {
       throw unprocessable(EDITOR_ORIGIN_PROBLEMS["public-origin"], { code: "website_editor_origin_refused", problem: "public-origin" });
     }
-    const row = await service.updateSite(site, input, actorOf(req));
+    const row = await orNetlifyOutage(res, service.updateSite(site, input, actorOf(req)));
+    if (!row) return;
     const fields = Object.keys(req.body).map((key) => {
       if (key === "netlifyToken") return site.netlifyTokenSecretId && site.netlifyTokenSecretOwned ? "netlifyToken (rotated)" : "netlifyToken (new site secret)";
       if (key === "netlifyTokenSecretId") return req.body.netlifyTokenSecretId ? "netlifyTokenSecretId (shared secret linked)" : "netlifyTokenSecretId (unlinked)";
