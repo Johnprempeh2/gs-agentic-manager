@@ -1,4 +1,4 @@
-import { createProjectSchema, createIssueSchema, mcpToolHints, type McpToolHints } from "@greatstone/shared";
+import { WEBSITE_DATA_RESOURCES, createProjectSchema, createIssueSchema, mcpToolHints, type McpToolHints } from "@greatstone/shared";
 import { z } from "zod";
 import { CAPABILITY_SEMANTIC_TOOL_CATALOG } from "../vendor/paperclip-runner/index.js";
 import { badRequest } from "../errors.js";
@@ -11,6 +11,8 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   create_project: mcpToolHints("write", { idempotent: true }),
   create_task: mcpToolHints("write", { idempotent: true }),
   list_website_modules: mcpToolHints("read"),
+  website_data_list: mcpToolHints("read"),
+  website_data_get: mcpToolHints("read"),
 };
 /** Read-only tool outside the runner catalog: the website module registry (GRE-2325). Needs website:view. */
 const WEBSITE_MODULES_TOOL = {
@@ -24,6 +26,46 @@ const WEBSITE_MODULES_TOOL = {
     additionalProperties: false,
   },
 };
+/**
+ * Read-only tools for the website's own records (GRE-2323): customers, quotes, orders, invoices, licences, portal
+ * documents and acceptances, enquiries. They go through GSAM's website data route (website:view), which signs the
+ * call with the site's read key and names this agent and run in the site's audit. The agent never sees the key.
+ */
+const WEBSITE_DATA_TOOLS = [
+  {
+    name: "website_data_list",
+    description: "List records from a connected website's own database, oldest first, a page at a time. Read only. Licence keys show only their last four characters.",
+    annotations: PROJECT_TOOL_HINTS.website_data_list,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: { type: "string", description: "The website site id (list_website_modules shows them)." },
+        resource: { type: "string", enum: [...WEBSITE_DATA_RESOURCES] },
+        customer: { type: "string", description: "Only this customer's records (a customer id). Not for enquiries." },
+        updatedSince: { type: "string", description: "ISO time: only records changed since then." },
+        cursor: { type: "string", description: "nextCursor from the previous page." },
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+      },
+      required: ["siteId", "resource"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "website_data_get",
+    description: "Read one record from a connected website's own database by id. Read only.",
+    annotations: PROJECT_TOOL_HINTS.website_data_get,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: { type: "string" },
+        resource: { type: "string", enum: [...WEBSITE_DATA_RESOURCES] },
+        id: { type: "string", description: "The record id, as a list returned it." },
+      },
+      required: ["siteId", "resource", "id"],
+      additionalProperties: false,
+    },
+  },
+];
 export function projectToolDefinitions(workMode: string, includeTask = false) {
   const catalog: Array<{ name: string; description: string; annotations: McpToolHints | undefined; inputSchema: unknown }> = CAPABILITY_SEMANTIC_TOOL_CATALOG.filter(tool =>
     (PROJECT_TOOL_NAMES.includes(tool.operationId) || includeTask && tool.operationId === "create_task")
@@ -34,7 +76,7 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_MODULES_TOOL];
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_MODULES_TOOL, ...WEBSITE_DATA_TOOLS];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -62,6 +104,23 @@ async function listWebsiteModules(input: { apiUrl: string; token: string; compan
   };
 }
 
+/** A website data read, through GSAM's own route so its permission check and signing apply. */
+async function readWebsiteData(input: { apiUrl: string; token: string; companyId: string; name: string; args: Record<string, unknown> }) {
+  const args = z.object({
+    siteId: z.string().uuid(), resource: z.enum(WEBSITE_DATA_RESOURCES), id: z.string().min(1).max(80).optional(),
+    customer: z.string().optional(), updatedSince: z.string().optional(), cursor: z.string().optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }).strict().parse(input.args);
+  const base = `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(args.siteId)}/data/${args.resource}`;
+  if (input.name === "website_data_get") {
+    if (!args.id) throw badRequest("website_data_get needs an id");
+    return apiGet(input.apiUrl, input.token, `${base}/${encodeURIComponent(args.id)}`);
+  }
+  const query = new URLSearchParams();
+  for (const key of ["customer", "updatedSince", "cursor", "limit"] as const) if (args[key] !== undefined) query.set(key, String(args[key]));
+  return apiGet(input.apiUrl, input.token, query.size ? `${base}?${query}` : base);
+}
+
 /** All transports use the normal authenticated API, including its validation and audit path. */
 export async function callProjectTool(input: {
   name: string; arguments: Record<string, unknown>; apiUrl: string; token: string;
@@ -70,6 +129,9 @@ export async function callProjectTool(input: {
   const args = input.arguments;
   if (input.name === "list_website_modules") {
     return listWebsiteModules({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, siteId: args.siteId });
+  }
+  if (input.name === "website_data_list" || input.name === "website_data_get") {
+    return readWebsiteData({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });
   }
   let path = `/companies/${input.companyId}/projects`;
   let body: unknown;
