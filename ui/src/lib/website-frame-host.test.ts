@@ -450,3 +450,53 @@ describe("set-motion (GRE-2219)", () => {
     expect(t.sentOf("set-motion")).toHaveLength(1);
   });
 });
+
+describe("full-screen editor (GRE-2296)", () => {
+  const ready = async (overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> = {}, ack: Record<string, unknown> = {}) => {
+    const t = setup(overrides);
+    t.session.start();
+    t.ack(ack);
+    await flush();
+    return t;
+  };
+
+  it("sends only the editor commands the engine offered, after the draft is loaded", async () => {
+    const t = await ready({}, { editorCommands: ["undo", "redo", "save"] });
+    expect([...t.session.editorCommands]).toEqual(["undo", "redo", "save"]);
+    expect(t.session.command("undo")).toBe(true);
+    expect(t.session.command("add-block")).toBe(false);
+    expect(t.sentOf("editor-command").map((entry) => entry.message.payload)).toEqual([{ command: "undo" }]);
+  });
+
+  it("an older engine gets no editor commands", async () => {
+    const t = await ready();
+    expect(t.session.editorCommands.size).toBe(0);
+    expect(t.session.command("save")).toBe(false);
+    expect(t.sentOf("editor-command")).toHaveLength(0);
+  });
+
+  it("preview never sends editor commands or takes editor messages", async () => {
+    const onEditorState = vi.fn();
+    const onEditorKey = vi.fn();
+    const t = await ready({ mode: "preview", onEditorState, onEditorKey }, { editorCommands: ["undo"] });
+    expect(t.session.command("undo")).toBe(false);
+    t.msg("editor-state", { selection: null, canUndo: true, canRedo: false });
+    t.msg("editor-key", { key: "escape" });
+    expect(onEditorState).not.toHaveBeenCalled();
+    expect(onEditorKey).not.toHaveBeenCalled();
+  });
+
+  it("passes editor-state, editor-key and media-requested to the host", async () => {
+    const onEditorState = vi.fn();
+    const onEditorKey = vi.fn();
+    const onMediaRequested = vi.fn();
+    const t = await ready({ onEditorState, onEditorKey, onMediaRequested });
+    const state = { selection: { blockId: "h1", blockType: "Hero", label: "Hero banner" }, canUndo: true, canRedo: false };
+    t.msg("editor-state", state);
+    t.msg("editor-key", { key: "escape" });
+    t.msg("media-requested", { blockId: "h1", field: "image", kind: "image" });
+    expect(onEditorState).toHaveBeenCalledWith(state);
+    expect(onEditorKey).toHaveBeenCalledWith("escape");
+    expect(onMediaRequested).toHaveBeenCalledWith({ blockId: "h1", field: "image", kind: "image" });
+  });
+});

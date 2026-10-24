@@ -176,7 +176,7 @@ describe("MotionStudio", () => {
     await settle();
     const use = document.querySelector('[data-testid="motion-use-on-website"]')!;
     expect(use.textContent).toBe("Use on website");
-    expect(use.getAttribute("href")).toBe("/website?tab=editor&motion=016");
+    expect(use.getAttribute("href")).toBe("/website/edit?motion=016");
 
     await act(async () => root.render(<></>));
     await render();
