@@ -34,6 +34,7 @@ import { AgentPipelinesAccessSection } from "../components/AgentPipelinesAccessS
 import { getAdapterDisplay, getAdapterLabel } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { AgentWebsiteAccessSelect } from "@/components/AgentWebsiteAccessSelect";
 import { AgentMemoryRightsToggles } from "@/components/AgentMemoryRightsToggles";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
 import { redactCommandText as redactCommandSecretText } from "@greatstone/adapter-utils";
@@ -2277,6 +2278,18 @@ export function ConfigurationTab({
               disabled={updatePermissions.isPending}
             />
           </div>
+          <AgentWebsiteAccessSelect
+            grants={agent.access?.grants ?? []}
+            disabled={updatePermissions.isPending}
+            onChange={(websiteAccess) =>
+              updatePermissions.mutate({
+                canCreateAgents,
+                canCreateSkills,
+                canAssignTasks,
+                websiteAccess,
+              })
+            }
+          />
           <AgentMemoryRightsToggles
             companyId={companyId}
             agentId={agent.id}

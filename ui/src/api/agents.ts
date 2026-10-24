@@ -1,4 +1,5 @@
 import type {
+  AgentWebsiteAccessLevel,
   PipelineAccess,
   Agent,
   AgentDesiredSkillEntry,
@@ -82,6 +83,7 @@ export interface AgentPermissionUpdate {
   canConfigureAgents?: boolean;
   canChangeSkills?: boolean;
   pipelineAccess?: PipelineAccess;
+  websiteAccess?: AgentWebsiteAccessLevel;
   trustPreset?: AgentPermissions["trustPreset"];
   authorizationPolicy?: AgentPermissions["authorizationPolicy"];
 }
