@@ -1232,7 +1232,7 @@ describe("issue execution policy routes", () => {
     const granted = new Set<string>();
     const txInsertValues = vi.fn(async () => undefined);
 
-    function escalatedIssue() {
+    function escalatedIssue(reviewer: { type: "agent"; agentId: string } | { type: "user"; userId: string } = { type: "user", userId: "ben-user" }) {
       return {
         id: ISSUE_ID,
         companyId: "company-1",
@@ -1243,14 +1243,14 @@ describe("issue execution policy routes", () => {
         identifier: "GRE-1538",
         title: "Waits on Ben",
         executionPolicy: normalizeIssueExecutionPolicy({
-          stages: [{ id: STAGE_ID, type: "review", participants: [{ type: "agent", agentId: REVIEWER_AGENT_ID }] }],
+          stages: [{ id: STAGE_ID, type: "review", participants: [reviewer] }],
         }),
         executionState: {
           status: "pending",
           currentStageId: STAGE_ID,
           currentStageIndex: 0,
           currentStageType: "review",
-          // Escalated: agents used up their rounds, so Ben holds the stage.
+          // Ben holds the stage.
           currentParticipant: { type: "user", userId: "ben-user" },
           returnAssignee: { type: "agent", agentId: RETURN_AGENT_ID },
           completedStageIds: [],
@@ -1316,17 +1316,7 @@ describe("issue execution policy routes", () => {
       mockAccessService.hasPermission.mockReset();
     });
 
-    it("still refuses the owner without the override flag", async () => {
-      const res = await request(await createApp(personActor("john-user", "owner")))
-        .patch(`/api/issues/${ISSUE_ID}`)
-        .send({ status: "done", comment: "Looks good" });
-
-      expect(res.status).toBe(422);
-      expect(res.body.details).toMatchObject({ code: "review_stage_change_refused" });
-      expect(mockIssueService.update).not.toHaveBeenCalled();
-    });
-
-    it("lets the owner approve on the escalated reviewer's behalf and records who and why", async () => {
+    it("lets the owner approve on the waiting reviewer's behalf and records who and why", async () => {
       const res = await request(await createApp(personActor("john-user", "owner")))
         .patch(`/api/issues/${ISSUE_ID}`)
         .send({ status: "done", reviewOverride: true, overrideReason: "I checked it with Ben on the call" });
@@ -1390,6 +1380,27 @@ describe("issue execution policy routes", () => {
 
       expect(res.status).toBe(403);
       expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
+
+    // GRE-2161: GRE-2118's stage listed only Keystone but was held by John,
+    // and every PATCH from anyone else was refused.
+    it("lets the stage's listed reviewer take back a stage held by a non-participant", async () => {
+      const issue = escalatedIssue({ type: "agent", agentId: REVIEWER_AGENT_ID });
+      mockIssueService.getById.mockResolvedValue(issue);
+      const res = await request(await createApp(personActor("admin-user", "admin")))
+        .patch(`/api/issues/${ISSUE_ID}`)
+        .send({ assigneeAgentId: REVIEWER_AGENT_ID });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      const updatePatch = mockIssueService.update.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(updatePatch.status).toBe("in_review");
+      expect(updatePatch.assigneeAgentId).toBe(REVIEWER_AGENT_ID);
+      expect(updatePatch.assigneeUserId).toBeNull();
+      expect(updatePatch.executionState).toMatchObject({
+        status: "pending",
+        currentParticipant: { type: "agent", agentId: REVIEWER_AGENT_ID },
+        returnAssignee: { type: "agent", agentId: RETURN_AGENT_ID },
+      });
     });
 
     it("refuses agents, even ones holding the grant", async () => {

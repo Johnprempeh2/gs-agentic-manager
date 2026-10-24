@@ -732,9 +732,9 @@ export interface IssueExecutionPolicy {
   reviewPreset?: LowTrustReviewPresetPolicy;
   authorizationPolicy?: TrustAuthorizationPolicy;
   /**
-   * Maximum consecutive agent-initiated changes-requested rounds before the
-   * pending stage escalates to the responsible human. Null uses the server
-   * default. Human decisions reset the round counter.
+   * Accepted for stored policies; no longer routes anything. A stage hands
+   * its review only to its listed participants, whatever the round count
+   * (GRE-2161).
    */
   maxReviewRounds?: number | null;
 }
