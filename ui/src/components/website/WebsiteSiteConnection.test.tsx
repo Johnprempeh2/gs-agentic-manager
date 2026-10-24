@@ -8,7 +8,7 @@ import type { WebsiteProperty, WebsiteSite } from "@greatstone/shared";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const moduleMock = vi.hoisted(() => ({ sites: vi.fn(), createSite: vi.fn(), updateSite: vi.fn(), pages: vi.fn() }));
+const moduleMock = vi.hoisted(() => ({ sites: vi.fn(), tokenSecrets: vi.fn(), createSite: vi.fn(), updateSite: vi.fn(), pages: vi.fn() }));
 const canManage = vi.hoisted(() => ({ value: true }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
@@ -44,6 +44,8 @@ function site(overrides: Partial<WebsiteSite> = {}): WebsiteSite {
     repoUrl: "https://github.com/acme/site",
     netlifySiteId: "netlify-123",
     hasNetlifyToken: true,
+    netlifyTokenSource: "own",
+    netlifyTokenSecretName: "Website Netlify token site-1",
     blobsStoreName: "gsam-content",
     engineVersion: null,
     releaseSchemaVersion: 1,
@@ -78,6 +80,7 @@ describe("WebsiteSiteConnection", () => {
     root = createRoot(container);
     canManage.value = true;
     vi.clearAllMocks();
+    moduleMock.tokenSecrets.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -138,6 +141,35 @@ describe("WebsiteSiteConnection", () => {
       netlifyToken: "nfp_secret_token",
       propertyId: "prop-1",
     });
+  });
+
+  it("says which saved secret a site uses, by name only", async () => {
+    moduleMock.sites.mockResolvedValue([site({ netlifyTokenSource: "shared", netlifyTokenSecretName: "Netlify PAT (agents)" })]);
+    await render();
+    expect(container.textContent).toContain("Saved secret Netlify PAT (agents). GSAM reads it and never changes it.");
+  });
+
+  it("links a saved secret instead of a pasted token", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.tokenSecrets.mockResolvedValue([{ id: "secret-1", name: "Netlify PAT (agents)" }]);
+    moduleMock.updateSite.mockResolvedValue(site({ netlifyTokenSource: "shared", netlifyTokenSecretName: "Netlify PAT (agents)" }));
+    await render();
+    await act(async () => container.querySelector("button")!.click());
+    const saved = [...container.querySelectorAll<HTMLButtonElement>("[role=radio]")].find((button) => button.textContent?.includes("Use a saved secret"))!;
+    await act(async () => saved.click());
+    await flush();
+    const select = container.querySelector<HTMLSelectElement>("#website-site-prop-1-token-secret")!;
+    expect([...select.options].map((option) => option.textContent)).toEqual(["Choose a secret", "Netlify PAT (agents)"]);
+    await act(async () => {
+      select.value = "secret-1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(moduleMock.updateSite).toHaveBeenCalledWith("co-1", "site-1", expect.objectContaining({ netlifyTokenSecretId: "secret-1" }));
+    expect(moduleMock.updateSite.mock.calls[0]![2]).not.toHaveProperty("netlifyToken");
   });
 
   it("tells people without Publish rights who can connect it", async () => {

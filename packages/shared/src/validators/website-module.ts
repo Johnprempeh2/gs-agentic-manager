@@ -64,26 +64,39 @@ const seoSchema = z
   })
   .strict();
 
-export const createWebsiteSiteSchema = z
+const websiteSiteFields = z
   .object({
     name: z.string().trim().min(1).max(120),
     domain: domainSchema,
     repoUrl: websiteRepoSchema.nullable().optional(),
     netlifySiteId: z.string().trim().min(1).max(120),
-    /** Stored in the company's secrets; never returned. */
+    /** A pasted token, stored in the company's secrets as this site's own secret; never returned. */
     netlifyToken: z.string().trim().min(10).max(500).optional(),
+    /**
+     * Use a company secret that already holds a Netlify token, for example the one agents use.
+     * The site never rotates or deletes a secret it links this way. `null` unlinks it.
+     */
+    netlifyTokenSecretId: z.string().uuid().nullable().optional(),
     propertyId: z.string().uuid().nullable().optional(),
     editorOrigins: z.array(z.string().trim().url().max(300)).max(10).optional(),
     checkPaths: z.array(websiteStaticPathSchema).min(1).max(20).optional(),
   })
   .strict();
+
+function oneTokenSource(value: { netlifyToken?: string; netlifyTokenSecretId?: string | null }) {
+  return !(value.netlifyToken && value.netlifyTokenSecretId !== undefined);
+}
+const ONE_TOKEN_SOURCE = { message: "Paste a token or choose a saved secret, not both", path: ["netlifyTokenSecretId"] };
+
+export const createWebsiteSiteSchema = websiteSiteFields.refine(oneTokenSource, ONE_TOKEN_SOURCE);
 export type CreateWebsiteSite = z.infer<typeof createWebsiteSiteSchema>;
 
-export const updateWebsiteSiteSchema = createWebsiteSiteSchema
+export const updateWebsiteSiteSchema = websiteSiteFields
   .partial()
   .extend({ archived: z.boolean().optional() })
   .strict()
-  .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
+  .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" })
+  .refine(oneTokenSource, ONE_TOKEN_SOURCE);
 export type UpdateWebsiteSite = z.infer<typeof updateWebsiteSiteSchema>;
 
 const sitemapFields = {

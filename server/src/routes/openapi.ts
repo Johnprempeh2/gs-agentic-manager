@@ -15807,7 +15807,15 @@ registerCurrentRoute({
   method: "get",
   path: "/api/companies/{companyId}/website/sites",
   tags: ["website"],
-  summary: "List the company's website sites the caller can view (website:view). The Netlify token is never returned; hasNetlifyToken says whether one is stored",
+  summary: "List the company's website sites the caller can view (website:view). The Netlify token is never returned; hasNetlifyToken says whether one is stored, netlifyTokenSource whether it is the site's own (own) or a company secret it uses (shared), and netlifyTokenSecretName names that secret",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website/token-secrets",
+  tags: ["website"],
+  summary: "List the company's active secrets ({ id, name } only, never values) that a site can use as its Netlify token (website:publish, people only)",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
@@ -15815,7 +15823,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/website/sites",
   tags: ["website"],
-  summary: "Connect a site: name, domain, repo (owner/site-name; a GitHub address is stored as owner/site-name), Netlify site id and an optional Netlify token stored in the company's secrets (website:publish, people only)",
+  summary: "Connect a site: name, domain, repo (owner/site-name; a GitHub address is stored as owner/site-name), Netlify site id and either a pasted Netlify token (netlifyToken, stored as the site's own secret) or an existing company secret (netlifyTokenSecretId, never rotated or deleted by the site; another company's secret is 404) (website:publish, people only)",
   body: createWebsiteSiteSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
 });
@@ -15832,7 +15840,7 @@ registerCurrentRoute({
   method: "patch",
   path: siteParams,
   tags: ["website"],
-  summary: "Change a site's settings, rotate its Netlify token or archive it (website:publish, people only)",
+  summary: "Change a site's settings or archive it (website:publish, people only). netlifyToken rotates the site's own token secret; when the site uses a shared secret it creates a new site-owned secret instead and leaves the shared one unchanged. netlifyTokenSecretId links an existing company secret (404 for another company's), null unlinks it without deleting it",
   body: updateWebsiteSiteSchema,
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
 });

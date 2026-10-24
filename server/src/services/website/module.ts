@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
+import { companySecrets, documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
 import {
   WEBSITE_CONTENT_MAX_BYTES,
   type CreateWebsiteEntry,
@@ -19,7 +19,7 @@ import {
   type WebsiteSaveResult,
   type WebsiteSite,
 } from "@greatstone/shared";
-import { conflict, unprocessable } from "../../errors.js";
+import { conflict, notFound, unprocessable } from "../../errors.js";
 import { secretService } from "../secrets.js";
 import { WEBSITE_MESSAGES } from "./messages.js";
 
@@ -38,7 +38,8 @@ export interface WebsiteActor {
   userId: string | null;
 }
 
-export function toWebsiteSite(row: SiteRow): WebsiteSite {
+/** `secretName` is the linked secret's name (never its value). */
+export function toWebsiteSite(row: SiteRow, secretName: string | null = null): WebsiteSite {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -47,6 +48,8 @@ export function toWebsiteSite(row: SiteRow): WebsiteSite {
     repoUrl: row.repoUrl,
     netlifySiteId: row.netlifySiteId,
     hasNetlifyToken: Boolean(row.netlifyTokenSecretId),
+    netlifyTokenSource: row.netlifyTokenSecretId ? (row.netlifyTokenSecretOwned ? "own" : "shared") : null,
+    netlifyTokenSecretName: row.netlifyTokenSecretId ? secretName : null,
     blobsStoreName: row.blobsStoreName,
     engineVersion: row.engineVersion,
     releaseSchemaVersion: row.releaseSchemaVersion,
@@ -300,18 +303,64 @@ export function websiteModuleService(db: Db) {
     return row ?? null;
   }
 
-  async function storeNetlifyToken(companyId: string, site: Pick<SiteRow, "id" | "domain" | "netlifyTokenSecretId">, token: string, userId: string | null) {
-    if (site.netlifyTokenSecretId) {
+  /** Company secrets a site can use as its Netlify token: active, company scope, names only. */
+  async function listTokenSecrets(companyId: string) {
+    return db
+      .select({ id: companySecrets.id, name: companySecrets.name })
+      .from(companySecrets)
+      .where(and(eq(companySecrets.companyId, companyId), eq(companySecrets.scope, "company"), eq(companySecrets.status, "active")))
+      .orderBy(asc(companySecrets.name));
+  }
+
+  /** The name of a site's linked token secret, or null. Never the value. */
+  async function tokenSecretName(site: Pick<SiteRow, "companyId" | "netlifyTokenSecretId">) {
+    if (!site.netlifyTokenSecretId) return null;
+    const [row] = await db
+      .select({ name: companySecrets.name })
+      .from(companySecrets)
+      .where(and(eq(companySecrets.companyId, site.companyId), eq(companySecrets.id, site.netlifyTokenSecretId)));
+    return row?.name ?? null;
+  }
+
+  /**
+   * A shared token secret must be one the Publish job can read: this company's, company scope, active.
+   * Another company's secret (or a person's own secret) is simply not found.
+   */
+  async function assertLinkableSecret(companyId: string, secretId: string) {
+    const secret = await secrets.getById(secretId);
+    if (!secret || secret.companyId !== companyId || secret.scope !== "company" || secret.status === "deleted") {
+      throw notFound("That secret is not in this company", { code: "website_token_secret_not_found" });
+    }
+    if (secret.status !== "active") {
+      throw unprocessable("That secret is not active. Choose an active secret or paste a token.", { code: "website_token_secret_inactive" });
+    }
+  }
+
+  /**
+   * Store a pasted token. Rotates the site's secret only when the site owns it; when the site uses a
+   * shared secret, a new site-owned secret is created and the shared one is left untouched.
+   */
+  async function storeNetlifyToken(
+    companyId: string,
+    site: Pick<SiteRow, "id" | "domain" | "netlifyTokenSecretId" | "netlifyTokenSecretOwned">,
+    token: string,
+    userId: string | null,
+  ) {
+    if (site.netlifyTokenSecretId && site.netlifyTokenSecretOwned) {
       const existing = await secrets.getById(site.netlifyTokenSecretId);
       if (existing && existing.status === "active" && existing.companyId === companyId) {
         await secrets.rotate(existing.id, { value: token }, { userId });
         return existing.id;
       }
     }
+    // A site that switched to a shared secret may have left its earlier own secret behind: never reuse that name.
+    const base = `Website Netlify token ${site.id.slice(0, 8)}`;
+    let name = base;
+    for (let n = 2; await secrets.getByName(companyId, name); n += 1) name = `${base} ${n}`;
     const created = await secrets.create(
       companyId,
       {
-        name: `Website Netlify token ${site.id.slice(0, 8)}`,
+        name,
         provider: "local_encrypted",
         value: token,
         description: `Netlify token for ${site.domain}, used only to publish this site (Website module).`,
@@ -322,6 +371,7 @@ export function websiteModuleService(db: Db) {
   }
 
   async function createSite(companyId: string, input: CreateWebsiteSite, actor: WebsiteActor) {
+    if (input.netlifyTokenSecretId) await assertLinkableSecret(companyId, input.netlifyTokenSecretId);
     let row: SiteRow;
     try {
       [row] = await db
@@ -332,6 +382,7 @@ export function websiteModuleService(db: Db) {
           domain: input.domain,
           repoUrl: input.repoUrl ?? null,
           netlifySiteId: input.netlifySiteId,
+          ...(input.netlifyTokenSecretId ? { netlifyTokenSecretId: input.netlifyTokenSecretId, netlifyTokenSecretOwned: false } : {}),
           propertyId: input.propertyId ?? null,
           editorOrigins: input.editorOrigins ?? [],
           checkPaths: input.checkPaths ?? ["/"],
@@ -345,7 +396,7 @@ export function websiteModuleService(db: Db) {
       // The secret lives in its own store, so a failure removes the new site row rather than leaving it without a token.
       try {
         const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
-        [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId }).where(eq(websiteSite.id, row.id)).returning();
+        [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId, netlifyTokenSecretOwned: true }).where(eq(websiteSite.id, row.id)).returning();
       } catch (err) {
         await db.delete(websiteSite).where(and(eq(websiteSite.companyId, companyId), eq(websiteSite.id, row.id)));
         throw err;
@@ -355,10 +406,21 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updateSite(site: SiteRow, input: UpdateWebsiteSite, actor: WebsiteActor) {
-    const { netlifyToken, archived, ...rest } = input;
+    const { netlifyToken, netlifyTokenSecretId, archived, ...rest } = input;
     const patch: Partial<typeof websiteSite.$inferInsert> = { ...rest, updatedAt: new Date() };
     if (archived !== undefined) patch.archivedAt = archived ? new Date() : null;
-    if (netlifyToken) patch.netlifyTokenSecretId = await storeNetlifyToken(site.companyId, site, netlifyToken, actor.userId);
+    if (netlifyToken) {
+      patch.netlifyTokenSecretId = await storeNetlifyToken(site.companyId, site, netlifyToken, actor.userId);
+      patch.netlifyTokenSecretOwned = true;
+    } else if (netlifyTokenSecretId === null) {
+      // Unlink only. The secret stays in the company's secrets, shared or not.
+      patch.netlifyTokenSecretId = null;
+      patch.netlifyTokenSecretOwned = true;
+    } else if (netlifyTokenSecretId && netlifyTokenSecretId !== site.netlifyTokenSecretId) {
+      await assertLinkableSecret(site.companyId, netlifyTokenSecretId);
+      patch.netlifyTokenSecretId = netlifyTokenSecretId;
+      patch.netlifyTokenSecretOwned = false;
+    }
     try {
       const [row] = await db
         .update(websiteSite)
@@ -664,6 +726,8 @@ export function websiteModuleService(db: Db) {
   return {
     store,
     listSites,
+    listTokenSecrets,
+    tokenSecretName,
     getSite,
     createSite,
     updateSite,

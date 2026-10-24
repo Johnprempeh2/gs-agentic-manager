@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   foreignKey,
   index,
@@ -39,6 +40,8 @@ export const websiteSite = pgTable(
     netlifySiteId: text("netlify_site_id").notNull(),
     /** The site's own Netlify token lives only in the vault. */
     netlifyTokenSecretId: uuid("netlify_token_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
+    /** True when the site created the token secret (a pasted token). A shared secret (false) is never rotated or deleted by the site. */
+    netlifyTokenSecretOwned: boolean("netlify_token_secret_owned").notNull().default(true),
     blobsStoreName: text("blobs_store_name").notNull().default("gsam-content"),
     engineVersion: text("engine_version"),
     releaseSchemaVersion: integer("release_schema_version").notNull().default(1),

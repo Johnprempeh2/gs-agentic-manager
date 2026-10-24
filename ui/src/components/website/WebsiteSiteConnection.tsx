@@ -5,6 +5,8 @@ import { websiteModuleApi } from "../../api/website";
 import { queryKeys } from "../../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { RadioCardGroup } from "@/components/ui/radio-card";
 import { errorStateMessage } from "../ErrorState";
 import { useCanManageWebsite } from "./WebsiteSetup";
 
@@ -55,14 +57,29 @@ function SiteForm({ companyId, property, site, onDone }: {
   const [repoUrl, setRepoUrl] = useState(site?.repoUrl ?? "");
   const [netlifySiteId, setNetlifySiteId] = useState(site?.netlifySiteId ?? "");
   const [netlifyToken, setNetlifyToken] = useState("");
+  const [tokenMode, setTokenMode] = useState<"saved" | "paste">(site?.netlifyTokenSource === "shared" ? "saved" : "paste");
+  const [chosenSecretId, setChosenSecretId] = useState<string | null>(null);
+  const tokenSecrets = useQuery({
+    queryKey: queryKeys.website.tokenSecrets(companyId),
+    queryFn: () => websiteModuleApi.tokenSecrets(companyId),
+  });
+  // The site names its shared secret, never its id: preselect it by name (names are unique in a company).
+  const linkedSecretId = site?.netlifyTokenSource === "shared"
+    ? tokenSecrets.data?.find((option) => option.name === site.netlifyTokenSecretName)?.id ?? ""
+    : "";
+  const secretId = chosenSecretId ?? linkedSecretId;
   const save = useMutation({
     mutationFn: () => {
+      const token =
+        tokenMode === "paste"
+          ? netlifyToken.trim() ? { netlifyToken: netlifyToken.trim() } : {}
+          : secretId ? { netlifyTokenSecretId: secretId } : {};
       const fields = {
         name: name.trim(),
         domain: domain.trim(),
         repoUrl: repoUrl.trim() || null,
         netlifySiteId: netlifySiteId.trim(),
-        ...(netlifyToken.trim() ? { netlifyToken: netlifyToken.trim() } : {}),
+        ...token,
       };
       return site
         ? websiteModuleApi.updateSite(companyId, site.id, fields)
@@ -125,24 +142,71 @@ function SiteForm({ companyId, property, site, onDone }: {
             required
           />
         </Field>
-        <Field
-          id={`${idPrefix}-token`}
-          label="Netlify access token"
-          help={
-            site?.hasNetlifyToken
-              ? "Token saved. Leave this empty to keep it, or paste a new token to replace it."
-              : "Stored in this company's secrets. Only the Publish job reads it. You cannot see it again after saving."
-          }
-        >
-          <Input
-            id={`${idPrefix}-token`}
-            type="password"
-            value={netlifyToken}
-            onChange={(event) => setNetlifyToken(event.target.value)}
-            aria-describedby={`${idPrefix}-token-help`}
-            autoComplete="new-password"
+        <div className="flex min-w-0 flex-col gap-2 text-sm sm:col-span-2" data-testid="website-site-token">
+          <p id={`${idPrefix}-token-label`} className="font-medium">Netlify token</p>
+          <RadioCardGroup
+            ariaLabel="Netlify token"
+            value={tokenMode}
+            onValueChange={(value) => setTokenMode(value as "saved" | "paste")}
+            className="sm:grid-cols-2"
+            options={[
+              {
+                value: "saved",
+                title: "Use a saved secret",
+                description: "A token already in this company's secrets, such as the one your agents use. GSAM reads it to Publish and never changes it.",
+              },
+              {
+                value: "paste",
+                title: "Paste a token",
+                description: "Saved as this site's own secret. You cannot see it again after saving.",
+              },
+            ]}
           />
-        </Field>
+          {tokenMode === "saved" ? (
+            <Field id={`${idPrefix}-token-secret`} label="Saved secret" help="Names only. GSAM never shows a secret's value.">
+              {tokenSecrets.isLoading ? (
+                <p className="text-xs text-muted-foreground">Loading saved secrets</p>
+              ) : tokenSecrets.error ? (
+                <p role="alert" className="text-xs text-status-danger">{errorStateMessage(tokenSecrets.error)}</p>
+              ) : tokenSecrets.data?.length ? (
+                <NativeSelect
+                  id={`${idPrefix}-token-secret`}
+                  value={secretId}
+                  onChange={(event) => setChosenSecretId(event.target.value)}
+                  aria-describedby={`${idPrefix}-token-secret-help`}
+                >
+                  <option value="" disabled>Choose a secret</option>
+                  {tokenSecrets.data.map((option) => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+                </NativeSelect>
+              ) : (
+                <p className="text-xs text-muted-foreground">No saved secrets yet. Add one in Secrets, or paste a token.</p>
+              )}
+            </Field>
+          ) : (
+            <Field
+              id={`${idPrefix}-token`}
+              label="Token"
+              help={
+                site?.netlifyTokenSource === "own"
+                  ? "Token saved. Leave this empty to keep it, or paste a new token to replace it."
+                  : site?.netlifyTokenSource === "shared"
+                    ? "This site uses a saved secret. A pasted token is saved as this site's own secret; the saved secret stays as it is."
+                    : "Stored in this company's secrets. Only the Publish job reads it."
+              }
+            >
+              <Input
+                id={`${idPrefix}-token`}
+                type="password"
+                value={netlifyToken}
+                onChange={(event) => setNetlifyToken(event.target.value)}
+                aria-describedby={`${idPrefix}-token-help`}
+                autoComplete="new-password"
+              />
+            </Field>
+          )}
+        </div>
       </fieldset>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="ghost" onClick={onDone} disabled={save.isPending}>Cancel</Button>
@@ -190,7 +254,13 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
           <Detail label="Live address"><span className="font-mono">{site.domain}</span></Detail>
           <Detail label="Code repository">{site.repoUrl ? <span className="font-mono">{site.repoUrl}</span> : "Not set"}</Detail>
           <Detail label="Netlify site ID"><span className="font-mono">{site.netlifySiteId}</span></Detail>
-          <Detail label="Netlify access token">{site.hasNetlifyToken ? "Token saved." : "Not saved yet. Publish needs it."}</Detail>
+          <Detail label="Netlify token">
+            {site.netlifyTokenSource === "shared"
+              ? <>Saved secret <span className="font-medium">{site.netlifyTokenSecretName ?? "(name unavailable)"}</span>. GSAM reads it and never changes it.</>
+              : site.hasNetlifyToken
+                ? "Token saved. Pasted for this site."
+                : "Not saved yet. Publish needs it."}
+          </Detail>
         </dl>
       ) : (
         <div className="space-y-3">

@@ -38,6 +38,8 @@ const site: WebsiteSite = {
   repoUrl: null,
   netlifySiteId: "netlify-123",
   hasNetlifyToken: true,
+  netlifyTokenSource: "own",
+  netlifyTokenSecretName: "Website Netlify token site-1",
   blobsStoreName: "gsam-content",
   engineVersion: null,
   releaseSchemaVersion: 1,
