@@ -218,6 +218,7 @@ import {
 import { artifactReviewDocumentService } from "../services/artifact-review-documents.js";
 import { documentEvidenceService } from "../services/document-evidence.js";
 import { assertCanResolveProposal } from "../services/secret-proposal-authorization.js";
+import { assertSecretDefinitionAdmin } from "./secrets.js";
 import {
   buildDocumentReviewContext,
   buildPlanReviewContext,
@@ -18029,6 +18030,44 @@ export function issueRoutes(
           };
         }
       }
+      // A binding card approves its binding, and the pending secret it needs,
+      // inside the accept transaction (GRE-2313). If approval fails, the accept
+      // rolls back too: the card stays open with the reason, ready to retry.
+      const cardSecretProposalId =
+        current.kind === "request_confirmation" &&
+        typeof current.payload.secretProposal?.proposalId === "string"
+          ? current.payload.secretProposal.proposalId
+          : null;
+      let approvedCardProposal: NonNullable<Awaited<ReturnType<typeof secretProposals.getById>>> | null = null;
+      if (cardSecretProposalId && !opts.approveSecretProposal) {
+        const proposal = await secretProposals.getById(issue.companyId, cardSecretProposalId);
+        if (
+          !proposal ||
+          proposal.kind !== "binding" ||
+          proposal.originIssueId !== issue.id ||
+          proposal.interactionId !== current.id
+        ) {
+          throw notFound("Secret proposal not found");
+        }
+        const resolvedByUserId = actor.actorType === "user" ? actor.actorId : "board";
+        acceptOptions = {
+          afterResolveInTransaction: async (tx) => {
+            await secretProposals.approveInTransaction(tx as unknown as Db, issue.companyId, proposal.id, {
+              resolvedByUserId,
+              cascade: true,
+              assertCanResolve: (lockedProposal, txDb) =>
+                assertCanResolveProposal({
+                  db: txDb,
+                  actor: req.actor,
+                  companyId: issue.companyId,
+                  proposal: lockedProposal,
+                  assertSecretDefinitionAdmin: () => assertSecretDefinitionAdmin(req, issue.companyId),
+                }),
+            });
+          },
+        };
+        approvedCardProposal = proposal;
+      }
       const acceptActor = {
         agentId: actor.agentId,
         runId: actor.runId,
@@ -18112,36 +18151,17 @@ export function issueRoutes(
                 userId: actor.actorType === "user" ? actor.actorId : null,
               },
             });
-          } else {
-            const proposal = await secretProposals.getById(
-              issue.companyId,
-              secretProposal.proposalId,
-            );
-            if (
-              !proposal ||
-              proposal.kind !== "binding" ||
-              proposal.originIssueId !== issue.id ||
-              proposal.interactionId !== interaction.id
-            ) {
-              throw notFound("Secret proposal not found");
-            }
-            await secretProposals.approve(issue.companyId, proposal.id, {
-              resolvedByUserId,
-              assertCanResolve: (lockedProposal, txDb) =>
-                assertCanResolveProposal({
-                  db: txDb,
-                  actor: req.actor,
-                  companyId: issue.companyId,
-                  proposal: lockedProposal,
-                }),
-            });
+          } else if (approvedCardProposal) {
+            // Approved and committed together with the accept above.
             await notifySecretProposalResolution({
-              proposal,
+              proposal: approvedCardProposal,
               status: "approved",
               userId: resolvedByUserId,
               issues: svc,
               heartbeat,
             });
+          } else {
+            throw conflict("Secret proposal was not approved with this card");
           }
           continuationInteraction =
             await interactionSvc.recordSecretProposalExecutionResult(
