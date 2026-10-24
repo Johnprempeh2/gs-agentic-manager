@@ -177,6 +177,14 @@ export function useTaskTreeView(
     );
   }, [index, showFinished, only]);
 
+  // The filter changes the tree's shape: bring its top back into view.
+  const [filterSeen, setFilterSeen] = useState(blockedOnly);
+  useEffect(() => {
+    if (!index || filterSeen === blockedOnly) return;
+    setFilterSeen(blockedOnly);
+    setFocusRequest({ id: index.root.id, nonce: Date.now() });
+  }, [index, blockedOnly, filterSeen]);
+
   useEffect(() => {
     if (!isPhone || !focusRequest) return;
     document

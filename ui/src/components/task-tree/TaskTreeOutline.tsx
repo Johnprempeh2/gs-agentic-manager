@@ -135,7 +135,7 @@ export function TaskTreeOutline({
           <Link to={hrefFor(item)} className="min-w-0 flex-1 py-2 text-sm">
             <span className={cn("line-clamp-2 text-foreground", depth === 0 ? "font-semibold" : "font-medium")}>{node.title}</span>
             <span className="mt-0.5 flex min-w-0 items-center gap-2">
-              {node.identifier ? <span className="font-mono text-xs text-muted-foreground">{node.identifier}</span> : null}
+              {node.identifier ? <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{node.identifier}</span> : null}
               {node.isKeyTask ? <KeyTaskMark /> : null}
               {loopIds?.has(node.id) ? <BlockLoopMark /> : null}
               {item.outside ? <OutsideProjectMark projectName={item.outside.projectName ?? "No project"} /> : null}
