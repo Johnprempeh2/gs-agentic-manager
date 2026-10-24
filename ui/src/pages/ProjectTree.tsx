@@ -238,6 +238,7 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
           truncatedNote={truncatedNote}
           subtitle={subtitle}
           actions={actions}
+          showSummary={data.keyTaskIds.length > 0}
         />
         {data.nodes.length === 0 && data.keyTaskIds.length === 0 ? (
           <div className="flex flex-wrap items-center gap-3" data-no-key-tasks="">

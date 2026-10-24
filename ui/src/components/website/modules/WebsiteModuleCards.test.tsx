@@ -126,7 +126,9 @@ describe("WebsiteModulesSection", () => {
     // No owner set: no empty owner line at all.
     expect(hub!.textContent).not.toContain("Owner");
     expect(hub!.textContent).toContain("Off");
-    expect(hub!.textContent).toContain("No project linked");
+    // No project: no tasks line, so the card leads with its release.
+    expect(hub!.textContent).not.toContain("No project linked");
+    expect(hub!.textContent).not.toContain("open task");
     expect(hub!.textContent).toContain("No release has changed it yet");
   });
 

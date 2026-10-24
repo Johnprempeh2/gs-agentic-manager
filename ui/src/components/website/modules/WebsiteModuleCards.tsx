@@ -22,7 +22,8 @@ import { ErrorState } from "../../ErrorState";
 import { releaseDate, releaseTime } from "../WebsiteReleases";
 
 // The Modules section of Website Home (GRE-2325): one card per module of the
-// site. A card shows only what is set: no "Owner: none" line.
+// site. A card shows only what is set: no "Owner: none" line, and no tasks
+// line when there is no project or nothing open.
 
 const MODULE_ICONS: Record<WebsiteModuleIcon, LucideIcon> = {
   blocks: Blocks,
@@ -101,7 +102,7 @@ function ModuleCardLink({ card, siteId }: { card: WebsiteModuleCard; siteId: str
         <HealthDot health={card.health} />
       </span>
       <span className="flex flex-col gap-1 text-xs text-muted-foreground">
-        <span className={cn(tasks.needsPerson > 0 && "font-medium text-status-warning-foreground")}>{tasks.text}</span>
+        {card.openTasks ? <span className={cn(tasks.needsPerson > 0 && "font-medium text-status-warning-foreground")}>{tasks.text}</span> : null}
         <span>
           {card.lastRelease ? (
             <>
