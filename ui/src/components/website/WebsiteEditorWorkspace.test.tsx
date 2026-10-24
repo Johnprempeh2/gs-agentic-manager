@@ -114,12 +114,12 @@ async function flush() {
   for (let i = 0; i < 6; i += 1) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
-async function render() {
+async function render(entry = "/website?tab=editor") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/website?tab=editor"]}>
+        <MemoryRouter initialEntries={[entry]}>
           <WebsiteEditorTab companyId="co-1" property={property} onOpenTab={vi.fn()} />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -149,7 +149,7 @@ async function openPreview() {
 const frame = () => container.querySelector<HTMLIFrameElement>('[data-testid="website-editor-frame"]');
 
 /** Load the frame and complete the handshake as the site's editor would. */
-async function connect() {
+async function connect(ackExtra: Record<string, unknown> = {}) {
   const iframe = frame()!;
   const frameWindow = iframe.contentWindow!;
   const posted = vi.spyOn(frameWindow, "postMessage").mockImplementation(() => {});
@@ -166,7 +166,7 @@ async function connect() {
   };
   await fromFrame({
     type: "hello-ack",
-    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }] },
+    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], ...ackExtra },
   });
   const sent = (type: string) => posted.mock.calls.map((call) => call[0] as { type: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
   const save = (requestId: string) => fromFrame({ protocol: 1, session: nonce, type: "save", payload: { requestId, pageId: "page-1", baseRevisionId: "rev-2", data } });
@@ -187,14 +187,14 @@ async function connect() {
 }
 
 /** Click to change, then "Edit words or image myself": the editor opens with block h1 selected. */
-async function openEditorOnBlock() {
-  await render();
+async function openEditorOnBlock(ackExtra: Record<string, unknown> = {}, entry?: string) {
+  await render(entry);
   await openPreview();
   const preview = await connect();
   await preview.pickBlock();
   await act(async () => button("Edit words or image myself").click());
   await flush();
-  return connect();
+  return connect(ackExtra);
 }
 
 /** Media, Add image, pick the GS Studio image, add alt text, Use. */
@@ -414,7 +414,7 @@ describe("WebsiteEditorTab", () => {
       await editor.reply("insert-media-result", { requestId: insert!.id, ok: true });
       expect(frame()).toBe(iframe);
       expect(editor.sent("load-draft")).toHaveLength(1);
-      expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. The image shows after you save the page in the editor.");
+      expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. Save the page to keep it.");
       expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
     });
 
@@ -482,6 +482,65 @@ describe("WebsiteEditorTab", () => {
       const [insert] = editor.sentMessages("insert-media");
       expect(insert!.payload).toMatchObject({ blockId: "h1", mediaEntryId: "asset-7", assetUrl: "/api/assets/asset-7/content" });
       expect(insert!.payload).not.toHaveProperty("media");
+    });
+  });
+
+  describe("motion in the selected block (GRE-2219)", () => {
+    const motionAck = {
+      blocks: [{ type: "Hero", label: "Hero", motion: { effects: ["none", "hero.stone", "bg.ascent"], default: { effect: "none", intensity: "off" } } }],
+      motionEffects: [
+        { id: "hero.stone", label: "Hero stone", still: "/motion/stone-still.png" },
+        { id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" },
+      ],
+    };
+    const motionPanel = () => container.querySelector<HTMLElement>('[data-testid="website-motion"]')!;
+    const effect = (id: string) => container.querySelector<HTMLButtonElement>(`[data-testid="website-motion-effect-${id}"]`)!;
+
+    it("a GS Studio hand-off opens Motion with the study chosen, and Use in block sends set-motion", async () => {
+      const editor = await openEditorOnBlock(motionAck, "/website?tab=editor&motion=016");
+      expect(motionPanel().textContent).toContain("From GS Studio: study 016, Ascent.");
+      expect(effect("bg.ascent").getAttribute("aria-checked")).toBe("true");
+      expect(effect("bg.ascent").querySelector("img")!.getAttribute("src")).toBe(`${EDITOR}/motion/ascent-dark.webp`);
+      expect(effect("none").getAttribute("aria-checked")).toBe("false");
+
+      await act(async () => button("Full").click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="website-motion-apply"]')!.click());
+      await flush();
+      const [request] = editor.sentMessages("set-motion");
+      expect(request!.payload).toEqual({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "full" } });
+
+      await editor.reply("set-motion-result", { requestId: request!.id, ok: true });
+      expect(motionPanel().querySelector('[role="status"]')!.textContent).toBe(
+        "Ascent, Full, is in Hero banner. Save the page in the editor to keep it.",
+      );
+      expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
+      expect(button("In the block").disabled).toBe(true);
+    });
+
+    it("a refusal says why in plain words", async () => {
+      const editor = await openEditorOnBlock(motionAck);
+      await act(async () => button("Motion").click());
+      await act(async () => effect("hero.stone").click());
+      await act(async () => button("Use in block").click());
+      await flush();
+      const [request] = editor.sentMessages("set-motion");
+      await editor.reply("set-motion-result", { requestId: request!.id, ok: false, code: "effect_not_allowed" });
+      expect(motionPanel().querySelector('[role="alert"]')!.textContent).toBe(
+        "Hero banner does not take Hero stone, so nothing changed. Pick another effect.",
+      );
+    });
+
+    it("an engine with no motion choices, or no selected block, says what to do and sends nothing", async () => {
+      const editor = await openEditorOnBlock();
+      await act(async () => button("Motion").click());
+      expect(motionPanel().textContent).toContain("does not offer motion choices yet");
+      expect(motionPanel().querySelector('[role="radiogroup"]')).toBeNull();
+      expect(editor.sentMessages("set-motion")).toHaveLength(0);
+
+      act(() => root.unmount());
+      root = createRoot(container);
+      await render("/website?tab=editor&motion=016");
+      expect(motionPanel().textContent).toContain("Pick a block first");
     });
   });
 

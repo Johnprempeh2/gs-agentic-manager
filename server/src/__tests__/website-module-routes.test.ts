@@ -34,6 +34,8 @@ import { websiteModuleService } from "../services/website/module.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
 import { companySearchService } from "../services/company-search.js";
 import { secretService } from "../services/secrets.js";
+import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
+import { createStorageService } from "../storage/service.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -368,6 +370,54 @@ describeEmbeddedPostgres("website module routes", () => {
     ).rejects.toThrow(/Agents cannot have Publish rights/);
   });
 
+  // GRE-2136: the page shows Connect a site and Change from this answer, so it must match what the site routes accept.
+  it("access: says what the caller may do, for the company or one site, and matches what the site routes accept", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const second = (await request(app())
+      .post(`/api/companies/${a.company.id}/website/sites`)
+      .send({ name: "Second", domain: "second.alpha.test", netlifySiteId: "n2" })
+      .expect(201)).body as WebsiteSite;
+    const accessUrl = `/api/companies/${a.company.id}/website/access`;
+    const sites = `/api/companies/${a.company.id}/website/sites`;
+    const ask = async (actor: Actor, siteId?: string) =>
+      (await request(app(actor)).get(siteId ? `${accessUrl}?siteId=${siteId}` : accessUrl).expect(200)).body;
+
+    const owner = await seedUser(a.company.id, "owner");
+    expect(await ask(owner)).toEqual({ view: true, edit: true, publish: true });
+    expect(await ask(owner, a.site.id)).toEqual({ view: true, edit: true, publish: true });
+
+    // An operator granted website:publish for the company may connect a site.
+    const granted = await seedUser(a.company.id, "operator", [{ key: "website:publish" }]);
+    expect(await ask(granted)).toEqual({ view: true, edit: true, publish: true });
+    await request(app(granted)).post(sites).send({ name: "Third", domain: "third.alpha.test", netlifySiteId: "n3" }).expect(201);
+
+    // A grant scoped to one site: Change on that site only, and no Connect a site.
+    const scoped = await seedUser(a.company.id, "operator", [{ key: "website:publish", scope: { siteIds: [a.site.id] } }]);
+    expect((await ask(scoped)).publish).toBe(false);
+    await request(app(scoped)).post(sites).send({ name: "Fourth", domain: "fourth.alpha.test", netlifySiteId: "n4" }).expect(403);
+    expect((await ask(scoped, a.site.id)).publish).toBe(true);
+    await request(app(scoped)).patch(`${sites}/${a.site.id}`).send({ name: "Renamed" }).expect(200);
+    expect((await ask(scoped, second.id)).publish).toBe(false);
+    await request(app(scoped)).patch(`${sites}/${second.id}`).send({ name: "Nope" }).expect(404);
+
+    const operator = await seedUser(a.company.id, "operator");
+    expect(await ask(operator, a.site.id)).toEqual({ view: true, edit: true, publish: false });
+    const viewer = await seedUser(a.company.id, "viewer");
+    expect(await ask(viewer)).toEqual({ view: true, edit: false, publish: false });
+
+    // Agents never hold website:publish, even with a grant row.
+    const { actor: agent } = await seedAgent(a.company.id, ["website:view", "website:edit", "website:publish"]);
+    expect(await ask(agent, a.site.id)).toEqual({ view: true, edit: true, publish: false });
+
+    // Another company's site, or a malformed id, is all false.
+    expect(await ask(owner, b.site.id)).toEqual({ view: false, edit: false, publish: false });
+    expect(await ask(owner, "not-a-uuid")).toEqual({ view: false, edit: false, publish: false });
+    // And company B's access is not company A's to ask about.
+    await request(app(owner)).get(`/api/companies/${b.company.id}/website/access`).expect(403);
+  });
+
   it("role defaults: owner publishes, operator edits but cannot publish, viewer only views", async () => {
     await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
     const a = await seedWorld("Alpha", "alpha.test");
@@ -647,10 +697,12 @@ describeEmbeddedPostgres("website module routes", () => {
     await http.patch(url).send({ editorFrameOrigin: "https://edit2.alpha.test" }).expect(200);
 
     const changes = await db.select().from(activityLog).where(eq(activityLog.action, "website.site_editor_origin_changed"));
-    expect(changes.map((row) => row.details)).toEqual([
+    // No ORDER BY: compare as a set.
+    expect(changes).toHaveLength(2);
+    expect(changes.map((row) => row.details)).toEqual(expect.arrayContaining([
       { from: null, to: "https://editor.alpha.test" },
       { from: "https://editor.alpha.test", to: "https://edit2.alpha.test" },
-    ]);
+    ]));
     // The public domain cannot be moved onto the editor host either.
     await http.patch(url).send({ domain: "edit2.alpha.test" }).expect(422);
   });
@@ -822,6 +874,63 @@ describeEmbeddedPostgres("website module routes", () => {
     await http.put(`${entryUrl}/content`).send({ content: { ...valid, assetId: foreign.id }, baseRevisionId: detail.latestRevisionId }).expect(422);
     await http.put(`${entryUrl}/content`).send({ content: { ...valid, alt: "" }, baseRevisionId: detail.latestRevisionId }).expect(422);
     await http.put(`${entryUrl}/content`).send({ content: { ...valid, alt: "Fishing boats" }, baseRevisionId: detail.latestRevisionId }).expect(200);
+  });
+
+  it("isolation 10 (GRE-2138): A's media entry naming B's asset is refused on save, and storage refuses B's object key", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const own = await seedAsset(a.company.id, "harbour");
+    const foreign = await seedAsset(b.company.id, "bravo-logo");
+
+    const create = await http.post(`${siteUrl}/entries`).send({ collection: "media", entryKey: "stolen", content: { assetId: foreign.id, alt: "Not ours" } }).expect(422);
+    expect(create.body.details).toMatchObject({ code: "website_media_asset_not_found" });
+    const created = (await http.post(`${siteUrl}/entries`).send({ collection: "media", entryKey: "hero", content: { assetId: own.id, alt: "Harbour" } }).expect(201)).body;
+    const detail = (await http.get(`${siteUrl}/entries/${created.id}`).expect(200)).body;
+    const save = await http.put(`${siteUrl}/entries/${created.id}/content`).send({ content: { assetId: foreign.id, alt: "Not ours" }, baseRevisionId: detail.latestRevisionId }).expect(422);
+    expect(save.body.details).toMatchObject({ code: "website_media_asset_not_found" });
+    const stored = await db.select().from(websiteEntry).where(eq(websiteEntry.companyId, a.company.id));
+    expect(JSON.stringify(stored)).not.toContain(foreign.id);
+
+    // The asset read path: A's storage calls refuse an object key under B's prefix.
+    const root = mkdtempSync(path.join(os.tmpdir(), "gsam-isolation-10-"));
+    try {
+      const storage = createStorageService(createLocalDiskStorageProvider(root));
+      for (const call of [storage.getObject, storage.headObject, storage.deleteObject]) {
+        await expect(call(a.company.id, foreign.objectKey)).rejects.toMatchObject({ status: 403 });
+      }
+      await expect(storage.getObject(a.company.id, `${a.company.id}/../${b.company.id}/x.png`)).rejects.toMatchObject({ status: 400 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("collection entries (GRE-2138): a wrong-shaped entry or an unknown collection answers 422", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const siteUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}`;
+    const post = (collection: string, entryKey: string, content: unknown) => http.post(`${siteUrl}/entries`).send({ collection, entryKey, content });
+    const valid = { id: "old-about", from: "/about-us", to: "/about", status: 301 };
+
+    const created = (await post("redirect", "old-about", valid).expect(201)).body;
+    const refused = async (collection: string, entryKey: string, content: unknown, code: string) => {
+      const response = await post(collection, entryKey, content).expect(422);
+      expect(response.body.details, entryKey).toMatchObject({ code });
+    };
+    await refused("redirect", "no-status", { ...valid, status: undefined }, "website_collection_fields_invalid");
+    await refused("redirect", "bad-status", { ...valid, status: 200 }, "website_collection_fields_invalid");
+    await refused("redirect", "protocol-relative", { ...valid, to: "//evil.test" }, "website_collection_fields_invalid");
+    await refused("redirect", "extra-field", { ...valid, note: "x" }, "website_collection_fields_invalid");
+    await refused("public-person", "bad-kind", { name: "Ada", role: "Engineer", kind: "robot" }, "website_collection_fields_invalid");
+    await refused("not-a-collection", "x", { anything: true }, "website_collection_unknown");
+
+    const entryUrl = `${siteUrl}/entries/${created.id}`;
+    const detail = (await http.get(entryUrl).expect(200)).body;
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, status: 200 }, baseRevisionId: detail.latestRevisionId }).expect(422);
+    await http.put(`${entryUrl}/content`).send({ content: { ...valid, status: 308 }, baseRevisionId: detail.latestRevisionId }).expect(200);
   });
 
   it("gsamServedOrigins lists the public URL and each allowed hostname", () => {

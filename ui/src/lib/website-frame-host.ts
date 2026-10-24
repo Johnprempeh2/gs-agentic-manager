@@ -3,12 +3,14 @@ import {
   WEBSITE_FRAME_HELLO_TIMEOUT_MS,
   WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS,
   WEBSITE_FRAME_PROTOCOLS,
+  WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS,
   inspectWebsitePuckData,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
   websiteFrameHelloMessage,
   websiteFrameInsertMediaSchema,
   websiteFrameMessage,
+  websiteFrameSetMotionSchema,
   type WebsiteFrameBlockPicked,
   type WebsiteFrameHelloAck,
   type WebsiteFrameHostMessageType,
@@ -17,6 +19,10 @@ import {
   type WebsiteFrameMode,
   type WebsiteFrameSave,
   type WebsiteFrameSaveResult,
+  type WebsiteFrameSetMotion,
+  type WebsiteFrameSetMotionResult,
+  type WebsiteMotionChoice,
+  type WebsiteMotionEffect,
   type WebsitePuckBlockInfo,
 } from "@greatstone/shared";
 
@@ -100,6 +106,15 @@ export interface WebsiteFrameHostOptions<Source> {
   createId?: () => string;
 }
 
+/** What the engine said about motion in its `hello-ack` (GRE-2232). Empty for an older engine. */
+export interface WebsiteFrameMotionCapabilities {
+  /** Block type to the effects it takes and what a new block starts with. */
+  blocks: Map<string, { effects: string[]; default: WebsiteMotionChoice }>;
+  effects: WebsiteMotionEffect[];
+}
+
+type ReplyType = "insert-media-result" | "set-motion-result";
+
 let fallbackId = 0;
 function defaultCreateId() {
   return globalThis.crypto?.randomUUID?.() ?? `msg-${Date.now()}-${++fallbackId}`;
@@ -116,8 +131,9 @@ export class WebsiteFrameHostSession<Source> {
   private shownBlocks = new Map<string, WebsitePuckBlockInfo>();
   private shownRevisionId: string | null = null;
   private shownData: unknown = null;
-  /** `insert-media` requests waiting for their `insert-media-result`, by message id. */
-  private inserts = new Map<string, { resolve: (result: WebsiteFrameInsertMediaResult | null) => void; timer: ReturnType<typeof setTimeout> }>();
+  private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [] };
+  /** `insert-media` and `set-motion` requests waiting for their result, by message id. */
+  private replies = new Map<string, { type: ReplyType; resolve: (result: never) => void; timer: ReturnType<typeof setTimeout> }>();
   /** Saves by `pageId:requestId`. Scoped to this session (one nonce). */
   private saves = new Map<string, Promise<WebsiteFrameSaveResult>>();
   private inFlight: string | null = null;
@@ -192,7 +208,8 @@ export class WebsiteFrameHostSession<Source> {
         this.options.onFrameError?.(message.payload);
         return;
       case "insert-media-result":
-        this.insertMediaResult(message.payload);
+      case "set-motion-result":
+        this.reply(message.type, message.payload);
         return;
     }
   }
@@ -228,34 +245,36 @@ export class WebsiteFrameHostSession<Source> {
    * an older engine drops `insert-media` without a reply.
    */
   insertMedia(payload: WebsiteFrameInsertMedia): Promise<WebsiteFrameInsertMediaResult | null> {
-    if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null) {
-      return Promise.resolve(null);
-    }
     const parsed = websiteFrameInsertMediaSchema.safeParse(payload);
-    if (!parsed.success) {
-      this.drop("insert-media payload GSAM made is invalid");
-      return Promise.resolve(null);
-    }
-    return new Promise((resolve) => {
-      const id = this.send("insert-media", parsed.data);
-      if (!id) return resolve(null);
-      const timer = setTimeout(() => {
-        this.inserts.delete(id);
-        resolve(null);
-      }, WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS);
-      this.inserts.set(id, { resolve, timer });
-    });
+    if (!parsed.success) return this.invalid("insert-media");
+    return this.request("insert-media", parsed.data, "insert-media-result", WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS);
+  }
+
+  /** The motion choices the engine offered in its `hello-ack`. */
+  get motionCapabilities(): WebsiteFrameMotionCapabilities {
+    return this.motion;
+  }
+
+  /**
+   * Put a motion choice in a block of the open draft (GRE-2232). Resolves with
+   * the frame's `set-motion-result`, or null when the frame cannot be asked or
+   * does not answer in time (an older engine drops `set-motion`).
+   */
+  setMotion(payload: WebsiteFrameSetMotion): Promise<WebsiteFrameSetMotionResult | null> {
+    const parsed = websiteFrameSetMotionSchema.safeParse(payload);
+    if (!parsed.success) return this.invalid("set-motion");
+    return this.request("set-motion", parsed.data, "set-motion-result", WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS);
   }
 
   /** The user leaves the editor. The frame drops the draft; this session stops listening. */
   teardown() {
     if (this.connection.phase === "closed") return;
     this.stopHello();
-    for (const pending of this.inserts.values()) {
+    for (const pending of this.replies.values()) {
       clearTimeout(pending.timer);
-      pending.resolve(null);
+      pending.resolve(null as never);
     }
-    this.inserts.clear();
+    this.replies.clear();
     this.send("teardown", {});
     this.setConnection({ phase: "closed" });
   }
@@ -274,6 +293,10 @@ export class WebsiteFrameHostSession<Source> {
     this.stopHello();
     this.protocol = ack.protocol;
     this.engineTypes = new Set(ack.blocks.map((block) => block.type));
+    this.motion = {
+      blocks: new Map(ack.blocks.flatMap((block) => (block.motion ? [[block.type, block.motion] as const] : []))),
+      effects: ack.motionEffects ?? [],
+    };
     this.setConnection({ phase: "ready", protocol: ack.protocol, engine: ack.engine });
 
     let draft: WebsiteFrameDraft;
@@ -393,12 +416,38 @@ export class WebsiteFrameHostSession<Source> {
     });
   }
 
-  private insertMediaResult(result: WebsiteFrameInsertMediaResult) {
-    const pending = this.inserts.get(result.requestId);
-    if (!pending) return this.drop("insert-media-result for no open request");
+  private invalid(type: "insert-media" | "set-motion") {
+    this.drop(`${type} payload GSAM made is invalid`);
+    return Promise.resolve(null);
+  }
+
+  /** Editor only, after the draft is loaded: send, then wait for the matching result or the timeout. */
+  private request<R>(
+    type: "insert-media" | "set-motion",
+    payload: Record<string, unknown>,
+    replyType: ReplyType,
+    timeoutMs: number,
+  ): Promise<R | null> {
+    if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null) {
+      return Promise.resolve(null);
+    }
+    return new Promise<R | null>((resolve) => {
+      const id = this.send(type, payload);
+      if (!id) return resolve(null);
+      const timer = setTimeout(() => {
+        this.replies.delete(id);
+        resolve(null);
+      }, timeoutMs);
+      this.replies.set(id, { type: replyType, resolve: resolve as (result: never) => void, timer });
+    });
+  }
+
+  private reply(type: ReplyType, result: { requestId: string }) {
+    const pending = this.replies.get(result.requestId);
+    if (!pending || pending.type !== type) return this.drop(`${type} for no open request`);
     clearTimeout(pending.timer);
-    this.inserts.delete(result.requestId);
-    pending.resolve(result);
+    this.replies.delete(result.requestId);
+    pending.resolve(result as never);
   }
 
   private rememberShown(revisionId: string, data: unknown) {

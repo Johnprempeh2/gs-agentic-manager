@@ -15937,6 +15937,15 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website/access",
+  tags: ["website"],
+  summary: "Say what the caller may do on the website: { view, edit, publish } booleans. With no siteId it is the company-wide right (connect a site); with siteId it is that site's right, so scoped grants count. Another company's or a malformed siteId answers all false. Agents never get publish",
+  query: z.object({ siteId: z.string().optional() }),
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/website/sites",
   tags: ["website"],

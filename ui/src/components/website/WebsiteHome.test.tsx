@@ -257,9 +257,14 @@ describe("WebsiteHomeTab", () => {
     await vi.waitFor(() => expect(byTestId("website-preview-frame")?.getAttribute("src")).toBe("https://dev.greatstone.example/"));
     const view = (label: string) => Array.from(byTestId("website-home-view")!.querySelectorAll("button")).find((el) => el.textContent === label)!;
     expect(view("In development").getAttribute("aria-pressed")).toBe("true");
+    // The panel beside the frame follows the view.
+    expect(byTestId("website-home-site-link")?.getAttribute("href")).toBe("https://dev.greatstone.example/");
+    expect(byTestId("website-home-open-site")?.textContent).toContain("Open development site");
     await act(async () => { view("Live").click(); });
     expect(byTestId("website-preview-frame")?.getAttribute("src")).toBe("https://mirror.greatstone.example/");
     expect(view("Live").getAttribute("aria-pressed")).toBe("true");
+    expect(byTestId("website-home-site-link")?.getAttribute("href")).toBe(`https://${site.domain}/`);
+    expect(byTestId("website-home-open-site")?.textContent).toContain("Open live site");
     await act(async () => { (byTestId("website-home-compare") as HTMLButtonElement).click(); });
     expect(onOpenTab).toHaveBeenLastCalledWith("preview");
     expect(rememberedPreviewMode()).toBe("side");

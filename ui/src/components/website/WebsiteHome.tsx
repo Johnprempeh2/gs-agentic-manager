@@ -314,6 +314,9 @@ function Hero({
   const latest = home?.releases.latest ?? null;
   const liveRelease = home?.releases.live ?? null;
   const previewHost = previewUrl ? previewUrl.replace(/^https?:\/\//, "").replace(/\/$/, "") : null;
+  // The panel follows the frame: In development shows and opens the development address.
+  const siteLink = view === "dev" ? devUrl : live;
+  const siteLabel = view === "dev" ? previewHost : domain;
   return (
     <section className="grid gap-6 lg:grid-cols-5 lg:items-center" aria-labelledby="website-home-title" data-testid="website-home-hero">
       <div className="min-w-0 lg:col-span-3">
@@ -334,9 +337,9 @@ function Hero({
             {status.label}
           </span>
           <h2 id="website-home-title" className="text-2xl font-bold tracking-tight">{site?.name ?? property.name}</h2>
-          {live ? (
-            <a href={live} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 break-all rounded-sm font-mono text-sm text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {domain}
+          {siteLink ? (
+            <a href={siteLink} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 break-all rounded-sm font-mono text-sm text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="website-home-site-link">
+              {siteLabel}
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : (
@@ -369,11 +372,11 @@ function Hero({
             <Send />
             Publish
           </Button>
-          {live ? (
+          {siteLink ? (
             <Button asChild variant="ghost">
-              <a href={live} target="_blank" rel="noreferrer">
+              <a href={siteLink} target="_blank" rel="noreferrer" data-testid="website-home-open-site">
                 <ExternalLink />
-                Open site
+                {view === "dev" ? "Open development site" : "Open live site"}
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </Button>

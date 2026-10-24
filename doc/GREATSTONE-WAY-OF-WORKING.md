@@ -59,7 +59,11 @@ to it.
    22 hours, 2.2 and 2.5 GB each, in worktrees that were already deleted.
 4. **Commit.** Small commits with plain-English messages that say what changed
    and why. Stage files by name; never `git add -A` or `git add .`.
-5. **Pull request.** `git push -u origin <branch>`, then
+5. **Pull request.** First run `git fetch origin` and merge `origin/main` into
+   your branch, and fix any conflicts on your branch. Do this again if `main`
+   moves before review. Several runs of one agent now work in parallel (this
+   repo and greatstone-website), so conflicts are more likely; Keystone still
+   merges. Then `git push -u origin <branch>`, then
    `gh pr create --base main`. The description says: what changed, why, the
    exact tests you ran and their results, and anything John should check by
    hand. Link the GRE issue. Put the pull request link on the issue, add
