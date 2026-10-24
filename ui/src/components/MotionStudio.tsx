@@ -299,9 +299,11 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
 
         <StudyFrame study={study} interactive className="rounded-lg ring-1 ring-border" />
 
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <DecisionPicker value={study.decision} disabled={busy} onChange={(decision) => update.mutate({ decision })} />
-          <label className="flex flex-col gap-1.5 text-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1">
+            <DecisionPicker value={study.decision} disabled={busy} onChange={(decision) => update.mutate({ decision })} />
+          </div>
+          <label className="flex shrink-0 flex-col gap-1.5 text-sm">
             <span className="font-medium text-foreground">Status</span>
             <NativeSelect
               value={study.status}
