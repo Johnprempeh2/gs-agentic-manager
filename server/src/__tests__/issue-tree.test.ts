@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { companies, companyMemberships, createDb, issueRelations, issues } from "@greatstone/db";
+import { companies, companyMemberships, createDb, issueRelations, issueThreadInteractions, issues } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -104,6 +104,70 @@ describeEmbeddedPostgres("task tree route", () => {
     expect(res.body.externalBlockers).toEqual([
       expect.objectContaining({ id: elsewhere, title: "Vendor contract", status: "in_progress" }),
     ]);
+  });
+
+  it("names the card a blocked task waits on and the root blocker outside the tree", async () => {
+    const companyId = await company("GRE");
+    const root = await task(companyId, { status: "blocked", issueNumber: 9, identifier: "GRE-9" });
+    const leaf = await task(companyId, {
+      parentId: root,
+      status: "blocked",
+      unblockDescriptor: { owner: { userId: "john" }, action: "Send the Turnstile keys" },
+    });
+    // GRE-9 waits on a task outside the tree, which waits on another one
+    // further away that waits on John's answer to a card.
+    const middle = await task(companyId, { status: "blocked", title: "Release" });
+    const far = await task(companyId, { status: "blocked", title: "Staging upload" });
+    await db.insert(issueRelations).values([
+      { companyId, issueId: middle, relatedIssueId: root, type: "blocks" },
+      { companyId, issueId: far, relatedIssueId: middle, type: "blocks" },
+    ]);
+    await db.insert(issueThreadInteractions).values([
+      {
+        companyId,
+        issueId: far,
+        kind: "request_confirmation",
+        status: "pending",
+        title: "Approve the staging upload",
+        addresseeUserId: "john",
+        payload: { version: 1, prompt: "Approve?" } as never,
+        createdAt: new Date("2026-10-24T10:00:00Z"),
+      },
+      {
+        companyId,
+        issueId: far,
+        kind: "request_confirmation",
+        status: "pending",
+        title: "A later card",
+        payload: { version: 1, prompt: "Later?" } as never,
+        createdAt: new Date("2026-10-24T11:00:00Z"),
+      },
+      {
+        companyId,
+        issueId: leaf,
+        kind: "ask_user_questions",
+        status: "accepted",
+        title: "Already answered",
+        payload: { version: 1, questions: [] } as never,
+      },
+    ]);
+
+    const res = await request(appFor([companyId])).get("/api/issues/GRE-9/tree").expect(200);
+    const byId = new Map(res.body.nodes.map((node: { id: string }) => [node.id, node]));
+    expect(byId.get(leaf)).toMatchObject({
+      unblockAction: "Send the Turnstile keys",
+      unblockOwner: { userId: "john" },
+      pendingCard: null,
+    });
+    expect(byId.get(root)).toMatchObject({ blockedByIds: [middle], rootBlockerId: far });
+    const external = new Map(res.body.externalBlockers.map((blocker: { id: string }) => [blocker.id, blocker]));
+    expect(external.get(far)).toMatchObject({
+      title: "Staging upload",
+      waitReason: {
+        unblockAction: null,
+        pendingCard: expect.objectContaining({ title: "Approve the staging upload", addresseeUserId: "john" }),
+      },
+    });
   });
 
   it("stays inside the company", async () => {

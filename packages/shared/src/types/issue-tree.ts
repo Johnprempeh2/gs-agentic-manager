@@ -1,4 +1,26 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { IssueUnblockOwner } from "./issue.js";
+
+/** A card on a blocked task that is still waiting for a reply. */
+export interface IssueTreePendingCard {
+  id: string;
+  kind: string;
+  /** The card's title or summary, when it has one. */
+  title: string | null;
+  addresseeAgentId: string | null;
+  addresseeUserId: string | null;
+  createdAt: Date;
+}
+
+/** What a blocked task says it waits on, besides other tasks. */
+export interface IssueTreeWaitReason {
+  /** What the owner says is needed to unblock it, when they said. */
+  unblockAction: string | null;
+  /** Who the owner says must act. */
+  unblockOwner: IssueUnblockOwner | null;
+  /** The oldest card on the task still waiting for a reply. */
+  pendingCard: IssueTreePendingCard | null;
+}
 
 /** One task in a task tree: the root, or anything under it. */
 export interface IssueTreeNode {
@@ -19,8 +41,18 @@ export interface IssueTreeNode {
   doneChildCount: number;
   /** For a blocked task: the task further down the chain that needs action. */
   terminalBlockerId: string | null;
+  /**
+   * For a blocked task: the task at the bottom of its blocker chain, when the
+   * chain goes deeper than its first open blocker. Set even when that task is
+   * waiting on a person, unlike `terminalBlockerId`.
+   */
+  rootBlockerId?: string | null;
   /** What the owner says is needed to unblock it, when they said. */
   unblockAction: string | null;
+  /** Who the owner says must act, when they said. Blocked tasks only. */
+  unblockOwner?: IssueUnblockOwner | null;
+  /** The oldest card waiting for a reply. Blocked tasks only. */
+  pendingCard?: IssueTreePendingCard | null;
   /** Marked by the project lead as a task that drives the project. */
   isKeyTask?: boolean;
   updatedAt: Date;
@@ -34,6 +66,11 @@ export interface IssueTreeExternalBlocker {
   status: IssueStatus;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  /**
+   * Why it waits, when it is blocked. Set for the tasks the tree names as a
+   * root blocker too, so "Root: GRE-12, waiting on John" can be shown.
+   */
+  waitReason?: IssueTreeWaitReason | null;
 }
 
 export interface IssueTree {

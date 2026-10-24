@@ -1,15 +1,17 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { issueRelations, issues, projects } from "@greatstone/db";
+import { issueRelations, issueThreadInteractions, issues, projects } from "@greatstone/db";
 import type {
   IssuePriority,
   IssueStatus,
   IssueTree,
   IssueTreeExternalBlocker,
   IssueTreeNode,
+  IssueTreePendingCard,
+  IssueUnblockDescriptor,
 } from "@greatstone/shared";
 import type { CanReadIssue } from "./issue-follows.js";
-import { issueService } from "./issues.js";
+import { issueService, terminalExplicitBlockersByRoot } from "./issues.js";
 
 /** A task tree stops at this many tasks; the page says so when it does. */
 export const ISSUE_TREE_MAX_NODES = 300;
@@ -85,6 +87,7 @@ export async function buildTreeNodes(
           status: issues.status,
           assigneeAgentId: issues.assigneeAgentId,
           assigneeUserId: issues.assigneeUserId,
+          unblockDescriptor: issues.unblockDescriptor,
           hiddenAt: issues.hiddenAt,
         },
       })
@@ -107,6 +110,7 @@ export async function buildTreeNodes(
   const counts = new Map(childCounts.map((row) => [row.parentId!, row]));
   const blockedBy = new Map<string, string[]>();
   const external = new Map<string, IssueTreeExternalBlocker>();
+  const externalDescriptors = new Map<string, IssueUnblockDescriptor | null>();
   for (const { blockedId, blocker } of relations) {
     if (blocker.hiddenAt) continue;
     if (!keptIds.has(blocker.id)) {
@@ -122,12 +126,118 @@ export async function buildTreeNodes(
         assigneeAgentId: blocker.assigneeAgentId,
         assigneeUserId: blocker.assigneeUserId,
       });
+      externalDescriptors.set(blocker.id, blocker.unblockDescriptor);
     }
     const list = blockedBy.get(blockedId) ?? [];
     list.push(blocker.id);
     blockedBy.set(blockedId, list);
   }
 
+  // The task at the bottom of each blocked task's chain: what the whole chain
+  // waits on, even when that task is itself waiting on a card (GRE-2277).
+  const firstOpenBlocker = new Map<string, (typeof relations)[number]["blocker"]>();
+  for (const { blockedId, blocker } of [...relations].sort((a, b) => a.blocker.id.localeCompare(b.blocker.id))) {
+    if (blocker.hiddenAt || TERMINAL.has(blocker.status) || firstOpenBlocker.has(blockedId)) continue;
+    if (!keptIds.has(blocker.id) && !external.has(blocker.id)) continue;
+    firstOpenBlocker.set(blockedId, blocker);
+  }
+  const chainEnds = await terminalExplicitBlockersByRoot(
+    companyId,
+    [...new Map([...firstOpenBlocker.values()].map((blocker) => [blocker.id, blocker])).values()].map((blocker) => ({
+      id: blocker.id,
+      identifier: blocker.identifier,
+      title: blocker.title,
+      status: blocker.status as IssueStatus,
+      priority: "medium" as IssuePriority,
+      assigneeAgentId: blocker.assigneeAgentId,
+      assigneeUserId: blocker.assigneeUserId,
+    })),
+    db,
+  );
+  const rootBlockerOf = (rowId: string): string | null => {
+    const direct = firstOpenBlocker.get(rowId);
+    if (!direct) return null;
+    return chainEnds.get(direct.id)?.find((end) => !TERMINAL.has(end.status))?.id ?? null;
+  };
+
+  // A root blocker further down a chain that leaves the tree is named too, so
+  // a task high up can say what the whole chain waits on.
+  const farTerminalIds = [
+    ...new Set(
+      [...[...attention.values()].map((entry) => entry.terminalBlockerIssueId), ...kept.map((row) => rootBlockerOf(row.id))]
+        .filter((id): id is string => !!id && !keptIds.has(id) && !external.has(id)),
+    ),
+  ];
+  if (farTerminalIds.length > 0) {
+    const far = await db
+      .select({ ...treeNodeColumns, hiddenAt: issues.hiddenAt })
+      .from(issues)
+      .where(and(eq(issues.companyId, companyId), inArray(issues.id, farTerminalIds)));
+    for (const row of far) {
+      if (row.hiddenAt || TERMINAL.has(row.status)) continue;
+      if (canRead && !(await canRead(row))) continue;
+      external.set(row.id, {
+        id: row.id,
+        identifier: row.identifier,
+        title: row.title,
+        status: row.status as IssueStatus,
+        assigneeAgentId: row.assigneeAgentId,
+        assigneeUserId: row.assigneeUserId,
+      });
+      externalDescriptors.set(row.id, row.unblockDescriptor);
+    }
+  }
+
+  // The card each blocked task waits on, oldest first.
+  const blockedIds = [
+    ...kept.filter((row) => row.status === "blocked").map((row) => row.id),
+    ...[...external.values()].filter((row) => row.status === "blocked").map((row) => row.id),
+  ];
+  const pendingCards = new Map<string, IssueTreePendingCard>();
+  if (blockedIds.length > 0) {
+    const cards = await db
+      .select({
+        issueId: issueThreadInteractions.issueId,
+        id: issueThreadInteractions.id,
+        kind: issueThreadInteractions.kind,
+        title: issueThreadInteractions.title,
+        summary: issueThreadInteractions.summary,
+        addresseeAgentId: issueThreadInteractions.addresseeAgentId,
+        addresseeUserId: issueThreadInteractions.addresseeUserId,
+        createdAt: issueThreadInteractions.createdAt,
+      })
+      .from(issueThreadInteractions)
+      .where(
+        and(
+          eq(issueThreadInteractions.companyId, companyId),
+          eq(issueThreadInteractions.status, "pending"),
+          inArray(issueThreadInteractions.issueId, blockedIds),
+        ),
+      )
+      .orderBy(asc(issueThreadInteractions.createdAt));
+    for (const card of cards) {
+      if (pendingCards.has(card.issueId)) continue;
+      pendingCards.set(card.issueId, {
+        id: card.id,
+        kind: card.kind,
+        title: card.title?.trim() || card.summary?.trim() || null,
+        addresseeAgentId: card.addresseeAgentId,
+        addresseeUserId: card.addresseeUserId,
+        createdAt: card.createdAt,
+      });
+    }
+  }
+  for (const blocker of external.values()) {
+    if (blocker.status !== "blocked") continue;
+    const descriptor = externalDescriptors.get(blocker.id) ?? null;
+    blocker.waitReason = {
+      unblockAction: descriptor?.action?.trim() || null,
+      unblockOwner: descriptor?.owner ?? null,
+      pendingCard: pendingCards.get(blocker.id) ?? null,
+    };
+  }
+
+  const named = (id: string | null) => (id && (keptIds.has(id) || external.has(id)) ? id : null);
   const nodes: IssueTreeNode[] = kept.map((row) => {
     const terminalBlockerId = attention.get(row.id)?.terminalBlockerIssueId ?? null;
     return {
@@ -143,11 +253,11 @@ export async function buildTreeNodes(
       blockedByIds: (blockedBy.get(row.id) ?? []).sort(),
       childCount: counts.get(row.id)?.total ?? 0,
       doneChildCount: counts.get(row.id)?.done ?? 0,
-      terminalBlockerId:
-        terminalBlockerId && (keptIds.has(terminalBlockerId) || external.has(terminalBlockerId))
-          ? terminalBlockerId
-          : null,
+      terminalBlockerId: named(terminalBlockerId),
+      rootBlockerId: row.status === "blocked" ? named(rootBlockerOf(row.id)) : null,
       unblockAction: row.status === "blocked" ? row.unblockDescriptor?.action?.trim() || null : null,
+      unblockOwner: row.status === "blocked" ? row.unblockDescriptor?.owner ?? null : null,
+      pendingCard: pendingCards.get(row.id) ?? null,
       isKeyTask: row.keyTaskAt != null,
       updatedAt: row.updatedAt,
     };

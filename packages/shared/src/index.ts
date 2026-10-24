@@ -1603,6 +1603,8 @@ export type {
   IssueTree,
   IssueTreeExternalBlocker,
   IssueTreeNode,
+  IssueTreePendingCard,
+  IssueTreeWaitReason,
   ProjectTree,
   ProjectTreeLead,
   AccessUserProfile,
