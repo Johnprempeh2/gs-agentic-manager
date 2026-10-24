@@ -13,6 +13,7 @@ import { TaskChatBubbleActions } from "./TaskChatBubbleActions";
 import { formatTaskChatTimestamp } from "./task-chat-adapter";
 import { TaskChatRunnerActivityGroup } from "./TaskChatRunnerActivityGroup";
 import { TaskChatProtocolCard } from "./TaskChatProtocolCard";
+import { runSilenceNote } from "../../lib/task-run-state";
 import { TaskChatPlanPreviewCard } from "./TaskChatPlanPreviewCard";
 import {
   buildTurnTimelineRows,
@@ -67,12 +68,14 @@ function RunnerTurnStatus({
   finishedAtMs,
   continuedAfterSteering = false,
   statusMessage = null,
+  lastOutputAtMs = null,
 }: {
   status: string;
   startedAtMs: number | null;
   finishedAtMs?: number | null;
   continuedAfterSteering?: boolean;
   statusMessage?: string | null;
+  lastOutputAtMs?: number | null;
 }) {
   const terminal = isTerminalRunStatus(status);
   // A queued run held by admission shows its hold line, not "Working" (GRE-198).
@@ -100,6 +103,8 @@ function RunnerTurnStatus({
       ? `${label} ${failed ? "after" : "for"} ${elapsed}`
       : label
     : `${label} for ${elapsed ?? "0s"}`;
+  // A live run that has gone quiet says so, as the header chip does (GRE-2246).
+  const silence = !terminal && !queued ? runSilenceNote(lastOutputAtMs, Date.now()) : null;
   const visibleLabel = continuedAfterSteering
     ? `Continued after steering · ${semanticLabel}`
     : semanticLabel;
@@ -113,6 +118,7 @@ function RunnerTurnStatus({
       aria-atomic="true"
     >
       {visibleLabel}
+      {silence ? <span className="text-status-warning-foreground"> · {silence}</span> : null}
     </span>
   );
 }
@@ -137,6 +143,7 @@ export function TaskChatRunnerTurn({
   suppressFinal = false,
   continuedAfterSteering = false,
   statusMessage = null,
+  lastOutputAtMs = null,
   onRuntimeRequestDecision,
 }: {
   /** Stable identity used to clear replay-latched final text for the next turn. */
@@ -156,6 +163,8 @@ export function TaskChatRunnerTurn({
   continuedAfterSteering?: boolean;
   /** Runtime status line for the run, e.g. an admission hold. */
   statusMessage?: string | null;
+  /** Last output from the run; a long silence adds "no output for 12 min" (GRE-2246). */
+  lastOutputAtMs?: number | null;
   onRuntimeRequestDecision?: (
     item: TaskChatRuntimeRequestItem,
     decision: TaskChatRuntimeRequestDecision,
@@ -236,6 +245,7 @@ export function TaskChatRunnerTurn({
           finishedAtMs={finishedAtMs}
           continuedAfterSteering={continuedAfterSteering}
           statusMessage={statusMessage}
+          lastOutputAtMs={lastOutputAtMs}
         />
       </div>
       {activityUnavailable ? (

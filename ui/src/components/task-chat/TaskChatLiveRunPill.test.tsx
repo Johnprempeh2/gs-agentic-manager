@@ -82,6 +82,32 @@ describe("TaskChatLiveRunPill", () => {
     expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
+  it("a live run silent for 10+ minutes adds no output for N min, and keeps its spinner (GRE-2246)", () => {
+    act(() => {
+      root.render(
+        <TaskChatLiveRunPill
+          status="running"
+          startedAtMs={Date.now() - 25 * 60_000}
+          lastOutputAtMs={Date.now() - 12 * 60_000}
+          toolSummary={null}
+        />,
+      );
+    });
+    const text = container.textContent ?? "";
+    expect(text).toContain("Working");
+    expect(text).toContain("no output for 12 min");
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+  });
+
+  it("a live run with recent output adds no silence note", () => {
+    act(() => {
+      root.render(
+        <TaskChatLiveRunPill status="running" startedAtMs={Date.now() - 60_000} lastOutputAtMs={Date.now() - 5_000} toolSummary={null} />,
+      );
+    });
+    expect(container.textContent ?? "").not.toContain("no output");
+  });
+
   it("shimmers 'Working' with elapsed + tool summary while streaming", () => {
     const startedAtMs = Date.now() - 65_000; // ~1 minute ago
     act(() => {

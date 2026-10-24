@@ -1,5 +1,6 @@
 
 import { useTaskRunStates } from "../hooks/useTaskRunStates";
+import { refreshTaskRunState, runSilenceNote } from "../lib/task-run-state";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
 import {
   PaperclipIcon,
@@ -962,8 +963,14 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       </nav>
     ) : null;
 
-  const taskRunState =
+  const derivedTaskRunState =
     issue.status === "done" || issue.status === "cancelled" ? null : taskRunStates.get(issue.id) ?? null;
+  // Re-read against the clock so the line under the title agrees with the chip.
+  const taskRunState = derivedTaskRunState ? refreshTaskRunState(derivedTaskRunState, Date.now()) : null;
+  const taskRunSilenceNote =
+    taskRunState && taskRunState.kind !== "queued" && taskRunState.lastOutputAt
+      ? runSilenceNote(new Date(taskRunState.lastOutputAt).getTime(), Date.now())
+      : null;
   const issueStatusControl = (
     <StatusIcon
       status={issue.status} externalConversationState={issue.externalConversationState}
@@ -986,6 +993,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             issue={issue}
             hasLiveRuns={hasLiveRuns}
             runStateKind={taskRunState?.kind ?? null}
+            runSilenceNote={taskRunSilenceNote}
             waitingOnMonitor={isWaitingOnMonitor(issue)}
             monitorServiceName={
               issue.executionState?.monitor?.serviceName ??

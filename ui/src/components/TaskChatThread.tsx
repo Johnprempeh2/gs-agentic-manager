@@ -2326,6 +2326,11 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       ? ((liveRun.startedAt ? toMs(liveRun.startedAt) : null) ??
         toMs(liveRun.createdAt))
       : (settlingRun?.startedAtMs ?? null));
+  // Latest event, else the start: how long the live run has been silent (GRE-2246).
+  const tailLastOutputAtMs =
+    liveRun && liveRun.id === tailRunId
+      ? toMs(liveRun.lastEventAt ?? liveRun.startedAt ?? null) || null
+      : null;
   const tailFinishedAtMs = liveRun
     ? liveRun.finishedAt
       ? toMs(liveRun.finishedAt)
@@ -3056,6 +3061,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                                       ? liveRun.currentStatusMessage
                                       : null
                                   }
+                                  lastOutputAtMs={tailLastOutputAtMs}
                                   onRuntimeRequestDecision={
                                     handleRuntimeRequestDecision
                                   }
@@ -3077,6 +3083,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                                         ? liveRun.currentStatusMessage
                                         : null
                                     }
+                                    lastOutputAtMs={tailLastOutputAtMs}
                                   />
                                   <TaskChatLiveTail
                                     items={tailItems}

@@ -211,6 +211,17 @@ export function deriveTaskRunState(
   return deriveTaskRunStates(liveRuns, context).get(issueId) ?? null;
 }
 
+/**
+ * "no output for 12 min" once a live run has been silent for the stuck
+ * threshold, else null. For lines that sit beside the chip (activity line,
+ * chat header) so they agree with it.
+ */
+export function runSilenceNote(lastOutputAtMs: number | null | undefined, now: number): string | null {
+  if (lastOutputAtMs == null || !Number.isFinite(lastOutputAtMs)) return null;
+  const silentMs = now - lastOutputAtMs;
+  return silentMs >= STUCK_SILENCE_MS ? `no output for ${formatRunDuration(silentMs)}` : null;
+}
+
 /** "20s", "4 min", "1 h 5 min". Short enough for a chip. */
 export function formatRunDuration(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));

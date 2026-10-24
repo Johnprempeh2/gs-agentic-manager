@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LiveRunForIssue } from "../api/heartbeats";
 import {
+  runSilenceNote,
   agentMaxConcurrentRuns,
   describeTaskRunState,
   deriveTaskRunState,
@@ -120,6 +121,14 @@ describe("agentMaxConcurrentRuns", () => {
     expect(agentMaxConcurrentRuns({ id: "a", runtimeConfig: { heartbeat: { maxConcurrentRuns: 1 } } })).toBe(1);
     expect(agentMaxConcurrentRuns({ id: "a", runtimeConfig: {} })).toBe(20);
     expect(agentMaxConcurrentRuns(null)).toBe(20);
+  });
+});
+
+describe("runSilenceNote", () => {
+  it("speaks only once the run has been silent for 10 minutes", () => {
+    expect(runSilenceNote(NOW - 12 * MIN, NOW)).toBe("no output for 12 min");
+    expect(runSilenceNote(NOW - 9 * MIN, NOW)).toBeNull();
+    expect(runSilenceNote(null, NOW)).toBeNull();
   });
 });
 
