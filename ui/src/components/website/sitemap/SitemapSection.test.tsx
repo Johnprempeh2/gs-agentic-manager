@@ -99,11 +99,40 @@ describe("SitemapSection", () => {
     expect(patch.tree.nodes.find((node: { id: string }) => node.id === "n3").order).toBe(0);
   });
 
+  const dialog = () => document.querySelector<HTMLElement>("[data-testid=sitemap-approve-dialog]");
+  const dialogButton = (label: string) => [...(dialog()?.querySelectorAll("button") ?? [])].find((entry) => entry.textContent === label);
+
   it("asks before approving and says what approval does to the site", async () => {
     await render();
     await act(async () => button("Approve this option")!.click());
-    expect(container.querySelector("[role=alertdialog]")!.textContent).toContain("2 new pages are planned and 0 pages");
+    expect(dialog()!.getAttribute("role")).toBe("alertdialog");
+    expect(dialog()!.textContent).toContain("Approve Option A?");
+    expect(dialog()!.textContent).toContain("2 new pages are planned and 0 pages");
     expect(moduleMock.approveSitemapOption).not.toHaveBeenCalled();
+  });
+
+  it("approves from Compare through the same dialog, with the counts for the chosen option", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const optionB = option({
+      id: "opt-b",
+      name: "Option B",
+      tree: { nodes: [{ id: "n1", title: "Home", path: "/", parentId: null, order: 0, menu: "none", menuOrder: null, pageId: "page-1" }], journeys: [] },
+    });
+    moduleMock.approveSitemapOption.mockResolvedValue({ option: { ...optionB, status: "approved" }, summary: { created: 0, updated: 1, archived: 0 } });
+    await render({ options: [option(), optionB] });
+    // Radix tabs switch on mouse down, not click.
+    await act(async () => button("Compare")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
+    const useButtons = [...container.querySelectorAll("[data-testid=sitemap-compare] button")].filter((entry) => entry.textContent === "Use this option");
+    expect(useButtons).toHaveLength(2);
+    await act(async () => (useButtons[1] as HTMLButtonElement).click());
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(dialog()!.textContent).toContain("Approve Option B?");
+    expect(dialog()!.textContent).toContain("0 new pages are planned and 0 pages");
+    expect(moduleMock.approveSitemapOption).not.toHaveBeenCalled();
+    await act(async () => dialogButton("Approve")!.click());
+    expect(moduleMock.approveSitemapOption).toHaveBeenCalledWith("co-1", "site-1", "opt-b");
+    expect(dialog()).toBeNull();
+    confirmSpy.mockRestore();
   });
 
   it("hides approval from people who cannot publish", async () => {

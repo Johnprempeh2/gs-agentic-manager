@@ -118,13 +118,13 @@ export function SitemapCompareView({ options, initialA, initialB, canApprove, ca
           <div className="min-w-0 space-y-2">
             <OptionColumn option={a} tree={a.tree} changesById={aChanges} side="a" />
             {canApprove && a.status !== "approved" ? (
-              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(a.id)}>Use {a.name}</Button>
+              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(a.id)}>Use this option</Button>
             ) : null}
           </div>
           <div className="min-w-0 space-y-2">
             <OptionColumn option={b} tree={b.tree} changesById={bChanges} side="b" />
             {canApprove && b.status !== "approved" ? (
-              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(b.id)}>Use {b.name}</Button>
+              <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(b.id)}>Use this option</Button>
             ) : null}
           </div>
         </div>
