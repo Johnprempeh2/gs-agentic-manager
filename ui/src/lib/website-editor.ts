@@ -1,5 +1,8 @@
 import {
   checkWebsiteEditorOrigin,
+  isWebsiteFrameAssetUrl,
+  type WebsiteFrameInsertMediaResult,
+  type WebsiteFrameMediaEntry,
   type WebsiteMediaItem,
   type WebsitePageEditorLoad,
   type WebsiteRevision,
@@ -59,6 +62,22 @@ export async function frameDraft(
   };
 }
 
+/**
+ * `insert-media.media`: the picked item as a `Blob`, like a `load-draft.media`
+ * entry, so the frame shows it before save and reload (GRE-2226). Undefined
+ * when it cannot be fetched: `insert-media` still goes, without it.
+ */
+export async function insertMediaEntry(
+  item: { contentPath: string; alt: string; width: number | null; height: number | null },
+  fetchBlob: FetchBlob,
+): Promise<WebsiteFrameMediaEntry | undefined> {
+  try {
+    return { blob: await fetchBlob(item.contentPath), alt: item.alt, width: item.width, height: item.height };
+  } catch {
+    return undefined;
+  }
+}
+
 const NOT_RETRYABLE = new Set(["origin-changed", "invalid", "archived"]);
 
 export interface SaveDependencies {
@@ -115,5 +134,86 @@ export function frameConnectionMessage(connection: WebsiteFrameConnection, edito
       return "This address serves a different site.";
     default:
       return null;
+  }
+}
+
+// ---------------------------------------------------------------- insert-media (GRE-2206)
+
+export type InsertMediaKind = "image" | "animation";
+
+const MEDIA_FIELD_NAMES: Record<InsertMediaKind, readonly string[]> = {
+  image: ["image", "media", "photo", "picture", "background", "video"],
+  animation: ["video", "animation", "clip", "media", "image", "background"],
+};
+
+function findBlockProps(items: unknown, blockId: string, depth = 0): Record<string, unknown> | null {
+  if (!Array.isArray(items) || depth > 20) return null;
+  for (const item of items) {
+    const props = (item as { props?: unknown } | null)?.props;
+    if (typeof props !== "object" || props === null) continue;
+    const record = props as Record<string, unknown>;
+    if (record.id === blockId) return record;
+    for (const value of Object.values(record)) {
+      const found = findBlockProps(value, blockId, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * The block field `insert-media` names. GSAM does not know the site's block
+ * schemas, so it guesses from the block's props: a field that already holds a
+ * `media:` reference first, then a field with a usual media name. The frame
+ * checks the field and answers `field_not_found` or `field_not_media` when the
+ * guess is wrong.
+ */
+export function insertMediaField(data: unknown, blockId: string, kind: InsertMediaKind): string {
+  const props = findBlockProps((data as { content?: unknown } | null)?.content, blockId) ?? {};
+  const names = Object.keys(props).filter((name) => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name));
+  const holdsMedia = names.find((name) => typeof props[name] === "string" && (props[name] as string).startsWith("media:"));
+  if (holdsMedia) return holdsMedia;
+  const preferred = MEDIA_FIELD_NAMES[kind];
+  return preferred.find((name) => names.includes(name)) ?? preferred[0]!;
+}
+
+/**
+ * `insert-media.assetUrl`: GSAM's asset address as an absolute https URL when
+ * GSAM is served over https, otherwise the root-relative path. The frame only
+ * uses it to show the item until the next load; the saved page keeps the
+ * `media:` reference.
+ */
+export function insertMediaAssetUrl(contentPath: string, gsamOrigin: string): string {
+  try {
+    const absolute = new URL(contentPath, gsamOrigin).href;
+    if (isWebsiteFrameAssetUrl(absolute)) return absolute;
+  } catch {
+    // fall through to the path
+  }
+  return contentPath;
+}
+
+const KIND_NOUN: Record<InsertMediaKind, string> = { image: "image", animation: "animation" };
+
+/**
+ * What the media panel says after the frame answered `insert-media`, naming
+ * the block. The site's own `message` is not shown; it goes to the console.
+ */
+export function insertMediaMessage(result: WebsiteFrameInsertMediaResult, blockName: string, kind: InsertMediaKind): string {
+  const noun = KIND_NOUN[kind];
+  // Until GRE-2225 the frame cannot load GSAM's asset, so the block shows the item only after save and reload.
+  if (result.ok) return `Put in ${blockName}. The ${noun} shows after you save the page in the editor.`;
+  const kept = `The ${noun} is saved in Website media.`;
+  switch (result.code) {
+    case "block_not_found":
+      return `${blockName} is no longer on this page, so nothing changed. ${kept}`;
+    case "field_not_found":
+    case "field_not_media":
+      return `${blockName} has no image or video field, so nothing changed. ${kept} Pick it from an image field in the editor.`;
+    case "invalid_payload":
+      return `The site's editor could not use this ${noun}, so nothing changed. ${kept}`;
+    default:
+      if (result.message) console.warn("insert-media refused:", result.message);
+      return `The site's editor did not put the ${noun} in ${blockName}, so nothing changed. ${kept}`;
   }
 }

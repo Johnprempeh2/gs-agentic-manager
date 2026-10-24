@@ -181,6 +181,24 @@ describe("insert-media (host to frame)", () => {
     expect(parses({ assetUrl: `https://media.example.com/${"a".repeat(2048)}` })).toBe(false);
     expect(parses({ extra: true })).toBe(false);
   });
+
+  it("parses a payload with the media blob, and the old payload without it", () => {
+    const media = { blob: new Blob(["png"], { type: "image/png" }), alt: "A stone bridge at dawn", width: 1600, height: 900 };
+    const parsed = websiteFrameInsertMediaSchema.parse({ ...valid, media });
+    expect(parsed.media?.blob).toBe(media.blob);
+    expect(parsed.media).toMatchObject({ alt: media.alt, width: 1600, height: 900 });
+    expect(parses({ media: { ...media, width: null, height: null } })).toBe(true);
+    expect(websiteFrameInsertMediaSchema.parse(valid).media).toBeUndefined();
+  });
+
+  it("refuses a media entry that is not a blob or has unknown keys", () => {
+    const media = { blob: new Blob(["png"]), alt: "", width: null, height: null };
+    expect(parses({ media: { ...media, blob: "data:image/png;base64,AAAA" } })).toBe(false);
+    expect(parses({ media: { ...media, blob: undefined } })).toBe(false);
+    expect(parses({ media: { ...media, width: -1 } })).toBe(false);
+    expect(parses({ media: { ...media, alt: "a".repeat(501) } })).toBe(false);
+    expect(parses({ media: { ...media, url: "https://media.example.com/a.png" } })).toBe(false);
+  });
 });
 
 describe("insert-media-result (frame to host)", () => {

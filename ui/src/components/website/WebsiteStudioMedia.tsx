@@ -34,6 +34,15 @@ import { ErrorState, errorStateMessage } from "../ErrorState";
 
 export type MediaPickerKind = "image" | "animation";
 
+/** The media the picker used: a new entry made from a studio item, or an existing Website media entry. */
+export interface PickedWebsiteMedia {
+  assetId: string;
+  contentPath: string;
+  alt: string;
+  /** True when the picker made a new media entry. */
+  created: boolean;
+}
+
 const KIND_SOURCE: Record<MediaPickerKind, StudioMediaSource> = { image: "studio", animation: "animation" };
 
 function useStudioMediaItems(companyId: string, source: StudioMediaSource, enabled: boolean) {
@@ -66,22 +75,45 @@ function StudioPreview({ item, className }: { item: StudioMediaItem; className?:
   );
 }
 
-/** One of the site's media entries, titled by its alt text. The key stays in the tooltip. */
-export function WebsiteMediaCard({ item }: { item: WebsiteMediaItem }) {
+/**
+ * One of the site's media entries, titled by its alt text. The key stays in
+ * the tooltip. With `onSelect` the card is a toggle button (pick to use).
+ */
+export function WebsiteMediaCard({ item, selected, onSelect }: { item: WebsiteMediaItem; selected?: boolean; onSelect?: () => void }) {
   const hasAlt = hasAltText(item.alt);
-  return (
-    <li className="min-w-0 space-y-1" title={item.entryKey}>
-      <div className="aspect-video overflow-hidden rounded-md border border-border bg-muted">
+  const body = (
+    <>
+      <span className="block aspect-video overflow-hidden rounded-md border border-border bg-muted">
         {item.contentType.startsWith("image/") ? (
           <img src={item.contentPath} alt={item.alt} loading="lazy" className="size-full object-cover" />
         ) : (
-          <div className="flex size-full items-center justify-center text-muted-foreground"><Film className="size-5" aria-hidden="true" /></div>
+          <span className="flex size-full items-center justify-center text-muted-foreground"><Film className="size-5" aria-hidden="true" /></span>
         )}
-      </div>
-      <p className="truncate text-xs font-medium">{mediaItemTitle(item)}</p>
+      </span>
+      <span className="block truncate text-xs font-medium">{mediaItemTitle(item)}</span>
       {item.caption || !hasAlt ? (
-        <p className="truncate text-micro text-muted-foreground">{hasAlt ? item.caption : "No alt text"}</p>
+        <span className="block truncate text-micro text-muted-foreground">{hasAlt ? item.caption : "No alt text"}</span>
       ) : null}
+    </>
+  );
+  return (
+    <li className="min-w-0" title={item.entryKey}>
+      {onSelect ? (
+        <button
+          type="button"
+          aria-pressed={Boolean(selected)}
+          onClick={onSelect}
+          className={cn(
+            "block w-full space-y-1 rounded-md p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            selected ? "bg-accent ring-2 ring-primary" : "hover:bg-accent/50",
+          )}
+          data-testid="media-picker-entry"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="space-y-1">{body}</div>
+      )}
     </li>
   );
 }
@@ -196,6 +228,8 @@ export function WebsiteMediaPicker({
   site,
   kind,
   media,
+  canInsert = false,
+  insertBlockName,
   onClose,
   onAdded,
 }: {
@@ -203,13 +237,18 @@ export function WebsiteMediaPicker({
   site: WebsiteSite;
   kind: MediaPickerKind | null;
   media: WebsiteMediaItem[];
+  /** A block is selected in the editor, so an existing Website media entry can be used too. */
+  canInsert?: boolean;
+  /** The selected block's name, shown when `canInsert`. */
+  insertBlockName?: string;
   onClose: () => void;
-  onAdded: (message: string) => void;
+  onAdded: (message: string, media: PickedWebsiteMedia) => void;
 }) {
   const source = KIND_SOURCE[kind ?? "image"];
   const [tab, setTab] = useState<"library" | "studio">("studio");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<StudioMediaItem | null>(null);
+  const [pickedEntry, setPickedEntry] = useState<WebsiteMediaItem | null>(null);
   const fields = useMediaFields(picked);
   const studioQuery = useStudioMediaItems(companyId, source, kind !== null && tab === "studio");
   const add = useAddStudioMedia(companyId);
@@ -218,6 +257,7 @@ export function WebsiteMediaPicker({
     setTab("studio");
     setQuery("");
     setPicked(null);
+    setPickedEntry(null);
     add.reset();
     // Reset only when the picker opens for a kind.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,16 +268,32 @@ export function WebsiteMediaPicker({
   const libraryItems = media
     .filter((item) => (kind === "animation" ? item.contentType.startsWith("video/") : item.contentType.startsWith("image/")))
     .filter((item) => !needle || `${item.alt} ${item.caption ?? ""} ${item.entryKey}`.toLowerCase().includes(needle));
-  const canUse = picked !== null && hasAltText(fields.alt) && !add.isPending;
+  const canUse =
+    tab === "studio"
+      ? picked !== null && hasAltText(fields.alt) && !add.isPending
+      : canInsert && pickedEntry !== null && hasAltText(pickedEntry.alt);
   const sourceLabel = STUDIO_MEDIA_SOURCE_LABEL[source];
 
   const use = () => {
-    if (!picked || !canUse) return;
+    if (!canUse) return;
+    if (tab === "library") {
+      if (!pickedEntry) return;
+      onAdded("", { assetId: pickedEntry.assetId, contentPath: pickedEntry.contentPath, alt: pickedEntry.alt, created: false });
+      onClose();
+      return;
+    }
+    if (!picked) return;
+    const alt = fields.alt.trim();
     add.mutate(
       { siteId: site.id, item: picked, alt: fields.alt, caption: fields.caption, focalPoint: fields.focalPoint },
       {
         onSuccess: () => {
-          onAdded(`Added from ${sourceLabel}. It is now in Website media and goes live with the next Publish.`);
+          onAdded(`Added from ${sourceLabel}. It is now in Website media and goes live with the next Publish.`, {
+            assetId: picked.assetId,
+            contentPath: picked.contentPath,
+            alt,
+            created: true,
+          });
           onClose();
         },
       },
@@ -252,7 +308,7 @@ export function WebsiteMediaPicker({
         footer={
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            {tab === "studio" ? (
+            {tab === "studio" || canInsert ? (
               <Button type="button" disabled={!canUse} onClick={use} data-testid="media-use">
                 {kind === "animation" ? <Film /> : <ImageIcon />}
                 Use
@@ -277,6 +333,7 @@ export function WebsiteMediaPicker({
                 onClick={() => {
                   setTab(value);
                   setPicked(null);
+                  setPickedEntry(null);
                 }}
                 className={cn(
                   "inline-flex h-8 items-center px-3 text-xs font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -298,11 +355,22 @@ export function WebsiteMediaPicker({
             <p className="text-sm text-muted-foreground">No media yet. Images added as media entries show here.</p>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground">The site's images. The editor's image fields pick from these.</p>
+              <p className="text-xs text-muted-foreground">
+                {canInsert ? `Pick one to put in ${insertBlockName || "the selected block"}.` : "The site's images. The editor's image fields pick from these."}
+              </p>
               <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="media-picker-library">
-                {libraryItems.map((item) => (
-                  <WebsiteMediaCard key={item.entryId} item={item} />
-                ))}
+                {libraryItems.map((item) =>
+                  canInsert ? (
+                    <WebsiteMediaCard
+                      key={item.entryId}
+                      item={item}
+                      selected={pickedEntry?.entryId === item.entryId}
+                      onSelect={() => setPickedEntry(item)}
+                    />
+                  ) : (
+                    <WebsiteMediaCard key={item.entryId} item={item} />
+                  ),
+                )}
               </ul>
             </>
           )

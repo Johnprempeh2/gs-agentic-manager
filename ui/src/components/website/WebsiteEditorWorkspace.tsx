@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Film, History, Image as ImageIcon, PenLine, Plus, RefreshCw } from "lucide-react";
+import { CheckCircle2, FileText, Film, History, Image as ImageIcon, PenLine, Plus, RefreshCw } from "lucide-react";
 import {
   WEBSITE_FRAME_SANDBOX,
   createWebsiteFrameNonce,
   websiteFrameSrc,
+  type WebsiteFrameInsertMediaResult,
+  type WebsiteMediaItem,
   type WebsitePage,
   type WebsiteProperty,
   type WebsiteRevision,
@@ -23,7 +25,17 @@ import {
   type WebsiteFrameSaveAnswer,
   type WebsiteFrameSaveState,
 } from "../../lib/website-frame-host";
-import { editorOpenProblem, fetchAssetBlob, frameConnectionMessage, frameDraft, saveThroughGsam } from "../../lib/website-editor";
+import {
+  editorOpenProblem,
+  fetchAssetBlob,
+  frameConnectionMessage,
+  frameDraft,
+  insertMediaAssetUrl,
+  insertMediaEntry,
+  insertMediaField,
+  insertMediaMessage,
+  saveThroughGsam,
+} from "../../lib/website-editor";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ScaledFrame } from "../AttachmentPreviewPanel";
@@ -32,7 +44,7 @@ import { ErrorState, errorStateMessage } from "../ErrorState";
 import { WebsiteChangeRequestPanel } from "./WebsiteChangeRequest";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
-import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind } from "./WebsiteStudioMedia";
+import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type PickedWebsiteMedia } from "./WebsiteStudioMedia";
 
 // The Website page's editor workspace (GRE-2118, plan 3.4): the site's pages,
 // the site's own Puck editor in a frame (GRE-1916 contract), save states,
@@ -101,6 +113,7 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
   const [notice, setNotice] = useState<string | null>(null);
   /** Click to change: the block to select once the editor has the draft. */
   const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
+  const [focusBlockName, setFocusBlockName] = useState("");
   const sessionRef = useRef<WebsiteFrameHostSession<Window> | null>(null);
 
   // Warn before the browser leaves with unsaved edits in the frame.
@@ -149,8 +162,9 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
   };
 
   // A words or image change goes straight into the draft: open the block in the editor.
-  const editBlock = async (blockId: string) => {
+  const editBlock = async (blockId: string, blockName: string) => {
     setFocusBlockId(blockId);
+    setFocusBlockName(blockName);
     if (!(await switchView({ mode: "edit", source: "draft" }))) setFocusBlockId(null);
   };
 
@@ -166,6 +180,31 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
   if (!page) {
     return <EmptyState icon={FileText} title="No pages yet" message="Pages appear here once the sitemap is approved and its pages are created." />;
   }
+
+  // The block opened from click to change is the editor's selected block: the
+  // frame does not tell GSAM about selections made inside the editor.
+  const insertBlockId = mode === "edit" ? focusBlockId : null;
+  const insertMedia = async (media: PickedWebsiteMedia, kind: MediaPickerKind): Promise<WebsiteFrameInsertMediaResult | null> => {
+    const session = sessionRef.current;
+    if (!session || !insertBlockId) return null;
+    // Size from the Website media list when it has the entry; a new entry is not in it yet.
+    const known = queryClient
+      .getQueryData<WebsiteMediaItem[]>(queryKeys.website.media(companyId, site.id))
+      ?.find((item) => item.assetId === media.assetId);
+    const entry = await insertMediaEntry(
+      { contentPath: media.contentPath, alt: media.alt, width: known?.width ?? null, height: known?.height ?? null },
+      fetchAssetBlob,
+    );
+    return session.insertMedia({
+      blockId: insertBlockId,
+      field: insertMediaField(session.shownPageData, insertBlockId, kind),
+      // The GSAM asset id: the frame stores `media:<id>`, and draft media and releases key media by it.
+      mediaEntryId: media.assetId,
+      assetUrl: insertMediaAssetUrl(media.contentPath, window.location.origin),
+      alt: media.alt,
+      ...(entry ? { media: entry } : {}),
+    });
+  };
 
   const width = mode === "preview" ? WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width : null;
 
@@ -233,7 +272,7 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
             dirty={dirty}
             sessionRef={sessionRef}
             focusBlockId={mode === "edit" ? focusBlockId : null}
-            onEditBlock={(blockId) => void editBlock(blockId)}
+            onEditBlock={(blockId, blockName) => void editBlock(blockId, blockName)}
             onDirty={setDirty}
             onOriginChanged={() => setNotice(ORIGIN_CHANGED_NOTICE)}
             onReload={reload}
@@ -257,6 +296,10 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
           companyId={companyId}
           site={site}
           dirty={dirty}
+          insertBlockId={insertBlockId}
+          insertBlockName={focusBlockName}
+          insertMedia={insertMedia}
+          onInserted={() => setDirty(true)}
           onMediaAdded={() => {
             // The frame gets the site's media with load-draft, so a clean editor reloads to pick up the new item.
             if (!dirty) setFrameKey((key) => key + 1);
@@ -357,7 +400,7 @@ function EditorFrame({
   dirty: boolean;
   sessionRef: React.MutableRefObject<WebsiteFrameHostSession<Window> | null>;
   focusBlockId: string | null;
-  onEditBlock: (blockId: string) => void;
+  onEditBlock: (blockId: string, blockName: string) => void;
   onDirty: (dirty: boolean) => void;
   onOriginChanged: () => void;
   onReload: () => void;
@@ -668,25 +711,78 @@ function MediaPanel({
   companyId,
   site,
   dirty,
+  insertBlockId,
+  insertBlockName,
+  insertMedia,
+  onInserted,
   onMediaAdded,
 }: {
   companyId: string;
   site: WebsiteSite;
   dirty: boolean;
+  /** The editor's selected block, or null. */
+  insertBlockId: string | null;
+  /** The selected block's name, as click to change showed it. */
+  insertBlockName: string;
+  insertMedia: (media: PickedWebsiteMedia, kind: MediaPickerKind) => Promise<WebsiteFrameInsertMediaResult | null>;
+  onInserted: () => void;
   onMediaAdded: () => void;
 }) {
   const [picker, setPicker] = useState<MediaPickerKind | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone?: "success" | "warn" } | null>(null);
   const mediaQuery = useQuery({
     queryKey: queryKeys.website.media(companyId, site.id),
     queryFn: () => websiteModuleApi.media(companyId, site.id),
   });
   const media = mediaQuery.data ?? [];
+  const blockName = insertBlockName || "The selected block";
+
+  // Today's flow: the new entry reaches the frame with the next load-draft.
+  const added = (text: string) => {
+    setMessage({ text: dirty ? `${text} Save the page, then reload the editor to pick it.` : text });
+    onMediaAdded();
+  };
+
+  // The frame did not answer insert-media (older site): today's flow, and say so.
+  const notAnswered = (item: PickedWebsiteMedia, kind: MediaPickerKind) => {
+    const noun = kind === "animation" ? "animation" : "image";
+    if (!item.created) {
+      setMessage({ text: `The site's editor did not answer, so nothing changed. Pick the ${noun} from the block's image field.`, tone: "warn" });
+      return;
+    }
+    setMessage({
+      text: dirty
+        ? `The site's editor did not answer. The ${noun} is saved in Website media. Save the page, then reload the editor to pick it from the block's image field.`
+        : `The site's editor did not answer, so the editor was reloaded. The ${noun} is saved in Website media. Pick it from the block's image field.`,
+      tone: "warn",
+    });
+    onMediaAdded();
+  };
+
+  const use = async (text: string, item: PickedWebsiteMedia, kind: MediaPickerKind) => {
+    if (!insertBlockId) return added(text);
+    setMessage({ text: `Putting it in ${blockName}.` });
+    const result = await insertMedia(item, kind);
+    if (!result) return notAnswered(item, kind);
+    if (result.ok) {
+      setMessage({ text: insertMediaMessage(result, blockName, kind), tone: "success" });
+      onInserted();
+      return;
+    }
+    // Refused: the entry stays, and a clean editor reloads so its fields can pick it.
+    setMessage({ text: insertMediaMessage(result, blockName, kind), tone: "warn" });
+    if (item.created && !dirty) onMediaAdded();
+  };
+
   return (
     <aside className="gs-glass-card min-w-0 space-y-3 rounded-xl border p-4 lg:w-80 lg:shrink-0" aria-labelledby="website-media-title" data-testid="website-media">
       <div>
         <h3 id="website-media-title" className="text-sm font-semibold">Media</h3>
-        <p className="text-xs text-muted-foreground">The site's images. The editor's image fields pick from these.</p>
+        <p className="text-xs text-muted-foreground">
+          {insertBlockId
+            ? `Selected block: ${blockName}. Add image or Add animation puts the item in it.`
+            : "The site's images. The editor's image fields pick from these."}
+        </p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="xs" variant="outline" onClick={() => setPicker("image")} data-testid="website-add-image">
@@ -698,7 +794,20 @@ function MediaPanel({
           Add animation
         </Button>
       </div>
-      {message ? <p role="status" className="text-xs text-muted-foreground">{message}</p> : null}
+      {message ? (
+        message.tone === "warn" ? (
+          <p role="alert" className="rounded-md border border-status-warning/40 bg-status-warning-soft px-2.5 py-2 text-xs text-status-warning-foreground">
+            {message.text}
+          </p>
+        ) : message.tone === "success" ? (
+          <p role="status" className="flex gap-1.5 rounded-md border border-status-success/30 bg-status-success-soft px-2.5 py-2 text-xs text-status-success-foreground">
+            <CheckCircle2 className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span>{message.text}</span>
+          </p>
+        ) : (
+          <p role="status" className="text-xs text-muted-foreground">{message.text}</p>
+        )
+      ) : null}
       {mediaQuery.isLoading ? (
         <p className="text-xs text-muted-foreground">Loading media</p>
       ) : mediaQuery.error ? (
@@ -717,11 +826,10 @@ function MediaPanel({
         site={site}
         kind={picker}
         media={media}
+        canInsert={insertBlockId !== null}
+        insertBlockName={insertBlockName}
         onClose={() => setPicker(null)}
-        onAdded={(text) => {
-          setMessage(dirty ? `${text} Save the page, then reload the editor to pick it.` : text);
-          onMediaAdded();
-        }}
+        onAdded={(text, item) => void use(text, item, picker ?? "image")}
       />
     </aside>
   );

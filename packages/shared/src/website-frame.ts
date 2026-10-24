@@ -264,7 +264,31 @@ export function isWebsiteFrameAssetUrl(value: string): boolean {
 /** A top-level Puck prop name on the block, for example `image`. */
 const blockFieldSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/);
 
-/** `insert-media` payload, host to frame: put this media entry in this field of this block. */
+const dimensionSchema = z.number().int().nonnegative().nullable();
+
+/**
+ * One media entry as the frame gets it, the same shape as a `load-draft.media`
+ * entry: the image itself as a `Blob`, so the frame never calls GSAM.
+ */
+export const websiteFrameMediaEntrySchema = z
+  .object({
+    blob: z.custom<Blob>((value) => typeof Blob !== "undefined" && value instanceof Blob),
+    alt: z.string().max(500),
+    width: dimensionSchema,
+    height: dimensionSchema,
+  })
+  .strict();
+export type WebsiteFrameMediaEntry = z.infer<typeof websiteFrameMediaEntrySchema>;
+
+/**
+ * `insert-media` payload, host to frame: put this media entry in this field of this block.
+ * - `mediaEntryId` carries the GSAM asset id (the key of `load-draft.media`), not a
+ *   Website media entry id. The frame stores it in the block as `media:<assetId>`.
+ *   The name stays as it is: sites already on protocol 1 read it.
+ * - `media` is optional (added in protocol 1, GRE-2226): the image as a `Blob`, so
+ *   the frame can show it before the page is saved and loaded again. The host leaves
+ *   it out when it cannot fetch the image; the frame then falls back to `assetUrl`.
+ */
 export const websiteFrameInsertMediaSchema = z
   .object({
     blockId: blockIdSchema,
@@ -272,6 +296,7 @@ export const websiteFrameInsertMediaSchema = z
     mediaEntryId: idString,
     assetUrl: z.string().max(MAX_ASSET_URL_LENGTH).refine(isWebsiteFrameAssetUrl),
     alt: z.string().max(500),
+    media: websiteFrameMediaEntrySchema.optional(),
   })
   .strict();
 export type WebsiteFrameInsertMedia = z.infer<typeof websiteFrameInsertMediaSchema>;

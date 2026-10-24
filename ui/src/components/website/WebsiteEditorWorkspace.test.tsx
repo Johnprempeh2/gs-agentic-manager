@@ -20,7 +20,11 @@ const api = vi.hoisted(() => ({
   restoreRevision: vi.fn(),
   media: vi.fn(),
   requestChange: vi.fn(),
+  createEntry: vi.fn(),
+  images: vi.fn(),
 }));
+vi.mock("../../api/images", () => ({ imagesApi: { list: api.images } }));
+vi.mock("../../api/videos", () => ({ videosApi: { list: vi.fn() } }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
   return { ...actual, websiteModuleApi: api };
@@ -51,7 +55,7 @@ const page = {
   latestRevisionId: "rev-2",
   publishedRevisionId: null,
 } as WebsitePage;
-const data = { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1" } }] };
+const data = { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1", heading: "Hello", image: "media:asset-1" } }] };
 const load: WebsitePageEditorLoad = {
   page,
   revisionId: "rev-2",
@@ -91,12 +95,19 @@ beforeEach(() => {
   api.media.mockResolvedValue(load.media);
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["png"], { type: "image/png" }) })));
   vi.stubGlobal("confirm", vi.fn(() => true));
+  api.images.mockResolvedValue({
+    images: [{ id: "img-77778888", prompt: "A harbour at dawn", status: "completed", assetId: "asset-7", contentPath: "/api/assets/asset-7/content" }],
+    total: 1,
+    nextOffset: null,
+  });
+  api.createEntry.mockResolvedValue({ id: "entry-7" });
 });
 
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function flush() {
@@ -169,8 +180,41 @@ async function connect() {
     });
     await flush();
   };
-  return { posted, sent, save, fromFrame, pickBlock };
+  const sentMessages = (type: string) =>
+    posted.mock.calls.map((call) => call[0] as { type: string; id: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
+  const reply = (type: string, payload: Record<string, unknown>) => fromFrame({ protocol: 1, session: nonce, type, payload });
+  return { posted, sent, sentMessages, reply, save, fromFrame, pickBlock };
 }
+
+/** Click to change, then "Edit words or image myself": the editor opens with block h1 selected. */
+async function openEditorOnBlock() {
+  await render();
+  await openPreview();
+  const preview = await connect();
+  await preview.pickBlock();
+  await act(async () => button("Edit words or image myself").click());
+  await flush();
+  return connect();
+}
+
+/** Media, Add image, pick the GS Studio image, add alt text, Use. */
+async function useStudioImage(alt = "Boats in a harbour") {
+  await act(async () => button("Media").click());
+  await flush();
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="website-add-image"]')!.click());
+  await flush();
+  await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-picker-item"]')!.click());
+  await flush();
+  const input = document.body.querySelector<HTMLInputElement>('[data-testid="media-alt"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, alt);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-use"]')!.click());
+  await flush();
+}
+
+const mediaPanel = () => container.querySelector<HTMLElement>('[data-testid="website-media"]')!;
 
 describe("WebsiteEditorTab", () => {
   it("frames the site's editor with the contract's sandbox and sends the draft with images as Blobs after hello-ack", async () => {
@@ -342,6 +386,103 @@ describe("WebsiteEditorTab", () => {
     expect(editor.sent("load-draft")).toHaveLength(1);
     expect(editor.sent("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
     expect(api.requestChange).not.toHaveBeenCalled();
+  });
+
+  describe("insert media into the selected block (GRE-2206)", () => {
+    it("sends insert-media for the selected block with the new entry's asset", async () => {
+      const editor = await openEditorOnBlock();
+      await useStudioImage();
+      expect(api.createEntry).toHaveBeenCalledTimes(1);
+      const [insert] = editor.sentMessages("insert-media");
+      expect(insert!.payload).toEqual({
+        blockId: "h1",
+        field: "image",
+        mediaEntryId: "asset-7",
+        assetUrl: "/api/assets/asset-7/content",
+        alt: "Boats in a harbour",
+        media: { blob: expect.any(Blob), alt: "Boats in a harbour", width: null, height: null },
+      });
+      expect(mediaPanel().textContent).toContain("Selected block: Hero banner.");
+      expect(mediaPanel().textContent).toContain("Putting it in Hero banner.");
+    });
+
+    it("ok reply: no editor reload, and the draft shows unsaved changes", async () => {
+      const editor = await openEditorOnBlock();
+      const iframe = frame();
+      await useStudioImage();
+      const [insert] = editor.sentMessages("insert-media");
+      await editor.reply("insert-media-result", { requestId: insert!.id, ok: true });
+      expect(frame()).toBe(iframe);
+      expect(editor.sent("load-draft")).toHaveLength(1);
+      expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. The image shows after you save the page in the editor.");
+      expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
+    });
+
+    it("ok:false reply: says why in plain words and keeps the media entry", async () => {
+      const editor = await openEditorOnBlock();
+      await useStudioImage();
+      const [insert] = editor.sentMessages("insert-media");
+      await editor.reply("insert-media-result", { requestId: insert!.id, ok: false, code: "field_not_media" });
+      expect(mediaPanel().querySelector('[role="alert"]')!.textContent).toBe(
+        "Hero banner has no image or video field, so nothing changed. The image is saved in Website media. Pick it from an image field in the editor.",
+      );
+      expect(api.createEntry).toHaveBeenCalledTimes(1);
+    });
+
+    it("no reply in time (older site): falls back to today's flow and reloads the editor", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const editor = await openEditorOnBlock();
+      const iframe = frame();
+      await useStudioImage();
+      expect(editor.sentMessages("insert-media")).toHaveLength(1);
+      await act(async () => { vi.advanceTimersByTime(5_000); });
+      await flush();
+      expect(frame()).not.toBe(iframe);
+      expect(mediaPanel().querySelector('[role="alert"]')!.textContent).toBe(
+        "The site's editor did not answer, so the editor was reloaded. The image is saved in Website media. Pick it from the block's image field.",
+      );
+    });
+
+    it("no block selected: makes the entry and reloads, without insert-media", async () => {
+      await render();
+      const editor = await connect();
+      const iframe = frame();
+      await useStudioImage();
+      expect(api.createEntry).toHaveBeenCalledTimes(1);
+      expect(editor.sentMessages("insert-media")).toHaveLength(0);
+      expect(frame()).not.toBe(iframe);
+    });
+
+    it("a selected block lets an existing Website media entry be used without making a new one", async () => {
+      const editor = await openEditorOnBlock();
+      await act(async () => button("Media").click());
+      await flush();
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="website-add-image"]')!.click());
+      await flush();
+      await act(async () => [...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === "Website media")!.click());
+      await flush();
+      await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-picker-entry"]')!.click());
+      await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-use"]')!.click());
+      await flush();
+      expect(api.createEntry).not.toHaveBeenCalled();
+      expect(editor.sentMessages("insert-media")[0]!.payload).toMatchObject({
+        blockId: "h1",
+        mediaEntryId: "asset-1",
+        alt: "Team",
+        media: { blob: expect.any(Blob), alt: "Team", width: 4, height: 3 },
+      });
+    });
+
+    it("sends the picked asset's blob from its content path, and still sends insert-media when that fetch fails (GRE-2226)", async () => {
+      const editor = await openEditorOnBlock();
+      vi.mocked(fetch).mockClear();
+      vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
+      await useStudioImage();
+      expect(fetch).toHaveBeenCalledWith("/api/assets/asset-7/content", { credentials: "include" });
+      const [insert] = editor.sentMessages("insert-media");
+      expect(insert!.payload).toMatchObject({ blockId: "h1", mediaEntryId: "asset-7", assetUrl: "/api/assets/asset-7/content" });
+      expect(insert!.payload).not.toHaveProperty("media");
+    });
   });
 
   it("does not open an editor until the editor address is set", async () => {
