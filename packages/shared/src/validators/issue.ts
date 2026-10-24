@@ -708,6 +708,8 @@ const createIssueBaseSchema = z.object({
       action: multilineTextSchema.pipe(z.string().trim().min(1).max(2_000)),
       waitingOn: z.enum(ISSUE_UNBLOCK_WAITING_ON).optional(),
       expectedBy: issueDueDateSchema.optional(),
+      // The card the task waits on. Answering it frees the task (GRE-2286).
+      interactionId: z.string().guid().optional(),
       // Server-owned marker. Accepted so a descriptor read back from the API
       // can be sent again, but the server ignores the value sent.
       expectedByWokenFor: issueDueDateSchema.optional(),
