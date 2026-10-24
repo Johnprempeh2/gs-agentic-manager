@@ -18,7 +18,7 @@ function OptionColumn({ option, tree, changesById, newAddressById, pagesById, si
   option: WebsiteSitemapOption;
   tree: Tree;
   changesById: Map<string, SitemapChange[]>;
-  /** Pages at a new address: "old → new" (GRE-2193). */
+  /** Pages at a new address: the address in the other option (GRE-2193). */
   newAddressById: Map<string, string>;
   pagesById: Map<string, WebsitePage>;
   side: "a" | "b";
@@ -94,9 +94,8 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
       if (entry.a) aChanges.set(entry.a.id, entry.changes);
       if (entry.b) bChanges.set(entry.b.id, entry.changes);
       if (entry.a && entry.b && entry.a.path !== entry.b.path) {
-        const address = `${entry.a.path} → ${entry.b.path}`;
-        aAddresses.set(entry.a.id, address);
-        bAddresses.set(entry.b.id, address);
+        aAddresses.set(entry.a.id, `Now at ${entry.b.path}`);
+        bAddresses.set(entry.b.id, `Was at ${entry.a.path}`);
       }
     }
     return { aChanges, bChanges, aAddresses, bAddresses, counts };

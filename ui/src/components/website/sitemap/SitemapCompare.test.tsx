@@ -43,7 +43,7 @@ describe("Sitemap Compare", () => {
     container.remove();
   });
 
-  it("shows a page at a new address as moved, with old → new, not as removed and added (GRE-2193)", () => {
+  it("shows a page at a new address as moved, with its other address, not as removed and added (GRE-2193)", () => {
     act(() => root.render(
       <SitemapCompareView
         options={[published, regrouped]}
@@ -63,9 +63,9 @@ describe("Sitemap Compare", () => {
     expect(counts).toContain("1 moved");
     const row = (list: string) =>
       [...container.querySelectorAll(`[aria-label='Pages in ${list}'] li`)].find((item) => item.textContent?.startsWith("Business website build"))!;
-    for (const list of ["v1 as published", "Rev 10"]) {
-      expect(row(list).textContent).toContain("Moved");
-      expect(row(list).textContent).toContain("/services/business-website-build → /services/websites-web-apps/business-website-build");
-    }
+    expect(row("v1 as published").textContent).toContain("Moved");
+    expect(row("v1 as published").textContent).toContain("Now at /services/websites-web-apps/business-website-build");
+    expect(row("Rev 10").textContent).toContain("Moved");
+    expect(row("Rev 10").textContent).toContain("Was at /services/business-website-build");
   });
 });
