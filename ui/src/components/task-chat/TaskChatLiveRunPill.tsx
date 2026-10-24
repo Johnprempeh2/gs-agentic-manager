@@ -57,10 +57,11 @@ export function TaskChatLiveRunPill({
   /** Run finish in ms once terminal; drives the settled elapsed readout. */
   finishedAtMs?: number | null;
   toolSummary: string | null;
-  /** Runtime status line; a queued run held by admission shows it instead of "Working" (GRE-198). */
+  /** Runtime status line; a queued run held by admission shows it in place of "Queued" (GRE-198). */
   statusMessage?: string | null;
 }) {
-  const waiting = status === "queued" && Boolean(statusMessage);
+  // A queued run waits for its agent's slot; it never reads as "Working" (GRE-2246).
+  const waiting = status === "queued";
   const active = !isTerminalRunStatus(status) && !waiting;
   // One shared page-wide ticker drives the live elapsed readout, matching the
   // default view's `useLiveElapsed`.
@@ -73,7 +74,7 @@ export function TaskChatLiveRunPill({
     : null;
   const failed = ["failed", "timed_out", "cancelled", "interrupted"].includes(status);
   const verb = waiting
-    ? statusMessage
+    ? statusMessage || "Queued"
     : active ? "Working" : failed ? "Stopped" : "Worked";
   const suffix = elapsed && !waiting ? `for ${elapsed}` : null;
 

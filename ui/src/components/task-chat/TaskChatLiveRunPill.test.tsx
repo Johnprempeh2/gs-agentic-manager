@@ -71,6 +71,17 @@ describe("TaskChatLiveRunPill", () => {
     expect(container.querySelector(".shimmer-text")).toBeNull();
   });
 
+  it("a queued run waiting for its agent says Queued, with no spinner or elapsed time (GRE-2246)", () => {
+    act(() => {
+      root.render(<TaskChatLiveRunPill status="queued" startedAtMs={Date.now() - 180_000} toolSummary={null} />);
+    });
+    const text = container.textContent ?? "";
+    expect(text).toContain("Queued");
+    expect(text).not.toContain("Working");
+    expect(text).not.toContain("for ");
+    expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+
   it("shimmers 'Working' with elapsed + tool summary while streaming", () => {
     const startedAtMs = Date.now() - 65_000; // ~1 minute ago
     act(() => {

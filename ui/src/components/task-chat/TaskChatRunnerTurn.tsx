@@ -76,8 +76,10 @@ function RunnerTurnStatus({
 }) {
   const terminal = isTerminalRunStatus(status);
   // A queued run held by admission shows its hold line, not "Working" (GRE-198).
-  const waiting = status === "queued" && Boolean(statusMessage);
-  useSecondTick(!terminal && startedAtMs != null);
+  // Any queued run waits for its agent's slot: it is not working yet (GRE-2246).
+  const queued = status === "queued";
+  const waiting = queued && Boolean(statusMessage);
+  useSecondTick(!terminal && !queued && startedAtMs != null);
   const elapsedMs =
     startedAtMs == null
       ? null
@@ -91,6 +93,8 @@ function RunnerTurnStatus({
   const label = terminal ? (failed ? "Stopped" : "Worked") : "Working";
   const semanticLabel = waiting
     ? statusMessage
+    : queued
+    ? "Queued; waiting for the agent to start"
     : terminal
     ? elapsed
       ? `${label} ${failed ? "after" : "for"} ${elapsed}`
@@ -114,7 +118,7 @@ function RunnerTurnStatus({
 }
 
 function RunnerCurrentActivityTail({ status }: { status: string }) {
-  if (isTerminalRunStatus(status)) return null;
+  if (isTerminalRunStatus(status) || status === "queued") return null;
   return <div className="mt-2 flex min-h-8 min-w-0 items-center gap-2 px-1 py-1 text-xs text-muted-foreground" data-testid="task-chat-current-activity" data-turn-position="tail">
     <span className="shimmer-text shimmer-text-muted" aria-live="polite" data-testid="task-chat-current-activity-label">Thinking</span>
   </div>;
