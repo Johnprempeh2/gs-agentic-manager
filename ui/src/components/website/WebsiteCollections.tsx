@@ -210,7 +210,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   });
   if (error) return <ErrorState error={error} />;
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading collections</p>;
-  if (!site) return <p className="text-sm text-muted-foreground">Connect a site on Overview before editing collections.</p>;
+  if (!site) return <p className="text-sm text-muted-foreground">Connect a site under Releases before editing collections.</p>;
   const selected = COLLECTIONS.find((item) => item.key === collection)!;
   return <div className="space-y-5" data-testid="website-collections">
     <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects and forms. Approved changes go live with the next Publish.</p></div>

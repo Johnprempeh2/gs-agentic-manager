@@ -54,6 +54,7 @@ import { websiteChangeRequestService } from "../services/website/change-request.
 import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
+import { websiteHomeService } from "../services/website/home.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -171,6 +172,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     }
   }
   const publishApprovals = websitePublishApprovals(db);
+  const home = websiteHomeService(db);
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
   router.use(WEBSITE_MODULE_API_ROUTES.tokenSecrets, requireEntitlement(db, "enableWebsiteView"));
@@ -357,6 +359,14 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       });
     }
     res.json(await siteView(row));
+  });
+
+  // ---- home (the Website Home tab, 24 Oct 2026) ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.home, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await home.summary(site));
   });
 
   // ---- pages ----

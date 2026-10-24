@@ -1137,3 +1137,54 @@
   --tw-exit-translate-x: calc(--value(integer) * var(--spacing));
   --tw-exit-translate-x: --value([percentage], [length]);
 }
+
+/* Website Home hero haze (24 Oct 2026): the one ambient effect on the
+   Website Home, in the margin around the preview frame only. The frame and
+   its address bar are opaque, so the haze is never behind text; its peak
+   (emerald 50% on the void, teal 18% on stone) stays far below any text
+   luminance. Transform only, so the compositor moves it; the component sets
+   data-motion="still" under reduced motion and while the tab is hidden. */
+:root {
+  --gs-haze-emerald: rgb(27 80 57 / 0.16);
+  --gs-haze-teal: rgb(78 205 196 / 0.18);
+  --gs-haze-duration: 48s;
+}
+
+.dark {
+  --gs-haze-emerald: rgb(27 80 57 / 0.5);
+  --gs-haze-teal: rgb(78 205 196 / 0.1);
+}
+
+.gs-website-haze {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.gs-website-haze::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 42% at 30% 35%, var(--gs-haze-emerald), transparent 70%),
+    radial-gradient(40% 40% at 72% 68%, var(--gs-haze-teal), transparent 70%);
+}
+
+.gs-website-haze[data-motion="drift"]::before {
+  animation: gs-website-haze-drift var(--gs-haze-duration) ease-in-out infinite alternate;
+}
+
+@keyframes gs-website-haze-drift {
+  from { transform: translate3d(-4%, -3%, 0) rotate(0deg); }
+  to { transform: translate3d(4%, 3%, 0) rotate(8deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-website-haze[data-motion="drift"]::before { animation: none; }
+}
+
+@media print {
+  .gs-website-haze::before { display: none; }
+}

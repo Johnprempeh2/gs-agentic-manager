@@ -335,4 +335,53 @@ export const WEBSITE_MODULE_API_ROUTES = {
    * Proposes a Publish of every approved change; a person with website:publish approves it.
    */
   publishProposals: "/companies/:companyId/website/sites/:siteId/publish-proposals",
+  /** GET → `WebsiteHomeSummary` (website:view): the Home tab's counts, releases and last 8 events in one read. */
+  home: "/companies/:companyId/website/sites/:siteId/home",
 } as const;
+
+/** A release as the Home shows it: who published it by name. */
+export interface WebsiteHomeRelease {
+  id: string;
+  number: number;
+  kind: WebsiteReleaseKind;
+  status: WebsiteReleaseStatus;
+  liveAt: string | null;
+  createdAt: string;
+  publishedByName: string | null;
+}
+
+/** One website event in the Home's recent activity. */
+export interface WebsiteHomeActivity {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorType: string;
+  /** The agent's or person's name; null when the actor is gone. */
+  actorName: string | null;
+  /** The page title, entry key, release number or sitemap option the event is about. */
+  subject: string | null;
+  createdAt: string;
+}
+
+/** The Website Home at a glance (24 Oct 2026): one read instead of five lists. */
+export interface WebsiteHomeSummary {
+  /** Non-archived pages by status. */
+  pages: Record<WebsitePageStatus, number>;
+  sitemap: {
+    approved: { id: string; name: string; approvedAt: string | null; changedSinceApproval: boolean } | null;
+    /** Draft options waiting for a person to approve one. */
+    awaitingReview: number;
+  };
+  releases: { latest: WebsiteHomeRelease | null; live: WebsiteHomeRelease | null };
+  /** The open `website_publish` proposal, when an agent or editor has asked for a Publish. */
+  publishApproval: { id: string; title: string; changeCount: number; createdAt: string } | null;
+  /** Non-archived entries by collection (media excluded). */
+  collections: Record<string, number>;
+  activity: WebsiteHomeActivity[];
+  /**
+   * Whether `https://{domain}/` lets GSAM show it in a frame, from its
+   * X-Frame-Options and CSP frame-ancestors headers. `unknown` when unreachable.
+   */
+  liveFraming: "allowed" | "refused" | "unknown";
+}

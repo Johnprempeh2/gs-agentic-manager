@@ -62,9 +62,9 @@ export function WebsiteEditorTab({
       <EmptyState
         icon={FileText}
         title="Connect the site first"
-        message="Pages are edited here once the site is connected. Connect it under Overview, Site connection."
-        action="Open Overview"
-        onAction={() => onOpenTab("overview")}
+        message="Pages are edited here once the site is connected. Connect it under Releases, Site connection."
+        action="Open Releases"
+        onAction={() => onOpenTab("releases")}
       />
     );
   }
@@ -73,9 +73,9 @@ export function WebsiteEditorTab({
       <EmptyState
         icon={PenLine}
         title="Set the editor address"
-        message="The site's editor runs on its own address, for example https://editor.example.com. A company owner or admin sets it under Overview, Site connection."
-        action="Open Overview"
-        onAction={() => onOpenTab("overview")}
+        message="The site's editor runs on its own address, for example https://editor.example.com. A company owner or admin sets it under Releases, Site connection."
+        action="Open Releases"
+        onAction={() => onOpenTab("releases")}
       />
     );
   }
@@ -440,7 +440,7 @@ function EditorFrame({
   if (problem) {
     return (
       <div role="alert" className="rounded-lg border border-status-danger/40 bg-status-danger-soft px-4 py-3 text-sm text-status-danger-foreground">
-        GSAM will not open the editor from {editorOrigin}: it must be its own https address, not the public site or a GSAM address. A company owner or admin can change it under Overview, Site connection.
+        GSAM will not open the editor from {editorOrigin}: it must be its own https address, not the public site or a GSAM address. A company owner or admin can change it under Releases, Site connection.
       </div>
     );
   }
