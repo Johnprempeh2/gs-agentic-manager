@@ -1,9 +1,13 @@
 import { Router, type Request, type Response } from "express";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import publicImport from "../services/website/public-import-v1.json" with { type: "json" };
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { websiteProperties } from "@greatstone/db";
 import {
   WEBSITE_MODULE_API_ROUTES,
+  websiteCollectionDefinition,
+  websiteCollectionFieldSchema,
   WEBSITE_SITEMAP_API_ROUTES,
   createWebsiteSitemapOptionSchema,
   importWebsiteSitemapOptionSchema,
@@ -68,6 +72,22 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
   const access = accessService(db);
+  const collectionValidator = new Ajv2020({ allErrors: true });
+  const fieldValidators = new Map<string, ReturnType<typeof collectionValidator.compile>>();
+
+  function assertCollectionFields(collection: string, content: unknown) {
+    const definition = websiteCollectionDefinition(collection);
+    if (!definition) throw unprocessable("This collection is not in the site's release schema", { code: "website_collection_unknown" });
+    let check = fieldValidators.get(collection);
+    if (!check) {
+      check = collectionValidator.compile({ $defs: websiteCollectionFieldSchema.$defs, $ref: definition.ref });
+      fieldValidators.set(collection, check);
+    }
+    if (!check(content)) {
+      const first = check.errors?.[0];
+      throw unprocessable(`The entry fields are incomplete: ${first?.instancePath || "fields"} ${first?.message || "is invalid"}`, { code: "website_collection_fields_invalid" });
+    }
+  }
   const publishApprovals = websitePublishApprovals(db);
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
@@ -327,9 +347,32 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     res.json(await service.listEntries(site.companyId, site.id, collection, req.query.includeArchived === "true"));
   });
 
+  router.post(WEBSITE_MODULE_API_ROUTES.entryImport, async (req, res) => {
+    const site = await siteFor(req, res, "website:publish");
+    if (!site) return;
+    const rows = [
+      ...publicImport.vendors.map((item) => ({ collection: "vendor", entryKey: item.id, content: { data: item } })),
+      ...publicImport.categories.map((item) => ({ collection: "category", entryKey: item.id, content: { data: item } })),
+      ...publicImport.products.map((item) => ({ collection: "product", entryKey: item.id, content: { data: item } })),
+      ...publicImport.people.map((item, index) => ({ collection: "public-person", entryKey: `public-person-${index + 1}`, content: item })),
+      ...publicImport.forms.map((item) => ({ collection: "form", entryKey: item.key, content: item })),
+    ];
+    const existing = new Set((await service.listEntries(site.companyId, site.id, undefined, true)).map((item) => `${item.collection}:${item.entryKey}`));
+    let imported = 0;
+    for (const row of rows) {
+      if (existing.has(`${row.collection}:${row.entryKey}`)) continue;
+      assertCollectionFields(row.collection, row.content);
+      await service.createEntry(site.companyId, site.id, row, actorOf(req));
+      imported++;
+    }
+    await log(req, site.companyId, "website.public_drafts_imported", "website_site", site.id, { imported, skipped: rows.length - imported, capturedAt: publicImport.capturedAt });
+    res.json({ imported, skipped: rows.length - imported, capturedAt: publicImport.capturedAt });
+  });
+
   router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
     const site = await writableSiteFor(req, res);
     if (!site) return;
+    assertCollectionFields(req.body.collection, req.body.content);
     const entry = await service.createEntry(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.entry_created", "website_entry", entry.id, { siteId: site.id, collection: entry.collection });
     res.status(201).json(entry);
@@ -373,9 +416,8 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
       sendSave(res, { state: "failed", message: "This entry is archived. Restore it before editing." });
       return;
     }
-    const result = await service.store.saveRevision({
-      companyId: entry.companyId,
-      documentId: entry.documentId,
+    assertCollectionFields(entry.collection, req.body.content);
+    const result = await service.saveEntryRevision(entry, {
       content: req.body.content,
       baseRevisionId: req.body.baseRevisionId,
       changeSummary: req.body.changeSummary,
@@ -400,6 +442,15 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     const entry = await entryFor(req, res, "website:view");
     if (!entry) return;
     res.json(await service.store.listRevisions(entry.companyId, entry.documentId));
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.entryRevision, async (req, res) => {
+    const entry = await entryFor(req, res, "website:view");
+    if (!entry) return;
+    const revisionId = req.params.revisionId as string;
+    const revision = UUID_RE.test(revisionId) ? await service.store.readRevision(entry.companyId, entry.documentId, revisionId) : null;
+    if (!revision) { res.status(404).json({ error: NOT_FOUND }); return; }
+    res.json(revision);
   });
 
   // ---- releases: Publish, Retry, Rollback (GRE-2108) ----
@@ -499,6 +550,8 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   router.post(WEBSITE_MODULE_API_ROUTES.entryApprove, async (req, res) => {
     const entry = await entryFor(req, res, "website:publish", APPROVER);
     if (!entry) return;
+    const detail = await service.entryDetail(entry);
+    assertCollectionFields(entry.collection, detail?.content);
     const updated = await service.approveEntry(entry);
     await log(req, entry.companyId, "website.entry_approved", "website_entry", entry.id, { siteId: entry.siteId, revisionId: updated.approvedRevisionId });
     const { doc } = await service.withDoc(updated);

@@ -25,7 +25,7 @@ import {
   websiteRelease,
   websiteSite,
 } from "@greatstone/db";
-import type { WebsitePageDetail, WebsiteRelease, WebsiteSite } from "@greatstone/shared";
+import type { WebsiteEntryDetail, WebsitePageDetail, WebsiteRelease, WebsiteSite } from "@greatstone/shared";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
@@ -385,6 +385,29 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(second.status).toBe("live");
     expect(netlify.state.builds).toBe(2);
     expect((await releaseById(release.id)).status).toBe("superseded");
+  });
+
+  it("publishes approved collection fields under the engine release key and keeps an unapproved draft out", async () => {
+    const { page, base } = await seedSite();
+    await approveLatest(page.id);
+    const fields = { data: { id: "category-1", slug: "annotation", name: "Annotation", description: "Approved" } };
+    const entry = (await request(app()).post(`${base}/entries`)
+      .send({ collection: "category", entryKey: "annotation", content: fields }).expect(201)).body as WebsiteEntryDetail;
+    await request(app()).post(`${base}/entries/${entry.id}/submit`).send({}).expect(200);
+    await request(app()).post(`${base}/entries/${entry.id}/approve`).send({}).expect(200);
+
+    const first = await publish(base);
+    expect(first.status).toBe("live");
+    const firstFile = JSON.parse(netlify.blobs.get("releases/1.json")!.body);
+    expect(firstFile.collections.categories[0]).toMatchObject({ key: "annotation", fields });
+    expect(firstFile.collections.category).toBeUndefined();
+
+    await request(app()).put(`${base}/entries/${entry.id}/content`)
+      .send({ baseRevisionId: entry.latestRevisionId, content: { data: { ...fields.data, description: "Unapproved" } } }).expect(200);
+    const second = await publish(base);
+    expect(second.status).toBe("live");
+    const secondFile = JSON.parse(netlify.blobs.get("releases/2.json")!.body);
+    expect(secondFile.collections.categories[0].fields).toEqual(fields);
   });
 
   // ---- lease and fence ----

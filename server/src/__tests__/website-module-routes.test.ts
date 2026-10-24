@@ -148,7 +148,12 @@ describeEmbeddedPostgres("website module routes", () => {
       .expect(201)).body as WebsitePageDetail;
     const entry = (await http
       .post(`/api/companies/${company.id}/website/sites/${site.id}/entries`)
-      .send({ collection: "product", entryKey: "aspose-pdf-net", content: { name: `${name} product` } })
+      .send({ collection: "product", entryKey: "aspose-pdf-net", content: { data: {
+        id: "product-1", slug: "aspose-pdf-net", name: `${name} product`, short_description: "Test product",
+        from_price_minor: null, from_price_currency: null, featured: false, platforms: [], type: "product",
+        attributes: {}, vendor: { id: "vendor-1", name: "Aspose", slug: "aspose", logo_url: "" },
+        category: { id: "category-1", name: "PDF", slug: "pdf" },
+      } } })
       .expect(201)).body;
     return { company, site, page, entry };
   }
@@ -281,6 +286,37 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(detail.latestRevisionNumber).toBe(2);
     const history = (await http.get(`/api/companies/${a.company.id}/website/sites/${a.site.id}/pages/${a.page.id}/revisions`).expect(200)).body;
     expect(history.map((row: { revisionNumber: number }) => row.revisionNumber)).toEqual([2, 1]);
+  });
+
+  it("validates collection fields before save and approves only a reviewed revision", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const { company, site, entry } = await seedWorld("Fields", "fields.test");
+    const http = request(app());
+    const base = `/api/companies/${company.id}/website/sites/${site.id}/entries/${entry.id}`;
+    await http.put(`${base}/content`).send({ baseRevisionId: entry.latestRevisionId, content: { data: { name: "Incomplete" } } }).expect(422);
+    expect(await revisionCount(entry.documentId)).toBe(1);
+    await http.post(`${base}/approve`).send({}).expect(422);
+    await http.post(`${base}/submit`).send({}).expect(200);
+    const approved = await http.post(`${base}/approve`).send({}).expect(200);
+    expect(approved.body).toMatchObject({ status: "approved", approvedRevisionId: entry.latestRevisionId });
+    const saved = await http.put(`${base}/content`).send({ baseRevisionId: entry.latestRevisionId, content: entry.content }).expect(200);
+    expect(saved.body.state).toBe("saved");
+    const changed = await http.get(base).expect(200);
+    expect(changed.body).toMatchObject({ status: "draft", approvedRevisionId: null });
+  });
+
+  it("imports the dated public snapshot once as drafts", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const { company, site } = await seedWorld("Import", "import.test");
+    const http = request(app());
+    const path = `/api/companies/${company.id}/website/sites/${site.id}/entries/import-public-drafts`;
+    const first = await http.post(path).send({}).expect(200);
+    expect(first.body).toMatchObject({ imported: 75, skipped: 0 });
+    const second = await http.post(path).send({}).expect(200);
+    expect(second.body).toMatchObject({ imported: 0, skipped: 75 });
+    const team = await http.get(`/api/companies/${company.id}/website/sites/${site.id}/entries?collection=public-person`).expect(200);
+    expect(team.body).toHaveLength(6);
+    expect(JSON.stringify(team.body)).not.toContain("inviteToken");
   });
 
   it("isolation 9: page and entry documents never show in company search", async () => {

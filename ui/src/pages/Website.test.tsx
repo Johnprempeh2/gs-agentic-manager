@@ -320,11 +320,11 @@ describe("Website page", () => {
 });
 
 describe("Website hub tabs", () => {
-  it("opens on Overview with the five tabs and asks once for the website project", async () => {
+  it("opens on Overview with the six tabs and asks once for the website project", async () => {
     await render("/website");
     await waitForText("Link the website project");
     const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
-    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Preview", "Traffic"]);
+    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Collections", "Preview", "Traffic"]);
     expect(text()).toContain("Live site");
     expect(text()).toContain("greatstone.example");
     expect(websiteApiMock.report).not.toHaveBeenCalled();

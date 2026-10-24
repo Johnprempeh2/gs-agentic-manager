@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "releaseSchema": "../website-release.v1.schema.json",
+  "fieldSchema": "./collections.v1.schema.json",
+  "collections": {
+    "vendor": { "releaseKey": "vendors", "fieldsVersion": 1, "ref": "#/$defs/vendors", "source": "publicCatalogue.vendors" },
+    "category": { "releaseKey": "categories", "fieldsVersion": 1, "ref": "#/$defs/categories", "source": "publicCatalogue.categories" },
+    "product": { "releaseKey": "offerings", "fieldsVersion": 1, "ref": "#/$defs/offerings", "source": "publicCatalogue.offerings" },
+    "public-person": { "releaseKey": "public-people", "fieldsVersion": 1, "ref": "#/$defs/public-people", "source": "publicPeople" },
+    "form": { "releaseKey": "forms", "fieldsVersion": 1, "ref": "#/$defs/forms", "source": "publicForms" },
+    "redirect": { "releaseKey": "redirects", "fieldsVersion": 1, "ref": "#/$defs/redirects", "source": "release.redirects" }
+  },
+  "privateCollections": ["team"]
+}

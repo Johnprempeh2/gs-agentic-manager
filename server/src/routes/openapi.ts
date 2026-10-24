@@ -15908,6 +15908,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
+  path: `${siteParams}/entries/import-public-drafts`,
+  tags: ["website"],
+  summary: "Import public catalogue and team snapshots as drafts, skipping entries already present (website:publish)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
   path: `${siteParams}/entries`,
   tags: ["website"],
   summary: "Create a collection entry (product, category, team, redirect, form, media or a site's own collection) with its first revision (website:edit)",
@@ -15954,6 +15962,14 @@ registerCurrentRoute({
   path: `${siteParams}/entries/{entryId}/revisions`,
   tags: ["website"],
   summary: "List an entry's revisions, newest first (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/entries/{entryId}/revisions/{revisionId}`,
+  tags: ["website"],
+  summary: "Get one entry revision (website:view)",
   responses: websiteModuleResponses,
 });
 

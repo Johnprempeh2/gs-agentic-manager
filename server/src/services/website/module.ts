@@ -175,6 +175,7 @@ export function websiteDocumentStore(db: Db) {
     baseRevisionId: string;
     changeSummary?: string | null;
     actor: WebsiteActor;
+    afterSave?: (tx: Tx) => Promise<void>;
   }): Promise<WebsiteSaveResult> {
     const serialised = serialiseWebsiteContent(input.content);
     if ("error" in serialised) return { state: "failed", message: serialised.error };
@@ -222,6 +223,7 @@ export function websiteDocumentStore(db: Db) {
             updatedAt: now,
           })
           .where(eq(documents.id, doc.id));
+        await input.afterSave?.(tx);
         return { state: "saved", revisionId: revision.id, revisionNumber } as const;
       });
     } catch (err) {
@@ -248,6 +250,13 @@ export function websiteDocumentStore(db: Db) {
     return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
   }
 
+  async function readRevision(companyId: string, documentId: string, revisionId: string) {
+    const [revision] = await db.select({ body: documentRevisions.body, revisionNumber: documentRevisions.revisionNumber })
+      .from(documentRevisions)
+      .where(and(eq(documentRevisions.companyId, companyId), eq(documentRevisions.documentId, documentId), eq(documentRevisions.id, revisionId)));
+    return revision ? { revisionNumber: revision.revisionNumber, content: parseBody(revision.body) } : null;
+  }
+
   async function readDocument(companyId: string, documentId: string) {
     const [doc] = await db
       .select()
@@ -256,7 +265,7 @@ export function websiteDocumentStore(db: Db) {
     return doc ?? null;
   }
 
-  return { createDocument, saveRevision, listRevisions, readDocument };
+  return { createDocument, saveRevision, listRevisions, readRevision, readDocument };
 }
 
 function parseBody(body: string): unknown {
@@ -534,6 +543,7 @@ export function websiteModuleService(db: Db) {
 
   async function approveEntry(row: EntryRow) {
     assertReviewable(row);
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.not_in_review"], { code: "website_review_not_in_review" });
     return setEntryReview(row, { status: "approved", approvedRevisionId: await latestRevisionId(row) });
   }
 
@@ -636,6 +646,21 @@ export function websiteModuleService(db: Db) {
     return updated;
   }
 
+  async function saveEntryRevision(row: EntryRow, input: {
+    content: unknown; baseRevisionId: string; changeSummary?: string; actor: WebsiteActor;
+  }) {
+    return store.saveRevision({
+      companyId: row.companyId,
+      documentId: row.documentId,
+      ...input,
+      afterSave: async (tx) => {
+        await tx.update(websiteEntry)
+          .set({ status: "draft", approvedRevisionId: null, updatedAt: new Date() })
+          .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)));
+      },
+    });
+  }
+
   return {
     store,
     listSites,
@@ -658,6 +683,7 @@ export function websiteModuleService(db: Db) {
     createEntry,
     updateEntry,
     archiveEntry,
+    saveEntryRevision,
     submitEntry,
     approveEntry,
     sendBackEntry,

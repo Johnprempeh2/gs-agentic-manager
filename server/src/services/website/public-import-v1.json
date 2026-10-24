@@ -1,0 +1,1512 @@
+{
+  "capturedAt": "2026-10-22",
+  "vendors": [
+    {
+      "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+      "slug": "aspose",
+      "name": "Aspose",
+      "logo_url": "assets/catalog/logos/aspose.png",
+      "description": ""
+    },
+    {
+      "id": "f87702fd-418c-4b91-a827-997c410da59e",
+      "slug": "groupdocs",
+      "name": "GroupDocs",
+      "logo_url": "assets/catalog/logos/groupdocs.png",
+      "description": ""
+    },
+    {
+      "id": "b4555dc2-4bb0-45ca-92e2-60488dd52c49",
+      "slug": "ironsoftware",
+      "name": "Iron Software",
+      "logo_url": "assets/catalog/logos/ironsoftware.png",
+      "description": ""
+    },
+    {
+      "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+      "slug": "apryse",
+      "name": "Apryse",
+      "logo_url": "assets/catalog/logos/apryse.png",
+      "description": ""
+    },
+    {
+      "id": "5a3d5c2b-a9ec-4dca-8a3d-358605682087",
+      "slug": "devexpress",
+      "name": "DevExpress",
+      "logo_url": "assets/catalog/logos/devexpress.png",
+      "description": ""
+    },
+    {
+      "id": "035f75b5-2e36-4a9b-94b1-ea59be8e1a0e",
+      "slug": "conholdate",
+      "name": "Conholdate",
+      "logo_url": "assets/catalog/logos/conholdate.png",
+      "description": ""
+    },
+    {
+      "id": "813609fd-11c5-46c3-bc9f-7bd2e19d451a",
+      "slug": "activepdf",
+      "name": "ActivePDF",
+      "logo_url": "assets/catalog/logos/activepdf.png",
+      "description": ""
+    },
+    {
+      "id": "61076929-035c-4c7c-9ec9-d1c2cd669f8c",
+      "slug": "iris",
+      "name": "I.R.I.S.",
+      "logo_url": "assets/catalog/logos/iris.png",
+      "description": ""
+    },
+    {
+      "id": "a2809936-6ea4-47f2-9482-a0da4762e2a2",
+      "slug": "pdflib",
+      "name": "PDFlib",
+      "logo_url": "assets/catalog/logos/pdflib.png",
+      "description": ""
+    },
+    {
+      "id": "47a02d77-f197-48e7-8f52-a93c44b6c4cf",
+      "slug": "investintech",
+      "name": "Investintech",
+      "logo_url": "assets/catalog/logos/investintech.png",
+      "description": ""
+    }
+  ],
+  "categories": [
+    {
+      "id": "9d09545a-9d46-47c3-8390-efe828471d91",
+      "slug": "annotation",
+      "name": "Annotation",
+      "description": ""
+    },
+    {
+      "id": "91301607-b61c-4dd5-8dcd-3f778ae0afe2",
+      "slug": "archiving-and-compression",
+      "name": "Archiving & Compression",
+      "description": ""
+    },
+    {
+      "id": "42323758-6c49-488f-80bf-86caec7c6d8c",
+      "slug": "barcode-and-qr",
+      "name": "Barcode & QR",
+      "description": ""
+    },
+    {
+      "id": "7f1efab0-a621-4603-baa3-e7810f01700b",
+      "slug": "comparison",
+      "name": "Comparison",
+      "description": ""
+    },
+    {
+      "id": "8a52a699-f74d-4893-a3f3-32d0336408a2",
+      "slug": "conversion",
+      "name": "Conversion",
+      "description": ""
+    },
+    {
+      "id": "c596882e-12e5-4978-89d1-3ee35d7eb2ff",
+      "slug": "diagrams",
+      "name": "Diagrams",
+      "description": ""
+    },
+    {
+      "id": "030cde89-bd55-4d78-a3f2-3acaf1e59391",
+      "slug": "document-automation",
+      "name": "Document Automation",
+      "description": ""
+    },
+    {
+      "id": "ebca3b93-ac0b-407c-a7cb-b5694705456a",
+      "slug": "editing",
+      "name": "Editing",
+      "description": ""
+    },
+    {
+      "id": "073f97d7-4b12-493a-9733-7fd47dad38a3",
+      "slug": "email",
+      "name": "Email",
+      "description": ""
+    },
+    {
+      "id": "ecdf7e8e-bdf3-4009-97f6-e391275375fe",
+      "slug": "imaging-and-graphics",
+      "name": "Imaging & Graphics",
+      "description": ""
+    },
+    {
+      "id": "14bd0e56-daf2-48e0-aa0e-7c79be24e1e1",
+      "slug": "merge-and-split",
+      "name": "Merge & Split",
+      "description": ""
+    },
+    {
+      "id": "0166bee2-c6f8-4d0a-88c9-c4b9e2233685",
+      "slug": "metadata",
+      "name": "Metadata",
+      "description": ""
+    },
+    {
+      "id": "2ca61826-821f-4fa6-8db9-ac89b64e7d9d",
+      "slug": "note-taking",
+      "name": "Note-taking",
+      "description": ""
+    },
+    {
+      "id": "2cea44d6-1162-4e79-b4fc-c844f8b4ed1b",
+      "slug": "ocr-and-recognition",
+      "name": "OCR & Recognition",
+      "description": ""
+    },
+    {
+      "id": "15b0b063-1dc5-4e46-a647-fa73fafc9405",
+      "slug": "omr",
+      "name": "OMR",
+      "description": ""
+    },
+    {
+      "id": "b7de9d2b-901b-41ab-8c93-eba23b3597b1",
+      "slug": "parsing-and-extraction",
+      "name": "Parsing & Extraction",
+      "description": ""
+    },
+    {
+      "id": "d9850036-dcac-428f-9521-78346e13d26c",
+      "slug": "pdf",
+      "name": "PDF",
+      "description": ""
+    },
+    {
+      "id": "2fe5cc38-257e-4d85-8e11-6417e09976c5",
+      "slug": "presentations",
+      "name": "Presentations",
+      "description": ""
+    },
+    {
+      "id": "845d2bd2-3194-47b4-a075-bfd0ae454a40",
+      "slug": "printing",
+      "name": "Printing",
+      "description": ""
+    },
+    {
+      "id": "f2189fd7-9f71-4345-95b3-29f3eaebd08d",
+      "slug": "project-management",
+      "name": "Project Management",
+      "description": ""
+    },
+    {
+      "id": "db0d283f-c559-46fc-8371-3dd33da9b62e",
+      "slug": "search",
+      "name": "Search",
+      "description": ""
+    },
+    {
+      "id": "ca1be2ce-aa25-4ea4-9124-bb8de10daa82",
+      "slug": "signing-and-e-sign",
+      "name": "Signing & e-Sign",
+      "description": ""
+    },
+    {
+      "id": "dc8fc4d3-68b8-4b41-97d9-76bcf1dd75af",
+      "slug": "spreadsheets",
+      "name": "Spreadsheets",
+      "description": ""
+    },
+    {
+      "id": "91f15861-f991-468b-9a13-385390b6d80b",
+      "slug": "suites-and-bundles",
+      "name": "Suites & Bundles",
+      "description": ""
+    },
+    {
+      "id": "e9f95c41-6eeb-44ab-94c3-7d6178165db5",
+      "slug": "support-and-services",
+      "name": "Support & Services",
+      "description": ""
+    },
+    {
+      "id": "9d330959-4ebe-4a86-ada1-e41769d12793",
+      "slug": "testing-and-qa",
+      "name": "Testing & QA",
+      "description": ""
+    },
+    {
+      "id": "8fdaf92d-fda0-4c2b-b2ba-e75b8e9c8abc",
+      "slug": "typesetting",
+      "name": "Typesetting",
+      "description": ""
+    },
+    {
+      "id": "9caccbf0-bfd0-4ffb-b834-f5f5be83ef17",
+      "slug": "ui-components",
+      "name": "UI Components",
+      "description": ""
+    },
+    {
+      "id": "150eeeb2-feac-4f10-b995-f113b4a14a56",
+      "slug": "viewing",
+      "name": "Viewing",
+      "description": ""
+    },
+    {
+      "id": "f9080f4e-4552-4b5c-a49b-b0a48948b3ba",
+      "slug": "watermarking",
+      "name": "Watermarking",
+      "description": ""
+    },
+    {
+      "id": "8ea661bf-49f1-49bc-9c64-db6812c85907",
+      "slug": "web-and-html",
+      "name": "Web & HTML",
+      "description": ""
+    },
+    {
+      "id": "347c33ef-802b-4221-8d97-4b1e532ce158",
+      "slug": "word-processing",
+      "name": "Word Processing",
+      "description": ""
+    }
+  ],
+  "products": [
+    {
+      "id": "12cabcae-fbfe-4330-b5dc-10ca61e14ad2",
+      "slug": "able2extract-professional",
+      "name": "Able2Extract Professional 20",
+      "short_description": "Able2Extract Professional – the leading perpetual PDF converter & editor. Convert, edit & automate PDFs with a one-time purchase from Greatstone.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/able2extract-logo_1759067929.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/able2extract-logo_1759067929.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/investintech/able2extract-professional"
+      },
+      "vendor": {
+        "id": "47a02d77-f197-48e7-8f52-a93c44b6c4cf",
+        "name": "Investintech",
+        "slug": "investintech",
+        "logo_url": "assets/catalog/logos/investintech.png"
+      },
+      "category": {
+        "id": "2cea44d6-1162-4e79-b4fc-c844f8b4ed1b",
+        "name": "OCR & Recognition",
+        "slug": "ocr-and-recognition"
+      },
+      "description": "At Greatstone International, we are proud to be an authorised reseller of Able2Extract Professional the most powerful, feature-rich, and cost-effective perpetual desktop PDF solution trusted by enterprises, professionals, and government organisations worldwide. Unlike subscription-only alternatives, Able2Extract Professional gives you lifetime usage rights with a one-time purchase, making it the go-to choice for businesses seeking long-term stability and value. Why Choose Able2Extract Professional? Perpetual Licence No Ongoing Fees Own your software outright. Pay once, use forever, without being tied to recurring subscriptions. Industry-Leading PDF Conversion Convert PDFs to fully editable formats such as Microsoft Word, Excel, PowerPoint, AutoCAD, HTML, and more with unmatched accuracy. Seamless PDF Editing Make quick changes to text, images, and pages directly…",
+      "seo": {
+        "metaTitle": "Able2Extract Professional – Perpetual Desktop PDF Converter",
+        "socialImage": "",
+        "metaDescription": "Able2Extract Professional – the leading perpetual PDF converter & editor. Convert, edit & automate PDFs with a one-time purchase from Greatstone."
+      },
+      "offering_variants": [
+        {
+          "id": "628621d1-6fdd-4c0a-b155-1b764aa7cdbf",
+          "sku": null,
+          "name": "25 to 49 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 2,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        },
+        {
+          "id": "c70cfd3f-ac4a-4217-ba4e-af42dd03b00b",
+          "sku": null,
+          "name": "50 to 1000 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 3,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        },
+        {
+          "id": "999ab8c4-1893-421f-ae0f-3f1dedc573f2",
+          "sku": null,
+          "name": "1 to 4 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 0,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        },
+        {
+          "id": "65efbaed-6af9-490b-8354-61dc952808c0",
+          "sku": null,
+          "name": "5 to 24 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 1,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        }
+      ],
+      "offering_specs": [
+        {
+          "label": "Create Universally Compatible PDF Files",
+          "value": "✓",
+          "sort_order": 0
+        },
+        {
+          "label": "Quick, Easy, and Accurate Conversion",
+          "value": "✓",
+          "sort_order": 1
+        },
+        {
+          "label": "Optical Character Recognition",
+          "value": "✓",
+          "sort_order": 2
+        },
+        {
+          "label": "Powerful Batch PDF Processing",
+          "value": "✓",
+          "sort_order": 3
+        },
+        {
+          "label": "PDF Text and File Editing",
+          "value": "✓",
+          "sort_order": 4
+        },
+        {
+          "label": "Digitally Sign PDFs Insert and Verify PDF Signatures",
+          "value": "✓",
+          "sort_order": 5
+        },
+        {
+          "label": "Complete and Edit PDF Forms",
+          "value": "✓",
+          "sort_order": 6
+        },
+        {
+          "label": "Secure and Password Protect PDF Files",
+          "value": "✓",
+          "sort_order": 7
+        },
+        {
+          "label": "PDF Collaboration with Compare & Review PDF files",
+          "value": "✓",
+          "sort_order": 8
+        },
+        {
+          "label": "Start your free trial",
+          "value": "✓",
+          "sort_order": 9
+        },
+        {
+          "label": "Product *:",
+          "value": "✓",
+          "sort_order": 10
+        },
+        {
+          "label": "First Name *:",
+          "value": "✓",
+          "sort_order": 11
+        },
+        {
+          "label": "Surname *:",
+          "value": "✓",
+          "sort_order": 12
+        },
+        {
+          "label": "Email *:",
+          "value": "✓",
+          "sort_order": 13
+        },
+        {
+          "label": "Telephone *:",
+          "value": "✓",
+          "sort_order": 14
+        },
+        {
+          "label": "Company:",
+          "value": "✓",
+          "sort_order": 15
+        },
+        {
+          "label": "Privacy Policy",
+          "value": "✓",
+          "sort_order": 16
+        },
+        {
+          "label": "Get your free trial",
+          "value": "✓",
+          "sort_order": 17
+        },
+        {
+          "label": "What you need to know:",
+          "value": "✓",
+          "sort_order": 18
+        },
+        {
+          "label": "A 30-day free trial",
+          "value": "✓",
+          "sort_order": 19
+        },
+        {
+          "label": "Priority support from Greatstone",
+          "value": "✓",
+          "sort_order": 20
+        },
+        {
+          "label": "Fully functional demonstrations",
+          "value": "✓",
+          "sort_order": 21
+        },
+        {
+          "label": "Example source code and instructions",
+          "value": "✓",
+          "sort_order": 22
+        },
+        {
+          "label": "Talk to an Expert",
+          "value": "✓",
+          "sort_order": 23
+        }
+      ],
+      "variants": [
+        {
+          "id": "628621d1-6fdd-4c0a-b155-1b764aa7cdbf",
+          "sku": null,
+          "name": "25 to 49 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 2,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        },
+        {
+          "id": "c70cfd3f-ac4a-4217-ba4e-af42dd03b00b",
+          "sku": null,
+          "name": "50 to 1000 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 3,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        },
+        {
+          "id": "999ab8c4-1893-421f-ae0f-3f1dedc573f2",
+          "sku": null,
+          "name": "1 to 4 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 0,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        },
+        {
+          "id": "65efbaed-6af9-490b-8354-61dc952808c0",
+          "sku": null,
+          "name": "5 to 24 Users, Desktop (Perpetual Licence)",
+          "currency": null,
+          "platform": null,
+          "sort_order": 1,
+          "license_type": "Version 20.0 - Windows, macOS and Linux",
+          "min_order_qty": 1,
+          "billing_period": "perpetual",
+          "base_price_minor": null
+        }
+      ],
+      "specs": [
+        {
+          "label": "Create Universally Compatible PDF Files",
+          "value": "✓",
+          "sort_order": 0
+        },
+        {
+          "label": "Quick, Easy, and Accurate Conversion",
+          "value": "✓",
+          "sort_order": 1
+        },
+        {
+          "label": "Optical Character Recognition",
+          "value": "✓",
+          "sort_order": 2
+        },
+        {
+          "label": "Powerful Batch PDF Processing",
+          "value": "✓",
+          "sort_order": 3
+        },
+        {
+          "label": "PDF Text and File Editing",
+          "value": "✓",
+          "sort_order": 4
+        },
+        {
+          "label": "Digitally Sign PDFs Insert and Verify PDF Signatures",
+          "value": "✓",
+          "sort_order": 5
+        },
+        {
+          "label": "Complete and Edit PDF Forms",
+          "value": "✓",
+          "sort_order": 6
+        },
+        {
+          "label": "Secure and Password Protect PDF Files",
+          "value": "✓",
+          "sort_order": 7
+        },
+        {
+          "label": "PDF Collaboration with Compare & Review PDF files",
+          "value": "✓",
+          "sort_order": 8
+        },
+        {
+          "label": "Start your free trial",
+          "value": "✓",
+          "sort_order": 9
+        },
+        {
+          "label": "Product *:",
+          "value": "✓",
+          "sort_order": 10
+        },
+        {
+          "label": "First Name *:",
+          "value": "✓",
+          "sort_order": 11
+        },
+        {
+          "label": "Surname *:",
+          "value": "✓",
+          "sort_order": 12
+        },
+        {
+          "label": "Email *:",
+          "value": "✓",
+          "sort_order": 13
+        },
+        {
+          "label": "Telephone *:",
+          "value": "✓",
+          "sort_order": 14
+        },
+        {
+          "label": "Company:",
+          "value": "✓",
+          "sort_order": 15
+        },
+        {
+          "label": "Privacy Policy",
+          "value": "✓",
+          "sort_order": 16
+        },
+        {
+          "label": "Get your free trial",
+          "value": "✓",
+          "sort_order": 17
+        },
+        {
+          "label": "What you need to know:",
+          "value": "✓",
+          "sort_order": 18
+        },
+        {
+          "label": "A 30-day free trial",
+          "value": "✓",
+          "sort_order": 19
+        },
+        {
+          "label": "Priority support from Greatstone",
+          "value": "✓",
+          "sort_order": 20
+        },
+        {
+          "label": "Fully functional demonstrations",
+          "value": "✓",
+          "sort_order": 21
+        },
+        {
+          "label": "Example source code and instructions",
+          "value": "✓",
+          "sort_order": 22
+        },
+        {
+          "label": "Talk to an Expert",
+          "value": "✓",
+          "sort_order": 23
+        }
+      ]
+    },
+    {
+      "id": "b922b72c-9084-494b-8931-c87102f267c7",
+      "slug": "apryse-server-sdk",
+      "name": "Apryse Server SDK",
+      "short_description": "Achieve total document and data control with Apryse Server SDK. Streamline workflows and secure your data. Available at Greatstone International.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/server-icon_1714573106.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/server-icon_1714573106.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-server-sdk"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "2dfa19e5-1609-4479-b0bd-39fe9074b5e2",
+      "slug": "aspose-pdf-for--net",
+      "name": "Aspose.Pdf for .NET",
+      "short_description": "Aspose.Pdf for .NET",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/Aspose.PDF-for-.NET.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/Aspose.PDF-for-.NET.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-pdf-for--net"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "ec02bda6-fbfd-4691-9e6d-3a2d5d3ce64b",
+      "slug": "aspose-total-product-family",
+      "name": "Aspose.Total Product Family",
+      "short_description": "With the wide range of components from the Aspose.Total Product Family, automation of MS Office and other file formats has never been easier. Discover more.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/Aspose.Total-Product-Family.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/Aspose.Total-Product-Family.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-total-product-family"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "91f15861-f991-468b-9a13-385390b6d80b",
+        "name": "Suites & Bundles",
+        "slug": "suites-and-bundles"
+      }
+    },
+    {
+      "id": "90b7a106-8833-4f83-af68-f1a4a4bf4a14",
+      "slug": "aspose-words-for--net",
+      "name": "Aspose.Words for .NET",
+      "short_description": "Aspose.Words is a .NET API that provides programmers with a vast range of document processing capabilities within their .NET, iOS, macOS & Android applications.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/Aspose.Words-for-.NET.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/Aspose.Words-for-.NET.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-words-for--net"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "347c33ef-802b-4221-8d97-4b1e532ce158",
+        "name": "Word Processing",
+        "slug": "word-processing"
+      }
+    },
+    {
+      "id": "180bf1a4-6f0f-4894-ba81-b8bcf3007b40",
+      "slug": "conholdate-total-for--net",
+      "name": "Conholdate.Total for .NET",
+      "short_description": "Discover Conholdate.Total for .NET, which includes all Aspose & GroupDocs .NET APIs and allows developers to perform a wide range of document processing tasks.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/conholdate_total-for-net.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/conholdate_total-for-net.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/conholdate/conholdate-total-for--net"
+      },
+      "vendor": {
+        "id": "035f75b5-2e36-4a9b-94b1-ea59be8e1a0e",
+        "name": "Conholdate",
+        "slug": "conholdate",
+        "logo_url": "assets/catalog/logos/conholdate.png"
+      },
+      "category": {
+        "id": "91f15861-f991-468b-9a13-385390b6d80b",
+        "name": "Suites & Bundles",
+        "slug": "suites-and-bundles"
+      }
+    },
+    {
+      "id": "a33e133d-a542-445d-9c96-825da07b52f4",
+      "slug": "devexpress-universal",
+      "name": "DevExpress Universal",
+      "short_description": "The DevExpress Universal Subscription is the ultimate developer component suite on the market. It includes over 600 UI Controls and more.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/DevExpress-Universal-20.1.png",
+        "gallery": [
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/devexpress-aspnet-grid-dashboard.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/DevExpress-HTML-JS-Sales-Dashboard.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/DevExpress-Windows-10-Inspired-App.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/devexpress-winforms-spreadsheet.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/devexpress-wpf-diagram-desktop-hd.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/devexpress-dashboard-sales-desktop.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/DevExpress-CodeRush-Debug-Visualizer.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/devexpress-web-reporting-user-designer.png"
+        ],
+        "mainImage": "assets/catalog/icons/DevExpress-Universal-20.1.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/devexpress/devexpress-universal"
+      },
+      "vendor": {
+        "id": "5a3d5c2b-a9ec-4dca-8a3d-358605682087",
+        "name": "DevExpress",
+        "slug": "devexpress",
+        "logo_url": "assets/catalog/logos/devexpress.png"
+      },
+      "category": {
+        "id": "9caccbf0-bfd0-4ffb-b834-f5f5be83ef17",
+        "name": "UI Components",
+        "slug": "ui-components"
+      }
+    },
+    {
+      "id": "9581bdd2-9682-4989-9b66-a49291e84586",
+      "slug": "groupdocs-total-for--net",
+      "name": "GroupDocs.Total for .NET",
+      "short_description": "Annotate, Compare, View, Export, Sign, Automate and Search Documents in .NET with GroupDocs.Total for .NET.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/GroupDocs.Total_for_NET.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/GroupDocs.Total_for_NET.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/groupdocs/groupdocs-total-for--net"
+      },
+      "vendor": {
+        "id": "f87702fd-418c-4b91-a827-997c410da59e",
+        "name": "GroupDocs",
+        "slug": "groupdocs",
+        "logo_url": "assets/catalog/logos/groupdocs.png"
+      },
+      "category": {
+        "id": "91f15861-f991-468b-9a13-385390b6d80b",
+        "name": "Suites & Bundles",
+        "slug": "suites-and-bundles"
+      }
+    },
+    {
+      "id": "c3113017-155d-4be9-ab86-9ed50cd44968",
+      "slug": "ironpdf",
+      "name": "IronPDF for .NET",
+      "short_description": "Build, format and manipulate PDFs that have an HTML look and feel with IronPDF. Converting to PDF is simple and lightning-quick with a few lines of code.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/ironpdf_1708945913.png",
+        "gallery": [
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/htmltopdf-c_1666191974.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/convert-aspx-to-pdf-in-aspdotnet_1666192477.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/create-a-pdf-report-in-c_1666192832.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/generate-pdf-files-in-net-6_1666193010.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/how-to-create-a-pdf-in-c-using-ironpdf_1666193117.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/comparing-ironpdf-to-itextsharp-in-c_1666193254.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/a-comparison-of-ironpdf-vs-selectpdf_1666193623.png",
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/how-to-convert-an-aspnet-mvc-view-to-pdf-using-ironpdf_1666193740.png"
+        ],
+        "mainImage": "assets/catalog/icons/ironpdf_1708945913.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/ironsoftware/ironpdf"
+      },
+      "vendor": {
+        "id": "b4555dc2-4bb0-45ca-92e2-60488dd52c49",
+        "name": "Iron Software",
+        "slug": "ironsoftware",
+        "logo_url": "assets/catalog/logos/ironsoftware.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "fd22e3d8-023f-4857-9ecb-dbf1e561664f",
+      "slug": "pdflib",
+      "name": "PDFlib – Enterprise PDF Generation Toolkit",
+      "short_description": "PDFlib is the premier toolkit for application developers looking to implement PDF generation & manipulation features in their enterprise. ",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/PDFlib-9.2.0.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/PDFlib-9.2.0.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/pdflib/pdflib"
+      },
+      "vendor": {
+        "id": "a2809936-6ea4-47f2-9482-a0da4762e2a2",
+        "name": "PDFlib",
+        "slug": "pdflib",
+        "logo_url": "assets/catalog/logos/pdflib.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "6bc73b1e-51ca-4125-bf1d-d32538777988",
+      "slug": "readirispdf-for-windows",
+      "name": "Readiris PDF for Windows",
+      "short_description": "Intelligent OCR, Secure, Sign, Create, Merge, Edit, Split, Annotate and Hyper Compress your PDF with a few clicks on your Windows device.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [
+        "Windows"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/ripdf-logo-icon-2350_1686654178.png",
+        "gallery": [
+          "https://www.greatstonesoftware.co.uk/storage/gallery/cropped/screenshot-2023-09-08-at-123840_1694173192.png"
+        ],
+        "mainImage": "assets/catalog/icons/ripdf-logo-icon-2350_1686654178.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/iris/readirispdf-for-windows"
+      },
+      "vendor": {
+        "id": "61076929-035c-4c7c-9ec9-d1c2cd669f8c",
+        "name": "I.R.I.S.",
+        "slug": "iris",
+        "logo_url": "assets/catalog/logos/iris.png"
+      },
+      "category": {
+        "id": "2cea44d6-1162-4e79-b4fc-c844f8b4ed1b",
+        "name": "OCR & Recognition",
+        "slug": "ocr-and-recognition"
+      }
+    },
+    {
+      "id": "e6769f72-113b-42ca-80ef-bf42169cffb8",
+      "slug": "toolkit",
+      "name": "Toolkit",
+      "short_description": "ActivePDF Toolkit Ultimate is a powerful PDF software development kit that developers can use to Convert, Create, Render, Redact and Print PDF documents.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": true,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/toolkit-ultimate_1613393148.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/toolkit-ultimate_1613393148.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/activepdf/toolkit"
+      },
+      "vendor": {
+        "id": "813609fd-11c5-46c3-bc9f-7bd2e19d451a",
+        "name": "ActivePDF",
+        "slug": "activepdf",
+        "logo_url": "assets/catalog/logos/activepdf.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "02de15d5-bd19-421b-9643-d73769e52f94",
+      "slug": "apryse-for-appian",
+      "name": "Apryse for Appian Platform",
+      "short_description": "Streamline workflows and allow users to review, approve, digitally sign, and comment on any document with Apyrse for Appian. Explore now with Greatstone.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "Appian"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/appianicon_1714740196.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/appianicon_1714740196.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-for-appian"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "da4580cc-d9eb-45b5-92fa-5479d923fc44",
+      "slug": "apryse-for-mendix",
+      "name": "Apryse for Mendix Platform",
+      "short_description": "Enhance your app with seamless document management with Apryse for Mendix. Request a call to revolutionise your document workflows with Greatstone.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "Mendix"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/mendixicon_1714743127.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/mendixicon_1714743127.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-for-mendix"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "11528200-c173-414f-88c1-5a1dc124192b",
+      "slug": "apryse-for-outsystems",
+      "name": "Apryse for OutSystems",
+      "short_description": "Apryse for OutSystems",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "OutSystems"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/outsystems_1714749225.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/outsystems_1714749225.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-for-outsystems"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "67d990de-b261-4de7-90f8-e9813c0d7c60",
+      "slug": "apryse-for-salesforce",
+      "name": "Apryse for Salesforce",
+      "short_description": "Unlock the potential of Salesforce with Apryse, the comprehensive document generation and collaboration solution. Request a call from Greatstone International.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "Salesforce"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/salesforceicon_1714735881.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/salesforceicon_1714735881.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-for-salesforce"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "75f16ac1-5d8f-49f4-bbc2-f166d23ca592",
+      "slug": "apryse-for-sharepoint",
+      "name": "Apryse for SharePoint",
+      "short_description": "Apryse for SharePoint",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "SharePoint"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/sharepointicon_1714752206.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/sharepointicon_1714752206.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-for-sharepoint"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "4928ef11-555f-4650-a657-f543c74a1437",
+      "slug": "apryse-mobile-sdk",
+      "name": "Apryse Mobile SDK",
+      "short_description": "Build engaging mobile apps with Apryse's client-side, mobile SDK. View, annotate, edit PDFs, Office docs, images & more. Available at Greatstone International.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/mobile-icon_1714573853.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/mobile-icon_1714573853.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-mobile-sdk"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "a2aaf9a8-f4ea-4804-97e1-311be17ebc28",
+      "slug": "apryse-web-sdk",
+      "name": "Apryse Web SDK",
+      "short_description": "All-in-one document powerhouse with Apryse WebViewer. Render, convert & edit PDFs, Office docs, images & more. Available with Greatstone International.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/wewb-icon_1714573583.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/wewb-icon_1714573583.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/apryse/apryse-web-sdk"
+      },
+      "vendor": {
+        "id": "3091808f-8fdb-4408-ac8b-6b30820eebb9",
+        "name": "Apryse",
+        "slug": "apryse",
+        "logo_url": "assets/catalog/logos/apryse.png"
+      },
+      "category": {
+        "id": "d9850036-dcac-428f-9521-78346e13d26c",
+        "name": "PDF",
+        "slug": "pdf"
+      }
+    },
+    {
+      "id": "e4ac6db0-0d6b-41a5-8475-61ed3cf49cce",
+      "slug": "aspose-tex-for-c++",
+      "name": "Aspose TeX for C++",
+      "short_description": "Aspose TeX for C++",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "C++"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/aspose_tex-for-cpp.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/aspose_tex-for-cpp.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-tex-for-c++"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "8fdaf92d-fda0-4c2b-b2ba-e75b8e9c8abc",
+        "name": "Typesetting",
+        "slug": "typesetting"
+      }
+    },
+    {
+      "id": "a65b073d-f448-4031-a2b6-57f9dc787060",
+      "slug": "aspose-3d-for--net",
+      "name": "Aspose.3D for .NET",
+      "short_description": "Aspose.3D for .NET",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/Aspose.3D-for-.NET.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/Aspose.3D-for-.NET.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-3d-for--net"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "ecdf7e8e-bdf3-4009-97f6-e391275375fe",
+        "name": "Imaging & Graphics",
+        "slug": "imaging-and-graphics"
+      }
+    },
+    {
+      "id": "c66a0a5a-a067-48a4-a3c3-9479ea9eaa00",
+      "slug": "aspose3d-for-java",
+      "name": "Aspose.3D for Java",
+      "short_description": "Aspose.3D for Java",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "Java"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/aspose_3d-for-java.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/aspose_3d-for-java.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose3d-for-java"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "ecdf7e8e-bdf3-4009-97f6-e391275375fe",
+        "name": "Imaging & Graphics",
+        "slug": "imaging-and-graphics"
+      }
+    },
+    {
+      "id": "f9e32661-6a94-4d24-9a08-3fefc5e926cd",
+      "slug": "aspose-barcode-for--net",
+      "name": "Aspose.BarCode for .NET",
+      "short_description": "Aspose.BarCode for .NET API allows developers to add Barcode recognition, scanning, and generation functionality to their .NET applications.",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        ".NET"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/Aspose.BarCode-for-.NET.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/Aspose.BarCode-for-.NET.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-barcode-for--net"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "42323758-6c49-488f-80bf-86caec7c6d8c",
+        "name": "Barcode & QR",
+        "slug": "barcode-and-qr"
+      }
+    },
+    {
+      "id": "f8c0d3db-4ca0-472e-af94-b998cf5deb75",
+      "slug": "aspose-barcode-for-jasperreports",
+      "name": "Aspose.BarCode for JasperReports",
+      "short_description": "Aspose.BarCode for JasperReports",
+      "from_price_minor": null,
+      "from_price_currency": null,
+      "featured": false,
+      "platforms": [
+        "JasperReports"
+      ],
+      "type": "product",
+      "attributes": {
+        "icon": "assets/catalog/icons/Aspose.BarCode-for-JasperReports.png",
+        "gallery": [],
+        "mainImage": "assets/catalog/icons/Aspose.BarCode-for-JasperReports.png",
+        "sourceUrl": "https://www.greatstonesoftware.co.uk/aspose/aspose-barcode-for-jasperreports"
+      },
+      "vendor": {
+        "id": "00a1aaa7-aee0-4466-b2b4-2e4205534017",
+        "name": "Aspose",
+        "slug": "aspose",
+        "logo_url": "assets/catalog/logos/aspose.png"
+      },
+      "category": {
+        "id": "030cde89-bd55-4d78-a3f2-3acaf1e59391",
+        "name": "Document Automation",
+        "slug": "document-automation"
+      }
+    }
+  ],
+  "people": [
+    {
+      "name": "Ben Mensah",
+      "role": "Founder and CEO",
+      "kind": "person"
+    },
+    {
+      "name": "John Prempeh",
+      "role": "Senior DX Executive",
+      "kind": "person"
+    },
+    {
+      "name": "Naa Ayokor Harding",
+      "role": "Product Manager",
+      "kind": "person"
+    },
+    {
+      "name": "Principal Engineer",
+      "role": "Named once we confirm who is on your engagement.",
+      "kind": "role"
+    },
+    {
+      "name": "Delivery Lead",
+      "role": "Named once we confirm who is on your engagement.",
+      "kind": "role"
+    },
+    {
+      "name": "Design Director",
+      "role": "Named once we confirm who is on your engagement.",
+      "kind": "role"
+    }
+  ],
+  "forms": [
+    {
+      "key": "dx-consultancy-aibaselinesurvey",
+      "title": "Your result is ready.",
+      "submitLabel": "See my result",
+      "fields": [
+        {
+          "key": "name",
+          "label": "Your name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "email",
+          "label": "Work email",
+          "type": "email",
+          "required": true
+        },
+        {
+          "key": "company",
+          "label": "Company (optional)",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "dx-consultancy-aicostcalculator",
+      "title": "See what AI could recover",
+      "submitLabel": "See the figure",
+      "fields": [
+        {
+          "key": "name",
+          "label": "Your name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "email",
+          "label": "Work email",
+          "type": "email",
+          "required": true
+        },
+        {
+          "key": "company",
+          "label": "Company (optional)",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "contact-bookdeepdive",
+      "title": "Send an Enquiry",
+      "submitLabel": "Send enquiry",
+      "fields": [
+        {
+          "key": "name",
+          "label": "Your name (required)",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "email",
+          "label": "Work email (required)",
+          "type": "email",
+          "required": true
+        },
+        {
+          "key": "company",
+          "label": "Organisation",
+          "type": "text",
+          "required": false
+        },
+        {
+          "key": "size",
+          "label": "How many people work there?",
+          "type": "select",
+          "required": false,
+          "options": [
+            {
+              "value": "Under 10",
+              "label": "Under 10"
+            },
+            {
+              "value": "11 to 50",
+              "label": "11 to 50"
+            },
+            {
+              "value": "51 to 250",
+              "label": "51 to 250"
+            },
+            {
+              "value": "More than 250",
+              "label": "More than 250"
+            }
+          ]
+        },
+        {
+          "key": "interest",
+          "label": "What are you interested in? (optional)",
+          "type": "select",
+          "required": false,
+          "options": [
+            {
+              "value": "A free Executive Discovery",
+              "label": "A free Executive Discovery"
+            },
+            {
+              "value": "A Deep Dive and blueprint",
+              "label": "A Deep Dive and blueprint"
+            },
+            {
+              "value": "GS Agentic Manager",
+              "label": "GS Agentic Manager"
+            },
+            {
+              "value": "Specialist expertise for a defined piece of work",
+              "label": "Specialist expertise for a defined piece of work"
+            },
+            {
+              "value": "Not sure yet",
+              "label": "Not sure yet"
+            }
+          ]
+        },
+        {
+          "key": "message",
+          "label": "Which work would you most like to get time back from?",
+          "type": "textarea",
+          "required": false
+        }
+      ]
+    }
+  ]
+}

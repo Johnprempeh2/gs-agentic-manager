@@ -45,12 +45,13 @@ import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapS
 // the linked project's tree, the decisions feed, the project's tasks' work
 // products, attachments and comments, and the project workspace's preview.
 
-export type WebsiteTab = "overview" | "progress" | "sitemap" | "preview" | "traffic";
+export type WebsiteTab = "overview" | "progress" | "sitemap" | "collections" | "preview" | "traffic";
 
 export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
   { value: "overview", label: "Overview" },
   { value: "progress", label: "Progress" },
   { value: "sitemap", label: "Sitemap" },
+  { value: "collections", label: "Collections" },
   { value: "preview", label: "Preview" },
   { value: "traffic", label: "Traffic" },
 ];
@@ -754,4 +755,3 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
     </div>
   );
 }
-
