@@ -36,6 +36,11 @@ describe("describeTaskActivity", () => {
     expect(line({ input: { hasLiveRuns: true } })).toBe("Mica is working on it");
   });
 
+  it("a queued run is not work in hand (GRE-2246)", () => {
+    expect(line({ input: { hasLiveRuns: true, runStateKind: "queued" } })).toBe("Mica is queued; not started yet");
+    expect(line({ input: { hasLiveRuns: true, runStateKind: "running" } })).toBe("Mica is working on it");
+  });
+
   it("uses the run phase in plain words, never the raw code", () => {
     const text = line({
       issue: {

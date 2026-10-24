@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { runStateForTask } from "../lib/task-run-state";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { deriveOriginatingActor, INBOX_MINE_ISSUE_STATUS_FILTER } from "@greatstone/shared";
@@ -41,6 +42,7 @@ import {
   normalizeIssueFilterState,
   type IssueFilterState,
 } from "../lib/issue-filters";
+import { useTaskRunStates } from "../hooks/useTaskRunStates";
 import { collectLiveIssueIds, collectSubtreeLiveCounts } from "../lib/liveIssueIds";
 import { formatAssigneeUserLabel } from "../lib/assignees";
 import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
@@ -1141,6 +1143,12 @@ export function Inbox() {
     enabled: shouldUseIssueSearchSupplement,
     placeholderData: (previousData) => previousData,
   });
+  // Queued, running or stuck per task (GRE-2246).
+  const runStateByIssueId = useTaskRunStates(selectedCompanyId);
+  const inboxIssueLabel = useMemo(() => {
+    const labels = new Map((issues ?? []).map((candidate) => [candidate.id, candidate.identifier]));
+    return (issueId: string) => labels.get(issueId) ?? null;
+  }, [issues]);
   const liveIssueIds = useMemo(
     () => collectLiveIssueIds(liveRuns, [
       ...(issues ?? []),
@@ -2951,7 +2959,7 @@ export function Inbox() {
                     && blockerAttention?.state === "covered"
                   );
                   const rowStatusIcon = (
-                    <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} waiting={isWaitingOnMonitor(issue)} size="md" />
+                    <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} waiting={isWaitingOnMonitor(issue)} queued={runStateForTask(runStateByIssueId, issue)?.kind === "queued"} size="md" />
                   );
                   return (
                     <IssueRow
@@ -2991,6 +2999,8 @@ export function Inbox() {
                         <InboxIssueMetaLeading
                           issue={issue}
                           isLive={isLive}
+                          runState={runStateForTask(runStateByIssueId, issue) ?? null}
+                          issueLabel={inboxIssueLabel}
                           subtreeLiveCount={liveDescendantCount}
                           showSubtreeLiveChip={showSubtreeLiveChip}
                           showStatus={false}

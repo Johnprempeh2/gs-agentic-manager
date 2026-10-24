@@ -33,6 +33,11 @@ export interface TaskActivityLineInput {
     | "activeRun"
   >;
   hasLiveRuns: boolean;
+  /**
+   * What the live run is doing (GRE-2246). A queued run waits for its agent and
+   * must not read as "working on it".
+   */
+  runStateKind?: "running" | "queued" | "stuck" | null;
   /** True when a monitor holds the task (see isWaitingOnMonitor). */
   waitingOnMonitor: boolean;
   monitorServiceName?: string | null;
@@ -147,6 +152,10 @@ function describeDoing(input: TaskActivityLineInput, waitingFor: string | null):
   const be = assignee.isYou ? "are" : "is";
 
   if (issue.tabledAt) return `Set aside for now; ${assignee.name} will come back to it`;
+
+  if (input.hasLiveRuns && input.runStateKind === "queued") {
+    return `${subject} ${be} queued; not started yet`;
+  }
 
   if (input.hasLiveRuns) {
     const phase = issue.activeRun?.execution?.phase;

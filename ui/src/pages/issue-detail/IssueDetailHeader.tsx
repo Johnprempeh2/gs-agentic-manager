@@ -54,6 +54,8 @@ import type { CompanyUserProfile } from "@/lib/company-members";
 import type { NavigateFunction } from "@/lib/router";
 import type { UseMutationResult } from "@tanstack/react-query";
 import type { IssueExternalObjectsResult } from "@/hooks/useIssueExternalObjects";
+import { TaskRunStateChip } from "@/components/TaskRunStateChip";
+import type { TaskRunState } from "@/lib/task-run-state";
 
 export type IssueDetailHeaderProps = {
   streamlinedTaskDetailEnabled: boolean;
@@ -64,6 +66,8 @@ export type IssueDetailHeaderProps = {
   issue: Issue;
   updateIssue: ReturnType<typeof useIssueMutations>["updateIssue"];
   hasLiveRuns: boolean;
+  /** Working, queued or stuck (GRE-2246); shown in place of the Live badge when known. */
+  runState?: TaskRunState | null;
   taskChatShellEnabled: boolean;
   resolvedProject: Project | null;
   agentMap: Map<string, Agent>;
@@ -119,6 +123,7 @@ export function IssueDetailHeader({
   issue,
   updateIssue,
   hasLiveRuns,
+  runState = null,
   taskChatShellEnabled,
   resolvedProject,
   agentMap,
@@ -241,7 +246,9 @@ export function IssueDetailHeader({
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
         ) : null}
-        {hasLiveRuns && (
+        {runState ? (
+          <TaskRunStateChip state={runState} variant="full" className="max-w-full" />
+        ) : hasLiveRuns && (
           <Badge
             variant="outline"
             className={cn("gap-1.5 text-(length:--text-nano)", liveBlueBadge)}
