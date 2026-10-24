@@ -9,7 +9,10 @@ import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityLog,
+  agentWakeupRequests,
   agents,
+  approvalComments,
+  approvals,
   companies,
   companyMemberships,
   companySecrets,
@@ -19,6 +22,7 @@ import {
   documents,
   heartbeatRuns,
   instanceSettings,
+  issueApprovals,
   principalPermissionGrants,
   websiteEntry,
   websitePage,
@@ -28,10 +32,12 @@ import {
 import type { WebsitePageDetail, WebsiteRelease, WebsiteSite } from "@greatstone/shared";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
+import { approvalRoutes } from "../routes/approvals.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
 import { instanceSettingsService } from "../services/index.js";
 import type { NetlifyDeploy, WebsiteNetlifyClient } from "../services/website/netlify-publish-client.js";
-import { websitePublishService, type FetchedPage, type WebsitePublishOptions } from "../services/website/publish.js";
+import { registerWebsitePublishStarter } from "../services/website/publish-approval.js";
+import { websitePublishService, websitePublishStarter, type FetchedPage, type WebsitePublishOptions } from "../services/website/publish.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -184,8 +190,12 @@ describeEmbeddedPostgres("website publish and rollback", () => {
 
   afterEach(async () => {
     await settle();
+    registerWebsitePublishStarter(null);
     await db.delete(activityLog);
+    await db.delete(issueApprovals);
+    await db.delete(approvalComments);
     await db.delete(websiteRelease);
+    await db.delete(approvals);
     await db.delete(websiteEntry);
     await db.delete(websitePage);
     await db.delete(websiteSite);
@@ -193,6 +203,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     await db.delete(documents);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
+    await db.delete(agentWakeupRequests);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companySecretVersions);
@@ -218,6 +229,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
       next();
     });
     instance.use("/api", websiteModuleRoutes(db, { publish: publishOptions() }));
+    instance.use("/api", approvalRoutes(db));
     instance.use(errorHandler);
     return instance;
   }
@@ -341,8 +353,22 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     };
     walk(serverSrc);
     const callers = (pattern: RegExp) => files.filter((f) => pattern.test(readFileSync(f, "utf8"))).map((f) => path.relative(serverSrc, f));
-    expect(callers(/\.(startPublish|retry|rollback)\(\s*(found\.)?site/)).toEqual([path.join("routes", "website-module.ts")]);
+    // The one other caller is the "Approve and Publish" starter (GRE-2139), checked below.
+    expect(callers(/\.(startPublish|retry|rollback)\(\s*(found\.)?site/)).toEqual([path.join("routes", "website-module.ts"), path.join("services", "website", "publish.ts")]);
     expect(callers(/\.(startBuild|restoreDeploy)\(/)).toEqual([path.join("services", "website", "publish.ts")]);
+    const publishSrc = readFileSync(path.join(serverSrc, "services", "website", "publish.ts"), "utf8");
+    expect(publishSrc.match(/\.startPublish\(\s*site/g)).toHaveLength(1);
+    expect(publishSrc.slice(publishSrc.indexOf("export function websitePublishStarter("))).toMatch(/\.startPublish\(\s*site/);
+    // The starter is registered only at server start, and runs only from the
+    // approve route, after assertCanDecide checked a signed-in person's click.
+    expect(callers(/registerWebsitePublishStarter\(/).sort()).toEqual(["app.ts", path.join("services", "website", "publish-approval.ts")]);
+    expect(callers(/\.startApprovedPublish\(/)).toEqual([path.join("routes", "approvals.ts")]);
+    const approveHandlers = readFileSync(path.join(serverSrc, "routes", "approvals.ts"), "utf8")
+      .split("router.")
+      .filter((h) => h.includes(".startApprovedPublish("));
+    expect(approveHandlers).toHaveLength(1);
+    expect(approveHandlers[0]!.indexOf("assertCanDecide(req.actor")).toBeGreaterThan(-1);
+    expect(approveHandlers[0]!.indexOf("assertCanDecide(req.actor")).toBeLessThan(approveHandlers[0]!.indexOf(".startApprovedPublish("));
     const routes = readFileSync(path.join(serverSrc, "routes", "website-module.ts"), "utf8");
     const handlers = routes.split("router.").filter((h) => /publish\.(startPublish|retry|rollback)\(/.test(h));
     expect(handlers).toHaveLength(3);
@@ -385,6 +411,101 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(second.status).toBe("live");
     expect(netlify.state.builds).toBe(2);
     expect((await releaseById(release.id)).status).toBe("superseded");
+  });
+
+  // ---- "Approve and Publish" (GRE-2139) ----
+
+  /** An agent proposes a Publish of the approved page; returns the open card. */
+  async function agentProposes(companyId: string, base: string) {
+    const agent = await seedAgent(companyId, ["website:view", "website:edit"]);
+    const proposal = (await request(app(agent)).post(`${base}/publish-proposals`).expect(201)).body as { id: string; payload: { manifest: unknown } };
+    return { agent, proposal };
+  }
+
+  async function approvalById(id: string) {
+    const [row] = await db.select().from(approvals).where(eq(approvals.id, id));
+    return row!;
+  }
+
+  it("Approve and Publish makes exactly one release and one production deploy, in the approver's name", async () => {
+    const { company, site, page, base } = await seedSite();
+    await approveLatest(page.id);
+    const { agent, proposal } = await agentProposes(company.id, base);
+    registerWebsitePublishStarter(websitePublishStarter(db, publishOptions()));
+
+    // The agent that proposed it cannot approve it: it never publishes by itself.
+    await request(app(agent)).post(`/api/approvals/${proposal.id}/approve`).send({}).expect(403);
+    expect(await releaseCount(site.id)).toBe(0);
+
+    const approved = await request(app()).post(`/api/approvals/${proposal.id}/approve`).send({}).expect(200);
+    await settle();
+    expect(approved.body.status).toBe("approved");
+    const releaseId = approved.body.payload.releaseId as string;
+    expect(releaseId).toBeTruthy();
+
+    const release = await releaseById(releaseId);
+    expect(release).toMatchObject({
+      status: "live",
+      kind: "publish",
+      approvalId: proposal.id,
+      publishedByUserId: "local-board",
+      requestedByAgentId: (agent as { agentId: string }).agentId,
+      requestedByUserId: null,
+    });
+    expect(await releaseCount(site.id)).toBe(1);
+    expect(netlify.state.builds).toBe(1);
+    expect(netlify.state.restores).toBe(0);
+
+    // A second click on the decided card starts nothing.
+    await request(app()).post(`/api/approvals/${proposal.id}/approve`).send({}).expect(200);
+    await settle();
+    expect(await releaseCount(site.id)).toBe(1);
+    expect(netlify.state.builds).toBe(1);
+  });
+
+  it("Approve and Publish while a Publish runs answers 409, makes no release and keeps the card open", async () => {
+    const { company, site, page, base } = await seedSite();
+    await approveLatest(page.id);
+    const { proposal } = await agentProposes(company.id, base);
+    registerWebsitePublishStarter(websitePublishStarter(db, publishOptions()));
+    const runningId = randomUUID();
+    await db
+      .update(websiteSite)
+      .set({ publishLeaseId: runningId, publishLeaseKind: "publish", publishLeaseExpiresAt: new Date(Date.now() + 10 * 60_000) })
+      .where(eq(websiteSite.id, site.id));
+
+    const busy = await request(app()).post(`/api/approvals/${proposal.id}/approve`).send({}).expect(409);
+    expect(busy.body.details).toMatchObject({ code: "website_publish_running", runningReleaseId: runningId });
+    await settle();
+    expect(await releaseCount(site.id)).toBe(0);
+    expect(netlify.state.builds).toBe(0);
+    expect(await approvalById(proposal.id)).toMatchObject({ status: "pending", decidedByUserId: null, decidedAt: null });
+
+    // When the running Publish ends, the same card still works.
+    await db
+      .update(websiteSite)
+      .set({ publishLeaseId: null, publishLeaseKind: null, publishLeaseExpiresAt: null })
+      .where(eq(websiteSite.id, site.id));
+    const approved = await request(app()).post(`/api/approvals/${proposal.id}/approve`).send({}).expect(200);
+    await settle();
+    expect((await releaseById(approved.body.payload.releaseId)).status).toBe("live");
+    expect(await releaseCount(site.id)).toBe(1);
+    expect(netlify.state.builds).toBe(1);
+  });
+
+  it("a board API key cannot Approve and Publish: it is a script, not a click", async () => {
+    const { company, site, page, base } = await seedSite();
+    await approveLatest(page.id);
+    const { proposal } = await agentProposes(company.id, base);
+    registerWebsitePublishStarter(websitePublishStarter(db, publishOptions()));
+    const boardKey = { type: "board", userId: "owner-1", source: "board_key", keyId: "key-1", isInstanceAdmin: true, companyIds: [company.id], memberships: [{ companyId: company.id, membershipRole: "owner", status: "active" }] } as Actor;
+
+    const refused = await request(app(boardKey)).post(`/api/approvals/${proposal.id}/approve`).send({}).expect(403);
+    expect(refused.body.details?.code).toBe("website_publish_person_only");
+    await settle();
+    expect(await releaseCount(site.id)).toBe(0);
+    expect(netlify.state.builds + netlify.state.restores).toBe(0);
+    expect((await approvalById(proposal.id)).status).toBe("pending");
   });
 
   // ---- lease and fence ----
