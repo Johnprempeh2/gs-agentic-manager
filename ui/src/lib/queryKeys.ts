@@ -705,6 +705,10 @@ export const queryKeys = {
     sitemapOptions: (companyId: string, siteId: string) => ["website", companyId, "sitemap-options", siteId] as const,
     sitemapXml: (companyId: string, siteId: string) => ["website", companyId, "sitemap-xml", siteId] as const,
     home: (companyId: string, siteId: string) => ["website", companyId, "home", siteId] as const,
+    /** Website modules (GRE-2325): the registry, the Home cards and one module page. */
+    modules: (companyId: string, siteId: string) => ["website", companyId, "modules", siteId] as const,
+    moduleCards: (companyId: string, siteId: string) => ["website", companyId, "modules", siteId, "cards"] as const,
+    module: (companyId: string, siteId: string, moduleId: string) => ["website", companyId, "modules", siteId, moduleId] as const,
   },
   budgets: {
     overview: (companyId: string) =>

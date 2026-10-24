@@ -3,7 +3,7 @@
 Status: tables, routes, the Pipedrive read adapter (GRE-1100) and the review queue with
 write-back to Pipedrive (GRE-1076) built. Source: GRE-1069 discovery deck v7, slides 6-9. The
 tables are migrations `0305_crm_sync_tables` and `0307_crm_sync_review_queue`. Only the sync
-runner writes to a CRM; agents never do with direct tool calls.
+runner and the website enquiry copy service write to a CRM; agents never do with direct tool calls.
 
 Code:
 
@@ -15,6 +15,7 @@ Code:
 - `server/src/services/crm-sync.ts`, `server/src/routes/crm-sync.ts` — the routes below.
 - `server/src/services/crm-sync-pipedrive.ts` — Pipedrive client: reads deals, updates one deal (429 back-off).
 - `server/src/services/crm-sync-runner.ts` — one sync pass and the poll scheduler.
+- `server/src/services/website/enquiries.ts`, `enquiry-pipedrive.ts` — website lead import and its Pipedrive copy.
 - `ui/src/components/PipelineCaseCrmSync.tsx` — the "CRM sync" section on the client case page.
 - `ui/src/components/CrmSyncConflictQueue.tsx` — the "Sync conflicts" queue (Review queue page and
   case page) and "Suggest a change to a CRM field".
@@ -103,7 +104,15 @@ Notes:
 - Resolving with `keep_crm`, `keep_gsam` or `custom` writes the chosen value to both sides on the
   next pass and stores it as the last-synced value. A resolved conflict is never reopened; a new
   change makes a new conflict.
-- Record links are written by the sync only. There is no route to edit them by hand in this phase.
+- Record links are written by the sync runner or the website enquiry copy service. There is no route to edit them by hand.
+
+## Website enquiries (GRE-2324)
+
+The website admin bridge is read-only from GSAM's side. A connected site can be checked by a person with website Edit access, and a scheduler checks connected sites every five minutes once a bridge reader is configured. The bridge reader returns pages of enquiries with opaque cursors. The real bridge connection and staging switch-over belong to GRE-2323; until then, tests provide a fake reader.
+
+Each website enquiry becomes one case in the `website-enquiries` Pipeline. Its case key includes the site and enquiry ids. The case retains source, page, UTM, consent and submission time in fields, and links to an Organisation by email domain when a live company-scoped match exists. Personal mailbox domains do not group unrelated people. A linked GSAM task provides the inbox item, routed to the Front door module owner or the company's default responsible user when one is set. The site's Resend owner alert remains the website's responsibility.
+
+The copy service uses an active Pipedrive sync connection. It creates or finds the contact person, sets a stable `origin_id` on the Pipedrive lead, and stores the external lead id in `crm_sync_record_links`. A repeat pass checks the link; after an interrupted write it searches Pipedrive by `origin_id` before creating another lead. The read importer skips leads with this GSAM origin so the copy does not become a second GSAM case. The staging proof must confirm the connected account returns `origin_id` in lead-list answers and has person and lead write access.
 - Sync events and conflicts are written by the server only (`crmSyncEventSchema`,
   `crmSyncConflictSchema` validate what the sync writes).
 - `POST .../sync` answers 422 `direction_not_allowed` for `direction: "outbound"` on an

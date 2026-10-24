@@ -35,7 +35,8 @@ import { DecisionFeedCard } from "../decisions-feed/DecisionFeedCard";
 import { ErrorState } from "../ErrorState";
 import { pickLivePreviewService } from "../LivePreviewCard";
 import { RELEASE_STATUS_COPY, isReleaseActive, releaseDate, releaseTime } from "./WebsiteReleases";
-import { useWebsiteSite } from "./WebsiteSiteConnection";
+import { useCanPublishWebsite, useWebsiteSite } from "./WebsiteSiteConnection";
+import { WebsiteModulesSection } from "./modules/WebsiteModuleCards";
 import {
   LinkProjectFirst,
   PreviewStage,
@@ -746,6 +747,7 @@ export function WebsiteHomeTab({
 }) {
   const projectId = property.projectId;
   const { site } = useWebsiteSite(companyId, property.id);
+  const { canPublish } = useCanPublishWebsite(companyId, site?.id ?? null, !!site);
   const homeQuery = useQuery({
     queryKey: queryKeys.website.home(companyId, site?.id ?? ""),
     queryFn: () => websiteModuleApi.home(companyId, site!.id),
@@ -772,6 +774,7 @@ export function WebsiteHomeTab({
     <div className="space-y-6" data-testid="website-home">
       <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site?.editorFrameOrigin ? onEditPages : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
+      <WebsiteModulesSection companyId={companyId} site={site} canChange={canPublish} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}
       <div className="grid gap-6 lg:grid-cols-2">
