@@ -8,7 +8,8 @@
 //   node scripts/import-animation-lab.mjs --company <companyId> [--catalogue rows.json] [--dry-run out.json] [--no-posters]
 //
 // Each study is also rendered once in headless Chromium, with no network, and
-// a still frame about two seconds in becomes its card poster.
+// a still frame about two seconds in becomes its card poster. Modules a
+// study maps to a CDN are bundled into the page, since the sandbox has no network.
 //
 // Uses GSAM_API_URL and GSAM_API_KEY. Matching is by slug on the server, so
 // running it again refreshes files and fields and keeps decisions made since.
@@ -91,6 +92,62 @@ export async function inlineRelativeImages(html, pageUrl, fetchBytes) {
     inlined = inlined.split(`"${source}"`).join(`"${dataUri}"`).split(`'${source}'`).join(`'${dataUri}'`);
   }
   return inlined;
+}
+
+const IMPORT_MAP = /<script\b[^>]*type=["']importmap["'][^>]*>([\s\S]*?)<\/script>/i;
+const MODULE_SCRIPT = /(<script\b[^>]*type=["']module["'][^>]*>)([\s\S]*?)(<\/script>)/gi;
+
+/** The import map's URL for a bare specifier: an exact key, or the longest key ending in "/" that prefixes it. */
+function mapSpecifier(imports, specifier) {
+  if (imports[specifier]) return imports[specifier];
+  const prefix = Object.keys(imports)
+    .filter((key) => key.endsWith("/") && specifier.startsWith(key))
+    .sort((a, b) => b.length - a.length)[0];
+  return prefix ? imports[prefix] + specifier.slice(prefix.length) : null;
+}
+
+/**
+ * The sandbox has no network, so a study that maps modules to a CDN (006
+ * Summit loads three.js from jsDelivr) has its module scripts bundled with
+ * those modules into one inline script, and the import map is dropped.
+ */
+export async function bundleMappedModules(html, fetchText, { build } = {}) {
+  const map = html.match(IMPORT_MAP);
+  if (!map) return html;
+  const imports = JSON.parse(map[1]).imports ?? {};
+  if (!Object.values(imports).some((url) => /^https?:/i.test(url))) return html;
+  const esbuild = build ?? (await import("esbuild")).build;
+  const cdn = {
+    name: "import-map-cdn",
+    setup(plugin) {
+      plugin.onResolve({ filter: /.*/ }, (args) => {
+        if (/^https?:/i.test(args.path)) return { path: args.path, namespace: "cdn" };
+        if (args.namespace === "cdn" && /^\.{1,2}\//.test(args.path)) {
+          return { path: new URL(args.path, args.importer).toString(), namespace: "cdn" };
+        }
+        const mapped = mapSpecifier(imports, args.path);
+        if (mapped) return { path: mapped, namespace: "cdn" };
+        return { errors: [{ text: `${args.path} is not in the study's import map` }] };
+      });
+      plugin.onLoad({ filter: /.*/, namespace: "cdn" }, async (args) => ({ contents: await fetchText(args.path), loader: "js" }));
+    },
+  };
+  const bundles = [];
+  for (const [, , code] of html.matchAll(MODULE_SCRIPT)) {
+    const result = await esbuild({
+      stdin: { contents: code, loader: "js", resolveDir: "/" },
+      bundle: true,
+      format: "esm",
+      minify: true,
+      write: false,
+      legalComments: "none",
+      plugins: [cdn],
+    });
+    // Escaped so the bundle cannot close its own script element.
+    bundles.push(result.outputFiles[0].text.replace(/<\/(script)/gi, "<\\/$1"));
+  }
+  let index = 0;
+  return html.replace(map[0], "").replace(MODULE_SCRIPT, (_whole, open, _code, close) => `${open}${bundles[index++]}${close}`);
 }
 
 /** One import entry: title, concept, theme and tech from ANIMS; notes and decisions from Notion when given. */
@@ -183,7 +240,7 @@ async function main(args) {
   const studies = [];
   for (const anim of anims) {
     const pageUrl = new URL(`anims/${anim.slug}.html`, galleryUrl);
-    const html = await inlineRelativeImages(await fetchText(pageUrl), pageUrl, fetchBytes);
+    const html = await bundleMappedModules(await inlineRelativeImages(await fetchText(pageUrl), pageUrl, fetchBytes), fetchText);
     studies.push(toImportStudy(anim, html, galleryUrl, catalogue));
   }
   console.log(`Read ${studies.length} studies from ${galleryUrl}${catalogue ? ` with ${catalogue.size} catalogue rows` : ""}`);
