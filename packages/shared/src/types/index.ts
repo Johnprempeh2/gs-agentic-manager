@@ -100,6 +100,13 @@ export type {
   BlockedWorkRootCause,
   BlockedWorkTidyReason,
 } from "./blocked-work.js";
+export type {
+  BlockCheckIssueRef,
+  BlockCheckItem,
+  BlockCheckKind,
+  BlockCheckProject,
+  BlockCheckResult,
+} from "./block-check.js";
 export type { RecoveryHold, RecoveryHoldList } from "./recovery-holds.js";
 export type {
   DecisionQueue,
