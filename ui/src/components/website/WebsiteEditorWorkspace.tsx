@@ -18,6 +18,7 @@ import { useSearchParams } from "@/lib/router";
 import { cn, formatTime, relativeTime } from "@/lib/utils";
 import {
   WebsiteFrameHostSession,
+  type WebsiteFrameBlockPick,
   type WebsiteFrameConnection,
   type WebsiteFrameSaveAnswer,
   type WebsiteFrameSaveState,
@@ -28,6 +29,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { ScaledFrame } from "../AttachmentPreviewPanel";
 import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
+import { WebsiteChangeRequestPanel } from "./WebsiteChangeRequest";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind } from "./WebsiteStudioMedia";
@@ -97,6 +99,8 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
   const [frameKey, setFrameKey] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Click to change: the block to select once the editor has the draft. */
+  const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
   const sessionRef = useRef<WebsiteFrameHostSession<Window> | null>(null);
 
   // Warn before the browser leaves with unsaved edits in the frame.
@@ -133,13 +137,21 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
     params.set("page", pageId);
     setSearchParams(params, { replace: true });
     setDirty(false);
+    setFocusBlockId(null);
   };
 
   const switchView = async (next: { mode?: Mode; source?: Source }) => {
-    if (!(await leaveUnsaved())) return;
+    if (!(await leaveUnsaved())) return false;
     if (next.mode) setMode(next.mode);
     if (next.source) setSource(next.source);
     setDirty(false);
+    return true;
+  };
+
+  // A words or image change goes straight into the draft: open the block in the editor.
+  const editBlock = async (blockId: string) => {
+    setFocusBlockId(blockId);
+    if (!(await switchView({ mode: "edit", source: "draft" }))) setFocusBlockId(null);
   };
 
   const reload = () => {
@@ -220,6 +232,8 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
             device={device}
             dirty={dirty}
             sessionRef={sessionRef}
+            focusBlockId={mode === "edit" ? focusBlockId : null}
+            onEditBlock={(blockId) => void editBlock(blockId)}
             onDirty={setDirty}
             onOriginChanged={() => setNotice(ORIGIN_CHANGED_NOTICE)}
             onReload={reload}
@@ -327,6 +341,8 @@ function EditorFrame({
   device,
   dirty,
   sessionRef,
+  focusBlockId,
+  onEditBlock,
   onDirty,
   onOriginChanged,
   onReload,
@@ -340,6 +356,8 @@ function EditorFrame({
   device: WebsitePreviewDevice;
   dirty: boolean;
   sessionRef: React.MutableRefObject<WebsiteFrameHostSession<Window> | null>;
+  focusBlockId: string | null;
+  onEditBlock: (blockId: string) => void;
   onDirty: (dirty: boolean) => void;
   onOriginChanged: () => void;
   onReload: () => void;
@@ -349,6 +367,8 @@ function EditorFrame({
   const [connection, setConnection] = useState<WebsiteFrameConnection>({ phase: "connecting" });
   const [saveState, setSaveState] = useState<WebsiteFrameSaveState>({ status: "idle" });
   const [frameError, setFrameError] = useState<string | null>(null);
+  /** Click to change: the block picked in the preview; each pick starts a fresh request. */
+  const [pick, setPick] = useState<{ n: number; pick: WebsiteFrameBlockPick } | null>(null);
   const editorOrigin = site.editorFrameOrigin!;
   const problem = editorOpenProblem(site, window.location.origin, import.meta.env.DEV);
   const notLive = mode === "preview" && source === "live" && !page.publishedRevisionId;
@@ -403,6 +423,13 @@ function EditorFrame({
       onConnection: setConnection,
       onSaveState: setSaveState,
       onDirty,
+      onBlockPicked: (picked) => {
+        setPick((current) => ({ n: (current?.n ?? 0) + 1, pick: picked }));
+        sessionRef.current?.highlight(picked.ref.blockId);
+      },
+      onDraftLoaded: () => {
+        if (focusBlockId) sessionRef.current?.highlight(focusBlockId);
+      },
       onFrameError: (error) => setFrameError(error.message),
       onDrop: (reason) => console.warn(`[website editor] dropped a frame message: ${reason}`),
     });
@@ -435,6 +462,20 @@ function EditorFrame({
         onRetrySave={() => void sessionRef.current?.retry()}
         onReconnect={onReload}
       />
+      {mode === "preview" && connection.phase === "ready" && pick ? (
+        <WebsiteChangeRequestPanel
+          key={pick.n}
+          companyId={companyId}
+          siteId={site.id}
+          page={page}
+          pick={pick.pick}
+          onCancel={() => {
+            setPick(null);
+            sessionRef.current?.highlight(null);
+          }}
+          onEditBlock={onEditBlock}
+        />
+      ) : null}
       <div className={cn("relative overflow-hidden rounded-xl border border-border bg-muted", mode === "edit" ? "h-(--sz-80vh)" : "h-(--sz-70vh)")}>
         <ScaledFrame
           frameRef={frameRef}
@@ -494,7 +535,7 @@ function SaveBanner({
     text = frameError;
     action = { label: "Reload", onClick: onReconnect };
   } else if (mode === "preview") {
-    text = "Preview. Switch to Edit to change the page.";
+    text = "Preview. Click a block to ask for a change, or switch to Edit to change it yourself.";
   } else if (saveState.status === "saving") {
     text = "Saving";
   } else if (saveState.status === "saved") {
