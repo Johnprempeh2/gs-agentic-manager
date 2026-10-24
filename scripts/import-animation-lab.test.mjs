@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { capturePosters, catalogueByNumber, externalScriptNote, inBatches, inlineRelativeImages, parseAnims, toImportStudy } from "./import-animation-lab.mjs";
+import { bundleMappedModules, capturePosters, catalogueByNumber, externalScriptNote, inBatches, inlineRelativeImages, parseAnims, toImportStudy } from "./import-animation-lab.mjs";
 
 const GALLERY = `<script>
 /* LIBRARY, newest first */
@@ -59,6 +59,38 @@ test("writes relative images into the page as data URIs and leaves absolute ones
   assert.deepEqual(asked, ["https://lab.example/assets/logo.png"]);
   assert.match(result, /<img src="data:image\/png;base64,AQID" alt="Greatstone">/);
   assert.match(result, /https:\/\/example.com\/a.png/);
+});
+
+test("bundles modules a study maps to a CDN into the page and drops the import map", async () => {
+  const cdn = "https://cdn.example/three/";
+  const files = {
+    [`${cdn}build/three.module.js`]: "export const REVISION = '170'; export const tag = '</script>';",
+    [`${cdn}jsm/postprocessing/Pass.js`]: "import { REVISION } from 'three'; export const Pass = () => `pass ${REVISION}`;",
+    [`${cdn}jsm/postprocessing/Bloom.js`]: "import { Pass } from './Pass.js'; export const Bloom = () => Pass() + ' bloom';",
+  };
+  const fetched = [];
+  const page = `<head><script type="importmap">{"imports":{"three":"${cdn}build/three.module.js","three/addons/":"${cdn}jsm/"}}</script></head>
+<body><canvas></canvas><script type="module">
+import * as THREE from 'three';
+import { Bloom } from 'three/addons/postprocessing/Bloom.js';
+document.title = THREE.REVISION + Bloom() + THREE.tag;
+</script></body>`;
+
+  const bundled = await bundleMappedModules(page, async (url) => {
+    fetched.push(url);
+    return files[url];
+  });
+  assert.doesNotMatch(bundled, /importmap|cdn\.example|from\s*["']/);
+  assert.equal(externalScriptNote(bundled), null);
+  assert.deepEqual(fetched.sort(), Object.keys(files).sort());
+  const script = bundled.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+  assert.match(script, /<\\\/script>/);
+  const title = { value: "" };
+  new Function("document", script)({ set title(value) { title.value = value; } });
+  assert.equal(title.value, "170pass 170 bloom</script>");
+
+  const plain = "<script type=\"module\">import x from './x.js';</script>";
+  assert.equal(await bundleMappedModules(plain, async () => assert.fail("no fetch")), plain);
 });
 
 test("splits the import into batches", () => {

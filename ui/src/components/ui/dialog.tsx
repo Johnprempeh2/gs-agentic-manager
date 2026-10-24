@@ -77,9 +77,10 @@ function DialogContent({
       >
         {scrollBody ? (
           // Negative margin plus padding keeps focus rings clear of the scroll clip.
+          // content-start: on a fixed-height dialog (a phone sheet) the rows stay packed, not spread apart.
           <div
             data-slot="dialog-scroll-body"
-            className="-m-2 grid min-h-0 gap-4 overflow-y-auto p-2 [&>*]:min-w-0"
+            className="-m-2 grid min-h-0 content-start gap-4 overflow-y-auto p-2 [&>*]:min-w-0"
           >
             {children}
           </div>

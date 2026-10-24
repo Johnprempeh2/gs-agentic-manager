@@ -5,6 +5,7 @@ import { activityLog, agents, assets, motionStudies } from "@greatstone/db";
 import { expect, it } from "vitest";
 import type { MotionStudiesResponse, MotionStudy } from "@greatstone/shared";
 import { motionStudyRoutes } from "../routes/motion-studies.js";
+import { companyService } from "../services/companies.js";
 import type { StorageService } from "../storage/types.js";
 import {
   describeEmbeddedPostgres,
@@ -200,6 +201,29 @@ describeEmbeddedPostgres("motion studies routes", () => {
     await request(app(agent, storage)).patch(`/api/motion-studies/${studyId}`).send({ status: "archived" }).expect(200);
     const declined = await request(board).post(`/api/motion-studies/${studyId}/proposal`).send({ accept: false });
     expect(declined.body).toMatchObject({ status: "new", proposal: null });
+  });
+
+  it("keeps another agent's open Decision proposal when an agent proposes only Status", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Motion partial proposals");
+    const storage = memoryStorage().storage;
+    const created = await request(app(actor, storage)).post(`/api/companies/${companyId}/motion-studies`).send(labStudy());
+    const studyId = (created.body as MotionStudy).id;
+
+    const first = await seedAgent(companyId);
+    const second = await seedAgent(companyId);
+    await request(app(first, storage)).patch(`/api/motion-studies/${studyId}`).send({ decision: "maybe" }).expect(200);
+    const both = await request(app(second, storage)).patch(`/api/motion-studies/${studyId}`).send({ status: "reviewed" });
+    expect(both.status, JSON.stringify(both.body)).toBe(200);
+    expect(both.body).toMatchObject({ proposal: { decision: "maybe", status: "reviewed", agentId: second.agentId } });
+  });
+
+  it("removes a company that has studies", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Motion company removal");
+    await request(app(actor, memoryStorage().storage)).post(`/api/companies/${companyId}/motion-studies`).send(labStudy()).expect(201);
+
+    const removed = await companyService(ctx.db).remove(companyId);
+    expect(removed?.id).toBe(companyId);
+    expect(await ctx.db.select().from(motionStudies)).toEqual([]);
   });
 
   it("brings agent imports in as New and Undecided whatever they ask for", async () => {

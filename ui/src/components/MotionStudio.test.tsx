@@ -148,6 +148,10 @@ describe("MotionStudio", () => {
     const options = [...decision.querySelectorAll('[role="radio"]')];
     expect(options.map((option) => option.textContent)).toEqual(["Implement", "Maybe", "Pass", "Undecided"]);
     expect(options.find((option) => option.getAttribute("aria-checked") === "true")?.textContent).toBe("Undecided");
+    // The open study keeps only the Text-safe mark; the controls already show Status and Decision.
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[data-testid="motion-text-safe"]')).not.toBeNull();
+    expect([...dialog.querySelectorAll('[data-slot="badge"]')].map((badge) => badge.textContent)).toEqual(["Text-safe"]);
 
     // The background rules are folded away until asked for.
     expect(document.querySelector('[data-testid="motion-background-rules"]')).toBeNull();

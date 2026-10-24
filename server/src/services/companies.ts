@@ -35,6 +35,9 @@ import {
   routineRevisions,
   routines,
   toolConnections,
+  motionStudies,
+  generatedVideos,
+  generatedImages,
 } from "@greatstone/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { isCloudManagedInstance } from "./cloud-instance.js";
@@ -774,6 +777,9 @@ export function companyService(db: Db) {
         await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
         await tx.delete(documents).where(eq(documents.companyId, id));
         await tx.delete(issues).where(eq(issues.companyId, id));
+        await tx.delete(motionStudies).where(eq(motionStudies.companyId, id));
+        await tx.delete(generatedVideos).where(eq(generatedVideos.companyId, id));
+        await tx.delete(generatedImages).where(eq(generatedImages.companyId, id));
         await tx.delete(companyLogos).where(eq(companyLogos.companyId, id));
         await tx.delete(assets).where(eq(assets.companyId, id));
         await tx.delete(goals).where(eq(goals.companyId, id));
