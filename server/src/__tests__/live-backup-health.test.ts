@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCachedLiveBackupHealth, inspectLiveBackupHealth } from "../services/live-backup-health.js";
 
 // GRE-1930: the nightly live backup state, as scripts/live-backup/live-backup.sh leaves it.
@@ -194,8 +194,17 @@ describe("inspectLiveBackupHealth", () => {
 });
 
 describe("createCachedLiveBackupHealth", () => {
+  // The cached reader always uses the real clock, so pin it to the fixture's night (GRE-2191).
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("reads the folder once per ttl", () => {
-    const { stateFile, backupDir } = setup({ artifacts: fullSet(new Date()) });
+    const { stateFile, backupDir } = setup({ artifacts: fullSet(NIGHT) });
     const inspect = createCachedLiveBackupHealth({ stateFile, maxAgeHours: 30 }, 60_000);
     expect(inspect().status).toBe("ok");
     fs.rmSync(path.join(backupDir, "files-20261022-023000.tar.gz"));
