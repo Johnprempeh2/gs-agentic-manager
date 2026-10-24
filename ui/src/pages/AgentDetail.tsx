@@ -1647,8 +1647,7 @@ function LatestRunCard({
   // A running run is the work in hand; a queued one only waits for a slot (GRE-2246).
   const liveRun = sorted.find((r) => r.status === "running") ?? sorted.find((r) => r.status === "queued");
   const run = liveRun ?? sorted[0];
-  const { selectedCompanyId } = useCompany();
-  const taskRunStates = useTaskRunStates(selectedCompanyId);
+  const taskRunStates = useTaskRunStates(run?.companyId);
 
   // The assigned-issues list this card resolves against is bounded (server page
   // limit), so a live run can reference a valid issue that isn't on the loaded
