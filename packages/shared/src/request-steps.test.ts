@@ -5,6 +5,7 @@ import {
   requestStepsPayloadSchema,
   requestStepsResultSchema,
 } from "./validators/issue.js";
+import { interactionResolverGovernanceSchema } from "./validators/company.js";
 
 const step = (text = "Open **Settings → API keys**.") => ({ text });
 const base = {
@@ -85,5 +86,11 @@ describe("request_steps payload", () => {
   it("accepts the secret value only on the accept body", () => {
     expect(acceptIssueThreadInteractionSchema.parse({ secretValue: "rk_test_x" })).toEqual({ secretValue: "rk_test_x" });
     expect(acceptIssueThreadInteractionSchema.safeParse({ secretValue: "" }).success).toBe(false);
+  });
+
+  it("can carry company resolver governance like every other kind", () => {
+    expect(
+      interactionResolverGovernanceSchema.parse({ request_steps: { defaultPolicy: "human_only" } }),
+    ).toEqual({ request_steps: { defaultPolicy: "human_only" } });
   });
 });

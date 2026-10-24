@@ -273,7 +273,7 @@ export function InteractionGovernancePanel({
           <div className="hidden text-xs font-medium text-muted-foreground uppercase tracking-wide sm:block">
             Cap
           </div>
-          {ISSUE_THREAD_INTERACTION_KINDS.filter((kind) => kind !== "request_steps").map((kind) => {
+          {ISSUE_THREAD_INTERACTION_KINDS.map((kind) => {
             const entry = governance[kind] ?? {};
             const kindLabel = INTERACTION_KIND_LABELS[kind];
             return (
