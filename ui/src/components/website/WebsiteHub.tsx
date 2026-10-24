@@ -45,12 +45,13 @@ import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapS
 // the linked project's tree, the decisions feed, the project's tasks' work
 // products, attachments and comments, and the project workspace's preview.
 
-export type WebsiteTab = "overview" | "progress" | "sitemap" | "collections" | "preview" | "traffic";
+export type WebsiteTab = "overview" | "progress" | "sitemap" | "editor" | "collections" | "preview" | "traffic";
 
 export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
   { value: "overview", label: "Overview" },
   { value: "progress", label: "Progress" },
   { value: "sitemap", label: "Sitemap" },
+  { value: "editor", label: "Pages" },
   { value: "collections", label: "Collections" },
   { value: "preview", label: "Preview" },
   { value: "traffic", label: "Traffic" },
@@ -600,9 +601,11 @@ function WebsiteSitemapAttachment({ companyId, property }: { companyId: string; 
 
 /* ---- Preview ---- */
 
-type Device = "laptop" | "tablet" | "phone";
+export type WebsitePreviewDevice = "laptop" | "tablet" | "phone";
+type Device = WebsitePreviewDevice;
 
-const DEVICES: { value: Device; label: string; width: number; icon: typeof Laptop }[] = [
+/** Preview widths: laptop, tablet and phone (plan 3.4). */
+export const WEBSITE_PREVIEW_DEVICES: { value: Device; label: string; width: number; icon: typeof Laptop }[] = [
   { value: "laptop", label: "Laptop", width: 1440, icon: Laptop },
   { value: "tablet", label: "Tablet", width: 768, icon: Tablet },
   { value: "phone", label: "Phone", width: 390, icon: Smartphone },
@@ -676,7 +679,7 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
       ? `Workspace preview (${service.serviceName}${service.port ? `, port ${service.port}` : ""})`
       : null;
   const problem = url ? framingProblem(url, window.location.protocol) : null;
-  const width = DEVICES.find((entry) => entry.value === device)!.width;
+  const width = WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width;
 
   return (
     <div className="space-y-6" data-testid="website-preview">
@@ -691,7 +694,7 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-md border border-border" role="group" aria-label="Preview width">
-              {DEVICES.map((entry) => {
+              {WEBSITE_PREVIEW_DEVICES.map((entry) => {
                 const Icon = entry.icon;
                 const active = entry.value === device;
                 return (

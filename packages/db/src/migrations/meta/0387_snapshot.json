@@ -1,5 +1,5 @@
 {
-  "id": "ed1d59ce-b064-4106-950e-fea12ce7d3fd",
+  "id": "d0355fbd-b9f4-4979-b766-32765f0306bc",
   "prevId": "0af199ea-0747-484a-bd8e-ddd6457c4b3b",
   "version": "7",
   "dialect": "postgresql",
@@ -62738,13 +62738,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "netlify_token_secret_owned": {
-          "name": "netlify_token_secret_owned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "blobs_store_name": {
           "name": "blobs_store_name",
           "type": "text",
@@ -62784,6 +62777,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::text[]"
+        },
+        "editor_frame_origin": {
+          "name": "editor_frame_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "check_paths": {
           "name": "check_paths",

@@ -267,7 +267,33 @@ function matchKey(node: WebsiteSitemapNode, matched: (key: string) => boolean): 
   return `path:${node.path}`;
 }
 
-/** Added, removed, moved (different parent) and renamed (different title) pages between options A and B. */
+/**
+ * Pages left over after the page and path match that share a title, when that
+ * title is on only one leftover page on each side: the same page at a new
+ * address (GRE-2193). Imported options have no site page ids yet.
+ */
+function pairByTitle(a: WebsiteSitemapTree, b: WebsiteSitemapTree, keyOfA: Map<string, string>, keyOfB: Map<string, string>) {
+  const aKeys = new Set(keyOfA.values());
+  const bKeys = new Set(keyOfB.values());
+  const leftovers = (nodes: WebsiteSitemapNode[], keys: Map<string, string>, other: Set<string>) => {
+    const byTitle = new Map<string, WebsiteSitemapNode[]>();
+    for (const node of nodes) {
+      if (other.has(keys.get(node.id)!)) continue;
+      const title = node.title.trim().toLowerCase();
+      byTitle.set(title, [...(byTitle.get(title) ?? []), node]);
+    }
+    return byTitle;
+  };
+  const aLeft = leftovers(a.nodes, keyOfA, bKeys);
+  const bLeft = leftovers(b.nodes, keyOfB, aKeys);
+  for (const [title, aNodes] of aLeft) {
+    const bNodes = bLeft.get(title);
+    if (aNodes.length !== 1 || bNodes?.length !== 1) continue;
+    keyOfB.set(bNodes[0]!.id, keyOfA.get(aNodes[0]!.id)!);
+  }
+}
+
+/** Added, removed, moved (different parent or address) and renamed (different title) pages between options A and B. */
 export function diffSitemapTrees(a: WebsiteSitemapTree, b: WebsiteSitemapTree): SitemapDiffEntry[] {
   const aPages = new Set(a.nodes.flatMap((node) => (node.pageId ? [`page:${node.pageId}`] : [])));
   const bPages = new Set(b.nodes.flatMap((node) => (node.pageId ? [`page:${node.pageId}`] : [])));
@@ -276,6 +302,7 @@ export function diffSitemapTrees(a: WebsiteSitemapTree, b: WebsiteSitemapTree): 
   const bById = new Map(b.nodes.map((node) => [node.id, node]));
   const keyOfA = new Map(a.nodes.map((node) => [node.id, matchKey(node, both)]));
   const keyOfB = new Map(b.nodes.map((node) => [node.id, matchKey(node, both)]));
+  pairByTitle(a, b, keyOfA, keyOfB);
   const parentKey = (node: WebsiteSitemapNode, keys: Map<string, string>, byId: Map<string, WebsiteSitemapNode>) =>
     node.parentId && byId.has(node.parentId) ? keys.get(node.parentId)! : null;
 
@@ -291,7 +318,8 @@ export function diffSitemapTrees(a: WebsiteSitemapTree, b: WebsiteSitemapTree): 
     if (!entry.a) entry.changes.push("added");
     else if (!entry.b) entry.changes.push("removed");
     else {
-      if (parentKey(entry.a, keyOfA, aById) !== parentKey(entry.b, keyOfB, bById)) entry.changes.push("moved");
+      const newParent = parentKey(entry.a, keyOfA, aById) !== parentKey(entry.b, keyOfB, bById);
+      if (newParent || entry.a.path !== entry.b.path) entry.changes.push("moved");
       if (entry.a.title !== entry.b.title) entry.changes.push("renamed");
     }
   }

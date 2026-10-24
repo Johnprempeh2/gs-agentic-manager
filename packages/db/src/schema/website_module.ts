@@ -48,6 +48,12 @@ export const websiteSite = pgTable(
     theme: jsonb("theme").$type<Record<string, unknown>>().notNull().default({}),
     propertyId: uuid("property_id").references(() => websiteProperties.id, { onDelete: "set null" }),
     editorOrigins: text("editor_origins").array().notNull().default(sql`'{}'::text[]`),
+    /**
+     * The frame's own origin: the dedicated editor host that serves `/editor`
+     * and `/preview` (GRE-1916 contract section 2, rules C1 and C2). Null
+     * until a person with website:publish sets it; GSAM opens no editor until then.
+     */
+    editorFrameOrigin: text("editor_frame_origin"),
     checkPaths: jsonb("check_paths").$type<string[]>().notNull().default(["/"]),
     liveReleaseId: uuid("live_release_id"),
     publishLeaseId: uuid("publish_lease_id"),

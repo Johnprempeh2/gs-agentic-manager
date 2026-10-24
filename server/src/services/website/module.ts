@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companySecrets, documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
+import { assets, companySecrets, documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
 import {
   WEBSITE_CONTENT_MAX_BYTES,
   type CreateWebsiteEntry,
@@ -11,7 +11,9 @@ import {
   type UpdateWebsiteSite,
   type WebsiteEntry,
   type WebsiteEntryStatus,
+  type WebsiteMediaItem,
   type WebsitePage,
+  type WebsitePageEditorLoad,
   type WebsitePageMenu,
   type WebsitePageSeo,
   type WebsitePageStatus,
@@ -55,6 +57,7 @@ export function toWebsiteSite(row: SiteRow, secretName: string | null = null): W
     releaseSchemaVersion: row.releaseSchemaVersion,
     propertyId: row.propertyId,
     editorOrigins: row.editorOrigins,
+    editorFrameOrigin: row.editorFrameOrigin,
     checkPaths: row.checkPaths,
     liveReleaseId: row.liveReleaseId,
     archivedAt: row.archivedAt?.toISOString() ?? null,
@@ -268,7 +271,22 @@ export function websiteDocumentStore(db: Db) {
     return doc ?? null;
   }
 
-  return { createDocument, saveRevision, listRevisions, readRevision, readDocument };
+  /** The whole revision row (id, author, time), for page history and restore. */
+  async function readRevisionRow(companyId: string, documentId: string, revisionId: string) {
+    const [row] = await db
+      .select()
+      .from(documentRevisions)
+      .where(
+        and(
+          eq(documentRevisions.companyId, companyId),
+          eq(documentRevisions.documentId, documentId),
+          eq(documentRevisions.id, revisionId),
+        ),
+      );
+    return row ?? null;
+  }
+
+  return { createDocument, saveRevision, listRevisions, readRevision, readRevisionRow, readDocument };
 }
 
 function parseBody(body: string): unknown {
@@ -277,6 +295,20 @@ function parseBody(body: string): unknown {
   } catch {
     return null;
   }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function positiveInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 const EMPTY_PAGE = { root: { props: {} }, content: [], zones: {} };
@@ -385,6 +417,7 @@ export function websiteModuleService(db: Db) {
           ...(input.netlifyTokenSecretId ? { netlifyTokenSecretId: input.netlifyTokenSecretId, netlifyTokenSecretOwned: false } : {}),
           propertyId: input.propertyId ?? null,
           editorOrigins: input.editorOrigins ?? [],
+          editorFrameOrigin: input.editorFrameOrigin ?? null,
           checkPaths: input.checkPaths ?? ["/"],
         })
         .returning();
@@ -708,6 +741,107 @@ export function websiteModuleService(db: Db) {
     return updated;
   }
 
+  // ---- editor ----
+
+  /** A revision of this page's own document, or null (another page's or company's revision is not found). */
+  async function pageRevision(row: PageRow, revisionId: string) {
+    const revision = await store.readRevisionRow(row.companyId, row.documentId, revisionId);
+    if (!revision) return null;
+    return {
+      revision: {
+        id: revision.id,
+        revisionNumber: revision.revisionNumber,
+        changeSummary: revision.changeSummary,
+        createdByAgentId: revision.createdByAgentId,
+        createdByUserId: revision.createdByUserId,
+        createdAt: revision.createdAt.toISOString(),
+      },
+      body: revision.body,
+    };
+  }
+
+  /** Restore = a new revision with the old content, so restoring can itself be undone. */
+  async function restorePageRevision(row: PageRow, revisionId: string, baseRevisionId: string, actor: WebsiteActor): Promise<WebsiteSaveResult | null> {
+    const found = await pageRevision(row, revisionId);
+    if (!found) return null;
+    return store.saveRevision({
+      companyId: row.companyId,
+      documentId: row.documentId,
+      content: parseBody(found.body),
+      baseRevisionId,
+      changeSummary: `Restored version ${found.revision.revisionNumber}`,
+      actor,
+    });
+  }
+
+  /**
+   * The site's media entries whose asset is in the same company (ADR section 2:
+   * `{ assetId, alt, caption, focalPoint }`). An entry naming another
+   * company's asset, or none, is left out.
+   */
+  async function listMedia(companyId: string, siteId: string): Promise<WebsiteMediaItem[]> {
+    const rows = await db
+      .select({ entry: websiteEntry, body: documents.latestBody })
+      .from(websiteEntry)
+      .innerJoin(documents, and(eq(documents.id, websiteEntry.documentId), eq(documents.companyId, companyId)))
+      .where(
+        and(
+          eq(websiteEntry.companyId, companyId),
+          eq(websiteEntry.siteId, siteId),
+          eq(websiteEntry.collection, "media"),
+          isNull(websiteEntry.archivedAt),
+        ),
+      )
+      .orderBy(sql`${websiteEntry.sortOrder} asc nulls last`, asc(websiteEntry.entryKey));
+    const parsed = rows.map((row) => ({ entry: row.entry, fields: asRecord(parseBody(row.body)) }));
+    const assetIds = [...new Set(parsed.map((row) => row.fields.assetId).filter(isUuid))];
+    if (assetIds.length === 0) return [];
+    const assetRows = await db
+      .select({ id: assets.id, contentType: assets.contentType, byteSize: assets.byteSize })
+      .from(assets)
+      .where(and(eq(assets.companyId, companyId), inArray(assets.id, assetIds)));
+    const byId = new Map(assetRows.map((row) => [row.id, row]));
+    const media: WebsiteMediaItem[] = [];
+    for (const { entry, fields } of parsed) {
+      const asset = isUuid(fields.assetId) ? byId.get(fields.assetId) : undefined;
+      if (!asset) continue;
+      media.push({
+        entryId: entry.id,
+        entryKey: entry.entryKey,
+        assetId: asset.id,
+        alt: typeof fields.alt === "string" ? fields.alt : "",
+        caption: typeof fields.caption === "string" ? fields.caption : null,
+        contentType: asset.contentType,
+        byteSize: asset.byteSize,
+        width: positiveInt(fields.width),
+        height: positiveInt(fields.height),
+        contentPath: `/api/assets/${asset.id}/content`,
+      });
+    }
+    return media;
+  }
+
+  async function editorLoad(site: SiteRow, row: PageRow, editorFrameOrigin: string): Promise<WebsitePageEditorLoad | null> {
+    const doc = await store.readDocument(row.companyId, row.documentId);
+    if (!doc || !doc.latestRevisionId) return null;
+    const pages = await listPages(site.companyId, site.id);
+    return {
+      page: toWebsitePage(row, doc),
+      revisionId: doc.latestRevisionId,
+      data: parseBody(doc.latestBody),
+      theme: site.theme ?? {},
+      site: {
+        name: site.name,
+        settings: { domain: site.domain },
+        navigation: pages
+          .filter((page) => page.menu !== "none")
+          .map((page) => ({ pageId: page.id, title: page.title, slug: page.slug, menu: page.menu, menuOrder: page.menuOrder })),
+      },
+      editorFrameOrigin,
+      media: await listMedia(site.companyId, site.id),
+    };
+  }
+
   async function saveEntryRevision(row: EntryRow, input: {
     content: unknown; baseRevisionId: string; changeSummary?: string; actor: WebsiteActor;
   }) {
@@ -725,6 +859,10 @@ export function websiteModuleService(db: Db) {
 
   return {
     store,
+    pageRevision,
+    restorePageRevision,
+    listMedia,
+    editorLoad,
     listSites,
     listTokenSecrets,
     tokenSecretName,

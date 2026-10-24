@@ -41,6 +41,8 @@ export interface WebsiteSite {
   releaseSchemaVersion: number;
   propertyId: string | null;
   editorOrigins: string[];
+  /** The frame's own origin (the dedicated editor host), or null: no editor opens until it is set. */
+  editorFrameOrigin: string | null;
   checkPaths: string[];
   liveReleaseId: string | null;
   archivedAt: string | null;
@@ -110,7 +112,47 @@ export interface WebsiteRevision {
 export type WebsiteSaveResult =
   | { state: "saved"; revisionId: string; revisionNumber: number }
   | { state: "conflict"; latestRevisionId: string | null; latestRevisionNumber: number; message: string }
-  | { state: "failed"; message: string };
+  | { state: "failed"; message: string; code?: WebsiteSaveFailureCode };
+
+/**
+ * Why a save failed. `origin-changed`: the editor address of the site changed
+ * after this editor session opened (frame contract rule C2.4). Never retryable.
+ */
+export type WebsiteSaveFailureCode = "invalid" | "archived" | "origin-changed" | "error";
+
+/** A media entry (`collection = 'media'`) whose asset is in the same company. */
+export interface WebsiteMediaItem {
+  entryId: string;
+  entryKey: string;
+  assetId: string;
+  alt: string;
+  caption: string | null;
+  contentType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  /** GSAM's company-scoped asset path. The host fetches it and hands the frame a `Blob`. */
+  contentPath: string;
+}
+
+export interface WebsiteNavigationItem {
+  pageId: string;
+  title: string;
+  slug: string;
+  menu: WebsitePageMenu;
+  menuOrder: number | null;
+}
+
+/** Everything the host needs for the frame's `load-draft` (frame contract section 5.2). */
+export interface WebsitePageEditorLoad {
+  page: WebsitePage;
+  revisionId: string;
+  data: unknown;
+  theme: Record<string, unknown>;
+  site: { name: string; settings: { domain: string }; navigation: WebsiteNavigationItem[] };
+  editorFrameOrigin: string;
+  media: WebsiteMediaItem[];
+}
 
 /**
  * Release statuses (ADR GRE-1914 section 2.4). `pending` = `current` points at
@@ -231,6 +273,14 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageArchive: "/companies/:companyId/website/sites/:siteId/pages/:pageId/archive",
   /** GET → `WebsiteRevision[]`, newest first. */
   pageRevisions: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions",
+  /** GET → the revision's content (`{ revision, content }`). */
+  pageRevision: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions/:revisionId",
+  /** POST `RestoreWebsiteRevision` → `WebsiteSaveResult` (website:edit). A new revision with the old content. */
+  pageRevisionRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions/:revisionId/restore",
+  /** GET → `WebsitePageEditorLoad` (website:view; saves need website:edit). 404 until the site's editor frame origin is set and passes C1.1. */
+  pageEditor: "/companies/:companyId/website/sites/:siteId/pages/:pageId/editor",
+  /** GET → `WebsiteMediaItem[]`, the site's media entries. */
+  media: "/companies/:companyId/website/sites/:siteId/media",
   /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */
   pageSubmit: "/companies/:companyId/website/sites/:siteId/pages/:pageId/submit",
   /** POST → `WebsitePage` (website:publish, people only). The latest revision becomes the approved one. */

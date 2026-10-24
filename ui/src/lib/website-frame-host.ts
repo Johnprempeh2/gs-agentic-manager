@@ -112,6 +112,8 @@ export class WebsiteFrameHostSession<Source> {
   /** Saves by `pageId:requestId`. Scoped to this session (one nonce). */
   private saves = new Map<string, Promise<WebsiteFrameSaveResult>>();
   private inFlight: string | null = null;
+  /** The last save that failed with a retryable answer, for the host's own Retry button. */
+  private retryable: WebsiteFrameSave | null = null;
 
   constructor(options: WebsiteFrameHostOptions<Source>) {
     this.options = options;
@@ -181,6 +183,20 @@ export class WebsiteFrameHostSession<Source> {
         this.options.onFrameError?.(message.payload);
         return;
     }
+  }
+
+  /** True when the last save failed and may be tried again. */
+  get canRetry(): boolean {
+    return this.retryable !== null && this.inFlight === null && this.connection.phase === "ready";
+  }
+
+  /**
+   * The host banner's Retry: the failed save again, with the same requestId,
+   * so it makes at most one revision. The frame gets the `save-result`.
+   */
+  retry(): Promise<WebsiteFrameSaveResult> | null {
+    if (!this.canRetry || !this.retryable) return null;
+    return this.save(this.retryable);
   }
 
   /** Preview: highlight the block the user picked, or clear it. */
@@ -257,12 +273,15 @@ export class WebsiteFrameHostSession<Source> {
       retryable,
     });
 
-    if (this.options.mode !== "editor") return Promise.resolve(answer(fail("invalid", "Preview cannot save.", false)));
-    if (save.pageId !== this.options.pageId) {
-      return Promise.resolve(answer(fail("invalid", "The save is for another page.", false)));
-    }
+    // A refused save is shown on the host too, never only inside the frame.
+    const refuse = (message: string) => {
+      this.options.onSaveState?.({ status: "failed", message: `The editor sent a save GSAM cannot accept: ${message}`, retryable: false });
+      return Promise.resolve(answer(fail("invalid", message, false)));
+    };
+    if (this.options.mode !== "editor") return refuse("Preview cannot save.");
+    if (save.pageId !== this.options.pageId) return refuse("The save is for another page.");
     const inspected = inspectWebsitePuckData(save.data, this.engineTypes ?? undefined);
-    if (!inspected.ok) return Promise.resolve(answer(fail("invalid", inspected.reason, false)));
+    if (!inspected.ok) return refuse(inspected.reason);
     if (this.inFlight) {
       return Promise.resolve(answer(fail("busy", "Another save is still running.", true)));
     }
@@ -289,6 +308,7 @@ export class WebsiteFrameHostSession<Source> {
         // A retryable failure is not remembered, so Retry with the same
         // requestId saves again. Saved and conflict answers are replayed.
         if (result.outcome === "failed" && result.retryable) this.saves.delete(key);
+        this.retryable = result.outcome === "failed" && result.retryable ? save : null;
         if (result.outcome === "saved") this.rememberShown(result.revisionId, save.data);
         this.options.onSaveState?.(
           result.outcome === "saved"

@@ -45,6 +45,7 @@ const site: WebsiteSite = {
   releaseSchemaVersion: 1,
   propertyId: "prop-1",
   editorOrigins: [],
+  editorFrameOrigin: null,
   checkPaths: ["/"],
   liveReleaseId: "rel-41",
   archivedAt: null,
