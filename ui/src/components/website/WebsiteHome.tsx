@@ -295,6 +295,7 @@ function Hero({
   home,
   devUrl,
   onOpenTab,
+  onEditPages,
 }: {
   property: WebsiteProperty;
   site: WebsiteSite | null;
@@ -302,6 +303,7 @@ function Hero({
   /** The In development address: the site's own, else the running workspace preview. */
   devUrl: string | null;
   onOpenTab: (tab: WebsiteTab) => void;
+  onEditPages?: () => void;
 }) {
   const live = site ? `https://${site.domain}/` : liveSiteUrl(property.siteUrl);
   // The Live view frames the exact copy of the live deploy when one is set.
@@ -364,7 +366,7 @@ function Hero({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => onOpenTab("editor")}>
+          <Button type="button" onClick={() => (onEditPages ? onEditPages() : onOpenTab("editor"))}>
             <PenLine />
             Edit pages
           </Button>
@@ -734,10 +736,13 @@ export function WebsiteHomeTab({
   companyId,
   property,
   onOpenTab,
+  onEditPages,
 }: {
   companyId: string;
   property: WebsiteProperty;
   onOpenTab: (tab: WebsiteTab) => void;
+  /** Edit pages: the full-screen editor (GRE-2296). Without it, the Pages tab. */
+  onEditPages?: () => void;
 }) {
   const projectId = property.projectId;
   const { site } = useWebsiteSite(companyId, property.id);
@@ -765,7 +770,7 @@ export function WebsiteHomeTab({
 
   return (
     <div className="space-y-6" data-testid="website-home">
-      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} />
+      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site?.editorFrameOrigin ? onEditPages : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}

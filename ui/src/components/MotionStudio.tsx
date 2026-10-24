@@ -22,6 +22,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
+import { websiteEditorPath } from "../lib/website-editor";
 
 // GS Studio's Motion section (GRE-2212): the Animation Lab's studies, each a
 // small HTML page that runs sandboxed with no network. A card shows a still
@@ -80,7 +81,7 @@ export function proposalSummary(study: MotionStudy): string | null {
 
 /** The website editor's Motion panel, with this study's effect chosen for the block a person picks. */
 export function motionWebsiteHref(study: Pick<MotionStudy, "number">) {
-  return `/website?tab=editor&motion=${encodeURIComponent(study.number)}`;
+  return websiteEditorPath({ motion: study.number });
 }
 
 /** Studies are laid out for a full screen; each is drawn at this size and scaled to fit its box. */
