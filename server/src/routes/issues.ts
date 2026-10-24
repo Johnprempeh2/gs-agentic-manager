@@ -341,7 +341,6 @@ import {
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
-import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
 import { userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
 import {
   authorizeReviewOverride,
@@ -3045,7 +3044,6 @@ function diffExecutionParticipants(
 }
 
 const STAGE_PARTICIPANT_REFUSALS = [
-  "Only the escalated reviewer can advance the current execution stage",
   "Only the active reviewer or approver can advance the current execution stage",
 ];
 
@@ -14575,11 +14573,6 @@ export function issueRoutes(
         req.body.executionPolicy !== undefined && monitorChanged,
       );
 
-      // Only a resubmission after changes-requested escalates (GRE-2049); bind a legacy board id to the real owner (GRE-870).
-      const reviewEscalationUserId =
-        parseIssueExecutionState(existing.executionState)?.status === "changes_requested"
-          ? await resolveReviewEscalationUserId(db, existing)
-          : undefined;
       // An owner decides a stage that waits on the legacy `local-board` user.
       const actorUserIdAliases = await stageParticipantAliasesForActor(
         db,
@@ -14621,7 +14614,6 @@ export function issueRoutes(
         },
         allowBoardOverride: req.actor.type === "board",
         commentBody: reviewOverride ? (commentBody || reviewOverride.reason) : commentBody,
-        reviewEscalationUserId,
         actorUserIdAliases,
         reviewOverride: Boolean(reviewOverride),
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
