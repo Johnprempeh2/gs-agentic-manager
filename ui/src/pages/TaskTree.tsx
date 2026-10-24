@@ -19,6 +19,7 @@ import { ErrorState } from "../components/ErrorState";
 import { TaskTreeCanvas } from "../components/task-tree/TaskTreeCanvas";
 import { TaskTreeHeader, countTreeStatuses } from "../components/task-tree/TaskTreeHeader";
 import { TaskTreeOutline } from "../components/task-tree/TaskTreeOutline";
+import { DiagramFind } from "../components/diagram/DiagramFrame";
 import { useTaskTreeView } from "../components/task-tree/useTaskTreeView";
 
 /** The tree refreshes on its own so statuses stay current. */
@@ -102,6 +103,15 @@ export function TaskTree() {
         <ToggleSwitch checked={showFinished} onCheckedChange={setShowFinished} aria-label="Show finished work" />
         <span>Show finished work</span>
       </label>
+      <label className="inline-flex items-center gap-2 text-sm">
+        <ToggleSwitch
+          checked={view.blockedOnly}
+          onCheckedChange={view.setBlockedOnly}
+          aria-label="Only what's blocked and why"
+          data-blocked-only-toggle=""
+        />
+        <span>Only what's blocked and why</span>
+      </label>
       {project ? (
         <Button asChild variant="outline" size="sm">
           <Link to={`/projects/${project.id}/tree`}>
@@ -132,12 +142,18 @@ export function TaskTree() {
           truncatedNote={truncatedNote}
           actions={actions}
         />
+        {view.blockedOnly && view.blockedOnlyIds?.size === 0 ? (
+          <p className="text-sm text-muted-foreground" data-nothing-blocked="">
+            Nothing here is blocked. Turn off "Only what's blocked and why" to see all the work.
+          </p>
+        ) : null}
         {isPhone && !diagramOpen ? (
-          <div className="flex">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
               <Maximize2 />
               Open the diagram full screen
             </Button>
+            <DiagramFind items={view.findItems} onPick={view.reveal} />
           </div>
         ) : null}
         {isPhone && !diagramOpen ? (
@@ -148,6 +164,8 @@ export function TaskTree() {
             hrefFor={(item: VisibleTaskItem) => taskHref(item.node)}
             waitingOnById={waitingOnById}
             blockReasonById={blockReasonById}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
             onToggleCollapsed={toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             highlightId={focusRequest?.id ?? null}
@@ -160,6 +178,9 @@ export function TaskTree() {
             people={people}
             waitingOnById={waitingOnById}
             blockReasonById={blockReasonById}
+            blockLinks={view.visibleBlockLinks}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
             onOpen={(node) => navigate(taskHref(node))}
             onToggleCollapsed={toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { TaskRunStateChip } from "@/components/TaskRunStateChip";
 import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { ChevronDown, ChevronUp, KeyRound } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, KeyRound, Repeat } from "lucide-react";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { StatusIcon } from "@/components/StatusIcon";
 import { issueStatusAccent, issueStatusAccentDefault } from "@/lib/status-colors";
@@ -28,6 +28,12 @@ export interface TaskTreeCardProps {
   waitingOn?: string | null;
   /** Why it is blocked; replaces the "Waiting on" pill when set. */
   blockReason?: TreeBlockReason | null;
+  /** Set for a task outside the tree: the project it lives in (GRE-2290). */
+  projectName?: string | null;
+  /** The task sits in a blocking loop. */
+  inLoop?: boolean;
+  /** The card that gathers the tasks outside the tree. */
+  isGroup?: boolean;
   /** Tasks under this one; 0 hides the collapse toggle. */
   descendants?: number;
   collapsed?: boolean;
@@ -35,6 +41,37 @@ export interface TaskTreeCardProps {
   /** A control in the card's footer, such as the project tree's Tidy button. */
   action?: ReactNode;
   className?: string;
+}
+
+/** Marks a task in a blocking loop: it waits on something that waits on it. */
+export function BlockLoopMark({ className }: { className?: string }) {
+  return (
+    <span
+      data-block-loop-mark=""
+      title="Blocking loop: this task waits on a task that waits on it"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-status-danger-soft px-1.5 text-xs font-medium text-status-danger-foreground",
+        className,
+      )}
+    >
+      <Repeat className="size-3" aria-hidden="true" />
+      Loop
+    </span>
+  );
+}
+
+/** Names the project of a task outside the tree. */
+export function OutsideProjectMark({ projectName, className }: { projectName: string; className?: string }) {
+  return (
+    <span
+      data-outside-project=""
+      title={`Outside this tree, in ${projectName}`}
+      className={cn("inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground", className)}
+    >
+      <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+      <span className="truncate">{projectName}</span>
+    </span>
+  );
 }
 
 /** Marks a task that drives its project. */
@@ -68,6 +105,9 @@ export function TaskTreeCard({
   isRootBlocker = false,
   waitingOn = null,
   blockReason = null,
+  projectName = null,
+  inLoop = false,
+  isGroup = false,
   descendants = 0,
   collapsed = false,
   onToggleCollapsed,
@@ -84,6 +124,7 @@ export function TaskTreeCard({
         "relative flex h-full w-full flex-col rounded-xl border border-border bg-card text-left shadow-sm transition-colors",
         "group-hover/tree-node:border-ring group-focus-visible/tree-node:border-ring",
         isRoot && "border-primary",
+        (projectName || isGroup) && "border-dashed",
         onBlockedPath && !isRootBlocker && "border-status-danger/40",
         isRootBlocker && "border-status-danger ring-2 ring-status-danger/30",
         className,
@@ -103,6 +144,8 @@ export function TaskTreeCard({
             <span className="truncate font-mono text-xs text-muted-foreground">{node.identifier}</span>
           ) : null}
           {node.isKeyTask ? <KeyTaskMark /> : null}
+          {inLoop ? <BlockLoopMark /> : null}
+          {projectName ? <OutsideProjectMark projectName={projectName} /> : null}
           {showPriority ? <PriorityIcon priority={node.priority} /> : null}
           {node.childCount > 0 ? (
             <ProgressRing done={node.doneChildCount} total={node.childCount} className="ml-auto" />
@@ -116,7 +159,11 @@ export function TaskTreeCard({
         </p>
         {blockReason ? <TaskTreeBlockReason reason={blockReason} compact /> : null}
         <div className="mt-auto flex min-w-0 items-center gap-2">
-          <TaskTreeOwner people={people} owner={node} className="min-w-0 flex-1" />
+          {isGroup ? (
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">Dashed lines show what they block</span>
+          ) : (
+            <TaskTreeOwner people={people} owner={node} className="min-w-0 flex-1" />
+          )}
           {runState ? <TaskRunStateChip state={runState} short /> : null}
           {isRootBlocker ? (
             <span className="shrink-0 rounded-full bg-status-danger-soft px-2 py-0.5 text-xs font-medium text-status-danger-foreground">

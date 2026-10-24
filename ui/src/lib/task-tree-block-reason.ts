@@ -4,7 +4,8 @@ import type {
   IssueTreeWaitReason,
   IssueUnblockOwner,
 } from "@greatstone/shared";
-import type { TaskTreeIndex } from "./task-tree";
+import { outsideAsNode, type TaskTreeIndex } from "./task-tree";
+import { blockerChain, loopThrough } from "./task-tree-links";
 
 /** Who can own or answer things in the tree, for naming them. */
 export interface TreeNamePeople {
@@ -28,6 +29,8 @@ export interface TreeBlockReason {
   own: TreeBlockLine;
   /** The root of the chain, when it is further down than the first blocker. */
   root: TreeBlockLine | null;
+  /** The loop the task sits in, when its blockers lead back to it (GRE-2290). */
+  loop?: TreeBlockLine | null;
   /** Marked blocked, but no open blocker, card or note says why. */
   unexplained: boolean;
 }
@@ -58,6 +61,11 @@ export function describeTreeBlocks(index: TaskTreeIndex, people: TreeNamePeople)
   for (const node of index.byId.values()) {
     const reason = describeTreeBlock(node, index, nameOf);
     if (reason) reasons.set(node.id, reason);
+  }
+  // Tasks outside the tree are cards too, and say why they are blocked.
+  for (const task of index.external.values()) {
+    const reason = describeTreeBlock(outsideAsNode(task, index.root.id), index, nameOf);
+    if (reason) reasons.set(task.id, reason);
   }
   return reasons;
 }
@@ -119,31 +127,52 @@ function waitOf(task: IssueTreeNode | IssueTreeExternalBlocker): IssueTreeWaitRe
 export function describeTreeBlock(node: IssueTreeNode, index: TaskTreeIndex, nameOf: TreeNameOf): TreeBlockReason | null {
   if (node.status !== "blocked") return null;
 
-  const openBlockers = node.blockedByIds
+  const openBlockers = [...new Set([...(index.graph.blockersOf.get(node.id) ?? []), ...node.blockedByIds])]
     .map((id) => lookup(index, id))
-    .filter((task): task is IssueTreeNode | IssueTreeExternalBlocker => !!task && !CLOSED.has(task.status));
+    .filter((task): task is IssueTreeNode | IssueTreeExternalBlocker => !!task && !CLOSED.has(task.status))
+    .sort((a, b) => taskRef(a).localeCompare(taskRef(b), undefined, { numeric: true }));
 
+  // Every blocker by name: a task blocked by three says all three.
   let own: TreeBlockLine | null = null;
   if (openBlockers.length > 0) {
     const first = openBlockers[0]!;
-    const more = openBlockers.length > 1 ? ` +${openBlockers.length - 1}` : "";
-    own = { text: `Blocked by ${taskRef(first)}${more}`, href: taskHref(first) };
+    own = { text: `Blocked by ${openBlockers.map(taskRef).join(", ")}`, href: taskHref(first) };
   } else {
     own = waitLine(node, nodeWait(node), nameOf);
   }
-  if (!own) return { own: { text: UNEXPLAINED_BLOCK_TEXT, href: null }, root: null, unexplained: true };
 
+  const loopPath = loopThrough(index.graph, node.id);
+  const loop = loopPath
+    ? {
+        text: `Blocking loop: ${loopPath.map((id) => (lookup(index, id) ? taskRef(lookup(index, id)!) : id)).join(" → ")}`,
+        href: null,
+      }
+    : null;
+  if (!own) return { own: { text: UNEXPLAINED_BLOCK_TEXT, href: null }, root: null, unexplained: true, loop };
+
+  // The chain from the first blocker down to its end, every hop named.
   let root: TreeBlockLine | null = null;
-  const rootTask = node.rootBlockerId ? lookup(index, node.rootBlockerId) : null;
-  if (rootTask && rootTask.id !== openBlockers[0]?.id && !CLOSED.has(rootTask.status)) {
+  const first = openBlockers[0];
+  const hops = first
+    ? blockerChain(index.graph, first.id)
+        .slice(1)
+        .filter((id) => id !== node.id)
+        .map((id) => lookup(index, id))
+        .filter((task): task is IssueTreeNode | IssueTreeExternalBlocker => !!task && !CLOSED.has(task.status))
+    : [];
+  const fallback = node.rootBlockerId ? lookup(index, node.rootBlockerId) : null;
+  if (hops.length === 0 && fallback && fallback.id !== first?.id && !CLOSED.has(fallback.status)) hops.push(fallback);
+  const rootTask = hops[hops.length - 1];
+  if (rootTask) {
     const wait = waitOf(rootTask);
     const waitText = wait ? waitLine(rootTask, wait, nameOf) : null;
     const tail = waitText
       ? `, ${waitText.text.charAt(0).toLowerCase()}${waitText.text.slice(1)}`
-      : rootTask.status === "blocked"
+      : rootTask.status === "blocked" && !loopPath
         ? ", nothing recorded"
         : "";
-    root = { text: `Root: ${taskRef(rootTask)}${tail}`, href: waitText?.href ?? taskHref(rootTask) };
+    const label = hops.length > 1 ? `Chain: ${hops.map(taskRef).join(" → ")}` : `Root: ${taskRef(rootTask)}`;
+    root = { text: `${label}${tail}`, href: waitText?.href ?? taskHref(rootTask) };
   }
-  return { own, root, unexplained: false };
+  return { own, root, unexplained: false, loop };
 }

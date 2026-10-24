@@ -6,10 +6,22 @@ import {
   ancestorIds,
   flattenVisible,
   traceBlockedPaths,
+  visibleStandIn,
   visibleTaskTree,
   type RootBlocker,
   type TaskTreeIndex,
 } from "@/lib/task-tree";
+import { blockedAndWhyIds, linkKey } from "@/lib/task-tree-links";
+
+/** A "blocks" line the canvas draws, between the cards that stand for its two ends. */
+export interface VisibleBlockLink {
+  from: string;
+  to: string;
+  /** The link closes a blocking loop. */
+  loop: boolean;
+  /** One end sits in a folded branch; the line ends on the card that holds it. */
+  folded: boolean;
+}
 
 /**
  * What a tree page shows: folded branches, finished work on or off, the
@@ -42,11 +54,42 @@ export function useTaskTreeView(
     if (collapsed !== initial) writeDiagramPrefs(storageKey, { collapsed: [...collapsed] });
   }, [collapsed, initial, storageKey]);
   const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null);
+  // "Only what's blocked and why": the reader's choice, off to start (GRE-2290).
+  const [blockedOnly, setBlockedOnly] = useState(false);
+  const only = useMemo(
+    () => (index && blockedOnly ? blockedAndWhyIds(index.graph, [...index.byId.values(), ...index.external.values()]) : null),
+    [index, blockedOnly],
+  );
 
   const visibleRoot = useMemo(
-    () => (index ? visibleTaskTree(index, { showFinished, collapsed }) : null),
-    [index, showFinished, collapsed],
+    () => (index ? visibleTaskTree(index, { showFinished, collapsed, only }) : null),
+    [index, showFinished, collapsed, only],
   );
+
+  // Every link, drawn between the cards that show its ends: a folded end
+  // lands on the card it is folded into, so no link ever drops out of sight.
+  const visibleBlockLinks = useMemo<VisibleBlockLink[]>(() => {
+    if (!index || !visibleRoot) return [];
+    const shown = new Set(flattenVisible(visibleRoot).map((item) => item.id));
+    const out = new Map<string, VisibleBlockLink>();
+    for (const link of index.graph.links) {
+      if (only && !(only.has(link.from) && only.has(link.to))) continue;
+      const from = visibleStandIn(index, shown, link.from);
+      const to = visibleStandIn(index, shown, link.to);
+      if (!from || !to || from === to) continue;
+      const key = linkKey(from, to);
+      const loop = index.graph.loopLinks.has(linkKey(link.from, link.to));
+      const folded = from !== link.from || to !== link.to;
+      const existing = out.get(key);
+      out.set(key, {
+        from,
+        to,
+        loop: loop || (existing?.loop ?? false),
+        folded: folded && (existing?.folded ?? true),
+      });
+    }
+    return [...out.values()];
+  }, [index, visibleRoot, only]);
   const trace = useMemo(() => (index ? traceBlockedPaths(index, viewerUserId) : null), [index, viewerUserId]);
   const waitingOnById = useMemo(() => {
     const map = new Map<string, string>();
@@ -67,6 +110,22 @@ export function useTaskTreeView(
     () => (index ? describeTreeBlocks(index, people ?? { agents: new Map(), users: new Map(), viewerUserId }) : new Map()),
     [index, people, viewerUserId],
   );
+
+  // Every task's links by name, for the hover card and the phone outline.
+  const linkNamesById = useMemo(() => {
+    const map = new Map<string, { blockedBy: string[]; blocks: string[] }>();
+    if (!index) return map;
+    const nameOf = (id: string) => {
+      const task = index.byId.get(id) ?? index.external.get(id);
+      return task ? task.identifier ?? task.title : null;
+    };
+    const names = (ids: string[] | undefined) => (ids ?? []).map(nameOf).filter((name): name is string => !!name);
+    const ids = new Set([...index.graph.blockersOf.keys(), ...index.graph.blocksOf.keys()]);
+    for (const id of ids) {
+      map.set(id, { blockedBy: names(index.graph.blockersOf.get(id)), blocks: names(index.graph.blocksOf.get(id)) });
+    }
+    return map;
+  }, [index]);
 
   const toggleCollapsed = useCallback((id: string) => {
     setCollapsed((current) => {
@@ -101,12 +160,22 @@ export function useTaskTreeView(
   }, [index]);
   const expandAll = useCallback(() => setCollapsed(new Set()), []);
 
-  // What "Find" can jump to: every task the tree shows when nothing is folded.
+  // What "Find" can jump to: every task the tree shows when nothing is
+  // folded, outside tasks included, by title, key or project.
   const findItems = useMemo<DiagramFindItem[]>(() => {
     if (!index) return [];
-    return flattenVisible(visibleTaskTree(index, { showFinished, collapsed: new Set() }))
-      .flatMap((item) => (item.kind === "task" ? [{ id: item.id, label: item.node.title, detail: item.node.identifier ?? undefined }] : []));
-  }, [index, showFinished]);
+    return flattenVisible(visibleTaskTree(index, { showFinished, collapsed: new Set(), only })).flatMap((item) =>
+      item.kind === "task" && !item.group
+        ? [
+            {
+              id: item.id,
+              label: item.node.title,
+              detail: [item.node.identifier, item.outside?.projectName].filter(Boolean).join(" · ") || undefined,
+            },
+          ]
+        : [],
+    );
+  }, [index, showFinished, only]);
 
   useEffect(() => {
     if (!isPhone || !focusRequest) return;
@@ -125,6 +194,13 @@ export function useTaskTreeView(
     reveal,
     findItems,
     visibleRoot,
+    visibleBlockLinks,
+    linkNamesById,
+    loopIds: index?.graph.loopNodeIds,
+    blockedOnly,
+    setBlockedOnly,
+    /** Tasks the filter keeps; null when it is off. */
+    blockedOnlyIds: only,
     trace,
     waitingOnById,
     blockReasonById,

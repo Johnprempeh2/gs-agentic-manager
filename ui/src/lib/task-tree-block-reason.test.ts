@@ -54,12 +54,12 @@ describe("describeTreeBlock", () => {
     expect(reasonFor([node("1", { status: "in_progress" })], "1")).toBeNull();
   });
 
-  it("names the open blocker first, with a count of the rest, and links to it", () => {
+  it("names every open blocker, never a count, and links to the first", () => {
     const reason = reasonFor(
       [node("1", { status: "todo" }), node("2", { blockedByIds: ["3", "4", "5"] }), node("3", { status: "done" }), node("4", { status: "todo" }), node("5", { status: "in_progress" })],
       "2",
     );
-    expect(reason).toEqual({ own: { text: "Blocked by GRE-4 +1", href: "/issues/GRE-4" }, root: null, unexplained: false });
+    expect(reason).toEqual({ own: { text: "Blocked by GRE-4, GRE-5", href: "/issues/GRE-4" }, root: null, unexplained: false, loop: null });
   });
 
   it("names the person a pending card waits on and links to the card", () => {
@@ -84,7 +84,7 @@ describe("describeTreeBlock", () => {
 
   it("warns when a blocked task has no open blocker, card or note", () => {
     const reason = reasonFor([node("1", { status: "todo" }), node("2", { blockedByIds: ["3"] }), node("3", { status: "done" })], "2");
-    expect(reason).toEqual({ own: { text: UNEXPLAINED_BLOCK_TEXT, href: null }, root: null, unexplained: true });
+    expect(reason).toEqual({ own: { text: UNEXPLAINED_BLOCK_TEXT, href: null }, root: null, unexplained: true, loop: null });
   });
 
   it("adds the root of the chain with what it waits on", () => {
@@ -124,6 +124,74 @@ describe("describeTreeBlock", () => {
 
   it("leaves the root out when it is the direct blocker", () => {
     const reason = reasonFor([node("1", { blockedByIds: ["2"], rootBlockerId: "2" }), node("2", { status: "todo" })], "1");
+    expect(reason?.root).toBeNull();
+  });
+
+  // GRE-2290: every hop, every blocker, and loops said out loud.
+  it("names every hop of a long chain that leaves the tree", () => {
+    const outside = (id: string, values: Partial<IssueTreeExternalBlocker> = {}): IssueTreeExternalBlocker => ({
+      id,
+      identifier: `GRE-${id}`,
+      title: `Outside ${id}`,
+      status: "blocked",
+      assigneeAgentId: null,
+      assigneeUserId: null,
+      ...values,
+    });
+    const tree: IssueTree = {
+      rootId: "1",
+      nodes: [node("1", { status: "todo" }), node("1936", { blockedByIds: ["1935"] })],
+      externalBlockers: [
+        outside("1935"),
+        outside("1989"),
+        outside("2001", { waitReason: { unblockAction: null, unblockOwner: null, pendingCard: card() } }),
+      ],
+      blockLinks: [
+        { blockerId: "1935", blockedId: "1936" },
+        { blockerId: "1989", blockedId: "1935" },
+        { blockerId: "2001", blockedId: "1989" },
+      ],
+      truncated: false,
+      limits: { maxNodes: 300, maxDepth: 12 },
+    };
+    const index = indexTaskTree(tree)!;
+    const reason = describeTreeBlock(index.byId.get("1936")!, index, nameOf);
+    expect(reason?.own.text).toBe("Blocked by GRE-1935");
+    expect(reason?.root?.text).toBe("Chain: GRE-1989 → GRE-2001, waiting on John: Approve staging upload");
+  });
+
+  it("names both blockers of a task blocked by two", () => {
+    const tree: IssueTree = {
+      rootId: "1",
+      nodes: [node("1", { status: "todo" }), node("2"), node("3", { status: "todo" }), node("4", { status: "in_progress" })],
+      externalBlockers: [],
+      blockLinks: [
+        { blockerId: "4", blockedId: "2" },
+        { blockerId: "3", blockedId: "2" },
+      ],
+      truncated: false,
+      limits: { maxNodes: 300, maxDepth: 12 },
+    };
+    const index = indexTaskTree(tree)!;
+    expect(describeTreeBlock(index.byId.get("2")!, index, nameOf)?.own.text).toBe("Blocked by GRE-3, GRE-4");
+  });
+
+  it("marks a loop and never hangs on it", () => {
+    const tree: IssueTree = {
+      rootId: "1",
+      nodes: [node("1", { status: "todo" }), node("2"), node("3")],
+      externalBlockers: [],
+      blockLinks: [
+        { blockerId: "2", blockedId: "3" },
+        { blockerId: "3", blockedId: "2" },
+      ],
+      truncated: false,
+      limits: { maxNodes: 300, maxDepth: 12 },
+    };
+    const index = indexTaskTree(tree)!;
+    const reason = describeTreeBlock(index.byId.get("2")!, index, nameOf);
+    expect(reason?.own.text).toBe("Blocked by GRE-3");
+    expect(reason?.loop?.text).toBe("Blocking loop: GRE-2 → GRE-3 → GRE-2");
     expect(reason?.root).toBeNull();
   });
 });

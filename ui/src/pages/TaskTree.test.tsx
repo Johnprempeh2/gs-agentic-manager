@@ -340,4 +340,62 @@ describe("Task tree navigation", () => {
     expect(container.querySelector('[data-slot="task-tree-canvas"]')).toBeNull();
     expect(container.querySelector('[data-slot="task-tree-outline"]')).not.toBeNull();
   });
+
+  // GRE-2290: every blocking link on the tree, and a filter to read it by.
+  describe("blocking links", () => {
+    beforeEach(() => {
+      tree = {
+        ...tree,
+        nodes: [
+          ...tree.nodes,
+          node("6", "1", { title: "Payments", status: "blocked" }),
+          node("7", "1", { title: "Docs", status: "todo" }),
+        ],
+        externalBlockers: [
+          { id: "x1", identifier: "GRE-1935", title: "Landing page", status: "blocked", assigneeAgentId: null, assigneeUserId: null, projectId: "p", projectName: "Website" },
+          { id: "x2", identifier: "GRE-1989", title: "Staging upload", status: "blocked", assigneeAgentId: null, assigneeUserId: null, projectId: "p", projectName: "Website" },
+        ],
+        blockLinks: [
+          { blockerId: "4", blockedId: "3" },
+          { blockerId: "x1", blockedId: "6" },
+          { blockerId: "x2", blockedId: "x1" },
+          { blockerId: "x1", blockedId: "x2" },
+        ],
+      };
+    });
+
+    it("draws each link as a dashed line, outside tasks as cards with their project, and marks the loop", async () => {
+      await renderPage();
+      const canvas = container.querySelector('[data-slot="task-tree-canvas"]')!;
+      const lines = [...canvas.querySelectorAll("[data-block-link]")].map((line) => line.getAttribute("data-block-link"));
+      expect(lines.sort()).toEqual(["4>3", "x1>6", "x1>x2", "x2>x1"]);
+      expect(canvas.querySelector('[data-block-link="x1>x2"]')?.hasAttribute("data-block-loop")).toBe(true);
+      expect(canvas.querySelector('[data-block-link="4>3"]')?.getAttribute("stroke-dasharray")).toBeTruthy();
+      const outsideCard = canvas.querySelector('[data-tree-node="x1"]')!;
+      expect(outsideCard.querySelector("[data-outside-project]")?.textContent).toBe("Website");
+      expect(outsideCard.querySelector("[data-block-loop-mark]")).not.toBeNull();
+      expect(canvas.querySelector('[data-slot="task-tree-link-legend"]')?.textContent).toContain("Blocks");
+    });
+
+    it("shows only what is blocked and why when the reader asks", async () => {
+      await renderPage();
+      const canvas = () => container.querySelector('[data-slot="task-tree-canvas"]')!;
+      expect(canvas().querySelector('[data-tree-node="7"]')).not.toBeNull();
+      const toggle = container.querySelector<HTMLButtonElement>('[data-blocked-only-toggle]')!;
+      flushSync(() => toggle.click());
+      await flush();
+      expect(canvas().querySelector('[data-tree-node="7"]')).toBeNull();
+      for (const id of ["3", "4", "6", "x1", "x2"]) expect(canvas().querySelector(`[data-tree-node="${id}"]`)).not.toBeNull();
+    });
+
+    it("lists what each task blocks on the phone, and finds outside tasks", async () => {
+      phone = true;
+      await renderPage();
+      const outline = container.querySelector('[data-slot="task-tree-outline"]')!;
+      const blocks = outline.querySelector('[data-outline-node="x1"]')?.querySelector("[data-outline-blocks]");
+      expect(blocks?.textContent).toBe("Blocks: GRE-6, GRE-1989");
+      expect(container.querySelector("[data-diagram-find]")).not.toBeNull();
+    });
+  });
 });
+

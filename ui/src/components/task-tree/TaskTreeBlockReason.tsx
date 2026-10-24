@@ -52,7 +52,8 @@ function ReasonLine({
 
 /**
  * Why a blocked task is blocked (GRE-2277). `compact` is one line for a tree
- * card: the root of the chain when there is one, else what blocks it directly.
+ * card: the loop it sits in, else the root of the chain when there is one,
+ * else what blocks it directly.
  */
 export function TaskTreeBlockReason({
   reason,
@@ -69,7 +70,7 @@ export function TaskTreeBlockReason({
     return (
       <div data-slot="task-tree-block-reason" data-unexplained={reason.unexplained ? "" : undefined} className={className}>
         <ReasonLine
-          line={reason.unexplained ? { text: UNEXPLAINED_BLOCK_SHORT_TEXT, href: null } : (reason.root ?? reason.own)}
+          line={reason.unexplained ? { text: UNEXPLAINED_BLOCK_SHORT_TEXT, href: null } : (reason.loop ?? reason.root ?? reason.own)}
           warning={reason.unexplained}
         />
       </div>
@@ -84,6 +85,7 @@ export function TaskTreeBlockReason({
     >
       <ReasonLine line={reason.own} warning={reason.unexplained} wrap />
       {reason.root ? <ReasonLine line={reason.root} wrap /> : null}
+      {reason.loop ? <ReasonLine line={reason.loop} warning wrap /> : null}
     </div>
   );
 }

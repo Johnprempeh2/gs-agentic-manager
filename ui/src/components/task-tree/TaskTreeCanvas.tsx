@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { TaskRunStateChip } from "@/components/TaskRunStateChip";
 import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
@@ -7,6 +7,7 @@ import { fitView, useDiagramViewport, type DiagramView } from "@/components/diag
 import { StatusIcon } from "@/components/StatusIcon";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import {
+  blockLinkPath,
   connectorPath,
   edgeKey,
   flattenVisible,
@@ -23,6 +24,10 @@ import { cn, relativeTime } from "@/lib/utils";
 import { TaskTreeBlockReason } from "./TaskTreeBlockReason";
 import { TASK_TREE_CARD_HEIGHT, TASK_TREE_CARD_WIDTH, TaskTreeCard } from "./TaskTreeCard";
 import { ownerName, type TaskTreePeople } from "./TaskTreeOwner";
+import type { VisibleBlockLink } from "./useTaskTreeView";
+
+/** How a "blocks" line is drawn: dashed, with an arrow on the task it holds up. */
+const BLOCK_DASH = "6 5";
 
 const DONE_PILL = { width: 112, height: 32 };
 const LAYOUT = { siblingGap: 28, levelGap: 72, padding: 48 };
@@ -41,6 +46,12 @@ export interface TaskTreeCanvasProps {
   waitingOnById?: ReadonlyMap<string, string>;
   /** Why each blocked task is blocked, by task id. */
   blockReasonById?: ReadonlyMap<string, TreeBlockReason>;
+  /** Every "blocks" link, between the cards that show its ends (GRE-2290). */
+  blockLinks?: VisibleBlockLink[];
+  /** Tasks in a blocking loop. */
+  loopIds?: ReadonlySet<string>;
+  /** Names of the tasks each task blocks and is blocked by, for the hover card. */
+  linkNamesById?: ReadonlyMap<string, { blockedBy: string[]; blocks: string[] }>;
   onOpen: (node: IssueTreeNode) => void;
   onToggleCollapsed: (id: string) => void;
   onShowFinished: () => void;
@@ -121,6 +132,9 @@ export function TaskTreeCanvas({
   people,
   waitingOnById,
   blockReasonById,
+  blockLinks = [],
+  loopIds,
+  linkNamesById,
   onOpen,
   onToggleCollapsed,
   onShowFinished,
@@ -136,6 +150,7 @@ export function TaskTreeCanvas({
   className,
 }: TaskTreeCanvasProps) {
   const reduced = usePrefersReducedMotion();
+  const markerId = useId().replace(/:/g, "");
 
   const layout = useMemo(
     () =>
@@ -217,6 +232,7 @@ export function TaskTreeCanvas({
 
   const activate = (item: VisibleItem) => {
     if (item.kind === "done") onShowFinished();
+    else if (item.group) onToggleCollapsed(item.id);
     else onOpen(item.node);
   };
 
@@ -311,6 +327,35 @@ export function TaskTreeCanvas({
               </g>
             );
           })}
+          <defs>
+            <marker id={`${markerId}-block`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-warning" />
+            </marker>
+            <marker id={`${markerId}-loop`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-danger" />
+            </marker>
+          </defs>
+          {blockLinks.map((link) => {
+            const from = boxAt(link.from);
+            const to = boxAt(link.to);
+            if (!from || !to) return null;
+            return (
+              <path
+                key={`block:${link.from}>${link.to}`}
+                data-block-link={edgeKey(link.from, link.to)}
+                data-block-loop={link.loop ? "" : undefined}
+                data-block-folded={link.folded ? "" : undefined}
+                d={blockLinkPath(from, to)}
+                fill="none"
+                strokeLinecap="round"
+                strokeWidth={link.loop ? 2.25 : 1.75}
+                strokeDasharray={BLOCK_DASH}
+                strokeOpacity={link.folded ? 0.6 : 1}
+                markerEnd={`url(#${markerId}-${link.loop ? "loop" : "block"})`}
+                className={link.loop ? "stroke-status-danger" : "stroke-status-warning"}
+              />
+            );
+          })}
         </svg>
 
         {layout.boxes.map((box) => {
@@ -370,6 +415,9 @@ export function TaskTreeCanvas({
                 isRootBlocker={trace.rootBlockers.some((blocker) => blocker.inTree && blocker.id === node.id)}
                 waitingOn={waitingOnById?.get(node.id) ?? null}
                 blockReason={blockReasonById?.get(node.id) ?? null}
+                projectName={item.outside ? item.outside.projectName ?? "No project" : null}
+                inLoop={loopIds?.has(node.id) ?? false}
+                isGroup={item.group}
                 descendants={item.descendants}
                 collapsed={item.collapsed}
                 onToggleCollapsed={() => onToggleCollapsed(node.id)}
@@ -382,7 +430,7 @@ export function TaskTreeCanvas({
     ),
     // The handlers inside read current state through setters and refs; the layer redraws when what it shows changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, blockLinks, loopIds, markerId, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
   );
 
   return (
@@ -420,10 +468,13 @@ export function TaskTreeCanvas({
           {layer}
         </div>
 
-        {hoverItem?.kind === "task" && hoverBox ? (
+        {blockLinks.length > 0 ? <TaskTreeLinkLegend loops={blockLinks.some((link) => link.loop)} /> : null}
+
+        {hoverItem?.kind === "task" && !hoverItem.group && hoverBox ? (
           <TaskTreeHoverCard
             node={hoverItem.node}
             people={people}
+            links={linkNamesById?.get(hoverItem.node.id) ?? null}
             blockReason={blockReasonById?.get(hoverItem.node.id) ?? null}
             left={(hoverBox.x + hoverBox.width) * view.k + view.x + 10}
             top={hoverBox.y * view.k + view.y}
@@ -434,15 +485,36 @@ export function TaskTreeCanvas({
   );
 }
 
+/** What the lines mean, in the corner of the canvas. */
+function TaskTreeLinkLegend({ loops }: { loops: boolean }) {
+  const sample = (className: string, dash?: string) => (
+    <svg aria-hidden="true" width="28" height="8" className="shrink-0">
+      <line x1="1" y1="4" x2="27" y2="4" strokeWidth="2" strokeLinecap="round" strokeDasharray={dash} className={className} />
+    </svg>
+  );
+  return (
+    <div
+      data-slot="task-tree-link-legend"
+      className="pointer-events-none absolute left-3 top-3 z-raised flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card/90 px-2 py-1 text-xs text-muted-foreground shadow-xs"
+    >
+      <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Sub-task</span>
+      <span className="inline-flex items-center gap-1.5">{sample("stroke-status-warning", "4 3")}Blocks</span>
+      {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger", "4 3")}Loop</span> : null}
+    </div>
+  );
+}
+
 function TaskTreeHoverCard({
   node,
   people,
+  links,
   blockReason,
   left,
   top,
 }: {
   node: IssueTreeNode;
   people: TaskTreePeople;
+  links: { blockedBy: string[]; blocks: string[] } | null;
   blockReason: TreeBlockReason | null;
   left: number;
   top: number;
@@ -470,7 +542,17 @@ function TaskTreeHoverCard({
           Needs: <span className="text-foreground">{node.unblockAction}</span>
         </p>
       ) : null}
-      <p className="text-xs text-muted-foreground">Updated {relativeTime(node.updatedAt)}</p>
+      {links?.blockedBy.length ? (
+        <p className="text-xs text-muted-foreground" data-hover-blocked-by="">
+          Blocked by: <span className="text-foreground">{links.blockedBy.join(", ")}</span>
+        </p>
+      ) : null}
+      {links?.blocks.length ? (
+        <p className="text-xs text-muted-foreground" data-hover-blocks="">
+          Blocks: <span className="text-foreground">{links.blocks.join(", ")}</span>
+        </p>
+      ) : null}
+      {new Date(node.updatedAt).getTime() > 0 ? <p className="text-xs text-muted-foreground">Updated {relativeTime(node.updatedAt)}</p> : null}
     </div>
   );
 }

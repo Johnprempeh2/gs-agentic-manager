@@ -94,6 +94,7 @@ export function projectTreeAsTaskTree(tree: ProjectTree): { tree: IssueTree; hid
       rootId,
       nodes,
       externalBlockers: tree.externalBlockers,
+      blockLinks: tree.blockLinks,
       truncated: tree.truncated,
       limits: tree.limits,
     },
