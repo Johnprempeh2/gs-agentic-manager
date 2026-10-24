@@ -52,6 +52,8 @@ function site(overrides: Partial<WebsiteSite> = {}): WebsiteSite {
     propertyId: "prop-1",
     editorOrigins: [],
     editorFrameOrigin: null,
+    livePreviewUrl: null,
+    devPreviewUrl: null,
     checkPaths: ["/"],
     liveReleaseId: null,
     archivedAt: null,
@@ -188,6 +190,30 @@ describe("WebsiteSiteConnection", () => {
     });
     await flush();
     expect(moduleMock.updateSite).toHaveBeenCalledWith("co-1", "site-1", expect.objectContaining({ editorFrameOrigin: "https://editor.greatstone.example" }));
+  });
+
+  it("sets the two preview addresses as https addresses, sending only what changed, with the exact-copy rule in the help", async () => {
+    moduleMock.sites.mockResolvedValue([site({ editorFrameOrigin: "https://editor.greatstone.example" })]);
+    moduleMock.updateSite.mockResolvedValue(site());
+    await render();
+    expect(container.textContent).toContain("Live site viewThe live address");
+    expect(container.textContent).toContain("In developmentThe editor address");
+    const change = [...container.querySelectorAll("button")].find((button) => button.textContent === "Change")!;
+    await act(async () => change.click());
+    const live = container.querySelector<HTMLInputElement>("#website-site-prop-1-live-preview")!;
+    const dev = container.querySelector<HTMLInputElement>("#website-site-prop-1-dev-preview")!;
+    expect(live.type).toBe("url");
+    expect(live.pattern).toBe("https://.*");
+    expect(dev.placeholder).toBe("https://editor.greatstone.example");
+    expect(container.querySelector("#website-site-prop-1-live-preview-help")!.textContent).toContain("must be an exact copy of the live deploy");
+    await act(async () => setValue(live, "https://abc--greatstone.netlify.app/"));
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    const sent = moduleMock.updateSite.mock.calls[0]![2];
+    expect(sent).toMatchObject({ livePreviewUrl: "https://abc--greatstone.netlify.app/" });
+    expect(sent).not.toHaveProperty("devPreviewUrl");
   });
 
   it("tells people without Publish rights who can connect it", async () => {

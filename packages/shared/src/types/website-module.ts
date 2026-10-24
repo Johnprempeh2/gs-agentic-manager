@@ -43,6 +43,10 @@ export interface WebsiteSite {
   editorOrigins: string[];
   /** The frame's own origin (the dedicated editor host), or null: no editor opens until it is set. */
   editorFrameOrigin: string | null;
+  /** A frameable exact copy of the live deploy for the Live preview, or null: the live domain. */
+  livePreviewUrl: string | null;
+  /** The development build for the In development preview, or null: the editor address. */
+  devPreviewUrl: string | null;
   checkPaths: string[];
   liveReleaseId: string | null;
   archivedAt: string | null;
@@ -380,8 +384,11 @@ export interface WebsiteHomeSummary {
   collections: Record<string, number>;
   activity: WebsiteHomeActivity[];
   /**
-   * Whether `https://{domain}/` lets GSAM show it in a frame, from its
+   * Whether the Live view's address (the mirror when set, else
+   * `https://{domain}/`) lets GSAM show it in a frame, from its
    * X-Frame-Options and CSP frame-ancestors headers. `unknown` when unreachable.
    */
   liveFraming: "allowed" | "refused" | "unknown";
+  /** The same check of the In development address; `unknown` when there is none. */
+  devFraming: "allowed" | "refused" | "unknown";
 }

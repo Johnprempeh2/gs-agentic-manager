@@ -481,3 +481,19 @@ export type WebsiteFrameSaveResult =
       savedAt: string;
     }
   | { requestId: string; outcome: "failed"; code: string; message: string; retryable: boolean };
+
+/**
+ * The two addresses the Preview tab and the Home hero frame (24 Oct 2026).
+ * Live: the frameable mirror when set (an exact copy of the live deploy),
+ * else the live domain. In development: its own address when set, else the
+ * editor address, else none.
+ */
+export function websitePreviewAddresses(
+  site: { domain: string; livePreviewUrl: string | null; devPreviewUrl: string | null; editorFrameOrigin: string | null },
+): { live: string; liveIsMirror: boolean; dev: string | null } {
+  return {
+    live: site.livePreviewUrl ?? `https://${site.domain}/`,
+    liveIsMirror: !!site.livePreviewUrl,
+    dev: site.devPreviewUrl ?? (site.editorFrameOrigin ? `${site.editorFrameOrigin}/` : null),
+  };
+}

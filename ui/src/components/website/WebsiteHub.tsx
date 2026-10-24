@@ -12,11 +12,11 @@ import {
   Smartphone,
   Tablet,
 } from "lucide-react";
-import type { Agent, DecisionCard, ProjectTree, WebsiteProperty } from "@greatstone/shared";
+import { websitePreviewAddresses, type Agent, type DecisionCard, type ProjectTree, type WebsiteProperty } from "@greatstone/shared";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
 import { projectsApi } from "../../api/projects";
-import { websiteApi, type WebsiteHubPreviewLink, type WebsiteHubSitemap } from "../../api/website";
+import { websiteApi, websiteModuleApi, type WebsiteHubPreviewLink, type WebsiteHubSitemap } from "../../api/website";
 import { useDialogActions } from "../../context/DialogContext";
 import { useDecisionsFeed } from "../../hooks/useDecisionsFeed";
 import { queryKeys } from "../../lib/queryKeys";
@@ -421,6 +421,39 @@ export const WEBSITE_PREVIEW_DEVICES: { value: Device; label: string; width: num
   { value: "phone", label: "Phone", width: 390, icon: Smartphone },
 ];
 
+/** Which site the Preview tab shows (John, 24 Oct 2026): the live site, the one in development, or both. */
+export type WebsitePreviewMode = "live" | "dev" | "side";
+
+export const WEBSITE_PREVIEW_MODES: { value: WebsitePreviewMode; label: string }[] = [
+  { value: "live", label: "Live" },
+  { value: "dev", label: "In development" },
+  { value: "side", label: "Side by side" },
+];
+
+const PREVIEW_MODE_KEY = "gsam.website.preview-mode";
+// Also kept in memory, so "Compare side by side" works where storage is blocked.
+let previewModeMemory: WebsitePreviewMode | null = null;
+
+/** The viewer's last Preview mode, if any. */
+export function rememberedPreviewMode(): WebsitePreviewMode | null {
+  if (previewModeMemory) return previewModeMemory;
+  try {
+    const value = window.localStorage.getItem(PREVIEW_MODE_KEY);
+    return WEBSITE_PREVIEW_MODES.some((mode) => mode.value === value) ? (value as WebsitePreviewMode) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPreviewMode(mode: WebsitePreviewMode) {
+  previewModeMemory = mode;
+  try {
+    window.localStorage.setItem(PREVIEW_MODE_KEY, mode);
+  } catch {
+    // Private windows and blocked storage: the memory copy is enough for this visit.
+  }
+}
+
 /** The live preview may run its own scripts, but never steer this page. */
 const PREVIEW_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups";
 
@@ -469,37 +502,46 @@ function PreviewLinksList({
 /** How long a frame may take to load before the page offers the new tab instead. */
 const PREVIEW_SLOW_MS = 8_000;
 
+const hostOf = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+
 /**
  * The site in a frame, never a blank box: a calm placeholder while it loads,
  * and, if it has not loaded after a while (most often a site that refuses
- * to be framed), a clear message with "Open in new tab".
+ * to be framed), a clear message with "Open in new tab". `refused`: the
+ * server's header check says the address refuses frames, so the message
+ * shows at once.
  */
-export function PreviewStage({ url, device, width, className = "h-(--sz-80vh) min-h-96 rounded-xl border border-border" }: {
+export function PreviewStage({ url, device, width, label = "Website", refused = false, className = "h-(--sz-80vh) min-h-96 rounded-xl border border-border" }: {
   url: string;
   device: Device;
   width: number;
+  /** Names the frame for screen readers when two show at once. */
+  label?: string;
+  refused?: boolean;
   /** The stage's size and frame; the Home hero sets its own. */
   className?: string;
 }) {
-  const [state, setState] = useState<"loading" | "loaded" | "slow">("loading");
+  const [loadState, setState] = useState<"loading" | "loaded" | "slow">("loading");
   useEffect(() => {
     setState("loading");
     const timer = window.setTimeout(() => setState((current) => (current === "loading" ? "slow" : current)), PREVIEW_SLOW_MS);
     return () => window.clearTimeout(timer);
   }, [url]);
-  const host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const state = refused ? "slow" : loadState;
   return (
     <div className={cn("relative overflow-hidden bg-muted", className)} data-preview-state={state}>
-      <ScaledFrame
-        key={url}
-        src={url}
-        title={`Website preview, ${device} width`}
-        width={width}
-        sandbox={PREVIEW_SANDBOX}
-        testId="website-preview-frame"
-        viewport={device}
-        onLoad={() => setState("loaded")}
-      />
+      {refused ? null : (
+        <ScaledFrame
+          key={url}
+          src={url}
+          title={`${label} preview, ${device} width`}
+          width={width}
+          sandbox={PREVIEW_SANDBOX}
+          testId="website-preview-frame"
+          viewport={device}
+          onLoad={() => setState("loaded")}
+        />
+      )}
       {state === "loaded" ? null : (
         <div className="absolute inset-0 flex items-center justify-center bg-muted p-6" data-testid="website-preview-placeholder">
           <div className="flex max-w-sm flex-col items-center gap-3 text-center">
@@ -508,14 +550,15 @@ export function PreviewStage({ url, device, width, className = "h-(--sz-80vh) mi
             </span>
             {state === "loading" ? (
               <p className="text-sm text-muted-foreground" role="status">
-                Loading <span className="font-mono text-foreground">{host}</span>
+                Loading <span className="font-mono text-foreground">{hostOf(url)}</span>
               </p>
             ) : (
               <>
                 <p className="text-sm font-medium">The site is not showing here</p>
                 <p className="text-xs text-muted-foreground">
-                  It may still be starting, or it may not allow being shown inside another page. That is the site keeping
-                  itself safe; open it in a new tab instead.
+                  {refused
+                    ? "It does not allow being shown inside another page. That is the site keeping itself safe; open it in a new tab instead."
+                    : "It may still be starting, or it may not allow being shown inside another page. That is the site keeping itself safe; open it in a new tab instead."}
                 </p>
                 <Button asChild size="sm">
                   <a href={url} target="_blank" rel="noreferrer">
@@ -532,6 +575,92 @@ export function PreviewStage({ url, device, width, className = "h-(--sz-80vh) mi
   );
 }
 
+/** One site in the Preview tab: its name, address and "Open in new tab", then the frame. */
+function PreviewPane({ title, detail, url, device, width, refused, note, empty, stageClassName, testId }: {
+  title: string;
+  detail: string | null;
+  url: string | null;
+  device: Device;
+  width: number;
+  refused: boolean;
+  note?: string | null;
+  empty: ReactNode;
+  stageClassName?: string;
+  testId: string;
+}) {
+  const problem = url ? framingProblem(url, window.location.protocol) : null;
+  return (
+    <section className="flex min-w-0 flex-col gap-2" aria-label={title} data-testid={testId}>
+      <div className="flex min-h-7 items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={url ?? undefined}>
+          <span className="font-medium text-foreground">{title}</span>
+          {detail ? <span> {detail}</span> : null}
+          {url ? <span className="font-mono"> {hostOf(url)}</span> : null}
+        </p>
+        {url ? (
+          <Button asChild size="xs" variant="ghost" className="shrink-0">
+            <a href={url} target="_blank" rel="noreferrer">
+              <ExternalLink />
+              Open in new tab
+              <span className="sr-only"> ({title})</span>
+            </a>
+          </Button>
+        ) : null}
+      </div>
+      {!url ? (
+        empty
+      ) : problem ? (
+        <div className="flex h-(--sz-50vh) flex-col items-center justify-center gap-3 rounded-xl border border-border bg-muted p-6 text-center">
+          <p role="alert" className="max-w-md text-sm text-muted-foreground">{problem}</p>
+          <Button asChild size="sm">
+            <a href={url} target="_blank" rel="noreferrer">
+              <ExternalLink />
+              Open in new tab
+            </a>
+          </Button>
+        </div>
+      ) : (
+        <PreviewStage url={url} device={device} width={width} label={title} refused={refused} className={stageClassName} />
+      )}
+      {/* Below the frame, so two frames side by side stay level. */}
+      {note ? <p className="text-xs text-muted-foreground" data-testid="website-preview-mirror-note">{note}</p> : null}
+    </section>
+  );
+}
+
+/** A small set of buttons where one is pressed, as the width toggle already reads. */
+function Toggle<T extends string>({ label, options, value, onChange }: {
+  label: string;
+  options: { value: T; label: string; icon?: typeof Laptop; title?: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label={label}>
+      {options.map((entry) => {
+        const Icon = entry.icon;
+        const active = entry.value === value;
+        return (
+          <button
+            key={entry.value}
+            type="button"
+            aria-pressed={active}
+            title={entry.title}
+            onClick={() => onChange(entry.value)}
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
+            {entry.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function WebsitePreviewTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const projectId = property.projectId;
   const projectQuery = useQuery({
@@ -541,97 +670,111 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
     refetchInterval: 30_000,
   });
   const hubQuery = useHub(companyId, property.id, !!projectId);
+  const { site } = useWebsiteSite(companyId, property.id);
+  // The Home's read: the server's frame check of the two addresses.
+  const homeQuery = useQuery({
+    queryKey: queryKeys.website.home(companyId, site?.id ?? ""),
+    queryFn: () => websiteModuleApi.home(companyId, site!.id),
+    enabled: !!site,
+  });
   const [device, setDevice] = useState<Device>("laptop");
   const [chosenUrl, setChosenUrl] = useState<string | null>(null);
+  const [storedMode, setStoredMode] = useState<WebsitePreviewMode | null>(rememberedPreviewMode);
 
   const project = projectQuery.data;
   const service = pickLivePreviewService(project?.workspaces.flatMap((workspace) => workspace.runtimeServices ?? []));
-  const liveUrl = liveSiteUrl(property.siteUrl);
-  // A chosen deploy preview, else the running workspace preview, else the live site.
-  const url = chosenUrl ?? service?.url ?? liveUrl;
-  const source = chosenUrl
-    ? "Deploy preview"
-    : service
-      ? `Workspace preview (${service.serviceName}${service.port ? `, port ${service.port}` : ""})`
-      : liveUrl
-        ? "Live site"
+  const addresses = site ? websitePreviewAddresses(site) : null;
+  const liveUrl = addresses?.live ?? liveSiteUrl(property.siteUrl);
+  const liveName = site?.domain ?? (liveUrl ? new URL(liveUrl).host : null);
+  // A chosen deploy preview, else the site's development address, else the running workspace preview.
+  const devUrl = chosenUrl ?? addresses?.dev ?? service?.url ?? null;
+  const devDetail = chosenUrl
+    ? "· Deploy preview"
+    : addresses?.dev
+      ? null
+      : service
+        ? `· Workspace preview (${service.serviceName}${service.port ? `, port ${service.port}` : ""})`
         : null;
-  const problem = url ? framingProblem(url, window.location.protocol) : null;
+  // Nothing remembered: the site being worked on, when it has an address.
+  const mode: WebsitePreviewMode = storedMode ?? (devUrl ? "dev" : "live");
   const width = WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width;
+  const home = homeQuery.data;
+  const liveRefused = !!home && liveUrl === addresses?.live && home.liveFraming === "refused";
+  const devRefused = !!home && devUrl === addresses?.dev && home.devFraming === "refused";
+
+  const chooseMode = (next: WebsitePreviewMode) => {
+    rememberPreviewMode(next);
+    setStoredMode(next);
+  };
+  const showDeployPreview = (url: string) => {
+    setChosenUrl(url);
+    if (mode === "live") chooseMode("dev");
+  };
+
+  const side = mode === "side";
+  const stageClassName = side ? "h-(--sz-70vh) min-h-96 rounded-xl border border-border" : undefined;
+  const livePane = (
+    <PreviewPane
+      testId="website-preview-live"
+      title={liveName ? `Live (${liveName})` : "Live"}
+      detail={null}
+      url={liveUrl}
+      device={device}
+      width={width}
+      refused={liveRefused}
+      note={addresses?.liveIsMirror ? "Showing an exact copy of the live site." : null}
+      stageClassName={stageClassName}
+      empty={<EmptyState icon={Globe} title="No live address" message="Connect the site under Releases, or give the website its address." />}
+    />
+  );
+  const devPane = (
+    <PreviewPane
+      testId="website-preview-dev"
+      title="In development"
+      detail={devDetail}
+      url={devUrl}
+      device={device}
+      width={width}
+      refused={devRefused}
+      stageClassName={stageClassName}
+      empty={
+        <EmptyState
+          icon={Globe}
+          title="No development address yet"
+          message="Set it under Releases, Site connection, or start the workspace preview from the card below. The Greatstone Website project serves its preview on port 4100."
+        />
+      }
+    />
+  );
 
   return (
-    <div className="space-y-6" data-testid="website-preview">
+    <div className="space-y-6" data-testid="website-preview" data-preview-mode={mode}>
       <section className="space-y-4" aria-labelledby="website-preview-frame">
         {/* The site leads; the controls stay quiet above it. */}
+        <h2 id="website-preview-frame" className="sr-only">Preview</h2>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="website-preview-frame" className="sr-only">Preview</h2>
-          <p className="min-w-0 truncate text-xs text-muted-foreground">
-            {url ? (
-              <>
-                <span className="font-medium text-foreground">{source}</span>
-                <span className="font-mono"> {url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
-              </>
-            ) : (
-              "No preview is running."
-            )}
-          </p>
+          <Toggle label="Which site" options={WEBSITE_PREVIEW_MODES} value={mode} onChange={chooseMode} />
           <div className="flex flex-wrap items-center gap-1">
-            <div className="flex items-center gap-0.5" role="group" aria-label="Preview width">
-              {WEBSITE_PREVIEW_DEVICES.map((entry) => {
-                const Icon = entry.icon;
-                const active = entry.value === device;
-                return (
-                  <button
-                    key={entry.value}
-                    type="button"
-                    aria-pressed={active}
-                    title={`${entry.label} width (${entry.width} px)`}
-                    onClick={() => setDevice(entry.value)}
-                    className={cn(
-                      "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-3.5" aria-hidden="true" />
-                    {entry.label}
-                  </button>
-                );
-              })}
-            </div>
-            {chosenUrl && (service?.url || liveUrl) ? (
+            <Toggle
+              label="Preview width"
+              options={WEBSITE_PREVIEW_DEVICES.map((entry) => ({ ...entry, title: `${entry.label} width (${entry.width} px)` }))}
+              value={device}
+              onChange={setDevice}
+            />
+            {chosenUrl ? (
               <Button type="button" size="xs" variant="ghost" onClick={() => setChosenUrl(null)}>
-                {service?.url ? "Back to workspace preview" : "Back to the live site"}
-              </Button>
-            ) : null}
-            {url ? (
-              <Button asChild size="xs" variant="ghost">
-                <a href={url} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                  Open in new tab
-                </a>
+                {addresses?.dev || service?.url ? "Back to the development site" : "Clear the deploy preview"}
               </Button>
             ) : null}
           </div>
         </div>
-        {!url ? (
-          <EmptyState
-            icon={Globe}
-            title="No preview to show"
-            message="Start the preview from the card below, or pick a deploy preview. The Greatstone Website project serves its preview on port 4100."
-          />
-        ) : problem ? (
-          <div className="flex h-(--sz-50vh) flex-col items-center justify-center gap-3 rounded-xl border border-border bg-muted p-6 text-center">
-            <p role="alert" className="max-w-md text-sm text-muted-foreground">{problem}</p>
-            <Button asChild size="sm">
-              <a href={url} target="_blank" rel="noreferrer">
-                <ExternalLink />
-                Open in new tab
-              </a>
-            </Button>
+        {side ? (
+          // Two columns from 900 px; below that they stack, live first.
+          <div className="grid gap-6 min-[900px]:grid-cols-2 min-[900px]:gap-4" data-testid="website-preview-side-by-side">
+            {livePane}
+            {devPane}
           </div>
-        ) : (
-          <PreviewStage url={url} device={device} width={width} />
-        )}
+        ) : mode === "live" ? livePane : devPane}
       </section>
       {!projectId ? (
         <LinkProjectFirst companyId={companyId} property={property} />
@@ -643,7 +786,7 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
           {hubQuery.error ? (
             <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
           ) : (
-            <PreviewLinksList links={hubQuery.data?.previewLinks ?? []} selected={chosenUrl} onShow={setChosenUrl} />
+            <PreviewLinksList links={hubQuery.data?.previewLinks ?? []} selected={chosenUrl} onShow={showDeployPreview} />
           )}
         </>
       )}

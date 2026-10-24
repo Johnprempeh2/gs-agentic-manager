@@ -41,6 +41,7 @@ vi.mock("../LivePreviewCard", () => ({ LivePreviewCard: () => null, pickLivePrev
 vi.mock("../../pages/ProjectTree", () => ({ ProjectTreeView: () => null }));
 
 import { WebsiteHomeTab, activityVerb, liveStatus, pageProgress } from "./WebsiteHome";
+import { rememberedPreviewMode } from "./WebsiteHub";
 
 function property(overrides: Partial<WebsiteProperty> = {}): WebsiteProperty {
   return {
@@ -78,6 +79,7 @@ function summary(overrides: Partial<WebsiteHomeSummary> = {}): WebsiteHomeSummar
       { id: "a1", action: "website.page_saved", entityType: "website_page", entityId: "p1", actorType: "agent", actorName: "Mikey", subject: "Home", createdAt: "2026-10-23T10:00:00.000Z" },
     ],
     liveFraming: "allowed",
+    devFraming: "allowed",
     ...overrides,
   };
 }
@@ -241,6 +243,36 @@ describe("WebsiteHomeTab", () => {
     await render(property({ siteUrl: "https://fresh.example/" }));
     await vi.waitFor(() => expect(byTestId("website-home-frame-placeholder")?.textContent).toContain("Connect the site to see it here"));
     expect(byTestId("website-preview-frame")).toBeNull();
+  });
+
+  it("leads with In development, switches to the live copy, and compares side by side in Preview", async () => {
+    moduleApiMock.sites.mockResolvedValue([{
+      ...site,
+      editorFrameOrigin: "https://dev.greatstone.example",
+      livePreviewUrl: "https://mirror.greatstone.example/",
+      devPreviewUrl: null,
+    }]);
+    moduleApiMock.home.mockResolvedValue(summary({ liveFraming: "allowed", devFraming: "allowed" }));
+    await render();
+    await vi.waitFor(() => expect(byTestId("website-preview-frame")?.getAttribute("src")).toBe("https://dev.greatstone.example/"));
+    const view = (label: string) => Array.from(byTestId("website-home-view")!.querySelectorAll("button")).find((el) => el.textContent === label)!;
+    expect(view("In development").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => { view("Live").click(); });
+    expect(byTestId("website-preview-frame")?.getAttribute("src")).toBe("https://mirror.greatstone.example/");
+    expect(view("Live").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => { (byTestId("website-home-compare") as HTMLButtonElement).click(); });
+    expect(onOpenTab).toHaveBeenLastCalledWith("preview");
+    expect(rememberedPreviewMode()).toBe("side");
+  });
+
+  it("checks the address actually shown: a refused development site gets the placeholder", async () => {
+    moduleApiMock.sites.mockResolvedValue([{ ...site, editorFrameOrigin: "https://dev.greatstone.example", livePreviewUrl: null, devPreviewUrl: null }]);
+    moduleApiMock.home.mockResolvedValue(summary({ liveFraming: "allowed", devFraming: "refused" }));
+    await render();
+    await vi.waitFor(() => expect(byTestId("website-home-frame-placeholder")?.textContent).toContain("dev.greatstone.example keeps itself out of frames"));
+    const live = Array.from(byTestId("website-home-view")!.querySelectorAll("button")).find((el) => el.textContent === "Live")!;
+    await act(async () => { live.click(); });
+    expect(byTestId("website-preview-frame")?.getAttribute("src")).toBe("https://greatstone.example/");
   });
 
   it("keeps the hero haze still under reduced motion and while the tab is hidden", async () => {
