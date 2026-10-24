@@ -185,6 +185,8 @@ export function TaskTree() {
             onToggleCollapsed={toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             focusRequest={focusRequest}
+            homeIds={view.blockedFocusIds}
+            homeRequest={view.homeRequest}
             storageKey={storageKey}
             findItems={view.findItems}
             onFind={view.reveal}

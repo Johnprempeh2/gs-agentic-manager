@@ -177,13 +177,32 @@ export function useTaskTreeView(
     );
   }, [index, showFinished, only]);
 
-  // The filter changes the tree's shape: bring its top back into view.
+  // With the filter on, the view is about the blocked cards and what blocks
+  // them directly, so the canvas opens fitted to those (GRE-2290).
+  const blockedFocusIds = useMemo(() => {
+    if (!only || !visibleRoot) return null;
+    const ids = new Set<string>();
+    for (const link of visibleBlockLinks) {
+      ids.add(link.from);
+      ids.add(link.to);
+    }
+    for (const item of flattenVisible(visibleRoot)) {
+      if (item.kind === "task" && !item.group && item.node.status === "blocked") ids.add(item.id);
+    }
+    ids.delete(visibleRoot.id);
+    return ids;
+  }, [only, visibleRoot, visibleBlockLinks]);
+
+  // The filter changes the tree's shape: the canvas goes back to its home
+  // view, and the phone list scrolls back to the top.
+  const [homeRequest, setHomeRequest] = useState(0);
   const [filterSeen, setFilterSeen] = useState(blockedOnly);
   useEffect(() => {
     if (!index || filterSeen === blockedOnly) return;
     setFilterSeen(blockedOnly);
-    setFocusRequest({ id: index.root.id, nonce: Date.now() });
-  }, [index, blockedOnly, filterSeen]);
+    setHomeRequest((count) => count + 1);
+    if (isPhone) document.querySelector(`[data-outline-node="${index.root.id}"]`)?.scrollIntoView({ block: "start" });
+  }, [index, blockedOnly, filterSeen, isPhone]);
 
   useEffect(() => {
     if (!isPhone || !focusRequest) return;
@@ -209,6 +228,10 @@ export function useTaskTreeView(
     setBlockedOnly,
     /** Tasks the filter keeps; null when it is off. */
     blockedOnlyIds: only,
+    /** Cards the canvas fits to with the filter on; null when it is off. */
+    blockedFocusIds,
+    /** Bumps when the canvas should go back to its home view. */
+    homeRequest,
     trace,
     waitingOnById,
     blockReasonById,

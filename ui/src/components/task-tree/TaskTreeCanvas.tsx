@@ -62,6 +62,10 @@ export interface TaskTreeCanvasProps {
   onShowFinished: () => void;
   /** Pan to this item; bump `nonce` to pan again to the same one. */
   focusRequest?: { id: string; nonce: number } | null;
+  /** With "Only what's blocked and why" on: the cards the view opens fitted to. */
+  homeIds?: ReadonlySet<string> | null;
+  /** Go back to the home view whenever this changes. */
+  homeRequest?: number;
   /** A control for a card's footer. */
   actionFor?: (node: IssueTreeNode) => ReactNode;
   /** Remembers zoom and place for this tree. */
@@ -144,6 +148,8 @@ export function TaskTreeCanvas({
   onToggleCollapsed,
   onShowFinished,
   focusRequest,
+  homeIds,
+  homeRequest,
   actionFor,
   storageKey,
   findItems,
@@ -186,6 +192,8 @@ export function TaskTreeCanvas({
   // nothing blocked it opens on the top of the tree.
   const home = useCallback(
     (viewport: { width: number; height: number }): TaskTreeView => {
+      const focus = [...(homeIds ?? [])].flatMap((id) => layout.byId.get(id) ?? []);
+      if (focus.length > 0) return fitBounds(focus.map(boundsOf).reduce(joinBounds), viewport);
       const whole = fitView(layout, viewport);
       if (whole.k >= MIN_READABLE_ZOOM) return { ...whole, y: Math.max(FIT_MARGIN, whole.y) };
       const k = MIN_READABLE_ZOOM;
@@ -215,10 +223,17 @@ export function TaskTreeCanvas({
         y: viewport.height / 2 - ((span.top + span.bottom) / 2) * k,
       };
     },
-    [layout, trace],
+    [layout, trace, homeIds],
   );
   const viewport = useDiagramViewport({ content: layout, storageKey: storageKey ? `${storageKey}.view` : undefined, home });
-  const { view, viewportRef, reveal, suppressClick } = viewport;
+  const { view, viewportRef, reveal, reset, suppressClick } = viewport;
+
+  const homeSeen = useRef(homeRequest);
+  useEffect(() => {
+    if (homeSeen.current === homeRequest) return;
+    homeSeen.current = homeRequest;
+    reset();
+  }, [homeRequest, reset]);
 
   const panTo = useCallback(
     (id: string, onlyIfHidden = false) => {
@@ -553,7 +568,7 @@ function TaskTreeLinkLegend({ loops, paths }: { loops: boolean; paths: boolean }
   return (
     <div
       data-slot="task-tree-link-legend"
-      className="pointer-events-none absolute left-3 top-3 z-raised flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card/90 px-2 py-1 text-xs text-muted-foreground shadow-xs"
+      className="pointer-events-none absolute left-3 top-3 z-raised flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm"
     >
       <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Sub-task</span>
       <span className="inline-flex items-center gap-1.5">{sample("stroke-status-warning", "4 3")}Blocks</span>
@@ -617,6 +632,24 @@ function TaskTreeHoverCard({
 }
 
 type Bounds = { left: number; right: number; top: number; bottom: number };
+
+/**
+ * The view that shows `span` as large as reads, up to full size. When it is
+ * too big even at the smallest readable zoom, its top-left stays on screen.
+ */
+function fitBounds(span: Bounds, viewport: { width: number; height: number }): TaskTreeView {
+  const width = span.right - span.left;
+  const height = span.bottom - span.top;
+  const room = { width: viewport.width - FIT_MARGIN * 2, height: viewport.height - FIT_MARGIN * 2 };
+  const k = Math.max(MIN_READABLE_ZOOM, Math.min(1, room.width / Math.max(width, 1), room.height / Math.max(height, 1)));
+  const place = (start: number, size: number, available: number, total: number) =>
+    size * k <= available ? total / 2 - (start + size / 2) * k : FIT_MARGIN - start * k;
+  return {
+    k,
+    x: place(span.left, width, room.width, viewport.width),
+    y: place(span.top, height, room.height, viewport.height),
+  };
+}
 
 function boundsOf(box: LayoutBox): Bounds {
   return { left: box.x, right: box.x + box.width, top: box.y, bottom: box.y + box.height };

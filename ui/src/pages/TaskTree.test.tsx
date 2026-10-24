@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { IssueTree, IssueTreeNode } from "@greatstone/shared";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { TaskTree } from "./TaskTree";
 
 const ME = "user-john";
@@ -379,6 +379,8 @@ describe("Task tree navigation", () => {
       const legend = canvas.querySelector('[data-slot="task-tree-link-legend"]')?.textContent;
       expect(legend).toContain("Blocks");
       expect(legend).toContain("Loop");
+      // A solid key: lines never show through it.
+      expect(canvas.querySelector('[data-slot="task-tree-link-legend"]')?.className).toMatch(/(^|\s)bg-card(\s|$)/);
       // A loop line is dotted, unlike a plain "blocks" line.
       expect(canvas.querySelector('[data-block-link="x1>x2"]')?.getAttribute("stroke-dasharray")).not.toBe(
         canvas.querySelector('[data-block-link="4>3"]')?.getAttribute("stroke-dasharray"),
@@ -415,6 +417,50 @@ describe("Task tree navigation", () => {
       await flush();
       expect(canvas().querySelector('[data-tree-node="7"]')).toBeNull();
       for (const id of ["3", "4", "6", "x1", "x2"]) expect(canvas().querySelector(`[data-tree-node="${id}"]`)).not.toBeNull();
+    });
+
+    it("fits the view to the blocked cards and their blockers when the filter turns on", async () => {
+      const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1440);
+      const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(900);
+      // Cards jump to their places instead of gliding.
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }));
+      onTestFinished(() => {
+        width.mockRestore();
+        height.mockRestore();
+        vi.unstubAllGlobals();
+      });
+      await renderPage();
+      flushSync(() => container.querySelector<HTMLButtonElement>("[data-blocked-only-toggle]")!.click());
+      await flush();
+      const numbers = (style: string) => [...style.matchAll(/-?\d+(\.\d+)?/g)].map((match) => Number(match[0]));
+      const [vx, vy, k] = numbers((container.querySelector('[role="tree"]') as HTMLElement).style.transform);
+      const span = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
+      for (const id of ["3", "4", "6", "x1", "x2"]) {
+        const card = container.querySelector(`[data-tree-node="${id}"]`) as HTMLElement;
+        const [x, y] = numbers(card.style.transform);
+        const left = x! * k! + vx!;
+        const top = y! * k! + vy!;
+        span.left = Math.min(span.left, left);
+        span.top = Math.min(span.top, top);
+        span.right = Math.max(span.right, left + Number.parseFloat(card.style.width) * k!);
+        span.bottom = Math.max(span.bottom, top + Number.parseFloat(card.style.height) * k!);
+      }
+      // All on screen, and centred on them rather than on the whole tree.
+      expect(span.left).toBeGreaterThanOrEqual(0);
+      expect(span.top).toBeGreaterThanOrEqual(0);
+      expect(span.right).toBeLessThanOrEqual(1440);
+      expect(span.bottom).toBeLessThanOrEqual(900);
+      expect((span.left + span.right) / 2).toBeCloseTo(720, 0);
+      expect((span.top + span.bottom) / 2).toBeCloseTo(450, 0);
+    });
+
+    it("colours the loop line violet on the phone, like the Loop badge", async () => {
+      phone = true;
+      await renderPage();
+      const loopLine = [...container.querySelectorAll('[data-slot="task-tree-block-line"]')].find((line) =>
+        line.textContent?.startsWith("Blocking loop"),
+      );
+      expect(loopLine?.getAttribute("class")).toContain("text-status-review-foreground");
     });
 
     it("lists what each task blocks on the phone, and finds outside tasks", async () => {

@@ -303,6 +303,8 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
             onToggleCollapsed={view.toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             focusRequest={view.focusRequest}
+            homeIds={view.blockedFocusIds}
+            homeRequest={view.homeRequest}
             actionFor={tidyAction}
             storageKey={storageKey}
             findItems={view.findItems}

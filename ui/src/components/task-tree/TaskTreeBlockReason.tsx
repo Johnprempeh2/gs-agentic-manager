@@ -1,31 +1,39 @@
 import type { CSSProperties } from "react";
-import { TriangleAlert } from "lucide-react";
+import { Repeat, TriangleAlert } from "lucide-react";
 import { Link } from "@/lib/router";
 import { UNEXPLAINED_BLOCK_SHORT_TEXT, type TreeBlockLine, type TreeBlockReason } from "@/lib/task-tree-block-reason";
 import { cn } from "@/lib/utils";
 
+const TONE = {
+  danger: "text-status-danger-foreground",
+  warning: "text-status-warning-foreground",
+  /** Violet, like the Loop badge and the loop line on the canvas (GRE-2290). */
+  loop: "text-status-review-foreground",
+} as const;
+
 function ReasonLine({
   line,
-  warning,
+  tone = "danger",
   wrap = false,
   className,
 }: {
   line: TreeBlockLine;
-  warning?: boolean;
+  tone?: keyof typeof TONE;
   /** Wrap long reasons instead of cutting them short. */
   wrap?: boolean;
   className?: string;
 }) {
   const body = (
     <>
-      {warning ? <TriangleAlert className={cn("size-3 shrink-0", wrap && "mt-0.5")} aria-hidden="true" /> : null}
+      {tone === "warning" ? <TriangleAlert className={cn("size-3 shrink-0", wrap && "mt-0.5")} aria-hidden="true" /> : null}
+      {tone === "loop" ? <Repeat className={cn("size-3 shrink-0", wrap && "mt-0.5")} aria-hidden="true" /> : null}
       <span className={wrap ? "break-words" : "truncate"}>{line.text}</span>
     </>
   );
   const classes = cn(
     "flex min-w-0 gap-1 text-xs font-medium",
     wrap ? "items-start" : "items-center",
-    warning ? "text-status-warning-foreground" : "text-status-danger-foreground",
+    TONE[tone],
     className,
   );
   if (!line.href) {
@@ -71,7 +79,7 @@ export function TaskTreeBlockReason({
       <div data-slot="task-tree-block-reason" data-unexplained={reason.unexplained ? "" : undefined} className={className}>
         <ReasonLine
           line={reason.unexplained ? { text: UNEXPLAINED_BLOCK_SHORT_TEXT, href: null } : (reason.loop ?? reason.root ?? reason.own)}
-          warning={reason.unexplained}
+          tone={reason.unexplained ? "warning" : reason.loop ? "loop" : "danger"}
         />
       </div>
     );
@@ -83,9 +91,9 @@ export function TaskTreeBlockReason({
       className={cn("flex min-w-0 flex-col gap-0.5", className)}
       style={style}
     >
-      <ReasonLine line={reason.own} warning={reason.unexplained} wrap />
+      <ReasonLine line={reason.own} tone={reason.unexplained ? "warning" : "danger"} wrap />
       {reason.root ? <ReasonLine line={reason.root} wrap /> : null}
-      {reason.loop ? <ReasonLine line={reason.loop} warning wrap /> : null}
+      {reason.loop ? <ReasonLine line={reason.loop} tone="loop" wrap /> : null}
     </div>
   );
 }
