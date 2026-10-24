@@ -1,18 +1,30 @@
 import type { CSSProperties } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Link } from "@/lib/router";
-import type { TreeBlockLine, TreeBlockReason } from "@/lib/task-tree-block-reason";
+import { UNEXPLAINED_BLOCK_SHORT_TEXT, type TreeBlockLine, type TreeBlockReason } from "@/lib/task-tree-block-reason";
 import { cn } from "@/lib/utils";
 
-function ReasonLine({ line, warning, className }: { line: TreeBlockLine; warning?: boolean; className?: string }) {
+function ReasonLine({
+  line,
+  warning,
+  wrap = false,
+  className,
+}: {
+  line: TreeBlockLine;
+  warning?: boolean;
+  /** Wrap long reasons instead of cutting them short. */
+  wrap?: boolean;
+  className?: string;
+}) {
   const body = (
     <>
-      {warning ? <TriangleAlert className="size-3 shrink-0" aria-hidden="true" /> : null}
-      <span className="truncate">{line.text}</span>
+      {warning ? <TriangleAlert className={cn("size-3 shrink-0", wrap && "mt-0.5")} aria-hidden="true" /> : null}
+      <span className={wrap ? "break-words" : "truncate"}>{line.text}</span>
     </>
   );
   const classes = cn(
-    "flex min-w-0 items-center gap-1 text-xs font-medium",
+    "flex min-w-0 gap-1 text-xs font-medium",
+    wrap ? "items-start" : "items-center",
     warning ? "text-status-warning-foreground" : "text-status-danger-foreground",
     className,
   );
@@ -56,7 +68,10 @@ export function TaskTreeBlockReason({
   if (compact) {
     return (
       <div data-slot="task-tree-block-reason" data-unexplained={reason.unexplained ? "" : undefined} className={className}>
-        <ReasonLine line={reason.root ?? reason.own} warning={reason.unexplained} />
+        <ReasonLine
+          line={reason.unexplained ? { text: UNEXPLAINED_BLOCK_SHORT_TEXT, href: null } : (reason.root ?? reason.own)}
+          warning={reason.unexplained}
+        />
       </div>
     );
   }
@@ -67,8 +82,8 @@ export function TaskTreeBlockReason({
       className={cn("flex min-w-0 flex-col gap-0.5", className)}
       style={style}
     >
-      <ReasonLine line={reason.own} warning={reason.unexplained} />
-      {reason.root ? <ReasonLine line={reason.root} /> : null}
+      <ReasonLine line={reason.own} warning={reason.unexplained} wrap />
+      {reason.root ? <ReasonLine line={reason.root} wrap /> : null}
     </div>
   );
 }

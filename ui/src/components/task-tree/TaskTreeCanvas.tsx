@@ -464,7 +464,7 @@ function TaskTreeHoverCard({
         Owner: <span className="text-foreground">{ownerName(people, node) ?? "No owner yet"}</span>
       </p>
       {blockReason ? (
-        <TaskTreeBlockReason reason={blockReason} className="[&_span]:whitespace-normal [&_span]:break-words" />
+        <TaskTreeBlockReason reason={blockReason} />
       ) : node.unblockAction ? (
         <p className="text-xs text-muted-foreground">
           Needs: <span className="text-foreground">{node.unblockAction}</span>

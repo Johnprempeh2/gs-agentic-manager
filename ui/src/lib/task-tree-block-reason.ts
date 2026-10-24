@@ -33,6 +33,8 @@ export interface TreeBlockReason {
 }
 
 export const UNEXPLAINED_BLOCK_TEXT = "Blocked, but nothing recorded is blocking it";
+/** The same warning on a tree card, where the status already says blocked. */
+export const UNEXPLAINED_BLOCK_SHORT_TEXT = "Nothing recorded is blocking it";
 
 /** Turns an agent, a person or the board into a name. */
 export type TreeNameOf = (who: { agentId?: string | null; userId?: string | null } | "board") => string | null;

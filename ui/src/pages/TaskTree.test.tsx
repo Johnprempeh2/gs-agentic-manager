@@ -243,13 +243,17 @@ describe("Task tree page", () => {
     expect(container.querySelector('[data-tree-node="4"] [data-slot="task-tree-block-line"]')?.textContent).toBe("Blocked by GRE-1989");
     const tidy = container.querySelector('[data-tree-node="7"] [data-slot="task-tree-block-reason"]')!;
     expect(tidy.hasAttribute("data-unexplained")).toBe(true);
-    expect(tidy.textContent).toBe("Blocked, but nothing recorded is blocking it");
+    // The card's status already says blocked, so its warning is shorter.
+    expect(tidy.textContent).toBe("Nothing recorded is blocking it");
 
     // On a phone both lines show under the row.
     phone = true;
     await renderPage();
     const lines = [...container.querySelectorAll('[data-outline-node="3"] [data-slot="task-tree-block-line"]')].map((line) => line.textContent);
     expect(lines).toEqual(["Blocked by GRE-4", "Root: GRE-1989, waiting on Naa Mensah: approve staging upload"]);
+    expect(container.querySelector('[data-outline-node="7"] [data-slot="task-tree-block-line"]')?.textContent).toBe(
+      "Blocked, but nothing recorded is blocking it",
+    );
   });
 
   it("leads back up to its project tree", async () => {
