@@ -33,6 +33,7 @@ import {
   Download,
   ExternalLink,
   Film,
+  Globe,
   ImageIcon,
   Loader2,
   Palette,
@@ -88,6 +89,8 @@ import { StudioLookPicker } from "../components/StudioLookPicker";
 import { StudioShotList } from "../components/StudioShotList";
 import { StudioPlanBar } from "../components/StudioPlanBar";
 import { VideoStudio } from "../components/VideoStudio";
+import { UseOnWebsiteDialog } from "../components/website/WebsiteStudioMedia";
+import { studioImageItems, type StudioMediaItem } from "../lib/website-studio-media";
 
 export { IMAGE_IDEA_STARTERS };
 
@@ -168,6 +171,7 @@ function ImageCard({
   onFavourite,
   onReuse,
   onAnimate,
+  onUseOnWebsite,
   retrying,
 }: {
   image: GeneratedImage;
@@ -177,6 +181,7 @@ function ImageCard({
   onFavourite: (favourite: boolean) => void;
   onReuse: () => void;
   onAnimate: () => void;
+  onUseOnWebsite: () => void;
   retrying: boolean;
 }) {
   const finished = image.status === "completed" && !!image.contentPath;
@@ -216,6 +221,7 @@ function ImageCard({
           />
           <StudioMediaAction icon={RotateCcw} label="Make another like this" onClick={onReuse} data-testid="image-card-reuse" />
           <StudioMediaAction icon={Clapperboard} label="Animate this image" onClick={onAnimate} data-testid="image-card-animate" />
+          {image.assetId ? <StudioMediaAction icon={Globe} label="Use on website" onClick={onUseOnWebsite} data-testid="image-card-use-on-website" /> : null}
           <StudioMediaAction icon={Download} label="Download" href={image.contentPath ?? undefined} download={downloadName(image)} data-testid="image-card-download" />
         </>
       }
@@ -292,6 +298,7 @@ export function Images() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tab, setTab] = useState<"images" | "videos">("images");
   const [animateImage, setAnimateImage] = useState<GeneratedImage | null>(null);
+  const [websiteItem, setWebsiteItem] = useState<StudioMediaItem | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "GS Studio" }]);
@@ -808,6 +815,7 @@ export function Images() {
           onClearSourceImage={() => setAnimateImage(null)}
           onError={(message) => pushToast({ title: message, tone: "error" })}
           onDeleted={() => pushToast({ title: "Video deleted", tone: "success", ttlMs: 2500 })}
+          onSentToWebsite={(message) => pushToast({ title: message, tone: "success" })}
         />
       ) : (
         <>
@@ -967,6 +975,7 @@ export function Images() {
                         setAnimateImage(image);
                         setTab("videos");
                       }}
+                      onUseOnWebsite={() => setWebsiteItem(studioImageItems([image])[0] ?? null)}
                       retrying={create.isPending || !configured}
                     />
                   ))}
@@ -1042,6 +1051,13 @@ export function Images() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <UseOnWebsiteDialog
+        companyId={companyId}
+        item={websiteItem}
+        onClose={() => setWebsiteItem(null)}
+        onSent={(message) => pushToast({ title: message, tone: "success" })}
+      />
 
       <Dialog open={!!toDelete} onOpenChange={(open) => (!open ? setConfirmDeleteId(null) : undefined)}>
         <DialogContent className="max-w-md">

@@ -503,6 +503,7 @@ describe("Images page", () => {
       "Add to favourites",
       "Make another like this",
       "Animate this image",
+      "Use on website",
       "Download",
     ]);
     for (const action of actions) {
