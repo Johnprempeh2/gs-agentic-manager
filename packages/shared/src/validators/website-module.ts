@@ -16,12 +16,30 @@ const httpsUrl = z
   .max(500)
   .refine((value) => /^https?:\/\//i.test(value), "Use an http or https address");
 
-/** A URL path on the site: `/` or `/a/b-c`. */
-export const websitePagePathSchema = z
+/** A URL path a visitor can open: `/` or `/a/b-c`. */
+export const websiteStaticPathSchema = z
   .string()
   .trim()
   .max(300)
   .regex(/^\/([a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*)?$/, "Use a path like /consultancy/deep-dive (lower case, hyphens)");
+
+const PATH_SEGMENT = "(?:[a-z0-9][a-z0-9-]*|:[a-zA-Z][a-zA-Z0-9_]*)";
+const PAGE_PATH = new RegExp(`^/(${PATH_SEGMENT}(/${PATH_SEGMENT})*)?$`);
+
+/** A page's path: a static path, or a pattern with `:param` segments such as `/portal/:client/overview`. */
+export const websitePagePathSchema = z
+  .string()
+  .trim()
+  .max(300)
+  .regex(PAGE_PATH, "Use a path like /consultancy/deep-dive (lower case, hyphens) or /portal/:client/overview");
+
+/**
+ * A pattern path (`:param` segments) stands for many URLs, e.g. one per client.
+ * Its page is private: never in sitemap.xml and never a menu link (GRE-2146).
+ */
+export function isPrivatePagePath(path: string): boolean {
+  return path.split("/").some((segment) => segment.startsWith(":"));
+}
 
 const seoSchema = z
   .object({
@@ -43,7 +61,7 @@ export const createWebsiteSiteSchema = z
     netlifyToken: z.string().trim().min(10).max(500).optional(),
     propertyId: z.string().uuid().nullable().optional(),
     editorOrigins: z.array(z.string().trim().url().max(300)).max(10).optional(),
-    checkPaths: z.array(websitePagePathSchema).min(1).max(20).optional(),
+    checkPaths: z.array(websiteStaticPathSchema).min(1).max(20).optional(),
   })
   .strict();
 export type CreateWebsiteSite = z.infer<typeof createWebsiteSiteSchema>;
@@ -128,3 +146,15 @@ export const updateWebsiteEntrySchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
 export type UpdateWebsiteEntry = z.infer<typeof updateWebsiteEntrySchema>;
+
+/**
+ * Retry and Rollback bodies (GRE-2108). A click that would start a rebuild
+ * (one production deploy, about 15 credits) must say so with
+ * `confirmRebuild: true`; a free verify or restore needs nothing.
+ */
+export const websiteReleaseActionSchema = z
+  .object({
+    confirmRebuild: z.boolean().optional(),
+  })
+  .strict();
+export type WebsiteReleaseAction = z.infer<typeof websiteReleaseActionSchema>;

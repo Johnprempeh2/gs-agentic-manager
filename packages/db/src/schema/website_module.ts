@@ -162,6 +162,13 @@ export const websiteRelease = pgTable(
     publishedByUserId: text("published_by_user_id"),
     status: text("status").notNull().default("building"),
     pendingReason: text("pending_reason"),
+    /**
+     * The Netlify production deploy that serves this release (GRE-2108):
+     * `{ method, requestedAt, deployId, commitRef, state, errorMessage }`.
+     * Retry reads `state` (verify only when `ready`); rollback restores
+     * `deployId` when `commitRef` still matches the live engine commit.
+     */
+    deploy: jsonb("deploy").$type<Record<string, unknown>>(),
     switchedAt: timestamp("switched_at", { withTimezone: true }),
     liveAt: timestamp("live_at", { withTimezone: true }),
     failedAt: timestamp("failed_at", { withTimezone: true }),

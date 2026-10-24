@@ -106,6 +106,7 @@ import {
 } from "./services/index.js";
 import { websiteService } from "./services/website/index.js";
 import { stallRecoveryService } from "./services/stall-recovery.js";
+import { websitePublishService } from "./services/website/publish.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -1240,6 +1241,18 @@ async function startServerWithDatabaseTeardown(
   // Remove per-run AI homes with no live run and day-old test temp folders,
   // now and daily, so the temp folder cannot fill the disk (GRE-209).
   startTempFolderSweeper(logger);
+
+  // Website publish jobs cut off by the restart (ADR GRE-1914 4.2, GRE-2108):
+  // half-built releases fail, switched ones go Pending for a person's Retry.
+  // Nothing is rebuilt, restored or checked here.
+  void websitePublishService(db as any)
+    .recoverOnStartup()
+    .then((result) => {
+      if (result.failed > 0 || result.pending > 0) logger.warn(result, "website publish jobs recovered after restart");
+    })
+    .catch((err) => {
+      logger.error({ err }, "website publish startup recovery failed");
+    });
 
   void reconcileBuiltInAgentsOnStartup(db as any)
     .then((result) => {

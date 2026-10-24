@@ -15,6 +15,8 @@ import {
   type WebsiteRevision,
   type WebsiteSaveResult,
   type CreateWebsiteEntry,
+  type WebsiteRelease,
+  type WebsiteReleaseActionPlan,
   type WebsiteSite,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
@@ -68,6 +70,8 @@ const sitesPath = (companyId: string) => `/companies/${encodeURIComponent(compan
 const sitePath = (companyId: string, siteId: string) => `${sitesPath(companyId)}/${encodeURIComponent(siteId)}`;
 const entryPath = (companyId: string, siteId: string, entryId: string) =>
   `${sitePath(companyId, siteId)}/entries/${encodeURIComponent(entryId)}`;
+const releasePath = (companyId: string, siteId: string, releaseId: string) =>
+  `${sitePath(companyId, siteId)}/releases/${encodeURIComponent(releaseId)}`;
 
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
@@ -116,7 +120,30 @@ export const websiteModuleApi = {
     if (!res.ok) throw new ApiError(plainHttpErrorMessage(res.status), res.status, null);
     return res.text();
   },
+  /** Releases of a site, newest first (GRE-2108). */
+  releases: (companyId: string, siteId: string) => api.get<WebsiteRelease[]>(`${sitePath(companyId, siteId)}/releases`),
+  release: (companyId: string, siteId: string, releaseId: string) =>
+    api.get<WebsiteRelease>(releasePath(companyId, siteId, releaseId)),
+  /** Start a Publish (a signed-in person's click only). 202, or 409 `website_publish_running` while one runs. */
+  publish: (companyId: string, siteId: string) => api.post<WebsiteRelease>(`${sitePath(companyId, siteId)}/releases`, {}),
+  /** What Retry on a Pending release will do, and whether it costs credits. */
+  retryPlan: (companyId: string, siteId: string, releaseId: string) =>
+    api.get<WebsiteReleaseActionPlan>(`${releasePath(companyId, siteId, releaseId)}/retry`),
+  retry: (companyId: string, siteId: string, releaseId: string, confirmRebuild: boolean) =>
+    api.post<WebsiteRelease>(`${releasePath(companyId, siteId, releaseId)}/retry`, confirmRebuild ? { confirmRebuild: true } : {}),
+  /** What rolling back to a release will do, and whether it costs credits. */
+  rollbackPlan: (companyId: string, siteId: string, releaseId: string) =>
+    api.get<WebsiteReleaseActionPlan>(`${releasePath(companyId, siteId, releaseId)}/rollback`),
+  rollback: (companyId: string, siteId: string, releaseId: string, confirmRebuild: boolean) =>
+    api.post<WebsiteRelease>(`${releasePath(companyId, siteId, releaseId)}/rollback`, confirmRebuild ? { confirmRebuild: true } : {}),
 };
+
+/** The `code` of a website API refusal, for example `website_rebuild_needs_confirm`. */
+export function websiteErrorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const code = (error.body as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : null;
+}
 
 /** True when the server refused because the Website switch is off (`403 not_entitled`). */
 export function isWebsiteNotEntitled(error: unknown): boolean {
