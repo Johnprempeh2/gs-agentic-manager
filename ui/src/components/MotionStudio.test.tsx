@@ -32,6 +32,8 @@ function study(overrides: Partial<MotionStudy>): MotionStudy {
     source: "lab_import",
     assetId: "asset-15",
     previewPath: "/api/motion-studies/study-15/preview",
+    posterAssetId: "poster-15",
+    posterPath: "/api/motion-studies/study-15/poster?v=poster-15",
     createdByAgentId: null,
     createdByUserId: null,
     createdAt: new Date().toISOString(),
@@ -40,7 +42,7 @@ function study(overrides: Partial<MotionStudy>): MotionStudy {
   };
 }
 
-const WEAVE = study({ id: "study-14", number: "014", slug: "weave", title: "Weave", theme: ["Truchet"], textSafe: false, decision: "maybe", previewPath: "/api/motion-studies/study-14/preview" });
+const WEAVE = study({ id: "study-14", number: "014", slug: "weave", title: "Weave", theme: ["Truchet"], textSafe: false, decision: "maybe", previewPath: "/api/motion-studies/study-14/preview", posterAssetId: null, posterPath: null });
 
 let container: HTMLDivElement;
 let root: Root;
@@ -94,7 +96,7 @@ describe("MotionStudio", () => {
     document.body.innerHTML = "";
   });
 
-  it("lists each study with its number, title, tags and text-safe mark, and plays it sandboxed only on hover", async () => {
+  it("lists each study with its still poster, number, title, tags and text-safe mark, and plays it sandboxed only on hover", async () => {
     motionApiMock.list.mockResolvedValue({ studies: [study({}), WEAVE] });
     await render();
 
@@ -105,6 +107,8 @@ describe("MotionStudio", () => {
     expect(bedrock.querySelector('[data-testid="motion-text-safe"]')).not.toBeNull();
     expect(card("weave")!.querySelector('[data-testid="motion-text-safe"]')).toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
+    expect(bedrock.querySelector('[data-testid="motion-poster"]')?.getAttribute("src")).toBe("/api/motion-studies/study-15/poster?v=poster-15");
+    expect(card("weave")!.querySelector('[data-testid="motion-poster"]')).toBeNull();
 
     await act(async () => {
       bedrock.focus();
@@ -112,6 +116,16 @@ describe("MotionStudio", () => {
     const frame = bedrock.querySelector("iframe")!;
     expect(frame.getAttribute("src")).toBe("/api/motion-studies/study-15/preview");
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+  });
+
+  it("keeps Show archived in the filter row", async () => {
+    motionApiMock.list.mockResolvedValue({ studies: [study({}), study({ id: "a", slug: "old", status: "archived" })] });
+    await render();
+    expect(card("old")).toBeNull();
+    const archived = [...container.querySelectorAll('[data-testid="motion-filters"] button')].find((button) => button.textContent === "Show archived")!;
+    await act(async () => (archived as HTMLButtonElement).click());
+    expect(archived.getAttribute("aria-pressed")).toBe("true");
+    expect(card("old")).not.toBeNull();
   });
 
   it("filters to text-safe studies", async () => {
@@ -130,12 +144,18 @@ describe("MotionStudio", () => {
     await act(async () => card("bedrock")!.click());
     await settle();
 
-    const select = document.querySelector('[data-testid="motion-decision-select"]') as HTMLSelectElement;
-    expect(document.body.textContent).toContain("Safe behind text");
-    await act(async () => {
-      select.value = "implement";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const decision = document.querySelector('[data-testid="motion-decision"]')!;
+    const options = [...decision.querySelectorAll('[role="radio"]')];
+    expect(options.map((option) => option.textContent)).toEqual(["Implement", "Maybe", "Pass", "Undecided"]);
+    expect(options.find((option) => option.getAttribute("aria-checked") === "true")?.textContent).toBe("Undecided");
+
+    // The background rules are folded away until asked for.
+    expect(document.querySelector('[data-testid="motion-background-rules"]')).toBeNull();
+    const rules = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Background rules"))!;
+    await act(async () => rules.click());
+    expect(document.querySelector('[data-testid="motion-background-rules"]')?.textContent).toContain("Lime never behind copy");
+
+    await act(async () => (options[0] as HTMLButtonElement).click());
     await settle();
     expect(motionApiMock.update).toHaveBeenCalledWith("study-15", { decision: "implement" });
     expect(card("bedrock")!.textContent).toContain("Implement");

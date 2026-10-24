@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MOTION_STUDY_DECISION_LABELS,
@@ -11,21 +11,21 @@ import {
   type MotionStudyDecision,
   type MotionStudyStatus,
 } from "@greatstone/shared";
-import { Check, ExternalLink, Loader2, Play, Sparkles, Type, X } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Loader2, Play, Sparkles, Type, X } from "lucide-react";
 import { motionStudiesApi } from "../api/motionStudies";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 
 // GS Studio's Motion section (GRE-2212): the Animation Lab's studies, each a
-// small HTML page that runs sandboxed with no network. A card plays its study
-// while it is hovered or focused; opening it shows the study large with its
-// notes and the Status and Decision for a person to set.
+// small HTML page that runs sandboxed with no network. A card shows a still
+// frame and plays its study while it is hovered or focused; opening it shows
+// the study large with the Decision and Status for a person to set.
 
 export type MotionFilter = "all" | "text-safe" | MotionStudyDecision;
 
@@ -147,6 +147,8 @@ function StudyPills({ study }: { study: MotionStudy }) {
   );
 }
 
+const CHIP_ON_FRAME = "rounded-md bg-background/85 px-1.5 py-0.5 text-xs text-foreground backdrop-blur-sm";
+
 function MotionCard({ study, onOpen }: { study: MotionStudy; onOpen: () => void }) {
   const [playing, setPlaying] = useState(false);
   return (
@@ -154,7 +156,7 @@ function MotionCard({ study, onOpen }: { study: MotionStudy; onOpen: () => void 
       <button
         type="button"
         onClick={onOpen}
-        onPointerEnter={() => setPlaying(true)}
+        onPointerEnter={(event) => event.pointerType === "mouse" && setPlaying(true)}
         onPointerLeave={() => setPlaying(false)}
         onFocus={() => setPlaying(true)}
         onBlur={() => setPlaying(false)}
@@ -166,19 +168,34 @@ function MotionCard({ study, onOpen }: { study: MotionStudy; onOpen: () => void 
           {playing ? (
             <StudyFrame study={study} className="absolute inset-0 h-full" />
           ) : (
-            // A still poster until the card is hovered or focused, so a page of studies is not a page of running canvases.
-            <div className="flex h-full w-full flex-col justify-between bg-card p-3">
-              <span className="text-xs text-muted-foreground">{study.theme[0] ?? study.tech}</span>
-              <span className="font-mono text-4xl font-semibold text-foreground">{study.number}</span>
-              <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span className="truncate">{study.tech}</span>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="pointer-coarse:hidden">Hover to play</span>
-                  <span className="hidden pointer-coarse:inline">Tap to open</span>
+            // A still frame until the card is hovered or focused, so a page of studies is not a page of running canvases.
+            <>
+              {study.posterPath ? (
+                <img
+                  src={study.posterPath}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  data-testid="motion-poster"
+                />
+              ) : (
+                <div className="absolute inset-0 grid place-items-center bg-card text-muted-foreground">
+                  <Play className="h-6 w-6" aria-hidden="true" />
+                </div>
+              )}
+              <div className="absolute inset-0 flex flex-col justify-between p-2">
+                {study.theme[0] ? <span className={cn(CHIP_ON_FRAME, "self-start")}>{study.theme[0]}</span> : <span />}
+                <span className="flex items-end justify-between gap-2">
+                  {study.tech ? <span className={cn(CHIP_ON_FRAME, "truncate")}>{study.tech}</span> : <span />}
+                  <span className={cn(CHIP_ON_FRAME, "flex shrink-0 items-center gap-1")}>
+                    <Play className="h-3 w-3" aria-hidden="true" />
+                    <span className="pointer-coarse:hidden">Hover to play</span>
+                    <span className="hidden pointer-coarse:inline">Tap to open</span>
+                  </span>
                 </span>
-              </span>
-            </div>
+              </div>
+            </>
           )}
         </div>
         <div className="space-y-1 px-0.5">
@@ -192,6 +209,54 @@ function MotionCard({ study, onOpen }: { study: MotionStudy; onOpen: () => void 
         </div>
       </button>
     </li>
+  );
+}
+
+/** Implement first: the order a person reads the choice in, with Undecided last. */
+const MOTION_STUDY_DECISIONS_IN_ORDER: readonly MotionStudyDecision[] = ["implement", "maybe", "pass", "undecided"];
+
+/** Decision, one tap each: the reason the open study exists. */
+function DecisionPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: MotionStudyDecision;
+  disabled: boolean;
+  onChange: (decision: MotionStudyDecision) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <span id="motion-decision-label" className="text-sm font-medium text-foreground">
+        Decision
+      </span>
+      <div
+        role="radiogroup"
+        aria-labelledby="motion-decision-label"
+        className="grid grid-cols-4 rounded-lg border border-border p-0.5"
+        data-testid="motion-decision"
+      >
+        {MOTION_STUDY_DECISIONS_IN_ORDER.map((decision) => {
+          const checked = value === decision;
+          return (
+            <button
+              key={decision}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              disabled={disabled}
+              onClick={() => (checked ? undefined : onChange(decision))}
+              className={cn(
+                "min-h-10 rounded-md px-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
+                checked ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {MOTION_STUDY_DECISION_LABELS[decision]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -219,8 +284,12 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
 
   return (
     <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
-      <DialogContent className="max-h-(--sz-90vh) sm:max-w-4xl" scrollBody>
-        <DialogHeader>
+      <DialogContent
+        // On a phone the study is a full-height sheet; the close button stays pinned while the body scrolls.
+        className="max-h-(--sz-90vh) sm:max-w-4xl max-sm:top-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:rounded-none max-sm:border-0 max-sm:p-4"
+        scrollBody
+      >
+        <DialogHeader className="text-left">
           <DialogTitle className="flex items-baseline gap-2 pr-6">
             <span className="font-mono text-sm text-muted-foreground">No. {study.number}</span>
             {study.title}
@@ -230,17 +299,36 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
 
         <StudyFrame study={study} interactive className="rounded-lg ring-1 ring-border" />
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <StudyPills study={study} />
-          {study.previewPath ? (
-            <Button asChild size="sm" variant="outline">
-              <a href={study.previewPath} target="_blank" rel="noreferrer noopener">
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                Open full screen
-              </a>
-            </Button>
-          ) : null}
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <DecisionPicker value={study.decision} disabled={busy} onChange={(decision) => update.mutate({ decision })} />
+          <label className="space-y-1.5 text-sm">
+            <span className="font-medium text-foreground">Status</span>
+            <NativeSelect
+              value={study.status}
+              disabled={busy}
+              onChange={(event) => update.mutate({ status: event.target.value as MotionStudyStatus })}
+              className="sm:w-40"
+              data-testid="motion-status-select"
+            >
+              {MOTION_STUDY_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {MOTION_STUDY_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
         </div>
+        {busy ? (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+            <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
+            Saving
+          </p>
+        ) : null}
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
 
         {proposal ? (
           <div className="space-y-2 rounded-lg border border-status-info/30 bg-status-info/10 p-3" data-testid="motion-proposal">
@@ -261,49 +349,17 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="font-medium text-foreground">Status</span>
-            <NativeSelect
-              value={study.status}
-              disabled={busy}
-              onChange={(event) => update.mutate({ status: event.target.value as MotionStudyStatus })}
-              data-testid="motion-status-select"
-            >
-              {MOTION_STUDY_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {MOTION_STUDY_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium text-foreground">Decision</span>
-            <NativeSelect
-              value={study.decision}
-              disabled={busy}
-              onChange={(event) => update.mutate({ decision: event.target.value as MotionStudyDecision })}
-              data-testid="motion-decision-select"
-            >
-              {MOTION_STUDY_DECISIONS.map((decision) => (
-                <option key={decision} value={decision}>
-                  {MOTION_STUDY_DECISION_LABELS[decision]}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <StudyPills study={study} />
+          {study.previewPath ? (
+            <Button asChild size="sm" variant="outline">
+              <a href={study.previewPath} target="_blank" rel="noreferrer noopener">
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                Open full screen
+              </a>
+            </Button>
+          ) : null}
         </div>
-        {busy ? (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
-            <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
-            Saving
-          </p>
-        ) : null}
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
 
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
@@ -317,14 +373,19 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
         </dl>
 
         {study.textSafe ? (
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Safe behind text: this study keeps to the background rules</p>
-            <ul className="list-disc space-y-0.5 pl-5 text-sm text-foreground">
-              {MOTION_TEXT_SAFE_CONTRACT.map((rule) => (
-                <li key={rule}>{rule}</li>
-              ))}
-            </ul>
-          </div>
+          <Collapsible className="rounded-lg border border-border">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
+              Background rules: safe behind text
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ul className="list-disc space-y-0.5 px-3 pb-3 pl-8 text-sm text-foreground" data-testid="motion-background-rules">
+                {MOTION_TEXT_SAFE_CONTRACT.map((rule) => (
+                  <li key={rule}>{rule}</li>
+                ))}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
         ) : null}
 
         {study.notes ? (
@@ -335,6 +396,22 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function FilterChip({ pressed, onClick, children }: { pressed: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cn(
+        "shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs transition-colors outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+        pressed ? "border-foreground bg-foreground text-background" : "border-border text-foreground hover:bg-accent",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -359,7 +436,10 @@ export function MotionStudio({ companyId }: { companyId: string }) {
             Motion
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            The Animation Lab's studies. Hover a card to play it, open it to decide. Text-safe studies are made to sit behind words.
+            The Animation Lab's studies.{" "}
+            <span className="pointer-coarse:hidden">Hover a card to play it, open it to decide.</span>
+            <span className="hidden pointer-coarse:inline">Open a card to play it and decide.</span> Text-safe studies are made
+            to sit behind words.
           </p>
         </div>
         {proposals > 0 ? (
@@ -369,25 +449,16 @@ export function MotionStudio({ companyId }: { companyId: string }) {
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Show">
+      {/* One row that scrolls sideways on a phone, so the first studies stay on the first screen. */}
+      <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 py-0.5" role="group" aria-label="Show" data-testid="motion-filters">
         {MOTION_FILTERS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={filter === item.id}
-            onClick={() => setFilter(item.id)}
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs transition-colors outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
-              filter === item.id ? "border-foreground bg-foreground text-background" : "border-border text-foreground hover:bg-accent",
-            )}
-          >
+          <FilterChip key={item.id} pressed={filter === item.id} onClick={() => setFilter(item.id)}>
             {item.label}
-          </button>
+          </FilterChip>
         ))}
-        <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox checked={showArchived} onCheckedChange={(checked) => setShowArchived(checked === true)} />
+        <FilterChip pressed={showArchived} onClick={() => setShowArchived((value) => !value)}>
           Show archived
-        </label>
+        </FilterChip>
       </div>
 
       {query.isLoading ? (
