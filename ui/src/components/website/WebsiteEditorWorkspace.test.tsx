@@ -400,6 +400,7 @@ describe("WebsiteEditorTab", () => {
         mediaEntryId: "asset-7",
         assetUrl: "/api/assets/asset-7/content",
         alt: "Boats in a harbour",
+        media: { blob: expect.any(Blob), alt: "Boats in a harbour", width: null, height: null },
       });
       expect(mediaPanel().textContent).toContain("Putting it in the selected block.");
     });
@@ -459,7 +460,23 @@ describe("WebsiteEditorTab", () => {
       await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-use"]')!.click());
       await flush();
       expect(api.createEntry).not.toHaveBeenCalled();
-      expect(editor.sentMessages("insert-media")[0]!.payload).toMatchObject({ blockId: "h1", mediaEntryId: "asset-1", alt: "Team" });
+      expect(editor.sentMessages("insert-media")[0]!.payload).toMatchObject({
+        blockId: "h1",
+        mediaEntryId: "asset-1",
+        alt: "Team",
+        media: { blob: expect.any(Blob), alt: "Team", width: 4, height: 3 },
+      });
+    });
+
+    it("sends the picked asset's blob from its content path, and still sends insert-media when that fetch fails (GRE-2226)", async () => {
+      const editor = await openEditorOnBlock();
+      vi.mocked(fetch).mockClear();
+      vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
+      await useStudioImage();
+      expect(fetch).toHaveBeenCalledWith("/api/assets/asset-7/content", { credentials: "include" });
+      const [insert] = editor.sentMessages("insert-media");
+      expect(insert!.payload).toMatchObject({ blockId: "h1", mediaEntryId: "asset-7", assetUrl: "/api/assets/asset-7/content" });
+      expect(insert!.payload).not.toHaveProperty("media");
     });
   });
 

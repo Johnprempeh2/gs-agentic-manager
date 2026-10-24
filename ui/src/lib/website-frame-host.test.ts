@@ -353,6 +353,22 @@ describe("insert-media (GRE-2206)", () => {
     await expect(pending).resolves.toEqual({ requestId: insertId(t), ok: false, code: "block_not_found" });
   });
 
+  it("sends the media blob when the payload has it, and the same Blob object reaches the frame (GRE-2226)", async () => {
+    const t = await ready();
+    const blob = new Blob(["png"], { type: "image/png" });
+    void t.session.insertMedia({ ...payload, media: { blob, alt: "Boats", width: 1600, height: 900 } });
+    const sent = t.sentOf("insert-media")[0]!.message.payload as { media: { blob: Blob } };
+    expect(sent).toEqual({ ...payload, media: { blob, alt: "Boats", width: 1600, height: 900 } });
+    expect(sent.media.blob).toBe(blob);
+  });
+
+  it("refuses a media entry that is not a Blob", async () => {
+    const t = await ready();
+    const bad = { ...payload, media: { blob: "https://evil.example/a.png", alt: "", width: null, height: null } };
+    await expect(t.session.insertMedia(bad as unknown as typeof payload)).resolves.toBeNull();
+    expect(t.sentOf("insert-media")).toHaveLength(0);
+  });
+
   it("resolves null when the frame does not answer in time", async () => {
     const t = await ready();
     const pending = t.session.insertMedia(payload);

@@ -2,6 +2,7 @@ import {
   checkWebsiteEditorOrigin,
   isWebsiteFrameAssetUrl,
   type WebsiteFrameInsertMediaResult,
+  type WebsiteFrameMediaEntry,
   type WebsiteMediaItem,
   type WebsitePageEditorLoad,
   type WebsiteRevision,
@@ -59,6 +60,22 @@ export async function frameDraft(
     media: await frameMedia(load.media, fetchBlob),
     site: load.site,
   };
+}
+
+/**
+ * `insert-media.media`: the picked item as a `Blob`, like a `load-draft.media`
+ * entry, so the frame shows it before save and reload (GRE-2226). Undefined
+ * when it cannot be fetched: `insert-media` still goes, without it.
+ */
+export async function insertMediaEntry(
+  item: { contentPath: string; alt: string; width: number | null; height: number | null },
+  fetchBlob: FetchBlob,
+): Promise<WebsiteFrameMediaEntry | undefined> {
+  try {
+    return { blob: await fetchBlob(item.contentPath), alt: item.alt, width: item.width, height: item.height };
+  } catch {
+    return undefined;
+  }
 }
 
 const NOT_RETRYABLE = new Set(["origin-changed", "invalid", "archived"]);

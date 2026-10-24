@@ -6,6 +6,7 @@ import {
   createWebsiteFrameNonce,
   websiteFrameSrc,
   type WebsiteFrameInsertMediaResult,
+  type WebsiteMediaItem,
   type WebsitePage,
   type WebsiteProperty,
   type WebsiteRevision,
@@ -30,6 +31,7 @@ import {
   frameConnectionMessage,
   frameDraft,
   insertMediaAssetUrl,
+  insertMediaEntry,
   insertMediaField,
   insertMediaMessage,
   saveThroughGsam,
@@ -180,16 +182,25 @@ function EditorWorkspace({ companyId, site }: { companyId: string; site: Website
   // The block opened from click to change is the editor's selected block: the
   // frame does not tell GSAM about selections made inside the editor.
   const insertBlockId = mode === "edit" ? focusBlockId : null;
-  const insertMedia = (media: PickedWebsiteMedia, kind: MediaPickerKind): Promise<WebsiteFrameInsertMediaResult | null> => {
+  const insertMedia = async (media: PickedWebsiteMedia, kind: MediaPickerKind): Promise<WebsiteFrameInsertMediaResult | null> => {
     const session = sessionRef.current;
-    if (!session || !insertBlockId) return Promise.resolve(null);
+    if (!session || !insertBlockId) return null;
+    // Size from the Website media list when it has the entry; a new entry is not in it yet.
+    const known = queryClient
+      .getQueryData<WebsiteMediaItem[]>(queryKeys.website.media(companyId, site.id))
+      ?.find((item) => item.assetId === media.assetId);
+    const entry = await insertMediaEntry(
+      { contentPath: media.contentPath, alt: media.alt, width: known?.width ?? null, height: known?.height ?? null },
+      fetchAssetBlob,
+    );
     return session.insertMedia({
       blockId: insertBlockId,
       field: insertMediaField(session.shownPageData, insertBlockId, kind),
-      // The frame stores `media:<id>`; GSAM's draft media and releases key media by asset id.
+      // The GSAM asset id: the frame stores `media:<id>`, and draft media and releases key media by it.
       mediaEntryId: media.assetId,
       assetUrl: insertMediaAssetUrl(media.contentPath, window.location.origin),
       alt: media.alt,
+      ...(entry ? { media: entry } : {}),
     });
   };
 
