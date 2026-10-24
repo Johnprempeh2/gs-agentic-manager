@@ -7,6 +7,7 @@ import { fitView, useDiagramViewport, type DiagramView } from "@/components/diag
 import { StatusIcon } from "@/components/StatusIcon";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import {
+  blockLinkMidpoint,
   blockLinkPath,
   connectorPath,
   edgeKey,
@@ -28,8 +29,10 @@ import type { VisibleBlockLink } from "./useTaskTreeView";
 
 /** How a "blocks" line is drawn: dashed, with an arrow on the task it holds up. */
 const BLOCK_DASH = "6 5";
-/** Loop links are dotted, so they never read as the red "leads to a block" line. */
+/** Loop links are violet and dotted, so they never read as the red "leads to a block" line. */
 const LOOP_DASH = "1 5";
+/** Lines that do not touch the hovered or selected card fade to this. */
+const FADED_LINK = 0.15;
 
 const DONE_PILL = { width: 112, height: 32 };
 const LAYOUT = { siblingGap: 28, levelGap: 72, padding: 48 };
@@ -177,22 +180,40 @@ export function TaskTreeCanvas({
 
   // ── View ────────────────────────────────────────────────────────────────
   // Where the tree opens and "Reset" returns to: the whole tree when it fits
-  // and still reads; otherwise cards stay legible with the top of the tree in
-  // view, centred on the span from the root to the first root blocker, so the
-  // task holding everything up is on screen when the tree opens.
+  // and still reads. Otherwise cards stay legible and the view opens on a
+  // blocking chain: the first root blocker and as many of the tasks it holds
+  // up as fit, nearest first, so both ends of its lines are on screen. With
+  // nothing blocked it opens on the top of the tree.
   const home = useCallback(
     (viewport: { width: number; height: number }): TaskTreeView => {
       const whole = fitView(layout, viewport);
       if (whole.k >= MIN_READABLE_ZOOM) return { ...whole, y: Math.max(FIT_MARGIN, whole.y) };
       const k = MIN_READABLE_ZOOM;
-      const rootBox = layout.boxes.find((box) => box.depth === 0);
-      const blockerBox = trace.rootBlockers
-        .map((blocker) => layout.byId.get(blocker.anchorId))
-        .find((box) => box !== undefined);
-      const span = [rootBox, blockerBox].filter((box): box is NonNullable<typeof box> => box !== undefined);
-      const left = span.length ? Math.min(...span.map((box) => box.x)) : 0;
-      const right = span.length ? Math.max(...span.map((box) => box.x + box.width)) : layout.width;
-      return { k, x: viewport.width / 2 - ((left + right) / 2) * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k };
+      const blocker = trace.rootBlockers.find((entry) => layout.byId.has(entry.anchorId));
+      const anchor = blocker ? layout.byId.get(blocker.anchorId)! : null;
+      if (!blocker || !anchor) {
+        const rootBox = layout.boxes.find((box) => box.depth === 0);
+        const centre = rootBox ? rootBox.x + rootBox.width / 2 : layout.width / 2;
+        return { k, x: viewport.width / 2 - centre * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k };
+      }
+      const fits = (span: Bounds) =>
+        (span.right - span.left) * k <= viewport.width - FIT_MARGIN * 2 &&
+        (span.bottom - span.top) * k <= viewport.height - FIT_MARGIN * 2;
+      const distance = (box: LayoutBox) => Math.hypot(box.x - anchor.x, box.y - anchor.y);
+      let span = boundsOf(anchor);
+      const heldUp = blocker.holdsUp
+        .map((id) => layout.byId.get(id))
+        .filter((box): box is LayoutBox => box !== undefined)
+        .sort((a, b) => distance(a) - distance(b));
+      for (const box of heldUp) {
+        const wider = joinBounds(span, boundsOf(box));
+        if (fits(wider)) span = wider;
+      }
+      return {
+        k,
+        x: viewport.width / 2 - ((span.left + span.right) / 2) * k,
+        y: viewport.height / 2 - ((span.top + span.bottom) / 2) * k,
+      };
     },
     [layout, trace],
   );
@@ -329,35 +350,6 @@ export function TaskTreeCanvas({
               </g>
             );
           })}
-          <defs>
-            <marker id={`${markerId}-block`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-warning" />
-            </marker>
-            <marker id={`${markerId}-loop`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-danger" />
-            </marker>
-          </defs>
-          {blockLinks.map((link) => {
-            const from = boxAt(link.from);
-            const to = boxAt(link.to);
-            if (!from || !to) return null;
-            return (
-              <path
-                key={`block:${link.from}>${link.to}`}
-                data-block-link={edgeKey(link.from, link.to)}
-                data-block-loop={link.loop ? "" : undefined}
-                data-block-folded={link.folded ? "" : undefined}
-                d={blockLinkPath(from, to)}
-                fill="none"
-                strokeLinecap="round"
-                strokeWidth={link.loop ? 2.5 : 1.75}
-                strokeDasharray={link.loop ? LOOP_DASH : BLOCK_DASH}
-                strokeOpacity={link.folded ? 0.6 : 1}
-                markerEnd={`url(#${markerId}-${link.loop ? "loop" : "block"})`}
-                className={link.loop ? "stroke-status-danger" : "stroke-status-warning"}
-              />
-            );
-          })}
         </svg>
 
         {layout.boxes.map((box) => {
@@ -432,7 +424,70 @@ export function TaskTreeCanvas({
     ),
     // The handlers inside read current state through setters and refs; the layer redraws when what it shows changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, blockLinks, loopIds, markerId, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, loopIds, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+  );
+
+  // "Blocks" lines sit over the sub-task lines and under the cards. They draw
+  // apart from the cards, so hovering a card redraws only the lines: its own
+  // come to full strength and the rest fade, so one chain reads by eye.
+  const emphasisId = hoveredId ?? (keyboardFocus ? activeFocusId : null) ?? foundId;
+  const blockLayer = useMemo(
+    () =>
+      blockLinks.length === 0 ? null : (
+        <svg
+          aria-hidden="true"
+          width={layout.width}
+          height={layout.height}
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
+        >
+          <defs>
+            <marker id={`${markerId}-block`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-warning" />
+            </marker>
+            <marker id={`${markerId}-loop`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-review" />
+            </marker>
+          </defs>
+          {blockLinks.map((link) => {
+            const from = boxAt(link.from);
+            const to = boxAt(link.to);
+            if (!from || !to) return null;
+            const touches = emphasisId === link.from || emphasisId === link.to;
+            const faded = emphasisId !== null && !touches;
+            const mid = link.loop ? blockLinkMidpoint(from, to) : null;
+            return (
+              <g key={`block:${link.from}>${link.to}`} strokeOpacity={faded ? FADED_LINK : link.folded && !touches ? 0.6 : 1}>
+                <path
+                  data-block-link={edgeKey(link.from, link.to)}
+                  data-block-loop={link.loop ? "" : undefined}
+                  data-block-folded={link.folded ? "" : undefined}
+                  data-block-emphasis={touches ? "" : faded ? "faded" : undefined}
+                  d={blockLinkPath(from, to)}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeWidth={(link.loop ? 2.5 : 1.75) + (touches ? 1 : 0)}
+                  strokeDasharray={link.loop ? LOOP_DASH : BLOCK_DASH}
+                  markerEnd={`url(#${markerId}-${link.loop ? "loop" : "block"})`}
+                  className={link.loop ? "stroke-status-review" : "stroke-status-warning"}
+                />
+                {mid ? (
+                  <text
+                    x={mid.x}
+                    y={mid.y}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fillOpacity={faded ? FADED_LINK : 1}
+                    className="fill-status-review text-sm font-semibold"
+                  >
+                    ↻
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+      ),
+    [blockLinks, boxAt, emphasisId, layout.width, layout.height, markerId],
   );
 
   return (
@@ -467,6 +522,7 @@ export function TaskTreeCanvas({
           className="absolute left-0 top-0 origin-top-left"
           style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, width: layout.width, height: layout.height }}
         >
+          {blockLayer}
           {layer}
         </div>
 
@@ -502,7 +558,7 @@ function TaskTreeLinkLegend({ loops, paths }: { loops: boolean; paths: boolean }
       <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Sub-task</span>
       <span className="inline-flex items-center gap-1.5">{sample("stroke-status-warning", "4 3")}Blocks</span>
       {paths ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger")}Leads to a block</span> : null}
-      {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger", "0.5 4")}Loop</span> : null}
+      {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-review", "0.5 4")}↻ Loop</span> : null}
     </div>
   );
 }
@@ -558,4 +614,14 @@ function TaskTreeHoverCard({
       {new Date(node.updatedAt).getTime() > 0 ? <p className="text-xs text-muted-foreground">Updated {relativeTime(node.updatedAt)}</p> : null}
     </div>
   );
+}
+
+type Bounds = { left: number; right: number; top: number; bottom: number };
+
+function boundsOf(box: LayoutBox): Bounds {
+  return { left: box.x, right: box.x + box.width, top: box.y, bottom: box.y + box.height };
+}
+
+function joinBounds(a: Bounds, b: Bounds): Bounds {
+  return { left: Math.min(a.left, b.left), right: Math.max(a.right, b.right), top: Math.min(a.top, b.top), bottom: Math.max(a.bottom, b.bottom) };
 }

@@ -414,6 +414,20 @@ type Box = Pick<LayoutBox, "x" | "y" | "width" | "height">;
  * right, with a bow out to the side.
  */
 export function blockLinkPath(from: Box, to: Box) {
+  const [p0, c1, c2, p3] = blockLinkCurve(from, to);
+  return `M ${p0.x} ${p0.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p3.x} ${p3.y}`;
+}
+
+/** The middle of a "blocks" line, where a loop link carries its mark. */
+export function blockLinkMidpoint(from: Box, to: Box) {
+  const [p0, c1, c2, p3] = blockLinkCurve(from, to);
+  return { x: (p0.x + 3 * c1.x + 3 * c2.x + p3.x) / 8, y: (p0.y + 3 * c1.y + 3 * c2.y + p3.y) / 8 };
+}
+
+type CurvePoint = { x: number; y: number };
+
+/** Start, two control points and end of a "blocks" line. */
+function blockLinkCurve(from: Box, to: Box): [CurvePoint, CurvePoint, CurvePoint, CurvePoint] {
   const fromCx = from.x + from.width / 2;
   const toCx = to.x + to.width / 2;
   const y1 = from.y + from.height / 2;
@@ -423,7 +437,7 @@ export function blockLinkPath(from: Box, to: Box) {
     const x1 = from.x + from.width;
     const x2 = to.x + to.width;
     const bow = Math.max(x1, x2) + Math.min(120, 40 + Math.abs(y2 - y1) / 4);
-    return `M ${x1} ${y1} C ${bow} ${y1}, ${bow} ${y2}, ${x2} ${y2}`;
+    return [{ x: x1, y: y1 }, { x: bow, y: y1 }, { x: bow, y: y2 }, { x: x2, y: y2 }];
   }
   const rightward = toCx > fromCx;
   const x1 = rightward ? from.x + from.width : from.x;
@@ -431,7 +445,8 @@ export function blockLinkPath(from: Box, to: Box) {
   const pull = Math.max(40, Math.abs(x2 - x1) / 3);
   // Cards on one row bow up over the row, so the line clears the cards between.
   const lift = Math.abs(y2 - y1) < from.height ? Math.min(160, 30 + Math.abs(x2 - x1) / 6) : 0;
-  return `M ${x1} ${y1} C ${x1 + (rightward ? pull : -pull)} ${y1 - lift}, ${x2 - (rightward ? pull : -pull)} ${y2 - lift}, ${x2} ${y2}`;
+  const step = rightward ? pull : -pull;
+  return [{ x: x1, y: y1 }, { x: x1 + step, y: y1 - lift }, { x: x2 - step, y: y2 - lift }, { x: x2, y: y2 }];
 }
 
 // ---------------------------------------------------------------------------

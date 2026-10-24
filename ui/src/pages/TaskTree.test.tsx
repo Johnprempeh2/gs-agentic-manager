@@ -245,6 +245,8 @@ describe("Task tree page", () => {
     expect(tidy.hasAttribute("data-unexplained")).toBe(true);
     // The card's status already says blocked, so its warning is shorter.
     expect(tidy.textContent).toBe("Nothing recorded is blocking it");
+    // A card that names no cause is not called a root blocker.
+    expect(container.querySelector('[data-tree-node="7"]')?.textContent).not.toContain("Root blocker");
 
     // On a phone both lines show under the row.
     phone = true;
@@ -381,6 +383,27 @@ describe("Task tree navigation", () => {
       expect(canvas.querySelector('[data-block-link="x1>x2"]')?.getAttribute("stroke-dasharray")).not.toBe(
         canvas.querySelector('[data-block-link="4>3"]')?.getAttribute("stroke-dasharray"),
       );
+    });
+
+    it("brings a hovered card's links to full strength and fades the rest", async () => {
+      await renderPage();
+      const canvas = container.querySelector('[data-slot="task-tree-canvas"]')!;
+      const loop = canvas.querySelector('[data-block-link="x1>x2"]')!;
+      // A loop is violet, not red, and carries a loop mark on the line.
+      expect(loop.getAttribute("class")).toContain("stroke-status-review");
+      expect(loop.parentElement?.querySelector("text")?.textContent).toBe("↻");
+      expect(canvas.querySelector("[data-block-emphasis]")).toBeNull();
+
+      // Picking a task with Find selects it, like hovering it.
+      const input = container.querySelector("[data-diagram-find]") as HTMLInputElement;
+      flushSync(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "build");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      await flush();
+      expect(canvas.querySelector('[data-block-link="4>3"]')?.getAttribute("data-block-emphasis")).toBe("");
+      expect(canvas.querySelector('[data-block-link="x1>6"]')?.getAttribute("data-block-emphasis")).toBe("faded");
     });
 
     it("shows only what is blocked and why when the reader asks", async () => {
