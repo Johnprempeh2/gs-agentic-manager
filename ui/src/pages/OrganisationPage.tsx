@@ -12,6 +12,7 @@ import {
 } from "@greatstone/shared";
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
+import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +194,8 @@ export function OrganisationPage() {
           </ul>
         )}
       </section>
+
+      <OrganisationCommerce companyId={companyId} organisation={organisation} />
 
       {history.data?.timeline?.length ? (
         <section aria-label="Activities and notes" className="space-y-2">
