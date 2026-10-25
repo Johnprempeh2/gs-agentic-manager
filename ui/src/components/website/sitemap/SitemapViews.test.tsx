@@ -78,6 +78,9 @@ describe("Sitemap Menus and Journeys status", () => {
     render(<SitemapTreeView tree={deep} onChange={() => {}} pagesById={pagesById} readOnly />);
     const titles = () => [...container.querySelectorAll("[data-testid=sitemap-tree-row]")].map((row) => row.querySelector("[data-sitemap-title]")!.textContent);
     expect(titles()).toEqual(["Home", "Tools", "Brands"]);
+    const brandsPath = container.querySelectorAll("[data-sitemap-path]")[2]!;
+    expect(brandsPath.textContent).toBe("/brands");
+    expect(brandsPath.getAttribute("title")).toBe("/tools/brands");
     const fold = container.querySelector<HTMLButtonElement>("button[aria-label='Show the 13 sub-pages of Brands']")!;
     expect(fold.getAttribute("aria-expanded")).toBe("false");
 

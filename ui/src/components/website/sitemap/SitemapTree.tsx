@@ -1,7 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, GripVertical, Maximize2, Minimize2, PenLine, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  GripVertical,
+  IndentDecrease,
+  IndentIncrease,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  PenLine,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { websiteFeatureForPath, type WebsiteFeature } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DiagramFind, trapTab, useDiagramFullscreen } from "@/components/diagram/DiagramFrame";
 import { cn } from "@/lib/utils";
 import {
@@ -9,15 +27,19 @@ import {
   ancestorIds,
   childrenOf,
   defaultFolded,
+  indent,
+  moveSibling,
   moveTo,
   nodeStatus,
+  outdent,
   outlineRows,
+  ownSlug,
   removeNode,
   updateNode,
   type Node,
   type OutlineRow,
 } from "./model";
-import { IconAction, MENU_LABELS, MoveControls, NodeEditor, StatusPill, focusRing, type SitemapViewProps } from "./SitemapViews";
+import { MENU_LABELS, NodeEditor, StatusPill, focusRing, type SitemapViewProps } from "./SitemapViews";
 
 type DropPlace = "before" | "inside" | "after";
 
@@ -25,11 +47,11 @@ export type SitemapFeature = Pick<WebsiteFeature, "name" | "routePrefixes">;
 
 /** Column widths on a wide screen, shared by the header and every row so they line up. */
 const COLS = {
-  path: "@5xl:w-56",
-  status: "@5xl:w-32",
-  feature: "@5xl:w-32",
-  menu: "@5xl:w-24",
-  edit: "@5xl:w-24",
+  path: "@5xl:w-64 @5xl:shrink-0",
+  status: "@5xl:w-32 @5xl:shrink-0",
+  feature: "@5xl:w-32 @5xl:shrink-0",
+  menu: "@5xl:w-24 @5xl:shrink-0",
+  edit: "@5xl:w-24 @5xl:shrink-0",
 } as const;
 
 /** The connector colour: a quiet line that still reads in both themes. */
@@ -132,6 +154,7 @@ export function SitemapTreeView({
     }
   };
 
+  const pathById = useMemo(() => new Map(tree.nodes.map((node) => [node.id, node.path])), [tree]);
   const foldable = tree.nodes.filter((node) => node.parentId && childrenOf(tree, node.id).length > 0).map((node) => node.id);
 
   return (
@@ -177,14 +200,14 @@ export function SitemapTreeView({
       </div>
       {readOnly ? null : (
         <p className="text-xs text-muted-foreground">
-          Drag a page onto another to make it a sub-page, or above or below it to reorder. The arrow buttons do the same from the keyboard.
-          <span className="@5xl:hidden"> Tap a page to see its buttons.</span>
+          <span className="hidden @5xl:inline">Drag a page onto another to make it a sub-page, or above or below it to reorder. </span>
+          Each page&apos;s <MoreHorizontal aria-hidden="true" className="inline size-3.5 align-text-bottom" /> menu renames, adds, moves and removes pages.
         </p>
       )}
       {rows.length === 0 ? <p className="text-sm text-muted-foreground">This option has no pages yet.</p> : (
         <div className={cn("min-w-0 rounded-xl border border-border bg-card", fullscreen.active && "min-h-0 flex-1 overflow-y-auto")}>
           <div aria-hidden="true" className="hidden items-center gap-3 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground @5xl:flex">
-            {readOnly ? null : <span className="w-4 shrink-0" />}
+            {readOnly ? null : <span className="mr-1 w-4 shrink-0" />}
             <span className="min-w-0 flex-1">Page</span>
             <span className={COLS.path}>URL</span>
             <span className={COLS.status}>Status</span>
@@ -202,6 +225,7 @@ export function SitemapTreeView({
                 pagesById={pagesById}
                 readOnly={readOnly}
                 onEditPage={onEditPage}
+                slug={ownSlug(row.node.path, row.node.parentId ? pathById.get(row.node.parentId) : undefined)}
                 feature={websiteFeatureForPath(row.node.path, features)?.name ?? null}
                 editing={editing === row.node.id}
                 onEdit={setEditing}
@@ -247,6 +271,7 @@ function TreeRow({
   pagesById,
   readOnly,
   onEditPage,
+  slug,
   feature,
   editing,
   onEdit,
@@ -258,6 +283,8 @@ function TreeRow({
 }: SitemapViewProps & {
   row: OutlineRow;
   onEditPage?: (pageId: string) => void;
+  /** The row's own part of its URL; the full path is its tooltip. */
+  slug: string;
   feature: string | null;
   editing: boolean;
   onEdit: (id: string | null) => void;
@@ -290,7 +317,8 @@ function TreeRow({
         marker === "after" && "after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-ring",
       )}
     >
-      {readOnly ? null : <GripVertical aria-hidden="true" className="mr-1 mt-2.5 size-4 shrink-0 cursor-grab text-muted-foreground" />}
+      {/* Touch cannot drag, so a phone leaves the handle out and gives deep pages the room; the arrow buttons move pages there. */}
+      {readOnly ? null : <GripVertical aria-hidden="true" className="mr-1 mt-2.5 hidden size-4 shrink-0 cursor-grab text-muted-foreground @5xl:block" />}
       {rails.map((on, index) => <Rail key={index} on={on} />)}
       {depth > 0 ? <Elbow last={last} /> : null}
       <span className="relative w-5 shrink-0">
@@ -329,29 +357,46 @@ function TreeRow({
           />
         </div>
       ) : (
-        <div className="flex min-w-0 flex-1 flex-col gap-1 py-1.5 pl-2 @5xl:flex-row @5xl:items-center @5xl:gap-3">
-          <div className="flex min-h-6 min-w-0 flex-1 items-center gap-2">
+        // A phone shows three short lines: the title, the URL, then status, feature and menu. A wide screen
+        // shows one line in columns. The row's menu button keeps its own small space at the end of the
+        // Page column, so nothing moves or hides when it shows.
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5 pl-2 @5xl:flex-nowrap">
+          <div className="flex min-h-6 min-w-0 basis-full items-center gap-2 @5xl:flex-1 @5xl:basis-0">
             <span data-sitemap-title="" className={cn("min-w-0 break-words leading-6", depth === 0 ? "font-semibold" : "font-medium")}>{node.title}</span>
             {folded ? (
               <button type="button" data-slot="icon-button" onClick={onToggle} className={cn("shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground", focusRing)}>
                 {subPages}
               </button>
             ) : null}
+            {!readOnly || (onEditPage && page) ? (
+              // The wrapper, not the button, takes the spare space: touch styles reset a button's margin.
+              <span className={cn("ml-auto flex shrink-0", readOnly && "@5xl:hidden")}>
+                <RowMenu tree={tree} node={node} onChange={onChange} readOnly={readOnly} onEdit={onEdit} onEditPage={onEditPage && page ? () => onEditPage(page.id) : undefined} />
+              </span>
+            ) : null}
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 @5xl:contents">
-            <span className={cn("min-w-0 break-all font-mono text-xs text-muted-foreground @5xl:truncate @5xl:break-normal", COLS.path)} title={node.path}>{node.path}</span>
-            <span className={cn("flex items-center gap-1.5", COLS.status)}>
-              <StatusPill status={status} />
-              {node.noindex ? <span className="whitespace-nowrap text-xs text-muted-foreground">Not indexed</span> : null}
-            </span>
-            <span className={cn("min-w-0 text-xs text-muted-foreground @5xl:truncate", !feature && "hidden @5xl:block", COLS.feature)} title={feature ?? undefined}>
-              {feature ?? ""}
-            </span>
-            <span className={cn("text-xs text-muted-foreground @5xl:truncate", !menu && "hidden @5xl:block", COLS.menu)}>{menu}</span>
+          <div className="flex min-w-0 basis-full flex-col gap-0.5 text-xs text-muted-foreground @5xl:contents">
+            <span data-sitemap-path="" className={cn("min-w-0 truncate font-mono", COLS.path)} title={node.path}>{slug}</span>
+            <div className="flex min-w-0 items-center gap-2 @5xl:contents">
+              <span className={cn("flex shrink-0 items-center gap-1.5", COLS.status)}>
+                <StatusPill status={status} />
+                {node.noindex ? <span className="whitespace-nowrap">Not indexed</span> : null}
+              </span>
+              <span className={cn("min-w-0 truncate", !feature && "hidden @5xl:block", COLS.feature)} title={feature ?? undefined}>
+                {feature ?? ""}
+              </span>
+              <span className={cn("min-w-0 truncate", !menu && "hidden @5xl:block", COLS.menu)} title={menu || undefined}>{menu}</span>
+            </div>
           </div>
-          {/* Under the page on a phone, the last column on a wide screen. */}
-          {!readOnly || onEditPage ? (
-            <RowActions tree={tree} node={node} onChange={onChange} readOnly={readOnly} page={page?.id} onEditPage={onEditPage} onEdit={onEdit} />
+          {onEditPage ? (
+            <div className={cn("hidden shrink-0 items-center @5xl:flex @5xl:justify-end", COLS.edit)}>
+              {page ? (
+                <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`Edit page ${node.title}`}>
+                  <PenLine aria-hidden="true" />
+                  Edit page
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       )}
@@ -359,52 +404,91 @@ function TreeRow({
   );
 }
 
-function RowActions({ tree, node, onChange, readOnly, page, onEditPage, onEdit }: {
+/**
+ * One row's actions behind a single button, so 178 rows do not each carry seven buttons and the
+ * row's cells never move or hide. Always shown on a phone; on a wide screen it fades in on hover
+ * or focus, in space kept for it. Move items keep the menu open so a page can step several places.
+ * It also holds Edit page, which a wide screen shows as its own column too.
+ */
+function RowMenu({ tree, node, onChange, readOnly, onEdit, onEditPage }: {
   tree: SitemapViewProps["tree"];
   node: Node;
   onChange: SitemapViewProps["onChange"];
   readOnly: boolean;
-  page: string | undefined;
-  onEditPage?: (pageId: string) => void;
   onEdit: (id: string | null) => void;
+  onEditPage?: () => void;
 }) {
+  const siblings = childrenOf(tree, node.parentId);
+  const position = siblings.findIndex((entry) => entry.id === node.id);
+  const step = (next: SitemapViewProps["tree"]) => (event: Event) => {
+    event.preventDefault();
+    onChange(next);
+  };
   return (
-    <div className="flex flex-wrap items-center gap-2 @5xl:contents">
-      {readOnly ? null : (
-        // Shown for the row being worked on, so 178 rows do not each carry seven buttons: under
-        // the tapped page on a phone, a small bar over the row's end on a wide screen.
-        <div
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Actions for ${node.title}`}
+          title="Page actions"
           className={cn(
-            "hidden flex-wrap items-center gap-0.5 group-focus-within:flex",
-            "@5xl:pointer-events-none @5xl:flex @5xl:absolute @5xl:top-1 @5xl:z-raised @5xl:flex-nowrap @5xl:rounded-md @5xl:border @5xl:border-border @5xl:bg-card @5xl:p-0.5 @5xl:opacity-0 @5xl:shadow-xs",
-            "@5xl:group-hover:pointer-events-auto @5xl:group-hover:opacity-100 @5xl:group-focus-within:pointer-events-auto @5xl:group-focus-within:opacity-100",
-            onEditPage ? "@5xl:right-28" : "@5xl:right-3",
+            "text-muted-foreground",
+            !readOnly && "@5xl:opacity-0 @5xl:group-hover:opacity-100 @5xl:group-focus-within:opacity-100 @5xl:data-[state=open]:opacity-100",
           )}
         >
-          <IconAction label={`Rename ${node.title}`} icon={Pencil} onClick={() => onEdit(node.id)} />
-          <MoveControls tree={tree} node={node} onChange={onChange} />
-          <IconAction
-            label={`Add a sub-page under ${node.title}`}
-            icon={Plus}
-            onClick={() => {
-              const added = addNode(tree, node.id);
-              onChange(added.tree);
-              onEdit(added.id);
-            }}
-          />
-          <IconAction label={`Remove ${node.title} from this option`} icon={Trash2} onClick={() => onChange(removeNode(tree, node.id))} />
-        </div>
-      )}
-      {onEditPage ? (
-        <div className={cn("flex shrink-0 items-center @5xl:justify-end", !page && "hidden @5xl:flex", COLS.edit)}>
-          {page ? (
-            <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page)} aria-label={`Edit page ${node.title}`}>
-              <PenLine aria-hidden="true" />
-              Edit page
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        {onEditPage ? (
+          <DropdownMenuItem onSelect={onEditPage}>
+            <PenLine aria-hidden="true" />
+            Edit page
+          </DropdownMenuItem>
+        ) : null}
+        {readOnly ? null : (
+          <>
+            <DropdownMenuItem onSelect={() => onEdit(node.id)}>
+              <Pencil aria-hidden="true" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                const added = addNode(tree, node.id);
+                onChange(added.tree);
+                onEdit(added.id);
+              }}
+            >
+              <Plus aria-hidden="true" />
+              Add a sub-page
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={position <= 0} onSelect={step(moveSibling(tree, node.id, -1))}>
+              <ArrowUp aria-hidden="true" />
+              Move up
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={position >= siblings.length - 1} onSelect={step(moveSibling(tree, node.id, 1))}>
+              <ArrowDown aria-hidden="true" />
+              Move down
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={position <= 0} onSelect={step(indent(tree, node.id))}>
+              <IndentIncrease aria-hidden="true" />
+              Make a sub-page of the page above
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!node.parentId} onSelect={step(outdent(tree, node.id))}>
+              <IndentDecrease aria-hidden="true" />
+              Move up a level
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => onChange(removeNode(tree, node.id))}>
+              <Trash2 aria-hidden="true" />
+              Remove from this option
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

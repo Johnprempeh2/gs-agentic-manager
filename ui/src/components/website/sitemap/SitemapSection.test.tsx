@@ -96,8 +96,12 @@ describe("SitemapSection", () => {
     await render();
     expect(rowTitles()).toEqual(["Home", "Consultancy", "Tools"]);
     expect(container.textContent).toContain("Live");
-    await act(async () => button("Move Tools up")!.click());
+    await act(async () => button("Actions for Tools")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 })));
+    const moveUp = [...document.querySelectorAll<HTMLElement>("[role=menuitem]")].find((item) => item.textContent === "Move up")!;
+    await act(async () => moveUp.click());
     expect(rowTitles()).toEqual(["Home", "Tools", "Consultancy"]);
+    // The menu stays open so a page can step several places.
+    expect(document.querySelector("[role=menu]")).not.toBeNull();
     expect(container.textContent).toContain("Unsaved changes");
     await act(async () => button("Save changes")!.click());
     const [, , optionId, patch] = moduleMock.updateSitemapOption.mock.calls[0]!;
