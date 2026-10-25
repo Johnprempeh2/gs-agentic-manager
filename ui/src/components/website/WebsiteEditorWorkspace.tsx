@@ -929,7 +929,7 @@ function IconButton({
       {labelled ? <span className={labelled === "2xl" ? "hidden 2xl:inline" : "hidden xl:inline"}>{name}</span> : null}
       {badge ? (
         <span
-          className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground 2xl:static 2xl:ml-0.5"
+          className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-nano leading-4 font-semibold text-primary-foreground 2xl:static 2xl:ml-0.5"
           data-testid="website-comments-count"
         >
           {badge}

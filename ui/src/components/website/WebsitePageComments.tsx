@@ -41,7 +41,7 @@ export function CommentPin({ number, className }: { number: number; className?: 
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex size-5 shrink-0 items-center justify-center rounded-full rounded-bl-none bg-primary text-[11px] font-semibold text-primary-foreground",
+        "inline-flex size-5 shrink-0 items-center justify-center rounded-full rounded-bl-none bg-primary text-micro font-semibold text-primary-foreground",
         className,
       )}
     >
