@@ -11,6 +11,7 @@ import {
   DEEP_DIVE_STREAM_STATUSES,
   DEEP_DIVE_STREAMS,
   DEEP_DIVE_VISIBILITIES,
+  deepDiveDepthError,
   deepDiveGifStubBody,
   defaultDeepDiveStreamFields,
   readDeepDiveStreamFields,
@@ -221,8 +222,9 @@ function StreamRow({
   function submitReason(event: FormEvent) {
     event.preventDefault();
     const reason = (reasonDraft ?? "").trim();
-    if (!reason) {
-      setReasonError("Name the reason. A stream is never dropped, only reduced with a named reason.");
+    const error = deepDiveDepthError({ depth: "reduced", depthReason: reason });
+    if (error) {
+      setReasonError(error);
       return;
     }
     void save({ depth: "reduced", depthReason: reason }).then((saved) => {
