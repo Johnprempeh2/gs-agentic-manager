@@ -536,3 +536,139 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(onMediaRequested).toHaveBeenCalledWith({ blockId: "h1", field: "image", kind: "image" });
   });
 });
+
+describe("Edit copy (GRE-2394)", () => {
+  const COPY_ACK = { editorContract: 2, editorCommands: ["undo", "redo", "save", "add-block", "outline", "layout", "import-live"] };
+  const ready = async (
+    overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> = {},
+    ack: Record<string, unknown> = COPY_ACK,
+  ) => {
+    const t = setup(overrides);
+    t.session.start();
+    t.ack(ack);
+    await flush();
+    return t;
+  };
+  const save = (t: Awaited<ReturnType<typeof ready>>, data: unknown, requestId = "11111111-1111-4111-8111-111111111111") =>
+    t.msg("save", { requestId, pageId: "page-1", baseRevisionId: "rev-1", data });
+  const resultOf = (t: Awaited<ReturnType<typeof ready>>) => t.sentOf("save-result").at(-1)?.message.payload;
+
+  it("hello asks for Edit copy by default; preview's hello has no edit mode", () => {
+    const editor = setup();
+    editor.session.start();
+    expect(editor.sentOf("hello")[0]!.message.payload.editMode).toBe("copy");
+    const layout = setup({ editMode: "layout" });
+    layout.session.start();
+    expect(layout.sentOf("hello")[0]!.message.payload.editMode).toBe("layout");
+    const preview = setup({ mode: "preview" });
+    preview.session.start();
+    expect("editMode" in preview.sentOf("hello")[0]!.message.payload).toBe(false);
+  });
+
+  it("opens in Edit copy on a contract 2 engine", async () => {
+    const t = await ready();
+    expect(t.session.hasCopyMode).toBe(true);
+    expect(t.session.copyMode).toBe(true);
+    expect(t.session.currentEditMode).toBe("copy");
+  });
+
+  it("Edit copy refuses add block, outline, media and motion; undo and save still go", async () => {
+    const onMediaRequested = vi.fn();
+    const t = await ready({ onMediaRequested });
+    expect(t.session.command("add-block")).toBe(false);
+    expect(t.session.command("outline", true)).toBe(false);
+    expect(t.session.command("undo")).toBe(true);
+    expect(t.session.command("save")).toBe(true);
+    expect(await t.session.insertMedia({ blockId: "h1", field: "image", mediaEntryId: "m1", assetUrl: "/api/assets/a/content", alt: "" })).toBeNull();
+    expect(await t.session.setMotion({ blockId: "h1", motion: { effect: "none", intensity: "off" } })).toBeNull();
+    t.msg("media-requested", { blockId: "h1", field: "image", kind: "image" });
+    expect(onMediaRequested).not.toHaveBeenCalled();
+    expect(t.sentOf("editor-command").map((entry) => entry.message.payload.command)).toEqual(["undo", "save"]);
+    expect(t.sentOf("insert-media")).toHaveLength(0);
+  });
+
+  it("Edit copy saves changed words, and refuses a save that adds, removes or moves blocks", async () => {
+    const t = await ready();
+    save(t, { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1", title: "New words" } }] });
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+    expect(t.saveDraft).toHaveBeenCalledTimes(1);
+
+    save(
+      t,
+      { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1" } }, { type: "Hero", props: { id: "h2" } }] },
+      "22222222-2222-4222-8222-222222222222",
+    );
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid", retryable: false });
+    expect(t.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("Layout sends the layout command and lets add block, outline and new blocks through", async () => {
+    const t = await ready();
+    expect(t.session.setEditMode("layout")).toBe(true);
+    expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "layout", on: true });
+    expect(t.session.copyMode).toBe(false);
+    expect(t.session.command("add-block")).toBe(true);
+    expect(t.session.command("outline", true)).toBe(true);
+    save(t, { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1" } }, { type: "Hero", props: { id: "h2" } }] });
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+    // Back to Edit copy.
+    expect(t.session.setEditMode("copy")).toBe(true);
+    expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "layout", on: false });
+    expect(t.session.command("add-block")).toBe(false);
+  });
+
+  it("the edit mode commands only go through their own calls", async () => {
+    const t = await ready();
+    expect(t.session.command("layout", true)).toBe(false);
+    expect(t.session.command("import-live")).toBe(false);
+  });
+
+  it("an older engine (contract 1) opens as today, in Layout, with no crash", async () => {
+    const t = await ready({}, { editorContract: 1, editorCommands: ["undo", "add-block", "outline"], liveContent: { blocks: 3 } });
+    expect(t.session.state.phase).toBe("ready");
+    expect(t.session.hasCopyMode).toBe(false);
+    expect(t.session.copyMode).toBe(false);
+    expect(t.session.currentEditMode).toBe("layout");
+    expect(t.session.setEditMode("copy")).toBe(false);
+    expect(t.session.command("add-block")).toBe(true);
+    // Contract 1 cannot import: its live content is not trusted.
+    expect(t.session.liveContent).toBeNull();
+  });
+
+  it("an empty draft with live content imports it once, and that save may add blocks", async () => {
+    const empty = { root: { props: {} }, content: [] };
+    const t = await ready(
+      {
+        loadDraft: vi.fn(async () => ({ revisionId: "rev-1", data: empty, theme: {}, media: {}, site: { name: "Site", settings: {}, navigation: [] } })),
+      },
+      { ...COPY_ACK, liveContent: { blocks: 1 } },
+    );
+    expect(t.session.draftEmpty).toBe(true);
+    expect(t.session.liveContent).toEqual({ blocks: 1 });
+    // Before the import a save that adds blocks is refused in Edit copy.
+    save(t, page);
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid" });
+
+    expect(t.session.importLive()).toBe(true);
+    expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "import-live" });
+    save(t, page, "33333333-3333-4333-8333-333333333333");
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+    expect(t.session.draftEmpty).toBe(false);
+    // The draft has content now: no second import.
+    expect(t.session.importLive()).toBe(false);
+  });
+
+  it("does not import when the live site has nothing or the draft has content", async () => {
+    const none = await ready({}, { ...COPY_ACK, liveContent: null });
+    expect(none.session.importLive()).toBe(false);
+    const built = await ready({}, { ...COPY_ACK, liveContent: { blocks: 2 } });
+    expect(built.session.draftEmpty).toBe(false);
+    expect(built.session.importLive()).toBe(false);
+    expect(built.sentOf("editor-command")).toHaveLength(0);
+  });
+});
