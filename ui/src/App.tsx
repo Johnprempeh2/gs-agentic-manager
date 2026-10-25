@@ -87,6 +87,7 @@ const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverable
 const Website = lazyPage(() => import("./pages/Website"), "Website");
 const WebsiteEditorPage = lazyPage(() => import("./pages/WebsiteEditorPage"), "WebsiteEditorPage");
 const WebsiteFeaturePage = lazyPage(() => import("./pages/WebsiteFeature"), "WebsiteFeaturePage");
+const CommercePage = lazyPage(() => import("./pages/Commerce"), "CommercePage");
 const Intelligence = lazyPage(() => import("./pages/Intelligence"), "Intelligence");
 const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
 const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
@@ -436,6 +437,10 @@ function boardRoutes() {
       {/* The full-screen website editor (GRE-2296): it covers the shell, so it has no sidebar or header. */}
       <Route path="website/edit" element={<WebsiteEditorPage />} />
       <Route path="website/sites/:siteId/features/:featureId" element={<WebsiteFeaturePage />} />
+      {/* Commerce (GRE-2383): the website's quotes, orders, invoices and licences, read only. Greatstone only. */}
+      <Route path="commerce" element={<CommercePage />} />
+      <Route path="commerce/:resource" element={<CommercePage />} />
+      <Route path="commerce/:resource/:recordId" element={<CommercePage />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
       <Route path="whats-new" element={<WhatsNew />} />
@@ -889,6 +894,9 @@ export function App() {
           <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
           <Route path="images" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
+          <Route path="commerce" element={<UnprefixedBoardRedirect />} />
+          <Route path="commerce/:resource" element={<UnprefixedBoardRedirect />} />
+          <Route path="commerce/:resource/:recordId" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="whats-new" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
