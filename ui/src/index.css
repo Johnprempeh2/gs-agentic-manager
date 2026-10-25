@@ -3496,6 +3496,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    * allow ui/src/pages/OrgChart.test.tsx — mock team color fixtures
    * allow ui/src/components/ui/dialog.test.tsx — asserts the grid-rows class that the allowlisted dialog.tsx renders
    * allow ui/src/components/EmailHtmlPreview.tsx — base style of the sandboxed email iframe document (srcdoc), which mimics a mail client's white page; app tokens do not exist inside that document
+   * allow ui/src/components/website/WebsiteStyle.test.tsx — mock website style fixtures: the client site's own colours and font sizes (read data shown as swatches), not app UI colours
    ── end allowlist ── */
 
 /* Agent settings composition, shared with Storybook. */

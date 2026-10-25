@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -8,8 +8,6 @@ import {
   GripVertical,
   IndentDecrease,
   IndentIncrease,
-  PenLine,
-  Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -20,17 +18,13 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import {
   SITEMAP_STATUS_LABELS,
-  addNode,
   childrenOf,
-  flatten,
   indent,
   menuItems,
   moveSibling,
-  moveTo,
   nodeStatus,
   outdent,
   placeInMenu,
-  removeNode,
   updateNode,
   type Node,
   type SitemapPageStatus,
@@ -67,7 +61,7 @@ export function StatusPill({ status }: { status: SitemapPageStatus }) {
 export const plannedHiddenNote = (page: string) => `${page} is planned, so it stays out of this menu until it is live.`;
 export const journeyGapNote = (page: string) => `${page} is planned, not live. Visitors cannot take this step yet.`;
 
-function IconAction({ label, icon: Icon, onClick, disabled }: { label: string; icon: typeof ArrowUp; onClick: () => void; disabled?: boolean }) {
+export function IconAction({ label, icon: Icon, onClick, disabled }: { label: string; icon: typeof ArrowUp; onClick: () => void; disabled?: boolean }) {
   return (
     <Button type="button" variant="ghost" size="icon-xs" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
       <Icon aria-hidden="true" />
@@ -116,144 +110,6 @@ export function NodeEditor({ node, onSave, onCancel }: { node: Node; onSave: (pa
         <Button type="button" size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
-  );
-}
-
-/* ---- Tree ---- */
-
-type DropPlace = "before" | "inside" | "after";
-
-export function SitemapTreeView({
-  tree,
-  onChange,
-  pagesById,
-  readOnly,
-  onEditPage,
-}: SitemapViewProps & { onEditPage?: (pageId: string) => void }) {
-  const rows = useMemo(() => flatten(tree), [tree]);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [drop, setDrop] = useState<{ id: string; place: DropPlace } | null>(null);
-
-  const placeFor = (event: DragEvent<HTMLElement>): DropPlace => {
-    const box = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientY - box.top) / box.height;
-    return ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
-  };
-  const onDrop = (targetId: string, place: DropPlace) => {
-    if (!dragging || dragging === targetId) return;
-    const target = tree.nodes.find((node) => node.id === targetId)!;
-    if (place === "inside") onChange(moveTo(tree, dragging, targetId));
-    else {
-      const siblings = childrenOf(tree, target.parentId).filter((node) => node.id !== dragging);
-      const index = siblings.findIndex((node) => node.id === targetId) + (place === "after" ? 1 : 0);
-      onChange(moveTo(tree, dragging, target.parentId, index));
-    }
-  };
-
-  return (
-    <div className="space-y-4" data-testid="sitemap-tree">
-      {readOnly ? null : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => {
-            const added = addNode(tree, null);
-            onChange(added.tree);
-            setEditing(added.id);
-          }}>
-            <Plus aria-hidden="true" />
-            Add page
-          </Button>
-          <p className="text-xs text-muted-foreground">Drag a page onto another to make it a sub-page, or above or below it to reorder. The arrow buttons do the same from the keyboard.</p>
-        </div>
-      )}
-      {rows.length === 0 ? <p className="text-sm text-muted-foreground">This option has no pages yet.</p> : null}
-      <ul className="divide-y divide-border rounded-xl border border-border" aria-label="Sitemap pages">
-        {rows.map(({ node, depth }) => {
-          const status = nodeStatus(node, pagesById);
-          const page = (node.pageId ? pagesById.get(node.pageId) : undefined) ?? pagesById.get(`slug:${node.path}`);
-          const marker = drop?.id === node.id ? drop.place : null;
-          return (
-            <li
-              key={node.id}
-              draggable={!readOnly && editing !== node.id}
-              onDragStart={(event) => {
-                setDragging(node.id);
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", node.id);
-              }}
-              onDragEnd={() => {
-                setDragging(null);
-                setDrop(null);
-              }}
-              onDragOver={(event) => {
-                if (!dragging || dragging === node.id) return;
-                event.preventDefault();
-                setDrop({ id: node.id, place: placeFor(event) });
-              }}
-              onDragLeave={() => setDrop((current) => (current?.id === node.id ? null : current))}
-              onDrop={(event) => {
-                event.preventDefault();
-                onDrop(node.id, placeFor(event));
-                setDrop(null);
-              }}
-              className={cn(
-                "flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm",
-                dragging === node.id && "bg-muted",
-                marker === "inside" && "bg-accent",
-                marker === "before" && "border-t-2 border-t-ring",
-                marker === "after" && "border-b-2 border-b-ring",
-              )}
-              style={{ paddingInlineStart: `calc(var(--spacing) * ${3 + depth * 4})` }}
-              data-testid="sitemap-tree-row"
-            >
-              {readOnly ? null : <GripVertical aria-hidden="true" className="size-4 shrink-0 cursor-grab text-muted-foreground" />}
-              {editing === node.id ? (
-                <NodeEditor
-                  node={node}
-                  onCancel={() => setEditing(null)}
-                  onSave={(patch) => {
-                    onChange(updateNode(tree, node.id, patch));
-                    setEditing(null);
-                  }}
-                />
-              ) : (
-                <div className="flex min-w-0 flex-1 basis-48 flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="min-w-0 font-medium">{node.title}</span>
-                  <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">{node.path}</span>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <StatusPill status={status} />
-                    {node.menu !== "none" ? <Pill className="bg-muted text-foreground">{MENU_LABELS[node.menu]}</Pill> : null}
-                    {node.noindex ? <Pill className="bg-muted text-muted-foreground">Not indexed</Pill> : null}
-                  </div>
-                </div>
-              )}
-              {page && onEditPage && editing !== node.id ? (
-                <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`Edit page ${node.title}`}>
-                  <PenLine aria-hidden="true" />
-                  Edit page
-                </Button>
-              ) : null}
-              {readOnly || editing === node.id ? null : (
-                <div className="flex w-full flex-wrap items-center gap-0.5 sm:w-auto">
-                  <IconAction label={`Rename ${node.title}`} icon={Pencil} onClick={() => setEditing(node.id)} />
-                  <MoveControls tree={tree} node={node} onChange={onChange} />
-                  <IconAction
-                    label={`Add a sub-page under ${node.title}`}
-                    icon={Plus}
-                    onClick={() => {
-                      const added = addNode(tree, node.id);
-                      onChange(added.tree);
-                      setEditing(added.id);
-                    }}
-                  />
-                  <IconAction label={`Remove ${node.title} from this option`} icon={Trash2} onClick={() => onChange(removeNode(tree, node.id))} />
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
 

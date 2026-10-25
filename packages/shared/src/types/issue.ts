@@ -1850,4 +1850,6 @@ export interface IssueAttachment {
   contentPath: string;
   openPath?: string;
   downloadPath?: string;
+  /** Upload response only: problems the uploader should fix, e.g. a blank screenshot (GRE-2524). */
+  warnings?: string[];
 }

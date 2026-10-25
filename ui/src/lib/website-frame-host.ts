@@ -1,4 +1,5 @@
 import {
+  WEBSITE_FRAME_CAPTURE_TIMEOUT_MS,
   WEBSITE_FRAME_HELLO_INTERVAL_MS,
   WEBSITE_FRAME_HELLO_TIMEOUT_MS,
   WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS,
@@ -11,13 +12,18 @@ import {
   isWebsiteEditorCommand,
   websiteEditorContractOf,
   websiteEditorHasCopyMode,
+  websiteFrameCommentPinsSchema,
   websiteFrameHelloMessage,
   websiteFrameInsertMediaSchema,
   websiteFrameMessage,
   websiteFrameSetMotionSchema,
   type WebsiteEditMode,
   type WebsiteEditorCommand,
+  type WebsiteFrameAskAgent,
   type WebsiteFrameBlockPicked,
+  type WebsiteFrameCaptureResult,
+  type WebsiteFrameCommentMessage,
+  type WebsiteFrameCommentPins,
   type WebsiteFrameEditorState,
   type WebsiteFrameHelloAck,
   type WebsiteFrameHostMessageType,
@@ -25,12 +31,14 @@ import {
   type WebsiteFrameInsertMediaResult,
   type WebsiteFrameMediaRequested,
   type WebsiteFrameMode,
+  type WebsiteFramePinClicked,
   type WebsiteFrameSave,
   type WebsiteFrameSaveResult,
   type WebsiteFrameSetMotion,
   type WebsiteFrameSetMotionResult,
   type WebsiteMotionChoice,
   type WebsiteMotionEffect,
+  type WebsiteBackgroundSurface,
   type WebsitePuckBlockInfo,
 } from "@greatstone/shared";
 
@@ -126,6 +134,10 @@ export interface WebsiteFrameHostOptions<Source> {
   onEditorKey?: (key: "escape") => void;
   /** Editor: the person clicked an image in the page to replace it. */
   onMediaRequested?: (request: WebsiteFrameMediaRequested) => void;
+  /** Editor (GRE-2361): the person clicked a comment pin GSAM sent. */
+  onPinClicked?: (pin: WebsiteFramePinClicked) => void;
+  /** Editor (GRE-2361): Ask an agent from the frame's block toolbar, about a block of the open draft. */
+  onAskAgent?: (ask: WebsiteFrameAskAgent) => void;
   /** Drop reasons, for the console. Never shown as HTML. */
   onDrop?: (reason: string) => void;
   createId?: () => string;
@@ -136,9 +148,12 @@ export interface WebsiteFrameMotionCapabilities {
   /** Block type to the effects it takes and what a new block starts with. */
   blocks: Map<string, { effects: string[]; default: WebsiteMotionChoice }>;
   effects: WebsiteMotionEffect[];
+  /** GRE-2522: the plain site surfaces a block's Background takes. Empty for an older engine. */
+  surfaces?: WebsiteBackgroundSurface[];
 }
 
-type ReplyType = "insert-media-result" | "set-motion-result";
+type ReplyType = "insert-media-result" | "set-motion-result" | "capture-result";
+type RequestType = "insert-media" | "set-motion" | "capture";
 
 /** Commands Edit copy never sends: they add blocks or open the block outline. */
 const COPY_MODE_REFUSED = new Set<WebsiteEditorCommand>(["add-block", "outline"]);
@@ -182,11 +197,16 @@ export class WebsiteFrameHostSession<Source> {
   private shownBlocks = new Map<string, WebsitePuckBlockInfo>();
   private shownRevisionId: string | null = null;
   private shownData: unknown = null;
-  private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [] };
+  private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [], surfaces: [] };
   private commands = new Set<WebsiteEditorCommand>();
   private copySupported = false;
   private editMode: WebsiteEditMode;
   private live: { blocks: number } | null = null;
+  /** The comment messages the engine listed in `hello-ack` (GRE-2361). */
+  private commentMessages = new Set<WebsiteFrameCommentMessage>();
+  /** The open comments' pins GSAM wants shown, and the ones last sent (as JSON), so a repeat sends nothing. */
+  private pins: WebsiteFrameCommentPins["pins"] | null = null;
+  private sentPins: { key: string; pins: WebsiteFrameCommentPins["pins"] } | null = null;
   /** `import-live` was sent to an empty draft: its save may add blocks in Edit copy. */
   private importing = false;
   /** `insert-media` and `set-motion` requests waiting for their result, by message id. */
@@ -285,6 +305,16 @@ export class WebsiteFrameHostSession<Source> {
         if (this.copyMode) return this.drop("media-requested in Edit copy");
         this.options.onMediaRequested?.(message.payload);
         return;
+      case "pin-clicked":
+        this.pinClicked(message.payload);
+        return;
+      case "ask-agent":
+        this.askAgent(message.payload);
+        return;
+      case "capture-result":
+        if (!this.commentMessages.has("capture")) return this.drop("capture-result from an engine that did not list capture");
+        this.reply(message.type, message.payload);
+        return;
     }
   }
 
@@ -357,6 +387,33 @@ export class WebsiteFrameHostSession<Source> {
     if (command === "layout" || command === "import-live") return false;
     if (this.copyMode && COPY_MODE_REFUSED.has(command)) return false;
     return this.sendCommand(command, on);
+  }
+
+  /** The comment messages the engine listed in its `hello-ack` (GRE-2361). Empty for an older engine. */
+  get commentFeatures(): ReadonlySet<WebsiteFrameCommentMessage> {
+    return this.commentMessages;
+  }
+
+  /**
+   * The open comments' pins (GRE-2361), sent as `comment-pins` once the draft
+   * is loaded and again each time they change. A pin for a block that is not
+   * on the shown draft is left out. Editor only, and only to an engine that
+   * lists `comment-pins`.
+   */
+  setCommentPins(pins: WebsiteFrameCommentPins["pins"]) {
+    this.pins = pins;
+    this.sendPins();
+  }
+
+  /**
+   * A PNG of a block, or of the page when `blockId` is null (GRE-2361).
+   * Resolves with the frame's `capture-result`, or null when the engine does
+   * not list `capture`, the draft is not loaded, or no answer comes in 5 s.
+   */
+  capture(blockId: string | null): Promise<WebsiteFrameCaptureResult | null> {
+    if (!this.commentMessages.has("capture")) return Promise.resolve(null);
+    if (blockId !== null && !this.shownBlocks.has(blockId)) return Promise.resolve(null);
+    return this.request("capture", { blockId }, "capture-result", WEBSITE_FRAME_CAPTURE_TIMEOUT_MS, { anyMode: true });
   }
 
   /** True when the engine has Edit copy (contract 2 with the `layout` command). */
@@ -445,10 +502,12 @@ export class WebsiteFrameHostSession<Source> {
     this.motion = {
       blocks: new Map(ack.blocks.flatMap((block) => (block.motion ? [[block.type, block.motion] as const] : []))),
       effects: ack.motionEffects ?? [],
+      surfaces: ack.backgroundSurfaces ?? [],
     };
     this.commands = new Set((ack.editorCommands ?? []).filter(isWebsiteEditorCommand));
     this.copySupported = this.options.mode === "editor" && websiteEditorHasCopyMode(ack);
     this.live = this.options.mode === "editor" && this.copySupported ? (ack.liveContent ?? null) : null;
+    this.commentMessages = new Set(ack.editorMessages ?? []);
     this.setConnection({ phase: "ready", protocol: ack.protocol, engine: ack.engine });
 
     let draft: WebsiteFrameDraft;
@@ -472,6 +531,8 @@ export class WebsiteFrameHostSession<Source> {
       media: draft.media,
       site: draft.site,
     });
+    this.sentPins = null;
+    this.sendPins();
     this.options.onDraftLoaded?.();
   }
 
@@ -545,6 +606,8 @@ export class WebsiteFrameHostSession<Source> {
         if (result.outcome === "saved") {
           this.importing = false;
           this.rememberShown(result.revisionId, save.data);
+          // A saved draft may have new or fewer blocks: their pins follow.
+          this.sendPins();
         }
         this.options.onSaveState?.(
           result.outcome === "saved"
@@ -580,19 +643,48 @@ export class WebsiteFrameHostSession<Source> {
     });
   }
 
+  private sendPins() {
+    if (this.options.mode !== "editor" || !this.commentMessages.has("comment-pins") || this.pins === null) return;
+    if (this.connection.phase !== "ready" || this.shownRevisionId === null) return;
+    const pins = this.pins.filter((pin) => this.shownBlocks.has(pin.blockId));
+    const parsed = websiteFrameCommentPinsSchema.safeParse({ pins });
+    if (!parsed.success) return this.drop("comment-pins payload GSAM made is invalid");
+    const key = JSON.stringify(parsed.data.pins);
+    if (key === this.sentPins?.key) return;
+    if (this.send("comment-pins", parsed.data) !== null) this.sentPins = { key, pins: parsed.data.pins };
+  }
+
+  private pinClicked(pin: WebsiteFramePinClicked) {
+    if (this.options.mode !== "editor") return this.drop("pin-clicked outside the editor");
+    if (!this.commentMessages.has("pin-clicked")) return this.drop("pin-clicked from an engine that did not list it");
+    if (!this.sentPins?.pins.some((entry) => entry.blockId === pin.blockId && entry.number === pin.number)) {
+      return this.drop("pin-clicked for a pin GSAM did not send");
+    }
+    this.options.onPinClicked?.(pin);
+  }
+
+  private askAgent(ask: WebsiteFrameAskAgent) {
+    if (this.options.mode !== "editor") return this.drop("ask-agent outside the editor");
+    if (!this.commentMessages.has("ask-agent")) return this.drop("ask-agent from an engine that did not list it");
+    const block = this.shownBlocks.get(ask.blockId);
+    if (!block || block.type !== ask.blockType) return this.drop("ask-agent with an unknown block");
+    this.options.onAskAgent?.(ask);
+  }
+
   private invalid(type: "insert-media" | "set-motion") {
     this.drop(`${type} payload GSAM made is invalid`);
     return Promise.resolve(null);
   }
 
-  /** Editor only, after the draft is loaded: send, then wait for the matching result or the timeout. */
+  /** After the draft is loaded (editor only unless `anyMode`): send, then wait for the matching result or the timeout. */
   private request<R>(
-    type: "insert-media" | "set-motion",
+    type: RequestType,
     payload: Record<string, unknown>,
     replyType: ReplyType,
     timeoutMs: number,
+    { anyMode = false }: { anyMode?: boolean } = {},
   ): Promise<R | null> {
-    if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null) {
+    if ((!anyMode && this.options.mode !== "editor") || this.connection.phase !== "ready" || this.shownRevisionId === null) {
       return Promise.resolve(null);
     }
     return new Promise<R | null>((resolve) => {

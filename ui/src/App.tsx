@@ -29,6 +29,7 @@ import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { ClientAcceptancePage } from "./pages/ClientAcceptance";
+import { ClientDeliverablePage } from "./pages/ClientDeliverable";
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
@@ -52,6 +53,15 @@ const TaskChatLab = lazyPage(() => import("./pages/TaskChatLab"), "TaskChatLab")
 const Cases = lazyPage(() => import("./pages/Cases"), "Cases");
 const CaseDetail = lazyPage(() => import("./pages/CaseDetail"), "CaseDetail");
 const DeepDive = lazyPage(() => import("./pages/DeepDive"), "DeepDive");
+const DeepDiveFiles = lazyPage(() => import("./pages/DeepDiveFiles"), "DeepDiveFiles");
+const DeepDiveFindings = lazyPage(() => import("./pages/DeepDiveFindings"), "DeepDiveFindings");
+const DeepDiveSessions = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessions");
+const DeepDiveSessionDetail = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessionDetail");
+const DeepDiveOrganisation = lazyPage(() => import("./pages/DeepDiveOrganisation"), "DeepDiveOrganisation");
+const DeepDiveProcessBoard = lazyPage(() => import("./pages/DeepDiveProcessBoard"), "DeepDiveProcessBoard");
+const DeepDiveOpportunities = lazyPage(() => import("./pages/DeepDiveOpportunities"), "DeepDiveOpportunities");
+const DeepDiveTraceability = lazyPage(() => import("./pages/DeepDiveTraceability"), "DeepDiveTraceability");
+const DeepDiveOverview = lazyPage(() => import("./pages/DeepDiveOverview"), "DeepDiveOverview");
 const DashboardLive = lazyPage(() => import("./pages/DashboardLive"), "DashboardLive");
 const Companies = lazyPage(() => import("./pages/Companies"), "Companies");
 const AgentDetail = lazyPage(() => import("./pages/AgentDetail"), "AgentDetail");
@@ -87,6 +97,7 @@ const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverable
 const Website = lazyPage(() => import("./pages/Website"), "Website");
 const WebsiteEditorPage = lazyPage(() => import("./pages/WebsiteEditorPage"), "WebsiteEditorPage");
 const WebsiteFeaturePage = lazyPage(() => import("./pages/WebsiteFeature"), "WebsiteFeaturePage");
+const CommercePage = lazyPage(() => import("./pages/Commerce"), "CommercePage");
 const Intelligence = lazyPage(() => import("./pages/Intelligence"), "Intelligence");
 const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
 const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
@@ -352,6 +363,42 @@ function boardRoutes() {
         element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
       />
       <Route
+        path="deep-dive/files"
+        element={<DeepDiveExperimentalGate><DeepDiveFiles /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/findings"
+        element={<DeepDiveExperimentalGate><DeepDiveFindings /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/sessions"
+        element={<DeepDiveExperimentalGate><DeepDiveSessions /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/sessions/:sessionId"
+        element={<DeepDiveExperimentalGate><DeepDiveSessionDetail /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/organisation"
+        element={<DeepDiveExperimentalGate><DeepDiveOrganisation /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/processes"
+        element={<DeepDiveExperimentalGate><DeepDiveProcessBoard /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/opportunities"
+        element={<DeepDiveExperimentalGate><DeepDiveOpportunities /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/traceability"
+        element={<DeepDiveExperimentalGate><DeepDiveTraceability /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/overview"
+        element={<DeepDiveExperimentalGate><DeepDiveOverview /></DeepDiveExperimentalGate>}
+      />
+      <Route
         path="status"
         element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
       />
@@ -436,6 +483,10 @@ function boardRoutes() {
       {/* The full-screen website editor (GRE-2296): it covers the shell, so it has no sidebar or header. */}
       <Route path="website/edit" element={<WebsiteEditorPage />} />
       <Route path="website/sites/:siteId/features/:featureId" element={<WebsiteFeaturePage />} />
+      {/* Commerce (GRE-2383): the website's quotes, orders, invoices and licences, read only. Greatstone only. */}
+      <Route path="commerce" element={<CommercePage />} />
+      <Route path="commerce/:resource" element={<CommercePage />} />
+      <Route path="commerce/:resource/:recordId" element={<CommercePage />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
       <Route path="whats-new" element={<WhatsNew />} />
@@ -840,6 +891,7 @@ export function App() {
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
         <Route path="accept/:token" element={<ClientAcceptancePage />} />
+        <Route path="deliverable/:token" element={<ClientDeliverablePage />} />
         <Route element={<CloudAccessGate allowMembershipRequest />}>
           {/* The identity APIs enforce the chat rollout flag. Nonmembers cannot
               read experimental settings, but a private invitation may request membership. */}
@@ -870,6 +922,15 @@ export function App() {
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
           <Route path="cases/:caseIdentifier" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/files" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/findings" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/sessions" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/sessions/:sessionId" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/organisation" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/processes" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/opportunities" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/traceability" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
@@ -889,6 +950,9 @@ export function App() {
           <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
           <Route path="images" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
+          <Route path="commerce" element={<UnprefixedBoardRedirect />} />
+          <Route path="commerce/:resource" element={<UnprefixedBoardRedirect />} />
+          <Route path="commerce/:resource/:recordId" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="whats-new" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />

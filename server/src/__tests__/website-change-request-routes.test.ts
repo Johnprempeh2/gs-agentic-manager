@@ -264,6 +264,17 @@ describeEmbeddedPostgres("website click to change", () => {
     expect(task!.description).toContain("No block was selected: the comment is about the whole page.");
     expect(task!.description).toContain("Do not publish");
     expect(task!.description).not.toContain("Block id:");
+    expect(task!.description).toContain("No screenshot was sent");
+  });
+
+  // GRE-2361: the editor captured a PNG; GSAM attaches it right after.
+  it("with a screenshot the task says one is attached", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const sent = { requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId, request: "Shorter, please.", screenshot: true };
+    await request(app()).post(url(a.company.id, a.site.id, a.page.id)).send(sent).expect(201);
+    const [task] = await changeTasks(a.company.id);
+    expect(task!.description).toContain("A screenshot of the page as the person saw it is attached to this task.");
+    expect(task!.description).not.toContain("No screenshot was sent");
   });
 
   it("a block id without its type, or a type without an id, is refused", async () => {

@@ -395,6 +395,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   publishProposals: "/companies/:companyId/website/sites/:siteId/publish-proposals",
   /** GET → `WebsiteHomeSummary` (website:view): the Home tab's counts, releases and last 8 events in one read. */
   home: "/companies/:companyId/website/sites/:siteId/home",
+  /** GET → `WebsiteSiteStyle` (website:view): colours, fonts and building blocks from the site's stylesheet and release theme. */
+  style: "/companies/:companyId/website/sites/:siteId/style",
 } as const;
 
 /** A release as the Home shows it: who published it by name. */

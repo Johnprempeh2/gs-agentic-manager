@@ -21,6 +21,11 @@ import {
   websiteFrameSetMotionSchema,
   websiteFrameInsertMediaSchema,
   websiteFrameSrc,
+  isWebsiteFramePngDataUrl,
+  WEBSITE_FRAME_CAPTURE_MAX_BYTES,
+  WEBSITE_FRAME_COMMENT_MESSAGES,
+  websiteFrameCaptureSchema,
+  websiteFrameCommentPinsSchema,
 } from "./website-frame.js";
 
 const ORIGIN = "https://editor.example.com";
@@ -277,6 +282,39 @@ describe("set-motion (GRE-2232)", () => {
     });
   });
 
+  it("reads the GRE-2522 library: preview, description, safe settings and plain surfaces", () => {
+    const veil = {
+      id: "bg.veil",
+      label: "Veil",
+      still: "/motion/veil-dark.webp",
+      study: "019",
+      preview: "/effect-preview/bg.veil",
+      description: "Veil ambient study.",
+      settings: {
+        intensity: ["off", "subtle", "full"],
+        speed: ["still", "slow", "normal"],
+        colour: ["emerald", "teal"],
+        defaults: { intensity: "subtle", speed: "slow", colour: "emerald" },
+      },
+      textSafety: { quietZone: "copy", minimumBodyContrast: "7:1", limeBehindCopy: false, reducedMotion: "still" },
+    };
+    const backgroundSurfaces = [
+      { id: "none", label: "None" },
+      { id: "panel", label: "Panel" },
+    ];
+    const received = receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: ack({ blocks: [], motionEffects: [veil, { ...veil, id: "bg.orbit", preview: "https://x.example/p" }], backgroundSurfaces }) },
+      ctx(null),
+    );
+    const payload = received.ok && received.message.type === "hello-ack" ? received.message.payload : null;
+    const { textSafety: _textSafety, ...known } = veil;
+    expect(payload?.motionEffects?.[0]).toEqual(known);
+    // An off-origin preview is dropped, never the effect.
+    expect(payload?.motionEffects?.[1]?.preview).toBeUndefined();
+    expect(payload?.backgroundSurfaces).toEqual(backgroundSurfaces);
+    expect(receive("set-motion-result", { requestId: "r1", ok: false, code: "frozen_page" }).ok).toBe(true);
+  });
+
   it("drops a bad motion list but keeps the handshake", () => {
     const received = receiveWebsiteFrameMessage(
       {
@@ -300,6 +338,14 @@ describe("set-motion (GRE-2232)", () => {
     expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "extreme" } }).success).toBe(false);
     expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "<b>", intensity: "full" } }).success).toBe(false);
     expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "none", intensity: "off" }, code: "x" }).success).toBe(false);
+    // GRE-2522: speed, colour and a plain surface; a block takes an effect or a surface, not both.
+    expect(
+      websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle", speed: "slow", colour: "teal" } }).success,
+    ).toBe(true);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle", speed: "fast" } }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "none", intensity: "off" }, surface: "panel" }).success).toBe(true);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle" }, surface: "panel" }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle" }, surface: "none" }).success).toBe(true);
   });
 
   it("accepts set-motion-result with each refusal code the site sends", () => {
@@ -308,6 +354,7 @@ describe("set-motion (GRE-2232)", () => {
       "block_has_no_motion",
       "effect_not_allowed",
       "invalid_payload",
+      "frozen_page",
       "error",
     ]);
     expect(receive("set-motion-result", { requestId: "m8", ok: true }).ok).toBe(true);
@@ -407,5 +454,72 @@ describe("full-screen editor messages (GRE-2296)", () => {
     expect(receive("media-requested", { blockId: "h1", field: "image", kind: "image", label: "Hero banner" }).ok).toBe(true);
     expect(receive("media-requested", { blockId: "h1", field: "image", kind: "video" }).ok).toBe(false);
     expect(receive("media-requested", { blockId: "h1", field: "a.b", kind: "image" }).ok).toBe(false);
+  });
+});
+
+describe("comment messages (GRE-2361)", () => {
+  const receive = (type: string, payload: unknown, protocol: number | null = 1) =>
+    receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: { gs: "website-frame", protocol: 1, session: nonce, id: "m9", type, payload } },
+      ctx(protocol),
+    );
+  const helloAck = (overrides: Record<string, unknown>) => {
+    const result = receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: ack(overrides) }, ctx(null));
+    if (!result.ok || result.message.type !== "hello-ack") throw new Error("hello-ack was dropped");
+    return result.message.payload;
+  };
+  const png = (bytes: number) => `data:image/png;base64,${"A".repeat(Math.ceil(bytes / 3) * 4)}`;
+
+  it("reads editorMessages from hello-ack, keeping only known ones; an older engine leaves it out", () => {
+    expect(WEBSITE_FRAME_COMMENT_MESSAGES).toEqual(["comment-pins", "pin-clicked", "ask-agent", "capture"]);
+    expect(helloAck({ editorMessages: ["comment-pins", "capture", "teleport"] }).editorMessages).toEqual(["comment-pins", "capture"]);
+    expect(helloAck({}).editorMessages).toBeUndefined();
+    expect(helloAck({ editorMessages: { pins: true } }).editorMessages).toBeUndefined();
+  });
+
+  it("comment-pins takes block ids and positive numbers only", () => {
+    const parses = (payload: unknown) => websiteFrameCommentPinsSchema.safeParse(payload).success;
+    expect(parses({ pins: [] })).toBe(true);
+    expect(parses({ pins: [{ blockId: "hero-1", number: 1 }] })).toBe(true);
+    expect(parses({ pins: [{ blockId: "hero 1", number: 1 }] })).toBe(false);
+    expect(parses({ pins: [{ blockId: "hero-1", number: 0 }] })).toBe(false);
+    expect(parses({ pins: [{ blockId: "hero-1", number: 1, html: "<b>" }] })).toBe(false);
+    expect(parses({ pins: Array.from({ length: 201 }, (_, index) => ({ blockId: `b${index}`, number: index + 1 })) })).toBe(false);
+  });
+
+  it("pin-clicked and ask-agent pass with a valid block and are dropped otherwise", () => {
+    expect(receive("pin-clicked", { blockId: "hero-1", number: 2 })).toMatchObject({ ok: true, message: { payload: { blockId: "hero-1", number: 2 } } });
+    expect(receive("pin-clicked", { blockId: "hero-1", number: -1 }).ok).toBe(false);
+    expect(receive("pin-clicked", { blockId: "hero-1", number: 2 }, null).ok).toBe(false);
+    expect(receive("ask-agent", { blockId: "hero-1", blockType: "Hero", label: "Hero banner" }).ok).toBe(true);
+    expect(receive("ask-agent", { blockId: "hero-1", blockType: "hero", label: "Hero" }).ok).toBe(false);
+    expect(receive("ask-agent", { blockId: "hero-1", blockType: "Hero", label: "x".repeat(201) }).ok).toBe(false);
+  });
+
+  it("capture names a block or null for the page", () => {
+    const parses = (payload: unknown) => websiteFrameCaptureSchema.safeParse(payload).success;
+    expect(parses({ blockId: "hero-1" })).toBe(true);
+    expect(parses({ blockId: null })).toBe(true);
+    expect(parses({})).toBe(false);
+    expect(parses({ blockId: "../x" })).toBe(false);
+  });
+
+  it("capture-result takes a PNG data URL of at most 2 MB, or a refusal", () => {
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(1000), width: 1440 }).ok).toBe(true);
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(WEBSITE_FRAME_CAPTURE_MAX_BYTES), width: 1440 }).ok).toBe(true);
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(WEBSITE_FRAME_CAPTURE_MAX_BYTES + 3), width: 1440 }).ok).toBe(false);
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(1000), width: 0 }).ok).toBe(false);
+    expect(receive("capture-result", { requestId: "r1", ok: false, message: "Could not draw the page." }).ok).toBe(true);
+    expect(receive("capture-result", { requestId: "r1", ok: false }).ok).toBe(true);
+  });
+
+  it("a screenshot is a base64 PNG data URL and nothing else", () => {
+    expect(isWebsiteFramePngDataUrl("data:image/png;base64,iVBORw0KGgo=")).toBe(true);
+    expect(isWebsiteFramePngDataUrl("data:image/jpeg;base64,iVBORw0KGgo=")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/svg+xml;base64,PHN2Zz4=")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/png,<svg>")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/png;base64,abc")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/png;base64,")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("https://example.com/shot.png")).toBe(false);
   });
 });

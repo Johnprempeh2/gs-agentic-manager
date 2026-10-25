@@ -697,3 +697,110 @@ describe("Edit copy (GRE-2394)", () => {
     expect(built.sentOf("editor-command")).toHaveLength(0);
   });
 });
+
+describe("comments in the frame (GRE-2361)", () => {
+  const ALL = ["comment-pins", "pin-clicked", "ask-agent", "capture"];
+  const PNG = `data:image/png;base64,${"iVBORw0K".repeat(4)}`;
+  const ready = async (overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> = {}, ack: Record<string, unknown> = {}) => {
+    const t = setup(overrides);
+    t.session.start();
+    t.ack({ editorMessages: ALL, ...ack });
+    await flush();
+    return t;
+  };
+
+  it("sends the pins after load-draft, again only when they change, and leaves out blocks not on the draft", async () => {
+    const t = setup();
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }, { blockId: "gone", number: 2 }]);
+    t.session.start();
+    t.ack({ editorMessages: ALL });
+    await flush();
+    const types = t.sent.map((entry) => entry.message.type);
+    expect(types.indexOf("comment-pins")).toBeGreaterThan(types.indexOf("load-draft"));
+    expect(t.sentOf("comment-pins").map((entry) => entry.message.payload)).toEqual([{ pins: [{ blockId: "h1", number: 1 }] }]);
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }]);
+    expect(t.sentOf("comment-pins")).toHaveLength(1);
+    t.session.setCommentPins([]);
+    expect(t.sentOf("comment-pins").at(-1)!.message.payload).toEqual({ pins: [] });
+  });
+
+  it("an older engine gets no pins or captures and its pin-clicked and ask-agent are dropped", async () => {
+    const onPinClicked = vi.fn();
+    const onAskAgent = vi.fn();
+    const t = await ready({ onPinClicked, onAskAgent }, { editorMessages: undefined });
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }]);
+    expect(t.sentOf("comment-pins")).toHaveLength(0);
+    await expect(t.session.capture(null)).resolves.toBeNull();
+    expect(t.sentOf("capture")).toHaveLength(0);
+    t.msg("pin-clicked", { blockId: "h1", number: 1 });
+    t.msg("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero" });
+    expect(onPinClicked).not.toHaveBeenCalled();
+    expect(onAskAgent).not.toHaveBeenCalled();
+  });
+
+  it("a malformed editorMessages list keeps the handshake and drops unknown names", async () => {
+    const bad = await ready({}, { editorMessages: "capture" });
+    expect(bad.session.state.phase).toBe("ready");
+    expect(bad.session.commentFeatures.size).toBe(0);
+    const mixed = await ready({}, { editorMessages: ["capture", "launch-missiles"] });
+    expect([...mixed.session.commentFeatures]).toEqual(["capture"]);
+  });
+
+  it("passes a click on a pin GSAM sent; any other pin is dropped", async () => {
+    const onPinClicked = vi.fn();
+    const t = await ready({ onPinClicked });
+    t.session.setCommentPins([{ blockId: "h1", number: 3 }]);
+    t.msg("pin-clicked", { blockId: "h1", number: 2 });
+    t.msg("pin-clicked", { blockId: "other", number: 3 });
+    expect(onPinClicked).not.toHaveBeenCalled();
+    t.msg("pin-clicked", { blockId: "h1", number: 3 });
+    expect(onPinClicked).toHaveBeenCalledWith({ blockId: "h1", number: 3 });
+  });
+
+  it("passes ask-agent for a block on the draft, in Edit copy too; an unknown block or wrong type is dropped", async () => {
+    const onAskAgent = vi.fn();
+    const t = await ready({ onAskAgent }, { editorContract: 2, editorCommands: ["layout"] });
+    expect(t.session.copyMode).toBe(true);
+    t.msg("ask-agent", { blockId: "nope", blockType: "Hero", label: "Hero" });
+    t.msg("ask-agent", { blockId: "h1", blockType: "Footer", label: "Hero" });
+    expect(onAskAgent).not.toHaveBeenCalled();
+    t.msg("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero banner" });
+    expect(onAskAgent).toHaveBeenCalledWith({ blockId: "h1", blockType: "Hero", label: "Hero banner" });
+  });
+
+  it("preview takes no pins, pin clicks or toolbar asks", async () => {
+    const onAskAgent = vi.fn();
+    const t = await ready({ mode: "preview", onAskAgent });
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }]);
+    expect(t.sentOf("comment-pins")).toHaveLength(0);
+    t.msg("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero" });
+    expect(onAskAgent).not.toHaveBeenCalled();
+  });
+
+  it("capture resolves with the frame's PNG for its own request", async () => {
+    const t = await ready();
+    const shot = t.session.capture("h1");
+    const request = t.sentOf("capture")[0]!.message as unknown as { id: string; payload: unknown };
+    expect(request.payload).toEqual({ blockId: "h1" });
+    t.msg("capture-result", { requestId: "someone-else", ok: true, png: PNG, width: 1440 });
+    t.msg("capture-result", { requestId: request.id, ok: true, png: PNG, width: 1440 });
+    await expect(shot).resolves.toEqual({ requestId: request.id, ok: true, png: PNG, width: 1440 });
+  });
+
+  it("capture of the whole page works in preview; a block not on the draft is not asked for", async () => {
+    const t = await ready({ mode: "preview" });
+    void t.session.capture(null);
+    expect(t.sentOf("capture").map((entry) => entry.message.payload)).toEqual([{ blockId: null }]);
+    await expect(t.session.capture("gone")).resolves.toBeNull();
+    expect(t.sentOf("capture")).toHaveLength(1);
+  });
+
+  it("capture resolves null with no answer in 5 s, and drops a PNG that is not a PNG data URL", async () => {
+    const t = await ready();
+    const shot = t.session.capture(null);
+    const request = t.sentOf("capture")[0]!.message as unknown as { id: string };
+    t.msg("capture-result", { requestId: request.id, ok: true, png: "data:image/svg+xml;base64,PHN2Zz4=", width: 10 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(shot).resolves.toBeNull();
+  });
+});

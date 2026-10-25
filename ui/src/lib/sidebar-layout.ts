@@ -17,7 +17,7 @@ export interface SidebarSectionDefault {
 export const SIDEBAR_SECTIONS: readonly SidebarSectionDefault[] = [
   { id: "today", label: "Today", items: ["needed", "decisions", "my-tasks", "inbox", "calendar"] },
   { id: "chats", label: "Chats", items: ["chats"] },
-  { id: "clients", label: "Clients", items: ["organisations", "pipelines", "deep-dive", "deliverables", "images"] },
+  { id: "clients", label: "Clients", items: ["organisations", "commerce", "pipelines", "deep-dive", "deliverables", "images"] },
   {
     id: "work",
     label: "Work",

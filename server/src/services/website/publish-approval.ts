@@ -170,8 +170,11 @@ export function websitePublishApprovals(db: Db) {
   async function assertCanDecide(actor: Express.Request["actor"], approval: Pick<ApprovalRow, "type" | "companyId" | "payload">) {
     if (approval.type !== WEBSITE_PUBLISH_APPROVAL_TYPE) return;
     if (actor.type !== "board") throw forbidden(WEBSITE_MESSAGES["agent.publish_refused"], { code: "website_publish_agent_refused" });
-    // The Publish runs in a person's name, so a board actor with no user cannot decide.
-    if (!actor.userId) throw forbidden(WEBSITE_MESSAGES["proposal.publish.person_only"], { code: "website_publish_person_only" });
+    // The Publish runs in a person's name, so a board actor with no user cannot
+    // decide; nor can a board API key (a script, not a click), as on the Publish route.
+    if (!actor.userId || (actor.source !== "session" && actor.source !== "local_implicit")) {
+      throw forbidden(WEBSITE_MESSAGES["proposal.publish.person_only"], { code: "website_publish_person_only" });
+    }
     const siteId = payloadOf(approval).siteId;
     if (typeof siteId !== "string") throw unprocessable("This Publish proposal names no site");
     const decision = await access.decide({

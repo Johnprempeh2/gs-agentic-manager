@@ -85,11 +85,12 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const site = await siteFor(req, res, "website:publish");
     if (!site) return;
     const actor = getActorInfo(req);
-    const key = await bridge.createReadKey(site, req.body, actor.actorType === "user" ? actor.actorId : null);
+    const key = await bridge.createKey(site, req.body, actor.actorType === "user" ? actor.actorId : null);
     await logActivity(db, {
       companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.data_bridge_key_created",
       entityType: "website_site", entityId: site.id, agentId: actor.agentId, runId: actor.runId,
-      details: { keyId: key.keyId, environment: req.body.environment, replaced: site.dataBridgeReadKeyId, url: req.body.url },
+      details: { keyId: key.keyId, capability: key.capability, environment: req.body.environment,
+        replaced: key.capability === "write" ? site.dataBridgeWriteKeyId : site.dataBridgeReadKeyId, url: req.body.url },
     });
     res.status(201).json(key);
   });

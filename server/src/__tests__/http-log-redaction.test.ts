@@ -651,6 +651,58 @@ describe("HTTP logger redaction", () => {
     });
   });
 
+  it("keeps the Netlify token out of failed website site create and update logs", async () => {
+    const chunks: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(chunk.toString());
+        callback();
+      },
+    });
+    const testLogger = pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream);
+    const app = express();
+    app.use(express.json());
+    app.use(createHttpLogger(testLogger));
+    const routes = express.Router();
+    // A refused connect check (wrong token or site) and a crash that echoes the token.
+    routes.post("/companies/:companyId/website/sites", (req, _res, next) => {
+      next(
+        new HttpError(422, `Netlify refused ${req.body.netlifyToken}`, {
+          code: "connect.err.token",
+          netlifyToken: req.body.netlifyToken,
+        }),
+      );
+    });
+    routes.patch("/companies/:companyId/website/sites/:siteId", (req, _res, next) => {
+      next(new Error(`Netlify unavailable for ${req.body.netlifyToken}`));
+    });
+    app.use("/api", routes);
+    app.use(errorHandler);
+
+    const createToken = "nfp_create-token-canary-71c2ab";
+    const updateToken = "nfp_update-token-canary-3e90fd";
+    const createResponse = await request(app)
+      .post("/api/companies/company-1/website/sites")
+      .send({
+        name: "Home",
+        domain: "example.com",
+        netlifySiteId: "site-1",
+        netlifyToken: createToken,
+      });
+    const updateResponse = await request(app)
+      .patch("/api/companies/company-1/website/sites/site-1")
+      .send({ netlifyToken: updateToken });
+
+    expect(createResponse.status).toBe(422);
+    expect(updateResponse.status).toBe(500);
+    const output = chunks.join("");
+    expect(output).not.toContain("token-canary");
+    expect(JSON.stringify(createResponse.body)).not.toContain(createToken);
+    expect(JSON.stringify(updateResponse.body)).not.toContain(updateToken);
+    const logs = output.trim().split("\n").filter(Boolean);
+    expect(logs).toHaveLength(2);
+  });
+
   it("redacts every credential from serialized chat setup 422 and 500 logs", async () => {
     const chunks: string[] = [];
     const stream = new Writable({

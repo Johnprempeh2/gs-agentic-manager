@@ -205,6 +205,8 @@ export const createWebsiteChangeRequestSchema = z
       .optional(),
     /** The change, in the person's own words. */
     request: z.string().trim().min(1).max(4000),
+    /** The editor captured a PNG (GRE-2361); GSAM attaches it to the task right after. */
+    screenshot: z.boolean().optional(),
   })
   .strict()
   .refine((value) => (value.blockId === undefined) === (value.blockType === undefined), {

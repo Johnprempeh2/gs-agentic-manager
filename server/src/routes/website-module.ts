@@ -52,10 +52,12 @@ import {
   type WebsitePublishOptions,
 } from "../services/website/publish.js";
 import { websiteChangeRequestService } from "../services/website/change-request.js";
+import type { WebsiteConnectionChecker } from "../services/website/connect-check.js";
 import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { websiteHomeService } from "../services/website/home.js";
+import { websiteStyleService } from "../services/website/style.js";
 import { websiteEnquiryService, type WebsiteEnquiryCopy, type WebsiteEnquiryReader } from "../services/website/enquiries.js";
 import { websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
@@ -94,6 +96,8 @@ export interface WebsiteModuleRouteOptions {
   allowLocalhostEditor?: boolean;
   /** Wakes the website agent when click to change gives it a task. */
   heartbeat?: IssueAssignmentWakeupDeps;
+  /** The Netlify and `/_release` check when a site is connected (GRE-2137). Default: the real one. */
+  checkConnection?: WebsiteConnectionChecker;
   /** The read-only admin bridge reader. Tests can supply a fake. */
   enquiryReader?: WebsiteEnquiryReader;
   /** Test seam for the Pipedrive copy; production uses the connected Pipedrive writer. */
@@ -132,7 +136,7 @@ const EDITOR_ORIGIN_PROBLEMS = {
 // cannot be probed.
 export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions = {}) {
   const router = Router();
-  const service = websiteModuleService(db);
+  const service = websiteModuleService(db, { checkConnection: options.checkConnection });
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
   const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
@@ -180,6 +184,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   }
   const publishApprovals = websitePublishApprovals(db);
   const home = websiteHomeService(db);
+  const style = websiteStyleService();
   const enquiries = websiteEnquiryService(db, options.enquiryReader
     ? options.enquiryCopy ?? websiteEnquiryPipedriveCopy(db)
     : undefined);
@@ -191,6 +196,22 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   function actorOf(req: Request): WebsiteActor {
     const info = getActorInfo(req);
     return info.actorType === "agent" ? { agentId: info.agentId, userId: null } : { agentId: null, userId: info.actorId };
+  }
+
+  /**
+   * Site create and update carry a Netlify token, so the error handler hides every 5xx body on them (GRE-2137).
+   * A Netlify outage is fixed, token-free copy the panel must still show, so the route answers it itself.
+   * Returns null when it has answered.
+   */
+  async function orNetlifyOutage<T>(res: Response, work: Promise<T>): Promise<T | null> {
+    try {
+      return await work;
+    } catch (err) {
+      const details = err instanceof HttpError ? (err.details as { code?: unknown } | undefined) : undefined;
+      if (!(err instanceof HttpError) || details?.code !== "website_connect_netlify_unavailable") throw err;
+      res.status(err.status).json({ error: err.message, code: details.code, details: err.details });
+      return null;
+    }
   }
 
   /**
@@ -359,7 +380,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     await allowed(req, companyId, "website:publish", undefined, { person: "perm.settings" });
     await assertPropertyInCompany(companyId, req.body.propertyId);
     const editorFrameOrigin = normaliseEditorFrameOrigin(req, req.body.domain, req.body.editorFrameOrigin);
-    const row = await service.createSite(companyId, { ...req.body, editorFrameOrigin }, actorOf(req));
+    const row = await orNetlifyOutage(res, service.createSite(companyId, { ...req.body, editorFrameOrigin }, actorOf(req)));
+    if (!row) return;
     await log(req, companyId, "website.site_connected", "website_site", row.id, {
       domain: row.domain,
       netlifyToken: Boolean(row.netlifyTokenSecretId),
@@ -385,7 +407,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     } else if (input.domain !== undefined && site.editorFrameOrigin && editorOriginProblem(req, { domain: input.domain }, site.editorFrameOrigin)) {
       throw unprocessable(EDITOR_ORIGIN_PROBLEMS["public-origin"], { code: "website_editor_origin_refused", problem: "public-origin" });
     }
-    const row = await service.updateSite(site, input, actorOf(req));
+    const row = await orNetlifyOutage(res, service.updateSite(site, input, actorOf(req)));
+    if (!row) return;
     const fields = Object.keys(req.body).map((key) => {
       if (key === "netlifyToken") return site.netlifyTokenSecretId && site.netlifyTokenSecretOwned ? "netlifyToken (rotated)" : "netlifyToken (new site secret)";
       if (key === "netlifyTokenSecretId") return req.body.netlifyTokenSecretId ? "netlifyTokenSecretId (shared secret linked)" : "netlifyTokenSecretId (unlinked)";
@@ -408,6 +431,14 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     res.json(await home.summary(site, gsamOriginsFor(req)));
+  });
+
+  // ---- style (the Website Style tab and the agents' style read, GRE-2520) ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.style, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await style.read(site, { fresh: req.query.fresh === "1" }));
   });
 
   // ---- front door and enquiries ----

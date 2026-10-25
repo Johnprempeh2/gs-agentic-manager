@@ -13,6 +13,7 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   list_website_features: mcpToolHints("read"),
   website_data_list: mcpToolHints("read"),
   website_data_get: mcpToolHints("read"),
+  website_style_get: mcpToolHints("read"),
 };
 /** Read-only tool outside the runner catalog: the website feature registry (GRE-2325). Needs website:view. */
 const WEBSITE_FEATURES_TOOL = {
@@ -75,6 +76,25 @@ const WEBSITE_DATA_TOOLS = [
     },
   },
 ];
+/**
+ * Read-only: a connected site's style (GRE-2520), the same answer as the Website Style tab. Colours with their
+ * CSS variables, release tokens and contrast ratings, fonts and the type scale, buttons, links, cards and pills,
+ * radius, spacing and motion tokens. Agents read it so a change uses the site's own tokens.
+ */
+const WEBSITE_STYLE_TOOL = {
+  name: "website_style_get",
+  description: "Read a connected website's style: its colours (CSS variable, release theme token, hex, role, where used, contrast ratings), fonts and type scale, building blocks (buttons, links, cards, pills) and radius, spacing and motion tokens, from the live stylesheet with the release theme on top. Use these tokens in any style change.",
+  annotations: PROJECT_TOOL_HINTS.website_style_get,
+  inputSchema: {
+    type: "object",
+    properties: {
+      siteId: { type: "string", description: "The website site id (list_website_features shows them)." },
+      fresh: { type: "boolean", description: "Read the site again now instead of the copy from the last ten minutes." },
+    },
+    required: ["siteId"],
+    additionalProperties: false,
+  },
+};
 export function projectToolDefinitions(workMode: string, includeTask = false) {
   const catalog: Array<{ name: string; description: string; annotations: McpToolHints | undefined; inputSchema: unknown }> = CAPABILITY_SEMANTIC_TOOL_CATALOG.filter(tool =>
     (PROJECT_TOOL_NAMES.includes(tool.operationId) || includeTask && tool.operationId === "create_task")
@@ -85,7 +105,7 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS];
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -149,6 +169,11 @@ export async function callProjectTool(input: {
   }
   if (input.name === "website_data_list" || input.name === "website_data_get") {
     return readWebsiteData({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });
+  }
+  if (input.name === "website_style_get") {
+    const { siteId, fresh } = z.object({ siteId: z.string().uuid(), fresh: z.boolean().optional() }).strict().parse(args);
+    const path = `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(siteId)}/style`;
+    return apiGet(input.apiUrl, input.token, fresh ? `${path}?fresh=1` : path);
   }
   let path = `/companies/${input.companyId}/projects`;
   let body: unknown;

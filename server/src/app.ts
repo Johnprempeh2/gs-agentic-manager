@@ -76,9 +76,12 @@ import { websiteRoutes } from "./routes/website.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
 import { websiteFeaturesRoutes } from "./routes/website-features.js";
 import { websiteDataBridgeRoutes } from "./routes/website-data-bridge.js";
+import { websiteBridgeInboundRoutes, websiteDeepDiveSyncRoutes } from "./routes/website-deep-dive-sync.js";
 import { websiteDataBridgeService } from "./services/website/data-bridge.js";
 import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
 import { websiteEnquiryPipedriveCopy } from "./services/website/enquiry-pipedrive.js";
+import { registerWebsitePublishStarter } from "./services/website/publish-approval.js";
+import { websitePublishStarter } from "./services/website/publish.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
 import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
@@ -99,10 +102,17 @@ import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
 import { issueTablingRoutes } from "./routes/issue-tabling.js";
 import { deliverableRoutes } from "./routes/deliverables.js";
 import { caseRoutes } from "./routes/cases.js";
+import { deepDiveFindingsRoutes } from "./routes/deep-dive-findings.js";
+import { deepDiveSessionsRoutes } from "./routes/deep-dive-sessions.js";
+import { deepDiveBoardsRoutes } from "./routes/deep-dive-boards.js";
+import { deepDiveOpportunitiesRoutes } from "./routes/deep-dive-opportunities.js";
+import { deepDiveTraceabilityRoutes } from "./routes/deep-dive-traceability.js";
+import { deepDiveOverviewRoutes } from "./routes/deep-dive-overview.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
 import { clientAcceptancePublicRoutes } from "./routes/client-acceptance-public.js";
+import { clientDeliverablePublicRoutes, clientPublicationRoutes } from "./routes/client-publications.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
 import { organisationRoutes } from "./routes/organisations.js";
 import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
@@ -784,6 +794,11 @@ export async function createApp(
   );
   api.use(websiteFeaturesRoutes(db));
   api.use(websiteDataBridgeRoutes(db));
+  api.use(websiteDeepDiveSyncRoutes(db));
+  // The site's signed call back (GRE-2439): no sign-in, the gs-bridge-v1 signature is the key.
+  api.use(websiteBridgeInboundRoutes(db));
+  // "Approve and Publish" on a website_publish card starts the Publish (GRE-2139).
+  registerWebsitePublishStarter(websitePublishStarter(db));
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
@@ -879,6 +894,12 @@ export async function createApp(
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
+  api.use(deepDiveFindingsRoutes(db));
+  api.use(deepDiveSessionsRoutes(db));
+  api.use(deepDiveBoardsRoutes(db));
+  api.use(deepDiveOpportunitiesRoutes(db));
+  api.use(deepDiveTraceabilityRoutes(db));
+  api.use(deepDiveOverviewRoutes(db));
   api.use(issueTreeControlRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
@@ -886,6 +907,8 @@ export async function createApp(
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(clientAcceptancePublicRoutes(db, opts.storageService));
+  api.use(clientPublicationRoutes(db, { publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(clientDeliverablePublicRoutes(db, opts.storageService));
   api.use(crmSyncRoutes(db));
   api.use(organisationRoutes(db, { storage: opts.storageService }));
   api.use(

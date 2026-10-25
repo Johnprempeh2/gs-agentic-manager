@@ -243,7 +243,7 @@ const DiagramMinimap = memo(function DiagramMinimap({
 });
 
 /** Tab and Shift+Tab stay inside the element while it is full screen. */
-function trapTab(event: KeyboardEvent<HTMLElement>, container: HTMLElement | null) {
+export function trapTab(event: KeyboardEvent<HTMLElement>, container: HTMLElement | null) {
   if (event.key !== "Tab" || !container) return;
   const focusable = [...container.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
     (el) => !el.hasAttribute("disabled") && el.getClientRects().length > 0,
