@@ -6,6 +6,7 @@ import "@greatstone/shared/legacy-env-bootstrap";
 // instrumentationReady before opening DB connections or constructing the
 // HTTP server, so trace coverage does not depend on incidental timing.
 import { instrumentationReady, shutdownInstrumentation } from "./instrumentation.js";
+import { createTrackedSingleFlight } from "./lib/single-flight.js";
 import { sentryReady, shutdownSentry, captureException } from "./sentry.js";
 import { waitForPendingRunFailureReports } from "./services/run-failure-report.js";
 import { setBoardIdentityDeploymentMode } from "./services/board-identity.js";
@@ -1343,6 +1344,16 @@ async function startServerWithDatabaseTeardown(
       });
     heartbeatSchedulerInFlight.add(tracked);
   };
+  const runPeriodicRecovery = createTrackedSingleFlight({
+    trackWork: trackHeartbeatSchedulerWork,
+    onSkipped: (inFlightForMs) => {
+      if (inFlightForMs >= 3 * config.heartbeatSchedulerIntervalMs) {
+        logger.error({ inFlightForMs }, "periodic heartbeat recovery remains in flight; duplicate pass suppressed");
+      } else {
+        logger.warn({ inFlightForMs }, "skipped periodic heartbeat recovery tick; previous chain still in flight");
+      }
+    },
+  });
   const waitForHeartbeatSchedulerIdle = async () => {
     while (heartbeatSchedulerInFlight.size > 0) {
       await Promise.allSettled([...heartbeatSchedulerInFlight]);
@@ -2231,7 +2242,7 @@ async function startServerWithDatabaseTeardown(
           }
           // Periodically reap orphaned runs (5-min staleness threshold) and make sure
           // persisted queued work is still being driven forward.
-          trackHeartbeatSchedulerWork(heartbeat
+          runPeriodicRecovery(() => heartbeat
             .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {
