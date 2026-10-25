@@ -77,6 +77,20 @@ describe("website style read", () => {
     expect(textOnBg!.ratio).toBeGreaterThan(15);
   });
 
+  it("counts rules that write the colour itself rather than the variable", () => {
+    const style = buildSiteStyle({
+      siteId: "s1", siteUrl: "https://example.com/", theme: {},
+      css: ":root { --pink: #ff4c81; --ink: #111; --blue: #00f; } .btn-blue { background: #0000ff; } .tag { color: #FF4C81; } .hero { background: rgb(255, 76, 129); } .x { color: #ff4c8180; }",
+      stylesheets: [], fontStylesheets: [], problem: null,
+    });
+    const pink = style.colours.find((c) => c.cssVar === "--pink");
+    expect(pink?.usedFor).toEqual(expect.arrayContaining(["text", "background"]));
+    expect(pink?.usedIn).toEqual([".tag", ".hero"]);
+    expect(style.colours.find((c) => c.cssVar === "--ink")?.usedIn).toEqual([]);
+    // A written-out use shows where the colour is used but does not set its role.
+    expect(style.colours.find((c) => c.cssVar === "--blue")).toMatchObject({ role: "other", usedIn: [".btn-blue"] });
+  });
+
   it("reads fonts, the type scale, building blocks, tokens and surfaces", () => {
     const style = buildSiteStyle({
       siteId: "s1", siteUrl: "https://example.com/", theme: {}, css: CSS, stylesheets: [],

@@ -311,6 +311,8 @@ interface Sources {
 }
 
 const VAR_REF = /var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\)/g;
+/** A colour written out in a declaration: hex, rgb() or hsl(). */
+const LITERAL_COLOUR = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\([^()]*\)/gi;
 
 /** Build the style answer from what was read. Pure, so the tests can feed it a stylesheet. */
 export function buildSiteStyle(input: {
@@ -372,17 +374,48 @@ export function buildSiteStyle(input: {
     }
   }
 
+  // Many sites write the colour itself (`color: #ff4c81`) rather than the variable: those rules count too.
+  const literalUsage = new Map<string, Usage>();
+  const colourKey = (c: Rgba) => `${toHex(c)}/${Math.round(c.a * 100)}`;
+  for (const rule of parsed.rules) {
+    for (const [prop, value] of rule.declarations) {
+      if (prop.startsWith("--")) continue;
+      for (const match of value.matchAll(LITERAL_COLOUR)) {
+        const rgba = parseColour(match[0]);
+        if (!rgba) continue;
+        const key = colourKey(rgba);
+        const entry = literalUsage.get(key) ?? emptyUsage();
+        const kind = propertyKind(prop);
+        entry.kinds.set(kind, (entry.kinds.get(kind) ?? 0) + 1);
+        if (entry.selectors.length < 4 && !entry.selectors.includes(rule.selector)) entry.selectors.push(rule.selector);
+        literalUsage.set(key, entry);
+      }
+    }
+  }
+
   const colours: WebsiteStyleColour[] = [];
   const tokens: WebsiteStyleToken[] = [];
   for (const [cssVar, entry] of vars) {
     const resolved = resolve(entry.value);
     const rgba = parseColour(resolved);
-    const used = usage.get(cssVar);
+    const viaVar = usage.get(cssVar);
+    let used = viaVar;
+    const literal = rgba ? literalUsage.get(colourKey(rgba)) : undefined;
+    if (literal) {
+      const both = { kinds: new Map(used?.kinds ?? []), selectors: [...(used?.selectors ?? [])] };
+      for (const [k, c] of literal.kinds) both.kinds.set(k, (both.kinds.get(k) ?? 0) + c);
+      for (const s of literal.selectors) if (both.selectors.length < 4 && !both.selectors.includes(s)) both.selectors.push(s);
+      used = both;
+    }
     if (rgba) {
-      const kinds = [...(used?.kinds ?? new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+      const byCount = (u: Usage | undefined) => [...(u?.kinds ?? new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+      const kinds = byCount(used);
       const named = roleFromName(cssVar);
+      // The role comes from the variable's own uses: a framework writes every palette colour into
+      // its generated button and table rules, which would make each one look like a background.
+      const main = byCount(viaVar)[0];
       const fromUse: WebsiteStyleColourRole | null =
-        kinds[0] === "text" ? "text" : kinds[0] === "background" ? "background" : kinds[0] === "border" ? "border" : null;
+        main === "text" ? "text" : main === "background" ? "background" : main === "border" ? "border" : null;
       colours.push({
         cssVar,
         token: entry.token,
