@@ -404,8 +404,8 @@ function LiveRun({
           Question {index + 1} of {ordered.length} · {cellLabel(streams, current)}
           {!firstOpen ? " · every question has an answer" : ""}
         </p>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <form onSubmit={saveAndNext} className="space-y-3">
+        <div className="grid gap-4 lg:grid-cols-5">
+          <form onSubmit={saveAndNext} className="space-y-3 lg:col-span-3">
             <h2 id="deep-dive-live-question" className="text-base font-semibold">
               {current.prompt}
             </h2>
@@ -436,7 +436,9 @@ function LiveRun({
               </Button>
             </div>
           </form>
-          <KnownPanel known={current.known} />
+          <div className="min-w-0 lg:col-span-2">
+            <KnownPanel known={current.known} />
+          </div>
         </div>
       </Card>
       <nav aria-label="All questions" className="flex flex-wrap gap-1.5">

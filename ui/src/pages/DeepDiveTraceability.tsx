@@ -66,9 +66,9 @@ function ChainCard({ chain }: { chain: DeepDiveChain }) {
               <li
                 key={step}
                 data-chain-step={step}
-                className={cn("grid grid-cols-[6.5rem_1fr] gap-2 border-l-2 pl-2 text-sm", isBreak ? "border-destructive" : "border-border")}
+                className={cn("flex gap-2 border-l-2 pl-2 text-sm", isBreak ? "border-destructive" : "border-border")}
               >
-                <span className="text-xs font-medium text-muted-foreground">{DEEP_DIVE_CHAIN_STEP_LABELS[step]}</span>
+                <span className="w-26 shrink-0 text-xs font-medium text-muted-foreground">{DEEP_DIVE_CHAIN_STEP_LABELS[step]}</span>
                 {items.length > 0 ? (
                   <span className="min-w-0 break-words">{items.map((item) => item.name).join(" · ")}</span>
                 ) : (
@@ -89,10 +89,10 @@ function CommercialRow({ commercial, chain, run }: { commercial: DeepDiveCommerc
   return (
     <li className="space-y-1 rounded-md border border-border px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-[10rem] flex-1 break-words text-sm font-medium">{commercial.name}</span>
+        <span className="min-w-40 flex-1 break-words text-sm font-medium">{commercial.name}</span>
         <NativeSelect
           aria-label={`Design ${commercial.name} is for`}
-          className="h-8 w-auto max-w-[14rem] text-xs"
+          className="h-8 w-auto max-w-56 text-xs"
           value={commercial.buildId ?? ""}
           onChange={(event) => {
             const buildId = event.target.value || null;
@@ -114,12 +114,12 @@ function RoadmapRow({ item, chain, run }: { item: DeepDiveRoadmapItem; chain: De
   return (
     <li className="space-y-1.5 rounded-md border border-border px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-[10rem] flex-1 break-words text-sm font-medium">
+        <span className="min-w-40 flex-1 break-words text-sm font-medium">
           {item.name}{item.phase ? <span className="text-xs text-muted-foreground"> · {item.phase}</span> : null}
         </span>
         <NativeSelect
           aria-label={`Commercial case ${item.name} delivers`}
-          className="h-8 w-auto max-w-[14rem] text-xs"
+          className="h-8 w-auto max-w-56 text-xs"
           value={item.commercialId ?? ""}
           onChange={(event) => {
             const commercialId = event.target.value || null;

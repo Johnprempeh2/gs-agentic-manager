@@ -153,13 +153,13 @@ function BuildRow({ build, board, run }: { build: DeepDiveBuild; board: DeepDive
   return (
     <li className="space-y-1.5 rounded-md border border-border px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-[10rem] flex-1 break-words text-sm font-medium">{build.ref ? `${build.ref} · ` : ""}{build.name}</span>
+        <span className="min-w-40 flex-1 break-words text-sm font-medium">{build.ref ? `${build.ref} · ` : ""}{build.name}</span>
         <NativeSelect aria-label={`State of ${build.name}`} className="h-8 w-auto text-xs" value={state} onChange={(event) => chooseState(event.target.value as DeepDiveBuildState)}>
           {DEEP_DIVE_BUILD_STATES.map((option) => <option key={option} value={option}>{DEEP_DIVE_BUILD_STATE_LABELS[option]}</option>)}
         </NativeSelect>
         <NativeSelect
           aria-label={`Opportunity ${build.name} serves`}
-          className="h-8 w-auto max-w-[12rem] text-xs"
+          className="h-8 w-auto max-w-48 text-xs"
           value={build.opportunityId ?? ""}
           onChange={(event) => {
             const opportunityId = event.target.value || null;
@@ -219,7 +219,7 @@ function OpportunityCard({ opportunity, board, run }: { opportunity: DeepDiveOpp
     <li>
       <Card className="gap-3 px-4 py-3">
         <div className="flex flex-wrap items-start gap-2">
-          <div className="min-w-[12rem] flex-1">
+          <div className="min-w-48 flex-1">
             <h3 className="break-words text-sm font-semibold">{opportunity.ref ? `${opportunity.ref} · ` : ""}{opportunity.name}</h3>
             <p className="text-sm"><span className="text-muted-foreground">Desired outcome: </span>{opportunity.desiredOutcome}</p>
             {opportunity.statement ? <p className="text-xs text-muted-foreground">{opportunity.statement}</p> : null}
@@ -273,13 +273,13 @@ function KpiCard({ kpi, board, run }: { kpi: DeepDiveKpi; board: DeepDiveOpportu
     <li>
       <Card className="gap-2 px-4 py-3">
         <div className="flex flex-wrap items-start gap-2">
-          <div className="min-w-[12rem] flex-1">
+          <div className="min-w-48 flex-1">
             <h3 className="break-words text-sm font-semibold">{kpi.name}</h3>
             <p className="text-xs text-muted-foreground">{SCOPE_LABELS[kpi.scope]} number · {DEEP_DIVE_KPI_DIRECTION_LABELS[kpi.direction]}</p>
           </div>
           <NativeSelect
             aria-label={`Owner of ${kpi.name}`}
-            className="h-8 w-auto max-w-[12rem] text-xs"
+            className="h-8 w-auto max-w-48 text-xs"
             value={kpi.ownerPersonId}
             onChange={(event) => {
               const ownerPersonId = event.target.value;

@@ -430,8 +430,8 @@ export function DeepDiveOrganisation() {
         </Card>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-        <section aria-labelledby="deep-dive-units" className="space-y-2">
+      <div className="grid gap-3 lg:grid-cols-3">
+        <section aria-labelledby="deep-dive-units" className="space-y-2 lg:col-span-2">
           <h2 id="deep-dive-units" className="text-sm font-semibold">Units</h2>
           {tree.length > 0 ? (
             <ul className="space-y-2">

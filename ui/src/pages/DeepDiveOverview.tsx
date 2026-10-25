@@ -14,7 +14,7 @@ import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOv
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -38,7 +38,7 @@ const GIF_LABEL = new Map<string, string>(DEEP_DIVE_GIF.map((g) => [g.key, g.lab
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "No date set";
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return formatDateTime(iso);
 }
 
 function StepRow({ step, lead = false }: { step: DeepDiveNextStep; lead?: boolean }) {
