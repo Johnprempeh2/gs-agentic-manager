@@ -287,7 +287,7 @@ export function nodeStatus(node: Node, pagesById: Map<string, WebsitePage>): Sit
 /* ---- Board layout (GRE-2542) ---- */
 
 /** Card size and spacing on the Board, in board pixels. At 100% the title is 14px and the path 12px. */
-export const BOARD_CARD = { width: 232, height: 88 } as const;
+export const BOARD_CARD = { width: 232, height: 96 } as const;
 export const BOARD_GAP = {
   /** Between two section columns. */
   column: 32,

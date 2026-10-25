@@ -11,6 +11,8 @@ import { MoveControls, StatusPill, focusRing, type SitemapViewProps } from "./Si
 
 const PAD = 16;
 const GRID = 20;
+/** Space above a card brought to the top of the view. */
+const TOP_GAP = 24;
 
 const pageOf = (node: Node, pagesById: Map<string, WebsitePage>) =>
   (node.pageId ? pagesById.get(node.pageId) : undefined) ?? pagesById.get(`slug:${node.path}`);
@@ -121,6 +123,19 @@ export function SitemapBoardView({
     if (box) reveal(pad(box), true);
   };
 
+  /**
+   * Put a card near the top of the view, so the pages under it show below it.
+   * Keeps the zoom unless it is too small to read, then comes back to 100%.
+   */
+  const showAtTop = (box: BoardBox) => {
+    const el = viewportRef.current;
+    if (!el || el.clientWidth === 0) return reveal(box);
+    const k = Math.max(view.k, 1);
+    const left = box.x * k + view.x;
+    const inView = k === view.k && left >= 0 && left + box.width * k <= el.clientWidth;
+    setView({ k, x: inView ? view.x : el.clientWidth / 2 - (box.x + box.width / 2) * k, y: TOP_GAP - box.y * k });
+  };
+
   /** Unfold the way to a page, select it and bring it into view at a size that can be read. */
   const findPage = (id: string) => {
     const byId = new Map(tree.nodes.map((node) => [node.id, node]));
@@ -137,13 +152,10 @@ export function SitemapBoardView({
     const box = pad(layout.cards.get(pendingFocus)!);
     setSelected(pendingFocus);
     viewportRef.current?.querySelector<HTMLElement>(`[data-board-node="${pendingFocus}"]`)?.focus({ preventScroll: true });
-    const el = viewportRef.current;
-    if (el && el.clientWidth > 0 && view.k < 1) {
-      // Zoomed out too far to read: come back to 100% on the page found.
-      setView({ k: 1, x: el.clientWidth / 2 - (box.x + box.width / 2), y: el.clientHeight / 2 - (box.y + box.height / 2) });
-    } else reveal(box);
+    showAtTop(box);
     setPendingFocus(null);
-  }, [pendingFocus, layout, reveal, setView, view.k, viewportRef]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocus, layout, viewportRef]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, id: string) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -366,7 +378,10 @@ export function SitemapBoardView({
                       aria-expanded={false}
                       data-board-more={id}
                       onPointerDown={(event) => event.stopPropagation()}
-                      onClick={() => toggle(id)}
+                      onClick={() => {
+                        toggle(id);
+                        showAtTop(pad(layout.cards.get(id)!));
+                      }}
                       className={cn(
                         "inline-flex size-full items-center justify-center rounded-full border border-dashed border-border bg-card text-xs font-medium text-foreground shadow-xs hover:bg-accent",
                         focusRing,
