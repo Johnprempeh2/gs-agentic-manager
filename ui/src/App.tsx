@@ -54,6 +54,8 @@ const CaseDetail = lazyPage(() => import("./pages/CaseDetail"), "CaseDetail");
 const DeepDive = lazyPage(() => import("./pages/DeepDive"), "DeepDive");
 const DeepDiveFiles = lazyPage(() => import("./pages/DeepDiveFiles"), "DeepDiveFiles");
 const DeepDiveFindings = lazyPage(() => import("./pages/DeepDiveFindings"), "DeepDiveFindings");
+const DeepDiveSessions = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessions");
+const DeepDiveSessionDetail = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessionDetail");
 const DashboardLive = lazyPage(() => import("./pages/DashboardLive"), "DashboardLive");
 const Companies = lazyPage(() => import("./pages/Companies"), "Companies");
 const AgentDetail = lazyPage(() => import("./pages/AgentDetail"), "AgentDetail");
@@ -361,6 +363,14 @@ function boardRoutes() {
       <Route
         path="deep-dive/findings"
         element={<DeepDiveExperimentalGate><DeepDiveFindings /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/sessions"
+        element={<DeepDiveExperimentalGate><DeepDiveSessions /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/sessions/:sessionId"
+        element={<DeepDiveExperimentalGate><DeepDiveSessionDetail /></DeepDiveExperimentalGate>}
       />
       <Route
         path="status"
@@ -887,6 +897,8 @@ export function App() {
           <Route path="deep-dive" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/files" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/findings" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/sessions" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/sessions/:sessionId" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
