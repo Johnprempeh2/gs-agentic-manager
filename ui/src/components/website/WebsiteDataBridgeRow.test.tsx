@@ -41,12 +41,28 @@ describe("WebsiteDataBridgeRow", () => {
   }
   const button = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === text);
 
+  const line = (capability: string) => container.querySelector(`[data-testid=website-data-bridge-key-${capability}]`)!;
+  const lineButton = (capability: string, text: string) => [...line(capability).querySelectorAll("button")].find((b) => b.textContent === text);
+  const submit = () => act(() => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+
+  it("shows one line per key, with its id and when it was made, or Not set", async () => {
+    bridgeMock.status.mockResolvedValue({ ...notSetUp, state: "connected", keyId: "stg-read-2026-10-abc123",
+      writeKeyId: "live-write-2026-09-def456", refundKeyId: null });
+    render(false);
+    await flush();
+    expect(line("read").textContent).toContain("stg-read-2026-10-abc123");
+    expect(line("read").textContent).toContain("Staging site, made October 2026");
+    expect(line("write").textContent).toContain("live-write-2026-09-def456");
+    expect(line("write").textContent).toContain("Live site, made September 2026");
+    expect(line("refund_request").textContent).toContain("Not set");
+  });
+
   it("says when GSAM cannot read yet, and shows no key button without Publish rights", async () => {
     bridgeMock.status.mockResolvedValue(notSetUp);
     render(false);
     await flush();
     expect(container.textContent).toContain("Not set up.");
-    expect(button("Make read key")).toBeUndefined();
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 
   it("makes a read key and shows only the public entry to add to GSAM_BRIDGE_KEYS", async () => {
@@ -55,12 +71,28 @@ describe("WebsiteDataBridgeRow", () => {
     bridgeMock.createKey.mockResolvedValue({ keyId: keysEntry.kid, capability: "read", publicKey: keysEntry.publicKey, keysEntry });
     render(true);
     await flush();
-    act(() => button("Make read key")!.click());
-    act(() => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    act(() => lineButton("read", "Make key")!.click());
+    submit();
     await flush();
-    expect(bridgeMock.createKey).toHaveBeenCalledWith("co-1", "site-1", { environment: "stg", url: undefined });
+    expect(bridgeMock.createKey).toHaveBeenCalledWith("co-1", "site-1", { environment: "stg", capability: "read", url: undefined });
     expect(container.querySelector("[data-testid=website-data-bridge-entry]")!.textContent).toBe(JSON.stringify(keysEntry));
     expect(container.textContent).toContain("GSAM_BRIDGE_KEYS");
+  });
+
+  it.each([["write"], ["refund_request"]])("makes a missing %s key with that capability", async (capability) => {
+    bridgeMock.status.mockResolvedValue({ ...notSetUp, state: "connected", keyId: "stg-read-2026-10-abc123", writeKeyId: null, refundKeyId: null });
+    const keysEntry = { kid: `live-${capability}-2026-10-abc123`, capability, publicKey: "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg" };
+    bridgeMock.createKey.mockResolvedValue({ keyId: keysEntry.kid, capability, publicKey: keysEntry.publicKey, keysEntry });
+    render(true);
+    await flush();
+    expect(lineButton("read", "Make key")).toBeUndefined();
+    act(() => lineButton(capability, "Make key")!.click());
+    const select = container.querySelector("select")!;
+    act(() => { select.value = "live"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    submit();
+    await flush();
+    expect(bridgeMock.createKey).toHaveBeenCalledWith("co-1", "site-1", { environment: "live", capability, url: undefined });
+    expect(container.querySelector("[data-testid=website-data-bridge-entry]")!.textContent).toBe(JSON.stringify(keysEntry));
   });
 
   it("shows why the site is not reading", async () => {
@@ -70,6 +102,6 @@ describe("WebsiteDataBridgeRow", () => {
     await flush();
     expect(container.textContent).toContain("Not reading.");
     expect(container.textContent).toContain("refused GSAM's read key");
-    expect(button("Make a new read key")).toBeDefined();
+    expect(lineButton("read", "Make a new key")).toBeDefined();
   });
 });
