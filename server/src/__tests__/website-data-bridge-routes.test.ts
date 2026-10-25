@@ -179,7 +179,7 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect((await http.get(`${base}/data-bridge/status`).expect(200)).body).toMatchObject({ state: "not_set_up", keyId: null, url: "https://www.greatstone.test" });
 
     const key = await makeKey(base);
-    answer = () => Response.json({ ok: true, kid: key.keyId, capability: "read", serverTime: new Date(Date.now() + 3_000).toISOString(), schema: "gs-bridge-v1" });
+    answer = () => Response.json({ ok: true, kid: key.keyId, capability: "read", serverTime: new Date(Date.now() + 3_000).toISOString(), schema: "gs-bridge-v1", siteContract: 1 });
     const ok = (await http.get(`${base}/data-bridge/status`).expect(200)).body as WebsiteDataBridgeStatus;
     expect(ok).toMatchObject({ state: "connected", keyId: key.keyId, message: null });
     expect(ok.clockSkewSeconds).toBeGreaterThanOrEqual(2);
@@ -193,6 +193,15 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     const failing = (await http.get(`${base}/data-bridge/status`).expect(200)).body as WebsiteDataBridgeStatus;
     expect(failing).toMatchObject({ state: "failing", keyId: second.keyId });
     expect(failing.message).toMatch(/GSAM_BRIDGE_KEYS/);
+  });
+
+  it("shows a site on an older GSAM and website contract as out of date (GRE-2633)", async () => {
+    const { base } = await seedSite();
+    const key = await makeKey(base);
+    answer = () => Response.json({ ok: true, kid: key.keyId, capability: "read", serverTime: new Date().toISOString(), schema: "gs-bridge-v1" });
+    const old = (await request(app()).get(`${base}/data-bridge/status`).expect(200)).body as WebsiteDataBridgeStatus;
+    expect(old).toMatchObject({ state: "failing", keyId: key.keyId });
+    expect(old.message).toBe("Out of date: update the website. The website speaks contract none; GSAM needs 1 or later.");
   });
 
   it("reads through the bridge as the calling agent and run, read only", async () => {

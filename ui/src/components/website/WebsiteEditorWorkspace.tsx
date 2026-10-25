@@ -49,6 +49,8 @@ import {
   type WebsiteProperty,
   type WebsiteRevision,
   type WebsiteSite,
+  SITE_CONTRACT_OUT_OF_DATE_MESSAGE,
+  siteContractDetail,
 } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
 import { useConfirm } from "../../context/ConfirmContext";
@@ -681,6 +683,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const connectionMessage = frameConnectionMessage(connection, site.editorFrameOrigin!);
   // GRE-2357: an editor host older than the shell's contract never shows its own studio.
   const outOfDate = editing && connection.phase === "out-of-date";
+  // GRE-2633: a site on an older GSAM and website contract shows neither the editor nor the preview.
+  const siteOutOfDate = connection.phase === "site-out-of-date";
   const toggleDrawer = (next: Exclude<Drawer, null>) => setDrawer((current) => (current === next ? null : next));
   // GRE-2394: Edit copy changes words only. An engine without it opens as today, in Layout.
   const copy = editing && copyAvailable && editMode === "copy";
@@ -851,7 +855,20 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
       ) : null}
       <div className="relative flex min-h-0 flex-1">
         <div className={cn("relative min-w-0 flex-1", width ? "bg-muted" : "bg-background")}>
-          {notice ? null : outOfDate ? (
+          {notice ? null : siteOutOfDate ? (
+            <ScreenMessage>
+              <div data-testid="website-site-out-of-date">
+                <EmptyState
+                  icon={TriangleAlert}
+                  title={SITE_CONTRACT_OUT_OF_DATE_MESSAGE}
+                  message={`${siteContractDetail(connection)} Deploy the website from its main branch, then press Retry.`}
+                  action="Retry"
+                  onAction={reload}
+                  hideActionIcon
+                />
+              </div>
+            </ScreenMessage>
+          ) : outOfDate ? (
             <ScreenMessage>
               <div data-testid="website-editor-out-of-date">
                 <EmptyState
@@ -881,7 +898,9 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               hidden={editing && !ready}
               onConnection={(next) => {
                 // Removing an out-of-date frame tears its session down; the screen keeps saying why.
-                setConnection((current) => (current.phase === "out-of-date" && next.phase === "closed" ? current : next));
+                setConnection((current) =>
+                  (current.phase === "out-of-date" || current.phase === "site-out-of-date") && next.phase === "closed" ? current : next,
+                );
                 if (next.phase === "ready") {
                   setCommands(new Set(sessionRef.current?.editorCommands ?? []));
                   setCopyAvailable(Boolean(sessionRef.current?.hasCopyMode));
@@ -1258,7 +1277,7 @@ function SaveStatePill({
   // Full-strength text on a neutral fill: the state is a must-have, so never the faint grey.
   let tone = "border border-border bg-status-neutral-soft text-foreground";
   if (connection.phase === "connecting") text = "Connecting";
-  else if (connection.phase === "out-of-date" && mode === "edit") {
+  else if ((connection.phase === "out-of-date" && mode === "edit") || connection.phase === "site-out-of-date") {
     text = "Not open";
     tone = "bg-status-warning-soft text-status-warning-foreground";
   }

@@ -24,7 +24,7 @@ export function fakeNetlifyConnect(options: FakeNetlifyConnect = {}) {
     if (options.release === "unreachable") throw new TypeError("fetch failed");
     const release = options.release ?? {
       status: 200,
-      body: { number: 1, engine: { version: "0.2.0", commit: "abc" }, supportedReleaseSchemas: [1] },
+      body: { number: 1, engine: { version: "0.2.0", commit: "abc" }, supportedReleaseSchemas: [1], siteContract: 1 },
     };
     const text = typeof release.body === "string" ? release.body : JSON.stringify(release.body);
     return new Response(text, { status: release.status, headers: { "content-type": "application/json" } });
