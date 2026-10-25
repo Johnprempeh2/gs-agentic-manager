@@ -111,7 +111,10 @@ const URLISH_KEYS = new Set<string>([
 ]);
 
 function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEYS.has(key.toLowerCase());
+  const lower = key.toLowerCase();
+  // Any `*token` key (a website site's `netlifyToken`, GRE-2137) is treated as
+  // credential-bearing, so a new provider field does not need its own entry.
+  return SENSITIVE_KEYS.has(lower) || lower.endsWith("token");
 }
 
 function isUrlishKey(key: string): boolean {

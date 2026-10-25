@@ -251,7 +251,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", websiteModuleRoutes(db, { publish: publishOptions() }));
+    instance.use("/api", websiteModuleRoutes(db, { publish: publishOptions(), checkConnection: async () => ({ ok: true, engineVersion: "0.1.0" }) }));
     instance.use("/api", approvalRoutes(db));
     instance.use(errorHandler);
     return instance;
