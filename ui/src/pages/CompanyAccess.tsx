@@ -399,6 +399,14 @@ export function CompanyAccess() {
                           <AvatarFallback>{memberInitials(member)}</AvatarFallback>
                         </Avatar>
                         <span className="truncate font-medium">{displayName}</span>
+                        {member.qaLogin ? (
+                          <Badge variant="outline" title={`Expires ${new Date(member.qaLogin.expiresAt).toLocaleString()}`}>
+                            QA for {member.qaLogin.agentName} · until{" "}
+                            {new Date(member.qaLogin.expiresAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                          </Badge>
+                        ) : member.qaAccount ? (
+                          <Badge variant="outline">QA log-in, ended</Badge>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-muted-foreground">
