@@ -43,6 +43,7 @@ import {
   updateDocumentAnnotationThreadSchema,
   isUuidLike,
   DEEP_DIVE_CASE_TYPES,
+  deepDiveDepthError,
 } from "@greatstone/shared";
 import { formatAttachmentSize, MAX_ATTACHMENT_BYTES, normalizeContentType } from "../attachment-types.js";
 import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
@@ -76,6 +77,13 @@ async function assertDeepDiveCaseTypesEntitled(db: Db, caseTypes: readonly unkno
   if (caseTypes.some((caseType) => typeof caseType === "string" && DEEP_DIVE_TYPES.has(caseType))) {
     await assertEntitled(instanceSettingsService(db), "enableDeepDive");
   }
+}
+
+/** Book V, Ch 7: a Reduced stream must carry its reason, whoever writes it. */
+function assertDeepDiveStreamFields(caseType: string, fields: Record<string, unknown> | undefined) {
+  if (caseType !== DEEP_DIVE_CASE_TYPES.stream || fields === undefined) return;
+  const error = deepDiveDepthError(fields);
+  if (error) throw unprocessable(error);
 }
 
 async function lockCaseUpsertKey(db: CaseRouteDb, input: { companyId: string; caseType: string; key: string | null | undefined }) {
@@ -615,6 +623,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     assertCompanyAccess(req, companyId);
     const actor = getActorInfo(req);
     const body = req.body as z.infer<typeof createCaseSchema>;
+    assertDeepDiveStreamFields(body.caseType, body.fields);
 
     const result = await db.transaction(async (tx) => {
       await assertProjectBelongsToCompany(tx, { companyId, projectId: body.projectId ?? null });
@@ -1422,6 +1431,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     if (!caseRow) return next();
     const actor = getActorInfo(req);
     const body = patchCaseSchema.parse(req.body);
+    assertDeepDiveStreamFields(caseRow.caseType, body.fields);
     const nextLabelIds = body.labelIds ?? body.labels;
 
     const updated = await db.transaction(async (tx) => {

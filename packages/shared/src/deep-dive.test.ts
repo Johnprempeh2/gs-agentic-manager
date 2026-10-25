@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEEP_DIVE_GIF,
+  DEEP_DIVE_REDUCED_NEEDS_REASON,
   DEEP_DIVE_STREAMS,
+  deepDiveDepthError,
   deepDiveGifStubBody,
   defaultDeepDiveStreamFields,
   readDeepDiveStreamFields,
@@ -60,5 +62,19 @@ describe("deep dive vocabulary (Book V)", () => {
     expect(fields.status).toBe("not_started");
     expect(fields.knowledge.evidence).toBe("unknown");
     expect(fields.knowledge["current-state"]).toBe("known");
+  });
+
+  it("accepts a Full stream, or a Reduced stream with a named reason", () => {
+    expect(deepDiveDepthError(defaultDeepDiveStreamFields("data") as unknown as Record<string, unknown>)).toBeNull();
+    expect(deepDiveDepthError({ depth: "full", depthReason: "" })).toBeNull();
+    expect(deepDiveDepthError({ depth: "reduced", depthReason: "Client has no data team" })).toBeNull();
+    expect(deepDiveDepthError(null)).toBeNull();
+  });
+
+  it("refuses a Reduced stream with no reason (Book V, Ch 7)", () => {
+    expect(deepDiveDepthError({ depth: "reduced", depthReason: "" })).toBe(DEEP_DIVE_REDUCED_NEEDS_REASON);
+    expect(deepDiveDepthError({ depth: "reduced", depthReason: "   " })).toBe(DEEP_DIVE_REDUCED_NEEDS_REASON);
+    expect(deepDiveDepthError({ depth: "reduced" })).toBe(DEEP_DIVE_REDUCED_NEEDS_REASON);
+    expect(deepDiveDepthError({ depth: "reduced", depthReason: 42 })).toBe(DEEP_DIVE_REDUCED_NEEDS_REASON);
   });
 });

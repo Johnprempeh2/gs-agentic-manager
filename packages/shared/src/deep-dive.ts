@@ -124,6 +124,19 @@ export function readDeepDiveStreamFields(stream: DeepDiveStreamKey, raw: Record<
   };
 }
 
+export const DEEP_DIVE_REDUCED_NEEDS_REASON =
+  "Name the reason. A stream is never dropped, only reduced with a named reason.";
+
+/**
+ * Book V, Ch 7: a stream is never dropped, only reduced with a named reason.
+ * Returns the message to show when stored stream fields break that rule, else null.
+ */
+export function deepDiveDepthError(raw: Record<string, unknown> | null | undefined): string | null {
+  if (raw?.depth !== "reduced") return null;
+  const reason = typeof raw.depthReason === "string" ? raw.depthReason.trim() : "";
+  return reason ? null : DEEP_DIVE_REDUCED_NEEDS_REASON;
+}
+
 /** The stub body for a missing GIF document: only a heading and the question. */
 export function deepDiveGifStubBody(gif: (typeof DEEP_DIVE_GIF)[number]): string {
   return `# ${gif.label}\n\n${gif.question}\n`;
