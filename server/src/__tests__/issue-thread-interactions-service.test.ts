@@ -1931,11 +1931,11 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
       payload: { version: 1, prompt: "Open question?" },
     }, { userId: "local-board" });
     expect(openCard.resolverUserIds).toEqual([]);
-    const boardCard = await interactionsSvc.create({ id: issueId, companyId }, {
+    const moneyCard = await interactionsSvc.create({ id: issueId, companyId }, {
       kind: "request_confirmation", resolverPolicy: "human_only",
-      payload: { version: 1, prompt: "Board question?" },
+      payload: { version: 1, prompt: "Approve this spending request?" },
     }, { userId: "local-board" });
-    expect(boardCard.resolverUserIds).toEqual(expect.arrayContaining(["john", "ben"]));
+    expect(moneyCard.resolverUserIds).toEqual(expect.arrayContaining(["john", "ben"]));
     const card = await interactionsSvc.create({ id: issueId, companyId }, {
       kind: "request_confirmation",
       resolverPolicy: "human_only",
