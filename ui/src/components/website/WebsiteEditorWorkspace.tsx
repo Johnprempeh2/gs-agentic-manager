@@ -643,6 +643,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               ]}
               onChange={changeEditMode}
               disabled={!ready}
+              strong
               testId="website-edit-mode"
             />
           ) : null}
@@ -846,7 +847,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                   page={page}
                   help={
                     editing
-                      ? "This page has no content yet. An agent builds it from the sitemap, or switch to Layout to add blocks yourself."
+                      ? "This page has no content yet. Ask an agent to build it, or switch to Layout to add blocks yourself."
                       : "This page has no content yet. Switch to Edit to build it."
                   }
                 />
@@ -1254,6 +1255,7 @@ function Segmented<T extends string>({
   options,
   onChange,
   disabled,
+  strong,
   testId,
 }: {
   label: string;
@@ -1262,6 +1264,8 @@ function Segmented<T extends string>({
   options: { value: T; label: string; short?: string; title?: string }[];
   onChange: (value: T) => void;
   disabled?: boolean;
+  /** The chosen segment takes the primary fill, so the control stands out from Width. */
+  strong?: boolean;
   testId?: string;
 }) {
   return (
@@ -1276,7 +1280,11 @@ function Segmented<T extends string>({
           onClick={() => onChange(option.value)}
           className={cn(
             "inline-flex h-8 items-center px-2.5 text-xs font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            option.value === value ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            option.value === value
+              ? strong
+                ? "bg-primary text-primary-foreground"
+                : "bg-accent text-foreground"
+              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
             "disabled:pointer-events-none disabled:opacity-50",
           )}
         >

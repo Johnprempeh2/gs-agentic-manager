@@ -847,6 +847,8 @@ describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
     expect(notBuilt()!.textContent).toContain("Not built yet");
     expect(notBuilt()!.textContent).toContain("Home");
     expect(notBuilt()!.textContent).toContain("/");
+    // Says who acts, so nobody waits for work that is not running.
+    expect(notBuilt()!.textContent).toContain("Ask an agent to build it, or switch to Layout to add blocks yourself.");
     expect(importWarning()).toBeNull();
     // Layout keeps the canvas to add blocks, with one line that says so.
     await act(async () => modeButton("Layout").click());
