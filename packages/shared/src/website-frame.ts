@@ -11,6 +11,28 @@ export const WEBSITE_FRAME_TAG = "website-frame" as const;
 /** Protocol versions this GSAM speaks, highest last. */
 export const WEBSITE_FRAME_PROTOCOLS = [1] as const;
 
+/**
+ * The full-screen editor contract (`editor-state` / `editor-command`, GRE-2296)
+ * GSAM's editor shell needs (GRE-2357). An editor host below it gets "Editor
+ * host is out of date" instead of the frame. See `websiteEditorContractOf`.
+ */
+export const WEBSITE_EDITOR_CONTRACT = 1;
+
+/**
+ * The editor contract that has Edit copy (GRE-2394): the `editMode` in `hello`,
+ * the `layout` and `import-live` commands and `liveContent` in `hello-ack`. An
+ * editor host at contract 1 still opens, in today's full Layout editor.
+ */
+export const WEBSITE_EDITOR_COPY_CONTRACT = 2;
+
+/**
+ * How the full-screen editor opens (GRE-2394). `copy`: click words on the page
+ * to change them; no adding, moving, deleting, duplicating or block settings.
+ * `layout`: the whole editor. GSAM always opens in `copy`.
+ */
+export const WEBSITE_EDIT_MODES = ["copy", "layout"] as const;
+export type WebsiteEditMode = (typeof WEBSITE_EDIT_MODES)[number];
+
 export const WEBSITE_FRAME_HELLO_INTERVAL_MS = 250;
 export const WEBSITE_FRAME_HELLO_TIMEOUT_MS = 10_000;
 export const WEBSITE_FRAME_SAVE_TIMEOUT_MS = 30_000;
@@ -29,8 +51,29 @@ export const WEBSITE_FRAME_HANDSHAKE_TYPES: readonly WebsiteFrameHandshakeType[]
   "hello-refused",
 ];
 
-export type WebsiteFrameHostMessageType = "load-draft" | "save-result" | "highlight" | "teardown" | "insert-media";
-export type WebsiteFrameFrameMessageType = "dirty" | "save" | "block-picked" | "error" | "insert-media-result";
+export type WebsiteFrameHostMessageType =
+  | "load-draft"
+  | "save-result"
+  | "highlight"
+  | "teardown"
+  | "insert-media"
+  | "set-motion"
+  | "editor-command"
+  | "comment-pins"
+  | "capture";
+export type WebsiteFrameFrameMessageType =
+  | "dirty"
+  | "save"
+  | "block-picked"
+  | "error"
+  | "insert-media-result"
+  | "set-motion-result"
+  | "editor-state"
+  | "editor-key"
+  | "media-requested"
+  | "pin-clicked"
+  | "ask-agent"
+  | "capture-result";
 
 // ---------------------------------------------------------------- nonce
 
@@ -183,7 +226,39 @@ export function inspectWebsitePuckData(
 // ---------------------------------------------------------------- payloads
 
 const idString = z.string().min(1).max(200);
+const MAX_ASSET_URL_LENGTH = 2048;
 const protocolNumber = z.number().int().positive();
+
+// ---------------------------------------------------------------- motion (GRE-2232)
+
+/** Release intensities a block's motion takes (GRE-2215). `none` is always `off`. */
+export const WEBSITE_MOTION_INTENSITIES = ["off", "subtle", "full"] as const;
+export type WebsiteMotionIntensity = (typeof WEBSITE_MOTION_INTENSITIES)[number];
+
+/** An engine effect id, for example `bg.ascent`, or `none`. The engine owns the list. */
+const motionEffectIdSchema = z.string().regex(/^(none|[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9-]{0,47})$/);
+
+const motionChoiceSchema = z.object({ effect: motionEffectIdSchema, intensity: z.enum(WEBSITE_MOTION_INTENSITIES) });
+export type WebsiteMotionChoice = z.infer<typeof motionChoiceSchema>;
+
+/** `hello-ack.blocks[].motion`: the effects one block type takes, and what a new block starts with. */
+const blockMotionSchema = z.object({
+  effects: z.array(motionEffectIdSchema).min(1).max(50),
+  default: motionChoiceSchema,
+});
+
+/**
+ * `hello-ack.motionEffects`: one effect the engine can draw. `still` is a path on
+ * the editor origin. `study` is the Animation Lab study number it comes from, for
+ * a `bg.*` effect made from a text-safe study (015 to 020 today).
+ */
+export const websiteMotionEffectSchema = z.object({
+  id: motionEffectIdSchema,
+  label: z.string().min(1).max(100),
+  still: z.string().max(MAX_ASSET_URL_LENGTH).refine((value) => value.startsWith("/") && isWebsiteFrameAssetUrl(value)),
+  study: z.string().regex(/^\d{3}$/).optional(),
+});
+export type WebsiteMotionEffect = z.infer<typeof websiteMotionEffectSchema>;
 
 export const websiteFrameHelloAckSchema = z.object({
   protocol: protocolNumber,
@@ -191,9 +266,77 @@ export const websiteFrameHelloAckSchema = z.object({
   siteId: idString,
   engine: z.object({ version: z.string().max(100), commit: z.string().regex(/^[0-9a-f]{40}$/) }),
   supportedReleaseSchemas: z.array(protocolNumber).min(1),
-  blocks: z.array(z.object({ type: blockTypeSchema, label: z.string().max(200) })).max(500),
+  blocks: z
+    .array(z.object({ type: blockTypeSchema, label: z.string().max(200), motion: blockMotionSchema.optional().catch(undefined) }))
+    .max(500),
+  /** Added in protocol 1 (GRE-2232). An older engine leaves it out: no motion choices. */
+  // A malformed motion list is dropped, never the handshake: the editor still opens.
+  motionEffects: z.array(websiteMotionEffectSchema).max(100).optional().catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2296): the `editor-command`s the engine takes from
+   * GSAM's top bar. An older engine leaves it out: GSAM's undo, redo and save
+   * buttons stay off and the editor's own controls do the work.
+   */
+  editorCommands: z
+    .array(z.string().max(40))
+    .max(20)
+    .transform((commands) => commands.filter(isWebsiteEditorCommand))
+    .optional()
+    .catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2357): the full-screen editor contract the engine
+   * speaks. An engine from website PR #98 leaves it out but sends
+   * `editorCommands`; that counts as contract 1.
+   */
+  editorContract: protocolNumber.optional().catch(undefined),
+  /**
+   * Added at editor contract 2 (GRE-2394): the page the hello named has content
+   * on the live site (`blocks` at the top level). `import-live` puts it in the
+   * draft. Null or left out: the live site has nothing GSAM can import.
+   */
+  liveContent: z
+    .object({ blocks: z.number().int().min(1).max(500) })
+    .nullable()
+    .optional()
+    .catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2361): the comment messages the engine speaks
+   * (`WEBSITE_FRAME_COMMENT_MESSAGES`). An older engine leaves it out: GSAM
+   * sends no pins or captures and drops `pin-clicked` and `ask-agent`.
+   */
+  editorMessages: z
+    .array(z.string().max(40))
+    .max(20)
+    .transform((messages) => messages.filter(isWebsiteFrameCommentMessage))
+    .optional()
+    .catch(undefined),
 });
 export type WebsiteFrameHelloAck = z.infer<typeof websiteFrameHelloAckSchema>;
+
+/**
+ * The editor contract an engine's `hello-ack` shows (GRE-2357): its
+ * `editorContract`, else 1 when it lists `editorCommands` (website PR #98),
+ * else null (an engine from before the full-screen editor).
+ */
+export function websiteEditorContractOf(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): number | null {
+  if (typeof ack.editorContract === "number") return ack.editorContract;
+  return Array.isArray(ack.editorCommands) ? 1 : null;
+}
+
+/** True when the engine speaks at least the editor contract GSAM's shell needs. */
+export function isWebsiteEditorContractCurrent(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): boolean {
+  const contract = websiteEditorContractOf(ack);
+  return contract !== null && contract >= WEBSITE_EDITOR_CONTRACT;
+}
+
+/**
+ * True when the engine has Edit copy (GRE-2394): contract 2 or later and the
+ * `layout` command. Otherwise the editor opens as today, in Layout.
+ */
+export function websiteEditorHasCopyMode(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): boolean {
+  const contract = websiteEditorContractOf(ack);
+  return contract !== null && contract >= WEBSITE_EDITOR_COPY_CONTRACT && (ack.editorCommands ?? []).includes("layout");
+}
 
 export const websiteFrameHelloRefusedSchema = z.object({
   nonce: z.string(),
@@ -239,8 +382,6 @@ export const websiteFrameErrorSchema = z.object({ code: z.string().max(100), mes
  * protocol 1 is kept), so no reply in time means "not supported here".
  */
 export const WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS = 5_000;
-
-const MAX_ASSET_URL_LENGTH = 2048;
 
 /**
  * An `assetUrl` the frame may put in a block: an absolute `https://` URL with
@@ -333,12 +474,198 @@ export const websiteFrameInsertMediaResultSchema = z.discriminatedUnion("ok", [
 ]);
 export type WebsiteFrameInsertMediaResult = z.infer<typeof websiteFrameInsertMediaResultSchema>;
 
+// ---------------------------------------------------------------- set-motion (GRE-2232)
+
+/** How long the host waits for `set-motion-result`. An older engine drops `set-motion` without a reply. */
+export const WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS = 5_000;
+
+/**
+ * `set-motion` payload, host to frame: put this motion choice in this block of
+ * the open draft. The frame checks the effect against the block's own list and
+ * marks the draft unsaved; nothing is saved until the person saves.
+ */
+export const websiteFrameSetMotionSchema = z.object({ blockId: blockIdSchema, motion: motionChoiceSchema }).strict();
+export type WebsiteFrameSetMotion = z.infer<typeof websiteFrameSetMotionSchema>;
+
+/**
+ * Why the frame did not set the motion:
+ * - `block_not_found`: no block with `blockId` on the open page.
+ * - `block_has_no_motion`: the block type takes no motion.
+ * - `effect_not_allowed`: the block takes motion, but not this effect.
+ * - `invalid_payload`: the frame's own checks refused the payload.
+ * - `error`: anything else; `message` says what.
+ */
+export const WEBSITE_FRAME_SET_MOTION_ERROR_CODES = [
+  "block_not_found",
+  "block_has_no_motion",
+  "effect_not_allowed",
+  "invalid_payload",
+  "error",
+] as const;
+export type WebsiteFrameSetMotionErrorCode = (typeof WEBSITE_FRAME_SET_MOTION_ERROR_CODES)[number];
+
+/** `set-motion-result` payload, frame to host. `requestId` is the `id` of the `set-motion` it answers. */
+export const websiteFrameSetMotionResultSchema = z.discriminatedUnion("ok", [
+  z.object({ requestId: idString, ok: z.literal(true), message: z.string().max(2000).optional() }),
+  z.object({
+    requestId: idString,
+    ok: z.literal(false),
+    code: z.enum(WEBSITE_FRAME_SET_MOTION_ERROR_CODES),
+    message: z.string().max(2000).optional(),
+  }),
+]);
+export type WebsiteFrameSetMotionResult = z.infer<typeof websiteFrameSetMotionResultSchema>;
+
+// ---------------------------------------------------------------- full-screen editor (GRE-2296)
+
+/**
+ * `editor-command` commands, host to frame, from the full-screen editor's top
+ * bar and shortcuts. The frame does each one as if the person used its own
+ * control; nothing is saved except by `save`, which runs the frame's normal
+ * save (a `save` message back to GSAM). No reply: the frame's next
+ * `editor-state` shows the result.
+ * - `undo`, `redo`: the editor's own history.
+ * - `save`: save the draft now (Cmd+S in GSAM's top bar).
+ * - `add-block`: open the block library in the editor's drawer.
+ * - `deselect`: clear the selected block and close the editor's drawer.
+ * - `outline`: show (`on: true`) or hide the page outline.
+ * - `layout` (contract 2): the whole editor (`on: true`) or Edit copy (`on: false`).
+ * - `import-live` (contract 2): put the page's live content in the empty draft,
+ *   with its block ids, and save it (a normal `save`).
+ */
+export const WEBSITE_EDITOR_COMMANDS = ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"] as const;
+export type WebsiteEditorCommand = (typeof WEBSITE_EDITOR_COMMANDS)[number];
+
+export function isWebsiteEditorCommand(value: unknown): value is WebsiteEditorCommand {
+  return typeof value === "string" && (WEBSITE_EDITOR_COMMANDS as readonly string[]).includes(value);
+}
+
+export const websiteFrameEditorCommandSchema = z
+  .object({ command: z.enum(WEBSITE_EDITOR_COMMANDS), on: z.boolean().optional() })
+  .strict();
+export type WebsiteFrameEditorCommand = z.infer<typeof websiteFrameEditorCommandSchema>;
+
+/**
+ * `editor-state` payload, frame to host: sent after the draft loads and on
+ * every change to the selection, the editor's history or the outline. GSAM
+ * uses `selection` as the block that Media and Motion act on.
+ */
+export const websiteFrameEditorStateSchema = z.object({
+  selection: z.object({ blockId: blockIdSchema, blockType: blockTypeSchema, label: z.string().max(200) }).nullable(),
+  canUndo: z.boolean(),
+  canRedo: z.boolean(),
+  outline: z.boolean().optional(),
+});
+export type WebsiteFrameEditorState = z.infer<typeof websiteFrameEditorStateSchema>;
+
+/**
+ * `editor-key` payload, frame to host: a key GSAM acts on while focus is in the
+ * frame. Today only `escape` with nothing selected and no editor drawer open,
+ * which leaves the full-screen editor. The frame keeps Cmd+S and Cmd+Z itself.
+ */
+export const websiteFrameEditorKeySchema = z.object({ key: z.enum(["escape"]) });
+
+/**
+ * `media-requested` payload, frame to host: the person clicked an image (or an
+ * animation) in the page to replace it. GSAM opens its media picker for that
+ * block and field and answers with `insert-media` once something is picked.
+ */
+export const websiteFrameMediaRequestedSchema = z.object({
+  blockId: blockIdSchema,
+  field: blockFieldSchema,
+  kind: z.enum(["image", "animation"]),
+  label: z.string().max(200).optional(),
+});
+export type WebsiteFrameMediaRequested = z.infer<typeof websiteFrameMediaRequestedSchema>;
+
+// ---------------------------------------------------------------- comments (GRE-2361)
+
+/**
+ * The comment messages an engine lists in `hello-ack.editorMessages`. Each one
+ * goes only to, or is only taken from, an engine that lists it.
+ * - `comment-pins`, host to frame: a numbered pin on each block with an open comment.
+ * - `pin-clicked`, frame to host: the person clicked a pin; GSAM opens that thread.
+ * - `ask-agent`, frame to host: Ask an agent from the frame's block toolbar.
+ * - `capture`, host to frame, answered by `capture-result`: a PNG of a block or the page.
+ */
+export const WEBSITE_FRAME_COMMENT_MESSAGES = ["comment-pins", "pin-clicked", "ask-agent", "capture"] as const;
+export type WebsiteFrameCommentMessage = (typeof WEBSITE_FRAME_COMMENT_MESSAGES)[number];
+
+export function isWebsiteFrameCommentMessage(value: unknown): value is WebsiteFrameCommentMessage {
+  return typeof value === "string" && (WEBSITE_FRAME_COMMENT_MESSAGES as readonly string[]).includes(value);
+}
+
+/** Most pins one page shows. */
+export const WEBSITE_FRAME_MAX_PINS = 200;
+
+/**
+ * `comment-pins` payload, host to frame: sent after `load-draft` and each time
+ * the open comments change. The frame draws pin `number` on block `blockId`
+ * and removes every pin not in the list. A whole-page comment has no pin.
+ */
+export const websiteFrameCommentPinsSchema = z
+  .object({
+    pins: z
+      .array(z.object({ blockId: blockIdSchema, number: z.number().int().positive().max(9999) }).strict())
+      .max(WEBSITE_FRAME_MAX_PINS),
+  })
+  .strict();
+export type WebsiteFrameCommentPins = z.infer<typeof websiteFrameCommentPinsSchema>;
+
+/** `pin-clicked` payload, frame to host: one of the pins GSAM sent. */
+export const websiteFramePinClickedSchema = z.object({ blockId: blockIdSchema, number: z.number().int().positive().max(9999) });
+export type WebsiteFramePinClicked = z.infer<typeof websiteFramePinClickedSchema>;
+
+/** `ask-agent` payload, frame to host: Ask an agent about this block of the open draft. */
+export const websiteFrameAskAgentSchema = z.object({ blockId: blockIdSchema, blockType: blockTypeSchema, label: z.string().max(200) });
+export type WebsiteFrameAskAgent = z.infer<typeof websiteFrameAskAgentSchema>;
+
+/** How long the host waits for `capture-result`. No answer: the task says no screenshot was sent. */
+export const WEBSITE_FRAME_CAPTURE_TIMEOUT_MS = 5_000;
+/** Largest screenshot GSAM takes, in bytes of PNG. */
+export const WEBSITE_FRAME_CAPTURE_MAX_BYTES = 2 * 1024 * 1024;
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+const PNG_DATA_URL_MAX_LENGTH = PNG_DATA_URL_PREFIX.length + Math.ceil(WEBSITE_FRAME_CAPTURE_MAX_BYTES / 3) * 4;
+
+/** A base64 `data:image/png` URL of at most 2 MB of PNG. Any other type or encoding is refused. */
+export function isWebsiteFramePngDataUrl(value: string): boolean {
+  if (!value.startsWith(PNG_DATA_URL_PREFIX) || value.length > PNG_DATA_URL_MAX_LENGTH) return false;
+  const body = value.slice(PNG_DATA_URL_PREFIX.length);
+  return body.length > 0 && body.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(body);
+}
+
+/** `capture` payload, host to frame: a PNG of this block, or of the page as shown when `blockId` is null. */
+export const websiteFrameCaptureSchema = z.object({ blockId: blockIdSchema.nullable() }).strict();
+export type WebsiteFrameCapture = z.infer<typeof websiteFrameCaptureSchema>;
+
+/**
+ * `capture-result` payload, frame to host. `requestId` is the `id` of the
+ * `capture` it answers. `width` is the PNG's width in pixels.
+ */
+export const websiteFrameCaptureResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    requestId: idString,
+    ok: z.literal(true),
+    png: z.string().max(PNG_DATA_URL_MAX_LENGTH).refine(isWebsiteFramePngDataUrl),
+    width: z.number().int().positive().max(10_000),
+  }),
+  z.object({ requestId: idString, ok: z.literal(false), message: z.string().max(2000).optional() }),
+]);
+export type WebsiteFrameCaptureResult = z.infer<typeof websiteFrameCaptureResultSchema>;
+
 const framePayloadSchemas = {
   dirty: websiteFrameDirtySchema,
   save: websiteFrameSaveSchema,
   "block-picked": websiteFrameBlockPickedSchema,
   error: websiteFrameErrorSchema,
   "insert-media-result": websiteFrameInsertMediaResultSchema,
+  "set-motion-result": websiteFrameSetMotionResultSchema,
+  "editor-state": websiteFrameEditorStateSchema,
+  "editor-key": websiteFrameEditorKeySchema,
+  "media-requested": websiteFrameMediaRequestedSchema,
+  "pin-clicked": websiteFramePinClickedSchema,
+  "ask-agent": websiteFrameAskAgentSchema,
+  "capture-result": websiteFrameCaptureResultSchema,
 } as const;
 
 /**
@@ -363,7 +690,14 @@ export type WebsiteFrameIncoming =
   | { type: "save"; id: string; payload: WebsiteFrameSave }
   | { type: "block-picked"; id: string; payload: WebsiteFrameBlockPicked }
   | { type: "error"; id: string; payload: z.infer<typeof websiteFrameErrorSchema> }
-  | { type: "insert-media-result"; id: string; payload: WebsiteFrameInsertMediaResult };
+  | { type: "insert-media-result"; id: string; payload: WebsiteFrameInsertMediaResult }
+  | { type: "set-motion-result"; id: string; payload: WebsiteFrameSetMotionResult }
+  | { type: "editor-state"; id: string; payload: WebsiteFrameEditorState }
+  | { type: "editor-key"; id: string; payload: z.infer<typeof websiteFrameEditorKeySchema> }
+  | { type: "media-requested"; id: string; payload: WebsiteFrameMediaRequested }
+  | { type: "pin-clicked"; id: string; payload: WebsiteFramePinClicked }
+  | { type: "ask-agent"; id: string; payload: WebsiteFrameAskAgent }
+  | { type: "capture-result"; id: string; payload: WebsiteFrameCaptureResult };
 
 export interface WebsiteFrameReceiveContext<Source> {
   /** The site's `editorOrigin`. */
@@ -436,6 +770,8 @@ export function websiteFrameHelloMessage(input: {
   nonce: string;
   mode: WebsiteFrameMode;
   pageId: string;
+  /** Editor only (GRE-2394). An engine below contract 2 ignores it. */
+  editMode?: WebsiteEditMode;
 }) {
   return {
     gs: WEBSITE_FRAME_TAG,
@@ -447,6 +783,7 @@ export function websiteFrameHelloMessage(input: {
       nonce: input.nonce,
       mode: input.mode,
       pageId: input.pageId,
+      ...(input.mode === "editor" && input.editMode ? { editMode: input.editMode } : {}),
     },
   };
 }

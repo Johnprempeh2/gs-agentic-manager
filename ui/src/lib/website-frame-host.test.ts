@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebsiteFrameNonce } from "@greatstone/shared";
 import {
+  addsTextColour,
   WebsiteFrameHostSession,
   type WebsiteFrameConnection,
   type WebsiteFrameHostOptions,
@@ -54,6 +55,8 @@ function setup(overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> =
         engine: { version: "1.0.0", commit: "b".repeat(40) },
         supportedReleaseSchemas: [1],
         blocks: [{ type: "Hero", label: "Hero" }],
+        // A current editor host (GRE-2357); tests of an older one leave it out.
+        editorContract: 1,
         ...payload,
       },
     });
@@ -105,7 +108,7 @@ describe("handshake", () => {
   });
 
   it("shows no-answer after 10 s (test 3)", () => {
-    const t = setup();
+    const t = setup({ mode: "preview" });
     t.session.start();
     vi.advanceTimersByTime(10_000);
     expect(t.session.state).toEqual({ phase: "no-answer" });
@@ -394,5 +397,410 @@ describe("insert-media (GRE-2206)", () => {
     const pending = t.session.insertMedia(payload);
     t.session.teardown();
     await expect(pending).resolves.toBeNull();
+  });
+});
+
+describe("set-motion (GRE-2219)", () => {
+  const motionAck = {
+    blocks: [
+      { type: "Hero", label: "Hero", motion: { effects: ["none", "bg.ascent"], default: { effect: "none", intensity: "off" } } },
+      { type: "Prose", label: "Prose" },
+    ],
+    motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" }],
+  };
+  const ready = async (ack: Record<string, unknown> = motionAck) => {
+    const t = setup();
+    t.session.start();
+    t.ack(ack);
+    await flush();
+    return t;
+  };
+  const motionId = (t: ReturnType<typeof setup>) => (t.sentOf("set-motion")[0]!.message as unknown as { id: string }).id;
+  const payload = { blockId: "h1", motion: { effect: "bg.ascent", intensity: "subtle" as const } };
+
+  it("keeps the engine's motion choices from hello-ack", async () => {
+    const t = await ready();
+    expect(t.session.motionCapabilities.blocks.get("Hero")).toEqual(motionAck.blocks[0]!.motion);
+    expect(t.session.motionCapabilities.blocks.has("Prose")).toBe(false);
+    expect(t.session.motionCapabilities.effects).toEqual(motionAck.motionEffects);
+  });
+
+  it("an older engine, or a malformed motion list, still connects with no motion choices", async () => {
+    const old = await ready({});
+    expect(old.session.state.phase).toBe("ready");
+    expect(old.session.motionCapabilities.effects).toEqual([]);
+    const bad = await ready({ ...motionAck, motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "javascript:alert(1)" }] });
+    expect(bad.session.state.phase).toBe("ready");
+    expect(bad.session.motionCapabilities.effects).toEqual([]);
+    expect(bad.session.motionCapabilities.blocks.has("Hero")).toBe(true);
+  });
+
+  it("resolves with the set-motion-result for its own request; an insert-media-result with that id is dropped", async () => {
+    const t = await ready();
+    const pending = t.session.setMotion(payload);
+    expect(t.sentOf("set-motion")[0]!.message.payload).toEqual(payload);
+    t.msg("insert-media-result", { requestId: motionId(t), ok: true });
+    t.msg("set-motion-result", { requestId: motionId(t), ok: false, code: "effect_not_allowed" });
+    await expect(pending).resolves.toEqual({ requestId: motionId(t), ok: false, code: "effect_not_allowed" });
+  });
+
+  it("resolves null when the frame does not answer in time, or for an invalid choice", async () => {
+    const t = await ready();
+    const pending = t.session.setMotion(payload);
+    vi.advanceTimersByTime(5_000);
+    await expect(pending).resolves.toBeNull();
+    await expect(t.session.setMotion({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "extreme" as never } })).resolves.toBeNull();
+    expect(t.sentOf("set-motion")).toHaveLength(1);
+  });
+});
+
+describe("full-screen editor (GRE-2296)", () => {
+  const ready = async (overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> = {}, ack: Record<string, unknown> = {}) => {
+    const t = setup(overrides);
+    t.session.start();
+    t.ack(ack);
+    await flush();
+    return t;
+  };
+
+  it("sends only the editor commands the engine offered, after the draft is loaded", async () => {
+    const t = await ready({}, { editorCommands: ["undo", "redo", "save"] });
+    expect([...t.session.editorCommands]).toEqual(["undo", "redo", "save"]);
+    expect(t.session.command("undo")).toBe(true);
+    expect(t.session.command("add-block")).toBe(false);
+    expect(t.sentOf("editor-command").map((entry) => entry.message.payload)).toEqual([{ command: "undo" }]);
+  });
+
+  it("an engine that lists no editor commands gets none", async () => {
+    const t = await ready();
+    expect(t.session.editorCommands.size).toBe(0);
+    expect(t.session.command("save")).toBe(false);
+    expect(t.sentOf("editor-command")).toHaveLength(0);
+  });
+
+  it("refuses an editor host below the editor contract and sends no draft (GRE-2357)", async () => {
+    const old = await ready({}, { editorContract: undefined });
+    expect(old.session.state).toEqual({ phase: "out-of-date", contract: null });
+    expect(old.loadDraft).not.toHaveBeenCalled();
+    expect(old.sentOf("load-draft")).toHaveLength(0);
+    // Its later messages are dropped: no protocol was agreed.
+    const onEditorState = vi.fn();
+    const below = await ready({ onEditorState }, { editorContract: 0 });
+    // Not a valid contract number, so it counts as none.
+    expect(below.session.state).toEqual({ phase: "out-of-date", contract: null });
+    below.msg("editor-state", { selection: null, canUndo: true, canRedo: false });
+    expect(onEditorState).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(below.sentOf("hello")).toHaveLength(1);
+  });
+
+  it("a silent editor host is out of date after 10 s; preview keeps no-answer (GRE-2357)", () => {
+    const t = setup();
+    t.session.start();
+    vi.advanceTimersByTime(10_000);
+    expect(t.session.state).toEqual({ phase: "out-of-date", contract: null });
+  });
+
+  it("opens for website PR #98's engine, which lists editor commands but no contract (GRE-2357)", async () => {
+    const t = await ready({}, { editorContract: undefined, editorCommands: ["undo"] });
+    expect(t.session.state.phase).toBe("ready");
+    expect(t.sentOf("load-draft")).toHaveLength(1);
+  });
+
+  it("preview opens an engine with no editor contract", async () => {
+    const t = await ready({ mode: "preview" }, { editorContract: undefined });
+    expect(t.session.state.phase).toBe("ready");
+  });
+
+  it("preview never sends editor commands or takes editor messages", async () => {
+    const onEditorState = vi.fn();
+    const onEditorKey = vi.fn();
+    const t = await ready({ mode: "preview", onEditorState, onEditorKey }, { editorCommands: ["undo"] });
+    expect(t.session.command("undo")).toBe(false);
+    t.msg("editor-state", { selection: null, canUndo: true, canRedo: false });
+    t.msg("editor-key", { key: "escape" });
+    expect(onEditorState).not.toHaveBeenCalled();
+    expect(onEditorKey).not.toHaveBeenCalled();
+  });
+
+  it("passes editor-state, editor-key and media-requested to the host", async () => {
+    const onEditorState = vi.fn();
+    const onEditorKey = vi.fn();
+    const onMediaRequested = vi.fn();
+    const t = await ready({ onEditorState, onEditorKey, onMediaRequested });
+    const state = { selection: { blockId: "h1", blockType: "Hero", label: "Hero banner" }, canUndo: true, canRedo: false };
+    t.msg("editor-state", state);
+    t.msg("editor-key", { key: "escape" });
+    t.msg("media-requested", { blockId: "h1", field: "image", kind: "image" });
+    expect(onEditorState).toHaveBeenCalledWith(state);
+    expect(onEditorKey).toHaveBeenCalledWith("escape");
+    expect(onMediaRequested).toHaveBeenCalledWith({ blockId: "h1", field: "image", kind: "image" });
+  });
+});
+
+describe("Edit copy (GRE-2394)", () => {
+  const COPY_ACK = { editorContract: 2, editorCommands: ["undo", "redo", "save", "add-block", "outline", "layout", "import-live"] };
+  const ready = async (
+    overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> = {},
+    ack: Record<string, unknown> = COPY_ACK,
+  ) => {
+    const t = setup(overrides);
+    t.session.start();
+    t.ack(ack);
+    await flush();
+    return t;
+  };
+  const save = (t: Awaited<ReturnType<typeof ready>>, data: unknown, requestId = "11111111-1111-4111-8111-111111111111") =>
+    t.msg("save", { requestId, pageId: "page-1", baseRevisionId: "rev-1", data });
+  const resultOf = (t: Awaited<ReturnType<typeof ready>>) => t.sentOf("save-result").at(-1)?.message.payload;
+
+  it("hello asks for Edit copy by default; preview's hello has no edit mode", () => {
+    const editor = setup();
+    editor.session.start();
+    expect(editor.sentOf("hello")[0]!.message.payload.editMode).toBe("copy");
+    const layout = setup({ editMode: "layout" });
+    layout.session.start();
+    expect(layout.sentOf("hello")[0]!.message.payload.editMode).toBe("layout");
+    const preview = setup({ mode: "preview" });
+    preview.session.start();
+    expect("editMode" in preview.sentOf("hello")[0]!.message.payload).toBe(false);
+  });
+
+  it("opens in Edit copy on a contract 2 engine", async () => {
+    const t = await ready();
+    expect(t.session.hasCopyMode).toBe(true);
+    expect(t.session.copyMode).toBe(true);
+    expect(t.session.currentEditMode).toBe("copy");
+  });
+
+  it("Edit copy refuses add block, outline, media and motion; undo and save still go", async () => {
+    const onMediaRequested = vi.fn();
+    const t = await ready({ onMediaRequested });
+    expect(t.session.command("add-block")).toBe(false);
+    expect(t.session.command("outline", true)).toBe(false);
+    expect(t.session.command("undo")).toBe(true);
+    expect(t.session.command("save")).toBe(true);
+    expect(await t.session.insertMedia({ blockId: "h1", field: "image", mediaEntryId: "m1", assetUrl: "/api/assets/a/content", alt: "" })).toBeNull();
+    expect(await t.session.setMotion({ blockId: "h1", motion: { effect: "none", intensity: "off" } })).toBeNull();
+    t.msg("media-requested", { blockId: "h1", field: "image", kind: "image" });
+    expect(onMediaRequested).not.toHaveBeenCalled();
+    expect(t.sentOf("editor-command").map((entry) => entry.message.payload.command)).toEqual(["undo", "save"]);
+    expect(t.sentOf("insert-media")).toHaveLength(0);
+  });
+
+  it("Edit copy saves changed words, and refuses a save that adds, removes or moves blocks", async () => {
+    const t = await ready();
+    save(t, { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1", title: "New words" } }] });
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+    expect(t.saveDraft).toHaveBeenCalledTimes(1);
+
+    save(
+      t,
+      { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1" } }, { type: "Hero", props: { id: "h2" } }] },
+      "22222222-2222-4222-8222-222222222222",
+    );
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid", retryable: false });
+    expect(t.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("Edit copy refuses a save that colours words; Layout lets it through", async () => {
+    const coloured = { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1", title: '<span class="gs-rt-c-accent">New</span> words' } }] };
+    const t = await ready();
+    save(t, coloured);
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid", retryable: false });
+    expect(String(resultOf(t)!.message)).toContain("text colour");
+    expect(t.saveDraft).not.toHaveBeenCalled();
+
+    expect(t.session.setEditMode("layout")).toBe(true);
+    save(t, coloured, "22222222-2222-4222-8222-222222222222");
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+  });
+
+  it("a coloured word may be deleted or reworded, never added", () => {
+    const page = (title: string) => ({ content: [{ type: "Hero", props: { id: "h1", title } }] });
+    const before = page('<span class="gs-rt-c-accent">Two</span> doors');
+    expect(addsTextColour(before, page('<span class="gs-rt-c-accent">Three</span> doors'))).toBe(false);
+    expect(addsTextColour(before, page("Two doors"))).toBe(false);
+    expect(addsTextColour(before, page('<span class="gs-rt-c-teal">Two</span> doors'))).toBe(true);
+    expect(addsTextColour(before, page('<span class="gs-rt-c-accent">Two</span> <span class="gs-rt-bg-accent">doors</span>'))).toBe(true);
+  });
+
+  it("Layout sends the layout command and lets add block, outline and new blocks through", async () => {
+    const t = await ready();
+    expect(t.session.setEditMode("layout")).toBe(true);
+    expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "layout", on: true });
+    expect(t.session.copyMode).toBe(false);
+    expect(t.session.command("add-block")).toBe(true);
+    expect(t.session.command("outline", true)).toBe(true);
+    save(t, { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1" } }, { type: "Hero", props: { id: "h2" } }] });
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+    // Back to Edit copy.
+    expect(t.session.setEditMode("copy")).toBe(true);
+    expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "layout", on: false });
+    expect(t.session.command("add-block")).toBe(false);
+  });
+
+  it("the edit mode commands only go through their own calls", async () => {
+    const t = await ready();
+    expect(t.session.command("layout", true)).toBe(false);
+    expect(t.session.command("import-live")).toBe(false);
+  });
+
+  it("an older engine (contract 1) opens as today, in Layout, with no crash", async () => {
+    const t = await ready({}, { editorContract: 1, editorCommands: ["undo", "add-block", "outline"], liveContent: { blocks: 3 } });
+    expect(t.session.state.phase).toBe("ready");
+    expect(t.session.hasCopyMode).toBe(false);
+    expect(t.session.copyMode).toBe(false);
+    expect(t.session.currentEditMode).toBe("layout");
+    expect(t.session.setEditMode("copy")).toBe(false);
+    expect(t.session.command("add-block")).toBe(true);
+    // Contract 1 cannot import: its live content is not trusted.
+    expect(t.session.liveContent).toBeNull();
+  });
+
+  it("an empty draft with live content imports it once, and that save may add blocks", async () => {
+    const empty = { root: { props: {} }, content: [] };
+    const t = await ready(
+      {
+        loadDraft: vi.fn(async () => ({ revisionId: "rev-1", data: empty, theme: {}, media: {}, site: { name: "Site", settings: {}, navigation: [] } })),
+      },
+      { ...COPY_ACK, liveContent: { blocks: 1 } },
+    );
+    expect(t.session.draftEmpty).toBe(true);
+    expect(t.session.liveContent).toEqual({ blocks: 1 });
+    // Before the import a save that adds blocks is refused in Edit copy.
+    save(t, page);
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid" });
+
+    expect(t.session.importLive()).toBe(true);
+    expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "import-live" });
+    save(t, page, "33333333-3333-4333-8333-333333333333");
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+    expect(t.session.draftEmpty).toBe(false);
+    // The draft has content now: no second import.
+    expect(t.session.importLive()).toBe(false);
+  });
+
+  it("does not import when the live site has nothing or the draft has content", async () => {
+    const none = await ready({}, { ...COPY_ACK, liveContent: null });
+    expect(none.session.importLive()).toBe(false);
+    const built = await ready({}, { ...COPY_ACK, liveContent: { blocks: 2 } });
+    expect(built.session.draftEmpty).toBe(false);
+    expect(built.session.importLive()).toBe(false);
+    expect(built.sentOf("editor-command")).toHaveLength(0);
+  });
+});
+
+describe("comments in the frame (GRE-2361)", () => {
+  const ALL = ["comment-pins", "pin-clicked", "ask-agent", "capture"];
+  const PNG = `data:image/png;base64,${"iVBORw0K".repeat(4)}`;
+  const ready = async (overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> = {}, ack: Record<string, unknown> = {}) => {
+    const t = setup(overrides);
+    t.session.start();
+    t.ack({ editorMessages: ALL, ...ack });
+    await flush();
+    return t;
+  };
+
+  it("sends the pins after load-draft, again only when they change, and leaves out blocks not on the draft", async () => {
+    const t = setup();
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }, { blockId: "gone", number: 2 }]);
+    t.session.start();
+    t.ack({ editorMessages: ALL });
+    await flush();
+    const types = t.sent.map((entry) => entry.message.type);
+    expect(types.indexOf("comment-pins")).toBeGreaterThan(types.indexOf("load-draft"));
+    expect(t.sentOf("comment-pins").map((entry) => entry.message.payload)).toEqual([{ pins: [{ blockId: "h1", number: 1 }] }]);
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }]);
+    expect(t.sentOf("comment-pins")).toHaveLength(1);
+    t.session.setCommentPins([]);
+    expect(t.sentOf("comment-pins").at(-1)!.message.payload).toEqual({ pins: [] });
+  });
+
+  it("an older engine gets no pins or captures and its pin-clicked and ask-agent are dropped", async () => {
+    const onPinClicked = vi.fn();
+    const onAskAgent = vi.fn();
+    const t = await ready({ onPinClicked, onAskAgent }, { editorMessages: undefined });
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }]);
+    expect(t.sentOf("comment-pins")).toHaveLength(0);
+    await expect(t.session.capture(null)).resolves.toBeNull();
+    expect(t.sentOf("capture")).toHaveLength(0);
+    t.msg("pin-clicked", { blockId: "h1", number: 1 });
+    t.msg("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero" });
+    expect(onPinClicked).not.toHaveBeenCalled();
+    expect(onAskAgent).not.toHaveBeenCalled();
+  });
+
+  it("a malformed editorMessages list keeps the handshake and drops unknown names", async () => {
+    const bad = await ready({}, { editorMessages: "capture" });
+    expect(bad.session.state.phase).toBe("ready");
+    expect(bad.session.commentFeatures.size).toBe(0);
+    const mixed = await ready({}, { editorMessages: ["capture", "launch-missiles"] });
+    expect([...mixed.session.commentFeatures]).toEqual(["capture"]);
+  });
+
+  it("passes a click on a pin GSAM sent; any other pin is dropped", async () => {
+    const onPinClicked = vi.fn();
+    const t = await ready({ onPinClicked });
+    t.session.setCommentPins([{ blockId: "h1", number: 3 }]);
+    t.msg("pin-clicked", { blockId: "h1", number: 2 });
+    t.msg("pin-clicked", { blockId: "other", number: 3 });
+    expect(onPinClicked).not.toHaveBeenCalled();
+    t.msg("pin-clicked", { blockId: "h1", number: 3 });
+    expect(onPinClicked).toHaveBeenCalledWith({ blockId: "h1", number: 3 });
+  });
+
+  it("passes ask-agent for a block on the draft, in Edit copy too; an unknown block or wrong type is dropped", async () => {
+    const onAskAgent = vi.fn();
+    const t = await ready({ onAskAgent }, { editorContract: 2, editorCommands: ["layout"] });
+    expect(t.session.copyMode).toBe(true);
+    t.msg("ask-agent", { blockId: "nope", blockType: "Hero", label: "Hero" });
+    t.msg("ask-agent", { blockId: "h1", blockType: "Footer", label: "Hero" });
+    expect(onAskAgent).not.toHaveBeenCalled();
+    t.msg("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero banner" });
+    expect(onAskAgent).toHaveBeenCalledWith({ blockId: "h1", blockType: "Hero", label: "Hero banner" });
+  });
+
+  it("preview takes no pins, pin clicks or toolbar asks", async () => {
+    const onAskAgent = vi.fn();
+    const t = await ready({ mode: "preview", onAskAgent });
+    t.session.setCommentPins([{ blockId: "h1", number: 1 }]);
+    expect(t.sentOf("comment-pins")).toHaveLength(0);
+    t.msg("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero" });
+    expect(onAskAgent).not.toHaveBeenCalled();
+  });
+
+  it("capture resolves with the frame's PNG for its own request", async () => {
+    const t = await ready();
+    const shot = t.session.capture("h1");
+    const request = t.sentOf("capture")[0]!.message as unknown as { id: string; payload: unknown };
+    expect(request.payload).toEqual({ blockId: "h1" });
+    t.msg("capture-result", { requestId: "someone-else", ok: true, png: PNG, width: 1440 });
+    t.msg("capture-result", { requestId: request.id, ok: true, png: PNG, width: 1440 });
+    await expect(shot).resolves.toEqual({ requestId: request.id, ok: true, png: PNG, width: 1440 });
+  });
+
+  it("capture of the whole page works in preview; a block not on the draft is not asked for", async () => {
+    const t = await ready({ mode: "preview" });
+    void t.session.capture(null);
+    expect(t.sentOf("capture").map((entry) => entry.message.payload)).toEqual([{ blockId: null }]);
+    await expect(t.session.capture("gone")).resolves.toBeNull();
+    expect(t.sentOf("capture")).toHaveLength(1);
+  });
+
+  it("capture resolves null with no answer in 5 s, and drops a PNG that is not a PNG data URL", async () => {
+    const t = await ready();
+    const shot = t.session.capture(null);
+    const request = t.sentOf("capture")[0]!.message as unknown as { id: string };
+    t.msg("capture-result", { requestId: request.id, ok: true, png: "data:image/svg+xml;base64,PHN2Zz4=", width: 10 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(shot).resolves.toBeNull();
   });
 });

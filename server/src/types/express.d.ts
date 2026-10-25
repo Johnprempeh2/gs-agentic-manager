@@ -28,6 +28,11 @@ declare global {
         /** Session actors only: whether this person has two-step sign-in on. */
         twoFactorEnabled?: boolean;
         keyId?: string;
+        /**
+         * Set when this user is an agent's browser QA log-in (GRE-2387). Such
+         * an actor can never approve cards, publish, or move money.
+         */
+        qaLogin?: { loginId: string; companyId: string; agentId: string; expiresAt: string };
         keyScope?: AgentApiKeyScope;
         runId?: string;
         onBehalfOfUserId?: string | null;

@@ -2,10 +2,10 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebsitePage } from "@greatstone/shared";
 import { pagesLookup, type Tree } from "./model";
-import { SitemapJourneysView, SitemapMenusView } from "./SitemapViews";
+import { SitemapJourneysView, SitemapMenusView, SitemapTreeView } from "./SitemapViews";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -56,5 +56,15 @@ describe("Sitemap Menus and Journeys status", () => {
     expect(steps).toContain("Planned");
     const gaps = container.querySelector("[aria-label='Steps visitors cannot take yet']")!;
     expect(gaps.textContent).toBe("Tools is planned, not live. Visitors cannot take this step yet.");
+  });
+
+  it("Edit page on a row with a page opens it in the editor (GRE-2296)", () => {
+    const onEditPage = vi.fn();
+    const extra: Tree = { ...tree, nodes: [...tree.nodes, { id: "n3", title: "New", path: "/new", parentId: null, order: 1, menu: "none", menuOrder: null, pageId: null }] };
+    render(<SitemapTreeView tree={extra} onChange={() => {}} pagesById={pagesById} readOnly onEditPage={onEditPage} />);
+    const edits = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => button.textContent === "Edit page");
+    expect(edits.map((button) => button.getAttribute("aria-label"))).toEqual(["Edit page Home", "Edit page Tools"]);
+    act(() => edits[1]!.click());
+    expect(onEditPage).toHaveBeenCalledWith("page-2");
   });
 });

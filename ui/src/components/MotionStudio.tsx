@@ -11,16 +11,18 @@ import {
   type MotionStudyDecision,
   type MotionStudyStatus,
 } from "@greatstone/shared";
-import { Check, ChevronDown, ExternalLink, Loader2, Play, Sparkles, Type, X } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Globe, Loader2, Play, Sparkles, Type, X } from "lucide-react";
 import { motionStudiesApi } from "../api/motionStudies";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
+import { Link } from "@/lib/router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
+import { websiteEditorPath } from "../lib/website-editor";
 
 // GS Studio's Motion section (GRE-2212): the Animation Lab's studies, each a
 // small HTML page that runs sandboxed with no network. A card shows a still
@@ -75,6 +77,11 @@ export function proposalSummary(study: MotionStudy): string | null {
   if (proposal.status) parts.push(`Status: ${MOTION_STUDY_STATUS_LABELS[proposal.status]}`);
   if (proposal.decision) parts.push(`Decision: ${MOTION_STUDY_DECISION_LABELS[proposal.decision]}`);
   return parts.join(", ");
+}
+
+/** The website editor's Motion panel, with this study's effect chosen for the block a person picks. */
+export function motionWebsiteHref(study: Pick<MotionStudy, "number">) {
+  return websiteEditorPath({ motion: study.number });
 }
 
 /** Studies are laid out for a full screen; each is drawn at this size and scaled to fit its box. */
@@ -358,14 +365,25 @@ function StudyDetail({ study, onClose }: { study: MotionStudy; onClose: () => vo
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <StudyPills study={study} withState={false} />
-          {study.previewPath ? (
-            <Button asChild size="sm" variant="outline">
-              <a href={study.previewPath} target="_blank" rel="noreferrer noopener">
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                Open full screen
-              </a>
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {study.previewPath ? (
+              <Button asChild size="sm" variant="outline">
+                <a href={study.previewPath} target="_blank" rel="noreferrer noopener">
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  Open full screen
+                </a>
+              </Button>
+            ) : null}
+            {study.textSafe ? (
+              // The site's engine draws the effect; GSAM only hands the editor the study number to place.
+              <Button asChild size="sm" data-testid="motion-use-on-website">
+                <Link to={motionWebsiteHref(study)}>
+                  <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+                  Use on website
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <dl className="grid gap-3 text-sm sm:grid-cols-2">

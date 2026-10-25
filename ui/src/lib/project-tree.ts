@@ -18,11 +18,15 @@ export function isSyntheticNode(id: string) {
   return id.startsWith("project:");
 }
 
+/**
+ * The project card's status sums up its tasks. It is never "blocked": the
+ * project waits on nothing itself, and a blocked project card would show as
+ * its own root blocker with no cause (GRE-2290). Its blocked tasks show why.
+ */
 function rootStatus(counts: ProjectTree["counts"]): IssueStatus {
   const total = counts.done + counts.active + counts.blocked + counts.waiting;
   if (total > 0 && counts.done === total) return "done";
-  if (counts.blocked > 0 && counts.active === 0) return "blocked";
-  if (counts.active > 0 || counts.done > 0) return "in_progress";
+  if (counts.active > 0 || counts.done > 0 || counts.blocked > 0) return "in_progress";
   return "todo";
 }
 
@@ -94,6 +98,7 @@ export function projectTreeAsTaskTree(tree: ProjectTree): { tree: IssueTree; hid
       rootId,
       nodes,
       externalBlockers: tree.externalBlockers,
+      blockLinks: tree.blockLinks,
       truncated: tree.truncated,
       limits: tree.limits,
     },

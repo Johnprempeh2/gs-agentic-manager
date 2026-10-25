@@ -24,6 +24,7 @@ import { ErrorState } from "../components/ErrorState";
 import { TaskTreeCanvas } from "../components/task-tree/TaskTreeCanvas";
 import { TaskTreeHeader } from "../components/task-tree/TaskTreeHeader";
 import { TaskTreeOutline } from "../components/task-tree/TaskTreeOutline";
+import { DiagramFind } from "../components/diagram/DiagramFrame";
 import { TaskTreeOwner } from "../components/task-tree/TaskTreeOwner";
 import { useTaskTreeView } from "../components/task-tree/useTaskTreeView";
 
@@ -85,7 +86,7 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
   const shaped = useMemo(() => (data ? projectTreeAsTaskTree(data) : null), [data]);
   const index = useMemo(() => (shaped ? indexTaskTree(shaped.tree, shaped.hiddenDone) : null), [shaped]);
   const storageKey = projectRef ? `project-tree.${projectRef}` : undefined;
-  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished, storageKey });
+  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished, storageKey, people });
   const { setCollapsed, restored } = view;
   const [diagramOpen, setDiagramOpen] = useState(false);
 
@@ -207,6 +208,15 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
         <ToggleSwitch checked={showFinished} onCheckedChange={setShowFinished} aria-label="Show finished work" />
         <span>Show finished work</span>
       </label>
+      <label className="inline-flex items-center gap-2 text-sm">
+        <ToggleSwitch
+          checked={view.blockedOnly}
+          onCheckedChange={view.setBlockedOnly}
+          aria-label="Only what's blocked and why"
+          data-blocked-only-toggle=""
+        />
+        <span>Only what's blocked and why</span>
+      </label>
       <Button asChild variant="outline" size="sm">
         <Link to={listHref}>
           <List />
@@ -228,6 +238,7 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
           truncatedNote={truncatedNote}
           subtitle={subtitle}
           actions={actions}
+          showSummary={data.keyTaskIds.length > 0}
         />
         {data.nodes.length === 0 && data.keyTaskIds.length === 0 ? (
           <div className="flex flex-wrap items-center gap-3" data-no-key-tasks="">
@@ -249,12 +260,18 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
             </Link>
           </div>
         ) : null}
+        {view.blockedOnly && view.blockedOnlyIds?.size === 0 ? (
+          <p className="text-sm text-muted-foreground" data-nothing-blocked="">
+            Nothing here is blocked. Turn off "Only what's blocked and why" to see all the work.
+          </p>
+        ) : null}
         {isPhone && !diagramOpen ? (
-          <div className="flex">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
               <Maximize2 />
               Open the diagram full screen
             </Button>
+            <DiagramFind items={view.findItems} onPick={view.reveal} />
           </div>
         ) : null}
         {isPhone && !diagramOpen ? (
@@ -264,6 +281,9 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
             people={people}
             hrefFor={hrefFor}
             waitingOnById={view.waitingOnById}
+            blockReasonById={view.blockReasonById}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
             onToggleCollapsed={view.toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             highlightId={view.focusRequest?.id ?? null}
@@ -276,10 +296,16 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
             trace={trace}
             people={people}
             waitingOnById={view.waitingOnById}
+            blockReasonById={view.blockReasonById}
+            blockLinks={view.visibleBlockLinks}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
             onOpen={openTask}
             onToggleCollapsed={view.toggleCollapsed}
             onShowFinished={() => setShowFinished(true)}
             focusRequest={view.focusRequest}
+            homeIds={view.blockedFocusIds}
+            homeRequest={view.homeRequest}
             actionFor={tidyAction}
             storageKey={storageKey}
             findItems={view.findItems}

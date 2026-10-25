@@ -35,7 +35,8 @@ import { DecisionFeedCard } from "../decisions-feed/DecisionFeedCard";
 import { ErrorState } from "../ErrorState";
 import { pickLivePreviewService } from "../LivePreviewCard";
 import { RELEASE_STATUS_COPY, isReleaseActive, releaseDate, releaseTime } from "./WebsiteReleases";
-import { useWebsiteSite } from "./WebsiteSiteConnection";
+import { useCanPublishWebsite, useWebsiteSite } from "./WebsiteSiteConnection";
+import { WebsiteFeaturesSection } from "./features/WebsiteFeatureCards";
 import {
   LinkProjectFirst,
   PreviewStage,
@@ -295,6 +296,7 @@ function Hero({
   home,
   devUrl,
   onOpenTab,
+  onEditPages,
 }: {
   property: WebsiteProperty;
   site: WebsiteSite | null;
@@ -302,6 +304,7 @@ function Hero({
   /** The In development address: the site's own, else the running workspace preview. */
   devUrl: string | null;
   onOpenTab: (tab: WebsiteTab) => void;
+  onEditPages?: () => void;
 }) {
   const live = site ? `https://${site.domain}/` : liveSiteUrl(property.siteUrl);
   // The Live view frames the exact copy of the live deploy when one is set.
@@ -314,6 +317,9 @@ function Hero({
   const latest = home?.releases.latest ?? null;
   const liveRelease = home?.releases.live ?? null;
   const previewHost = previewUrl ? previewUrl.replace(/^https?:\/\//, "").replace(/\/$/, "") : null;
+  // The panel follows the frame: In development shows and opens the development address.
+  const siteLink = view === "dev" ? devUrl : live;
+  const siteLabel = view === "dev" ? previewHost : domain;
   return (
     <section className="grid gap-6 lg:grid-cols-5 lg:items-center" aria-labelledby="website-home-title" data-testid="website-home-hero">
       <div className="min-w-0 lg:col-span-3">
@@ -334,9 +340,9 @@ function Hero({
             {status.label}
           </span>
           <h2 id="website-home-title" className="text-2xl font-bold tracking-tight">{site?.name ?? property.name}</h2>
-          {live ? (
-            <a href={live} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 break-all rounded-sm font-mono text-sm text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {domain}
+          {siteLink ? (
+            <a href={siteLink} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 break-all rounded-sm font-mono text-sm text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="website-home-site-link">
+              {siteLabel}
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : (
@@ -361,7 +367,7 @@ function Hero({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => onOpenTab("editor")}>
+          <Button type="button" onClick={() => (onEditPages ? onEditPages() : onOpenTab("editor"))}>
             <PenLine />
             Edit pages
           </Button>
@@ -369,11 +375,11 @@ function Hero({
             <Send />
             Publish
           </Button>
-          {live ? (
+          {siteLink ? (
             <Button asChild variant="ghost">
-              <a href={live} target="_blank" rel="noreferrer">
+              <a href={siteLink} target="_blank" rel="noreferrer" data-testid="website-home-open-site">
                 <ExternalLink />
-                Open site
+                {view === "dev" ? "Open development site" : "Open live site"}
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </Button>
@@ -731,13 +737,17 @@ export function WebsiteHomeTab({
   companyId,
   property,
   onOpenTab,
+  onEditPages,
 }: {
   companyId: string;
   property: WebsiteProperty;
   onOpenTab: (tab: WebsiteTab) => void;
+  /** Edit pages: the full-screen editor (GRE-2296). Without it, the Pages tab. */
+  onEditPages?: () => void;
 }) {
   const projectId = property.projectId;
   const { site } = useWebsiteSite(companyId, property.id);
+  const { canPublish } = useCanPublishWebsite(companyId, site?.id ?? null, !!site);
   const homeQuery = useQuery({
     queryKey: queryKeys.website.home(companyId, site?.id ?? ""),
     queryFn: () => websiteModuleApi.home(companyId, site!.id),
@@ -762,8 +772,9 @@ export function WebsiteHomeTab({
 
   return (
     <div className="space-y-6" data-testid="website-home">
-      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} />
+      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site?.editorFrameOrigin ? onEditPages : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
+      <WebsiteFeaturesSection companyId={companyId} site={site} canChange={canPublish} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}
       <div className="grid gap-6 lg:grid-cols-2">

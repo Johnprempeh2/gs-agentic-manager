@@ -177,8 +177,10 @@ export function StartSitemap({ companyId, site, pages }: { companyId: string; si
   );
 }
 
-export function SitemapSection({ companyId, site, options, pages, canApprove, canEdit }: {
+export function SitemapSection({ companyId, site, options, pages, canApprove, canEdit, onEditPage }: {
   companyId: string;
+  /** Edit page on a row with a page: the full-screen editor (GRE-2296). */
+  onEditPage?: (pageId: string) => void;
   site: WebsiteSite;
   options: WebsiteSitemapOption[];
   pages: WebsitePage[];
@@ -360,7 +362,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
         <Tabs value={view} onValueChange={(value) => setView(value as SitemapView)} className="mb-4">
           <PageTabBar items={SITEMAP_VIEWS} value={view} onValueChange={(value) => setView(value as SitemapView)} align="start" ariaLabel="Sitemap view" />
         </Tabs>
-        {view === "tree" ? <SitemapTreeView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
+        {view === "tree" ? <SitemapTreeView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} onEditPage={onEditPage} /> : null}
         {view === "board" ? <SitemapBoardView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} storageKey={`sitemap-board.${option.id}`} /> : null}
         {view === "menus" ? <SitemapMenusView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
         {view === "journeys" ? <SitemapJourneysView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}

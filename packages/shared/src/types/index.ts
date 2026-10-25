@@ -100,6 +100,13 @@ export type {
   BlockedWorkRootCause,
   BlockedWorkTidyReason,
 } from "./blocked-work.js";
+export type {
+  BlockCheckIssueRef,
+  BlockCheckItem,
+  BlockCheckKind,
+  BlockCheckProject,
+  BlockCheckResult,
+} from "./block-check.js";
 export type { RecoveryHold, RecoveryHoldList } from "./recovery-holds.js";
 export type {
   DecisionQueue,
@@ -1082,7 +1089,7 @@ export type {
   IssueFollowState,
   RecentlyOpenedIssue,
 } from "./issue-follow.js";
-export type { IssueTree, IssueTreeExternalBlocker, IssueTreeNode, ProjectTree, ProjectTreeLead } from "./issue-tree.js";
+export type { IssueTree, IssueTreeBlockLink, IssueTreeExternalBlocker, IssueTreeNode, IssueTreePendingCard, IssueTreeWaitReason, ProjectTree, ProjectTreeLead } from "./issue-tree.js";
 export type {
   DecisionEffectStaleness,
   DecisionOptionStyle,

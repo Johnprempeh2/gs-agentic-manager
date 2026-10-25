@@ -343,6 +343,13 @@ export type {
   BlockedWorkRootCause,
   BlockedWorkTidyReason,
 } from "./types/blocked-work.js";
+export type {
+  BlockCheckIssueRef,
+  BlockCheckItem,
+  BlockCheckKind,
+  BlockCheckProject,
+  BlockCheckResult,
+} from "./types/block-check.js";
 export type { RecoveryHold, RecoveryHoldList } from "./types/recovery-holds.js";
 export type {
   DecisionQueue,
@@ -492,7 +499,10 @@ export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
 export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
+export * from "./types/deep-dive-files.js";
+export * from "./validators/deep-dive-files.js";
 export * from "./client-journey.js";
+export * from "./client-deliverable-publishing.js";
 export * from "./deliverable-versions.js";
 export * from "./draft-diff.js";
 export * from "./types/workflow-template.js";
@@ -506,7 +516,9 @@ export * from "./types/website-module.js";
 export * from "./website-collections.js";
 export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
+export * from "./website-features.js";
 export * from "./website-frame.js";
+export * from "./types/website-data-bridge.js";
 export * from "./types/intelligence.js";
 export * from "./validators/intelligence.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
@@ -1601,8 +1613,11 @@ export type {
   IssueFollowState,
   RecentlyOpenedIssue,
   IssueTree,
+  IssueTreeBlockLink,
   IssueTreeExternalBlocker,
   IssueTreeNode,
+  IssueTreePendingCard,
+  IssueTreeWaitReason,
   ProjectTree,
   ProjectTreeLead,
   AccessUserProfile,
@@ -2286,6 +2301,8 @@ export {
   type CompanySearchExtractQuery,
   type CompanySearchQuery,
   createIssueSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
+  describeUnknownIssueFields,
   createIssueInputSchema,
   createChildIssueSchema,
   createAcceptedPlanDecompositionSchema,
@@ -3217,6 +3234,12 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export * from "./deep-dive-findings.js";
+export * from "./deep-dive-sessions.js";
+export * from "./deep-dive-boards.js";
+export * from "./deep-dive-opportunities.js";
+export * from "./deep-dive-traceability.js";
+export * from "./deep-dive-overview.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";

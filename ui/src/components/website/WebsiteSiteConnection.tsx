@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { RadioCardGroup } from "@/components/ui/radio-card";
 import { errorStateMessage } from "../ErrorState";
-import { useCanManageWebsite } from "./WebsiteSetup";
+import { WebsiteDataBridgeRow } from "./WebsiteDataBridgeRow";
 
 // Connect a site (GRE-2105): the website module's site row for this website
 // property. The Netlify token goes into the company's secrets; the page only
@@ -41,6 +41,20 @@ export function useWebsiteSite(companyId: string, propertyId: string) {
   });
   const site = query.data?.find((entry) => entry.propertyId === propertyId && !entry.archivedAt) ?? null;
   return { ...query, site };
+}
+
+/**
+ * Whether the caller holds website:publish, as the server decides it (GRE-2136): for the
+ * company when there is no site yet (Connect a site), for the site once there is one (Change).
+ */
+export function useCanPublishWebsite(companyId: string, siteId: string | null, enabled = true) {
+  const query = useQuery({
+    queryKey: queryKeys.website.access(companyId, siteId),
+    queryFn: () => websiteModuleApi.access(companyId, siteId),
+    enabled: enabled && Boolean(companyId),
+    retry: false,
+  });
+  return { canPublish: query.data?.publish ?? false, isLoading: query.isLoading };
 }
 
 function Field({ id, label, help, children }: { id: string; label: string; help?: string; children: ReactNode }) {
@@ -307,7 +321,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 /** Releases tab panel: the connected site, or a "Connect a site" form for people with Publish rights. */
 export function WebsiteSiteConnection({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const { site, isLoading, error } = useWebsiteSite(companyId, property.id);
-  const { canManage } = useCanManageWebsite(companyId);
+  const { canPublish: canManage } = useCanPublishWebsite(companyId, site?.id ?? null, !isLoading && !error);
   const [editing, setEditing] = useState(false);
   const [checked, setChecked] = useState<WebsiteSite | null>(null);
 
@@ -353,6 +367,7 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
                   ? "Token saved. Pasted for this site."
                   : "Not saved yet. Publish needs it."}
             </Detail>
+            <Detail label="Website data"><WebsiteDataBridgeRow companyId={companyId} site={site} canManage={canManage} /></Detail>
             <Detail label="Editor address">{site.editorFrameOrigin ? <span className="font-mono">{site.editorFrameOrigin}</span> : "Not set. Editing pages needs it."}</Detail>
             <Detail label="Live site view">{site.livePreviewUrl ? <span className="font-mono">{site.livePreviewUrl}</span> : "The live address"}</Detail>
             <Detail label="In development">{site.devPreviewUrl ? <span className="font-mono">{site.devPreviewUrl}</span> : site.editorFrameOrigin ? "The editor address" : "Not set"}</Detail>

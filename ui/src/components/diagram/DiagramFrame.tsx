@@ -72,17 +72,20 @@ export interface DiagramFindItem {
 
 const MAX_MATCHES = 8;
 
+/** The nodes a find query matches, by name or detail (a task's key or project), first few only. */
+export function matchFindItems(items: DiagramFindItem[], query: string, limit = MAX_MATCHES): DiagramFindItem[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  return items.filter((item) => `${item.label} ${item.detail ?? ""}`.toLowerCase().includes(needle)).slice(0, limit);
+}
+
 /** Find a node by name: type, pick a match (Enter takes the first) and the diagram jumps to it. */
-function DiagramFind({ items, onPick }: { items: DiagramFindItem[]; onPick: (id: string) => void }) {
+export function DiagramFind({ items, onPick }: { items: DiagramFindItem[]; onPick: (id: string) => void }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const listId = useId();
-  const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return [];
-    return items.filter((item) => `${item.label} ${item.detail ?? ""}`.toLowerCase().includes(needle)).slice(0, MAX_MATCHES);
-  }, [items, query]);
+  const matches = useMemo(() => matchFindItems(items, query), [items, query]);
 
   const pick = (item: DiagramFindItem | undefined) => {
     if (!item) return;

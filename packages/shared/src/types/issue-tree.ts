@@ -1,4 +1,26 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { IssueUnblockOwner } from "./issue.js";
+
+/** A card on a blocked task that is still waiting for a reply. */
+export interface IssueTreePendingCard {
+  id: string;
+  kind: string;
+  /** The card's title or summary, when it has one. */
+  title: string | null;
+  addresseeAgentId: string | null;
+  addresseeUserId: string | null;
+  createdAt: Date;
+}
+
+/** What a blocked task says it waits on, besides other tasks. */
+export interface IssueTreeWaitReason {
+  /** What the owner says is needed to unblock it, when they said. */
+  unblockAction: string | null;
+  /** Who the owner says must act. */
+  unblockOwner: IssueUnblockOwner | null;
+  /** The oldest card on the task still waiting for a reply. */
+  pendingCard: IssueTreePendingCard | null;
+}
 
 /** One task in a task tree: the root, or anything under it. */
 export interface IssueTreeNode {
@@ -19,14 +41,27 @@ export interface IssueTreeNode {
   doneChildCount: number;
   /** For a blocked task: the task further down the chain that needs action. */
   terminalBlockerId: string | null;
+  /**
+   * For a blocked task: the task at the bottom of its blocker chain, when the
+   * chain goes deeper than its first open blocker. Set even when that task is
+   * waiting on a person, unlike `terminalBlockerId`.
+   */
+  rootBlockerId?: string | null;
   /** What the owner says is needed to unblock it, when they said. */
   unblockAction: string | null;
+  /** Who the owner says must act, when they said. Blocked tasks only. */
+  unblockOwner?: IssueUnblockOwner | null;
+  /** The oldest card waiting for a reply. Blocked tasks only. */
+  pendingCard?: IssueTreePendingCard | null;
   /** Marked by the project lead as a task that drives the project. */
   isKeyTask?: boolean;
   updatedAt: Date;
 }
 
-/** A task that blocks something in the tree but sits outside it. */
+/**
+ * A task outside the tree that is linked to it by a "blocks" link: anything
+ * up a blocked task's chain, however far, or a task the tree holds up.
+ */
 export interface IssueTreeExternalBlocker {
   id: string;
   identifier: string | null;
@@ -34,6 +69,20 @@ export interface IssueTreeExternalBlocker {
   status: IssueStatus;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  /** Its project, so a task from elsewhere says where it lives. */
+  projectId?: string | null;
+  projectName?: string | null;
+  /**
+   * Why it waits, when it is blocked. Set for the tasks the tree names as a
+   * root blocker too, so "Root: GRE-12, waiting on John" can be shown.
+   */
+  waitReason?: IssueTreeWaitReason | null;
+}
+
+/** One "blocks" link: `blockerId` holds up `blockedId`. */
+export interface IssueTreeBlockLink {
+  blockerId: string;
+  blockedId: string;
 }
 
 export interface IssueTree {
@@ -41,6 +90,11 @@ export interface IssueTree {
   /** Root first, then breadth first. */
   nodes: IssueTreeNode[];
   externalBlockers: IssueTreeExternalBlocker[];
+  /**
+   * Every open "blocks" link between the tasks sent (nodes and outside
+   * tasks), full chains included, loops included (GRE-2290).
+   */
+  blockLinks?: IssueTreeBlockLink[];
   /** True when the tree was cut at the node or depth limit. */
   truncated: boolean;
   limits: { maxNodes: number; maxDepth: number };
@@ -69,6 +123,8 @@ export interface ProjectTree {
   /** Tasks, parents before children. A branch top has `parentId` null. */
   nodes: IssueTreeNode[];
   externalBlockers: IssueTreeExternalBlocker[];
+  /** Every open "blocks" link between the tasks sent, as on the task tree. */
+  blockLinks?: IssueTreeBlockLink[];
   /** Finished tasks left out, by the task they sit under (their own sub-tasks included). */
   hiddenDoneByParent: Record<string, number>;
   /** Work under each key task (not counting it), cancelled left out. */

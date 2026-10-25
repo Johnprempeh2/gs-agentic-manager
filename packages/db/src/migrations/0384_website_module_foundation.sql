@@ -3,8 +3,12 @@
 -- Rollback, in one transaction, in this order (tested on a sandbox copy, GRE-2126). Collect the page and
 -- entry documents first: once the tables are gone nothing names them. document_id is ON DELETE restrict,
 -- so the website rows must go before their documents; revisions cascade with the documents. Later
--- migrations that point at these tables (0385 website_sitemap_option) are rolled back first.
+-- migrations that use these tables (0394 website_site data bridge columns, 0393 website_feature,
+-- 0385 website_sitemap_option) are rolled back first.
 --   BEGIN;
+--   DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792889652512;
+--   DROP TABLE IF EXISTS "website_feature";
+--   DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792889651512;
 --   DROP TABLE IF EXISTS "website_sitemap_option";
 --   DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792790160161;
 --   CREATE TEMP TABLE _wm_docs ON COMMIT DROP AS

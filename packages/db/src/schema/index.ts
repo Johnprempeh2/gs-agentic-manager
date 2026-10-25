@@ -13,6 +13,7 @@ export { agentMemberships } from "./agent_memberships.js";
 export { boardApiKeys } from "./board_api_keys.js";
 export { cliAuthChallenges } from "./cli_auth_challenges.js";
 export { companyMemberships } from "./company_memberships.js";
+export { agentQaLogins } from "./agent_qa_logins.js";
 export { companyUserSidebarPreferences } from "./company_user_sidebar_preferences.js";
 export { companyUserVisits } from "./company_user_visits.js";
 export { principalPermissionGrants } from "./principal_permission_grants.js";
@@ -95,8 +96,15 @@ export {
   pipelineCaseDocuments,
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
+export { deepDiveItemFiles } from "./deep_dive_item_files.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
 export { clientAcceptanceLinks } from "./client_acceptance_links.js";
+export {
+  CLIENT_DELIVERABLE_PUBLICATION_STATUSES,
+  clientDeliverableApprovers,
+  clientDeliverablePublications,
+  clientDeliverablePublicationEvents,
+} from "./client_deliverable_publications.js";
 export {
   crmSyncBindings,
   crmSyncFieldMaps,
@@ -115,7 +123,7 @@ export { calendarFeeds } from "./calendar_feeds.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
 export { websiteProperties, websitePulls } from "./website.js";
-export { websiteSite, websitePage, websiteEntry, websiteRelease, websiteSitemapOption } from "./website_module.js";
+export { websiteSite, websitePage, websiteEntry, websiteRelease, websiteSitemapOption, websiteFeature } from "./website_module.js";
 export { intelligenceReports, intelligenceBoardSnapshots, intelligenceRecommendations } from "./intelligence.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
@@ -276,3 +284,25 @@ export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";
 export { billingAccounts, billingInvoices } from "./billing_accounts.js";
 export { agentDailyDigests } from "./agent_daily_digests.js";
+export { deepDiveFindings, deepDiveFindingEvidence } from "./deep_dive_findings.js";
+export { deepDiveSessions, deepDiveSessionQuestions } from "./deep_dive_sessions.js";
+export {
+  deepDiveOrgUnits,
+  deepDivePeople,
+  deepDivePersonTasks,
+  deepDiveOfferings,
+  deepDiveProcesses,
+  deepDiveHandoffs,
+} from "./deep_dive_boards.js";
+export {
+  deepDiveOpportunities,
+  deepDiveOpportunityFindings,
+  deepDiveBuilds,
+  deepDiveKpis,
+  deepDiveKpiProcesses,
+} from "./deep_dive_opportunities.js";
+export {
+  deepDiveCommercials,
+  deepDiveRoadmapItems,
+  deepDiveRoadmapKpis,
+} from "./deep_dive_traceability.js";

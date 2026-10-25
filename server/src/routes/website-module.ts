@@ -29,6 +29,7 @@ import {
   updateWebsiteSiteSchema,
   websiteReleaseActionSchema,
   type PermissionKey,
+  type WebsiteAccess,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
 import { HttpError, conflict, unprocessable } from "../errors.js";
@@ -56,8 +57,10 @@ import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wak
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { websiteHomeService } from "../services/website/home.js";
+import { websiteEnquiryService, type WebsiteEnquiryCopy, type WebsiteEnquiryReader } from "../services/website/enquiries.js";
+import { websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
 
@@ -94,6 +97,10 @@ export interface WebsiteModuleRouteOptions {
   heartbeat?: IssueAssignmentWakeupDeps;
   /** The Netlify and `/_release` check when a site is connected (GRE-2137). Default: the real one. */
   checkConnection?: WebsiteConnectionChecker;
+  /** The read-only admin bridge reader. Tests can supply a fake. */
+  enquiryReader?: WebsiteEnquiryReader;
+  /** Test seam for the Pipedrive copy; production uses the connected Pipedrive writer. */
+  enquiryCopy?: WebsiteEnquiryCopy;
 }
 
 /** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
@@ -176,9 +183,13 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   }
   const publishApprovals = websitePublishApprovals(db);
   const home = websiteHomeService(db);
+  const enquiries = websiteEnquiryService(db, options.enquiryReader
+    ? options.enquiryCopy ?? websiteEnquiryPipedriveCopy(db)
+    : undefined);
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
   router.use(WEBSITE_MODULE_API_ROUTES.tokenSecrets, requireEntitlement(db, "enableWebsiteView"));
+  router.use(WEBSITE_MODULE_API_ROUTES.access, requireEntitlement(db, "enableWebsiteView"));
 
   function actorOf(req: Request): WebsiteActor {
     const info = getActorInfo(req);
@@ -327,6 +338,32 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.json(visible);
   });
 
+  // What the caller may do, so the page shows only the buttons the routes above will accept (GRE-2136).
+  // Same decision as `allowed`: with no siteId it is the company-wide right (connect a site), with one
+  // it is that site's right (change it). A site outside this company answers all false.
+  router.get(WEBSITE_MODULE_API_ROUTES.access, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const siteId = typeof req.query.siteId === "string" && req.query.siteId ? req.query.siteId : undefined;
+    const none: WebsiteAccess = { view: false, edit: false, publish: false };
+    if (siteId && !(UUID_RE.test(siteId) && (await service.getSite(companyId, siteId)))) {
+      res.json(none);
+      return;
+    }
+    const can = async (permission: WebsitePermission) => {
+      if (permission === "website:publish" && req.actor.type === "agent") return false;
+      const decision = await access.decide({
+        actor: req.actor,
+        action: permission,
+        resource: { type: "company", companyId },
+        scope: siteId ? { siteId } : null,
+      });
+      return decision.allowed;
+    };
+    const result: WebsiteAccess = { view: await can("website:view"), edit: await can("website:edit"), publish: await can("website:publish") };
+    res.json(result);
+  });
+
   // Saved secrets a person with Publish rights can choose as a site's Netlify token: names only.
   router.get(WEBSITE_MODULE_API_ROUTES.tokenSecrets, async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -392,6 +429,44 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     res.json(await home.summary(site, gsamOriginsFor(req)));
+  });
+
+  // ---- front door and enquiries ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.enquiries, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const rows = await enquiries.list(site.companyId, site.id);
+    if (rows[0]) {
+      const decision = await access.decide({
+        actor: req.actor,
+        action: "pipelines:cases",
+        resource: { type: "company", companyId: site.companyId },
+        scope: { pipelineId: rows[0].pipelineId },
+      });
+      if (!decision.allowed) throw new HttpError(403, decision.explanation, { code: "pipeline_cases_forbidden" });
+    }
+    res.json(rows.map((row) => ({
+      id: row.id,
+      pipelineId: row.pipelineId,
+      title: row.title,
+      organisationId: row.organisationId,
+      contactEmail: typeof row.fields.contactEmail === "string" ? row.fields.contactEmail : null,
+      source: typeof row.fields.source === "string" ? row.fields.source : null,
+      page: typeof row.fields.page === "string" ? row.fields.page : null,
+      submittedAt: typeof row.fields.submittedAt === "string" ? row.fields.submittedAt : null,
+      createdAt: row.createdAt.toISOString(),
+    })));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.enquiriesCheck, async (req, res) => {
+    const site = await siteFor(req, res, "website:edit");
+    if (!site) return;
+    assertBoard(req);
+    if (!options.enquiryReader) throw conflict("The website data bridge is not connected yet", { code: "website_bridge_unavailable" });
+    const result = await enquiries.importFromBridge(site.companyId, site.id, options.enquiryReader);
+    await log(req, site.companyId, "website.enquiries.checked", "website_site", site.id, result);
+    res.json(result);
   });
 
   // ---- pages ----
@@ -556,8 +631,16 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.json(load);
   });
 
-  // Click to change (GRE-2121): website:edit, the page in this company, and
-  // the picked block in that revision of the page. One task per requestId.
+  // Ask an agent (GRE-2350): the page's open comments, for anyone who can see the page.
+  router.get(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, async (req, res) => {
+    const page = await pageFor(req, res, "website:view");
+    if (!page) return;
+    res.json(await changeRequests.listOpen(page));
+  });
+
+  // Click to change (GRE-2121) and Ask an agent (GRE-2350): website:edit, the
+  // page in this company, and the picked block (if any) in that revision of
+  // the page. One task per requestId.
   router.post(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, validate(createWebsiteChangeRequestSchema), async (req, res) => {
     const found = await sitePageFor(req, res, "website:edit");
     if (!found) return;
@@ -574,6 +657,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
         blockId: req.body.blockId,
         blockType: req.body.blockType,
         pageRevisionId: req.body.pageRevisionId,
+        width: req.body.width,
       });
     }
     res.status(created ? 201 : 200).json(result);

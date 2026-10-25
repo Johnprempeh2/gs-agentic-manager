@@ -6,7 +6,11 @@ import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
-  agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
+  agentApiKeys, agents, agentTeams, approvals, assets, authUsers, caseDocuments, cases, chatEndpoints,
+  clientDeliverablePublications, companies, deepDiveBuilds, deepDiveCommercials, deepDiveFindings, deepDiveHandoffs,
+  deepDiveKpis, deepDiveOfferings, deepDiveOpportunities, deepDiveOrgUnits, deepDivePeople, deepDivePersonTasks,
+  deepDiveProcesses, deepDiveRoadmapItems, deepDiveSessionQuestions, deepDiveSessions, documents, pipelineCases,
+  pipelineStages,
   companyMemberships, companySecretProviderConfigs, companySecrets, crmSyncBindings, crmSyncConflicts,
   decisions, decisionTrainingExamples, intelligenceRecommendations, workflowTemplates,
   environmentLeases, environments, executionWorkspaces, generatedImages, generatedVideos, motionStudies, studioLooks, feedbackExports, feedbackVotes, goals, heartbeatRuns,
@@ -15,7 +19,7 @@ import {
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
   toolMcpGateways, toolMcpGatewayTokens, toolProfileEntries, toolProfiles, toolRuntimeSlots, workspaceOperations,
 } from "@greatstone/db";
-import { TEAM_CHAT_ORIGIN_KIND } from "@greatstone/shared";
+import { DEEP_DIVE_GIF, TEAM_CHAT_ORIGIN_KIND } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
 import { createApp } from "../app.js";
 import { environmentService } from "../services/environments.js";
@@ -91,6 +95,7 @@ const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
 const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/invites/:token": "Public invite link, the token is the credential.",
   "/api/client-acceptance/:token": "Public client acceptance link, the 256-bit token is the credential and reaches one client's pack only.",
+  "/api/client-deliverable/:token": "Public deliverable acceptance link (GRE-2373), the token is the credential and reaches one published deliverable only.",
   "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
   "/api/join-requests/:requestId": "Only POST .../claim-api-key, which a joining agent calls before it has a key; "
     + "the claim secret in the body is the credential, not a session. Company join-request routes are swept above.",
@@ -337,6 +342,10 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const boardPackId = id(), whyRequestId = id();
     const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
     const teamChatId = id(), generatedImageId = id(), generatedVideoId = id(), studioLookId = id(), motionStudyId = id();
+    const streamId = id(), gifCellId = id(), findingId = id(), sessionId = id(), questionId = id();
+    const unitId = id(), personId = id(), personTaskId = id(), offeringId = id(), processId = id(), nextProcessId = id(), handoffId = id();
+    const opportunityId = id(), buildId = id(), kpiId = id(), commercialId = id(), roadmapItemId = id();
+    const clientCaseId = id(), publicationId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -457,6 +466,46 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       ...A, id: teamChatId, title: "Company A chat", originKind: TEAM_CHAT_ORIGIN_KIND,
     });
 
+    // Deep Dive (GRE-2365 to GRE-2373): a stream with one GIF cell, then one
+    // record of each kind the id routes take.
+    const gif = DEEP_DIVE_GIF[0]!;
+    const [gifDoc] = await ctx.db.insert(documents).values({ ...A, title: gif.label, latestBody: `# ${gif.label}\n` }).returning();
+    await ctx.db.insert(cases).values({
+      ...A, id: streamId, caseNumber: 2, identifier: "ACASE-2", caseType: "deep_dive_stream", key: "a-stream",
+      title: "Company A stream",
+    });
+    await ctx.db.insert(caseDocuments).values({ ...A, id: gifCellId, caseId: streamId, documentId: gifDoc!.id, key: gif.documentKey });
+    await ctx.db.insert(deepDiveFindings).values({ ...A, id: findingId, streamCaseId: streamId, gifDocumentId: gifCellId, statement: "Company A finding" });
+    await ctx.db.insert(deepDiveSessions).values({ ...A, id: sessionId, title: "Company A session" });
+    await ctx.db.insert(deepDiveSessionQuestions).values({
+      ...A, id: questionId, sessionId, position: 0, streamCaseId: streamId, gifDocumentId: gifCellId, prompt: "Company A question",
+    });
+    await ctx.db.insert(deepDiveOrgUnits).values({ ...A, id: unitId, name: "Company A unit" });
+    await ctx.db.insert(deepDivePeople).values({ ...A, id: personId, name: "Company A person" });
+    await ctx.db.insert(deepDivePersonTasks).values({ ...A, id: personTaskId, personId, what: "Company A task" });
+    await ctx.db.insert(deepDiveOfferings).values({ ...A, id: offeringId, name: "Company A offering" });
+    await ctx.db.insert(deepDiveProcesses).values([
+      { ...A, id: processId, name: "Company A process" }, { ...A, id: nextProcessId, name: "Company A next process" },
+    ]);
+    await ctx.db.insert(deepDiveHandoffs).values({ ...A, id: handoffId, fromProcessId: processId, toProcessId: nextProcessId, what: "Company A handoff" });
+    await ctx.db.insert(deepDiveOpportunities).values({ ...A, id: opportunityId, name: "Company A opportunity", desiredOutcome: "Company A" });
+    await ctx.db.insert(deepDiveBuilds).values({ ...A, id: buildId, name: "Company A build" });
+    await ctx.db.insert(deepDiveKpis).values({
+      ...A, id: kpiId, name: "Company A KPI", ownerPersonId: personId, baseline: "1", definition: "Company A",
+      baselinePeriod: "2026-Q3", target: "2",
+    });
+    await ctx.db.insert(deepDiveCommercials).values({ ...A, id: commercialId, name: "Company A commercial" });
+    await ctx.db.insert(deepDiveRoadmapItems).values({ ...A, id: roadmapItemId, name: "Company A roadmap item" });
+    // Clients > Deliverables publishing: a client case on company A's pipeline.
+    const [stage] = await ctx.db.insert(pipelineStages).values({
+      pipelineId, key: "a-stage", name: "Company A stage", kind: "working", position: 0,
+    }).returning();
+    await ctx.db.insert(pipelineCases).values({ ...A, id: clientCaseId, pipelineId, stageId: stage!.id, caseKey: "a-client", title: "Company A client" });
+    await ctx.db.insert(clientDeliverablePublications).values({
+      ...A, id: publicationId, caseId: clientCaseId, deliverableIssueId: issueId, deliverableKey: "a-deliverable",
+      title: "Company A deliverable",
+    });
+
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
       "/api/agents/:id": agentId, "/api/agents/:agentId": agentId,
@@ -488,6 +537,15 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/generated-videos/:id": generatedVideoId,
       "/api/studio-looks/:id": studioLookId,
       "/api/motion-studies/:id": motionStudyId,
+      "/api/deep-dive/findings/:findingId": findingId, "/api/deep-dive/sessions/:sessionId": sessionId,
+      "/api/deep-dive/session-questions/:questionId": questionId,
+      "/api/deep-dive/org-units/:unitId": unitId, "/api/deep-dive/people/:personId": personId,
+      "/api/deep-dive/person-tasks/:taskId": personTaskId, "/api/deep-dive/offerings/:offeringId": offeringId,
+      "/api/deep-dive/processes/:processId": processId, "/api/deep-dive/handoffs/:handoffId": handoffId,
+      "/api/deep-dive/opportunities/:opportunityId": opportunityId, "/api/deep-dive/builds/:buildId": buildId,
+      "/api/deep-dive/kpis/:kpiId": kpiId, "/api/deep-dive/commercials/:commercialId": commercialId,
+      "/api/deep-dive/roadmap/:roadmapItemId": roadmapItemId,
+      "/api/client-publications/:id": publicationId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),

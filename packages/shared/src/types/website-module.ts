@@ -23,6 +23,16 @@ export interface WebsiteTokenSecretOption {
   name: string;
 }
 
+/**
+ * What the caller may do on the website: for the company (no `siteId`) or for one site.
+ * Connecting a site needs `publish` for the company; changing a site needs `publish` for that site.
+ */
+export interface WebsiteAccess {
+  view: boolean;
+  edit: boolean;
+  publish: boolean;
+}
+
 export interface WebsiteSite {
   id: string;
   companyId: string;
@@ -269,13 +279,54 @@ export interface WebsiteChangeRequestResult {
   projectId: string | null;
 }
 
+/**
+ * An open comment on a page (GRE-2350): a change request task that is not done
+ * or cancelled. `number` is its place among the page's open comments, oldest
+ * first, as the editor shows it. `blockId` null means the whole page.
+ */
+export interface WebsitePageComment {
+  number: number;
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  /** The person's words, as sent. */
+  request: string;
+  blockId: string | null;
+  blockType: string | null;
+  blockLabel: string | null;
+  pageRevisionId: string | null;
+  width: string | null;
+  assigneeAgentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebsiteEnquiryLead {
+  id: string;
+  pipelineId: string;
+  title: string;
+  organisationId: string | null;
+  contactEmail: string | null;
+  source: string | null;
+  page: string | null;
+  submittedAt: string | null;
+  createdAt: string;
+}
+
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
+  /** GET → `WebsiteAccess` for the caller (`?siteId=` for one site). Never 403: a missing right is `false`. */
+  access: "/companies/:companyId/website/access",
   /** GET → `WebsiteTokenSecretOption[]`: the company's active secrets by name, to use as a site's Netlify token (website:publish, people only). */
   tokenSecrets: "/companies/:companyId/website/token-secrets",
   /** GET → `WebsiteSite`. PATCH `UpdateWebsiteSite` → `WebsiteSite` (website:publish). */
   site: "/companies/:companyId/website/sites/:siteId",
+  /** GET → website enquiry leads in GSAM, newest first (website:view). */
+  enquiries: "/companies/:companyId/website/sites/:siteId/enquiries",
+  /** POST → import counts from the read-only admin bridge (website:edit). */
+  enquiriesCheck: "/companies/:companyId/website/sites/:siteId/enquiries/check",
   /** GET → `WebsitePage[]` (`?includeArchived=true`). POST `CreateWebsitePage` → 201 `WebsitePageDetail` (website:edit). */
   pages: "/companies/:companyId/website/sites/:siteId/pages",
   /** GET → `WebsitePageDetail`. PATCH `UpdateWebsitePage` → `WebsitePage` (website:edit). */
@@ -292,7 +343,10 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageRevisionRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions/:revisionId/restore",
   /** GET → `WebsitePageEditorLoad` (website:view; saves need website:edit). 404 until the site's editor frame origin is set and passes C1.1. */
   pageEditor: "/companies/:companyId/website/sites/:siteId/pages/:pageId/editor",
-  /** POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId. */
+  /**
+   * GET → `WebsitePageComment[]`, the page's open comments, oldest first (website:view).
+   * POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId.
+   */
   pageChangeRequests: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
   media: "/companies/:companyId/website/sites/:siteId/media",

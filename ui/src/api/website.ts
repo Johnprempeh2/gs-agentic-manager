@@ -20,11 +20,14 @@ import {
   type CreateWebsiteEntry,
   type CreateWebsiteChangeRequest,
   type WebsiteChangeRequestResult,
+  type WebsitePageComment,
   type WebsiteRelease,
   type WebsiteHomeSummary,
+  type WebsiteEnquiryLead,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
   type WebsiteTokenSecretOption,
+  type WebsiteAccess,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
   type WebsiteOverview,
@@ -83,6 +86,15 @@ const releasePath = (companyId: string, siteId: string, releaseId: string) =>
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
   sites: (companyId: string) => api.get<WebsiteSite[]>(sitesPath(companyId)),
+  enquiries: (companyId: string, siteId: string) =>
+    api.get<WebsiteEnquiryLead[]>(`${sitePath(companyId, siteId)}/enquiries`),
+  checkEnquiries: (companyId: string, siteId: string) =>
+    api.post<{ created: number; skipped: number }>(`${sitePath(companyId, siteId)}/enquiries/check`, {}),
+  /** What the caller may do: for the company, or for one site when `siteId` is given. */
+  access: (companyId: string, siteId?: string | null) =>
+    api.get<WebsiteAccess>(
+      `/companies/${encodeURIComponent(companyId)}/website/access${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`,
+    ),
   /** Saved company secrets a site can use as its Netlify token: names only (website:publish). */
   tokenSecrets: (companyId: string) =>
     api.get<WebsiteTokenSecretOption[]>(`/companies/${encodeURIComponent(companyId)}/website/token-secrets`),
@@ -108,6 +120,9 @@ export const websiteModuleApi = {
     api.get<{ revision: WebsiteRevision; content: unknown }>(
       `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}`,
     ),
+  /** Request publish: draft to review. A person with Publish rights approves it; nothing goes live here. */
+  submitPage: (companyId: string, siteId: string, pageId: string) =>
+    api.post<WebsitePage>(`${pagePath(companyId, siteId, pageId)}/submit`, {}),
   restoreRevision: (companyId: string, siteId: string, pageId: string, revisionId: string, baseRevisionId: string) =>
     saveAnswer(
       api.post<WebsiteSaveResult>(
@@ -116,6 +131,9 @@ export const websiteModuleApi = {
       ),
     ),
   /** Click to change: one task for the website agent (website:edit). The same requestId returns the same task. */
+  /** The page's open comments for the agents (GRE-2350), oldest first and numbered. */
+  pageComments: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsitePageComment[]>(`${pagePath(companyId, siteId, pageId)}/change-requests`),
   requestChange: (companyId: string, siteId: string, pageId: string, input: CreateWebsiteChangeRequest) =>
     api.post<WebsiteChangeRequestResult>(`${pagePath(companyId, siteId, pageId)}/change-requests`, input),
   media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),

@@ -2,13 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { WebsitePageEditorLoad, WebsiteRevision } from "@greatstone/shared";
 import { ApiError } from "../api/client";
 import {
+  blockMotionOptions,
   editorOpenProblem,
   frameConnectionMessage,
   frameDraft,
   insertMediaAssetUrl,
   insertMediaField,
   insertMediaMessage,
+  motionChoice,
+  motionOptionFor,
   saveThroughGsam,
+  setMotionMessage,
+  websiteEditorPath,
 } from "./website-editor";
 
 const request = { pageId: "page-1", baseRevisionId: "rev-1", data: { root: {} }, editorOrigin: "https://editor.example.com" };
@@ -120,6 +125,8 @@ describe("insert-media helpers (GRE-2206)", () => {
       { type: "Hero", props: { id: "h1", heading: "Hi", backdrop: "media:asset-1" } },
       { type: "Grid", props: { id: "g1", items: [{ type: "Card", props: { id: "c1", title: "x", photo: "" } }] } },
       { type: "Text", props: { id: "t1", body: "words" } },
+      { type: "BeforeAfter", props: { id: "b1", caption: "Kitchen.jpg looks great", beforeImage: "/images/before.jpg", afterClip: "https://cdn.example.com/after.mp4?v=2" } },
+      { type: "Mixed", props: { id: "m1", poster: "/images/old.png", image: "media:asset-2" } },
     ],
   };
 
@@ -131,6 +138,12 @@ describe("insert-media helpers (GRE-2206)", () => {
     expect(insertMediaField(null, "missing", "image")).toBe("image");
   });
 
+  it("picks a field that holds a site path or URL of the kind's file type, after a media reference (GRE-2295)", () => {
+    expect(insertMediaField(data, "b1", "image")).toBe("beforeImage");
+    expect(insertMediaField(data, "b1", "animation")).toBe("afterClip");
+    expect(insertMediaField(data, "m1", "image")).toBe("image");
+  });
+
   it("sends an absolute https asset URL, or the path when GSAM is not on https", () => {
     expect(insertMediaAssetUrl("/api/assets/a/content", "https://gsam.example.com")).toBe("https://gsam.example.com/api/assets/a/content");
     expect(insertMediaAssetUrl("/api/assets/a/content", "http://localhost:3100")).toBe("/api/assets/a/content");
@@ -138,7 +151,7 @@ describe("insert-media helpers (GRE-2206)", () => {
 
   it("names the block, says why in plain words, and that the entry is kept", () => {
     expect(insertMediaMessage({ requestId: "r", ok: true }, "Hero", "image")).toBe(
-      "Put in Hero. The image shows after you save the page in the editor.",
+      "Put in Hero. Save the page to keep it.",
     );
     for (const code of ["block_not_found", "field_not_found", "field_not_media", "invalid_payload", "error"] as const) {
       const text = insertMediaMessage({ requestId: "r", ok: false, code }, "Hero", "image");
@@ -158,5 +171,72 @@ describe("insert-media helpers (GRE-2206)", () => {
     expect(insertMediaMessage({ requestId: "r", ok: false, code: "error", message: "Draft locked" }, "Hero", "image")).not.toContain("Draft locked");
     expect(warn).toHaveBeenCalledWith("insert-media refused:", "Draft locked");
     warn.mockRestore();
+  });
+});
+
+describe("set-motion helpers (GRE-2219)", () => {
+  const capabilities = {
+    blocks: new Map([
+      ["Hero", { effects: ["none", "hero.stone", "bg.ascent", "bg.unknown"], default: { effect: "none", intensity: "off" as const } }],
+      ["Band", { effects: ["none"], default: { effect: "none", intensity: "off" as const } }],
+    ]),
+    effects: [
+      { id: "hero.stone", label: "Hero stone", still: "/motion/stone-still.png" },
+      { id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" },
+    ],
+  };
+  const data = {
+    root: { props: {} },
+    content: [
+      { type: "Hero", props: { id: "h1", motion: { effect: "bg.ascent", intensity: "full", quietAnchor: "copy" } } },
+      { type: "Hero", props: { id: "h2" } },
+      { type: "Band", props: { id: "b1" } },
+      { type: "Prose", props: { id: "p1" } },
+    ],
+  };
+
+  it("lists the block's effects in the engine's order, leaving out effects the engine does not describe", () => {
+    const options = blockMotionOptions(capabilities, data, "h2")!;
+    expect(options.options.map((option) => option.id)).toEqual(["none", "hero.stone", "bg.ascent"]);
+    expect(options.options[2]).toEqual({ id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" });
+    expect(options.current).toEqual({ effect: "none", intensity: "off" });
+    expect(blockMotionOptions(capabilities, data, "h1")!.current).toEqual({ effect: "bg.ascent", intensity: "full" });
+  });
+
+  it("is null for a block that takes no motion, only None, or is not on the page", () => {
+    expect(blockMotionOptions(capabilities, data, "p1")).toBeNull();
+    expect(blockMotionOptions(capabilities, data, "b1")).toBeNull();
+    expect(blockMotionOptions(capabilities, data, "gone")).toBeNull();
+  });
+
+  it("finds a GS Studio hand-off by study number or effect id", () => {
+    const { options } = blockMotionOptions(capabilities, data, "h2")!;
+    expect(motionOptionFor(options, "016")?.id).toBe("bg.ascent");
+    expect(motionOptionFor(options, "hero.stone")?.id).toBe("hero.stone");
+    expect(motionOptionFor(options, "019")).toBeNull();
+    expect(motionOptionFor(options, null)).toBeNull();
+  });
+
+  it("keeps None off and an effect on", () => {
+    expect(motionChoice("none", "full")).toEqual({ effect: "none", intensity: "off" });
+    expect(motionChoice("bg.ascent", "off")).toEqual({ effect: "bg.ascent", intensity: "subtle" });
+    expect(motionChoice("bg.ascent", "full")).toEqual({ effect: "bg.ascent", intensity: "full" });
+  });
+
+  it("names the block and the effect in every answer", () => {
+    expect(setMotionMessage({ requestId: "r", ok: true }, "Hero", "Ascent", "subtle")).toBe(
+      "Ascent, Subtle, is in Hero. Save the page in the editor to keep it.",
+    );
+    expect(setMotionMessage({ requestId: "r", ok: false, code: "effect_not_allowed" }, "Hero", "Ascent", "subtle")).toMatch(/does not take Ascent/);
+    expect(setMotionMessage({ requestId: "r", ok: false, code: "block_not_found" }, "Hero", "Ascent", "subtle")).toMatch(/no longer on this page/);
+    expect(setMotionMessage(null, "Hero", "Ascent", "subtle")).toMatch(/did not answer/);
+  });
+});
+
+describe("websiteEditorPath (GRE-2296)", () => {
+  it("opens the full-screen editor on a website, page and motion hand-off", () => {
+    expect(websiteEditorPath()).toBe("/website/edit");
+    expect(websiteEditorPath({ propertyId: "prop-1", pageId: "page 1" })).toBe("/website/edit?property=prop-1&page=page+1");
+    expect(websiteEditorPath({ motion: "016" })).toBe("/website/edit?motion=016");
   });
 });

@@ -26,7 +26,7 @@ import {
   websiteProperties,
   websiteSite,
 } from "@greatstone/db";
-import type { WebsiteChangeRequestResult, WebsitePageDetail, WebsiteSite } from "@greatstone/shared";
+import type { WebsiteChangeRequestResult, WebsitePageComment, WebsitePageDetail, WebsiteSite } from "@greatstone/shared";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
@@ -241,5 +241,92 @@ describeEmbeddedPostgres("website click to change", () => {
     expect(response.body.details).toMatchObject({ code: "website_permission_missing", permission: "website:edit" });
     expect(await changeTasks(a.company.id)).toHaveLength(0);
     expect(wakeup).not.toHaveBeenCalled();
+  });
+  // GRE-2350: Ask an agent from the full-screen editor.
+  it("with nothing selected the task is about the whole page, with its address and width", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const sent = {
+      requestId: randomUUID(),
+      pageRevisionId: a.page.latestRevisionId,
+      width: "phone",
+      request: "The page feels too long on a phone.",
+    };
+    const created = (await http.post(url(a.company.id, a.site.id, a.page.id)).send(sent).expect(201)).body as WebsiteChangeRequestResult;
+    expect(created.assigneeAgentId).toBe(a.lintel.id);
+
+    const [task] = await changeTasks(a.company.id);
+    expect(task!.title).toBe("Website change: the whole page on Alpha home");
+    expect(task!.originId).toBe(a.page.id);
+    expect(task!.description).toContain("Page address: https://alpha.test/");
+    expect(task!.description).toContain(`Page revision: \`${a.page.latestRevisionId}\``);
+    expect(task!.description).toContain("Seen at: Phone (390 px)");
+    expect(task!.description).toContain("No block was selected: the comment is about the whole page.");
+    expect(task!.description).toContain("Do not publish");
+    expect(task!.description).not.toContain("Block id:");
+    expect(task!.description).toContain("No screenshot was sent");
+  });
+
+  // GRE-2361: the editor captured a PNG; GSAM attaches it right after.
+  it("with a screenshot the task says one is attached", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const sent = { requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId, request: "Shorter, please.", screenshot: true };
+    await request(app()).post(url(a.company.id, a.site.id, a.page.id)).send(sent).expect(201);
+    const [task] = await changeTasks(a.company.id);
+    expect(task!.description).toContain("A screenshot of the page as the person saw it is attached to this task.");
+    expect(task!.description).not.toContain("No screenshot was sent");
+  });
+
+  it("a block id without its type, or a type without an id, is refused", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const base = { requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId, request: "Change it." };
+    await http.post(target).send({ ...base, blockId: "hero-1" }).expect(400);
+    await http.post(target).send({ ...base, blockType: "Hero" }).expect(400);
+    await http.post(target).send({ ...base, width: "watch" }).expect(400);
+    expect(await changeTasks(a.company.id)).toHaveLength(0);
+  });
+
+  it("lists the page's open comments oldest first and numbered; a done task drops off", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const first = (await http.post(target).send(body(a.page, { width: "laptop", request: "Shorter <b>heading</b> -->" })).expect(201)).body as WebsiteChangeRequestResult;
+    const second = (await http
+      .post(target)
+      .send({ requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId, request: "Whole page: warmer colours." })
+      .expect(201)).body as WebsiteChangeRequestResult;
+
+    const listed = (await http.get(target).expect(200)).body as WebsitePageComment[];
+    expect(listed.map((entry) => [entry.number, entry.issueId])).toEqual([
+      [1, first.issueId],
+      [2, second.issueId],
+    ]);
+    expect(listed[0]).toMatchObject({
+      request: "Shorter <b>heading</b> -->",
+      blockId: "hero-1",
+      blockType: "Hero",
+      blockLabel: "Hero",
+      width: "laptop",
+      pageRevisionId: a.page.latestRevisionId,
+      assigneeAgentId: a.lintel.id,
+    });
+    expect(listed[1]).toMatchObject({ request: "Whole page: warmer colours.", blockId: null, blockType: null, width: null });
+
+    await db.update(issues).set({ status: "done" }).where(eq(issues.id, first.issueId));
+    const after = (await http.get(target).expect(200)).body as WebsitePageComment[];
+    expect(after.map((entry) => [entry.number, entry.issueId])).toEqual([[1, second.issueId]]);
+  });
+
+  it("the list is company-scoped and needs only website:view", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    await request(app()).post(url(b.company.id, b.site.id, b.page.id)).send(body(b.page)).expect(201);
+    const { actor } = await seedAgent(a.company.id, ["website:view"]);
+    const http = request(app(actor));
+    expect((await http.get(url(a.company.id, a.site.id, a.page.id)).expect(200)).body).toEqual([]);
+    await http.get(url(a.company.id, b.site.id, b.page.id)).expect(404);
+    await http.get(url(a.company.id, a.site.id, b.page.id)).expect(404);
   });
 });

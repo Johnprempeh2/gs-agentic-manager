@@ -92,6 +92,7 @@ import {
   createDocumentAnnotationThreadSchema,
   documentEvidenceBulletIdSchema,
   upsertDocumentEvidenceSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
   createChildIssueSchema,
   createIssueSchema,
   resolveCreateIssueStatusDefault,
@@ -218,6 +219,7 @@ import {
 import { artifactReviewDocumentService } from "../services/artifact-review-documents.js";
 import { documentEvidenceService } from "../services/document-evidence.js";
 import { assertCanResolveProposal } from "../services/secret-proposal-authorization.js";
+import { assertSecretDefinitionAdmin } from "./secrets.js";
 import {
   buildDocumentReviewContext,
   buildPlanReviewContext,
@@ -298,11 +300,14 @@ import {
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../services/issue-dependency-wakeups.js";
 import {
+  buildCardAnsweredWakeKey,
   handOffBlockedDependents,
   releaseReadyDependents,
+  releaseTasksWaitingOnCards,
   resolveDuplicateOfFromComment,
   type BlockerHandoff,
   type BlockerHandoffResult,
+  type ReleasedCardWaiter,
   type ReleasedDependent,
 } from "../services/issue-blocker-handoff.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -414,9 +419,11 @@ import {
 } from "../services/issue-queued-comment-queue.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
+// `.extend` keeps the shared schema strict; `.merge` would let unknown keys through.
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
-}).merge(issueReviewOverrideFieldsSchema);
+  ...issueReviewOverrideFieldsSchema.shape,
+});
 const queuedCommentMutationTargetSchema = z.object({
   queueId: z.string().min(1),
   revision: z.string().min(1),
@@ -2697,6 +2704,73 @@ async function readBlockedPathLostAfterResolution(
   });
 }
 
+/**
+ * Frees the blocked tasks that wait on an answered card and wakes each agent
+ * assignee once with the note that says so. Failures are logged; the card
+ * backstop retries on its next pass. Returns the freed task ids.
+ */
+async function releaseAndWakeTasksWaitingOnCard(input: {
+  db: Db;
+  heartbeat: ReturnType<typeof heartbeatService>;
+  companyId: string;
+  interactionId: string;
+  actor: { actorType: "user" | "agent"; actorId: string };
+  skipWakeForIssueId: string | null;
+}): Promise<Set<string>> {
+  let released = new Map<string, ReleasedCardWaiter>();
+  try {
+    released = await releaseTasksWaitingOnCards(issueService(input.db), input.db, {
+      companyId: input.companyId,
+      interactionIds: [input.interactionId],
+      actor: {
+        agentId: input.actor.actorType === "agent" ? input.actor.actorId : null,
+        userId: input.actor.actorType === "user" ? input.actor.actorId : null,
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      { err, interactionId: input.interactionId },
+      "failed to free tasks waiting on an answered card",
+    );
+  }
+  for (const [issueId, freed] of released) {
+    if (!freed.assigneeAgentId || issueId === input.skipWakeForIssueId) continue;
+    await input.heartbeat
+      .wakeup(freed.assigneeAgentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "issue_status_changed",
+        payload: {
+          issueId,
+          interactionId: freed.interactionId,
+          interactionStatus: freed.interactionStatus,
+          commentId: freed.commentId,
+          mutation: "card_answered",
+        },
+        idempotencyKey: buildCardAnsweredWakeKey(issueId, freed.interactionId),
+        requestedByActorType: input.actor.actorType,
+        requestedByActorId: input.actor.actorId,
+        contextSnapshot: {
+          issueId,
+          taskId: issueId,
+          interactionId: freed.interactionId,
+          interactionStatus: freed.interactionStatus,
+          commentId: freed.commentId,
+          wakeCommentId: freed.commentId,
+          wakeReason: "issue_status_changed",
+          source: "issue.card_answered",
+        },
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, issueId, interactionId: freed.interactionId },
+          "failed to wake assignee of a task freed by an answered card",
+        ),
+      );
+  }
+  return new Set(released.keys());
+}
+
 async function queueResolvedInteractionContinuationWakeup(input: {
   db: Db;
   heartbeat: ReturnType<typeof heartbeatService>;
@@ -2723,6 +2797,25 @@ async function queueResolvedInteractionContinuationWakeup(input: {
   newlyResolvedItemIds?: string[];
   idempotencyKey?: string | null;
 }) {
+  // GRE-2286: tasks whose unblock note links this card leave `blocked` now.
+  // The card's own task keeps its continuation wake below when it has one.
+  const freedOwnTask = await releaseAndWakeTasksWaitingOnCard({
+    db: input.db,
+    heartbeat: input.heartbeat,
+    companyId: input.issue.companyId,
+    interactionId: input.interaction.id,
+    actor: input.actor,
+    skipWakeForIssueId:
+      input.interaction.continuationPolicy === "wake_assignee" ||
+      (input.interaction.continuationPolicy === "wake_assignee_on_accept" &&
+        (input.interaction.status === "accepted" ||
+          input.interaction.status === "answered"))
+        ? input.issue.id
+        : null,
+  });
+  if (freedOwnTask.has(input.issue.id)) {
+    input = { ...input, issue: { ...input.issue, status: "todo" } };
+  }
   if (!input.issue.assigneeAgentId || isClosedIssueStatus(input.issue.status))
     return;
 
@@ -14710,6 +14803,28 @@ export function issueRoutes(
               "Unblock owner user must be an active company member",
             );
         }
+        // GRE-2286: the linked card is what frees the task, so it must be a
+        // card in this company that is still waiting for an answer.
+        if (descriptor.interactionId) {
+          const card = await db
+            .select({ status: issueThreadInteractions.status })
+            .from(issueThreadInteractions)
+            .where(
+              and(
+                eq(issueThreadInteractions.id, descriptor.interactionId),
+                eq(issueThreadInteractions.companyId, existing.companyId),
+              ),
+            )
+            .then((rows) => rows[0] ?? null);
+          if (!card)
+            throw unprocessable(
+              "unblockDescriptor.interactionId must be a card in the issue company",
+            );
+          if (card.status !== "pending")
+            throw unprocessable(
+              `unblockDescriptor.interactionId names a card that is already ${card.status}`,
+            );
+        }
       }
       const enteringBlocked =
         existing.status !== "blocked" && updateFields.status === "blocked";
@@ -14766,9 +14881,9 @@ export function issueRoutes(
           !pendingApproval &&
           !descriptor
         ) {
-          res.status(422).json({
-            error:
-              "Entering blocked requires unresolved blockers, a pending interaction/approval, or unblockDescriptor",
+          res.status(400).json({
+            error: BLOCKED_WITHOUT_REASON_MESSAGE,
+            code: "issue_blocked_without_reason",
           });
           return;
         }
@@ -18029,6 +18144,44 @@ export function issueRoutes(
           };
         }
       }
+      // A binding card approves its binding, and the pending secret it needs,
+      // inside the accept transaction (GRE-2313). If approval fails, the accept
+      // rolls back too: the card stays open with the reason, ready to retry.
+      const cardSecretProposalId =
+        current.kind === "request_confirmation" &&
+        typeof current.payload.secretProposal?.proposalId === "string"
+          ? current.payload.secretProposal.proposalId
+          : null;
+      let approvedCardProposal: NonNullable<Awaited<ReturnType<typeof secretProposals.getById>>> | null = null;
+      if (cardSecretProposalId && !opts.approveSecretProposal) {
+        const proposal = await secretProposals.getById(issue.companyId, cardSecretProposalId);
+        if (
+          !proposal ||
+          proposal.kind !== "binding" ||
+          proposal.originIssueId !== issue.id ||
+          proposal.interactionId !== current.id
+        ) {
+          throw notFound("Secret proposal not found");
+        }
+        const resolvedByUserId = actor.actorType === "user" ? actor.actorId : "board";
+        acceptOptions = {
+          afterResolveInTransaction: async (tx) => {
+            await secretProposals.approveInTransaction(tx as unknown as Db, issue.companyId, proposal.id, {
+              resolvedByUserId,
+              cascade: true,
+              assertCanResolve: (lockedProposal, txDb) =>
+                assertCanResolveProposal({
+                  db: txDb,
+                  actor: req.actor,
+                  companyId: issue.companyId,
+                  proposal: lockedProposal,
+                  assertSecretDefinitionAdmin: () => assertSecretDefinitionAdmin(req, issue.companyId),
+                }),
+            });
+          },
+        };
+        approvedCardProposal = proposal;
+      }
       const acceptActor = {
         agentId: actor.agentId,
         runId: actor.runId,
@@ -18112,36 +18265,17 @@ export function issueRoutes(
                 userId: actor.actorType === "user" ? actor.actorId : null,
               },
             });
-          } else {
-            const proposal = await secretProposals.getById(
-              issue.companyId,
-              secretProposal.proposalId,
-            );
-            if (
-              !proposal ||
-              proposal.kind !== "binding" ||
-              proposal.originIssueId !== issue.id ||
-              proposal.interactionId !== interaction.id
-            ) {
-              throw notFound("Secret proposal not found");
-            }
-            await secretProposals.approve(issue.companyId, proposal.id, {
-              resolvedByUserId,
-              assertCanResolve: (lockedProposal, txDb) =>
-                assertCanResolveProposal({
-                  db: txDb,
-                  actor: req.actor,
-                  companyId: issue.companyId,
-                  proposal: lockedProposal,
-                }),
-            });
+          } else if (approvedCardProposal) {
+            // Approved and committed together with the accept above.
             await notifySecretProposalResolution({
-              proposal,
+              proposal: approvedCardProposal,
               status: "approved",
               userId: resolvedByUserId,
               issues: svc,
               heartbeat,
             });
+          } else {
+            throw conflict("Secret proposal was not approved with this card");
           }
           continuationInteraction =
             await interactionSvc.recordSecretProposalExecutionResult(

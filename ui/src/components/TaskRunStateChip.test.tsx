@@ -98,6 +98,14 @@ describe("TaskRunStateChip", () => {
     expect(mockIssuesApi.get).not.toHaveBeenCalled();
   });
 
+  it("queued while a release drains: the chip says Waiting for release (GRE-2274)", async () => {
+    await render(<TaskRunStateChip state={{ ...queued, reason: { kind: "release" }, position: 1, queueLength: 1 }} />);
+    expect(chip().getAttribute("data-run-state")).toBe("queued");
+    expect(chipLabel()).toBe("Waiting for release");
+    expect(spins()).toBe(false);
+    expect(chip().getAttribute("title")).toBe("Waiting for release · Starts when the release is done");
+  });
+
   it("queued: looks up the blocking task's name when the caller does not know it", async () => {
     mockIssuesApi.get.mockResolvedValue({ id: "issue-2217", identifier: "GRE-2217" });
     await render(<TaskRunStateChip state={queued} variant="full" />);

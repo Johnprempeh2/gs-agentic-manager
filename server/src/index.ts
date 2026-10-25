@@ -120,6 +120,7 @@ import {
 } from "./services/device-login-reaper.js";
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
+import { agentQaLoginService } from "./services/agent-qa-logins.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
 import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
 import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
@@ -1376,6 +1377,7 @@ async function startServerWithDatabaseTeardown(
     ["status_delivery", () => deliverExecutionStatuses(db)],
     ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
+    ["agent_qa_login_expiry", () => agentQaLoginService(db).reapExpired()],
     // GRE-1363: a dated budget change takes effect on its date, with no restart.
     ["budget_scheduled_changes", () => budgets.applyDueChanges(new Date())],
     // GRE-1371: a top-up whose card was decided but not applied (stop between the two writes).
@@ -1949,6 +1951,16 @@ async function startServerWithDatabaseTeardown(
           );
         }
 
+        const answeredCardBlocksReconciled = await recoveryStep("reconcileAnsweredCardBlocks", () =>
+          heartbeat.reconcileAnsweredCardBlocks(),
+        );
+        if (answeredCardBlocksReconciled && answeredCardBlocksReconciled.issueIds.length > 0) {
+          logger.warn(
+            { ...answeredCardBlocksReconciled },
+            "startup answered-card reconciliation freed tasks still blocked on an answered card",
+          );
+        }
+
         const taskWatchdogsReconciled = await recoveryStep("reconcileTaskWatchdogs", () =>
           heartbeat.reconcileTaskWatchdogs(),
         );
@@ -2263,6 +2275,17 @@ async function startServerWithDatabaseTeardown(
               const reconciled = await heartbeat.reconcileWaitingDatesPassed();
               if (reconciled.issueIds.length > 0) {
                 logger.info({ ...reconciled }, "periodic waiting-date sweep woke assignees whose expected date passed");
+              }
+            })
+            .then(async () => {
+              // A failure here must not skip the run-output watchdog and stale-lock sweep below.
+              try {
+                const reconciled = await heartbeat.reconcileAnsweredCardBlocks();
+                if (reconciled.issueIds.length > 0) {
+                  logger.warn({ ...reconciled }, "periodic answered-card sweep freed tasks still blocked on an answered card");
+                }
+              } catch (err) {
+                logger.error({ err }, "periodic answered-card sweep failed; continuing recovery");
               }
             })
             .then(async () => {

@@ -9,13 +9,11 @@ import { ApiError } from "../../api/client";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const moduleMock = vi.hoisted(() => ({ sites: vi.fn(), tokenSecrets: vi.fn(), createSite: vi.fn(), updateSite: vi.fn(), pages: vi.fn() }));
-const canManage = vi.hoisted(() => ({ value: true }));
+const moduleMock = vi.hoisted(() => ({ sites: vi.fn(), access: vi.fn(), tokenSecrets: vi.fn(), createSite: vi.fn(), updateSite: vi.fn(), pages: vi.fn() }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
   return { ...actual, websiteModuleApi: moduleMock };
 });
-vi.mock("./WebsiteSetup", () => ({ useCanManageWebsite: () => ({ canManage: canManage.value, isLoading: false }) }));
 
 import { WebsiteSiteConnection, domainFromSiteUrl } from "./WebsiteSiteConnection";
 
@@ -82,8 +80,8 @@ describe("WebsiteSiteConnection", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    canManage.value = true;
     vi.clearAllMocks();
+    moduleMock.access.mockResolvedValue({ view: true, edit: true, publish: true });
     moduleMock.tokenSecrets.mockResolvedValue([]);
   });
 
@@ -276,10 +274,36 @@ describe("WebsiteSiteConnection", () => {
   });
 
   it("tells people without Publish rights who can connect it", async () => {
-    canManage.value = false;
+    moduleMock.access.mockResolvedValue({ view: true, edit: true, publish: false });
     moduleMock.sites.mockResolvedValue([]);
     await render();
+    expect(moduleMock.access).toHaveBeenCalledWith("co-1", null);
     expect(container.textContent).toContain("Only people with Publish rights can change site settings, the theme and the token.");
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  // GRE-2136: the buttons follow the server's website:publish decision, not the owner/admin role.
+  it("offers Connect a site to someone granted website:publish for the company", async () => {
+    moduleMock.access.mockResolvedValue({ view: true, edit: true, publish: true });
+    moduleMock.sites.mockResolvedValue([]);
+    await render();
+    expect(moduleMock.access).toHaveBeenCalledWith("co-1", null);
+    expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Connect a site"]);
+  });
+
+  it("shows Change from the grant for this site, and hides it when the grant is for another site", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.access.mockImplementation(async (_companyId: string, siteId: string | null) => ({ view: true, edit: true, publish: siteId === "site-1" }));
+    await render();
+    expect(moduleMock.access).toHaveBeenCalledWith("co-1", "site-1");
+    expect(container.querySelector("button")?.textContent).toBe("Change");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    vi.clearAllMocks();
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.access.mockImplementation(async (_companyId: string, siteId: string | null) => ({ view: true, edit: true, publish: siteId === "other-site" }));
+    await render();
     expect(container.querySelector("button")).toBeNull();
   });
 });

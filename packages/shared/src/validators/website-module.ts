@@ -175,15 +175,26 @@ export type RestoreWebsiteRevision = z.infer<typeof restoreWebsiteRevisionSchema
  * preview and what they want changed. The block reference is durable (page,
  * revision, block id and type, engine commit); `source` is only a hint.
  */
+/** The editor widths a comment can be made at (GRE-2350). */
+export const WEBSITE_COMMENT_WIDTHS = ["laptop", "tablet", "phone"] as const;
+export type WebsiteCommentWidth = (typeof WEBSITE_COMMENT_WIDTHS)[number];
+
+/**
+ * Click to change (GRE-2121) and Ask an agent (GRE-2350). With a block, the
+ * task is about that block; with no `blockId` and `blockType`, it is about the
+ * whole page. `engine` and `source` come only from a preview pick.
+ */
 export const createWebsiteChangeRequestSchema = z
   .object({
     /** Client-made id for this confirm; the same id never makes a second task. */
     requestId: z.string().uuid(),
     pageRevisionId: z.string().uuid(),
-    blockId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),
-    blockType: z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/),
+    blockId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/).optional(),
+    blockType: z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/).optional(),
     blockLabel: z.string().trim().max(200).optional(),
-    engine: z.object({ version: z.string().max(100), commit: z.string().regex(/^[0-9a-f]{40}$/) }).strict(),
+    /** The editor width the person saw the page at. */
+    width: z.enum(WEBSITE_COMMENT_WIDTHS).optional(),
+    engine: z.object({ version: z.string().max(100), commit: z.string().regex(/^[0-9a-f]{40}$/) }).strict().optional(),
     source: z
       .object({
         file: z.string().regex(/^[A-Za-z0-9_./-]{1,300}$/).refine((file) => !file.startsWith("/") && !file.split("/").includes("..")),
@@ -194,8 +205,14 @@ export const createWebsiteChangeRequestSchema = z
       .optional(),
     /** The change, in the person's own words. */
     request: z.string().trim().min(1).max(4000),
+    /** The editor captured a PNG (GRE-2361); GSAM attaches it to the task right after. */
+    screenshot: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => (value.blockId === undefined) === (value.blockType === undefined), {
+    message: "Send blockId and blockType together, or neither for the whole page.",
+    path: ["blockType"],
+  });
 export type CreateWebsiteChangeRequest = z.infer<typeof createWebsiteChangeRequestSchema>;
 
 export const sendBackWebsiteContentSchema = z

@@ -74,7 +74,7 @@ function hasSecretDefinitionAdminAccess(req: Parameters<typeof assertBoard>[0], 
   return membership?.status === "active" && ["owner", "admin"].includes(String(membership.membershipRole));
 }
 
-function assertSecretDefinitionAdmin(req: Parameters<typeof assertBoard>[0], companyId: string) {
+export function assertSecretDefinitionAdmin(req: Parameters<typeof assertBoard>[0], companyId: string) {
   if (hasSecretDefinitionAdminAccess(req, companyId)) return;
   throw forbidden("Company admin access required");
 }

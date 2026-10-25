@@ -12,6 +12,7 @@ import {
 } from "@greatstone/shared";
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
+import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -163,6 +164,8 @@ export function OrganisationPage() {
           </div>
         ) : null}
       </section>
+
+      <OrganisationCommerce companyId={companyId} organisation={organisation} />
 
       <section aria-label="Contacts" className="space-y-2">
         <h2 className="text-sm font-semibold">Contacts</h2>

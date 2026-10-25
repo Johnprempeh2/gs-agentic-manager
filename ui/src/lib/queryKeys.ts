@@ -221,6 +221,7 @@ export const queryKeys = {
   agents: {
     list: (companyId: string) => ["agents", companyId] as const,
     detail: (id: string) => ["agents", "detail", id] as const,
+    qaLogin: (id: string) => ["agents", "qa-login", id] as const,
     runtimeState: (id: string) => ["agents", "runtime-state", id] as const,
     taskSessions: (id: string) => ["agents", "task-sessions", id] as const,
     skills: (id: string) => ["agents", "skills", id] as const,
@@ -516,6 +517,10 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "journey"] as const,
     casePortal: (caseId: string) =>
       ["pipelines", "item", caseId, "portal"] as const,
+    casePublications: (caseId: string) =>
+      ["pipelines", "item", caseId, "publications"] as const,
+    caseTimeline: (caseId: string) =>
+      ["pipelines", "item", caseId, "timeline"] as const,
     caseDocument: (caseId: string, key: string) =>
       ["pipelines", "item", caseId, "document", key] as const,
     caseDocumentRevisions: (caseId: string, key: string) =>
@@ -579,6 +584,7 @@ export const queryKeys = {
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
     detail: (id: string) => ["cases", "detail", id] as const,
+    deepDiveFiles: (companyId: string) => ["cases", companyId, "deep-dive-files"] as const,
     documents: (id: string) => ["cases", "documents", id] as const,
     documentAnnotations: (
       caseId: string,
@@ -687,10 +693,14 @@ export const queryKeys = {
       ["website", companyId, "hub", propertyId] as const,
     sites: (companyId: string) => ["website", companyId, "sites"] as const,
     tokenSecrets: (companyId: string) => ["website", companyId, "token-secrets"] as const,
+    access: (companyId: string, siteId: string | null) => ["website", companyId, "access", siteId] as const,
     pages: (companyId: string, siteId: string) => ["website", companyId, "pages", siteId] as const,
     revisions: (companyId: string, siteId: string, pageId: string) =>
       ["website", companyId, "revisions", siteId, pageId] as const,
     media: (companyId: string, siteId: string) => ["website", companyId, "media", siteId] as const,
+    /** A page's open comments for the agents (GRE-2350). */
+    pageComments: (companyId: string, siteId: string, pageId: string) =>
+      ["website", companyId, "page-comments", siteId, pageId] as const,
     /** Finished GS Studio images or Animate clips, for the media picker. */
     studioMedia: (companyId: string, source: "studio" | "animation") => ["website", companyId, "studio-media", source] as const,
     releases: (companyId: string, siteId: string) => ["website", companyId, "releases", siteId] as const,
@@ -701,6 +711,15 @@ export const queryKeys = {
     sitemapOptions: (companyId: string, siteId: string) => ["website", companyId, "sitemap-options", siteId] as const,
     sitemapXml: (companyId: string, siteId: string) => ["website", companyId, "sitemap-xml", siteId] as const,
     home: (companyId: string, siteId: string) => ["website", companyId, "home", siteId] as const,
+    /** The website admin bridge's status (GRE-2323). */
+    dataBridge: (companyId: string, siteId: string) => ["website", companyId, "data-bridge", siteId] as const,
+    /** Records read through the bridge (Commerce, GRE-2383). */
+    data: (companyId: string, siteId: string, resource: string, ...rest: string[]) =>
+      ["website", companyId, "data", siteId, resource, ...rest] as const,
+    /** Website features (GRE-2325): the registry, the Home cards and one feature page. */
+    features: (companyId: string, siteId: string) => ["website", companyId, "features", siteId] as const,
+    featureCards: (companyId: string, siteId: string) => ["website", companyId, "features", siteId, "cards"] as const,
+    feature: (companyId: string, siteId: string, featureId: string) => ["website", companyId, "features", siteId, featureId] as const,
   },
   budgets: {
     overview: (companyId: string) =>
