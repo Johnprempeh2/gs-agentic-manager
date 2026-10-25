@@ -11,6 +11,13 @@ export const WEBSITE_FRAME_TAG = "website-frame" as const;
 /** Protocol versions this GSAM speaks, highest last. */
 export const WEBSITE_FRAME_PROTOCOLS = [1] as const;
 
+/**
+ * The full-screen editor contract (`editor-state` / `editor-command`, GRE-2296)
+ * GSAM's editor shell needs (GRE-2357). An editor host below it gets "Editor
+ * host is out of date" instead of the frame. See `websiteEditorContractOf`.
+ */
+export const WEBSITE_EDITOR_CONTRACT = 1;
+
 export const WEBSITE_FRAME_HELLO_INTERVAL_MS = 250;
 export const WEBSITE_FRAME_HELLO_TIMEOUT_MS = 10_000;
 export const WEBSITE_FRAME_SAVE_TIMEOUT_MS = 30_000;
@@ -256,8 +263,30 @@ export const websiteFrameHelloAckSchema = z.object({
     .transform((commands) => commands.filter(isWebsiteEditorCommand))
     .optional()
     .catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2357): the full-screen editor contract the engine
+   * speaks. An engine from website PR #98 leaves it out but sends
+   * `editorCommands`; that counts as contract 1.
+   */
+  editorContract: protocolNumber.optional().catch(undefined),
 });
 export type WebsiteFrameHelloAck = z.infer<typeof websiteFrameHelloAckSchema>;
+
+/**
+ * The editor contract an engine's `hello-ack` shows (GRE-2357): its
+ * `editorContract`, else 1 when it lists `editorCommands` (website PR #98),
+ * else null (an engine from before the full-screen editor).
+ */
+export function websiteEditorContractOf(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): number | null {
+  if (typeof ack.editorContract === "number") return ack.editorContract;
+  return Array.isArray(ack.editorCommands) ? 1 : null;
+}
+
+/** True when the engine speaks at least the editor contract GSAM's shell needs. */
+export function isWebsiteEditorContractCurrent(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): boolean {
+  const contract = websiteEditorContractOf(ack);
+  return contract !== null && contract >= WEBSITE_EDITOR_CONTRACT;
+}
 
 export const websiteFrameHelloRefusedSchema = z.object({
   nonce: z.string(),

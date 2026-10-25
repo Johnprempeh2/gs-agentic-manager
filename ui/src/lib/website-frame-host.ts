@@ -5,9 +5,11 @@ import {
   WEBSITE_FRAME_PROTOCOLS,
   WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS,
   inspectWebsitePuckData,
+  isWebsiteEditorContractCurrent,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
   isWebsiteEditorCommand,
+  websiteEditorContractOf,
   websiteFrameHelloMessage,
   websiteFrameInsertMediaSchema,
   websiteFrameMessage,
@@ -40,6 +42,12 @@ export type WebsiteFrameConnection =
   | { phase: "connecting" }
   | { phase: "ready"; protocol: number; engine: WebsiteFrameHelloAck["engine"] }
   | { phase: "no-answer" }
+  /**
+   * Editor only (GRE-2357): the editor host is older than `WEBSITE_EDITOR_CONTRACT`
+   * or did not answer. `contract` is what it said, null when it said nothing.
+   * No draft is sent; the host shows "Editor host is out of date", not the frame.
+   */
+  | { phase: "out-of-date"; contract: number | null }
   | { phase: "refused-protocol"; supported: number[] }
   | { phase: "refused-site" }
   | { phase: "closed" };
@@ -175,7 +183,9 @@ export class WebsiteFrameHostSession<Source> {
     this.helloTimer = setInterval(send, WEBSITE_FRAME_HELLO_INTERVAL_MS);
     this.helloDeadline = setTimeout(() => {
       this.stopHello();
-      if (this.connection.phase === "connecting") this.setConnection({ phase: "no-answer" });
+      if (this.connection.phase !== "connecting") return;
+      // A silent editor host is treated as one too old for the full-screen editor.
+      this.setConnection(this.options.mode === "editor" ? { phase: "out-of-date", contract: null } : { phase: "no-answer" });
     }, WEBSITE_FRAME_HELLO_TIMEOUT_MS);
   }
 
@@ -330,6 +340,10 @@ export class WebsiteFrameHostSession<Source> {
       return;
     }
     this.stopHello();
+    if (this.options.mode === "editor" && !isWebsiteEditorContractCurrent(ack)) {
+      this.setConnection({ phase: "out-of-date", contract: websiteEditorContractOf(ack) });
+      return;
+    }
     this.protocol = ack.protocol;
     this.engineTypes = new Set(ack.blocks.map((block) => block.type));
     this.motion = {

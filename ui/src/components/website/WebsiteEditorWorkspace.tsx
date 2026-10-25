@@ -18,6 +18,7 @@ import {
   Redo2,
   RefreshCw,
   Send,
+  TriangleAlert,
   Undo2,
   Waves,
   X,
@@ -588,6 +589,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const outlineOn = Boolean(editorState?.outline);
   const waiting = page.status === "review";
   const connectionMessage = frameConnectionMessage(connection, site.editorFrameOrigin!);
+  // GRE-2357: an editor host older than the shell's contract never shows its own studio.
+  const outOfDate = editing && connection.phase === "out-of-date";
   const toggleDrawer = (next: Exclude<Drawer, null>) => setDrawer((current) => (current === next ? null : next));
 
   return (
@@ -691,7 +694,20 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
       ) : null}
       <div className="relative flex min-h-0 flex-1">
         <div className={cn("relative min-w-0 flex-1", width ? "bg-muted" : "bg-background")}>
-          {notice ? null : (
+          {notice ? null : outOfDate ? (
+            <ScreenMessage>
+              <div data-testid="website-editor-out-of-date">
+                <EmptyState
+                  icon={TriangleAlert}
+                  title="Editor host is out of date"
+                  message={`Redeploy the editor host (${site.editorFrameOrigin}) from the website's main branch, then press Retry.`}
+                  action="Retry"
+                  onAction={reload}
+                  hideActionIcon
+                />
+              </div>
+            </ScreenMessage>
+          ) : (
             <EditorFrame
               key={frameSessionKey}
               companyId={companyId}
@@ -703,8 +719,11 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               device={device}
               sessionRef={sessionRef}
               focusBlockId={mode === "edit" ? focusBlockId : null}
+              // Edit keeps the frame hidden until the engine passes the contract check.
+              hidden={editing && !ready}
               onConnection={(next) => {
-                setConnection(next);
+                // Removing an out-of-date frame tears its session down; the screen keeps saying why.
+                setConnection((current) => (current.phase === "out-of-date" && next.phase === "closed" ? current : next));
                 if (next.phase === "ready") setCommands(new Set(sessionRef.current?.editorCommands ?? []));
               }}
               onSaveState={setSaveState}
@@ -937,6 +956,10 @@ function SaveStatePill({
   // Full-strength text on a neutral fill: the state is a must-have, so never the faint grey.
   let tone = "border border-border bg-status-neutral-soft text-foreground";
   if (connection.phase === "connecting") text = "Connecting";
+  else if (connection.phase === "out-of-date" && mode === "edit") {
+    text = "Not open";
+    tone = "bg-status-warning-soft text-status-warning-foreground";
+  }
   else if (mode === "preview") text = "Preview";
   else if (saveState.status === "saving") text = "Saving";
   else if (dirty) {
@@ -1201,6 +1224,7 @@ function EditorFrame({
   device,
   sessionRef,
   focusBlockId,
+  hidden,
   onConnection,
   onSaveState,
   onFrameError,
@@ -1221,6 +1245,7 @@ function EditorFrame({
   device: WebsitePreviewDevice;
   sessionRef: React.MutableRefObject<WebsiteFrameHostSession<Window> | null>;
   focusBlockId: string | null;
+  hidden: boolean;
   onConnection: (connection: WebsiteFrameConnection) => void;
   onSaveState: (state: WebsiteFrameSaveState) => void;
   onFrameError: (message: string) => void;
@@ -1327,17 +1352,19 @@ function EditorFrame({
   }
 
   return (
-    <ScaledFrame
-      frameRef={frameRef}
-      src={websiteFrameSrc(editorOrigin, mode === "edit" ? "editor" : "preview", page.id)}
-      title={mode === "edit" ? "Page editor" : `Page preview, ${device} width`}
-      width={width}
-      sandbox={WEBSITE_FRAME_SANDBOX}
-      allow=""
-      onLoad={start}
-      testId="website-editor-frame"
-      viewport={mode === "preview" || width ? device : "editor"}
-    />
+    <div className={cn("absolute inset-0", hidden && "invisible")} data-testid="website-editor-canvas" data-hidden={hidden ? "true" : undefined}>
+      <ScaledFrame
+        frameRef={frameRef}
+        src={websiteFrameSrc(editorOrigin, mode === "edit" ? "editor" : "preview", page.id)}
+        title={mode === "edit" ? "Page editor" : `Page preview, ${device} width`}
+        width={width}
+        sandbox={WEBSITE_FRAME_SANDBOX}
+        allow=""
+        onLoad={start}
+        testId="website-editor-frame"
+        viewport={mode === "preview" || width ? device : "editor"}
+      />
+    </div>
   );
 }
 
