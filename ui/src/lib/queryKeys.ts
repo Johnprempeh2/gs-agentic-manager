@@ -579,6 +579,7 @@ export const queryKeys = {
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
     detail: (id: string) => ["cases", "detail", id] as const,
+    deepDiveFiles: (companyId: string) => ["cases", companyId, "deep-dive-files"] as const,
     documents: (id: string) => ["cases", "documents", id] as const,
     documentAnnotations: (
       caseId: string,

@@ -533,7 +533,12 @@ export function DeepDive() {
   return (
     <div className="space-y-4">
       <header className="space-y-1">
-        <h1 className="text-xl font-bold">Deep Dive</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-xl font-bold">Deep Dive</h1>
+          <Link to="/deep-dive/files" className="text-xs font-medium underline-offset-4 hover:underline">
+            Evidence and files
+          </Link>
+        </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
           The nine Investigation Streams against the five GIF questions (Book V). Place the known, validate the
           indicated, investigate only the unknown. Open a cell to write its answer and attach the evidence.
