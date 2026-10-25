@@ -787,7 +787,7 @@ describe("WebsiteFullScreenEditor", () => {
       await act(async () => effect("bg.veil").click());
       const preview = document.body.querySelector<HTMLIFrameElement>('[data-testid="website-motion-preview"]')!;
       expect(preview.getAttribute("src")).toBe(`${EDITOR}/effect-preview/bg.veil`);
-      expect(preview.getAttribute("sandbox")).toBe("allow-scripts");
+      expect(preview.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
       await act(async () => button("Normal").click());
       await act(async () => button("Teal").click());
       await act(async () => button("Use in block").click());

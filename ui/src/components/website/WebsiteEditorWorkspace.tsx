@@ -2006,7 +2006,14 @@ function MotionPanel({
     (request.surface === undefined || (applied.surface ?? "none") === request.surface);
   const pickNone = () => setSelection((value) => ({ ...value, effect: "none", surface: "none" }));
   const pickSurface = (surface: string) => setSelection((value) => ({ ...value, effect: "none", surface }));
-  const pickEffect = (option: MotionOption) =>
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const picked = useRef(false);
+  // After a pick, bring the preview and settings into view: they sit below the library.
+  useEffect(() => {
+    if (picked.current) settingsRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [selection.effect]);
+  const pickEffect = (option: MotionOption) => {
+    picked.current = true;
     setSelection((value) => ({
       ...value,
       effect: option.id,
@@ -2014,6 +2021,7 @@ function MotionPanel({
       speed: value.speed ?? option.settings?.defaults.speed,
       colour: value.colour ?? option.settings?.defaults.colour,
     }));
+  };
 
   const apply = async () => {
     setPending(true);
@@ -2112,15 +2120,16 @@ function MotionPanel({
             ) : null}
           </div>
           {chosen ? (
-            <div className="space-y-3 rounded-lg border border-border p-3" data-testid="website-motion-settings">
+            <div ref={settingsRef} className="scroll-mt-4 space-y-3 rounded-lg border border-border p-3" data-testid="website-motion-settings">
               {chosen.preview ? (
-                // The engine's live preview of the effect, from the editor origin, sandboxed and out of the tab order.
+                // The engine's live preview of the effect, from the editor origin GSAM already frames (rule C1.1),
+                // with the editor frame's sandbox less forms, and out of the tab order.
                 <span className="dark relative block aspect-video w-full overflow-hidden rounded-md bg-background">
                   <iframe
                     key={chosen.id}
                     src={`${editorOrigin}${chosen.preview}`}
                     title={`${chosen.label} live preview`}
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
                     loading="lazy"
                     referrerPolicy="no-referrer"
                     tabIndex={-1}
@@ -2167,7 +2176,8 @@ function MotionPanel({
               </p>
             </div>
           ) : null}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Pinned to the foot of the drawer, so the choice can be used without scrolling back down the library. */}
+          <div className="sticky -bottom-4 -mx-4 grid grid-cols-2 gap-2 border-t border-border bg-background px-4 py-3">
             <Button type="button" size="sm" disabled={pending || unchanged} onClick={() => void apply()} data-testid="website-motion-apply">
               {pending ? "Putting it in" : unchanged ? "In the block" : "Use in block"}
             </Button>
