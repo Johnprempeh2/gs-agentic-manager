@@ -99,6 +99,12 @@ export { deepDiveItemFiles } from "./deep_dive_item_files.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
 export { clientAcceptanceLinks } from "./client_acceptance_links.js";
 export {
+  CLIENT_DELIVERABLE_PUBLICATION_STATUSES,
+  clientDeliverableApprovers,
+  clientDeliverablePublications,
+  clientDeliverablePublicationEvents,
+} from "./client_deliverable_publications.js";
+export {
   crmSyncBindings,
   crmSyncFieldMaps,
   crmSyncRecordLinks,

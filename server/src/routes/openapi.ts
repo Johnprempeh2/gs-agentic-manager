@@ -75,6 +75,11 @@ import {
   setCaseNdaSchema,
   setCaseEngagementSchema,
   acceptClientEngagementSchema,
+  createClientPublicationSchema,
+  registerClientApproverSchema,
+  rejectClientPublicationSchema,
+  submitClientPublicationSchema,
+  withdrawClientPublicationSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -5135,6 +5140,146 @@ registry.registerPath({
   summary:
     "Public, no sign-in: the client accepts the engagement pack with their name, optional role and email. The " +
     "client's engagement moves to accepted. 409 when already accepted",
+  request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
+});
+
+// Clients > Deliverables publishing and the engagement timeline (GRE-2373).
+const casePath = z.object({ caseId: z.string() });
+const publicationPath = z.object({ id: z.string() });
+const boardOnly = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict };
+
+registry.registerPath({
+  method: "get",
+  path: "/api/cases/{caseId}/publications",
+  tags: ["issues"],
+  summary: "The client's registered approvers, deliverable publications with their audit, what blocks publishing, and whether receipts can be sent",
+  request: { params: casePath },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/cases/{caseId}/timeline",
+  tags: ["issues"],
+  summary: "The client's engagement timeline from stored events: stages entered and left, NDA, engagement and publishing milestones. ?view=client returns only what the client may see",
+  request: { params: casePath, query: z.object({ view: z.enum(["client"]).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/approvers",
+  tags: ["issues"],
+  summary: "Register a company member as an approver of this client's deliverables (a person with Work cases)",
+  request: { params: casePath, body: jsonBody(registerClientApproverSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/cases/{caseId}/approvers/{approverId}",
+  tags: ["issues"],
+  summary: "Remove a registered approver (a person with Work cases); the audit keeps who it was",
+  request: { params: z.object({ caseId: z.string(), approverId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/publications",
+  tags: ["issues"],
+  summary: "Start a draft publication from a deliverable filed under one of the client's stages (Work cases)",
+  request: { params: casePath, body: jsonBody(createClientPublicationSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/submit",
+  tags: ["issues"],
+  summary: "Freeze the newest version and its content fingerprint, and ask one registered approver (Work cases)",
+  request: { params: publicationPath, body: jsonBody(submitClientPublicationSchema) },
+  responses: { ...boardOnly, 400: r.badRequest, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/approve",
+  tags: ["issues"],
+  summary: "Approve (only the named, still-registered approver). 409 fingerprint_mismatch when the content changed since it was submitted",
+  request: { params: publicationPath },
+  responses: boardOnly,
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/reject",
+  tags: ["issues"],
+  summary: "Send back to draft with a reason (only the named approver)",
+  request: { params: publicationPath, body: jsonBody(rejectClientPublicationSchema) },
+  responses: { ...boardOnly, 400: r.badRequest },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/publish",
+  tags: ["issues"],
+  summary: "Publish exactly what was approved (a person with Work cases). 409 when the NDA or engagement blocks it or the fingerprint no longer matches",
+  request: { params: publicationPath },
+  responses: boardOnly,
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/acceptance-link",
+  tags: ["issues"],
+  summary: "Make the client's link to read and accept a published deliverable (a person with Work cases). Returned once; a new link replaces the old",
+  request: { params: publicationPath },
+  responses: { ...boardOnly, 201: r.ok() },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/withdraw",
+  tags: ["issues"],
+  summary: "Withdraw before acceptance, with a reason (a person with Work cases); the client's link stops working",
+  request: { params: publicationPath, body: jsonBody(withdrawClientPublicationSchema) },
+  responses: { ...boardOnly, 400: r.badRequest },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/receipt",
+  tags: ["issues"],
+  summary: "Send the acceptance receipt again after it failed or before the sending-only Resend key was set (a person with Work cases)",
+  request: { params: publicationPath },
+  responses: boardOnly,
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-deliverable/{token}",
+  tags: ["issues"],
+  summary: "Public, no sign-in: what a client sees for a published deliverable. 404 when the link is unknown, withdrawn or expired",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-deliverable/{token}/content",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the published file, served sandboxed, only while it still has the published fingerprint",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-deliverable/{token}/accept",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the client accepts the published deliverable; a receipt email is sent. 409 when already accepted",
   request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
 });

@@ -502,6 +502,7 @@ export * from "./validators/client-journey.js";
 export * from "./types/deep-dive-files.js";
 export * from "./validators/deep-dive-files.js";
 export * from "./client-journey.js";
+export * from "./client-deliverable-publishing.js";
 export * from "./deliverable-versions.js";
 export * from "./draft-diff.js";
 export * from "./types/workflow-template.js";
