@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Bot,
   Check,
   CheckCircle2,
   ChevronsUpDown,
@@ -13,6 +14,7 @@ import {
   History,
   Image as ImageIcon,
   ListTree,
+  Lock,
   MessageSquarePlus,
   MessagesSquare,
   MoreHorizontal,
@@ -61,7 +63,12 @@ import {
   type WebsiteFrameSaveState,
 } from "../../lib/website-frame-host";
 import {
+  MOTION_COLOUR_LABELS,
   MOTION_INTENSITY_LABELS,
+  MOTION_SPEED_LABELS,
+  backgroundAgentRequest,
+  backgroundRequest,
+  backgroundSettingsText,
   blockMotionOptions,
   editorOpenProblem,
   fetchAssetBlob,
@@ -71,11 +78,12 @@ import {
   insertMediaEntry,
   insertMediaField,
   insertMediaMessage,
-  motionChoice,
+  isFrozenBackground,
   motionOptionFor,
   saveThroughGsam,
   setMotionMessage,
   websiteEditorPath,
+  type BackgroundSelection,
   type BlockMotionOptions,
   type MotionOption,
 } from "../../lib/website-editor";
@@ -94,6 +102,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScaledFrame } from "../AttachmentPreviewPanel";
 import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
+import { useIsPhone } from "../../hooks/useIsPhone";
 import { WebsiteChangeRequestPanel, websiteScreenshotFile, type WebsiteChangeTarget } from "./WebsiteChangeRequest";
 import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComments";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
@@ -333,6 +342,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   /** A pin clicked in the frame (GRE-2361): the thread the Comments drawer opens on. */
   const [commentFocus, setCommentFocus] = useState<{ n: number; issueId: string } | null>(null);
   const [mode, setMode] = useState<Mode>("edit");
+  const phone = useIsPhone();
   /** GRE-2394: Edit copy on every open; a GS Studio hand-off needs Motion, so it opens in Layout. */
   const [editMode, setEditMode] = useState<WebsiteEditMode>(() => (searchParams.get("motion") ? "layout" : "copy"));
   const [source, setSource] = useState<Source>("draft");
@@ -342,6 +352,12 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const [drawer, setDrawer] = useState<Drawer>(() => (wantedMotion ? "motion" : null));
   /** Counts draft loads, so the Motion panel reads the engine's choices once the frame has them. */
   const [draftLoads, setDraftLoads] = useState(0);
+  /**
+   * Backgrounds put in blocks since the draft loaded, by block id. `set-motion`
+   * changes the frame's draft, not the data GSAM last sent, so a reopened panel
+   * reads the block's background from here first.
+   */
+  const [appliedBackgrounds, setAppliedBackgrounds] = useState<Record<string, AppliedBackground>>({});
   const [frameKey, setFrameKey] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -363,7 +379,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const [draftEmpty, setDraftEmpty] = useState<boolean | null>(null);
   const [importing, setImporting] = useState(false);
   /** Click to change or Ask an agent: what the comment is about; each one starts a fresh request. */
-  const [ask, setAsk] = useState<{ n: number; target: WebsiteChangeTarget; picked: boolean } | null>(null);
+  const [ask, setAsk] = useState<{ n: number; target: WebsiteChangeTarget; picked: boolean; request?: string } | null>(null);
   const sessionRef = useRef<WebsiteFrameHostSession<Window> | null>(null);
   const hadSelection = useRef(false);
   const frameSessionKey = `${page?.id ?? ""}:${mode}:${source}:${frameKey}`;
@@ -635,16 +651,19 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     });
   };
 
-  const setMotion = async (choice: WebsiteMotionChoice): Promise<WebsiteFrameSetMotionResult | null> => {
+  const setMotion = async (request: { motion: WebsiteMotionChoice; surface?: string }): Promise<WebsiteFrameSetMotionResult | null> => {
     const session = sessionRef.current;
-    if (!session || !insertBlockId) return null;
-    return session.setMotion({ blockId: insertBlockId, motion: choice });
+    if (!session || !insertBlockId || motionFrozen) return null;
+    return session.setMotion({ blockId: insertBlockId, ...request });
   };
   const session = sessionRef.current;
   const motionReady = mode === "edit" && draftLoads > 0 && session !== null;
   const motionOptions =
     motionReady && insertBlockId ? blockMotionOptions(session.motionCapabilities, session.shownPageData, insertBlockId) : null;
   const engineEffects = motionReady ? session.motionCapabilities.effects : [];
+  // GRE-2522: the frozen Two Doors home page takes no Background change from the picker.
+  const motionBlockType = motionOptions?.blockType ?? (insertBlockId && editorState?.selection?.blockId === insertBlockId ? editorState.selection.blockType : null);
+  const motionFrozen = isFrozenBackground(page.slug, motionBlockType, motionReady ? session.shownPageData : null);
 
   const deviceWidth = WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width;
   // Editing at laptop width fills the canvas; tablet and phone show the page at that width.
@@ -747,7 +766,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             {copy ? null : (
               <>
                 <IconButton label="Media" icon={ImageIcon} labelled="2xl" pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
-                <IconButton label="Motion" icon={Waves} labelled="2xl" pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
+                <IconButton label="Background" icon={Waves} labelled="2xl" pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
               </>
             )}
           </div>
@@ -899,6 +918,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onDirty={setDirty}
               onDraftLoaded={() => {
                 setDraftLoads((count) => count + 1);
+                setAppliedBackgrounds({});
                 setDraftEmpty(sessionRef.current?.draftEmpty ?? null);
               }}
               onOriginChanged={() => setNotice(ORIGIN_CHANGED_NOTICE)}
@@ -979,10 +999,31 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 blockId={insertBlockId}
                 blockName={focusBlockName}
                 options={motionOptions}
+                applied={insertBlockId ? (appliedBackgrounds[insertBlockId] ?? null) : null}
                 engineEffects={engineEffects.length}
+                frozen={motionFrozen}
                 wanted={wantedMotion}
                 setMotion={setMotion}
-                onApplied={() => setDirty(true)}
+                onApplied={(background) => {
+                  setDirty(true);
+                  if (insertBlockId) setAppliedBackgrounds((current) => ({ ...current, [insertBlockId]: background }));
+                  // On a phone the sheet covers the page: close it and bring the block into view, so the change shows.
+                  if (phone) {
+                    setDrawer(null);
+                    if (insertBlockId) sessionRef.current?.highlight(insertBlockId);
+                  }
+                }}
+                onAskAgent={(request) => {
+                  if (!insertBlockId || !motionOptions) return;
+                  const target: WebsiteChangeTarget = {
+                    kind: "block",
+                    blockId: insertBlockId,
+                    blockType: motionOptions.blockType,
+                    label: focusBlockName,
+                  };
+                  setAsk((current) => ({ n: (current?.n ?? 0) + 1, target, picked: false, request }));
+                  setDrawer("change");
+                }}
               />
             ) : null}
             {drawer === "change" && ask ? (
@@ -992,6 +1033,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 siteId={site.id}
                 page={page}
                 target={ask.target}
+                initialRequest={ask.request}
                 width={device}
                 dirty={dirty}
                 capture={captureFor(ask.target)}
@@ -1059,7 +1101,7 @@ function EmptyPageState({
 const DRAWER_TITLES: Record<Exclude<Drawer, null>, string> = {
   history: "History",
   media: "Media",
-  motion: "Motion",
+  motion: "Background",
   change: "Ask an agent",
   comments: "Comments",
 };
@@ -1340,7 +1382,7 @@ function MoreMenu({
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onDrawer("motion")}>
               <Waves />
-              Motion{drawer === "motion" ? " (open)" : ""}
+              Background{drawer === "motion" ? " (open)" : ""}
             </DropdownMenuItem>
           </>
         )}
@@ -1916,10 +1958,14 @@ const EFFECT_INTENSITIES: { value: WebsiteMotionIntensity; label: string }[] = [
 ];
 
 /**
- * Motion (GRE-2219): put one of the engine's effects in the selected block.
- * The engine owns the effects, their stills and the checks; GSAM sends only
- * the choice (`set-motion`), and the person saves the page in the editor.
+ * Motion (GRE-2219), the block's Background (GRE-2526): None, a plain site
+ * surface, or an effect from the engine's library, with its safe settings.
+ * The engine owns the effects, their stills, previews and checks; GSAM sends
+ * only the choice (`set-motion`), and the person saves the page in the editor.
+ * Ask an agent hands the same choice, by library id, to the website agent.
  */
+type AppliedBackground = { motion: WebsiteMotionChoice; surface?: string };
+
 function MotionPanel({
   editorOrigin,
   mode,
@@ -1927,10 +1973,13 @@ function MotionPanel({
   blockId,
   blockName,
   options,
+  applied: appliedBefore,
   engineEffects,
+  frozen,
   wanted,
   setMotion,
   onApplied,
+  onAskAgent,
 }: {
   editorOrigin: string;
   mode: Mode;
@@ -1939,51 +1988,101 @@ function MotionPanel({
   blockId: string | null;
   blockName: string;
   options: BlockMotionOptions | null;
+  /** What this panel last put in the block, when it was opened before: newer than the draft GSAM sent. */
+  applied: AppliedBackground | null;
   /** How many effects the engine described; 0 for an engine from before GRE-2232. */
   engineEffects: number;
+  /** The Two Doors home page (GRE-2522): no Background changes without John's yes. */
+  frozen: boolean;
   wanted: string | null;
-  setMotion: (choice: WebsiteMotionChoice) => Promise<WebsiteFrameSetMotionResult | null>;
-  onApplied: () => void;
+  setMotion: (request: { motion: WebsiteMotionChoice; surface?: string }) => Promise<WebsiteFrameSetMotionResult | null>;
+  onApplied: (background: AppliedBackground) => void;
+  onAskAgent: (request: string) => void;
 }) {
   const name = blockName || "The selected block";
   const wantedOption = options ? motionOptionFor(options.options, wanted) : null;
-  const [effect, setEffect] = useState(wantedOption?.id ?? options?.current.effect ?? "none");
-  const [intensity, setIntensity] = useState<WebsiteMotionIntensity>(
-    options && options.current.intensity !== "off" ? options.current.intensity : "subtle",
-  );
-  const [applied, setApplied] = useState<WebsiteMotionChoice | null>(options?.current ?? null);
+  const current = options ? (appliedBefore?.motion ?? options.current) : null;
+  const currentSurface = (appliedBefore ? appliedBefore.surface : options?.currentSurface) ?? "none";
+  const [selection, setSelection] = useState<BackgroundSelection>(() => ({
+    effect: wantedOption?.id ?? current?.effect ?? "none",
+    intensity: current && current.intensity !== "off" ? current.intensity : "subtle",
+    speed: current?.speed,
+    colour: current?.colour,
+    surface: currentSurface,
+  }));
+  const [applied, setApplied] = useState<AppliedBackground | null>(current ? { motion: current, surface: currentSurface } : null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone: "success" | "warn" } | null>(null);
-  const chosen = options?.options.find((option) => option.id === effect) ?? null;
-  const choice = motionChoice(effect, intensity);
-  const unchanged = applied !== null && applied.effect === choice.effect && applied.intensity === choice.intensity;
+  const surfacesOffered = (options?.surfaces.length ?? 0) > 0;
+  const effects = options?.options.filter((option) => option.id !== "none") ?? [];
+  const chosen = selection.effect === "none" ? null : (effects.find((option) => option.id === selection.effect) ?? null);
+  const chosenSurface = options?.surfaces.find((surface) => surface.id === selection.surface) ?? null;
+  const request = backgroundRequest(selection, chosen, surfacesOffered);
+  const settings = chosen?.settings ?? null;
+  const unchanged =
+    applied !== null &&
+    applied.motion.effect === request.motion.effect &&
+    applied.motion.intensity === request.motion.intensity &&
+    (applied.motion.speed ?? null) === (request.motion.speed ?? null) &&
+    (applied.motion.colour ?? null) === (request.motion.colour ?? null) &&
+    (request.surface === undefined || (applied.surface ?? "none") === request.surface);
+  const pickNone = () => setSelection((value) => ({ ...value, effect: "none", surface: "none" }));
+  const pickSurface = (surface: string) => setSelection((value) => ({ ...value, effect: "none", surface }));
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const picked = useRef(false);
+  // After a pick, bring the preview and settings into view: they sit below the library.
+  useEffect(() => {
+    if (picked.current) settingsRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [selection.effect]);
+  const pickEffect = (option: MotionOption) => {
+    picked.current = true;
+    setSelection((value) => ({
+      ...value,
+      effect: option.id,
+      surface: "none",
+      speed: value.speed ?? option.settings?.defaults.speed,
+      colour: value.colour ?? option.settings?.defaults.colour,
+    }));
+  };
 
   const apply = async () => {
-    if (!chosen) return;
     setPending(true);
     setMessage(null);
-    const result = await setMotion(choice);
+    const result = await setMotion(request);
     setPending(false);
-    setMessage({ text: setMotionMessage(result, name, chosen.label, choice.intensity), tone: result?.ok ? "success" : "warn" });
+    const label = chosen ? chosen.label : chosenSurface && chosenSurface.id !== "none" ? chosenSurface.label : "None";
+    const text =
+      chosen || !chosenSurface || chosenSurface.id === "none"
+        ? setMotionMessage(result, name, label, request.motion.intensity, chosen ? backgroundSettingsText(request.motion) : undefined)
+        : result?.ok
+          ? `${name} is on the ${chosenSurface.label} surface now. Save the page in the editor to keep it.`
+          : setMotionMessage(result, name, label, request.motion.intensity);
+    setMessage({ text, tone: result?.ok ? "success" : "warn" });
     if (result?.ok) {
-      setApplied(choice);
-      onApplied();
+      setApplied(request);
+      onApplied(request);
     }
   };
 
+  const askAgent = () => {
+    if (!blockId) return;
+    onAskAgent(backgroundAgentRequest({ blockId, blockName: name, option: chosen, surface: chosenSurface, motion: request.motion }));
+  };
+
   let hint: string;
-  if (mode !== "edit") hint = "Switch to Edit to put motion in a block.";
-  else if (!blockId) hint = "Pick a block first: click it on the page. Its motion choices show here.";
+  if (mode !== "edit") hint = "Switch to Edit to change a block's background.";
+  else if (!blockId) hint = "Pick a block first: click it on the page. Its background choices show here.";
+  else if (frozen) hint = "";
   else if (!ready) hint = "Waiting for the site's editor.";
-  else if (engineEffects === 0) hint = "This site's engine does not offer motion choices yet. Set motion in the block's own fields.";
-  else if (!options) hint = `${name} takes no motion. Pick a hero or a section block.`;
-  else hint = `Selected block: ${name}. Pick an effect, then Use in block.`;
+  else if (engineEffects === 0) hint = "This site's engine does not offer background choices yet. Set them in the block's own fields.";
+  else if (!options) hint = `${name} takes no background. Pick a hero or a section block.`;
+  else hint = `Selected block: ${name}. Pick a background, then Use in block.`;
 
   return (
-    <section className="min-w-0 space-y-3" aria-label="Motion in the selected block" data-testid="website-motion">
+    <section className="min-w-0 space-y-4" aria-label="Background of the selected block" data-testid="website-motion">
       <div className="space-y-1">
-        <p className="text-xs text-muted-foreground">{hint}</p>
-        {wanted ? (
+        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+        {wanted && !frozen ? (
           <p className="text-xs text-muted-foreground" data-testid="website-motion-wanted">
             {wantedOption
               ? `From GS Studio: ${wantedOption.study ? `study ${wantedOption.study}, ` : ""}${wantedOption.label}.`
@@ -1993,29 +2092,126 @@ function MotionPanel({
           </p>
         ) : null}
       </div>
-      {options ? (
+      {frozen && mode === "edit" && blockId ? (
+        <div
+          role="note"
+          className="flex gap-2 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground"
+          data-testid="website-motion-frozen"
+        >
+          <Lock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            <span className="font-medium text-foreground">The Two Doors home page is frozen.</span> Its waves stay as they are. A background
+            change here needs John's explicit yes first.
+          </span>
+        </div>
+      ) : options && !frozen ? (
         <>
-          <div role="radiogroup" aria-label="Effect" className="grid grid-cols-2 gap-2" data-testid="website-motion-effects">
-            {options.options.map((option) => (
-              <MotionOptionTile
-                key={option.id}
-                option={option}
-                editorOrigin={editorOrigin}
-                checked={option.id === effect}
-                current={applied?.effect === option.id}
-                onSelect={() => setEffect(option.id)}
-              />
-            ))}
+          <div role="radiogroup" aria-label="Background" className="space-y-4" data-testid="website-motion-effects">
+            <div className="space-y-2">
+              <h3 className="text-xs font-medium text-foreground">Plain</h3>
+              <div className="flex flex-wrap gap-1.5">
+                <SurfaceChip label="None" checked={selection.effect === "none" && selection.surface === "none"} onSelect={pickNone} testId="website-motion-effect-none" />
+                {options.surfaces.map((surface) => (
+                  <SurfaceChip
+                    key={surface.id}
+                    label={surface.label}
+                    checked={selection.effect === "none" && selection.surface === surface.id}
+                    current={applied?.motion.effect === "none" && applied.surface === surface.id}
+                    onSelect={() => pickSurface(surface.id)}
+                    testId={`website-motion-surface-${surface.id}`}
+                  />
+                ))}
+              </div>
+            </div>
+            {effects.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium text-foreground">Effects</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {effects.map((option) => (
+                    <MotionOptionTile
+                      key={option.id}
+                      option={option}
+                      editorOrigin={editorOrigin}
+                      checked={option.id === selection.effect}
+                      current={applied?.motion.effect === option.id}
+                      onSelect={() => pickEffect(option)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
-          {effect !== "none" ? (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-foreground">Strength</span>
-              <Segmented label="Strength" value={choice.intensity} options={EFFECT_INTENSITIES} onChange={setIntensity} />
+          {chosen ? (
+            <div ref={settingsRef} className="scroll-mt-4 space-y-3 rounded-lg border border-border p-3" data-testid="website-motion-settings">
+              {chosen.preview ? (
+                // The engine's live preview of the effect, from the editor origin GSAM already frames (rule C1.1),
+                // with the editor frame's sandbox less forms, and out of the tab order.
+                <span className="dark relative block aspect-video w-full overflow-hidden rounded-md bg-background">
+                  <iframe
+                    key={chosen.id}
+                    src={`${editorOrigin}${chosen.preview}`}
+                    title={`${chosen.label} live preview`}
+                    sandbox="allow-scripts allow-same-origin"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    tabIndex={-1}
+                    className="pointer-events-none absolute inset-0 h-full w-full border-0"
+                    data-testid="website-motion-preview"
+                  />
+                </span>
+              ) : null}
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">{chosen.label}</p>
+                {chosen.description ? <p className="text-xs text-muted-foreground">{chosen.description}</p> : null}
+              </div>
+              <SettingRow label="Strength">
+                <Segmented
+                  label="Strength"
+                  value={request.motion.intensity}
+                  options={EFFECT_INTENSITIES.filter((entry) => !settings || settings.intensity.includes(entry.value))}
+                  onChange={(intensity) => setSelection((value) => ({ ...value, intensity }))}
+                />
+              </SettingRow>
+              {settings && request.motion.speed ? (
+                <SettingRow label="Speed">
+                  <Segmented
+                    label="Speed"
+                    value={request.motion.speed}
+                    options={settings.speed.map((speed) => ({ value: speed, label: MOTION_SPEED_LABELS[speed] }))}
+                    onChange={(speed) => setSelection((value) => ({ ...value, speed }))}
+                  />
+                </SettingRow>
+              ) : null}
+              {settings && request.motion.colour ? (
+                <SettingRow label="Colour">
+                  <Segmented
+                    label="Colour"
+                    value={request.motion.colour}
+                    options={settings.colour.map((colour) => ({ value: colour, label: MOTION_COLOUR_LABELS[colour] }))}
+                    onChange={(colour) => setSelection((value) => ({ ...value, colour }))}
+                  />
+                </SettingRow>
+              ) : null}
+              <p className="text-(length:--text-micro) text-muted-foreground">
+                Copy stays readable: the effect keeps a quiet zone behind the words, and still shows when someone asks for less motion.
+              </p>
             </div>
           ) : null}
-          <Button type="button" size="sm" className="w-full" disabled={pending || unchanged || !chosen} onClick={() => void apply()} data-testid="website-motion-apply">
-            {pending ? "Putting it in the block" : unchanged ? "In the block" : "Use in block"}
-          </Button>
+          {/* Pinned to the foot of the drawer, so the choice can be used without scrolling back down the library. */}
+          <div className="sticky -bottom-4 -mx-4 grid grid-cols-2 gap-2 border-t border-border bg-background px-4 py-3">
+            {unchanged && !pending ? (
+              <p className="col-span-2 text-xs text-muted-foreground" data-testid="website-motion-current">
+                This is the block's background now.
+              </p>
+            ) : null}
+            <Button type="button" size="sm" disabled={pending || unchanged} onClick={() => void apply()} data-testid="website-motion-apply">
+              {pending ? "Putting it in" : "Use in block"}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={askAgent} data-testid="website-motion-ask">
+              <Bot aria-hidden="true" />
+              Ask an agent
+            </Button>
+          </div>
         </>
       ) : null}
       {message ? (
@@ -2031,6 +2227,46 @@ function MotionPanel({
         )
       ) : null}
     </section>
+  );
+}
+
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs font-medium text-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function SurfaceChip({
+  label,
+  checked,
+  current,
+  onSelect,
+  testId,
+}: {
+  label: string;
+  checked: boolean;
+  current?: boolean;
+  onSelect: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onSelect}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        checked ? "border-foreground bg-accent text-foreground" : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+      )}
+      data-testid={testId}
+    >
+      {label}
+      {current ? <span className="text-(length:--text-micro) font-normal text-muted-foreground">Now</span> : null}
+    </button>
   );
 }
 
@@ -2080,6 +2316,9 @@ function MotionOptionTile({
         <span className="truncate text-xs font-medium text-foreground">{option.label}</span>
         {current ? <span className="ml-auto shrink-0 text-(length:--text-micro) text-muted-foreground">Now</span> : null}
       </span>
+      {option.description ? (
+        <span className="line-clamp-2 px-1 pb-0.5 text-(length:--text-micro) text-muted-foreground">{option.description}</span>
+      ) : null}
     </button>
   );
 }

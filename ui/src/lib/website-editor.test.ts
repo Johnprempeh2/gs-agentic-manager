@@ -9,6 +9,9 @@ import {
   insertMediaAssetUrl,
   insertMediaField,
   insertMediaMessage,
+  backgroundAgentRequest,
+  backgroundRequest,
+  isFrozenBackground,
   motionChoice,
   motionOptionFor,
   saveThroughGsam,
@@ -198,7 +201,15 @@ describe("set-motion helpers (GRE-2219)", () => {
   it("lists the block's effects in the engine's order, leaving out effects the engine does not describe", () => {
     const options = blockMotionOptions(capabilities, data, "h2")!;
     expect(options.options.map((option) => option.id)).toEqual(["none", "hero.stone", "bg.ascent"]);
-    expect(options.options[2]).toEqual({ id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" });
+    expect(options.options[2]).toEqual({
+      id: "bg.ascent",
+      label: "Ascent",
+      still: "/motion/ascent-dark.webp",
+      study: "016",
+      description: null,
+      preview: null,
+      settings: null,
+    });
     expect(options.current).toEqual({ effect: "none", intensity: "off" });
     expect(blockMotionOptions(capabilities, data, "h1")!.current).toEqual({ effect: "bg.ascent", intensity: "full" });
   });
@@ -223,6 +234,68 @@ describe("set-motion helpers (GRE-2219)", () => {
     expect(motionChoice("bg.ascent", "full")).toEqual({ effect: "bg.ascent", intensity: "full" });
   });
 
+  it("reads the saved surface and offers surfaces only when the engine sends them (GRE-2526)", () => {
+    const withSurfaces = { ...capabilities, surfaces: [{ id: "none", label: "None" }, { id: "panel", label: "Panel" }] };
+    const surfaced = { root: { props: {} }, content: [{ type: "Hero", props: { id: "h3", _section: { surface: "panel" } } }] };
+    const options = blockMotionOptions(withSurfaces, surfaced, "h3")!;
+    expect(options.surfaces).toEqual([{ id: "panel", label: "Panel" }]);
+    expect(options.currentSurface).toBe("panel");
+    expect(options.blockType).toBe("Hero");
+    expect(blockMotionOptions(capabilities, surfaced, "h3")!.surfaces).toEqual([]);
+  });
+
+  it("keeps a Background choice inside the effect's safe settings (GRE-2526)", () => {
+    const settings = {
+      intensity: ["off", "subtle", "full"] as const,
+      speed: ["still", "slow", "normal"] as const,
+      colour: ["emerald", "teal"] as const,
+      defaults: { intensity: "subtle", speed: "slow", colour: "emerald" } as const,
+    };
+    const option = { id: "bg.veil", label: "Veil", still: "/v.webp", study: null, settings: { ...settings, intensity: [...settings.intensity], speed: [...settings.speed], colour: [...settings.colour] } };
+    expect(backgroundRequest({ effect: "bg.veil", intensity: "full", speed: "normal", colour: "teal", surface: "panel" }, option, true)).toEqual({
+      motion: { effect: "bg.veil", intensity: "full", speed: "normal", colour: "teal" },
+    });
+    expect(backgroundRequest({ effect: "bg.veil", intensity: "off", surface: "none" }, option, true)).toEqual({
+      motion: { effect: "bg.veil", intensity: "subtle", speed: "slow", colour: "emerald" },
+    });
+    // An effect with no settings gets strength only: an older engine.
+    expect(backgroundRequest({ effect: "bg.veil", intensity: "full", speed: "normal", surface: "none" }, { ...option, settings: null }, true)).toEqual({
+      motion: { effect: "bg.veil", intensity: "full" },
+    });
+    expect(backgroundRequest({ effect: "none", intensity: "full", surface: "deep" }, null, true)).toEqual({
+      motion: { effect: "none", intensity: "off" },
+      surface: "deep",
+    });
+    expect(backgroundRequest({ effect: "none", intensity: "full", surface: "deep" }, null, false)).toEqual({ motion: { effect: "none", intensity: "off" } });
+  });
+
+  it("freezes Two Doors blocks and the Two Doors home page only (GRE-2522)", () => {
+    const home = { content: [{ type: "TwoDoors", props: { id: "t1" } }, { type: "Prose", props: { id: "p1" } }] };
+    expect(isFrozenBackground("/", "Prose", home)).toBe(true);
+    expect(isFrozenBackground("home", "Prose", home)).toBe(true);
+    expect(isFrozenBackground("/services", "TwoDoorsClose", { content: [] })).toBe(true);
+    expect(isFrozenBackground("/services", "Prose", home)).toBe(false);
+    expect(isFrozenBackground("/", "Hero", { content: [{ type: "Hero", props: { id: "h" } }] })).toBe(false);
+  });
+
+  it("asks an agent with the block id, the library effect id and its settings (GRE-2526)", () => {
+    const text = backgroundAgentRequest({
+      blockId: "p1",
+      blockName: "Prose",
+      option: { id: "bg.veil", label: "Veil", still: null, study: null },
+      surface: null,
+      motion: { effect: "bg.veil", intensity: "subtle", speed: "slow", colour: "teal" },
+    });
+    expect(text).toContain("block id `p1`");
+    expect(text).toContain("Effect: `bg.veil` (Veil)");
+    expect(text).toContain("Speed: `slow`");
+    expect(text).toContain("Colour: `teal`");
+    expect(text).toMatch(/7:1/);
+    expect(
+      backgroundAgentRequest({ blockId: "p1", blockName: "Prose", option: null, surface: { id: "panel", label: "Panel" }, motion: { effect: "none", intensity: "off" } }),
+    ).toContain("Surface: `panel` (Panel)");
+  });
+
   it("names the block and the effect in every answer", () => {
     expect(setMotionMessage({ requestId: "r", ok: true }, "Hero", "Ascent", "subtle")).toBe(
       "Ascent, Subtle, is in Hero. Save the page in the editor to keep it.",
@@ -230,6 +303,10 @@ describe("set-motion helpers (GRE-2219)", () => {
     expect(setMotionMessage({ requestId: "r", ok: false, code: "effect_not_allowed" }, "Hero", "Ascent", "subtle")).toMatch(/does not take Ascent/);
     expect(setMotionMessage({ requestId: "r", ok: false, code: "block_not_found" }, "Hero", "Ascent", "subtle")).toMatch(/no longer on this page/);
     expect(setMotionMessage(null, "Hero", "Ascent", "subtle")).toMatch(/did not answer/);
+    expect(setMotionMessage({ requestId: "r", ok: false, code: "frozen_page" }, "Hero", "Ascent", "subtle")).toMatch(/frozen.*John/);
+    expect(setMotionMessage({ requestId: "r", ok: true }, "Prose", "Veil", "subtle", "Subtle, slow, teal")).toBe(
+      "Veil, Subtle, slow, teal, is in Prose. Save the page in the editor to keep it.",
+    );
   });
 });
 

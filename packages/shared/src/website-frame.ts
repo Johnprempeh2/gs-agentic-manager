@@ -238,7 +238,18 @@ export type WebsiteMotionIntensity = (typeof WEBSITE_MOTION_INTENSITIES)[number]
 /** An engine effect id, for example `bg.ascent`, or `none`. The engine owns the list. */
 const motionEffectIdSchema = z.string().regex(/^(none|[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9-]{0,47})$/);
 
-const motionChoiceSchema = z.object({ effect: motionEffectIdSchema, intensity: z.enum(WEBSITE_MOTION_INTENSITIES) });
+/** Background speeds and site colours a block's effect takes (GRE-2522). Optional: an older engine leaves them out. */
+export const WEBSITE_MOTION_SPEEDS = ["still", "slow", "normal"] as const;
+export type WebsiteMotionSpeed = (typeof WEBSITE_MOTION_SPEEDS)[number];
+export const WEBSITE_MOTION_COLOURS = ["emerald", "teal"] as const;
+export type WebsiteMotionColour = (typeof WEBSITE_MOTION_COLOURS)[number];
+
+const motionChoiceSchema = z.object({
+  effect: motionEffectIdSchema,
+  intensity: z.enum(WEBSITE_MOTION_INTENSITIES),
+  speed: z.enum(WEBSITE_MOTION_SPEEDS).optional(),
+  colour: z.enum(WEBSITE_MOTION_COLOURS).optional(),
+});
 export type WebsiteMotionChoice = z.infer<typeof motionChoiceSchema>;
 
 /** `hello-ack.blocks[].motion`: the effects one block type takes, and what a new block starts with. */
@@ -257,8 +268,39 @@ export const websiteMotionEffectSchema = z.object({
   label: z.string().min(1).max(100),
   still: z.string().max(MAX_ASSET_URL_LENGTH).refine((value) => value.startsWith("/") && isWebsiteFrameAssetUrl(value)),
   study: z.string().regex(/^\d{3}$/).optional(),
+  /**
+   * Added for GRE-2522, all optional. `preview` is a live, animated page on the
+   * editor origin; `settings` lists the safe choices the effect takes.
+   */
+  preview: z
+    .string()
+    .max(MAX_ASSET_URL_LENGTH)
+    .refine((value) => value.startsWith("/") && isWebsiteFrameAssetUrl(value))
+    .optional()
+    .catch(undefined),
+  description: z.string().max(300).optional().catch(undefined),
+  settings: z
+    .object({
+      intensity: z.array(z.enum(WEBSITE_MOTION_INTENSITIES)).max(3),
+      speed: z.array(z.enum(WEBSITE_MOTION_SPEEDS)).max(3),
+      colour: z.array(z.enum(WEBSITE_MOTION_COLOURS)).max(2),
+      defaults: z.object({
+        intensity: z.enum(WEBSITE_MOTION_INTENSITIES),
+        speed: z.enum(WEBSITE_MOTION_SPEEDS),
+        colour: z.enum(WEBSITE_MOTION_COLOURS),
+      }),
+    })
+    .optional()
+    .catch(undefined),
 });
 export type WebsiteMotionEffect = z.infer<typeof websiteMotionEffectSchema>;
+
+/** A site surface id, for example `panel`, or `none`. The engine owns the list. */
+const websiteBackgroundSurfaceIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+export interface WebsiteBackgroundSurface {
+  id: string;
+  label: string;
+}
 
 export const websiteFrameHelloAckSchema = z.object({
   protocol: protocolNumber,
@@ -272,6 +314,12 @@ export const websiteFrameHelloAckSchema = z.object({
   /** Added in protocol 1 (GRE-2232). An older engine leaves it out: no motion choices. */
   // A malformed motion list is dropped, never the handshake: the editor still opens.
   motionEffects: z.array(websiteMotionEffectSchema).max(100).optional().catch(undefined),
+  /** Added for GRE-2522: the plain site surfaces a block's Background can take instead of an effect. */
+  backgroundSurfaces: z
+    .array(z.object({ id: websiteBackgroundSurfaceIdSchema, label: z.string().min(1).max(100) }))
+    .max(20)
+    .optional()
+    .catch(undefined),
   /**
    * Added in protocol 1 (GRE-2296): the `editor-command`s the engine takes from
    * GSAM's top bar. An older engine leaves it out: GSAM's undo, redo and save
@@ -484,7 +532,17 @@ export const WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS = 5_000;
  * the open draft. The frame checks the effect against the block's own list and
  * marks the draft unsaved; nothing is saved until the person saves.
  */
-export const websiteFrameSetMotionSchema = z.object({ blockId: blockIdSchema, motion: motionChoiceSchema }).strict();
+export const websiteFrameSetMotionSchema = z
+  .object({
+    blockId: blockIdSchema,
+    motion: motionChoiceSchema,
+    /** GRE-2522: a plain site surface. Only with effect `none`: a block has one background. */
+    surface: websiteBackgroundSurfaceIdSchema.optional(),
+  })
+  .strict()
+  .refine((value) => value.surface === undefined || value.surface === "none" || value.motion.effect === "none", {
+    message: "A block takes an effect or a surface, not both.",
+  });
 export type WebsiteFrameSetMotion = z.infer<typeof websiteFrameSetMotionSchema>;
 
 /**
@@ -493,6 +551,7 @@ export type WebsiteFrameSetMotion = z.infer<typeof websiteFrameSetMotionSchema>;
  * - `block_has_no_motion`: the block type takes no motion.
  * - `effect_not_allowed`: the block takes motion, but not this effect.
  * - `invalid_payload`: the frame's own checks refused the payload.
+ * - `frozen_page`: the page is frozen (the Two Doors home page, GRE-2522).
  * - `error`: anything else; `message` says what.
  */
 export const WEBSITE_FRAME_SET_MOTION_ERROR_CODES = [
@@ -500,6 +559,7 @@ export const WEBSITE_FRAME_SET_MOTION_ERROR_CODES = [
   "block_has_no_motion",
   "effect_not_allowed",
   "invalid_payload",
+  "frozen_page",
   "error",
 ] as const;
 export type WebsiteFrameSetMotionErrorCode = (typeof WEBSITE_FRAME_SET_MOTION_ERROR_CODES)[number];
