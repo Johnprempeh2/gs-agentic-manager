@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebsiteFrameNonce } from "@greatstone/shared";
 import {
+  addsTextColour,
   WebsiteFrameHostSession,
   type WebsiteFrameConnection,
   type WebsiteFrameHostOptions,
@@ -602,6 +603,30 @@ describe("Edit copy (GRE-2394)", () => {
     await flush();
     expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid", retryable: false });
     expect(t.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("Edit copy refuses a save that colours words; Layout lets it through", async () => {
+    const coloured = { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1", title: '<span class="gs-rt-c-accent">New</span> words' } }] };
+    const t = await ready();
+    save(t, coloured);
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "failed", code: "invalid", retryable: false });
+    expect(String(resultOf(t)!.message)).toContain("text colour");
+    expect(t.saveDraft).not.toHaveBeenCalled();
+
+    expect(t.session.setEditMode("layout")).toBe(true);
+    save(t, coloured, "22222222-2222-4222-8222-222222222222");
+    await flush();
+    expect(resultOf(t)).toMatchObject({ outcome: "saved" });
+  });
+
+  it("a coloured word may be deleted or reworded, never added", () => {
+    const page = (title: string) => ({ content: [{ type: "Hero", props: { id: "h1", title } }] });
+    const before = page('<span class="gs-rt-c-accent">Two</span> doors');
+    expect(addsTextColour(before, page('<span class="gs-rt-c-accent">Three</span> doors'))).toBe(false);
+    expect(addsTextColour(before, page("Two doors"))).toBe(false);
+    expect(addsTextColour(before, page('<span class="gs-rt-c-teal">Two</span> doors'))).toBe(true);
+    expect(addsTextColour(before, page('<span class="gs-rt-c-accent">Two</span> <span class="gs-rt-bg-accent">doors</span>'))).toBe(true);
   });
 
   it("Layout sends the layout command and lets add block, outline and new blocks through", async () => {

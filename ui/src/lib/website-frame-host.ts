@@ -151,6 +151,21 @@ function sameBlocks(before: Map<string, WebsitePuckBlockInfo>, after: Map<string
   return a.every((block, index) => block.id === b[index]!.id && block.type === b[index]!.type);
 }
 
+/** Brand text colour and highlight classes, e.g. `gs-rt-c-accent` or `gs-rt-bg-teal`. */
+const TEXT_COLOUR_CLASS = /\bgs-rt-(?:c|bg)-[a-z0-9-]+/g;
+
+function textColourCounts(data: unknown) {
+  const counts = new Map<string, number>();
+  for (const name of JSON.stringify(data ?? null).match(TEXT_COLOUR_CLASS) ?? []) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return counts;
+}
+
+/** True when `after` colours more words than `before`. Deleting a coloured word is a wording change. */
+export function addsTextColour(before: unknown, after: unknown) {
+  const was = textColourCounts(before);
+  return [...textColourCounts(after)].some(([name, count]) => count > (was.get(name) ?? 0));
+}
+
 let fallbackId = 0;
 function defaultCreateId() {
   return globalThis.crypto?.randomUUID?.() ?? `msg-${Date.now()}-${++fallbackId}`;
@@ -496,6 +511,9 @@ export class WebsiteFrameHostSession<Source> {
     const importSave = this.importing && this.shownBlocks.size === 0;
     if (this.copyMode && !importSave && !sameBlocks(this.shownBlocks, inspected.blocks)) {
       return refuse("Edit copy changes words only. Switch to Layout to add, move or remove blocks.");
+    }
+    if (this.copyMode && !importSave && addsTextColour(this.shownData, save.data)) {
+      return refuse("Edit copy changes words only. Switch to Layout to change text colour.");
     }
     if (this.inFlight) {
       return Promise.resolve(answer(fail("busy", "Another save is still running.", true)));
