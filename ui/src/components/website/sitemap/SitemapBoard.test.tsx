@@ -3,6 +3,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WebsitePage } from "@greatstone/shared";
 import { pagesLookup, type Tree } from "./model";
 import { SitemapBoardView } from "./SitemapBoard";
 
@@ -58,8 +59,48 @@ describe("Sitemap board navigation", () => {
     expect(document.activeElement).toBe(card("audit"));
     press(card("audit"), "ArrowLeft");
     expect(document.activeElement).toBe(card("services"));
+    // The board stays tidy: Alt with the arrows no longer drags cards out of place.
     press(card("services"), "ArrowDown", { altKey: true });
-    expect(latest.nodes.find((node) => node.id === "services")?.y).toBe(16);
+    expect(latest).toBe(start);
+  });
+
+  it("lays out top to bottom: sections in a row under Home, pages stacked under their section (GRE-2542)", () => {
+    act(() => root.render(<Board />));
+    const at = (id: string) => {
+      const li = card(id).parentElement as HTMLElement;
+      return { x: parseFloat(li.style.left), y: parseFloat(li.style.top) };
+    };
+    expect(at("services").y).toBe(at("about").y);
+    expect(at("services").y).toBeGreaterThan(at("home").y);
+    expect(at("audit").y).toBeGreaterThan(at("services").y);
+    expect(at("audit").x).toBeGreaterThan(at("services").x);
+    expect(at("audit").x).toBeLessThan(at("about").x);
+  });
+
+  it("opens sections of more than 8 pages folded behind +N pages, and a click shows them", () => {
+    const pages = Array.from({ length: 9 }, (_, i) => ({ ...base, id: `p${i}`, title: `Guide ${i}`, path: `/services/guide-${i}`, parentId: "services", order: i + 1 }));
+    function Big() {
+      const [tree, setTree] = useState<Tree>({ ...start, nodes: [...start.nodes, ...pages] });
+      return <SitemapBoardView tree={tree} onChange={setTree} pagesById={pagesLookup([])} readOnly={false} storageKey="test-board" />;
+    }
+    act(() => root.render(<Big />));
+    expect(cards()).toEqual(["home", "services", "about"]);
+    const more = container.querySelector('[data-board-more="services"]') as HTMLButtonElement;
+    expect(more.textContent).toBe("+10 pages");
+    act(() => more.click());
+    expect(cards()).toContain("p8");
+    expect(container.querySelector('[data-board-more="services"]')).toBeNull();
+  });
+
+  it("opens a page that exists in the editor", () => {
+    const onEditPage = vi.fn();
+    const page = { id: "page-audit", slug: "/services/audit", status: "draft" } as unknown as WebsitePage;
+    act(() => root.render(<SitemapBoardView tree={start} onChange={() => {}} pagesById={pagesLookup([page])} readOnly={false} onEditPage={onEditPage} />));
+    const open = () => [...container.querySelectorAll("button")].filter((el) => el.textContent?.trim() === "Open in editor");
+    // Only the card with a page offers it.
+    expect(open()).toHaveLength(1);
+    act(() => open()[0]!.click());
+    expect(onEditPage).toHaveBeenCalledWith("page-audit");
   });
 
   it("folds a branch from its card, collapses and expands all, and remembers it", () => {
