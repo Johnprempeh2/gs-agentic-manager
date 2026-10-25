@@ -6,6 +6,10 @@
 //                                     [--company-name X] [--client-email X]
 //                                     [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
 //                                     [--ai-route R] [--board-approval on|off]
+//                                     [--entitlement-public-key K] [--entitlement-file F] [--entitlement-client C]
+//   scripts/client-instance.sh entitlement --root <dir> [--entitlement-public-key K] [--entitlement-file F]
+//                                     [--entitlement-client C] [--off yes] [--install <signed file>]
+//                                     (hub key and signed file; Website screens need the signed key, GRE-2396)
 //   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
 //   scripts/client-instance.sh ai-route --root <dir> [--ai-route R]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
@@ -65,6 +69,16 @@ import type { BillingUsage } from "../../packages/shared/src/billing-account.js"
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import {
+  ENTITLEMENT_FLAGS,
+  describeEntitlement,
+  entitlementChecks,
+  entitlementEnv,
+  parseEntitlementFlags,
+  type EntitlementSetup,
+} from "./entitlement.js";
+import { ENTITLEMENT_FEATURE_KEYS, type EffectiveEntitlements } from "../../packages/shared/src/entitlement-document.js";
+import { GREATSTONE_ONLY_ERROR_CODE } from "../../packages/shared/src/client-install.js";
 import {
   billingArchiveLines,
   buildBillingExport,
@@ -195,8 +209,19 @@ const USAGE = `usage:
                                            (${AI_ACCESS_ROUTES.join(", ")})
          [--board-approval on|off]         board approval for new agents in the company [on]
          [--fleet-hub <url>]               register with the hub at the end (code in CLIENT_INSTANCE_FLEET_CODE)
+         [--entitlement-public-key K]      hub Ed25519 PUBLIC key (PEM file, PEM or base64url); set at every start.
+                                           Website screens are on only while a signed file grants enableWebsiteView
+         [--entitlement-file F]            the signed file, inside <dir> [<dir>/instances/default/entitlements/entitlement.json]
+         [--entitlement-client C]          refuse a document for another client code
   limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
   ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
+  entitlement --root <dir> [--entitlement-public-key K] [--entitlement-file F] [--entitlement-client C]
+                                           show or change the hub key and file (used at the next start)
+  entitlement --root <dir> --off yes       remove the hub key (next start): Website screens off, data kept
+  entitlement --root <dir> --install <signed file>
+                                           check a signed file from the hub against the hub key and put it in
+                                           place; the server reads it within a minute (at once with
+                                           CLIENT_INSTANCE_OPERATOR_PASSWORD set)
   start|stop|status|backup --root <dir>
   users --root <dir> --file <list.csv> [--dry-run]
                                            add board, Exco and owner log-ins from a list of
@@ -302,6 +327,8 @@ interface InstanceState {
   lastPause?: PauseRecord;
   lastResume?: ResumeRecord;
   lastArchive?: ArchiveRecord;
+  /** GRE-2396: hub public key, signed file and client code, passed at every start. Absent means no hub key. */
+  entitlement?: EntitlementSetup;
 }
 
 interface ReleaseRef {
@@ -492,6 +519,27 @@ function readPid(root: string): number | null {
 
 const baseUrl = (state: InstanceState) => `http://127.0.0.1:${state.port}`;
 
+/**
+ * A database killed during stop leaves `/tmp/.s.PGSQL.<port>.lock`, and the
+ * server then moves to another database port (GRE-2381), away from the one in
+ * client-instance.json. Remove the lock only when it names this instance's own
+ * database folder and its process is not a running postgres.
+ */
+function clearOwnStaleSocketLock(root: string, state: InstanceState) {
+  if (process.platform === "win32") return;
+  const lock = `/tmp/.s.PGSQL.${state.dbPort}.lock`;
+  if (!existsSync(lock)) return;
+  const [pidLine, dataDir] = readFileSync(lock, "utf8").split("\n");
+  if (path.resolve(dataDir ?? "") !== path.join(instanceDir(root), "db")) return;
+  const pid = Number(pidLine);
+  if (Number.isInteger(pid) && pid > 0) {
+    const comm = spawnSync("ps", ["-p", String(pid), "-o", "comm="], { encoding: "utf8" });
+    if (comm.status === 0 && comm.stdout.includes("postgres")) return;
+  }
+  rmSync(lock, { force: true });
+  say(`removed a stale database socket lock of this instance (${lock})`);
+}
+
 async function health(state: InstanceState): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${baseUrl(state)}/api/health`, { signal: AbortSignal.timeout(3000) });
@@ -514,6 +562,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     process.exit(EXIT_DORMANT);
   }
   if (readPid(root)) die(`the instance at ${root} is already running (pid ${readPid(root)})`);
+  clearOwnStaleSocketLock(root, state);
   if (!(await portFree(state.port))) die(`port ${state.port} is in use by another process`);
   if (!(await portFree(state.dbPort))) die(`database port ${state.dbPort} is in use by another process`);
   const values = editionValues(state);
@@ -524,6 +573,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     mode === "normal" && values ? { GSAM_HIDDEN_SETTINGS: values.hiddenSettings, GSAM_MANAGED_CONFIG: values.managedConfig } : {},
   );
   if (state.limits) env.GSAM_INSTALL_LIMITS = installLimitsEnv(state.limits);
+  if (mode === "normal") Object.assign(env, entitlementEnv(state.entitlement));
   // The operator log-in is the account these scripts sign in with: it has no
   // phone, so compulsory two-step sign-in leaves it out.
   env.GSAM_TWO_STEP_EXEMPT_EMAILS = OPERATOR_EMAIL;
@@ -626,6 +676,7 @@ async function stopServer(root: string, state: InstanceState) {
     }
   }
   writeFileSync(path.join(root, PID_FILE), "");
+  clearOwnStaleSocketLock(root, state);
   if (!(await portFree(state.port))) die(`port ${state.port} is still in use after stop`);
   say("stopped");
 }
@@ -715,7 +766,15 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
 
     // Features.
     const experimental = await operator.expect("GET", "/api/instance/settings/experimental", undefined, [200]);
-    for (const key of values.expectOn) check(experimental[key] === true, `feature ${key} is on`);
+    const entitlements = (await operator.expect("GET", "/api/instance/entitlements", undefined, [200])) as unknown as EffectiveEntitlements;
+    // With a hub key the signed document narrows the governed features (GRE-1078).
+    const notGranted = (key: string) =>
+      (ENTITLEMENT_FEATURE_KEYS as readonly string[]).includes(key) &&
+      entitlements.features[key as keyof EffectiveEntitlements["features"]]?.entitled === false;
+    for (const key of values.expectOn) {
+      const hint = experimental[key] !== true && notGranted(key) ? " (the signed document does not grant it; add it to the next document)" : "";
+      check(experimental[key] === true, `feature ${key} is on${hint}`);
+    }
     for (const key of values.expectOff) check(experimental[key] === false, `feature ${key} is off`);
     const managedKeys = (experimental.managedKeys ?? {}) as Record<string, unknown>;
     check(Object.keys(managedKeys).length > 0, "GSAM_MANAGED_CONFIG is applied (managed keys reported)");
@@ -801,16 +860,24 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
     const withoutBudget = agentList.filter((agent) => !(Number(agent.budgetMonthlyCents) > 0)).length;
     check(withoutBudget === 0, `every agent has a monthly budget (${agentList.length} agents, ${withoutBudget} without)`);
   }
+  // The Website screens follow the signed key in a client edition (GRE-2346, GRE-2396).
+  if (values && Array.isArray(companies) && companies.length === 1) {
+    const entitlements = (await operator.expect("GET", "/api/instance/entitlements", undefined, [200])) as unknown as EffectiveEntitlements;
+    const experimentalNow = await operator.expect("GET", "/api/instance/settings/experimental", undefined, [200]);
+    const website = await operator.request("GET", `/api/companies/${(companies[0] as { id?: string }).id}/website`);
+    results.push(...entitlementChecks(state.entitlement, entitlements, experimentalNow.enableWebsiteView, website.status));
+  }
   if (client) {
     const clientCompanies = (await client.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
     check(Array.isArray(clientCompanies) && clientCompanies.length === 1, "the client log-in sees its one company");
     // Releases are hidden on every client edition (GRE-129): 403 even for the client's board log-in.
+    // Since GRE-2346 a client install refuses them as Greatstone-only before the hidden-settings floor.
     // `internal` has no edition values, so nothing is hidden there.
     if (values) {
       const companyId = (clientCompanies[0] as { id?: string } | undefined)?.id;
       const releases = await client.request("GET", `/api/companies/${companyId}/releases`);
       check(
-        releases.status === 403 && releases.text.includes("settings_operator_managed"),
+        releases.status === 403 && (releases.text.includes(GREATSTONE_ONLY_ERROR_CODE) || releases.text.includes("settings_operator_managed")),
         `instance.releases: the client log-in gets 403 on GET /api/companies/:id/releases (-> ${releases.status})`,
       );
     }
@@ -1761,6 +1828,74 @@ function cmdAiRoute(root: string, state: InstanceState, opts: Record<string, str
   if (readPid(root)) say("the instance is running; stop and start it to use the new route");
 }
 
+/**
+ * entitlement --root <dir> (GRE-2396): show or change the hub public key, the
+ * signed file and the client code (the next start uses them), remove them
+ * with --off yes, or put a signed file from the hub in place with --install.
+ * The hub signs; no private key is ever given to this script.
+ */
+async function cmdEntitlement(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, [...ENTITLEMENT_FLAGS, "off", "install"]);
+  if (state.edition === "internal") die("internal takes no entitlement: the signed Website key is for client editions");
+  const changing = ENTITLEMENT_FLAGS.some((flag) => opts[flag] !== undefined);
+  if (opts.off !== undefined) {
+    if (opts.off !== "yes") die("--off takes only: yes");
+    if (changing || opts.install) die("--off cannot be used with other entitlement flags");
+    delete state.entitlement;
+    writeState(root, state);
+    say("hub key removed. At the next start the Website screens are off; the signed file and all data stay.");
+    if (readPid(root)) say("the instance is running; stop and start it to use the change");
+    return;
+  }
+  if (changing) {
+    state.entitlement = orDie(() => parseEntitlementFlags(opts, root, instanceDir(root), state.entitlement ?? null))!;
+    writeState(root, state);
+    say(`entitlements saved: ${describeEntitlement(state.entitlement)}`);
+    if (readPid(root)) say("the instance is running; stop and start it to use the change");
+  }
+  if (opts.install) await installEntitlementFile(root, state, path.resolve(opts.install));
+  if (!changing && !opts.install) say(`entitlements: ${describeEntitlement(state.entitlement)}`);
+}
+
+async function installEntitlementFile(root: string, state: InstanceState, source: string) {
+  const setup = state.entitlement;
+  if (!setup) die("no hub key; set one first with --entitlement-public-key");
+  if (!existsSync(source)) die(`${source} not found`);
+  const { parseEntitlementPublicKey, verifyEntitlementEnvelope } = await import("../../server/src/services/entitlement-document.js");
+  const key = parseEntitlementPublicKey(setup.publicKey);
+  const text = readFileSync(source, "utf8");
+  const next = orDie(() => verifyEntitlementEnvelope(text, key, setup.client ?? null));
+  if (existsSync(setup.file)) {
+    const currentText = readFileSync(setup.file, "utf8");
+    let current: { version: number } | null = null;
+    try {
+      current = verifyEntitlementEnvelope(currentText, key, setup.client ?? null);
+    } catch {
+      // A bad file in place is replaced.
+    }
+    if (current && currentText !== text && next.version <= current.version) {
+      die(`the signed file is version ${next.version}; the one in place is version ${current.version}. The hub must sign a higher version.`);
+    }
+  }
+  mkdirSync(path.dirname(setup.file), { recursive: true, mode: 0o700 });
+  const temp = `${setup.file}.${process.pid}.tmp`;
+  writeFileSync(temp, text, { mode: 0o600 });
+  renameSync(temp, setup.file);
+  const website = next.features.enableWebsiteView === true;
+  say(`signed file v${next.version} for ${next.client} in place (valid until ${next.validUntil}); Website screens ${website ? "granted" : "not granted"}`);
+
+  const password = process.env.CLIENT_INSTANCE_OPERATOR_PASSWORD;
+  if (!readPid(root)) return say("the instance is not running; the next start reads the file");
+  if (!password) return say("the server reads it within a minute; set CLIENT_INSTANCE_OPERATOR_PASSWORD to read it at once and see the state");
+  const operator = new Session(baseUrl(state));
+  await operator.signIn(OPERATOR_EMAIL, password);
+  const synced = await operator.request("POST", "/api/instance/entitlements/sync", {});
+  if (synced.status !== 200) die(`sync refused (${synced.status}): ${synced.text.slice(0, 300)}. Was the instance started with the hub key?`);
+  const body = synced.json as { error: string | null; entitlements: EffectiveEntitlements };
+  if (body.error) die(`the server refused the file: ${body.error}`);
+  say(`server state ${body.entitlements.state}, document v${body.entitlements.document?.version ?? "none"}; run verify to check the Website screens`);
+}
+
 // ---------------------------------------------------------------- pause, resume, archive, delete (GRE-1367)
 
 /** `start` exits with this code while the instance is paused or archived; gsam-client@.service does not restart on it. */
@@ -2146,6 +2281,10 @@ async function cmdCreate(opts: Record<string, string>) {
   const limits = readLimitFlags(opts, DEFAULT_INSTALL_LIMITS);
   const aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
   const requireBoardApprovalForNewAgents = orDie(() => parseBoardApproval(opts["board-approval"]));
+  if (edition === "internal" && ENTITLEMENT_FLAGS.some((flag) => opts[flag] !== undefined)) {
+    die("internal takes no --entitlement-* flags: the signed Website key is for client editions");
+  }
+  const entitlement = orDie(() => parseEntitlementFlags(opts, root, instanceDir(root), null));
   const state: InstanceState = {
     edition,
     passedBetaFeatures: [...passed].sort(),
@@ -2155,6 +2294,7 @@ async function cmdCreate(opts: Record<string, string>) {
     limits,
     aiAccessRoute,
     requireBoardApprovalForNewAgents,
+    ...(entitlement ? { entitlement } : {}),
   };
   editionValues(state); // fail before anything is written
   mkdirSync(root, { recursive: true });
@@ -2162,6 +2302,7 @@ async function cmdCreate(opts: Record<string, string>) {
   say(`instance folder ${root}, edition ${edition}${passed.length ? ` + ${passed.join(", ")}` : ""}, port ${port}, database port ${dbPort}`);
   say(`limits: ${describeLimits(limits)}`);
   say(`AI access route ${aiAccessRoute}, board approval for new agents ${requireBoardApprovalForNewAgents ? "on" : "off"}`);
+  say(`entitlements: ${describeEntitlement(entitlement)}`);
 
   // 1. Setup start: operator (instance admin), one company, one client log-in.
   await startServer(root, state, "provision");
@@ -2515,6 +2656,7 @@ async function main() {
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
       say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
       say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route)"}`);
+      if (state.edition !== "internal") say(`entitlements: ${describeEntitlement(state.entitlement)}`);
       // Read-only; a WARNING does not change the exit code (GRE-533).
       for (const line of [
         ...lifecycleStatusLines(state),
@@ -2550,6 +2692,8 @@ async function main() {
       return cmdWatch(root, state, opts);
     case "ai-route":
       return cmdAiRoute(root, state, opts);
+    case "entitlement":
+      return cmdEntitlement(root, state, opts);
     case "fleet-register":
       return cmdFleetRegister(root, opts);
     case "fleet-check-in":
