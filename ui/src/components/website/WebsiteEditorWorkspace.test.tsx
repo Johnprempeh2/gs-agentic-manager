@@ -752,14 +752,86 @@ describe("WebsiteFullScreenEditor", () => {
       const [request] = editor.sentMessages("set-motion");
       await editor.reply("set-motion-result", { requestId: request!.id, ok: false, code: "effect_not_allowed" });
       expect(motionPanel().querySelector('[role="alert"]')!.textContent).toBe(
-        "Hero banner does not take Hero stone, so nothing changed. Pick another effect.",
+        "Hero banner does not take Hero stone, so nothing changed. Pick another background.",
       );
+    });
+
+    const libraryAck = {
+      blocks: [{ type: "Hero", label: "Hero", motion: { effects: ["none", "bg.veil"], default: { effect: "none", intensity: "off" } } }],
+      motionEffects: [
+        {
+          id: "bg.veil",
+          label: "Veil",
+          still: "/motion/veil-dark.webp",
+          study: "019",
+          preview: "/effect-preview/bg.veil",
+          description: "A soft emerald atmosphere.",
+          settings: {
+            intensity: ["off", "subtle", "full"],
+            speed: ["still", "slow", "normal"],
+            colour: ["emerald", "teal"],
+            defaults: { intensity: "subtle", speed: "slow", colour: "emerald" },
+          },
+        },
+      ],
+      backgroundSurfaces: [
+        { id: "none", label: "None" },
+        { id: "panel", label: "Panel" },
+      ],
+    };
+
+    it("offers None, the site surfaces and the effect library, with a live preview and safe settings (GRE-2526)", async () => {
+      const editor = await openEditorOnBlock(libraryAck);
+      await act(async () => labelled("Motion").click());
+      expect(effect("bg.veil").textContent).toContain("A soft emerald atmosphere.");
+      await act(async () => effect("bg.veil").click());
+      const preview = document.body.querySelector<HTMLIFrameElement>('[data-testid="website-motion-preview"]')!;
+      expect(preview.getAttribute("src")).toBe(`${EDITOR}/effect-preview/bg.veil`);
+      expect(preview.getAttribute("sandbox")).toBe("allow-scripts");
+      await act(async () => button("Normal").click());
+      await act(async () => button("Teal").click());
+      await act(async () => button("Use in block").click());
+      await flush();
+      const [request] = editor.sentMessages("set-motion");
+      expect(request!.payload).toEqual({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle", speed: "normal", colour: "teal" } });
+      await editor.reply("set-motion-result", { requestId: request!.id, ok: true });
+      expect(motionPanel().querySelector('[role="status"]')!.textContent).toBe(
+        "Veil, Subtle, normal, teal, is in Hero banner. Save the page in the editor to keep it.",
+      );
+
+      await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-motion-surface-panel"]')!.click());
+      await act(async () => button("Use in block").click());
+      await flush();
+      expect(editor.sentMessages("set-motion")[1]!.payload).toEqual({ blockId: "h1", motion: { effect: "none", intensity: "off" }, surface: "panel" });
+    });
+
+    it("Ask an agent carries the block id, the effect id and its settings (GRE-2526)", async () => {
+      await openEditorOnBlock(libraryAck);
+      await act(async () => labelled("Motion").click());
+      await act(async () => effect("bg.veil").click());
+      await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-motion-ask"]')!.click());
+      await flush();
+      expect(panel()).not.toBeNull();
+      expect(textarea().value).toContain("block id `h1`");
+      expect(textarea().value).toContain("Effect: `bg.veil` (Veil)");
+      expect(textarea().value).toContain("Speed: `slow`");
+    });
+
+    it("the frozen Two Doors home page takes no Background change (GRE-2522)", async () => {
+      const twoDoors = { root: { props: {} }, content: [{ type: "TwoDoors", props: { id: "t1" } }, ...data.content] };
+      api.pageEditor.mockResolvedValue({ ...load, data: twoDoors });
+      const editor = await openEditorOnBlock(libraryAck);
+      await act(async () => labelled("Motion").click());
+      expect(document.body.querySelector('[data-testid="website-motion-frozen"]')!.textContent).toContain("frozen");
+      expect(motionPanel().querySelector('[role="radiogroup"]')).toBeNull();
+      expect(document.body.querySelector('[data-testid="website-motion-apply"]')).toBeNull();
+      expect(editor.sentMessages("set-motion")).toHaveLength(0);
     });
 
     it("an engine with no motion choices, or no selected block, says what to do and sends nothing", async () => {
       const editor = await openEditorOnBlock();
       await act(async () => labelled("Motion").click());
-      expect(motionPanel().textContent).toContain("does not offer motion choices yet");
+      expect(motionPanel().textContent).toContain("does not offer background choices yet");
       expect(motionPanel().querySelector('[role="radiogroup"]')).toBeNull();
       expect(editor.sentMessages("set-motion")).toHaveLength(0);
 

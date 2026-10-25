@@ -71,6 +71,7 @@ export function WebsiteChangeRequestPanel({
   siteId,
   page,
   target,
+  initialRequest,
   width,
   dirty = false,
   capture,
@@ -81,6 +82,8 @@ export function WebsiteChangeRequestPanel({
   siteId: string;
   page: WebsitePage;
   target: WebsiteChangeTarget;
+  /** Words to start the request with, for example a Background choice by library id (GRE-2526). */
+  initialRequest?: string;
   /** The editor width the person sees the page at. */
   width: WebsiteCommentWidth;
   /** The editor has edits that are not saved: the task names the saved draft. */
@@ -94,7 +97,7 @@ export function WebsiteChangeRequestPanel({
 }) {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>("describe");
-  const [request, setRequest] = useState("");
+  const [request, setRequest] = useState(initialRequest ?? "");
   // One id per pick: a repeated confirm returns the same task, never a second one.
   const [requestId] = useState(newRequestId);
   const [created, setCreated] = useState<WebsiteChangeRequestResult | null>(null);

@@ -38,6 +38,7 @@ import {
   type WebsiteFrameSetMotionResult,
   type WebsiteMotionChoice,
   type WebsiteMotionEffect,
+  type WebsiteBackgroundSurface,
   type WebsitePuckBlockInfo,
 } from "@greatstone/shared";
 
@@ -147,6 +148,8 @@ export interface WebsiteFrameMotionCapabilities {
   /** Block type to the effects it takes and what a new block starts with. */
   blocks: Map<string, { effects: string[]; default: WebsiteMotionChoice }>;
   effects: WebsiteMotionEffect[];
+  /** GRE-2522: the plain site surfaces a block's Background takes. Empty for an older engine. */
+  surfaces?: WebsiteBackgroundSurface[];
 }
 
 type ReplyType = "insert-media-result" | "set-motion-result" | "capture-result";
@@ -194,7 +197,7 @@ export class WebsiteFrameHostSession<Source> {
   private shownBlocks = new Map<string, WebsitePuckBlockInfo>();
   private shownRevisionId: string | null = null;
   private shownData: unknown = null;
-  private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [] };
+  private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [], surfaces: [] };
   private commands = new Set<WebsiteEditorCommand>();
   private copySupported = false;
   private editMode: WebsiteEditMode;
@@ -499,6 +502,7 @@ export class WebsiteFrameHostSession<Source> {
     this.motion = {
       blocks: new Map(ack.blocks.flatMap((block) => (block.motion ? [[block.type, block.motion] as const] : []))),
       effects: ack.motionEffects ?? [],
+      surfaces: ack.backgroundSurfaces ?? [],
     };
     this.commands = new Set((ack.editorCommands ?? []).filter(isWebsiteEditorCommand));
     this.copySupported = this.options.mode === "editor" && websiteEditorHasCopyMode(ack);
