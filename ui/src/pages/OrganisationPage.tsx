@@ -165,6 +165,8 @@ export function OrganisationPage() {
         ) : null}
       </section>
 
+      <OrganisationCommerce companyId={companyId} organisation={organisation} />
+
       <section aria-label="Contacts" className="space-y-2">
         <h2 className="text-sm font-semibold">Contacts</h2>
         {contacts.length === 0 ? (
@@ -194,8 +196,6 @@ export function OrganisationPage() {
           </ul>
         )}
       </section>
-
-      <OrganisationCommerce companyId={companyId} organisation={organisation} />
 
       {history.data?.timeline?.length ? (
         <section aria-label="Activities and notes" className="space-y-2">
