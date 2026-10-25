@@ -12,6 +12,8 @@ import {
   History,
   Image as ImageIcon,
   ListTree,
+  MessageSquarePlus,
+  MessagesSquare,
   MoreHorizontal,
   PenLine,
   Plus,
@@ -87,7 +89,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScaledFrame } from "../AttachmentPreviewPanel";
 import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
-import { WebsiteChangeRequestPanel } from "./WebsiteChangeRequest";
+import { WebsiteChangeRequestPanel, type WebsiteChangeTarget } from "./WebsiteChangeRequest";
+import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComments";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type PickedWebsiteMedia } from "./WebsiteStudioMedia";
@@ -104,7 +107,7 @@ const ORIGIN_CHANGED_NOTICE = "The editor address for this site changed. Reload 
 
 type Mode = "edit" | "preview";
 type Source = "draft" | "live";
-type Drawer = "history" | "media" | "motion" | "change" | null;
+type Drawer = "history" | "media" | "motion" | "change" | "comments" | null;
 
 const PAGE_STATUS_COPY: Record<WebsitePageStatus, { label: string; tone: string }> = {
   planned: { label: "Planned", tone: "bg-muted text-muted-foreground" },
@@ -320,6 +323,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   });
   const pages = pagesQuery.data ?? [];
   const page = pages.find((entry) => entry.id === searchParams.get("page")) ?? pages[0] ?? null;
+  const openComments = useWebsitePageComments(companyId, site.id, page?.id ?? null).data?.length ?? 0;
   const [mode, setMode] = useState<Mode>("edit");
   const [source, setSource] = useState<Source>("draft");
   const [device, setDevice] = useState<WebsitePreviewDevice>("laptop");
@@ -342,8 +346,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const [frameError, setFrameError] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<WebsiteFrameEditorState | null>(null);
   const [commands, setCommands] = useState<ReadonlySet<WebsiteEditorCommand>>(new Set());
-  /** Click to change: the block picked in the preview; each pick starts a fresh request. */
-  const [pick, setPick] = useState<{ n: number; pick: WebsiteFrameBlockPick } | null>(null);
+  /** Click to change or Ask an agent: what the comment is about; each one starts a fresh request. */
+  const [ask, setAsk] = useState<{ n: number; target: WebsiteChangeTarget; picked: boolean } | null>(null);
   const sessionRef = useRef<WebsiteFrameHostSession<Window> | null>(null);
   const hadSelection = useRef(false);
   const frameSessionKey = `${page?.id ?? ""}:${mode}:${source}:${frameKey}`;
@@ -355,7 +359,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     setFrameError(null);
     setEditorState(null);
     setCommands(new Set());
-    setPick(null);
+    setAsk(null);
+    setDrawer((current) => (current === "change" ? null : current));
     hadSelection.current = false;
   }, [frameSessionKey]);
 
@@ -521,6 +526,23 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     if (ok) requestPublish.mutate(page);
   };
 
+  // Ask an agent (GRE-2350): about the block selected in the editor, else the whole page.
+  const askAgent = () => {
+    const selection = mode === "edit" ? editorState?.selection : null;
+    const target: WebsiteChangeTarget = selection
+      ? { kind: "block", blockId: selection.blockId, blockType: selection.blockType, label: selection.label }
+      : { kind: "page" };
+    setAsk((current) => ({ n: (current?.n ?? 0) + 1, target, picked: false }));
+    setDrawer("change");
+  };
+
+  // An agent's change is a draft of this page: show the latest draft in the preview.
+  const previewChange = async () => {
+    if (!(await switchView({ mode: "preview", source: "draft" }))) return;
+    setFrameKey((key) => key + 1);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, site.id) });
+  };
+
   if (pagesQuery.isLoading || pagesQuery.error || !page) {
     return (
       <FullScreen>
@@ -603,6 +625,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               <IconButton label="Redo (⇧⌘Z)" icon={Redo2} disabled={!canRedo} onClick={() => run("redo")} />
             </>
           ) : null}
+          <IconButton label="Ask an agent" icon={MessageSquarePlus} labelled pressed={drawer === "change" && !ask?.picked} onClick={askAgent} />
           <div className="hidden items-center gap-1 lg:flex">
             {editing ? (
               <>
@@ -628,6 +651,14 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 onChange={(value) => void switchView({ source: value })}
               />
             ) : null}
+            <IconButton
+              label="Comments"
+              icon={MessagesSquare}
+              labelled
+              badge={openComments}
+              pressed={drawer === "comments"}
+              onClick={() => toggleDrawer("comments")}
+            />
             <IconButton label="History" icon={History} labelled pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
             <IconButton label="Media" icon={ImageIcon} labelled pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
             <IconButton label="Motion" icon={Waves} labelled pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
@@ -658,6 +689,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             mode={mode}
             device={device}
             drawer={drawer}
+            openComments={openComments}
             waiting={waiting}
             canAddBlock={canAddBlock}
             canOutline={canOutline}
@@ -710,7 +742,16 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onSaveState={setSaveState}
               onFrameError={setFrameError}
               onBlockPicked={(picked) => {
-                setPick((current) => ({ n: (current?.n ?? 0) + 1, pick: picked }));
+                const target: WebsiteChangeTarget = {
+                  kind: "block",
+                  blockId: picked.ref.blockId,
+                  blockType: picked.ref.blockType,
+                  label: picked.label,
+                  pageRevisionId: picked.ref.pageRevisionId,
+                  engine: picked.ref.engine,
+                  source: picked.ref.source,
+                };
+                setAsk((current) => ({ n: (current?.n ?? 0) + 1, target, picked: true }));
                 setDrawer("change");
               }}
               onEditorState={onEditorState}
@@ -728,8 +769,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             onClose={() => {
               setDrawer(null);
               if (drawer === "change") {
-                setPick(null);
-                sessionRef.current?.highlight(null);
+                if (ask?.picked) sessionRef.current?.highlight(null);
+                setAsk(null);
               }
             }}
           >
@@ -776,19 +817,30 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 onApplied={() => setDirty(true)}
               />
             ) : null}
-            {drawer === "change" && mode === "preview" && ready && pick ? (
+            {drawer === "change" && ask ? (
               <WebsiteChangeRequestPanel
-                key={pick.n}
+                key={ask.n}
                 companyId={companyId}
                 siteId={site.id}
                 page={page}
-                pick={pick.pick}
+                target={ask.target}
+                width={device}
+                dirty={dirty}
                 onCancel={() => {
-                  setPick(null);
+                  if (ask.picked) sessionRef.current?.highlight(null);
+                  setAsk(null);
                   setDrawer(null);
-                  sessionRef.current?.highlight(null);
                 }}
-                onEditBlock={(blockId, blockName) => void editBlock(blockId, blockName)}
+                onEditBlock={ask.picked && mode === "preview" ? (blockId, blockName) => void editBlock(blockId, blockName) : undefined}
+              />
+            ) : null}
+            {drawer === "comments" ? (
+              <WebsiteCommentsPanel
+                companyId={companyId}
+                siteId={site.id}
+                page={page}
+                onAsk={askAgent}
+                onPreviewChange={() => void previewChange()}
               />
             ) : null}
           </EditorDrawer>
@@ -802,7 +854,8 @@ const DRAWER_TITLES: Record<Exclude<Drawer, null>, string> = {
   history: "History",
   media: "Media",
   motion: "Motion",
-  change: "Ask for a change",
+  change: "Ask an agent",
+  comments: "Comments",
 };
 
 /**
@@ -843,6 +896,7 @@ function IconButton({
   disabled,
   pressed,
   labelled,
+  badge,
 }: {
   label: string;
   icon: typeof Undo2;
@@ -851,6 +905,8 @@ function IconButton({
   pressed?: boolean;
   /** Show the label beside the icon where the bar has room (xl and up). */
   labelled?: boolean;
+  /** A count beside the icon, e.g. open comments. Hidden at 0. */
+  badge?: number;
 }) {
   const name = label.replace(/ \(.+\)$/, "");
   return (
@@ -863,10 +919,18 @@ function IconButton({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className={cn(labelled && "w-9 xl:w-auto", pressed && PRESSED)}
+      className={cn(labelled && "w-9 xl:w-auto", badge ? "relative" : null, pressed && PRESSED)}
     >
       <Icon />
       {labelled ? <span className="hidden xl:inline">{name}</span> : null}
+      {badge ? (
+        <span
+          className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground xl:static xl:ml-0.5"
+          data-testid="website-comments-count"
+        >
+          {badge}
+        </span>
+      ) : null}
     </Button>
   );
 }
@@ -967,6 +1031,7 @@ function MoreMenu({
   mode,
   device,
   drawer,
+  openComments,
   waiting,
   canAddBlock,
   canOutline,
@@ -981,6 +1046,7 @@ function MoreMenu({
   mode: Mode;
   device: WebsitePreviewDevice;
   drawer: Drawer;
+  openComments: number;
   waiting: boolean;
   canAddBlock: boolean;
   canOutline: boolean;
@@ -1021,6 +1087,10 @@ function MoreMenu({
           </>
         ) : null}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => onDrawer("comments")}>
+          <MessagesSquare />
+          Comments{openComments ? ` (${openComments} open)` : ""}{drawer === "comments" ? " (shown)" : ""}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onDrawer("history")}>
           <History />
           History{drawer === "history" ? " (open)" : ""}

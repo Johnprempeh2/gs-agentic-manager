@@ -20,6 +20,7 @@ import {
   type CreateWebsiteEntry,
   type CreateWebsiteChangeRequest,
   type WebsiteChangeRequestResult,
+  type WebsitePageComment,
   type WebsiteRelease,
   type WebsiteHomeSummary,
   type WebsiteReleaseActionPlan,
@@ -125,6 +126,9 @@ export const websiteModuleApi = {
       ),
     ),
   /** Click to change: one task for the website agent (website:edit). The same requestId returns the same task. */
+  /** The page's open comments for the agents (GRE-2350), oldest first and numbered. */
+  pageComments: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsitePageComment[]>(`${pagePath(companyId, siteId, pageId)}/change-requests`),
   requestChange: (companyId: string, siteId: string, pageId: string, input: CreateWebsiteChangeRequest) =>
     api.post<WebsiteChangeRequestResult>(`${pagePath(companyId, siteId, pageId)}/change-requests`, input),
   media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
