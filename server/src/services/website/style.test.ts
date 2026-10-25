@@ -105,6 +105,16 @@ describe("website style read", () => {
     expect(style.surfaces.map((s) => s.selector)).toEqual(["body", ".hero-band"]);
   });
 
+  it("leaves out icon fonts, generic fallbacks and the inside of cards", () => {
+    const style = buildSiteStyle({
+      siteId: "s1", siteUrl: "https://example.com/", theme: {}, stylesheets: [], fontStylesheets: [], problem: null,
+      css: `.fa { font-family: "Font Awesome 5 Pro"; } code { font-family: monospace; } body { font-family: Inter, sans-serif; }
+        .card { padding: 1rem; } .card-body { padding: 1rem; } .card-title { font-weight: 600; } .badge-pill { border-radius: 10rem; }`,
+    });
+    expect(style.fonts.map((f) => f.family)).toEqual(["Inter"]);
+    expect(style.components.map((c) => c.selector)).toEqual([".card", ".badge-pill"]);
+  });
+
   it("still shows the release tokens when the site has no stylesheet", () => {
     const style = buildSiteStyle({
       siteId: "s1", siteUrl: "https://example.com/", theme: { gs: { accent: "#ff3366" } }, css: "",

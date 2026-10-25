@@ -296,6 +296,13 @@ function tokenKind(cssVar: string, value: string): WebsiteStyleTokenKind {
 
 // ---- the style read ----
 
+/** A generic family is the fallback, not a font the site chose. */
+const GENERIC_FAMILY = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-[a-z-]+|-apple-system|blinkmacsystemfont)$/i;
+/** Icon fonts draw symbols, not text: not part of the type. */
+const ICON_FONT = /(awesome|icons?\b|icomoon|glyph|material symbols|slick|swiper|^lg$|^fa[- ])/i;
+/** The inside of a card (`.card-body`, `.card-title`) is not a card of its own. */
+const CARD_PART = /card[-_](body|title|subtitle|text|header|footer|img|image|link|group|deck|columns|tabs|pills)/;
+
 interface Sources {
   siteUrl: string;
   sheets: Array<{ url: string; css: string }>;
@@ -456,7 +463,7 @@ export function buildSiteStyle(input: {
   const fonts = new Map<string, WebsiteStyleFont>();
   const addFont = (stack: string, selector: string | null) => {
     const family = unquote(stack.split(",")[0] ?? "");
-    if (!family || /^(inherit|initial|unset|var\()/.test(family)) return;
+    if (!family || /^(inherit|initial|unset|var\()/.test(family) || GENERIC_FAMILY.test(family) || ICON_FONT.test(family)) return;
     const key = family.toLowerCase();
     const font: WebsiteStyleFont = fonts.get(key) ?? {
       family,
@@ -507,7 +514,7 @@ export function buildSiteStyle(input: {
     if (/^(btn|button|cta)([-_]|$)/.test(cls)) return "button";
     if (/^(link|text-link)([-_]|$)/.test(cls)) return "link";
     if (/(^|[-_])(pill|badge|chip|tag)([-_]|$)/.test(cls)) return "pill";
-    if (/(^|[-_])card([-_]|$)/.test(cls) && !/__/.test(cls)) return "card";
+    if (/(^|[-_])card([-_]|$)/.test(cls) && !/__/.test(cls) && !CARD_PART.test(cls)) return "card";
     return null;
   };
   const seen = new Set<string>();
