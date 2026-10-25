@@ -105,7 +105,7 @@ CREATE INDEX "deep_dive_opportunity_findings_finding_idx" ON "deep_dive_opportun
 -- Every new item is Internal and stays in its company; every link points inside the same company.
 -- A finding joins an opportunity only once a person has validated it; a link already made stays
 -- when that finding is later superseded, so the record keeps what the opportunity rested on.
--- Uses deep_dive_board_in_company from migration 0398.
+-- Uses deep_dive_board_in_company from migration 0399.
 CREATE FUNCTION "deep_dive_opportunity_guard"() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_TABLE_NAME IN ('deep_dive_opportunities', 'deep_dive_builds', 'deep_dive_kpis') THEN

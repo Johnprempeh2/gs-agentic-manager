@@ -16,7 +16,7 @@ import { pipelineCaseFilesService } from "./pipeline-case-files.js";
 // Deep Dive evidence and files (GRE-2395). One client file, many Deep Dive
 // items: a link row points an item at its client's evidence row or document
 // request. Unlinking removes only that row; the file stays with the client.
-// The deep_dive_item_files_guard_writes trigger (migration 0395) keeps every
+// The deep_dive_item_files_guard_writes trigger (migration 0396) keeps every
 // target on the item's own client. Client-facing code reads links only through
 // listSharedDeepDiveFilesForClient in deep-dive-sharing.ts.
 

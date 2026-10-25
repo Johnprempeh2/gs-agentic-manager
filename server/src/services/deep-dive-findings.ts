@@ -22,7 +22,7 @@ import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 // Deep Dive findings (GRE-2367). Proposed by a person or an agent, validated
 // or rejected by a person, never edited: a new finding supersedes a validated
 // one, and the old one becomes Superseded when the new one is validated. The
-// deep_dive_findings_guard trigger (migration 0396) enforces the same rules
+// deep_dive_findings_guard trigger (migration 0397) enforces the same rules
 // for any writer; these checks give the caller a clear answer first.
 
 export type DeepDiveFindingActor =

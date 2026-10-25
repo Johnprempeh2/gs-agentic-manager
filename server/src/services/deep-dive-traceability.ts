@@ -38,7 +38,7 @@ import type { DeepDiveOpportunityActor } from "./deep-dive-opportunities.js";
 // Commercial → Roadmap → KPI from its real links and lists where it breaks.
 // Commercial cases and roadmap items are written here; every other step is
 // written on its own screen. Every write returns the whole chain. The
-// deep_dive_traceability_guard trigger in migration 0400 keeps links inside
+// deep_dive_traceability_guard trigger in migration 0401 keeps links inside
 // the company for any writer; this service turns its refusals into 422s.
 
 export const DEEP_DIVE_TRACE_KINDS = {

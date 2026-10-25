@@ -14,7 +14,7 @@ import {
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
 
-// Deep Dive boards (GRE-2369, migration 0398). The organisation board holds
+// Deep Dive boards (GRE-2369, migration 0399). The organisation board holds
 // units, people and each person's tasks with the fate chosen for them (the
 // target state). The process board holds offerings (its lanes), processes
 // (cards, with an optional saved position) and handoffs. An arrow on the board

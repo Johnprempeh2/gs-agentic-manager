@@ -52,7 +52,7 @@ CREATE INDEX "deep_dive_roadmap_items_commercial_idx" ON "deep_dive_roadmap_item
 CREATE UNIQUE INDEX "deep_dive_roadmap_kpis_pair_uq" ON "deep_dive_roadmap_kpis" USING btree ("roadmap_item_id","kpi_id");--> statement-breakpoint
 CREATE INDEX "deep_dive_roadmap_kpis_kpi_idx" ON "deep_dive_roadmap_kpis" USING btree ("kpi_id");--> statement-breakpoint
 -- Every new item is Internal and stays in its company; every link points inside the same company.
--- Uses deep_dive_board_in_company from migration 0398.
+-- Uses deep_dive_board_in_company from migration 0399.
 CREATE FUNCTION "deep_dive_traceability_guard"() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_TABLE_NAME IN ('deep_dive_commercials', 'deep_dive_roadmap_items') THEN

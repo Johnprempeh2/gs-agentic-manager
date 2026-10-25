@@ -31,7 +31,7 @@ import type { DeepDiveFindingActor } from "./deep-dive-findings.js";
 
 // Deep Dive opportunities and KPIs (GRE-2370): Screen 7 of the GRE-2327 plan.
 // Every write returns the whole board, so the page shows exactly what was
-// saved. The deep_dive_opportunity_guard trigger in migration 0399 keeps every
+// saved. The deep_dive_opportunity_guard trigger in migration 0400 keeps every
 // link inside the company and links only validated findings, for any writer;
 // this service turns its refusals into 422s. Links are replaced as a set: a
 // link that stays is kept as it was, so a finding superseded after it was

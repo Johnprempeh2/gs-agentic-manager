@@ -15,7 +15,7 @@ import { companies } from "./companies.js";
 import { deepDivePeople, deepDiveProcesses } from "./deep_dive_boards.js";
 import { deepDiveFindings } from "./deep_dive_findings.js";
 
-// Deep Dive opportunities and KPIs (GRE-2370, migration 0399). Many validated
+// Deep Dive opportunities and KPIs (GRE-2370, migration 0400). Many validated
 // findings point at one opportunity (deep_dive_opportunity_findings), and one
 // opportunity needs many builds (deep_dive_builds.opportunity_id). A KPI is
 // owned by a person on the organisation board, has a target and a baseline it

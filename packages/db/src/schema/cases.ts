@@ -35,7 +35,7 @@ export const cases = pgTable(
     status: text("status").notNull().default("draft"),
     fields: jsonb("fields").$type<Record<string, unknown>>().notNull().default({}),
     parentCaseId: uuid("parent_case_id").references((): AnyPgColumn => cases.id, { onDelete: "set null" }),
-    // Deep Dive sharing (GRE-2366, migration 0394). Internal unless a person
+    // Deep Dive sharing (GRE-2366, migration 0395). Internal unless a person
     // sets Shared; only Shared items of the item's own client reach that client.
     visibility: text("visibility").$type<"internal" | "shared">().notNull().default("internal"),
     clientCaseId: uuid("client_case_id").references(() => pipelineCases.id, { onDelete: "set null" }),

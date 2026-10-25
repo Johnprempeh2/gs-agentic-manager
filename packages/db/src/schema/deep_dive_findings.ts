@@ -14,7 +14,7 @@ import { caseDocuments, cases } from "./cases.js";
 import { companies } from "./companies.js";
 import { pipelineCaseEvidence } from "./pipeline_cases.js";
 
-// Deep Dive findings (GRE-2367, migration 0395). A finding is proposed by a
+// Deep Dive findings (GRE-2367, migration 0397). A finding is proposed by a
 // person or an agent and validated by a person. It is never edited: a new
 // finding supersedes it. It links to its Investigation Stream (a
 // deep_dive_stream case), its GIF cell (that stream's gif-* document) and its

@@ -3,7 +3,7 @@ import { check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizz
 import { companies } from "./companies.js";
 import { deepDiveBuilds, deepDiveKpis } from "./deep_dive_opportunities.js";
 
-// Deep Dive traceability (GRE-2371, migration 0400). The last links of the
+// Deep Dive traceability (GRE-2371, migration 0401). The last links of the
 // chain North Star → Source → Finding → Opportunity → Design → Commercial →
 // Roadmap → KPI. A design is a build (deep_dive_builds). A commercial case is
 // for one design; a roadmap item delivers one commercial case and moves the

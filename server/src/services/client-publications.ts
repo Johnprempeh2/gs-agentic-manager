@@ -44,7 +44,7 @@ import { clientReceiptSender, type ClientReceiptSender } from "./client-receipts
 // Deliverable publishing on Clients > Deliverables (GRE-2373). The routes
 // decide who may call each step; this service holds the order of the steps,
 // the frozen fingerprint and the audit. The database checks the same rules
-// again (migration 0401), so a bug here cannot publish unapproved content.
+// again (migration 0402), so a bug here cannot publish unapproved content.
 
 export type ClientPublicationActor =
   | { type: "user"; userId: string }

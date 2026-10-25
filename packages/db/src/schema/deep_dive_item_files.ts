@@ -5,7 +5,7 @@ import { cases } from "./cases.js";
 import { companies } from "./companies.js";
 import { pipelineCaseDocumentRequests, pipelineCaseEvidence } from "./pipeline_cases.js";
 
-// One client file, many Deep Dive items (GRE-2395, migration 0395). A link
+// One client file, many Deep Dive items (GRE-2395, migration 0396). A link
 // points a Deep Dive item at one of its client's evidence rows (a file we hold)
 // or at one of its client's document requests (held once received, missing
 // until then). The file itself stays where it is; unlinking removes only this

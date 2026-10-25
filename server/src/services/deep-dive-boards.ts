@@ -34,7 +34,7 @@ import type { DeepDiveFindingActor } from "./deep-dive-findings.js";
 
 // Deep Dive boards (GRE-2369): Screens 5 and 6 of the GRE-2327 plan. Every
 // write returns the whole board it changed, so the page reloads exactly what
-// was saved. The deep_dive_board_guard trigger in migration 0398 keeps every
+// was saved. The deep_dive_board_guard trigger in migration 0399 keeps every
 // link inside the company and refuses cycles for any writer; this service
 // turns its refusals into 422s. Arrows on the process board are handoff rows:
 // saving a layout touches only x and y and cannot draw one.

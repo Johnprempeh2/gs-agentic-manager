@@ -5,7 +5,7 @@ import { caseDocuments, cases } from "./cases.js";
 import { companies } from "./companies.js";
 import { deepDiveFindings } from "./deep_dive_findings.js";
 
-// Deep Dive sessions (GRE-2368, migration 0397). A session is planned as an
+// Deep Dive sessions (GRE-2368, migration 0398). A session is planned as an
 // ordered list of questions, each in one GIF cell (a deep_dive_stream case and
 // its gif-* document), run live, and closed. The deep_dive_sessions_guard and
 // deep_dive_session_questions_guard triggers keep the order Planned -> Live ->

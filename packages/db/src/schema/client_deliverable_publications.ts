@@ -6,7 +6,7 @@ import { issueWorkProducts } from "./issue_work_products.js";
 import { issues } from "./issues.js";
 import { pipelineCases, pipelineCaseStageDeliverables } from "./pipeline_cases.js";
 
-// Deliverable publishing on Clients > Deliverables (GRE-2373, migration 0401),
+// Deliverable publishing on Clients > Deliverables (GRE-2373, migration 0402),
 // carried over from the website client portal (its migration 0037). A
 // deliverable filed for a client goes draft → pending approval → approved →
 // published → accepted, or is withdrawn. Submitting freezes one version and
