@@ -51,9 +51,9 @@ describe("WebsiteDataBridgeRow", () => {
     render(false);
     await flush();
     expect(line("read").textContent).toContain("stg-read-2026-10-abc123");
-    expect(line("read").textContent).toContain("Staging site, made Oct 2026");
+    expect(line("read").textContent).toContain("Staging site, made October 2026");
     expect(line("write").textContent).toContain("live-write-2026-09-def456");
-    expect(line("write").textContent).toContain("Live site, made Sept 2026");
+    expect(line("write").textContent).toContain("Live site, made September 2026");
     expect(line("refund_request").textContent).toContain("Not set");
   });
 

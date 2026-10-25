@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { errorStateMessage } from "../ErrorState";
+import { formatCalendarMonth } from "@/lib/utils";
 
 // "Website data" on Site connection (GRE-2323): whether GSAM can read the site's customer records through the
 // signed admin bridge, one line per bridge key (read, write, refund_request; GRE-2552), and, for people with
@@ -32,8 +33,7 @@ function keyIdFor(data: WebsiteDataBridgeStatus | undefined, capability: Website
 export function describeBridgeKeyId(keyId: string) {
   const match = /^(stg|live)-[a-z]+-(\d{4})-(\d{2})-/.exec(keyId);
   if (!match) return null;
-  const made = new Date(Date.UTC(Number(match[2]), Number(match[3]) - 1, 1));
-  return `${match[1] === "live" ? "Live" : "Staging"} site, made ${made.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })}`;
+  return `${match[1] === "live" ? "Live" : "Staging"} site, made ${formatCalendarMonth(`${match[2]}-${match[3]}-01`)}`;
 }
 
 export function WebsiteDataBridgeRow({ companyId, site, canManage }: { companyId: string; site: WebsiteSite; canManage: boolean }) {
