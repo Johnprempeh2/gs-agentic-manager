@@ -231,15 +231,17 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     await http.get(`${base}/commerce/payments`).expect(409);
 
     const key = await makeKey(base);
-    const report = { from: "2026-10-01", to: "2026-10-31", stripeMode: "test", paidOrders: 1, refundedMinor: 500,
-      refundRequests: { requested: 1, approved: 0, done: 0 }, refundWithNoRequestMinor: 0 };
+    // the site's own shape (greatstone-website bridgePayments); GSAM adds from and to under `report`
+    const siteReport = { stripeMode: "test", totals: [{ currency: "GBP", orders: 1, total_minor: "9000", refunded_minor: "500" }],
+      refundRequests: [{ status: "requested", requests: 1, amount_minor: "500" }], items: [], nextCursor: null };
+    const report = { from: "2026-10-01", to: "2026-10-31", ...siteReport };
     answer = (url) => {
       const path = url.pathname.replace("/api/admin/v1/", "");
       if (path === "offerings") return Response.json({ items: [{ id: "of1", status: "draft", variants: [] }], nextCursor: null });
       if (path === "vendors/v1") return Response.json({ item: { id: "v1", activation_instructions: "Sign in, then…" } });
       if (path === "imports/j1") return Response.json({ item: { id: "j1", status: "validated" }, rows: [{ row_no: 1 }], nextCursor: "c2" });
       if (path === "fx") return Response.json({ item: { usd_to_gbp_display_rate: "0.7900", row_version: 4, history: [] } });
-      if (path === "payments") return Response.json({ report });
+      if (path === "payments") return Response.json(siteReport);
       return new Response(JSON.stringify({ error: { code: "not_found" } }), { status: 404 });
     };
     expect((await http.get(`${base}/commerce/offerings?limit=10`).expect(200)).body.items).toHaveLength(1);
@@ -267,7 +269,7 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect(seen).toHaveLength(calls);
 
     // A report that carries a Stripe id never reaches the caller.
-    answer = () => Response.json({ report: { ...report, lastIntent: "pi_3PqRsTuVwXyZ12345678" } });
+    answer = () => Response.json({ ...siteReport, lastIntent: "pi_3PqRsTuVwXyZ12345678" });
     const leaked = await http.get(`${base}/commerce/payments`).expect(502);
     expect(leaked.body.details?.code ?? leaked.body.code).toBe("website_bridge_bad_response");
     expect(JSON.stringify(leaked.body)).not.toMatch(/pi_3P/);

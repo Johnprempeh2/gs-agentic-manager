@@ -161,12 +161,16 @@ describe("website bridge client", () => {
       json(200, { items: [], nextCursor: null }),
       json(200, { item: { id: "j1" }, rows: [{ line: 1 }], nextCursor: "r2" }),
       json(200, { item: { usdToGbpDisplayRate: "0.79", rowVersion: 3, history: [] } }),
-      json(200, { report: { from: "2026-10-01", to: "2026-10-31", stripeMode: "test", paidOrders: 2 } }),
+      // the site's own shape (greatstone-website bridgePayments): no envelope, no from/to
+      json(200, { stripeMode: "test", totals: [{ currency: "GBP", orders: 2, total_minor: "9000", refunded_minor: "0" }],
+        refundRequests: [], items: [], nextCursor: null }),
     ]);
     await c.list("pricing-rules", { updatedSince: "2026-10-01T00:00:00Z" }, ACTOR);
     await expect(c.importJob("j1", { cursor: "r1", limit: 20 }, ACTOR)).resolves.toMatchObject({ rows: [{ line: 1 }], nextCursor: "r2" });
     await c.fx(ACTOR);
-    await expect(c.payments({ from: "2026-10-01", to: "2026-10-31" }, ACTOR)).resolves.toMatchObject({ report: { stripeMode: "test", paidOrders: 2 } });
+    await expect(c.payments({ from: "2026-10-01", to: "2026-10-31" }, ACTOR)).resolves.toEqual({ report: { from: "2026-10-01",
+      to: "2026-10-31", stripeMode: "test", totals: [{ currency: "GBP", orders: 2, total_minor: "9000", refunded_minor: "0" }],
+      refundRequests: [], items: [], nextCursor: null } });
     expect(calls.map((x) => x.url)).toEqual([
       "https://staging.example.test/api/admin/v1/pricing-rules?updatedSince=2026-10-01T00%3A00%3A00Z",
       "https://staging.example.test/api/admin/v1/imports/j1?cursor=r1&limit=20",
@@ -178,14 +182,14 @@ describe("website bridge client", () => {
 
   it("refuses a payment report that carries a Stripe id or key, or no Stripe mode", async () => {
     for (const leak of ["pi_3PqRsTuVwXyZ1234", "sk_test_51AbCdEfGhIjKl", "ch_1AbCdEfGhIjKlMn"]) {
-      const { c } = client([json(200, { report: { from: null, to: null, stripeMode: "test", orders: [{ id: "o1", note: leak }] } })]);
+      const { c } = client([json(200, { stripeMode: "test", items: [{ id: "o1", reference: leak }], nextCursor: null })]);
       await expect(c.payments({}, ACTOR), leak).rejects.toMatchObject({ code: "bad_response", status: 502 });
     }
-    const unset = client([json(200, { report: { from: null, to: null } })]);
+    const unset = client([json(200, { items: [], nextCursor: null })]);
     await expect(unset.c.payments({}, ACTOR)).rejects.toMatchObject({ code: "bad_response" });
-    const boolean = client([json(200, { report: { from: null, to: null, stripeMode: "unset",
-      orders: [{ id: "8c1d7c2e-4f0a-4a51-9f4e-0d9c2b7a1e33", paidByStripe: true, refundStatus: "in_progress_with_stripe" }] } })]);
-    await expect(boolean.c.payments({}, ACTOR)).resolves.toMatchObject({ report: { stripeMode: "unset" } });
+    const boolean = client([json(200, { stripeMode: "unset", totals: [], refundRequests: [], nextCursor: null,
+      items: [{ id: "8c1d7c2e-4f0a-4a51-9f4e-0d9c2b7a1e33", paid_by_stripe: true, refund_requests: [{ status: "in_progress_with_stripe" }] }] })]);
+    await expect(boolean.c.payments({}, ACTOR)).resolves.toMatchObject({ report: { from: null, to: null, stripeMode: "unset" } });
   });
 
   describe("writes and refund requests (GRE-2354 2c(b))", () => {
