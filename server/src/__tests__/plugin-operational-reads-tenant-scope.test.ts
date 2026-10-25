@@ -124,7 +124,7 @@ describeEmbeddedPostgres("plugin operational reads are company-scoped", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "paperclip.operational-reads-test",
-      packageName: "@paperclipai/plugin-operational-reads-test",
+      packageName: "@greatstone/plugin-operational-reads-test",
       version: "0.0.1",
       apiVersion: 1,
       categories: ["automation"],
