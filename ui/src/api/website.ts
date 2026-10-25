@@ -119,6 +119,9 @@ export const websiteModuleApi = {
     api.get<{ revision: WebsiteRevision; content: unknown }>(
       `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}`,
     ),
+  /** Request publish: draft to review. A person with Publish rights approves it; nothing goes live here. */
+  submitPage: (companyId: string, siteId: string, pageId: string) =>
+    api.post<WebsitePage>(`${pagePath(companyId, siteId, pageId)}/submit`, {}),
   restoreRevision: (companyId: string, siteId: string, pageId: string, revisionId: string, baseRevisionId: string) =>
     saveAnswer(
       api.post<WebsiteSaveResult>(

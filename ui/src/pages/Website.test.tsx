@@ -34,7 +34,7 @@ vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompa
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { useSearchParams: actual.useSearchParams, Link: actual.Link };
+  return { useSearchParams: actual.useSearchParams, useLocation: actual.useLocation, useNavigate: actual.useNavigate, Navigate: actual.Navigate, Link: actual.Link };
 });
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 

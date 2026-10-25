@@ -91,6 +91,8 @@ type CardContext = {
   latestCommentBy: Map<string, { agentId: string; body: string; at: Date }>;
   holdsUp: Map<string, DecisionCardTaskRef[]>;
   blockerChain: Map<string, DecisionCardTaskRef[]>;
+  /** Who owns each open blocker in `blockerChain`, by blocker id. */
+  blockerOwner: Map<string, { agentId: string | null; userId: string | null }>;
   interactionCreatedBy: Map<string, string | null>;
   interactionPayload: Map<string, Record<string, unknown>>;
   /** Newest comment a person wrote on each task. */
@@ -836,7 +838,15 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         .innerJoin(issues, eq(issues.id, issueRelations.relatedIssueId))
         .where(and(eq(issueRelations.companyId, companyId), eq(issueRelations.type, "blocks"), inArray(issueRelations.issueId, taskIds))),
       taskIds.length === 0 ? none : db
-        .select({ to: issueRelations.relatedIssueId, id: issues.id, identifier: issues.identifier, title: issues.title, status: issues.status })
+        .select({
+          to: issueRelations.relatedIssueId,
+          id: issues.id,
+          identifier: issues.identifier,
+          title: issues.title,
+          status: issues.status,
+          assigneeAgentId: issues.assigneeAgentId,
+          assigneeUserId: issues.assigneeUserId,
+        })
         .from(issueRelations)
         .innerJoin(issues, eq(issues.id, issueRelations.issueId))
         .where(and(eq(issueRelations.companyId, companyId), eq(issueRelations.type, "blocks"), inArray(issueRelations.relatedIssueId, taskIds))),
@@ -901,6 +911,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       latestCommentBy,
       holdsUp: openRefsBy(blocksRows.map((row) => ({ ...row, key: row.from }))),
       blockerChain: openRefsBy(blockedByRows.map((row) => ({ ...row, key: row.to }))),
+      blockerOwner: new Map(blockedByRows.map((row) => [row.id, { agentId: row.assigneeAgentId, userId: row.assigneeUserId }])),
       interactionCreatedBy: new Map(intentRows.map((row) => [row.id, row.createdByAgentId])),
       interactionPayload: new Map(intentRows.map((row) => [row.id, (row.payload ?? {}) as Record<string, unknown>])),
       latestPersonComment: new Map((personComments as Array<{ issueId: string; at: Date }>).map((row) => [row.issueId, new Date(row.at)])),
@@ -1466,9 +1477,10 @@ function buildCard(input: {
       setupAgentName,
       setupCause: setup?.cause ?? null,
       readyToRetry,
+      kinds,
       escalation: input.escalation,
-      latestComment,
-      commentAuthor: agentRef(latestComment?.agentId)?.name ?? null,
+      blockerChain,
+      agentRef,
       context,
       reason,
     })),
@@ -1594,8 +1606,26 @@ function recommendationOf(input: {
     : null;
 }
 
-/** The decision in one sentence: exactly what is asked of the person. */
-function decisionSentence(input: {
+/** Card kinds that are an ask addressed to the person: an interaction or an approval. */
+const PERSON_ASK_KINDS = new Set<DecisionCardKind>(["question", "approval", "connection"]);
+
+/**
+ * The decision in one sentence: exactly what is asked of the person.
+ *
+ * "Waiting on you" comes only from facts (GRE-2342): a pending ask or approval
+ * on a blocked task, or an unblock step assigned to the person. Never from
+ * comment text: an agent's plan that says "John: accept the card" is not an
+ * ask of John, and the card names the real blocker instead.
+ */
+function decisionSentence(input: Parameters<typeof askSentence>[0] & { kinds: DecisionCardKind[] }): string {
+  const ask = askSentence(input);
+  if (input.kind !== "blocked" && input.kinds.includes("blocked") && PERSON_ASK_KINDS.has(input.kind)) {
+    return `${input.waiting?.name ?? "The agent"} is waiting on you: ${ask}`;
+  }
+  return ask;
+}
+
+function askSentence(input: {
   kind: DecisionCardKind;
   main: AttentionItem | null;
   task: TaskRow | null;
@@ -1612,8 +1642,8 @@ function decisionSentence(input: {
   setupCause: string | null;
   readyToRetry: boolean;
   escalation: DecisionCard["escalation"];
-  latestComment: { agentId: string; body: string } | null;
-  commentAuthor: string | null;
+  blockerChain: DecisionCardTaskRef[];
+  agentRef: (agentId: string | null | undefined) => DecisionCardAgentRef | null;
   context: CardContext;
   reason: string;
 }): string {
@@ -1621,11 +1651,6 @@ function decisionSentence(input: {
   const agent = waiting?.name ?? "The agent";
   const shown = input.titleShowsTask;
   const label = shown ? "this task" : taskLabel ?? "this task";
-  const named = namedAskSentence(input.latestComment?.body, context.names);
-  if (named && (kind === "blocked" || input.escalation?.reason === "named_in_comment")) {
-    const author = input.commentAuthor ?? agent;
-    return `${author} is waiting on you. In ${author}'s words: ${named}`;
-  }
   if (input.setupCard) {
     return input.readyToRetry
       ? `${input.setupAgentName}'s setup works again: retry the stopped work.`
@@ -1660,16 +1685,26 @@ function decisionSentence(input: {
         ? `${review.reviewer.name} reviews ${agent}'s work on ${label}; step in only if it must move without them.`
         : `Review ${agent}'s work on ${label}: approve it or ask for changes.`;
     case "blocked": {
-      if (main?.dedupKey.startsWith("blocked-owner:")) return `${agent} needs you to unblock ${label}: ${main.whyNow}`;
+      if (main?.dedupKey.startsWith("blocked-owner:")) return `${agent} is waiting on you to unblock ${label}: ${main.whyNow}`;
+      // The real blocker by task and owner, for example "GRE-2338 (Keystone)".
+      const blockers = input.blockerChain.length === 0 ? null : listTasks(input.blockerChain.map((ref) => {
+        const owner = context.blockerOwner.get(ref.id);
+        const who = input.agentRef(owner?.agentId)?.name ?? (owner?.userId ? "a person" : "no owner");
+        return `${ref.identifier ?? ref.title} (${who})`;
+      }));
       const owner = task?.assigneeAgentId ? agent : "No agent";
       const lead = input.escalation?.lead?.name ?? context.lead?.name ?? "The lead agent";
       if (input.escalation?.reason === "stall_threshold") {
         const ask = `choose who takes it on, tell ${owner === "No agent" ? "an agent" : owner} what to do, or cancel it.`;
-        return shown
-          ? `Not moved for over a day and ${lead} could not get it going: ${ask}`
-          : `${label} has not moved for over a day and ${lead} could not get it going: ${ask}`;
+        const stuck = shown
+          ? `Not moved for over a day and ${lead} could not get it going`
+          : `${label} has not moved for over a day and ${lead} could not get it going`;
+        return blockers ? `${stuck}. It is blocked by ${blockers}: ${ask}` : `${stuck}: ${ask}`;
       }
-      return `${shown ? "No live next step" : `${label} has no live next step`}: choose who takes it on, give an instruction, or cancel it.`;
+      const ask = "choose who takes it on, give an instruction, or cancel it.";
+      if (blockers) return `${shown ? "Blocked" : `${label} is blocked`} by ${blockers}: ${ask}`;
+      if (owner === "No agent") return `${shown ? "No live next step" : `${label} has no live next step`}: ${ask}`;
+      return `${shown ? `${agent} has no live next step on this task` : `${label} (${agent}) has no live next step`}: ${ask}`;
     }
     case "recovery":
       return `${shown ? "Stopped" : `${label} stopped`}: retry it, give it to another agent, or cancel it.`;

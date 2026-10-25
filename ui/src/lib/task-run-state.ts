@@ -234,7 +234,7 @@ export function formatRunDuration(ms: number): string {
 }
 
 export interface TaskRunStateCopy {
-  /** Chip text: "Working", "Queued", "No output for 12 min". */
+  /** Chip text: "Working", "Queued", "Waiting for release", "No output for 12 min". */
   label: string;
   /** The why or the progress, without the blocking task's identifier. */
   detail: string | null;
@@ -275,6 +275,7 @@ export function describeTaskRunState(
   }
 
   const position = state.queueLength > 1 ? `${ordinal(state.position)} of ${state.queueLength} waiting` : null;
+  let label = "Queued";
   let why: string;
   let blockingIssueId: string | null = null;
   switch (state.reason.kind) {
@@ -282,7 +283,9 @@ export function describeTaskRunState(
       why = `${state.agentName} is paused`;
       break;
     case "release":
-      why = "Waiting for a release to finish";
+      // GRE-2274: the chip itself says it, so a held task never reads as stuck in a queue.
+      label = "Waiting for release";
+      why = "Starts when the release is done";
       break;
     case "instance_hold":
       why = `Waiting: ${state.reason.message}`;
@@ -299,7 +302,7 @@ export function describeTaskRunState(
       break;
   }
   const detail = [why, position].filter(Boolean).join(" · ");
-  return { label: "Queued", detail, blockingIssueId, summary: `Queued. ${detail}.` };
+  return { label, detail, blockingIssueId, summary: `${label}. ${detail}.` };
 }
 
 function ordinal(n: number): string {

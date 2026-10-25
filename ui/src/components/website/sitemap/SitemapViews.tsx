@@ -8,6 +8,7 @@ import {
   GripVertical,
   IndentDecrease,
   IndentIncrease,
+  PenLine,
   Pencil,
   Plus,
   Trash2,
@@ -122,7 +123,13 @@ export function NodeEditor({ node, onSave, onCancel }: { node: Node; onSave: (pa
 
 type DropPlace = "before" | "inside" | "after";
 
-export function SitemapTreeView({ tree, onChange, pagesById, readOnly }: SitemapViewProps) {
+export function SitemapTreeView({
+  tree,
+  onChange,
+  pagesById,
+  readOnly,
+  onEditPage,
+}: SitemapViewProps & { onEditPage?: (pageId: string) => void }) {
   const rows = useMemo(() => flatten(tree), [tree]);
   const [editing, setEditing] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -163,6 +170,7 @@ export function SitemapTreeView({ tree, onChange, pagesById, readOnly }: Sitemap
       <ul className="divide-y divide-border rounded-xl border border-border" aria-label="Sitemap pages">
         {rows.map(({ node, depth }) => {
           const status = nodeStatus(node, pagesById);
+          const page = (node.pageId ? pagesById.get(node.pageId) : undefined) ?? pagesById.get(`slug:${node.path}`);
           const marker = drop?.id === node.id ? drop.place : null;
           return (
             <li
@@ -219,6 +227,12 @@ export function SitemapTreeView({ tree, onChange, pagesById, readOnly }: Sitemap
                   </div>
                 </div>
               )}
+              {page && onEditPage && editing !== node.id ? (
+                <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`Edit page ${node.title}`}>
+                  <PenLine aria-hidden="true" />
+                  Edit page
+                </Button>
+              ) : null}
               {readOnly || editing === node.id ? null : (
                 <div className="flex w-full flex-wrap items-center gap-0.5 sm:w-auto">
                   <IconAction label={`Rename ${node.title}`} icon={Pencil} onClick={() => setEditing(node.id)} />

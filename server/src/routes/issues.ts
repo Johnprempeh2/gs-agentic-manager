@@ -92,6 +92,7 @@ import {
   createDocumentAnnotationThreadSchema,
   documentEvidenceBulletIdSchema,
   upsertDocumentEvidenceSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
   createChildIssueSchema,
   createIssueSchema,
   resolveCreateIssueStatusDefault,
@@ -418,9 +419,11 @@ import {
 } from "../services/issue-queued-comment-queue.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
+// `.extend` keeps the shared schema strict; `.merge` would let unknown keys through.
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
-}).merge(issueReviewOverrideFieldsSchema);
+  ...issueReviewOverrideFieldsSchema.shape,
+});
 const queuedCommentMutationTargetSchema = z.object({
   queueId: z.string().min(1),
   revision: z.string().min(1),
@@ -14878,9 +14881,9 @@ export function issueRoutes(
           !pendingApproval &&
           !descriptor
         ) {
-          res.status(422).json({
-            error:
-              "Entering blocked requires unresolved blockers, a pending interaction/approval, or unblockDescriptor",
+          res.status(400).json({
+            error: BLOCKED_WITHOUT_REASON_MESSAGE,
+            code: "issue_blocked_without_reason",
           });
           return;
         }

@@ -13,6 +13,7 @@ import {
   motionOptionFor,
   saveThroughGsam,
   setMotionMessage,
+  websiteEditorPath,
 } from "./website-editor";
 
 const request = { pageId: "page-1", baseRevisionId: "rev-1", data: { root: {} }, editorOrigin: "https://editor.example.com" };
@@ -229,5 +230,13 @@ describe("set-motion helpers (GRE-2219)", () => {
     expect(setMotionMessage({ requestId: "r", ok: false, code: "effect_not_allowed" }, "Hero", "Ascent", "subtle")).toMatch(/does not take Ascent/);
     expect(setMotionMessage({ requestId: "r", ok: false, code: "block_not_found" }, "Hero", "Ascent", "subtle")).toMatch(/no longer on this page/);
     expect(setMotionMessage(null, "Hero", "Ascent", "subtle")).toMatch(/did not answer/);
+  });
+});
+
+describe("websiteEditorPath (GRE-2296)", () => {
+  it("opens the full-screen editor on a website, page and motion hand-off", () => {
+    expect(websiteEditorPath()).toBe("/website/edit");
+    expect(websiteEditorPath({ propertyId: "prop-1", pageId: "page 1" })).toBe("/website/edit?property=prop-1&page=page+1");
+    expect(websiteEditorPath({ motion: "016" })).toBe("/website/edit?motion=016");
   });
 });

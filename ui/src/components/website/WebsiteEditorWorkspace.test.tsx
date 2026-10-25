@@ -21,6 +21,7 @@ const api = vi.hoisted(() => ({
   media: vi.fn(),
   requestChange: vi.fn(),
   createEntry: vi.fn(),
+  submitPage: vi.fn(),
   images: vi.fn(),
 }));
 vi.mock("../../api/images", () => ({ imagesApi: { list: api.images } }));
@@ -31,10 +32,17 @@ vi.mock("../../api/website", async () => {
 });
 vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { useSearchParams: actual.useSearchParams, Link: actual.Link };
+  return {
+    useSearchParams: actual.useSearchParams,
+    useLocation: actual.useLocation,
+    useNavigate: actual.useNavigate,
+    Navigate: actual.Navigate,
+    Link: actual.Link,
+  };
 });
 
-import { WebsiteEditorTab } from "./WebsiteEditorWorkspace";
+import { Route, Routes, useLocation } from "react-router-dom";
+import { WebsiteFullScreenEditor, WebsitePagesTab } from "./WebsiteEditorWorkspace";
 
 const EDITOR = "https://editor.example.com";
 const property = { id: "prop-1", companyId: "co-1", name: "Example", siteUrl: "https://example.com/" } as WebsiteProperty;
@@ -52,9 +60,11 @@ const page = {
   siteId: "site-1",
   title: "Home",
   slug: "/",
+  status: "draft",
   latestRevisionId: "rev-2",
   publishedRevisionId: null,
 } as WebsitePage;
+const about = { ...page, id: "page-2", title: "About", slug: "/about", latestRevisionId: "rev-5" } as WebsitePage;
 const data = { root: { props: {} }, content: [{ type: "Hero", props: { id: "h1", heading: "Hello", image: "media:asset-1" } }] };
 const load: WebsitePageEditorLoad = {
   page,
@@ -114,13 +124,17 @@ async function flush() {
   for (let i = 0; i < 6; i += 1) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
-async function render(entry = "/website?tab=editor") {
+let onLeave = vi.fn();
+
+/** The full-screen editor, as `/website/edit` renders it. */
+async function render(entry = "/website/edit") {
+  onLeave = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[entry]}>
-          <WebsiteEditorTab companyId="co-1" property={property} onOpenTab={vi.fn()} />
+          <WebsiteFullScreenEditor companyId="co-1" property={property} onLeave={onLeave} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -128,10 +142,18 @@ async function render(entry = "/website?tab=editor") {
   await flush();
 }
 
-const text = () => container.textContent ?? "";
-const button = (label: string) => [...container.querySelectorAll("button")].find((el) => el.textContent?.trim() === label)!;
-const textarea = () => container.querySelector<HTMLTextAreaElement>('[data-testid="website-change-request"] textarea')!;
-const panel = () => container.querySelector<HTMLElement>('[data-testid="website-change-request"]');
+// The editor covers the viewport from a portal on <body>, so look there.
+const screen = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor"]');
+const text = () => screen()?.textContent ?? "";
+const button = (label: string) => [...document.body.querySelectorAll("button")].find((el) => el.textContent?.trim() === label)!;
+const labelled = (label: string) => document.body.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+const textarea = () => document.body.querySelector<HTMLTextAreaElement>('[data-testid="website-change-request"] textarea')!;
+const panel = () => document.body.querySelector<HTMLElement>('[data-testid="website-change-request"]');
+const drawer = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-drawer"]');
+const key = async (init: KeyboardEventInit, target: EventTarget = document.body) => {
+  await act(async () => { target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init })); });
+  await flush();
+};
 
 async function type(value: string) {
   await act(async () => {
@@ -146,7 +168,7 @@ async function openPreview() {
   await flush();
 }
 
-const frame = () => container.querySelector<HTMLIFrameElement>('[data-testid="website-editor-frame"]');
+const frame = () => document.body.querySelector<HTMLIFrameElement>('[data-testid="website-editor-frame"]');
 
 /** Load the frame and complete the handshake as the site's editor would. */
 async function connect(ackExtra: Record<string, unknown> = {}) {
@@ -199,9 +221,9 @@ async function openEditorOnBlock(ackExtra: Record<string, unknown> = {}, entry?:
 
 /** Media, Add image, pick the GS Studio image, add alt text, Use. */
 async function useStudioImage(alt = "Boats in a harbour") {
-  await act(async () => button("Media").click());
+  await act(async () => labelled("Media").click());
   await flush();
-  await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="website-add-image"]')!.click());
+  await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-add-image"]')!.click());
   await flush();
   await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-picker-item"]')!.click());
   await flush();
@@ -214,9 +236,9 @@ async function useStudioImage(alt = "Boats in a harbour") {
   await flush();
 }
 
-const mediaPanel = () => container.querySelector<HTMLElement>('[data-testid="website-media"]')!;
+const mediaPanel = () => document.body.querySelector<HTMLElement>('[data-testid="website-media"]')!;
 
-describe("WebsiteEditorTab", () => {
+describe("WebsiteFullScreenEditor", () => {
   it("frames the site's editor with the contract's sandbox and sends the draft with images as Blobs after hello-ack", async () => {
     await render();
     const iframe = frame()!;
@@ -276,7 +298,7 @@ describe("WebsiteEditorTab", () => {
     await act(async () => button("Preview").click());
     await flush();
     expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/preview/page-1`);
-    for (const [label, width, viewport] of [["Tablet 768", 768, "tablet"], ["Phone 390", 390, "phone"], ["Laptop 1440", 1440, "laptop"]] as const) {
+    for (const [label, width, viewport] of [["Tablet", 768, "tablet"], ["Phone", 390, "phone"], ["Laptop", 1440, "laptop"]] as const) {
       await act(async () => button(label).click());
       await flush();
       expect(frame()!.dataset.viewport).toBe(viewport);
@@ -290,7 +312,7 @@ describe("WebsiteEditorTab", () => {
   it("history: restores an older version on top of the latest one and reloads the editor", async () => {
     api.restoreRevision.mockResolvedValue({ state: "saved", revisionId: "rev-3", revisionNumber: 3 });
     await render();
-    await act(async () => button("History").click());
+    await act(async () => labelled("History").click());
     await flush();
     expect(text()).toContain("Version 2");
     expect(text()).toContain("Current");
@@ -302,9 +324,9 @@ describe("WebsiteEditorTab", () => {
 
   it("media: lists the site's media entries", async () => {
     await render();
-    await act(async () => button("Media").click());
+    await act(async () => labelled("Media").click());
     await flush();
-    const image = container.querySelector<HTMLImageElement>('[data-testid="website-media"] img')!;
+    const image = document.body.querySelector<HTMLImageElement>('[data-testid="website-media"] img')!;
     expect(image.getAttribute("src")).toBe("/api/assets/asset-1/content");
     expect(image.alt).toBe("Team");
   });
@@ -325,7 +347,7 @@ describe("WebsiteEditorTab", () => {
     await type("Make the heading shorter.");
     await act(async () => button("Review").click());
     expect(panel()!.dataset.step).toBe("confirm");
-    expect(container.querySelector('[data-testid="website-change-summary"]')!.textContent).toBe("Make the heading shorter.");
+    expect(document.body.querySelector('[data-testid="website-change-summary"]')!.textContent).toBe("Make the heading shorter.");
     expect(api.requestChange).not.toHaveBeenCalled();
 
     await act(async () => button("Create task").click());
@@ -344,7 +366,7 @@ describe("WebsiteEditorTab", () => {
       request: "Make the heading shorter.",
     });
     expect(panel()!.dataset.step).toBe("created");
-    expect(container.querySelector<HTMLAnchorElement>('[data-testid="website-change-request"] a')!.getAttribute("href")).toBe("/issues/GRE-9001");
+    expect(document.body.querySelector<HTMLAnchorElement>('[data-testid="website-change-request"] a')!.getAttribute("href")).toBe("/issues/GRE-9001");
     expect(text()).toContain("is with the website agent");
   });
 
@@ -415,7 +437,7 @@ describe("WebsiteEditorTab", () => {
       expect(frame()).toBe(iframe);
       expect(editor.sent("load-draft")).toHaveLength(1);
       expect(mediaPanel().querySelector('[role="status"]')!.textContent).toBe("Put in Hero banner. Save the page to keep it.");
-      expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
+      expect(document.body.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
     });
 
     it("ok:false reply: says why in plain words and keeps the media entry", async () => {
@@ -455,9 +477,9 @@ describe("WebsiteEditorTab", () => {
 
     it("a selected block lets an existing Website media entry be used without making a new one", async () => {
       const editor = await openEditorOnBlock();
-      await act(async () => button("Media").click());
+      await act(async () => labelled("Media").click());
       await flush();
-      await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="website-add-image"]')!.click());
+      await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-add-image"]')!.click());
       await flush();
       await act(async () => [...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === "Website media")!.click());
       await flush();
@@ -493,18 +515,18 @@ describe("WebsiteEditorTab", () => {
         { id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" },
       ],
     };
-    const motionPanel = () => container.querySelector<HTMLElement>('[data-testid="website-motion"]')!;
-    const effect = (id: string) => container.querySelector<HTMLButtonElement>(`[data-testid="website-motion-effect-${id}"]`)!;
+    const motionPanel = () => document.body.querySelector<HTMLElement>('[data-testid="website-motion"]')!;
+    const effect = (id: string) => document.body.querySelector<HTMLButtonElement>(`[data-testid="website-motion-effect-${id}"]`)!;
 
     it("a GS Studio hand-off opens Motion with the study chosen, and Use in block sends set-motion", async () => {
-      const editor = await openEditorOnBlock(motionAck, "/website?tab=editor&motion=016");
+      const editor = await openEditorOnBlock(motionAck, "/website/edit?motion=016");
       expect(motionPanel().textContent).toContain("From GS Studio: study 016, Ascent.");
       expect(effect("bg.ascent").getAttribute("aria-checked")).toBe("true");
       expect(effect("bg.ascent").querySelector("img")!.getAttribute("src")).toBe(`${EDITOR}/motion/ascent-dark.webp`);
       expect(effect("none").getAttribute("aria-checked")).toBe("false");
 
       await act(async () => button("Full").click());
-      await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="website-motion-apply"]')!.click());
+      await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-motion-apply"]')!.click());
       await flush();
       const [request] = editor.sentMessages("set-motion");
       expect(request!.payload).toEqual({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "full" } });
@@ -513,13 +535,13 @@ describe("WebsiteEditorTab", () => {
       expect(motionPanel().querySelector('[role="status"]')!.textContent).toBe(
         "Ascent, Full, is in Hero banner. Save the page in the editor to keep it.",
       );
-      expect(container.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
+      expect(document.body.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
       expect(button("In the block").disabled).toBe(true);
     });
 
     it("a refusal says why in plain words", async () => {
       const editor = await openEditorOnBlock(motionAck);
-      await act(async () => button("Motion").click());
+      await act(async () => labelled("Motion").click());
       await act(async () => effect("hero.stone").click());
       await act(async () => button("Use in block").click());
       await flush();
@@ -532,14 +554,14 @@ describe("WebsiteEditorTab", () => {
 
     it("an engine with no motion choices, or no selected block, says what to do and sends nothing", async () => {
       const editor = await openEditorOnBlock();
-      await act(async () => button("Motion").click());
+      await act(async () => labelled("Motion").click());
       expect(motionPanel().textContent).toContain("does not offer motion choices yet");
       expect(motionPanel().querySelector('[role="radiogroup"]')).toBeNull();
       expect(editor.sentMessages("set-motion")).toHaveLength(0);
 
       act(() => root.unmount());
       root = createRoot(container);
-      await render("/website?tab=editor&motion=016");
+      await render("/website/edit?motion=016");
       expect(motionPanel().textContent).toContain("Pick a block first");
     });
   });
@@ -549,5 +571,204 @@ describe("WebsiteEditorTab", () => {
     await render();
     expect(text()).toContain("Set the editor address");
     expect(frame()).toBeNull();
+  });
+});
+
+describe("full-screen editor (GRE-2296)", () => {
+  const fullAck = { editorCommands: ["undo", "redo", "save", "add-block", "deselect", "outline"] };
+  const selected = { blockId: "h1", blockType: "Hero", label: "Hero banner" };
+
+  it("covers the viewport with one top bar and the frame, and no page list or Website tabs", async () => {
+    await render();
+    expect(screen()!.parentElement).toBe(document.body);
+    expect(screen()!.className).toContain("fixed inset-0");
+    expect(container.textContent).toBe("");
+    expect(document.body.querySelector('[data-testid="website-editor-topbar"]')).not.toBeNull();
+    expect(document.body.querySelector('nav[aria-label="Pages"]')).toBeNull();
+    expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/editor/page-1`);
+    // Laptop fills the canvas when editing; no drawer until something asks for one.
+    expect(frame()!.style.width).toBe("");
+    expect(drawer()).toBeNull();
+  });
+
+  it("the page picker searches the site's pages and opens another one", async () => {
+    // cmdk measures its list.
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    Element.prototype.scrollIntoView ??= () => {};
+    api.pages.mockResolvedValue([page, about]);
+    await render("/website/edit?page=page-1");
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-page-picker"]')!.click());
+    await flush();
+    const option = [...document.body.querySelectorAll<HTMLElement>('[cmdk-item]')].find((item) => item.textContent?.includes("About"))!;
+    expect(option.textContent).toContain("/about");
+    await act(async () => option.click());
+    await flush();
+    expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/editor/page-2`);
+  });
+
+  it("the top bar names the page without the home page's '/', and shows which panel is open", async () => {
+    await render();
+    await connect(fullAck);
+    expect(document.body.querySelector('[data-testid="website-page-picker"]')!.textContent).toBe("Home");
+    expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Draft");
+    await act(async () => labelled("Media").click());
+    expect(labelled("Media").getAttribute("aria-pressed")).toBe("true");
+    expect(labelled("History").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("Esc closes the drawer, then clears the selected block, then leaves", async () => {
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("editor-state", { selection: selected, canUndo: false, canRedo: false });
+    await act(async () => labelled("History").click());
+    expect(drawer()).not.toBeNull();
+
+    await key({ key: "Escape" });
+    expect(drawer()).toBeNull();
+    expect(onLeave).not.toHaveBeenCalled();
+
+    await key({ key: "Escape" });
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "deselect" });
+    expect(onLeave).not.toHaveBeenCalled();
+
+    await editor.reply("editor-state", { selection: null, canUndo: false, canRedo: false });
+    await key({ key: "Escape" });
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  it("Esc pressed inside the frame (editor-key) and the Back button leave", async () => {
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("editor-key", { key: "escape" });
+    expect(onLeave).toHaveBeenCalledTimes(1);
+    await act(async () => labelled("Back to Website").click());
+    await flush();
+    expect(onLeave).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaving with unsaved changes asks first", async () => {
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("dirty", { dirty: true });
+    await act(async () => labelled("Back to Website").click());
+    await flush();
+    expect(window.confirm).toHaveBeenCalled();
+    expect(onLeave).not.toHaveBeenCalled();
+  });
+
+  it("Cmd+S saves through the editor, and Cmd+Z / Cmd+Shift+Z undo and redo", async () => {
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("editor-state", { selection: null, canUndo: true, canRedo: true });
+    await key({ key: "s", metaKey: true });
+    await key({ key: "z", metaKey: true });
+    await key({ key: "z", metaKey: true, shiftKey: true });
+    expect(editor.sent("editor-command").map((message) => message.payload.command)).toEqual(["save", "undo", "redo"]);
+    expect(labelled("Undo").disabled).toBe(false);
+    await act(async () => labelled("Redo").click());
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "redo" });
+  });
+
+  it("an engine without editor commands: undo stays off and Cmd+S says to use the editor's Save", async () => {
+    await render();
+    const editor = await connect();
+    await key({ key: "s", ctrlKey: true });
+    expect(editor.sent("editor-command")).toHaveLength(0);
+    expect(text()).toContain("saves from its own Save button");
+    expect(labelled("Undo").disabled).toBe(true);
+  });
+
+  it("the save path: the frame's save goes through GSAM's API and the top bar says Saved", async () => {
+    api.savePageContent.mockResolvedValueOnce({ state: "saved", revisionId: "rev-3", revisionNumber: 3 });
+    await render();
+    const editor = await connect(fullAck);
+    await key({ key: "s", metaKey: true });
+    await editor.save("req-1");
+    expect(api.savePageContent).toHaveBeenCalledWith("co-1", "site-1", "page-1", { baseRevisionId: "rev-2", content: data, editorOrigin: EDITOR });
+    expect(editor.sent("save-result")[0]!.payload).toMatchObject({ outcome: "saved", revisionId: "rev-3" });
+    expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toMatch(/^Saved /);
+  });
+
+  it("clicking an image on the page opens Media for that block and field, and the pick goes into it", async () => {
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("media-requested", { blockId: "h1", field: "backgroundImage", kind: "image", label: "Hero banner" });
+    expect(drawer()!.getAttribute("aria-label")).toBe("Media");
+    expect(document.body.querySelector('[data-testid="media-picker-item"]')).not.toBeNull();
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-picker-item"]')!.click());
+    await flush();
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="media-alt"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Boats");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="media-use"]')!.click());
+    await flush();
+    expect(editor.sentMessages("insert-media")[0]!.payload).toMatchObject({ blockId: "h1", field: "backgroundImage", mediaEntryId: "asset-7" });
+  });
+
+  it("Request publish asks a person with Publish rights; it never publishes, and needs the page saved first", async () => {
+    api.submitPage.mockResolvedValue({ ...page, status: "review" });
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("dirty", { dirty: true });
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-request-publish"]')!.click());
+    await flush();
+    expect(api.submitPage).not.toHaveBeenCalled();
+    expect(text()).toContain("Save the page first");
+
+    await editor.reply("dirty", { dirty: false });
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-request-publish"]')!.click());
+    await flush();
+    expect(api.submitPage).toHaveBeenCalledWith("co-1", "site-1", "page-1");
+    expect(text()).toContain("Home is waiting for approval");
+  });
+
+  it("Add block and Outline drive the editor's own drawer and outline", async () => {
+    await render();
+    const editor = await connect(fullAck);
+    await act(async () => labelled("Add block").click());
+    await act(async () => labelled("Outline").click());
+    expect(editor.sent("editor-command").map((message) => message.payload)).toEqual([{ command: "add-block" }, { command: "outline", on: true }]);
+  });
+});
+
+describe("WebsitePagesTab (GRE-2296)", () => {
+  function Where() {
+    const location = useLocation();
+    return <p data-testid="where">{`${location.pathname}${location.search}`}</p>;
+  }
+  async function renderTab(entry = "/website?tab=editor") {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/website" element={<WebsitePagesTab companyId="co-1" property={property} onOpenTab={vi.fn()} />} />
+              <Route path="/website/edit" element={<Where />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+  }
+  const where = () => container.querySelector('[data-testid="where"]')?.textContent;
+
+  it("lists the pages, and Edit opens the full-screen editor on that page", async () => {
+    api.pages.mockResolvedValue([page, about]);
+    await renderTab();
+    expect(frame()).toBeNull();
+    expect(container.textContent).toContain("About");
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Edit About"]')!.click());
+    await flush();
+    expect(where()).toBe("/website/edit?property=prop-1&page=page-2");
+  });
+
+  it("the old in-page editor links open the full-screen editor", async () => {
+    await renderTab("/website?tab=editor&motion=016");
+    expect(where()).toBe("/website/edit?property=prop-1&motion=016");
   });
 });

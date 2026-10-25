@@ -324,3 +324,16 @@ export function setMotionMessage(result: WebsiteFrameSetMotionResult | null, blo
       return `The site's editor did not set the motion in ${blockName}, so nothing changed.`;
   }
 }
+
+/**
+ * The full-screen editor's address (GRE-2296): `/website/edit`, with the
+ * website, the page to open and a GS Studio motion hand-off when known.
+ */
+export function websiteEditorPath(input: { propertyId?: string | null; pageId?: string | null; motion?: string | null } = {}): string {
+  const params = new URLSearchParams();
+  if (input.propertyId) params.set("property", input.propertyId);
+  if (input.pageId) params.set("page", input.pageId);
+  if (input.motion) params.set("motion", input.motion);
+  const query = params.toString();
+  return query ? `/website/edit?${query}` : "/website/edit";
+}

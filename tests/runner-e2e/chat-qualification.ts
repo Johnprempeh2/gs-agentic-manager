@@ -218,7 +218,7 @@ export async function runAnswerQuality(context: Context) {
   const { input } = context;
   const { api, fixtures: f } = input;
   const base = `/api/companies/${f.company.id}`;
-  const blocked = await api.post<Row>(`${base}/issues`, { title: "Venue confirmation", status: "blocked", description: "Confirm where our Friday launch will be held." });
+  const blocked = await api.post<Row>(`${base}/issues`, { title: "Venue confirmation", status: "blocked", description: "Confirm where our Friday launch will be held.", unblockDescriptor: { owner: "board", action: "Confirm the venue" } });
   const deferred = await api.post<Row>(`${base}/issues`, { title: "Print invitations", status: "backlog", description: "Only start after the venue is confirmed." });
   const stale = `BUDGET${randomUUID().replaceAll("-", "")}`;
   const current = `VENUE${randomUUID().replaceAll("-", "")}`;

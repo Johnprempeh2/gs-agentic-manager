@@ -29,14 +29,24 @@ export const WEBSITE_FRAME_HANDSHAKE_TYPES: readonly WebsiteFrameHandshakeType[]
   "hello-refused",
 ];
 
-export type WebsiteFrameHostMessageType = "load-draft" | "save-result" | "highlight" | "teardown" | "insert-media" | "set-motion";
+export type WebsiteFrameHostMessageType =
+  | "load-draft"
+  | "save-result"
+  | "highlight"
+  | "teardown"
+  | "insert-media"
+  | "set-motion"
+  | "editor-command";
 export type WebsiteFrameFrameMessageType =
   | "dirty"
   | "save"
   | "block-picked"
   | "error"
   | "insert-media-result"
-  | "set-motion-result";
+  | "set-motion-result"
+  | "editor-state"
+  | "editor-key"
+  | "media-requested";
 
 // ---------------------------------------------------------------- nonce
 
@@ -235,6 +245,17 @@ export const websiteFrameHelloAckSchema = z.object({
   /** Added in protocol 1 (GRE-2232). An older engine leaves it out: no motion choices. */
   // A malformed motion list is dropped, never the handshake: the editor still opens.
   motionEffects: z.array(websiteMotionEffectSchema).max(100).optional().catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2296): the `editor-command`s the engine takes from
+   * GSAM's top bar. An older engine leaves it out: GSAM's undo, redo and save
+   * buttons stay off and the editor's own controls do the work.
+   */
+  editorCommands: z
+    .array(z.string().max(40))
+    .max(20)
+    .transform((commands) => commands.filter(isWebsiteEditorCommand))
+    .optional()
+    .catch(undefined),
 });
 export type WebsiteFrameHelloAck = z.infer<typeof websiteFrameHelloAckSchema>;
 
@@ -416,6 +437,65 @@ export const websiteFrameSetMotionResultSchema = z.discriminatedUnion("ok", [
 ]);
 export type WebsiteFrameSetMotionResult = z.infer<typeof websiteFrameSetMotionResultSchema>;
 
+// ---------------------------------------------------------------- full-screen editor (GRE-2296)
+
+/**
+ * `editor-command` commands, host to frame, from the full-screen editor's top
+ * bar and shortcuts. The frame does each one as if the person used its own
+ * control; nothing is saved except by `save`, which runs the frame's normal
+ * save (a `save` message back to GSAM). No reply: the frame's next
+ * `editor-state` shows the result.
+ * - `undo`, `redo`: the editor's own history.
+ * - `save`: save the draft now (Cmd+S in GSAM's top bar).
+ * - `add-block`: open the block library in the editor's drawer.
+ * - `deselect`: clear the selected block and close the editor's drawer.
+ * - `outline`: show (`on: true`) or hide the page outline.
+ */
+export const WEBSITE_EDITOR_COMMANDS = ["undo", "redo", "save", "add-block", "deselect", "outline"] as const;
+export type WebsiteEditorCommand = (typeof WEBSITE_EDITOR_COMMANDS)[number];
+
+export function isWebsiteEditorCommand(value: unknown): value is WebsiteEditorCommand {
+  return typeof value === "string" && (WEBSITE_EDITOR_COMMANDS as readonly string[]).includes(value);
+}
+
+export const websiteFrameEditorCommandSchema = z
+  .object({ command: z.enum(WEBSITE_EDITOR_COMMANDS), on: z.boolean().optional() })
+  .strict();
+export type WebsiteFrameEditorCommand = z.infer<typeof websiteFrameEditorCommandSchema>;
+
+/**
+ * `editor-state` payload, frame to host: sent after the draft loads and on
+ * every change to the selection, the editor's history or the outline. GSAM
+ * uses `selection` as the block that Media and Motion act on.
+ */
+export const websiteFrameEditorStateSchema = z.object({
+  selection: z.object({ blockId: blockIdSchema, blockType: blockTypeSchema, label: z.string().max(200) }).nullable(),
+  canUndo: z.boolean(),
+  canRedo: z.boolean(),
+  outline: z.boolean().optional(),
+});
+export type WebsiteFrameEditorState = z.infer<typeof websiteFrameEditorStateSchema>;
+
+/**
+ * `editor-key` payload, frame to host: a key GSAM acts on while focus is in the
+ * frame. Today only `escape` with nothing selected and no editor drawer open,
+ * which leaves the full-screen editor. The frame keeps Cmd+S and Cmd+Z itself.
+ */
+export const websiteFrameEditorKeySchema = z.object({ key: z.enum(["escape"]) });
+
+/**
+ * `media-requested` payload, frame to host: the person clicked an image (or an
+ * animation) in the page to replace it. GSAM opens its media picker for that
+ * block and field and answers with `insert-media` once something is picked.
+ */
+export const websiteFrameMediaRequestedSchema = z.object({
+  blockId: blockIdSchema,
+  field: blockFieldSchema,
+  kind: z.enum(["image", "animation"]),
+  label: z.string().max(200).optional(),
+});
+export type WebsiteFrameMediaRequested = z.infer<typeof websiteFrameMediaRequestedSchema>;
+
 const framePayloadSchemas = {
   dirty: websiteFrameDirtySchema,
   save: websiteFrameSaveSchema,
@@ -423,6 +503,9 @@ const framePayloadSchemas = {
   error: websiteFrameErrorSchema,
   "insert-media-result": websiteFrameInsertMediaResultSchema,
   "set-motion-result": websiteFrameSetMotionResultSchema,
+  "editor-state": websiteFrameEditorStateSchema,
+  "editor-key": websiteFrameEditorKeySchema,
+  "media-requested": websiteFrameMediaRequestedSchema,
 } as const;
 
 /**
@@ -448,7 +531,10 @@ export type WebsiteFrameIncoming =
   | { type: "block-picked"; id: string; payload: WebsiteFrameBlockPicked }
   | { type: "error"; id: string; payload: z.infer<typeof websiteFrameErrorSchema> }
   | { type: "insert-media-result"; id: string; payload: WebsiteFrameInsertMediaResult }
-  | { type: "set-motion-result"; id: string; payload: WebsiteFrameSetMotionResult };
+  | { type: "set-motion-result"; id: string; payload: WebsiteFrameSetMotionResult }
+  | { type: "editor-state"; id: string; payload: WebsiteFrameEditorState }
+  | { type: "editor-key"; id: string; payload: z.infer<typeof websiteFrameEditorKeySchema> }
+  | { type: "media-requested"; id: string; payload: WebsiteFrameMediaRequested };
 
 export interface WebsiteFrameReceiveContext<Source> {
   /** The site's `editorOrigin`. */

@@ -4525,7 +4525,7 @@ registry.registerPath({
     "When posting a comment, attachmentIds selects up to 20 unique uploaded attachments from this exact task and company. The comment, attachment binding, and issue update commit atomically. attachmentIds without a comment is rejected; Markdown links alone do not bind uploads. reviewOverride with a non-empty overrideReason lets the company owner, or a person granted reviews:override, approve (status done) or request changes (status in_progress) on a review that waits on someone else; the decision, an activity entry and a system comment record who decided and why. Agents and agent keys are refused with 403. keyTask true marks the task as a key task of its project (one of the 3 to 7 tasks that drive it; it becomes a branch of the project tree) and false clears it; send a comment with it to record why. Placing a task in the project tree is setting parentId to the key task or task it serves.",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(updateIssueSchema.partial().merge(issueReviewOverrideFieldsSchema)),
+    body: jsonBody(updateIssueSchema.partial().extend(issueReviewOverrideFieldsSchema.shape)),
   },
   responses: {
     200: r.ok(),
