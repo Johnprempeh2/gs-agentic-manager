@@ -52,7 +52,10 @@ export const DEEP_DIVE_BOARD_KINDS = {
 export type DeepDiveBoardKind = keyof typeof DEEP_DIVE_BOARD_KINDS;
 
 function asBoardError(error: unknown): unknown {
-  const cause = ((error as { cause?: unknown })?.cause ?? error) as { code?: string; message?: string };
+  const cause = ((error as { cause?: unknown })?.cause ?? error) as { code?: string; message?: string; constraint_name?: string };
+  if (cause?.constraint_name === "deep_dive_kpis_owner_person_id_deep_dive_people_id_fk") {
+    return conflict("This person owns a KPI. Give the KPI another owner first");
+  }
   if (cause?.code === "23505") return conflict("This handoff is already recorded");
   if (cause?.code === "23503") return unprocessable("That link points at something that is not on this board");
   if (cause?.code === "23514" && cause.message) return unprocessable(cause.message);

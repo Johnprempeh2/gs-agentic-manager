@@ -287,3 +287,10 @@ export {
   deepDiveProcesses,
   deepDiveHandoffs,
 } from "./deep_dive_boards.js";
+export {
+  deepDiveOpportunities,
+  deepDiveOpportunityFindings,
+  deepDiveBuilds,
+  deepDiveKpis,
+  deepDiveKpiProcesses,
+} from "./deep_dive_opportunities.js";
