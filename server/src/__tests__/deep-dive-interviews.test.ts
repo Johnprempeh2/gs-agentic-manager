@@ -150,8 +150,26 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
   }
 
   function setUp(actor: Express.Request["actor"], companyId: string, body: Record<string, unknown>) {
-    return request(app(actor)).post(`/api/companies/${companyId}/deep-dive/interview-round`).send(body);
+    return request(app(actor))
+      .post(`/api/companies/${companyId}/deep-dive/interview-round`)
+      .send({ websiteOrganisationId: "org_7Hq2kLm9", ...body });
   }
+
+  it("refuses a round without the website organisation id, and keeps the id it was given", async () => {
+    const company = await seedCompany("DIO");
+    for (const websiteOrganisationId of [undefined, "", "  ", "acme ltd", "a@b.com"]) {
+      await setUp(person, company.id, { mode: "per_team", websiteOrganisationId }).expect(400);
+    }
+    // Not past the API either.
+    expect(await refused(db.insert(deepDiveInterviewRounds).values({ companyId: company.id, mode: "per_team" } as never))).toMatchObject({ code: "23502" });
+    expect(await refused(db.insert(deepDiveInterviewRounds).values({ companyId: company.id, mode: "per_team", websiteOrganisationId: "" }))).toMatchObject({ code: "23514" });
+
+    const created = await setUp(person, company.id, { mode: "per_team", websiteOrganisationId: " org_7Hq2kLm9 " }).expect(201);
+    const round = (created.body as DeepDiveInterviewRoundView).round!;
+    expect(round.websiteOrganisationId).toBe("org_7Hq2kLm9");
+    await request(app(person)).patch(`/api/deep-dive/interview-rounds/${round.id}`).send({ websiteOrganisationId: "org_other" }).expect(400);
+    expect(await refused(db.update(deepDiveInterviewRounds).set({ websiteOrganisationId: "org_other" }).where(eq(deepDiveInterviewRounds.id, round.id)))).toMatchObject({ code: "23514" });
+  });
 
   it("sets up a round, drafts a set from what is known, and lets only a person approve it", async () => {
     const company = await seedCompany("DIR");

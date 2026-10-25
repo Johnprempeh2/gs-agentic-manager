@@ -8,6 +8,7 @@ import {
   DEEP_DIVE_INTERVIEW_LABELS,
   DEEP_DIVE_STREAMS,
   deepDiveInterviewReadiness,
+  websiteOrganisationIdSchema,
   type DeepDiveInterviewContextPack,
   type DeepDiveInterviewMode,
   type DeepDiveInterviewQuestion,
@@ -95,16 +96,26 @@ function ContextFields({
 // ---------------------------------------------------------------------------
 
 function SetUpRound({ companyId }: { companyId: string }) {
+  const [organisationId, setOrganisationId] = useState("");
   const [mode, setMode] = useState<DeepDiveInterviewMode>("per_team");
   const [minutes, setMinutes] = useState(String(DEEP_DIVE_INTERVIEW_DEFAULT_MINUTES));
   const [context, setContext] = useState<DeepDiveInterviewContextPack>({});
   const [formError, setFormError] = useState<string | null>(null);
   const create = useRoundWrite(companyId, () =>
-    deepDiveInterviewsApi.create(companyId, { mode, targetMinutes: Number(minutes), contextPack: context }),
+    deepDiveInterviewsApi.create(companyId, {
+      websiteOrganisationId: organisationId.trim(),
+      mode,
+      targetMinutes: Number(minutes),
+      contextPack: context,
+    }),
   );
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!websiteOrganisationIdSchema.safeParse(organisationId).success) {
+      setFormError("Enter the client's website organisation id. The round and every invite are keyed by it.");
+      return;
+    }
     const value = Number(minutes);
     if (!Number.isInteger(value) || value < 5 || value > 90) {
       setFormError("Give a target length of 5 to 90 minutes.");
@@ -119,6 +130,17 @@ function SetUpRound({ companyId }: { companyId: string }) {
     <Card className="gap-3 px-4 py-3">
       <form onSubmit={submit} noValidate className="space-y-4" aria-labelledby="interview-set-up">
         <h2 id="interview-set-up" className="text-sm font-semibold">Set up the round</h2>
+        <label className="block max-w-sm space-y-1 text-xs text-muted-foreground">
+          <span>Website organisation id</span>
+          <Input
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={formError ? true : undefined}
+            value={organisationId}
+            onChange={(event) => setOrganisationId(event.target.value)}
+          />
+          <span className="block">The client's one id on the website. It cannot change once the round is set up.</span>
+        </label>
         <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Who each question set is for">
           {MODE_OPTIONS.map((option) => (
             <RadioCard
@@ -186,6 +208,9 @@ function RoundSetup({ round, companyId }: { round: DeepDiveInterviewRound; compa
         </h2>
         <StatusBadge status={ROUND_TONE[round.status]} label={DEEP_DIVE_INTERVIEW_LABELS[round.status]} />
       </div>
+      <p className="text-xs text-muted-foreground">
+        Website organisation <span className="font-mono text-foreground">{round.websiteOrganisationId}</span>
+      </p>
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {readiness.total === 0
           ? `No question sets yet. Draft one for each ${round.mode === "per_team" ? "team" : "person"} below.`

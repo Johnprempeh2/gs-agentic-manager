@@ -209,6 +209,7 @@ export function deepDiveInterviewsService(db: Db) {
     const out: DeepDiveInterviewRound = {
       id: round.id,
       companyId: round.companyId,
+      websiteOrganisationId: round.websiteOrganisationId,
       mode: round.mode,
       targetMinutes: round.targetMinutes,
       contextPack: readDeepDiveInterviewContextPack(round.contextPack),
@@ -226,6 +227,7 @@ export function deepDiveInterviewsService(db: Db) {
   async function create(companyId: string, input: CreateDeepDiveInterviewRound, actor: DeepDiveInterviewActor) {
     await write(db.insert(deepDiveInterviewRounds).values({
       companyId,
+      websiteOrganisationId: input.websiteOrganisationId,
       mode: input.mode,
       targetMinutes: input.targetMinutes ?? DEEP_DIVE_INTERVIEW_DEFAULT_MINUTES,
       contextPack: input.contextPack ?? {},

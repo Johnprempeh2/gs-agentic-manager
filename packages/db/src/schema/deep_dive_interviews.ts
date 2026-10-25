@@ -17,6 +17,9 @@ export const deepDiveInterviewRounds = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // The client's one id (John, 25 Oct): the website organisation id. Every
+    // bridge call for the round is keyed by it; it never changes.
+    websiteOrganisationId: text("website_organisation_id").notNull(),
     mode: text("mode").$type<"per_team" | "per_person">().notNull(),
     targetMinutes: integer("target_minutes").notNull().default(20),
     // Everest's context pack keys (company_background, org_summary, ...), all strings.
@@ -31,6 +34,11 @@ export const deepDiveInterviewRounds = pgTable(
   (table) => ({
     // One round per engagement.
     companyUq: uniqueIndex("deep_dive_interview_rounds_company_uq").on(table.companyId),
+    websiteOrganisationIdx: index("deep_dive_interview_rounds_website_organisation_idx").on(table.websiteOrganisationId),
+    websiteOrganisationCheck: check(
+      "deep_dive_interview_rounds_website_organisation_check",
+      sql`${table.websiteOrganisationId} ~ '^[A-Za-z0-9_-]{1,128}$'`,
+    ),
     modeCheck: check("deep_dive_interview_rounds_mode_check", sql`${table.mode} in ('per_team', 'per_person')`),
     statusCheck: check("deep_dive_interview_rounds_status_check", sql`${table.status} in ('setup', 'open', 'closed')`),
     minutesCheck: check(

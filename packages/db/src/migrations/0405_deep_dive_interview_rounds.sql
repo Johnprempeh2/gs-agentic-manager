@@ -10,6 +10,7 @@
 CREATE TABLE "deep_dive_interview_rounds" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" uuid NOT NULL,
+	"website_organisation_id" text NOT NULL,
 	"mode" text NOT NULL,
 	"target_minutes" integer DEFAULT 20 NOT NULL,
 	"context_pack" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -18,6 +19,7 @@ CREATE TABLE "deep_dive_interview_rounds" (
 	"created_by_user_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "deep_dive_interview_rounds_website_organisation_check" CHECK ("deep_dive_interview_rounds"."website_organisation_id" ~ '^[A-Za-z0-9_-]{1,128}$'),
 	CONSTRAINT "deep_dive_interview_rounds_mode_check" CHECK ("deep_dive_interview_rounds"."mode" in ('per_team', 'per_person')),
 	CONSTRAINT "deep_dive_interview_rounds_status_check" CHECK ("deep_dive_interview_rounds"."status" in ('setup', 'open', 'closed')),
 	CONSTRAINT "deep_dive_interview_rounds_minutes_check" CHECK ("deep_dive_interview_rounds"."target_minutes" >= 5 and "deep_dive_interview_rounds"."target_minutes" <= 90),
@@ -56,10 +58,12 @@ ALTER TABLE "deep_dive_interview_sets" ADD CONSTRAINT "deep_dive_interview_sets_
 ALTER TABLE "deep_dive_interview_sets" ADD CONSTRAINT "deep_dive_interview_sets_person_id_deep_dive_people_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."deep_dive_people"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "deep_dive_interview_sets" ADD CONSTRAINT "deep_dive_interview_sets_drafted_by_agent_id_agents_id_fk" FOREIGN KEY ("drafted_by_agent_id") REFERENCES "public"."agents"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "deep_dive_interview_rounds_company_uq" ON "deep_dive_interview_rounds" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "deep_dive_interview_rounds_website_organisation_idx" ON "deep_dive_interview_rounds" USING btree ("website_organisation_id");--> statement-breakpoint
 CREATE INDEX "deep_dive_interview_sets_round_idx" ON "deep_dive_interview_sets" USING btree ("round_id");--> statement-breakpoint
 CREATE INDEX "deep_dive_interview_sets_company_idx" ON "deep_dive_interview_sets" USING btree ("company_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "deep_dive_interview_sets_round_unit_uq" ON "deep_dive_interview_sets" USING btree ("round_id","unit_id") WHERE "deep_dive_interview_sets"."unit_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "deep_dive_interview_sets_round_person_uq" ON "deep_dive_interview_sets" USING btree ("round_id","person_id") WHERE "deep_dive_interview_sets"."person_id" is not null;--> statement-breakpoint
+-- A round is keyed by the website organisation id (John, 25 Oct: one client id) and keeps it.
 -- A round goes Setup -> Open -> Closed and never back. It starts in Setup. Its mode, length and
 -- context pack change only in Setup, and its mode only while it has no question sets. A removed
 -- agent's id may fall to null.
@@ -71,10 +75,10 @@ BEGIN
     END IF;
     RETURN new;
   END IF;
-  IF (new.id, new.company_id, new.created_by_user_id, new.created_at)
-     IS DISTINCT FROM (old.id, old.company_id, old.created_by_user_id, old.created_at)
+  IF (new.id, new.company_id, new.website_organisation_id, new.created_by_user_id, new.created_at)
+     IS DISTINCT FROM (old.id, old.company_id, old.website_organisation_id, old.created_by_user_id, old.created_at)
      OR (new.created_by_agent_id IS DISTINCT FROM old.created_by_agent_id AND new.created_by_agent_id IS NOT NULL) THEN
-    RAISE EXCEPTION 'An interview round keeps its company and who set it up' USING errcode = '23514';
+    RAISE EXCEPTION 'An interview round keeps its company, its website organisation and who set it up' USING errcode = '23514';
   END IF;
   IF new.status IS DISTINCT FROM old.status
      AND NOT ((old.status = 'setup' AND new.status = 'open') OR (old.status = 'open' AND new.status = 'closed')) THEN

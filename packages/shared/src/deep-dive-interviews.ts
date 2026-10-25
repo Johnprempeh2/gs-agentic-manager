@@ -81,8 +81,18 @@ export const deepDiveInterviewContextPackSchema = z.object(contextPackShape).str
 
 const minutesSchema = z.number().int().min(5).max(90);
 
+/**
+ * The client's one id (John, 25 Oct): the website organisation id. A round,
+ * and every bridge call for it, is keyed by this id, never by a name or email.
+ */
+export const websiteOrganisationIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_-]{1,128}$/, "Enter the website organisation id: letters, numbers, - and _ only");
+
 export const createDeepDiveInterviewRoundSchema = z
   .object({
+    websiteOrganisationId: websiteOrganisationIdSchema,
     mode: z.enum(DEEP_DIVE_INTERVIEW_MODES),
     targetMinutes: minutesSchema.optional(),
     contextPack: deepDiveInterviewContextPackSchema.optional(),
@@ -90,7 +100,10 @@ export const createDeepDiveInterviewRoundSchema = z
   .strict();
 export type CreateDeepDiveInterviewRound = z.infer<typeof createDeepDiveInterviewRoundSchema>;
 
-/** Setup changes only while the round is setting up; the mode only while it has no question sets. */
+/**
+ * Setup changes only while the round is setting up; the mode only while it has
+ * no question sets. The website organisation id never changes.
+ */
 export const updateDeepDiveInterviewRoundSchema = z
   .object({
     mode: z.enum(DEEP_DIVE_INTERVIEW_MODES).optional(),
@@ -170,6 +183,8 @@ export interface DeepDiveInterviewSet {
 export interface DeepDiveInterviewRound {
   id: string;
   companyId: string;
+  /** The website organisation id: the client's one id across GSAM and the website. */
+  websiteOrganisationId: string;
   mode: DeepDiveInterviewMode;
   targetMinutes: number;
   contextPack: DeepDiveInterviewContextPack;

@@ -96,6 +96,7 @@ function installFakeServer() {
       round: {
         id: "round-1",
         companyId: COMPANY_ID,
+        websiteOrganisationId: input.websiteOrganisationId,
         mode: input.mode,
         targetMinutes: input.targetMinutes ?? 20,
         contextPack: input.contextPack ?? {},
@@ -151,6 +152,16 @@ function setValue(element: HTMLTextAreaElement | HTMLInputElement, value: string
   element.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function organisationInput(container: HTMLElement) {
+  const label = [...container.querySelectorAll("label")].find((l) => l.textContent?.startsWith("Website organisation id"))!;
+  return label.querySelector("input")!;
+}
+
+function setUpWithOrganisation(container: HTMLElement) {
+  flushSync(() => setValue(organisationInput(container), "org_7Hq2kLm9"));
+  flushSync(() => button(container, "Set up the round").click());
+}
+
 function button(container: HTMLElement, label: string) {
   // Exact label first; a radio card's text also holds its description.
   const buttons = [...container.querySelectorAll("button")];
@@ -186,9 +197,17 @@ describe("Parallel Interview page (GRE-2611)", () => {
     });
   }
 
-  it("sets up a round per person with a context pack, refusing a bad length first", async () => {
+  it("sets up a round per person with a context pack, refusing a missing organisation id and a bad length first", async () => {
     render();
     await waitFor(() => expect(container.textContent).toContain("Set up the round"));
+
+    flushSync(() => button(container, "Set up the round").click());
+    await waitFor(() =>
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+        "Enter the client's website organisation id. The round and every invite are keyed by it.",
+      ),
+    );
+    flushSync(() => setValue(organisationInput(container), "org_7Hq2kLm9"));
 
     flushSync(() => button(container, "Per person").click());
     flushSync(() => setValue(container.querySelector<HTMLInputElement>('input[type="number"]')!, "200"));
@@ -202,17 +221,19 @@ describe("Parallel Interview page (GRE-2611)", () => {
     flushSync(() => button(container, "Set up the round").click());
     await waitFor(() => expect(container.textContent).toContain("Per person, about 25 minutes"));
     expect(mockApi.create).toHaveBeenCalledWith(COMPANY_ID, {
+      websiteOrganisationId: "org_7Hq2kLm9",
       mode: "per_person",
       targetMinutes: 25,
       contextPack: { company_background: "A regional haulier with four depots." },
     });
     expect(container.textContent).toContain("A regional haulier with four depots.");
+    expect(container.textContent).toContain("Website organisation org_7Hq2kLm9");
   });
 
   it("drafts a set, shows what is known and not asked, approves it, and asks again after an edit", async () => {
     render();
     await waitFor(() => expect(container.textContent).toContain("Set up the round"));
-    flushSync(() => button(container, "Set up the round").click());
+    setUpWithOrganisation(container);
     await waitFor(() => expect(container.textContent).toContain("No question sets yet."));
 
     flushSync(() => button(container, "Draft questions").click());
@@ -241,7 +262,7 @@ describe("Parallel Interview page (GRE-2611)", () => {
   it("shows the server's refusal instead of failing silently", async () => {
     render();
     await waitFor(() => expect(container.textContent).toContain("Set up the round"));
-    flushSync(() => button(container, "Set up the round").click());
+    setUpWithOrganisation(container);
     await waitFor(() => expect(container.textContent).toContain("No question sets yet."));
     mockApi.draftSet.mockRejectedValueOnce(new Error("Every cell of the Deep Dive is Known, so there is nothing to ask."));
     flushSync(() => button(container, "Draft questions").click());

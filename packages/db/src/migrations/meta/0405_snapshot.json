@@ -23084,6 +23084,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "website_organisation_id": {
+          "name": "website_organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "mode": {
           "name": "mode",
           "type": "text",
@@ -23153,6 +23159,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "deep_dive_interview_rounds_website_organisation_idx": {
+          "name": "deep_dive_interview_rounds_website_organisation_idx",
+          "columns": [
+            {
+              "expression": "website_organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -23187,6 +23208,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "deep_dive_interview_rounds_website_organisation_check": {
+          "name": "deep_dive_interview_rounds_website_organisation_check",
+          "value": "\"deep_dive_interview_rounds\".\"website_organisation_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
+        },
         "deep_dive_interview_rounds_mode_check": {
           "name": "deep_dive_interview_rounds_mode_check",
           "value": "\"deep_dive_interview_rounds\".\"mode\" in ('per_team', 'per_person')"
