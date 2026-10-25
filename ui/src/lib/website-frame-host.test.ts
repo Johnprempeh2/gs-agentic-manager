@@ -54,6 +54,8 @@ function setup(overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> =
         engine: { version: "1.0.0", commit: "b".repeat(40) },
         supportedReleaseSchemas: [1],
         blocks: [{ type: "Hero", label: "Hero" }],
+        // A current editor host (GRE-2357); tests of an older one leave it out.
+        editorContract: 1,
         ...payload,
       },
     });
@@ -105,7 +107,7 @@ describe("handshake", () => {
   });
 
   it("shows no-answer after 10 s (test 3)", () => {
-    const t = setup();
+    const t = setup({ mode: "preview" });
     t.session.start();
     vi.advanceTimersByTime(10_000);
     expect(t.session.state).toEqual({ phase: "no-answer" });
@@ -468,11 +470,45 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(t.sentOf("editor-command").map((entry) => entry.message.payload)).toEqual([{ command: "undo" }]);
   });
 
-  it("an older engine gets no editor commands", async () => {
+  it("an engine that lists no editor commands gets none", async () => {
     const t = await ready();
     expect(t.session.editorCommands.size).toBe(0);
     expect(t.session.command("save")).toBe(false);
     expect(t.sentOf("editor-command")).toHaveLength(0);
+  });
+
+  it("refuses an editor host below the editor contract and sends no draft (GRE-2357)", async () => {
+    const old = await ready({}, { editorContract: undefined });
+    expect(old.session.state).toEqual({ phase: "out-of-date", contract: null });
+    expect(old.loadDraft).not.toHaveBeenCalled();
+    expect(old.sentOf("load-draft")).toHaveLength(0);
+    // Its later messages are dropped: no protocol was agreed.
+    const onEditorState = vi.fn();
+    const below = await ready({ onEditorState }, { editorContract: 0 });
+    // Not a valid contract number, so it counts as none.
+    expect(below.session.state).toEqual({ phase: "out-of-date", contract: null });
+    below.msg("editor-state", { selection: null, canUndo: true, canRedo: false });
+    expect(onEditorState).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(below.sentOf("hello")).toHaveLength(1);
+  });
+
+  it("a silent editor host is out of date after 10 s; preview keeps no-answer (GRE-2357)", () => {
+    const t = setup();
+    t.session.start();
+    vi.advanceTimersByTime(10_000);
+    expect(t.session.state).toEqual({ phase: "out-of-date", contract: null });
+  });
+
+  it("opens for website PR #98's engine, which lists editor commands but no contract (GRE-2357)", async () => {
+    const t = await ready({}, { editorContract: undefined, editorCommands: ["undo"] });
+    expect(t.session.state.phase).toBe("ready");
+    expect(t.sentOf("load-draft")).toHaveLength(1);
+  });
+
+  it("preview opens an engine with no editor contract", async () => {
+    const t = await ready({ mode: "preview" }, { editorContract: undefined });
+    expect(t.session.state.phase).toBe("ready");
   });
 
   it("preview never sends editor commands or takes editor messages", async () => {

@@ -188,7 +188,7 @@ async function connect(ackExtra: Record<string, unknown> = {}) {
   };
   await fromFrame({
     type: "hello-ack",
-    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], ...ackExtra },
+    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], editorContract: 1, ...ackExtra },
   });
   const sent = (type: string) => posted.mock.calls.map((call) => call[0] as { type: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
   const save = (requestId: string) => fromFrame({ protocol: 1, session: nonce, type: "save", payload: { requestId, pageId: "page-1", baseRevisionId: "rev-2", data } });
@@ -670,7 +670,7 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "redo" });
   });
 
-  it("an engine without editor commands: undo stays off and Cmd+S says to use the editor's Save", async () => {
+  it("an engine that lists no editor commands: undo stays off and Cmd+S says to use the editor's Save", async () => {
     await render();
     const editor = await connect();
     await key({ key: "s", ctrlKey: true });
@@ -723,6 +723,56 @@ describe("full-screen editor (GRE-2296)", () => {
     await flush();
     expect(api.submitPage).toHaveBeenCalledWith("co-1", "site-1", "page-1");
     expect(text()).toContain("Home is waiting for approval");
+  });
+
+  describe("editor host version check (GRE-2357)", () => {
+    const canvas = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-canvas"]');
+    const outOfDate = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-out-of-date"]');
+
+    it("an old engine (no editor contract) gets 'Editor host is out of date', not the frame", async () => {
+      await render();
+      const editor = await connect({ editorContract: undefined });
+      expect(outOfDate()!.textContent).toContain("Editor host is out of date");
+      expect(outOfDate()!.textContent).toContain(`Redeploy the editor host (${EDITOR})`);
+      expect(frame()).toBeNull();
+      expect(editor.sent("load-draft")).toHaveLength(0);
+      expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");
+    });
+
+    it("a silent engine gets 'Editor host is out of date' after the hello timeout, and Retry loads the frame again", async () => {
+      await render();
+      const iframe = frame()!;
+      vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
+      vi.useFakeTimers();
+      await act(async () => { iframe.dispatchEvent(new Event("load")); });
+      expect(canvas()!.dataset.hidden).toBe("true");
+      await act(async () => { vi.advanceTimersByTime(10_000); });
+      vi.useRealTimers();
+      await flush();
+      expect(outOfDate()!.textContent).toContain("Editor host is out of date");
+      expect(frame()).toBeNull();
+      await act(async () => button("Retry").click());
+      await flush();
+      expect(outOfDate()).toBeNull();
+      expect(frame()).not.toBeNull();
+    });
+
+    it("a current engine shows the canvas, hidden only until the handshake passes", async () => {
+      await render();
+      expect(canvas()!.dataset.hidden).toBe("true");
+      const editor = await connect(fullAck);
+      expect(outOfDate()).toBeNull();
+      expect(canvas()!.dataset.hidden).toBeUndefined();
+      expect(canvas()!.className).not.toContain("invisible");
+      expect(editor.sent("load-draft")).toHaveLength(1);
+    });
+
+    it("website PR #98's engine (editor commands, no contract number) opens", async () => {
+      await render();
+      const editor = await connect({ editorContract: undefined, ...fullAck });
+      expect(outOfDate()).toBeNull();
+      expect(editor.sent("load-draft")).toHaveLength(1);
+    });
   });
 
   it("Add block and Outline drive the editor's own drawer and outline", async () => {
