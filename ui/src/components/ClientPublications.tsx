@@ -17,6 +17,7 @@ import { useToastActions } from "../context/ToastContext";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDate } from "../lib/utils";
+import { SharedWithClientBadge } from "./SharedWithClientBadge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { NativeSelect } from "./ui/native-select";
@@ -162,6 +163,7 @@ function PublicationRow({
         <span className={cn("rounded-sm border px-1.5 py-0.5 text-xs", STATUS_TONE[publication.status])}>
           {CLIENT_PUBLICATION_STATUS_LABELS[publication.status]}
         </span>
+        {publication.status === "published" || publication.status === "accepted" ? <SharedWithClientBadge /> : null}
       </div>
 
       {stale ? (
