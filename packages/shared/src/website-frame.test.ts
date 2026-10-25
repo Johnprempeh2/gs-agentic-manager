@@ -3,8 +3,11 @@ import {
   checkWebsiteEditorOrigin,
   createWebsiteFrameNonce,
   inspectWebsitePuckData,
+  isWebsiteEditorContractCurrent,
   isWebsiteFrameAssetUrl,
   isWebsiteFrameNonce,
+  WEBSITE_EDITOR_CONTRACT,
+  websiteEditorContractOf,
   parseWebsiteEditorOrigin,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
@@ -330,6 +333,23 @@ describe("full-screen editor messages (GRE-2296)", () => {
     expect(helloAck({}).editorCommands).toBeUndefined();
     // A malformed list is dropped, never the handshake.
     expect(helloAck({ editorCommands: "undo" }).editorCommands).toBeUndefined();
+  });
+
+  it("editor contract (GRE-2357): only a current engine lets the editor open", () => {
+    expect(WEBSITE_EDITOR_CONTRACT).toBe(1);
+    // Missing: an engine from before the full-screen editor sends neither marker.
+    expect(websiteEditorContractOf(helloAck({}))).toBeNull();
+    expect(isWebsiteEditorContractCurrent(helloAck({}))).toBe(false);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorCommands: "undo" }))).toBe(false);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: "1" }))).toBe(false);
+    // Below required.
+    expect(isWebsiteEditorContractCurrent({ editorContract: 0 })).toBe(false);
+    expect(isWebsiteEditorContractCurrent({ editorContract: WEBSITE_EDITOR_CONTRACT - 1 })).toBe(false);
+    // Current: website PR #98 lists editorCommands; a later engine says its contract.
+    expect(websiteEditorContractOf(helloAck({ editorCommands: [] }))).toBe(1);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorCommands: ["undo"] }))).toBe(true);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: 1 }))).toBe(true);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: 2 }))).toBe(true);
   });
 
   it("editor-command carries one known command and nothing else", () => {
