@@ -7,7 +7,12 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
 import { websiteSite } from "@greatstone/db";
-import type { WebsiteDataBridgeKey, WebsiteDataBridgeStatus, WebsiteDataResource } from "@greatstone/shared";
+import type {
+  WebsiteDataBridgeCapability,
+  WebsiteDataBridgeKey,
+  WebsiteDataBridgeStatus,
+  WebsiteDataResource,
+} from "@greatstone/shared";
 import { secretService } from "../secrets.js";
 import type { WebsiteEnquiry, WebsiteEnquiryReader } from "./enquiries.js";
 import {
@@ -18,8 +23,9 @@ import {
   type WebsiteBridgeClient,
 } from "./data-bridge-client.js";
 
-type BridgeSite = Pick<typeof websiteSite.$inferSelect,
-  "id" | "companyId" | "domain" | "dataBridgeUrl" | "dataBridgeReadKeyId" | "dataBridgeReadSecretId">;
+export type BridgeSite = Pick<typeof websiteSite.$inferSelect,
+  "id" | "companyId" | "domain" | "dataBridgeUrl" | "dataBridgeReadKeyId" | "dataBridgeReadSecretId"
+  | "dataBridgeWriteKeyId" | "dataBridgeWriteSecretId">;
 
 const STATUS_TTL_MS = 60_000;
 /** The scheduled enquiry pull: GSAM itself, with no person or agent behind it. */
@@ -57,54 +63,64 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     createWebsiteBridgeClient({ baseUrl: bridgeUrlOf(site), credential: parseBridgeCredential(value) }));
   const statusCache = new Map<string, { at: number; keyId: string | null; value: WebsiteDataBridgeStatus }>();
 
-  async function client(site: BridgeSite) {
-    if (!site.dataBridgeReadSecretId) throw new WebsiteBridgeError("not_configured");
+  async function client(site: BridgeSite, capability: WebsiteDataBridgeCapability = "read") {
+    const secretId = capability === "write" ? site.dataBridgeWriteSecretId : site.dataBridgeReadSecretId;
+    if (!secretId) throw new WebsiteBridgeError("not_configured", null, capability === "write" ? "no write key yet" : undefined);
     // Read for this site only, as a system consumer, so each use is an access event like the publish token's (ADR 4.4).
-    const value = await secrets.resolveSecretValue(site.companyId, site.dataBridgeReadSecretId, "latest", {
+    const value = await secrets.resolveSecretValue(site.companyId, secretId, "latest", {
       accessContext: {
         consumerType: "system",
         consumerId: `website-data-bridge:${site.id}`,
-        configPath: "dataBridge.readKey",
+        configPath: capability === "write" ? "dataBridge.writeKey" : "dataBridge.readKey",
         actorType: "system",
       },
     }).catch((error: unknown) => {
-      throw new WebsiteBridgeError("not_configured", null, error instanceof Error ? error.message : "the read key is unavailable");
+      throw new WebsiteBridgeError("not_configured", null, error instanceof Error ? error.message : `the ${capability} key is unavailable`);
     });
     return clientFor(site, value);
   }
 
-  /** Makes a new read key pair for the site. Returns the public half only; the private half goes to the vault. */
-  async function createReadKey(site: BridgeSite, input: { environment: "stg" | "live"; url?: string | null }, userId: string | null): Promise<WebsiteDataBridgeKey> {
+  /**
+   * Makes a new key pair for the site: `read` for GSAM's reads, `write` for the Deep Dive sync (GRE-2439).
+   * Returns the public half only; the private half goes to the vault.
+   */
+  async function createKey(site: BridgeSite, input: { environment: "stg" | "live"; capability?: WebsiteDataBridgeCapability; url?: string | null },
+    userId: string | null): Promise<WebsiteDataBridgeKey> {
+    const capability = input.capability ?? "read";
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
     const month = new Date(now()).toISOString().slice(0, 7);
-    const kid = `${input.environment}-read-${month}-${randomBytes(3).toString("hex")}`;
+    const kid = `${input.environment}-${capability}-${month}-${randomBytes(3).toString("hex")}`;
     const value = JSON.stringify({ kid, privateKey: privateKey.export({ format: "pem", type: "pkcs8" }).toString() });
-    const existing = site.dataBridgeReadSecretId ? await secrets.getById(site.dataBridgeReadSecretId) : null;
+    const currentSecretId = capability === "write" ? site.dataBridgeWriteSecretId : site.dataBridgeReadSecretId;
+    const existing = currentSecretId ? await secrets.getById(currentSecretId) : null;
     let secretId: string;
     if (existing && existing.status === "active" && existing.companyId === site.companyId) {
       await secrets.rotate(existing.id, { value }, { userId });
       secretId = existing.id;
     } else {
-      const base = `Website data bridge read key ${site.id.slice(0, 8)}`;
+      const base = `Website data bridge ${capability} key ${site.id.slice(0, 8)}`;
       let name = base;
       for (let n = 2; await secrets.getByName(site.companyId, name); n += 1) name = `${base} ${n}`;
       const created = await secrets.create(site.companyId, {
         name,
         provider: "local_encrypted",
         value,
-        description: `Ed25519 read key GSAM signs ${site.domain}'s admin bridge calls with (GRE-2323). Read only; never shared.`,
+        description: capability === "write"
+          ? `Ed25519 write key GSAM signs ${site.domain}'s Deep Dive sync with (GRE-2439). Never shared.`
+          : `Ed25519 read key GSAM signs ${site.domain}'s admin bridge calls with (GRE-2323). Read only; never shared.`,
       }, { userId });
       secretId = created.id;
     }
     await db.update(websiteSite).set({
-      dataBridgeReadKeyId: kid,
-      dataBridgeReadSecretId: secretId,
+      ...(capability === "write"
+        ? { dataBridgeWriteKeyId: kid, dataBridgeWriteSecretId: secretId }
+        : { dataBridgeReadKeyId: kid, dataBridgeReadSecretId: secretId }),
       ...(input.url !== undefined ? { dataBridgeUrl: input.url } : {}),
       updatedAt: new Date(now()),
     }).where(eq(websiteSite.id, site.id));
     statusCache.delete(site.id);
     const raw = publicKey.export({ format: "jwk" }).x as string;
-    return { keyId: kid, capability: "read", publicKey: raw, keysEntry: { kid, capability: "read", publicKey: raw } };
+    return { keyId: kid, capability, publicKey: raw, keysEntry: { kid, capability, publicKey: raw } };
   }
 
   async function status(site: BridgeSite): Promise<WebsiteDataBridgeStatus> {
@@ -152,6 +168,6 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
-  return { createReadKey, status, list, get, enquiryReader };
+  return { client, createKey, status, list, get, enquiryReader };
 }
 export type WebsiteDataBridgeService = ReturnType<typeof websiteDataBridgeService>;
