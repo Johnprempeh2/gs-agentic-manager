@@ -35,13 +35,12 @@ describe("deep dive vocabulary (Book V)", () => {
     expect(deepDiveGifStubBody(DEEP_DIVE_GIF[0])).toBe("# Current state\n\nWhat exists today?\n");
   });
 
-  it("starts every stream Internal, at full depth, with every cell Unknown", () => {
+  it("starts every stream at full depth, with every cell Unknown", () => {
     expect(defaultDeepDiveStreamFields("data")).toEqual({
       stream: "data",
       status: "not_started",
       depth: "full",
       depthReason: "",
-      visibility: "internal",
       knowledge: {
         "current-state": "unknown",
         evidence: "unknown",
@@ -52,13 +51,11 @@ describe("deep dive vocabulary (Book V)", () => {
     });
   });
 
-  it("reads unrecognised values as Unknown and Internal, never Known or Shared", () => {
+  it("reads unrecognised values as Unknown, never Known", () => {
     const fields = readDeepDiveStreamFields("data", {
-      visibility: "SHARED",
       status: "done",
       knowledge: { evidence: "Known", "current-state": "known" },
     });
-    expect(fields.visibility).toBe("internal");
     expect(fields.status).toBe("not_started");
     expect(fields.knowledge.evidence).toBe("unknown");
     expect(fields.knowledge["current-state"]).toBe("known");

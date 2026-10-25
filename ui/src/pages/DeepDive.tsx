@@ -17,9 +17,10 @@ import {
   readDeepDiveStreamFields,
   type DeepDiveKnowledge,
   type DeepDiveStreamFields,
+  type DeepDiveVisibility,
 } from "@greatstone/shared";
 import { ApiError } from "@/api/client";
-import { casesApi, type CaseDetail, type CaseSummary } from "@/api/cases";
+import { casesApi, type CaseDetail, type CaseSummary, type PatchCaseInput } from "@/api/cases";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link, useCaseHref, useNavigate } from "@/lib/router";
@@ -197,6 +198,7 @@ function StreamRow({
   row,
   detail,
   onSave,
+  onShare,
   saving,
 }: {
   index: number;
@@ -205,6 +207,7 @@ function StreamRow({
   detail: CaseDetail | undefined;
   /** Resolves true once saved; false when the save failed (the page shows the error). */
   onSave: (row: CaseSummary, fields: DeepDiveStreamFields) => Promise<boolean>;
+  onShare: (row: CaseSummary, visibility: DeepDiveVisibility) => Promise<boolean>;
   saving: boolean;
 }) {
   const caseHref = useCaseHref();
@@ -287,9 +290,11 @@ function StreamRow({
             Visibility
             <select
               className={SELECT_CLASS}
-              value={fields.visibility}
+              value={row?.visibility === "shared" ? "shared" : "internal"}
               disabled={disabled}
-              onChange={(event) => void save({ visibility: event.target.value as DeepDiveStreamFields["visibility"] })}
+              onChange={(event) => {
+                if (row) void onShare(row, event.target.value as DeepDiveVisibility);
+              }}
             >
               {DEEP_DIVE_VISIBILITIES.map((value) => (
                 <option key={value} value={value}>
@@ -434,12 +439,12 @@ export function DeepDive() {
   }
 
   const saveMutation = useMutation({
-    mutationFn: ({ row, fields }: { row: CaseSummary; fields: Record<string, unknown> }) =>
-      casesApi.patch(row.id, { fields }),
-    onMutate: ({ row, fields }) => {
+    mutationFn: ({ row, patch }: { row: CaseSummary; patch: Pick<PatchCaseInput, "fields" | "visibility"> }) =>
+      casesApi.patch(row.id, patch),
+    onMutate: ({ row, patch }) => {
       // Show the choice at once instead of snapping back until the refetch.
       queryClient.setQueryData<CaseSummary[]>(deepDiveListQueryKey(selectedCompanyId ?? ""), (current) =>
-        current?.map((entry) => (entry.id === row.id ? { ...entry, fields } : entry)),
+        current?.map((entry) => (entry.id === row.id ? { ...entry, ...patch } : entry)),
       );
     },
     onSettled: refresh,
@@ -447,7 +452,15 @@ export function DeepDive() {
 
   function saveStream(row: CaseSummary, fields: DeepDiveStreamFields) {
     // Fields are written whole: keep any keys this page does not know about.
-    return saveMutation.mutateAsync({ row, fields: { ...row.fields, ...fields } }).then(
+    return saveMutation.mutateAsync({ row, patch: { fields: { ...row.fields, ...fields } } }).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  /** Internal or Shared is the case's own column (GRE-2366), not a key of fields. */
+  function shareStream(row: CaseSummary, visibility: DeepDiveVisibility) {
+    return saveMutation.mutateAsync({ row, patch: { visibility } }).then(
       () => true,
       () => false,
     );
@@ -568,6 +581,7 @@ export function DeepDive() {
               detail={row ? detailById.get(row.id) : undefined}
               saving={saveMutation.isPending}
               onSave={saveStream}
+              onShare={shareStream}
             />
           );
         })}
