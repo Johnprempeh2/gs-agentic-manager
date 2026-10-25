@@ -19,9 +19,13 @@ vi.mock("../../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../../api/website")>("../../../api/website");
   return { ...actual, websiteModuleApi: moduleMock };
 });
+const authMock = vi.hoisted(() => ({ getSession: vi.fn() }));
+const featuresMock = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock("../../../api/auth", () => ({ authApi: authMock }));
+vi.mock("../../../api/website-features", () => ({ websiteFeaturesApi: featuresMock }));
 vi.mock("../../../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 
-import { SitemapSection, mixName, treeFromPages } from "./SitemapSection";
+import { SitemapSection, mixName, sitemapViewKey, treeFromPages } from "./SitemapSection";
 
 const site = { id: "site-1", companyId: "co-1", domain: "www.example.test" } as WebsiteSite;
 
@@ -63,6 +67,9 @@ describe("SitemapSection", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     vi.clearAllMocks();
+    window.localStorage.clear();
+    authMock.getSession.mockResolvedValue({ user: { id: "user-1" } });
+    featuresMock.list.mockResolvedValue([{ id: "f1", name: "Consultancy pages", routePrefixes: ["/consultancy"] }]);
   });
 
   afterEach(() => {
@@ -82,7 +89,7 @@ describe("SitemapSection", () => {
   }
 
   const button = (label: string) => [...container.querySelectorAll("button")].find((entry) => entry.getAttribute("aria-label") === label || entry.textContent === label);
-  const rowTitles = () => [...container.querySelectorAll("[data-testid=sitemap-tree-row]")].map((row) => row.querySelector("span.font-medium")?.textContent);
+  const rowTitles = () => [...container.querySelectorAll("[data-testid=sitemap-tree-row]")].map((row) => row.querySelector("[data-sitemap-title]")?.textContent);
 
   it("shows page status from the site's pages and moves pages from the keyboard, then saves", async () => {
     moduleMock.updateSitemapOption.mockResolvedValue(option());
@@ -97,6 +104,26 @@ describe("SitemapSection", () => {
     expect(optionId).toBe("opt-a");
     expect(patch.baseUpdatedAt).toBe("2026-10-23T09:00:00.000Z");
     expect(patch.tree.nodes.find((node: { id: string }) => node.id === "n3").order).toBe(0);
+  });
+
+  it("opens on the vertical Tree, shows each page's feature, and remembers the view each person chose (GRE-2509)", async () => {
+    await render();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    const tab = (label: string) => [...container.querySelectorAll<HTMLElement>("[role=tab]")].find((entry) => entry.textContent === label)!;
+    expect(tab("Tree").getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector("[data-testid=sitemap-tree]")).not.toBeNull();
+    const consultancy = [...container.querySelectorAll("[data-testid=sitemap-tree-row]")][1]!;
+    expect(consultancy.textContent).toContain("Consultancy pages");
+    await act(async () => {
+      tab("Board (across)").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      tab("Board (across)").click();
+    });
+    expect(window.localStorage.getItem(sitemapViewKey("user-1"))).toBe("board");
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(container.querySelector("[data-testid=sitemap-board]")).not.toBeNull();
   });
 
   const dialog = () => document.querySelector<HTMLElement>("[data-testid=sitemap-approve-dialog]");

@@ -5,7 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebsitePage } from "@greatstone/shared";
 import { pagesLookup, type Tree } from "./model";
-import { SitemapJourneysView, SitemapMenusView, SitemapTreeView } from "./SitemapViews";
+import { SitemapJourneysView, SitemapMenusView } from "./SitemapViews";
+import { SitemapTreeView } from "./SitemapTree";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -66,5 +67,29 @@ describe("Sitemap Menus and Journeys status", () => {
     expect(edits.map((button) => button.getAttribute("aria-label"))).toEqual(["Edit page Home", "Edit page Tools"]);
     act(() => edits[1]!.click());
     expect(onEditPage).toHaveBeenCalledWith("page-2");
+  });
+
+  it("lays the tree out top to bottom, folds a deep section with more than 12 pages, and Find unfolds the way to a page (GRE-2509)", () => {
+    const products = Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, title: `Product ${i}`, path: `/tools/brands/products/${i}`, parentId: "n3", order: i, menu: "none" as const, menuOrder: null }));
+    const deep: Tree = {
+      ...tree,
+      nodes: [...tree.nodes, { id: "n3", title: "Brands", path: "/tools/brands", parentId: "n2", order: 0, menu: "none", menuOrder: null }, ...products],
+    };
+    render(<SitemapTreeView tree={deep} onChange={() => {}} pagesById={pagesById} readOnly />);
+    const titles = () => [...container.querySelectorAll("[data-testid=sitemap-tree-row]")].map((row) => row.querySelector("[data-sitemap-title]")!.textContent);
+    expect(titles()).toEqual(["Home", "Tools", "Brands"]);
+    const fold = container.querySelector<HTMLButtonElement>("button[aria-label='Show the 13 sub-pages of Brands']")!;
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+
+    const find = container.querySelector<HTMLInputElement>("[role=toolbar] input")!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(find, "Product 7");
+      find.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => find.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(titles()).toHaveLength(16);
+    const found = container.querySelector("[data-found]")!;
+    expect(found.querySelector("[data-sitemap-title]")!.textContent).toBe("Product 7");
+    expect(document.activeElement).toBe(found);
   });
 });
