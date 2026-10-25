@@ -25,6 +25,7 @@ import { websiteModuleService, type SiteRow } from "../services/website/module.j
 import { WEBSITE_MESSAGES } from "../services/website/messages.js";
 import { websiteDataBridgeService, type WebsiteDataBridgeOptions } from "../services/website/data-bridge.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
+import { websiteActivityService } from "../services/website/activity.js";
 import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -43,10 +44,37 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   const access = accessService(db);
   const bridge = websiteDataBridgeService(db, options);
   const refunds = commerceRefundApprovals(db, options);
+  const activity = websiteActivityService(db, { read: async () => { throw new Error("Activity reads cannot pull the website"); } });
 
   router.use("/companies/:companyId/website/sites/:siteId/data-bridge", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/data", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/commerce", requireEntitlement(db, "enableWebsiteView"));
+
+  router.get("/companies/:companyId/website/activity/:organisationId", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const organisationId = req.params.organisationId as string;
+    assertCompanyAccess(req, companyId);
+    if (!UUID_RE.test(organisationId)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    let cursor: { occurredAt: Date; siteId: string; sequence: bigint } | undefined;
+    if (req.query.cursor !== undefined) {
+      if (typeof req.query.cursor !== "string" || req.query.cursor.length > 300 || !/^[A-Za-z0-9_-]+$/.test(req.query.cursor)) {
+        throw unprocessable("Invalid activity cursor");
+      }
+      try {
+        const parts: unknown = JSON.parse(Buffer.from(req.query.cursor, "base64url").toString("utf8"));
+        if (!Array.isArray(parts) || parts.length !== 3 || typeof parts[0] !== "string" ||
+          typeof parts[1] !== "string" || typeof parts[2] !== "string" || !UUID_RE.test(parts[1]) ||
+          !/^[1-9]\d*$/.test(parts[2])) throw new Error("invalid");
+        const occurredAt = new Date(parts[0]);
+        if (Number.isNaN(occurredAt.valueOf()) || occurredAt.toISOString() !== parts[0]) throw new Error("invalid");
+        cursor = { occurredAt, siteId: parts[1], sequence: BigInt(parts[2]) };
+      } catch { throw unprocessable("Invalid activity cursor"); }
+    }
+    res.json(await activity.list(companyId, organisationId, cursor));
+  });
 
   async function siteFor(req: Request, res: Response,
     permission: Extract<PermissionKey, "website:view" | "website:publish" | "website:commerce">): Promise<SiteRow | null> {

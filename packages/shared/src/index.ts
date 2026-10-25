@@ -520,6 +520,7 @@ export * from "./website-sitemap.js";
 export * from "./website-features.js";
 export * from "./website-frame.js";
 export * from "./types/website-data-bridge.js";
+export * from "./website-activity.js";
 export * from "./types/intelligence.js";
 export * from "./validators/intelligence.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
