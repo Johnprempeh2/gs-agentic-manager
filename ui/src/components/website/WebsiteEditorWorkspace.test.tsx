@@ -740,12 +740,13 @@ describe("WebsiteFullScreenEditor", () => {
         "Ascent, Full, is in Hero banner. Save the page in the editor to keep it.",
       );
       expect(document.body.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
-      expect(button("In the block").disabled).toBe(true);
+      expect(button("Use in block").disabled).toBe(true);
+      expect(motionPanel().querySelector('[data-testid="website-motion-current"]')!.textContent).toBe("This is the block's background now.");
     });
 
     it("a refusal says why in plain words", async () => {
       const editor = await openEditorOnBlock(motionAck);
-      await act(async () => labelled("Motion").click());
+      await act(async () => labelled("Background").click());
       await act(async () => effect("hero.stone").click());
       await act(async () => button("Use in block").click());
       await flush();
@@ -782,12 +783,14 @@ describe("WebsiteFullScreenEditor", () => {
 
     it("offers None, the site surfaces and the effect library, with a live preview and safe settings (GRE-2526)", async () => {
       const editor = await openEditorOnBlock(libraryAck);
-      await act(async () => labelled("Motion").click());
+      await act(async () => labelled("Background").click());
       expect(effect("bg.veil").textContent).toContain("A soft emerald atmosphere.");
       await act(async () => effect("bg.veil").click());
       const preview = document.body.querySelector<HTMLIFrameElement>('[data-testid="website-motion-preview"]')!;
       expect(preview.getAttribute("src")).toBe(`${EDITOR}/effect-preview/bg.veil`);
       expect(preview.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
+      // The library id is for agents: the settings card shows the name and description only.
+      expect(document.body.querySelector('[data-testid="website-motion-settings"]')!.textContent).not.toContain("bg.veil");
       await act(async () => button("Normal").click());
       await act(async () => button("Teal").click());
       await act(async () => button("Use in block").click());
@@ -805,9 +808,35 @@ describe("WebsiteFullScreenEditor", () => {
       expect(editor.sentMessages("set-motion")[1]!.payload).toEqual({ blockId: "h1", motion: { effect: "none", intensity: "off" }, surface: "panel" });
     });
 
+    it("on a phone, Use in block closes the sheet and brings the block into view (GRE-2526)", async () => {
+      const matchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) =>
+        ({ matches: query === "(width < 40rem)", media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+      try {
+        const editor = await openEditorOnBlock(libraryAck);
+        await act(async () => labelled("Background").click());
+        await act(async () => effect("bg.veil").click());
+        await act(async () => button("Use in block").click());
+        await flush();
+        const [request] = editor.sentMessages("set-motion");
+        await editor.reply("set-motion-result", { requestId: request!.id, ok: true });
+        expect(document.body.querySelector('[data-testid="website-editor-drawer"]')).toBeNull();
+        expect(editor.sentMessages("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
+        expect(document.body.querySelector('[data-testid="website-save-banner"]')!.textContent).toContain("Unsaved changes");
+
+        // Reopened, the panel shows what was just put in, not the draft GSAM sent before it.
+        await act(async () => labelled("Background").click());
+        expect(effect("bg.veil").getAttribute("aria-checked")).toBe("true");
+        expect(button("Use in block").disabled).toBe(true);
+        expect(motionPanel().querySelector('[data-testid="website-motion-current"]')!.textContent).toBe("This is the block's background now.");
+      } finally {
+        window.matchMedia = matchMedia;
+      }
+    });
+
     it("Ask an agent carries the block id, the effect id and its settings (GRE-2526)", async () => {
       await openEditorOnBlock(libraryAck);
-      await act(async () => labelled("Motion").click());
+      await act(async () => labelled("Background").click());
       await act(async () => effect("bg.veil").click());
       await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-motion-ask"]')!.click());
       await flush();
@@ -821,7 +850,7 @@ describe("WebsiteFullScreenEditor", () => {
       const twoDoors = { root: { props: {} }, content: [{ type: "TwoDoors", props: { id: "t1" } }, ...data.content] };
       api.pageEditor.mockResolvedValue({ ...load, data: twoDoors });
       const editor = await openEditorOnBlock(libraryAck);
-      await act(async () => labelled("Motion").click());
+      await act(async () => labelled("Background").click());
       expect(document.body.querySelector('[data-testid="website-motion-frozen"]')!.textContent).toContain("frozen");
       expect(motionPanel().querySelector('[role="radiogroup"]')).toBeNull();
       expect(document.body.querySelector('[data-testid="website-motion-apply"]')).toBeNull();
@@ -830,7 +859,7 @@ describe("WebsiteFullScreenEditor", () => {
 
     it("an engine with no motion choices, or no selected block, says what to do and sends nothing", async () => {
       const editor = await openEditorOnBlock();
-      await act(async () => labelled("Motion").click());
+      await act(async () => labelled("Background").click());
       expect(motionPanel().textContent).toContain("does not offer background choices yet");
       expect(motionPanel().querySelector('[role="radiogroup"]')).toBeNull();
       expect(editor.sentMessages("set-motion")).toHaveLength(0);
@@ -1075,7 +1104,7 @@ describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
     expect(hello.payload.editMode).toBe("copy");
     expect(modeButton("Edit copy").getAttribute("aria-pressed")).toBe("true");
     expect(modeButton("Layout").getAttribute("aria-pressed")).toBe("false");
-    for (const name of ["Add block", "Outline", "Media", "Motion"]) expect(labelled(name)).toBeNull();
+    for (const name of ["Add block", "Outline", "Media", "Background"]) expect(labelled(name)).toBeNull();
     expect(labelled("History")).not.toBeNull();
     expect(button("Preview")).toBeDefined();
     // Save still goes to the editor.
@@ -1093,7 +1122,7 @@ describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
     await act(async () => modeButton("Layout").click());
     await flush();
     expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "layout", on: true });
-    for (const name of ["Add block", "Outline", "Media", "Motion"]) expect(labelled(name)).not.toBeNull();
+    for (const name of ["Add block", "Outline", "Media", "Background"]) expect(labelled(name)).not.toBeNull();
     await act(async () => labelled("Add block").click());
     expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "add-block" });
     await act(async () => labelled("Media").click());
