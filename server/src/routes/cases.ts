@@ -16,6 +16,7 @@ import {
   listCasesQuerySchema,
   listEventsQuerySchema,
 } from "./cases-schemas.js";
+import { isDeepStrictEqual } from "node:util";
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { z } from "zod";
@@ -35,6 +36,7 @@ import {
   documentRevisions,
   issues,
   labels,
+  pipelineCases,
   projects,
 } from "@greatstone/db";
 import {
@@ -46,7 +48,7 @@ import {
   deepDiveDepthError,
 } from "@greatstone/shared";
 import { formatAttachmentSize, MAX_ATTACHMENT_BYTES, normalizeContentType } from "../attachment-types.js";
-import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
+import { badRequest, conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertEntitled, requireEntitlement } from "../services/entitlements.js";
@@ -84,6 +86,70 @@ function assertDeepDiveStreamFields(caseType: string, fields: Record<string, unk
   if (caseType !== DEEP_DIVE_CASE_TYPES.stream || fields === undefined) return;
   const error = deepDiveDepthError(fields);
   if (error) throw unprocessable(error);
+}
+
+type DeepDiveSharingInput = {
+  visibility?: "internal" | "shared";
+  clientCaseId?: string | null;
+  clientEditableFields?: string[];
+  sourceValues?: Record<string, unknown>;
+};
+
+/**
+ * GRE-2366: Internal/Shared, the item's client, client-edit unlocks and
+ * imported source values belong to Deep Dive items only. Only a person sets
+ * Shared, unlocks a field for the client, or moves an existing item to another
+ * client; an agent may name the client of a new item, which starts Internal.
+ */
+function assertDeepDiveSharingInput(
+  caseType: string,
+  body: DeepDiveSharingInput,
+  actor: CaseActor,
+  existing: Pick<typeof cases.$inferSelect, "clientCaseId"> | null,
+) {
+  const touches = body.visibility !== undefined
+    || body.clientCaseId !== undefined
+    || body.clientEditableFields !== undefined
+    || body.sourceValues !== undefined;
+  if (!touches) return;
+  if (!DEEP_DIVE_TYPES.has(caseType)) {
+    throw unprocessable("Only Deep Dive items have Internal or Shared, a client, client-edit locks or source values");
+  }
+  if (actor.actorType === "user") return;
+  const movesClient = existing !== null
+    && body.clientCaseId !== undefined
+    && body.clientCaseId !== existing.clientCaseId;
+  if (body.visibility === "shared" || body.clientEditableFields !== undefined || movesClient) {
+    throw forbidden("Only a person can share a Deep Dive item, unlock a field for the client or move it to another client");
+  }
+}
+
+async function assertClientBelongsToCompany(db: CaseRouteDb, companyId: string, clientCaseId: string | null | undefined) {
+  if (!clientCaseId) return;
+  const row = await db
+    .select({ id: pipelineCases.id })
+    .from(pipelineCases)
+    .where(and(eq(pipelineCases.id, clientCaseId), eq(pipelineCases.companyId, companyId)))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (!row) throw unprocessable("Client does not belong to company");
+}
+
+/**
+ * Moving an item to another client makes it Internal again unless the same
+ * request shares it, so nothing Shared with one client lands Shared on another.
+ */
+function sharingUpdateValues(
+  body: DeepDiveSharingInput,
+  existing: Pick<typeof cases.$inferSelect, "clientCaseId">,
+) {
+  const movesClient = body.clientCaseId !== undefined && body.clientCaseId !== existing.clientCaseId;
+  const visibility = body.visibility ?? (movesClient ? "internal" : undefined);
+  return {
+    ...(visibility !== undefined ? { visibility } : {}),
+    ...(body.clientCaseId !== undefined ? { clientCaseId: body.clientCaseId } : {}),
+    ...(body.clientEditableFields !== undefined ? { clientEditableFields: [...new Set(body.clientEditableFields)] } : {}),
+  };
 }
 
 async function lockCaseUpsertKey(db: CaseRouteDb, input: { companyId: string; caseType: string; key: string | null | undefined }) {
@@ -628,6 +694,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     const result = await db.transaction(async (tx) => {
       await assertProjectBelongsToCompany(tx, { companyId, projectId: body.projectId ?? null });
       await assertParentCaseBelongsToCompany(tx, { companyId, parentCaseId: body.parentCaseId ?? null });
+      await assertClientBelongsToCompany(tx, companyId, body.clientCaseId);
       await lockCaseUpsertKey(tx, { companyId, caseType: body.caseType, key: body.key });
       const keyFilter = body.key ? eq(cases.key, body.key) : isNull(cases.key);
 
@@ -639,9 +706,20 @@ export function caseRoutes(db: Db, storage: StorageService) {
         .limit(1)
         .then((rows) => rows[0] ?? null);
 
+      assertDeepDiveSharingInput(body.caseType, body, actor, existing);
+
       if (existing) {
+        if (
+          existing.sourceValues !== null
+          && body.sourceValues !== undefined
+          && !isDeepStrictEqual(existing.sourceValues, body.sourceValues)
+        ) {
+          throw conflict("An imported source row is kept unchanged; store the edit in fields");
+        }
         const status = body.status ?? existing.status;
         const [updated] = await tx.update(cases).set({
+          ...sharingUpdateValues(body, existing),
+          ...(existing.sourceValues === null && body.sourceValues !== undefined ? { sourceValues: body.sourceValues } : {}),
           projectId: body.projectId ?? existing.projectId,
           title: body.title,
           summary: body.summary ?? existing.summary,
@@ -662,6 +740,15 @@ export function caseRoutes(db: Db, storage: StorageService) {
         return { created: false, row: updated! };
       }
 
+      // A new item is Internal unless a person shares it, and belongs to its
+      // parent's client unless it names one.
+      const parentClientCaseId = body.clientCaseId === undefined && body.parentCaseId
+        ? await tx
+          .select({ clientCaseId: cases.clientCaseId })
+          .from(cases)
+          .where(and(eq(cases.id, body.parentCaseId), eq(cases.companyId, companyId)))
+          .then((rows) => rows[0]?.clientCaseId ?? null)
+        : null;
       const identity = await nextCaseIdentity(tx, companyId);
       const status = body.status ?? "draft";
       const [created] = await tx.insert(cases).values({
@@ -675,6 +762,10 @@ export function caseRoutes(db: Db, storage: StorageService) {
         status,
         fields: body.fields ?? {},
         parentCaseId: body.parentCaseId ?? null,
+        visibility: body.visibility ?? "internal",
+        clientCaseId: body.clientCaseId ?? parentClientCaseId,
+        clientEditableFields: [...new Set(body.clientEditableFields ?? [])],
+        sourceValues: body.sourceValues ?? null,
         createdByAgentId: actor.agentId,
         createdByUserId: actor.actorType === "user" ? actor.actorId : null,
         completedAt: completedAtForStatus(status),
@@ -686,7 +777,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         caseId: created!.id,
         kind: "created",
         actor,
-        payload: { caseType: body.caseType, key: body.key ?? null },
+        payload: { caseType: body.caseType, key: body.key ?? null, visibility: created!.visibility },
       });
       await autoLinkRunIssue(tx, { companyId, caseId: created!.id, actor, role: "origin" });
       return { created: true, row: created! };
@@ -1432,6 +1523,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     const actor = getActorInfo(req);
     const body = patchCaseSchema.parse(req.body);
     assertDeepDiveStreamFields(caseRow.caseType, body.fields);
+    assertDeepDiveSharingInput(caseRow.caseType, body, actor, caseRow);
     const nextLabelIds = body.labelIds ?? body.labels;
 
     const updated = await db.transaction(async (tx) => {
@@ -1442,9 +1534,15 @@ export function caseRoutes(db: Db, storage: StorageService) {
         parentCaseId: body.parentCaseId ?? null,
       });
       if (nextLabelIds) await assertLabelsBelongToCompany(tx, caseRow.companyId, nextLabelIds);
+      await assertClientBelongsToCompany(tx, caseRow.companyId, body.clientCaseId);
 
       const now = new Date();
-      const [row] = await tx.update(cases).set(buildCasePatchUpdateValues(body, caseRow, now)).where(eq(cases.id, caseRow.id)).returning();
+      const sharing = sharingUpdateValues(body, caseRow);
+      const [row] = await tx
+        .update(cases)
+        .set({ ...buildCasePatchUpdateValues(body, caseRow, now), ...sharing })
+        .where(eq(cases.id, caseRow.id))
+        .returning();
 
       if (nextLabelIds) {
         await lockCaseLabels(tx, { companyId: caseRow.companyId, caseId: caseRow.id });
@@ -1504,6 +1602,11 @@ export function caseRoutes(db: Db, storage: StorageService) {
           previousStatus: body.status !== undefined ? caseRow.status : undefined,
           status: body.status,
           parentCaseId: body.parentCaseId,
+          ...(sharing.visibility !== undefined && sharing.visibility !== caseRow.visibility
+            ? { previousVisibility: caseRow.visibility, visibility: sharing.visibility }
+            : {}),
+          ...(sharing.clientCaseId !== undefined ? { clientCaseId: sharing.clientCaseId } : {}),
+          ...(sharing.clientEditableFields !== undefined ? { clientEditableFields: sharing.clientEditableFields } : {}),
         },
       });
       await autoLinkRunIssue(tx, { companyId: caseRow.companyId, caseId: caseRow.id, actor, role: "work" });

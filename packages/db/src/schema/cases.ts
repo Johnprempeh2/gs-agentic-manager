@@ -17,6 +17,7 @@ import { companies } from "./companies.js";
 import { documents } from "./documents.js";
 import { issues } from "./issues.js";
 import { labels } from "./labels.js";
+import { pipelineCases } from "./pipeline_cases.js";
 import { projects } from "./projects.js";
 
 export const cases = pgTable(
@@ -34,6 +35,16 @@ export const cases = pgTable(
     status: text("status").notNull().default("draft"),
     fields: jsonb("fields").$type<Record<string, unknown>>().notNull().default({}),
     parentCaseId: uuid("parent_case_id").references((): AnyPgColumn => cases.id, { onDelete: "set null" }),
+    // Deep Dive sharing (GRE-2366, migration 0394). Internal unless a person
+    // sets Shared; only Shared items of the item's own client reach that client.
+    visibility: text("visibility").$type<"internal" | "shared">().notNull().default("internal"),
+    clientCaseId: uuid("client_case_id").references(() => pipelineCases.id, { onDelete: "set null" }),
+    // Client-edit locks: every key of `fields` is locked to a client unless it
+    // is listed here. The cases_guard_writes trigger enforces it.
+    clientEditableFields: text("client_editable_fields").array().notNull().default(sql`'{}'::text[]`),
+    // An imported source row, kept unchanged (the trigger refuses edits once
+    // set); edits live beside it in `fields`.
+    sourceValues: jsonb("source_values").$type<Record<string, unknown>>(),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -48,6 +59,11 @@ export const cases = pgTable(
     companyTypeIdx: index("cases_company_type_idx").on(table.companyId, table.caseType),
     companyProjectIdx: index("cases_company_project_idx").on(table.companyId, table.projectId),
     parentIdx: index("cases_parent_idx").on(table.parentCaseId),
+    companyClientVisibilityIdx: index("cases_company_client_visibility_idx").on(
+      table.companyId,
+      table.clientCaseId,
+      table.visibility,
+    ),
     titleSearchIdx: index("cases_title_search_idx").using("gin", table.title.op("gin_trgm_ops")),
     identifierSearchIdx: index("cases_identifier_search_idx").using("gin", table.identifier.op("gin_trgm_ops")),
     summarySearchIdx: index("cases_summary_search_idx").using("gin", table.summary.op("gin_trgm_ops")),
@@ -55,6 +71,7 @@ export const cases = pgTable(
       "cases_status_check",
       sql`${table.status} in ('draft', 'in_progress', 'in_review', 'approved', 'done', 'cancelled')`,
     ),
+    visibilityCheck: check("cases_visibility_check", sql`${table.visibility} in ('internal', 'shared')`),
   }),
 );
 
