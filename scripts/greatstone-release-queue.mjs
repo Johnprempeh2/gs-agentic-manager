@@ -12,7 +12,11 @@
 //   candidate  an rc-* tag with a title and changelog (scripts/greatstone-candidate.mjs)
 //   preview    the candidate on a copy of the live data, then its switch tests;
 //              skipped when the release changes nothing in the database
-//              (db_change_check in greatstone-common.sh; when unsure it runs)
+//              (db_change_check in greatstone-common.sh; when unsure it runs).
+//              An agent's preview found here gets GSAM_RELEASE_QUEUE_PREVIEW_GRACE_SECONDS
+//              (2 min) to end, is then stopped, recorded on the request, and its
+//              task is told and woken (GRE-2486). While a request runs, agents
+//              cannot start, check or stop the preview (greatstone-preview.sh).
 //   draining   new agent runs are held (the task drain) for the whole release
 //              window; it is never lifted between tries (GRE-2274: runs started
 //              in that gap and the drain never finished). Running runs get
@@ -34,6 +38,10 @@
 //   node scripts/greatstone-release-queue.mjs enqueue [main | <rc-tag> | <sha>] ["<title>"] [--pc-gate] [--by <who>] [--json]
 //   node scripts/greatstone-release-queue.mjs status [--json]
 //   node scripts/greatstone-release-queue.mjs cancel <id> [--by <who>] [--json]
+//   node scripts/greatstone-release-queue.mjs releasing [--json]   exit 0 and name the commit while a request runs
+//   node scripts/greatstone-release-queue.mjs covers <rc-tag|sha> [--json]
+//                                                      exit 0 when the queue released, or is releasing, it or a
+//                                                      newer main: the daily candidate then skips its own preview
 //   (options may also come first, then "--" and the arguments)
 //   node scripts/greatstone-release-queue.mjs tick     start the worker in the background unless it runs
 //                                                      (the PC's watchdog calls this every minute)
@@ -72,6 +80,7 @@ export function config() {
     pollMs: num("GSAM_RELEASE_QUEUE_POLL_SECONDS", 30) * 1000,
     drainGraceMs: num("GSAM_RELEASE_DRAIN_GRACE_SECONDS", 300) * 1000,
     drainStopMs: num("GSAM_RELEASE_DRAIN_STOP_SECONDS", 180) * 1000,
+    previewGraceMs: num("GSAM_RELEASE_QUEUE_PREVIEW_GRACE_SECONDS", 120) * 1000,
     stepWaitMs: num("GSAM_RELEASE_QUEUE_STEP_WAIT_SECONDS", 3600) * 1000,
     githubWaitMs: num("GSAM_GITHUB_GATE_WAIT_SECONDS", 1800) * 1000,
     nice: num("GSAM_RELEASE_QUEUE_NICE", 15),
@@ -217,6 +226,22 @@ export function nextBatch(items) {
   return { head, merged };
 }
 
+/** The request past "queued" (the worker is on it), or null. Its preview is the queue's (GRE-2486). Pure. */
+export function releasingItem(items) {
+  return items.find((i) => i.status === "running") ?? null;
+}
+
+/**
+ * The request that released, or is releasing, `commit` or a newer main (one
+ * that has `commit` in its history), or null: then the daily candidate's own
+ * preview of `commit` is not needed (GRE-2486). `isAncestor(a, b)` says
+ * whether a is in b's history. Pure, for the tests.
+ */
+export function coveringItem(items, commit, isAncestor) {
+  const open = items.filter((i) => i.commit && (i.status === "released" || i.status === "running"));
+  return open.reverse().find((i) => i.commit === commit || isAncestor(commit, i.commit)) ?? null;
+}
+
 // ── Git and processes ──────────────────────────────────────────────────────
 
 const git = (cfg, ...args) => {
@@ -229,6 +254,45 @@ const liveHead = (cfg) => {
   const r = spawnSync("git", ["-C", cfg.liveDir, "rev-parse", "HEAD"], { encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : null;
 };
+
+const isAncestor = (cfg, a, b) => spawnSync("git", ["merge-base", "--is-ancestor", a, b], { cwd: cfg.repo, stdio: "ignore" }).status === 0;
+const alive = (pid) => {
+  if (!(pid > 0)) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+};
+const keyValues = (file) => {
+  try {
+    return Object.fromEntries(readFileSync(file, "utf8").split("\n").filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+  } catch { return null; }
+};
+
+/**
+ * An agent run's preview: its start, switch-tests or stop holding the preview
+ * lock (`pid` is that step), or a preview it started that still runs (`pid`
+ * null). Null when there is none; a person's preview is stopped as before.
+ */
+export function agentPreview(root) {
+  const lock = keyValues(join(root, "locks", "preview.lock", "owner"));
+  const lockPid = Number(lock?.pid ?? 0);
+  if (lock?.run_id && alive(lockPid)) return { runId: lock.run_id, issueId: lock.issue_id || null, pid: lockPid, what: oneLine(lock.command) };
+  const state = keyValues(join(root, "preview", "preview.state"));
+  if (state?.run_id && alive(Number(state.pid ?? 0))) return { runId: state.run_id, issueId: state.issue_id || null, pid: null, what: `the preview of ${oneLine(state.tag)}` };
+  return null;
+}
+
+/** Sends `signal` to `pid` and every process under it (a preview start's install, copy and server). */
+function killTree(pid, signal) {
+  const ps = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+  const kids = new Map();
+  for (const line of (ps.stdout ?? "").split("\n")) {
+    const [p, pp] = line.trim().split(/\s+/).map(Number);
+    if (p && pp) kids.set(pp, [...(kids.get(pp) ?? []), p]);
+  }
+  const all = [];
+  const walk = (p) => { all.push(p); for (const c of kids.get(p) ?? []) if (!all.includes(c)) walk(c); };
+  walk(pid);
+  for (const p of all) { try { process.kill(p, signal); } catch {} }
+}
 
 /** Runs a command with its output appended to `log`; resolves to { code, out } (out = this run's output). */
 function run(cfg, cmd, args, { log, extraEnv = {}, onSpawn } = {}) {
@@ -400,6 +464,13 @@ function nextTagName(cfg) {
   return `rc-${day}.${n}`;
 }
 
+/**
+ * The queue's own preview steps: greatstone-preview.sh lets them through while
+ * the request runs, and they are never recorded as an agent's (no run or task),
+ * even when the worker was started from an agent run.
+ */
+const queueEnv = (item) => ({ GSAM_RELEASE_QUEUE_ITEM: item.id, GSAM_RUN_ID: "", GSAM_TASK_ID: "" });
+
 class Stop extends Error {
   constructor(status, reason) { super(reason); this.status = status; }
 }
@@ -410,10 +481,10 @@ function createWorker(cfg) {
   const step = (item, name, detail) => { logLine(item.log, `${name}: ${detail}`); patchItem(cfg, item.id, { step: name, detail }); };
 
   /** Runs a step's command; while another holder has its lock, waits (at most stepWaitMs). */
-  const runStep = async (item, name, cmd, args) => {
+  const runStep = async (item, name, cmd, args, extraEnv) => {
     const deadline = Date.now() + cfg.stepWaitMs;
     for (;;) {
-      const result = await run(cfg, cmd, args, { log: item.log });
+      const result = await run(cfg, cmd, args, { log: item.log, extraEnv });
       const locked = result.code === 0 ? null : LOCKED.exec(result.out)?.[0];
       if (!locked) return result;
       if (Date.now() > deadline) throw new Stop("failed", `${name}: ${locked}`);
@@ -495,6 +566,46 @@ function createWorker(cfg) {
         checkCancel(item);
       }
     }
+  };
+
+  /**
+   * An agent's preview found at the preview step: it gets previewGraceMs to
+   * end, then its step (and everything under it) is stopped, the preview is
+   * stopped, the run and task are recorded on the request (previewStopped),
+   * and the task is told why and woken with a comment (GRE-2486).
+   */
+  const stopAgentPreview = async (item, tag, commit) => {
+    let found = agentPreview(cfg.root);
+    if (!found) return;
+    const who = (f) => `${f.what}, run ${f.runId}${f.issueId ? `, task ${f.issueId}` : ""}`;
+    step(item, "preview", `an agent's preview is in the way (${who(found)}); it may end within ${Math.round(cfg.previewGraceMs / 1000)} s, then the queue stops it`);
+    const graceEnd = Date.now() + cfg.previewGraceMs;
+    while (found && Date.now() < graceEnd) {
+      await sleep(Math.max(0, Math.min(cfg.pollMs, graceEnd - Date.now())));
+      checkCancel(item);
+      found = agentPreview(cfg.root) ?? null;
+    }
+    if (!found) {
+      logLine(item.log, "preview: the agent's preview ended on its own");
+      return;
+    }
+    if (found.pid) {
+      killTree(found.pid, "SIGTERM");
+      for (let i = 0; i < 20 && alive(found.pid); i += 1) await sleep(500);
+      if (alive(found.pid)) killTree(found.pid, "SIGKILL");
+    }
+    const stopped = await run(cfg, "bash", [join(cfg.scripts, "greatstone-preview.sh"), "stop"], { log: item.log, extraEnv: queueEnv(item) });
+    const entry = { runId: found.runId, issueId: found.issueId, what: found.what, at: nowIso(), note: stopped.code === 0 ? "stopped" : `stop failed: ${lastLine(stopped.out)}` };
+    logLine(item.log, `preview: stopped the agent's preview (${who(found)}): ${entry.note}`);
+    if (found.issueId) {
+      const body = `The release queue stopped this task's preview (${found.what}, run ${found.runId}) after ${Math.round(cfg.previewGraceMs / 1000)} s, so release ${item.id} of ${commit.slice(0, 9)} (${tag}) can run its own preview. Do not start the preview again: while the queue releases, an agent's preview start is refused. Check the queue: \`node scripts/greatstone-release-queue.mjs status\`. If it releases this commit or a newer one, your preview check is covered (\`node scripts/greatstone-release-queue.mjs covers <tag>\`).`;
+      const posted = await liveJson(cfg, "POST", `/api/issues/${encodeURIComponent(found.issueId)}/comments`, { body, resume: true });
+      entry.note += posted.ok ? "; the task was told and woken" : `; the comment failed (${posted.status})`;
+    }
+    mutate(cfg, (s) => {
+      const it = s.items.find((i) => i.id === item.id);
+      if (it) (it.previewStopped ??= []).push(entry);
+    });
   };
 
   /** Adds runs to the request's paused list, once per run, so they are woken again after the release. */
@@ -741,12 +852,13 @@ function createWorker(cfg) {
         step(item, "preview", `preview skipped: ${db.note}`);
       } else {
         const preview = join(cfg.scripts, "greatstone-preview.sh");
+        await stopAgentPreview(item, tag, commit);
         step(item, "preview", `starting ${tag} on a copy of the live data (${db.note})`);
-        await run(cfg, "bash", [preview, "stop"], { log: item.log });
-        const started = await runStep(item, "preview", "bash", [preview, "start", tag]);
+        await run(cfg, "bash", [preview, "stop"], { log: item.log, extraEnv: queueEnv(item) });
+        const started = await runStep(item, "preview", "bash", [preview, "start", tag], queueEnv(item));
         if (started.code !== 0) throw new Stop("failed", `the preview of ${tag} did not start: ${lastLine(started.out, "preview:")}`);
         step(item, "preview", `running the switch tests on the preview of ${tag}`);
-        const switches = await runStep(item, "preview", "bash", [preview, "switch-tests"]);
+        const switches = await runStep(item, "preview", "bash", [preview, "switch-tests"], queueEnv(item));
         if (switches.code !== 0) throw new Stop("failed", `the switch tests failed on the preview of ${tag}: ${lastLine(switches.out, "preview:")}`);
       }
       checkCancel(item);
@@ -767,7 +879,7 @@ function createWorker(cfg) {
       logLine(item.log, `${status}: ${reason}`);
       if (cutTag && !git(cfg, "ls-remote", "--tags", "origin", `refs/tags/${cutTag}`)) git(cfg, "tag", "-d", cutTag);
       if (["preview", "draining"].includes(load(cfg).items.find((i) => i.id === item.id)?.step)) {
-        await run(cfg, "bash", [join(cfg.scripts, "greatstone-preview.sh"), "stop"], { log: item.log });
+        await run(cfg, "bash", [join(cfg.scripts, "greatstone-preview.sh"), "stop"], { log: item.log, extraEnv: queueEnv(item) });
       }
       patchItem(cfg, item.id, { status, reason, finishedAt: nowIso(), ...(error.rollback ? { rollback: error.rollback } : {}), ...(error.backupFile ? { backupFile: error.backupFile } : {}) });
     }
@@ -867,6 +979,26 @@ async function main(argv) {
       const v = view(load(cfg));
       return json ? console.log(JSON.stringify(v)) : printStatus(v);
     }
+    case "releasing": {
+      // Exit 0 with "<commit or ref> (<id>)" while a request runs; exit 1 with nothing otherwise.
+      const item = releasingItem(load(cfg).items);
+      if (!item) return json ? (console.log(JSON.stringify({ item: null })), 1) : 1;
+      out({ item }, `${item.commit ? item.commit.slice(0, 9) : item.ref} (${item.id}${item.tag ? `, ${item.tag}` : ""})`);
+      return 0;
+    }
+    case "covers": {
+      // Exit 0 when the queue released, or is releasing, <ref> or a newer main; exit 1 when not.
+      if (!rest[0]) throw new Error("usage: greatstone-release-queue.mjs covers <rc-tag | sha>");
+      const commit = git(cfg, "rev-parse", "--verify", "--quiet", `${rest[0]}^{commit}`);
+      if (!commit) throw new Error(`cannot resolve ${oneLine(rest[0])} in ${cfg.repo}`);
+      const item = coveringItem(load(cfg).items, commit, (a, b) => isAncestor(cfg, a, b));
+      const what = item ? `${item.id} ${item.status === "released" ? "released" : "is releasing"} ${item.commit.slice(0, 9)}${item.liveTag ? ` as ${item.liveTag}` : item.tag ? ` (${item.tag})` : ""}` : null;
+      const text = item
+        ? `Covered: ${what}, which ${item.commit === commit ? "is" : "includes"} ${oneLine(rest[0])} (${commit.slice(0, 9)}). The queue's preview covers it; skip this preview.`
+        : `Not covered: the queue has not released or started releasing ${oneLine(rest[0])} (${commit.slice(0, 9)}) or a newer main.`;
+      out({ covered: !!item, commit, item }, text);
+      return item ? 0 : 1;
+    }
     case "tick": {
       // A new session and its own log, so the watchdog's end cannot stop it.
       mkdirSync(cfg.dir, { recursive: true });
@@ -887,7 +1019,7 @@ async function main(argv) {
 const invokedAs = (() => { try { return pathToFileURL(realpathSync(process.argv[1] ?? "")).href; } catch { return ""; } })();
 if (import.meta.url === invokedAs) {
   main(process.argv.slice(2)).then(
-    () => process.exit(0),
+    (code) => process.exit(typeof code === "number" ? code : 0),
     (error) => {
       process.stderr.write(`release-queue: ${error.message}\n`);
       process.exit(1);

@@ -555,3 +555,69 @@ test("script refuses with no preview running", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// GRE-2486: the release queue's state, as greatstone-release-queue.mjs writes it.
+function writeQueue(root, items) {
+  mkdirSync(join(root, "release-queue"), { recursive: true });
+  writeFileSync(join(root, "release-queue", "queue.json"), JSON.stringify({ items, main: null, worker: null }));
+}
+
+test("an agent's start, switch-tests and stop are refused while a queue request runs (GRE-2486)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    mkdirSync(join(root, "preview"), { recursive: true });
+    writeQueue(root, [{ id: "rq-621bf4", ref: "main", status: "running", step: "preview", commit: "0123456789abcdef", tag: "rc-2026-10-25.10" }]);
+    for (const args of [["start", "rc-2026-10-25.9"], ["switch-tests"], ["stop"]]) {
+      const { code, out } = runPreview(args, root, { GSAM_RUN_ID: "run-flint" });
+      assert.equal(code, 1, args[0]);
+      assert.match(out, /^preview: The release queue is releasing 012345678 \(rq-621bf4, rc-2026-10-25\.10\); its own preview covers this\. Check the queue status: node scripts\/greatstone-release-queue\.mjs status$/m, args[0]);
+      assert.equal(existsSync(join(root, "locks", "preview.lock")), false, `${args[0]} took no lock`);
+    }
+    // The queue's own steps and people pass the guard.
+    assert.equal(runPreview(["stop"], root, { GSAM_RUN_ID: "run-flint", GSAM_RELEASE_QUEUE_ITEM: "rq-621bf4" }).code, 0);
+    assert.equal(runPreview(["stop"], root).code, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an agent's preview steps run while requests only wait in the queue, or the queue is empty (GRE-2486)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    mkdirSync(join(root, "preview"), { recursive: true });
+    assert.match(runPreview(["stop"], root, { GSAM_RUN_ID: "run-flint" }).out, /No preview is running\./);
+    writeQueue(root, [{ id: "rq-1", ref: "main", status: "queued" }, { id: "rq-0", ref: "main", status: "released", commit: "abc" }]);
+    const { code, out } = runPreview(["stop"], root, { GSAM_RUN_ID: "run-flint" });
+    assert.equal(code, 0, out);
+    assert.match(out, /No preview is running\./);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a run takes over its own dead lock once; the second time it fails and says why (GRE-2486)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    mkdirSync(join(root, "preview"), { recursive: true });
+    const dead = Number(execFileSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }));
+    const owner = join(root, "locks", "preview.lock", "owner");
+    // The run's first start was killed: its lock (takeovers=0) is taken over once, and the new owner says so.
+    writePreviewLock(root, dead, "takeovers=0\n");
+    const got = runSetup('preview_lock start rc-1; cat "$GS_ROOT/locks/preview.lock/owner"; trap - EXIT', { GSAM_ROOT: root, HOME: root, GSAM_RUN_ID: "run-9" });
+    assert.match(got, /^takeovers=1$/m);
+    assert.match(got, /^run_id=run-9$/m);
+    // That start was killed too: the same run does not start a third time.
+    writeFileSync(owner, readFileSync(owner, "utf8").replace(/^pid=\d+$/m, `pid=${dead}`));
+    const { code, out } = runPreview(["start", "rc-1"], root, { GSAM_RUN_ID: "run-9" });
+    assert.equal(code, 1);
+    assert.match(out, /^preview: this run \(run-9\) already took over its own preview lock once, and that step \(pid \d+\) was also stopped before it ended, most likely by a tool time limit\. Not starting a third time\./m);
+    assert.match(readFileSync(owner, "utf8"), /^takeovers=1$/m, "the lock is left for the queue or a person to take over");
+    // Another run (or the queue, with no run) takes the same dead lock over as before, counting from 0.
+    const other = runPreview(["stop"], root, { GSAM_RUN_ID: "run-other" });
+    assert.equal(other.code, 0, other.out);
+    assert.match(other.out, /No preview is running\./);
+    assert.equal(existsSync(join(root, "locks", "preview.lock")), false, "taken over, then freed on exit");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

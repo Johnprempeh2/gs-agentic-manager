@@ -620,7 +620,15 @@ tests, the database backup before the switch, and the rollback command.
 3. **Candidate:** `greatstone-candidate.mjs` cuts the next `rc-*` tag on that
    commit with the title (proposed from the changes when none was given).
 4. **Preview:** stops any preview, starts the candidate on a fresh copy of the
-   live data and runs `switch-tests`. A failure ends the request, stops the
+   live data and runs `switch-tests`. An agent's preview found here (its
+   start holds the preview lock, or a preview it started runs) gets 2 minutes
+   (`GSAM_RELEASE_QUEUE_PREVIEW_GRACE_SECONDS`) to end; then the worker stops
+   it, records the run and task on the request (`previewStopped`) and comments
+   on the task with `resume: true`, so its agent is woken and told why
+   (GRE-2486: on 25 Oct a daily-candidate preview made rq-621bf4 fail with "a
+   preview of rc-2026-10-25.9 is already running"). While a request is past
+   `queued`, an agent's `start`, `switch-tests` and `stop` are refused: "The
+   release queue is releasing <sha>; its own preview covers this." A failure ends the request, stops the
    preview and deletes the unreleased tag. A release that changes nothing in
    the database (`db_change_check`, described under step 6 of the release above) skips this step; it shows
    `preview skipped: no database changes between <live> and <candidate>`, so a
@@ -887,6 +895,15 @@ on a throwaway sandbox, in both modes.
   or restart the preview under it. On 15 Oct 2026 parallel starts removed each
   other's seed and data copy ("Failed to restore preview-seed.sql.gz:
   unexpected end of file"). A lock whose holder no longer runs is taken over.
+  An agent run takes over its own lock only once: if that step is also
+  killed (a tool time limit; a start takes 8 to 12 minutes), the next start of
+  the same run fails and says why, instead of starting from scratch again
+  (GRE-2486). Run a start in the background and follow it with `status`.
+- **Daily candidate:** before the preview check of a candidate, run
+  `node scripts/greatstone-release-queue.mjs covers <rc-tag>`. Exit 0 ("Covered:
+  rq-… released/is releasing <sha>") means the queue released, or is
+  releasing, that commit or a newer main with its own preview: skip the
+  preview check and say so on the task (GRE-2486).
   `greatstone-candidate.mjs` takes `~/GSAM/locks/candidate.lock` the same way.
   The seed is written to a `.tmp` file and renamed, so it is never half written.
 - **Your own Playwright script:** run it with
