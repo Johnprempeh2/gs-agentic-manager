@@ -170,11 +170,12 @@ export const bridgeImportItemSchema = bridgeItemSchema.extend({ rows: z.array(z.
  * values such as `in_progress` do not match: they have an underscore and no digit.
  */
 const STRIPE_ID_RE = /\b(?:(?:pi|ch|re|py|in|ii|cus|sub|txn|po|pm|acct|evt|cs|seti|src|tok|card|ba)_(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{14,}|(?:sk|rk|pk)_(?:test|live)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{16,})\b/;
+/** The site's own answer (greatstone-website `bridgePayments`): no envelope, no `from`/`to`. GSAM wraps it. */
 export const bridgePaymentReportSchema = z.object({
-  report: z.object({
-    from: z.string().nullable(), to: z.string().nullable(), stripeMode: z.enum(["test", "live", "unset"]),
-  }).passthrough(),
-}).refine((value) => !STRIPE_ID_RE.test(JSON.stringify(value)), "the payment report carried a Stripe id or key");
+  stripeMode: z.enum(["test", "live", "unset"]),
+  items: z.array(z.record(z.string(), z.unknown())),
+  nextCursor: z.string().nullable(),
+}).passthrough().refine((value) => !STRIPE_ID_RE.test(JSON.stringify(value)), "the payment report carried a Stripe id or key");
 export const bridgeSyncAckSchema = z.object({ ok: z.literal(true), tenantId: z.string() });
 /** A write's answer: the row as it is after the change (`imports/:id/apply` adds the apply result). */
 export const bridgeWriteSchema = z.object({ item: z.record(z.string(), z.unknown()), result: z.unknown().optional() });
@@ -286,8 +287,10 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     importJob: (id: string, page: { cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/imports/${encodeURIComponent(id)}`, { cursor: page.cursor, limit: limitOf(page.limit) }, actor, bridgeImportItemSchema),
     fx: (actor: WebsiteBridgeActor) => get("/api/admin/v1/fx", {}, actor, bridgeItemSchema),
-    payments: (range: { from?: string; to?: string }, actor: WebsiteBridgeActor) =>
-      get("/api/admin/v1/payments", { from: range.from, to: range.to }, actor, bridgePaymentReportSchema),
+    payments: async (range: { from?: string; to?: string }, actor: WebsiteBridgeActor) => {
+      const site = await get("/api/admin/v1/payments", { from: range.from, to: range.to }, actor, bridgePaymentReportSchema);
+      return { report: { from: range.from ?? null, to: range.to ?? null, ...site } };
+    },
     /** Deep Dive sync (GRE-2439): replace one tenant's snapshot on the site. Needs a `write` key. */
     putDeepDiveTenant: (tenantId: string, payload: DeepDiveSyncPayload, actor: WebsiteBridgeActor) =>
       call("PUT", deepDiveSyncSitePath(tenantId), {}, JSON.stringify(payload), actor, bridgeSyncAckSchema),
