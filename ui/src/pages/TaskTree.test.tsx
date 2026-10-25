@@ -387,6 +387,29 @@ describe("Task tree navigation", () => {
       );
     });
 
+    // GRE-2384: one line per pair of tasks.
+    it("shows a parent and child link on the line that joins them, not a second line", async () => {
+      tree = {
+        ...tree,
+        nodes: [...tree.nodes, { ...node("8", "3", { title: "Fix the build", status: "todo" }), depth: 2 }],
+        blockLinks: [...tree.blockLinks!, { blockerId: "8", blockedId: "3" }],
+      };
+      await renderPage();
+      const canvas = container.querySelector('[data-slot="task-tree-canvas"]')!;
+      const lines = [...canvas.querySelectorAll("[data-block-link]")].map((line) => line.getAttribute("data-block-link"));
+      expect(lines).not.toContain("8>3");
+      expect(canvas.querySelectorAll('[data-tree-edge="3>8"]')).toHaveLength(0);
+      const edge = canvas.querySelector('[data-block-edge="3>8"]')!;
+      expect(edge.getAttribute("class")).toContain("stroke-status-warning");
+      // The arrow points up, at the blocked parent.
+      expect(edge.getAttribute("marker-start")).toBeTruthy();
+      expect(edge.getAttribute("marker-end")).toBeNull();
+      expect(edge.parentElement?.querySelector("title")?.textContent).toBe("GRE-8 blocks GRE-3");
+      const legend = canvas.querySelector('[data-slot="task-tree-link-legend"]')?.textContent;
+      expect(legend).toContain("Part of");
+      expect(legend).toContain("Blocks");
+    });
+
     it("brings a hovered card's links to full strength and fades the rest", async () => {
       await renderPage();
       const canvas = container.querySelector('[data-slot="task-tree-canvas"]')!;

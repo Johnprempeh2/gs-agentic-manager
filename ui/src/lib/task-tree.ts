@@ -405,6 +405,11 @@ export function connectorPath(from: Pick<LayoutBox, "x" | "y" | "width" | "heigh
   return `M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`;
 }
 
+/** The middle of a connector, where a loop on a parent and child line carries its mark. */
+export function connectorMidpoint(from: Pick<LayoutBox, "x" | "y" | "width" | "height">, to: Pick<LayoutBox, "x" | "y" | "width">) {
+  return { x: (from.x + from.width / 2 + to.x + to.width / 2) / 2, y: (from.y + from.height + to.y) / 2 };
+}
+
 type Box = Pick<LayoutBox, "x" | "y" | "width" | "height">;
 
 /**

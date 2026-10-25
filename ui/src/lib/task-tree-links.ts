@@ -178,6 +178,76 @@ export function loopThrough(graph: TreeLinkGraph, id: string): string[] | null {
   return null;
 }
 
+/** The links a parent and child line carries, and the longer links it is a hop of. */
+export interface EdgeBlockLinks<L extends TreeLink> {
+  links: L[];
+  /** Links shown by a chain of tree lines this one sits on, with the tasks between. */
+  via: Array<{ link: L; through: string[] }>;
+}
+
+export interface RoutedBlockLinks<L extends TreeLink> {
+  /** Blocking that rides a parent and child line, keyed `parent>child`. */
+  onEdges: Map<string, EdgeBlockLinks<L>>;
+  /** Links with no tree route between their ends: each gets its own line. */
+  lines: L[];
+}
+
+/**
+ * One line per pair of tasks (GRE-2384). A link between a parent and its
+ * child is shown on the line that already joins them; a link that a chain
+ * of such lines already runs along (A to B to C for A blocks C) is shown on
+ * that chain. Only the rest, across branches or projects, draw a line.
+ */
+export function routeBlockLinks<L extends TreeLink>(
+  links: L[],
+  edges: ReadonlyArray<{ from: string; to: string }>,
+): RoutedBlockLinks<L> {
+  const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const edgeOf = new Map(edges.map((edge) => [pairKey(edge.from, edge.to), linkKey(edge.from, edge.to)]));
+  const onEdges = new Map<string, EdgeBlockLinks<L>>();
+  const entry = (key: string) => {
+    let found = onEdges.get(key);
+    if (!found) onEdges.set(key, (found = { links: [], via: [] }));
+    return found;
+  };
+  const rest: L[] = [];
+  const next = new Map<string, string[]>();
+  for (const link of links) {
+    const edge = edgeOf.get(pairKey(link.from, link.to));
+    if (!edge) {
+      rest.push(link);
+      continue;
+    }
+    entry(edge).links.push(link);
+    pushTo(next, link.from, link.to);
+  }
+
+  const lines: L[] = [];
+  for (const link of rest) {
+    // Breadth first along blocking that rides tree lines, from blocker to blocked.
+    const previous = new Map<string, string>([[link.from, link.from]]);
+    const queue = [link.from];
+    for (let head = 0; head < queue.length && !previous.has(link.to); head += 1) {
+      for (const to of next.get(queue[head]!) ?? []) {
+        if (previous.has(to)) continue;
+        previous.set(to, queue[head]!);
+        queue.push(to);
+      }
+    }
+    if (!previous.has(link.to)) {
+      lines.push(link);
+      continue;
+    }
+    const route = [link.to];
+    while (route[0] !== link.from) route.unshift(previous.get(route[0]!)!);
+    const through = route.slice(1, -1);
+    for (let at = 1; at < route.length; at += 1) {
+      entry(edgeOf.get(pairKey(route[at - 1]!, route[at]!))!).via.push({ link, through });
+    }
+  }
+  return { onEdges, lines };
+}
+
 /**
  * "Only what's blocked and why": every blocked task, and every task up its
  * chains, however far. The tree keeps their parents so they stay in place.

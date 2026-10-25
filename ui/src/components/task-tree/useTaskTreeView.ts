@@ -21,6 +21,8 @@ export interface VisibleBlockLink {
   loop: boolean;
   /** One end sits in a folded branch; the line ends on the card that holds it. */
   folded: boolean;
+  /** What the line shows, one "GRE-A blocks GRE-B" for each link behind it. */
+  labels: string[];
 }
 
 /**
@@ -71,6 +73,10 @@ export function useTaskTreeView(
   const visibleBlockLinks = useMemo<VisibleBlockLink[]>(() => {
     if (!index || !visibleRoot) return [];
     const shown = new Set(flattenVisible(visibleRoot).map((item) => item.id));
+    const nameOf = (id: string) => {
+      const task = index.byId.get(id) ?? index.external.get(id);
+      return task ? task.identifier ?? task.title : id;
+    };
     const out = new Map<string, VisibleBlockLink>();
     for (const link of index.graph.links) {
       if (only && !(only.has(link.from) && only.has(link.to))) continue;
@@ -86,6 +92,7 @@ export function useTaskTreeView(
         to,
         loop: loop || (existing?.loop ?? false),
         folded: folded && (existing?.folded ?? true),
+        labels: [...(existing?.labels ?? []), `${nameOf(link.from)} blocks ${nameOf(link.to)}`],
       });
     }
     return [...out.values()];
