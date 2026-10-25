@@ -1,10 +1,10 @@
 // The website admin bridge client (GRE-2323): GSAM reads the site's customer
-// records by calling `<site>/api/admin/v1/*`, signed with an Ed25519 key it
+// and commerce records (GRE-2354) by calling `<site>/api/admin/v1/*`, signed with an Ed25519 key it
 // keeps in the vault. The signing contract is contracts/gs-bridge-v1, the same
 // file in greatstone-website; both test suites check against its vectors.
 import { createHash, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { z } from "zod";
-import type { WebsiteDataResource } from "@greatstone/shared";
+import type { WebsiteCommerceResource, WebsiteDataResource } from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 
 export const BRIDGE_SCHEME = "gs-bridge-v1";
@@ -128,6 +128,19 @@ export const bridgeHealthSchema = z.object({
 });
 export const bridgeListSchema = z.object({ items: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable() });
 export const bridgeItemSchema = z.object({ item: z.record(z.string(), z.unknown()) });
+/** `imports/:id`: the job, and a page of its rows. */
+export const bridgeImportItemSchema = bridgeItemSchema.extend({ rows: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable() });
+/**
+ * A Stripe object id (`pi_…`, `ch_…`: a prefix, then 14+ letters and digits with at least one digit) or a Stripe key
+ * (`sk_test_…`, `rk_live_…`, `whsec_…`). The payment report must never carry one (GRE-2354 section 7). Snake-case
+ * values such as `in_progress` do not match: they have an underscore and no digit.
+ */
+const STRIPE_ID_RE = /\b(?:(?:pi|ch|re|py|in|ii|cus|sub|txn|po|pm|acct|evt|cs|seti|src|tok|card|ba)_(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{14,}|(?:sk|rk|pk)_(?:test|live)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{16,})\b/;
+export const bridgePaymentReportSchema = z.object({
+  report: z.object({
+    from: z.string().nullable(), to: z.string().nullable(), stripeMode: z.enum(["test", "live", "unset"]),
+  }).passthrough(),
+}).refine((value) => !STRIPE_ID_RE.test(JSON.stringify(value)), "the payment report carried a Stripe id or key");
 
 export interface WebsiteBridgeClientOptions {
   baseUrl: string;
@@ -200,13 +213,22 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     }
   }
 
+  const limitOf = (limit: number | undefined) => (limit === undefined ? undefined : String(limit));
+
   return {
     health: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeHealthSchema),
-    list: (resource: WebsiteDataResource, filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
+    list: (resource: WebsiteDataResource | WebsiteCommerceResource,
+      filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/${resource}`, { customer: filters.customer, updatedSince: filters.updatedSince, cursor: filters.cursor,
-        limit: filters.limit === undefined ? undefined : String(filters.limit) }, actor, bridgeListSchema),
-    get: (resource: WebsiteDataResource, id: string, actor: WebsiteBridgeActor) =>
+        limit: limitOf(filters.limit) }, actor, bridgeListSchema),
+    get: (resource: WebsiteDataResource | Exclude<WebsiteCommerceResource, "imports">, id: string, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/${resource}/${encodeURIComponent(id)}`, {}, actor, bridgeItemSchema),
+    /** One import job with a page of its rows. */
+    importJob: (id: string, page: { cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
+      get(`/api/admin/v1/imports/${encodeURIComponent(id)}`, { cursor: page.cursor, limit: limitOf(page.limit) }, actor, bridgeImportItemSchema),
+    fx: (actor: WebsiteBridgeActor) => get("/api/admin/v1/fx", {}, actor, bridgeItemSchema),
+    payments: (range: { from?: string; to?: string }, actor: WebsiteBridgeActor) =>
+      get("/api/admin/v1/payments", { from: range.from, to: range.to }, actor, bridgePaymentReportSchema),
   };
 }
 export type WebsiteBridgeClient = ReturnType<typeof createWebsiteBridgeClient>;

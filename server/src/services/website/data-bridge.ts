@@ -7,7 +7,14 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
 import { websiteSite } from "@greatstone/db";
-import type { WebsiteDataBridgeKey, WebsiteDataBridgeStatus, WebsiteDataResource } from "@greatstone/shared";
+import type {
+  WebsiteCommerceListQuery,
+  WebsiteCommerceResource,
+  WebsiteDataBridgeKey,
+  WebsiteDataBridgeStatus,
+  WebsiteDataResource,
+  WebsitePaymentReportQuery,
+} from "@greatstone/shared";
 import { secretService } from "../secrets.js";
 import type { WebsiteEnquiry, WebsiteEnquiryReader } from "./enquiries.js";
 import {
@@ -137,6 +144,23 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     return (await client(site)).get(resource, id, actor);
   }
 
+  /** Commerce reads (GRE-2354 2c(a)): the same read key and the same audit on the site. */
+  const commerce = {
+    async list(site: BridgeSite, resource: WebsiteCommerceResource, filters: WebsiteCommerceListQuery, actor: WebsiteBridgeActor) {
+      return (await client(site)).list(resource, filters, actor);
+    },
+    async get(site: BridgeSite, resource: WebsiteCommerceResource, id: string, page: { cursor?: string; limit?: number }, actor: WebsiteBridgeActor) {
+      const bridge = await client(site);
+      return resource === "imports" ? bridge.importJob(id, page, actor) : bridge.get(resource, id, actor);
+    },
+    async fx(site: BridgeSite, actor: WebsiteBridgeActor) {
+      return (await client(site)).fx(actor);
+    },
+    async payments(site: BridgeSite, range: WebsitePaymentReportQuery, actor: WebsiteBridgeActor) {
+      return (await client(site)).payments(range, actor);
+    },
+  };
+
   /** Facet's reader (GRE-2324): the site's enquiries, page by page, as the scheduled pull. */
   const enquiryReader: WebsiteEnquiryReader = {
     async listEnquiries(siteId, cursor) {
@@ -152,6 +176,6 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
-  return { createReadKey, status, list, get, enquiryReader };
+  return { createReadKey, status, list, get, commerce, enquiryReader };
 }
 export type WebsiteDataBridgeService = ReturnType<typeof websiteDataBridgeService>;
