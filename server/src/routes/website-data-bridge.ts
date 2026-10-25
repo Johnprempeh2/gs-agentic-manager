@@ -1,11 +1,17 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import type { Db } from "@greatstone/db";
 import {
+  WEBSITE_COMMERCE_RESOURCES,
   WEBSITE_DATA_BRIDGE_API_ROUTES,
   WEBSITE_DATA_RESOURCES,
   createWebsiteDataBridgeKeySchema,
+  websiteCommerceItemQuerySchema,
+  websiteCommerceListQuerySchema,
   websiteDataListQuerySchema,
+  websitePaymentReportQuerySchema,
   type PermissionKey,
+  type WebsiteCommerceResource,
   type WebsiteDataResource,
 } from "@greatstone/shared";
 import { HttpError, unprocessable } from "../errors.js";
@@ -20,6 +26,7 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ITEM_ID_RE = /^[A-Za-z0-9-]{1,80}$/;
+const NO_QUERY = z.object({}).strict();
 
 // Website data (GRE-2323): reads from the site's own database through the signed admin bridge. Same order of checks
 // as the website module routes: company access, the website permission, then the site by (company_id, id) or 404.
@@ -31,6 +38,7 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
 
   router.use("/companies/:companyId/website/sites/:siteId/data-bridge", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/data", requireEntitlement(db, "enableWebsiteView"));
+  router.use("/companies/:companyId/website/sites/:siteId/commerce", requireEntitlement(db, "enableWebsiteView"));
 
   async function siteFor(req: Request, res: Response, permission: Extract<PermissionKey, "website:view" | "website:publish">): Promise<SiteRow | null> {
     const companyId = req.params.companyId as string;
@@ -107,6 +115,56 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
       return;
     }
     res.json(await bridge.get(site, resource, itemId, actorOf(req)));
+  });
+
+  // Commerce reads (GRE-2354 2c(a)): the catalogue, pricing, FX, imports and the payment report, on the same read
+  // key. Read only; the write capability is a separate key and separate routes (2c(b)).
+  function commerceResourceOf(req: Request): WebsiteCommerceResource {
+    const resource = req.params.resource as string;
+    if (!(WEBSITE_COMMERCE_RESOURCES as readonly string[]).includes(resource)) {
+      throw unprocessable("Unknown website commerce resource", { code: "website_commerce_resource_unknown", resources: WEBSITE_COMMERCE_RESOURCES });
+    }
+    return resource as WebsiteCommerceResource;
+  }
+
+  function queryOf<T>(schema: z.ZodType<T>, req: Request): T {
+    const query = schema.safeParse(req.query);
+    if (!query.success) throw unprocessable(`The filters are not valid: ${query.error.issues[0]?.path.join(".") || "query"}`, { code: "website_data_filters_invalid" });
+    return query.data;
+  }
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceFx, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await bridge.commerce.fx(site, actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.commercePayments, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await bridge.commerce.payments(site, queryOf(websitePaymentReportQuerySchema, req), actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceList, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const resource = commerceResourceOf(req);
+    res.json(await bridge.commerce.list(site, resource, queryOf(websiteCommerceListQuerySchema, req), actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceItem, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const resource = commerceResourceOf(req);
+    const itemId = req.params.itemId as string;
+    if (!ITEM_ID_RE.test(itemId)) {
+      res.status(404).json({ error: "The website has no such record.", code: "website_bridge_not_found" });
+      return;
+    }
+    // Only an import job pages (its rows); every other item takes no query.
+    const pageSchema: z.ZodType<{ cursor?: string; limit?: number }> = resource === "imports" ? websiteCommerceItemQuerySchema : NO_QUERY;
+    res.json(await bridge.commerce.get(site, resource, itemId, queryOf(pageSchema, req), actorOf(req)));
   });
 
   return router;

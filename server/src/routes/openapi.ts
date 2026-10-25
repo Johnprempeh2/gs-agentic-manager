@@ -16634,6 +16634,42 @@ registerCurrentRoute({
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
 });
 
+// ─── Website commerce reads (GRE-2354 2c(a)) ──────────────────────────────────
+
+const commerceReadResponses = { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } };
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/fx`,
+  tags: ["website"],
+  summary: "The site's USD to GBP display rate, its row version and its last 50 changes, read only through the signed admin bridge (website:view)",
+  responses: commerceReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/payments`,
+  tags: ["website"],
+  summary: "The payment report from the site's own orders: orders paid by Stripe, refunds and refund requests, and whether the site's Stripe key is test or live. Never a Stripe id or key; no Stripe call (website:view). Filters: from, to (YYYY-MM-DD)",
+  responses: commerceReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/{resource}`,
+  tags: ["website"],
+  summary: "List the site's commerce records, read only, through the signed admin bridge: offerings, categories, vendors, pricing-rules, customer-tiers or imports (website:view). Filters: updatedSince, cursor, limit",
+  responses: commerceReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/{resource}/{itemId}`,
+  tags: ["website"],
+  summary: "Read one commerce record by id through the signed admin bridge (website:view). An import job comes with a page of its rows (cursor, limit)",
+  responses: commerceReadResponses,
+});
+
 // ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────
 
 registerCurrentRoute({
