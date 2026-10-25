@@ -3238,6 +3238,7 @@ export * from "./deep-dive-sessions.js";
 export * from "./deep-dive-boards.js";
 export * from "./deep-dive-opportunities.js";
 export * from "./deep-dive-traceability.js";
+export * from "./deep-dive-overview.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";
