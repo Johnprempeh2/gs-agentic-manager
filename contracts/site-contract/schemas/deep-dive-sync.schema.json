@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/deep-dive-sync",
+  "title": "PUT /api/admin/v1/deep-dive/tenants/:tenantId: GSAM's whole snapshot of one tenant (GRE-2439)",
+  "type": "object",
+  "required": ["schema", "tenantId", "tenantName", "generatedAt", "items", "files", "documentRequests", "deliverables"],
+  "additionalProperties": false,
+  "definitions": {
+    "id": { "type": "string", "minLength": 1 },
+    "time": { "type": "string", "format": "date-time" },
+    "nullableTime": { "oneOf": [{ "type": "null" }, { "type": "string", "format": "date-time" }] },
+    "nullableString": { "type": ["string", "null"] }
+  },
+  "properties": {
+    "schema": { "const": "gs-deep-dive-sync-v1" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "tenantName": { "type": "string" },
+    "generatedAt": { "$ref": "#/definitions/time" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "key", "title", "summary", "status", "fields", "parentId", "updatedAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "type": { "type": "string" },
+          "key": { "$ref": "#/definitions/nullableString" },
+          "title": { "type": "string" },
+          "summary": { "$ref": "#/definitions/nullableString" },
+          "status": { "type": "string" },
+          "fields": { "type": "object" },
+          "parentId": { "$ref": "#/definitions/nullableString" },
+          "updatedAt": { "$ref": "#/definitions/time" }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "itemId", "title", "kind", "status", "heldAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "itemId": { "$ref": "#/definitions/id" },
+          "title": { "type": "string" },
+          "kind": { "$ref": "#/definitions/nullableString" },
+          "status": { "enum": ["held", "missing"] },
+          "heldAt": { "$ref": "#/definitions/nullableTime" }
+        }
+      }
+    },
+    "documentRequests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "note", "itemIds", "status", "receivedAt", "createdAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "title": { "type": "string" },
+          "note": { "$ref": "#/definitions/nullableString" },
+          "itemIds": { "type": "array", "items": { "$ref": "#/definitions/id" } },
+          "status": { "enum": ["open", "received"] },
+          "receivedAt": { "$ref": "#/definitions/nullableTime" },
+          "createdAt": { "$ref": "#/definitions/time" }
+        }
+      }
+    },
+    "deliverables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "version", "status", "publishedAt", "acceptedAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "title": { "type": "string" },
+          "version": { "type": ["integer", "null"] },
+          "status": { "enum": ["published", "accepted"] },
+          "publishedAt": { "$ref": "#/definitions/time" },
+          "acceptedAt": { "$ref": "#/definitions/nullableTime" }
+        }
+      }
+    }
+  }
+}

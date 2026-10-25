@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/editor-hello-ack",
+  "title": "The payload of the editor frame's hello-ack (frame protocol 1). Later additions are optional; GSAM ignores what it does not know.",
+  "type": "object",
+  "required": ["protocol", "nonce", "siteId", "engine", "supportedReleaseSchemas", "blocks", "siteContract"],
+  "properties": {
+    "protocol": { "const": 1 },
+    "nonce": { "type": "string" },
+    "siteId": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "engine": {
+      "type": "object",
+      "required": ["version", "commit"],
+      "properties": {
+        "version": { "type": "string", "maxLength": 100 },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "supportedReleaseSchemas": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 } },
+    "blocks": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["type", "label"],
+        "properties": { "type": { "type": "string" }, "label": { "type": "string", "maxLength": 200 } }
+      }
+    },
+    "siteContract": { "type": "integer", "minimum": 1 },
+    "editorContract": { "type": "integer", "minimum": 1 },
+    "editorCommands": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 40 } },
+    "editorMessages": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 40 } },
+    "liveContent": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "object", "required": ["blocks"], "properties": { "blocks": { "type": "integer", "minimum": 1, "maximum": 500 } } }
+      ]
+    }
+  }
+}

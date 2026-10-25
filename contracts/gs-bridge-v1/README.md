@@ -1,7 +1,8 @@
 # gs-bridge-v1: how GSAM signs a call to the website's admin API
 
-GRE-2323. This folder is at the same path in `greatstone-website` and `gs-agentic-manager`. If you change
-`vectors.json` in one repo, change it in the other repo's pull request too. Both test suites check against it.
+GRE-2323. This folder is part of the GSAM and website contract (`contracts/README.md`, GRE-2633). Change it
+only in `gs-agentic-manager`; the website vendors it with `contracts/check.mjs --vendor`. Both test suites check
+against `vectors.json`.
 
 ## Keys
 
