@@ -137,6 +137,8 @@ export interface CommerceRefundRequestApprovalPayload {
   requestId: string | null;
   /** The site's status of the request as GSAM last saw it: requested, approved, rejected, done, cancelled. */
   requestStatus: string | null;
+  /** The caller's Idempotency-Key, when it sent one: the same key returns this card. */
+  clientKey?: string;
 }
 
 export type WebsiteDataBridgeState = "not_set_up" | "connected" | "failing";

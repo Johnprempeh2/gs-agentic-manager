@@ -200,7 +200,11 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
       agentId: actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
       userId: actor.actorType === "user" ? actor.actorId : null,
       bridge: actorOf(req),
-    });
+    }, idempotencyKeyOf(req));
+    if (result.replayed) {
+      res.status(200).json({ approval: result.approval, request: result.request });
+      return;
+    }
     await logActivity(db, {
       companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.commerce_refund_requested",
       entityType: "approval", entityId: result.approval.id, agentId: actor.agentId, runId: actor.runId,

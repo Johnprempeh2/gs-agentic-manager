@@ -389,6 +389,21 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
       expect(approved.body).toMatchObject({ status: "approved", payload: { requestId: "rr-1", requestStatus: "approved" } });
     });
 
+    it("the caller's Idempotency-Key returns the same card, and the site records one request", async () => {
+      const { base, agent } = await refundWorld();
+      answer = (_m, _p, body) => requested(body);
+      const key = "UFFSU1RVVldYWVpbXF1eXw";
+      const send = (amountMinor: number) => request(app(agent.actor)).post(`${base}/commerce/refund-requests`).set("Idempotency-Key", key)
+        .send({ orderId: ORDER, amountMinor, reason: "r" });
+      const first = await send(100).expect(201);
+      const again = await send(100).expect(200);
+      expect(again.body.approval.id).toBe(first.body.approval.id);
+      expect(await db.select().from(approvals)).toHaveLength(1);
+      expect(seen.filter((s) => !s.replayed)).toHaveLength(1);
+      const other = await send(200).expect(409);
+      expect(other.body.code).toBe("website_bridge_idempotency_mismatch");
+    });
+
     it("keeps the card open when the site's answer to a request cannot be read", async () => {
       const { base, agent } = await refundWorld();
       answer = () => ({ status: 201, body: { item: { odd: true } } });

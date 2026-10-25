@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { agents, approvals, authUsers } from "@greatstone/db";
 import {
@@ -30,6 +30,16 @@ const OPEN = ["pending", "revision_requested"] as const;
 /** 22 base64url characters from the approval and the step: the same step always has the same key. */
 export function refundIdempotencyKey(approvalId: string, step: "request" | "approved" | "rejected") {
   return createHash("sha256").update(`${COMMERCE_REFUND_REQUEST_APPROVAL_TYPE}:${approvalId}:${step}`).digest().subarray(0, 16).toString("base64url");
+}
+
+/**
+ * The site key for recording the request. With a caller's key it comes from that key, so two cards opened at the
+ * same moment under it still record one request on the site; the second card's decision then fails and cancels it.
+ */
+function requestKeyOf(approval: Pick<ApprovalRow, "id" | "companyId">, clientKey: string | undefined) {
+  return clientKey
+    ? createHash("sha256").update(`${COMMERCE_REFUND_REQUEST_APPROVAL_TYPE}:${approval.companyId}:client:${clientKey}`).digest().subarray(0, 16).toString("base64url")
+    : refundIdempotencyKey(approval.id, "request");
 }
 
 function payloadOf(approval: Pick<ApprovalRow, "payload">) {
@@ -101,8 +111,20 @@ export function commerceRefundApprovals(db: Db, bridgeOptions: WebsiteDataBridge
    * request id; deciding it sends the same request again first (same key), so it is recorded at most once.
    */
   async function request(site: SiteRow, input: WebsiteCommerceRefundRequestInput,
-    actor: { agentId: string | null; userId: string | null; bridge: WebsiteBridgeActor }) {
+    actor: { agentId: string | null; userId: string | null; bridge: WebsiteBridgeActor }, clientKey?: string) {
     if (!site.dataBridgeRefundSecretId) throw capabilityNotConfigured("refund_request");
+    // the caller's Idempotency-Key: the same key is the same card, so a retried call opens no second request
+    if (clientKey) {
+      const [existing] = await db.select().from(approvals).where(and(eq(approvals.companyId, site.companyId),
+        eq(approvals.type, COMMERCE_REFUND_REQUEST_APPROVAL_TYPE), sql`${approvals.payload}->>'clientKey' = ${clientKey}`)).limit(1);
+      if (existing) {
+        const p = payloadOf(existing);
+        if (p.siteId !== site.id || p.orderId !== input.orderId || p.amountMinor !== input.amountMinor || p.reason !== input.reason) {
+          throw new WebsiteBridgeError("idempotency_mismatch");
+        }
+        return { approval: existing, request: null, confirmed: Boolean(p.requestId), replayed: true };
+      }
+    }
     const who = await requesterName(actor);
     const payload: CommerceRefundRequestApprovalPayload = {
       siteId: site.id,
@@ -117,6 +139,7 @@ export function commerceRefundApprovals(db: Db, bridgeOptions: WebsiteDataBridge
       requestedBy: who,
       requestId: null,
       requestStatus: null,
+      ...(clientKey ? { clientKey } : {}),
     };
     const [created] = await db
       .insert(approvals)
@@ -131,11 +154,11 @@ export function commerceRefundApprovals(db: Db, bridgeOptions: WebsiteDataBridge
       .returning();
     const approval = created!;
     try {
-      const recorded = await bridge.commerce.requestRefund(site, input, actor.bridge, refundIdempotencyKey(approval.id, "request"));
+      const recorded = await bridge.commerce.requestRefund(site, input, actor.bridge, requestKeyOf(approval, clientKey));
       const updated = await setPayload(approval, fromItem(recorded.item));
-      return { approval: updated, request: recorded.item, confirmed: true };
+      return { approval: updated, request: recorded.item, confirmed: true, replayed: false };
     } catch (error) {
-      if (!definite(error)) return { approval, request: null, confirmed: false };
+      if (!definite(error)) return { approval, request: null, confirmed: false, replayed: false };
       await cancel(approval, `The website did not record the request: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
@@ -179,7 +202,7 @@ export function commerceRefundApprovals(db: Db, bridgeOptions: WebsiteDataBridge
         const recorded = await bridge.commerce.requestRefund(site, {
           orderId: payload.orderId as string, amountMinor: payload.amountMinor as number, reason: payload.reason as string,
         }, approval.requestedByAgentId ? { type: "agent", id: approval.requestedByAgentId }
-          : approval.requestedByUserId ? { type: "user", id: approval.requestedByUserId } : person, refundIdempotencyKey(approval.id, "request"));
+          : approval.requestedByUserId ? { type: "user", id: approval.requestedByUserId } : person, requestKeyOf(approval, payload.clientKey));
         current = await setPayload(current, fromItem(recorded.item));
         requestId = String(recorded.item.id);
       }
