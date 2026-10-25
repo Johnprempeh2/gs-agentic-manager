@@ -517,6 +517,10 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "journey"] as const,
     casePortal: (caseId: string) =>
       ["pipelines", "item", caseId, "portal"] as const,
+    casePublications: (caseId: string) =>
+      ["pipelines", "item", caseId, "publications"] as const,
+    caseTimeline: (caseId: string) =>
+      ["pipelines", "item", caseId, "timeline"] as const,
     caseDocument: (caseId: string, key: string) =>
       ["pipelines", "item", caseId, "document", key] as const,
     caseDocumentRevisions: (caseId: string, key: string) =>
@@ -580,6 +584,7 @@ export const queryKeys = {
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
     detail: (id: string) => ["cases", "detail", id] as const,
+    deepDiveFiles: (companyId: string) => ["cases", companyId, "deep-dive-files"] as const,
     documents: (id: string) => ["cases", "documents", id] as const,
     documentAnnotations: (
       caseId: string,

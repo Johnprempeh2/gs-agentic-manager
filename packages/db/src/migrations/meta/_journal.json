@@ -2752,6 +2752,62 @@
       "when": 1792889652512,
       "tag": "0394_website_data_bridge",
       "breakpoints": true
+    },
+    {
+      "idx": 395,
+      "version": "7",
+      "when": 1792889653512,
+      "tag": "0395_deep_dive_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 396,
+      "version": "7",
+      "when": 1792889654512,
+      "tag": "0396_deep_dive_item_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 397,
+      "version": "7",
+      "when": 1792889655512,
+      "tag": "0397_deep_dive_findings",
+      "breakpoints": true
+    },
+    {
+      "idx": 398,
+      "version": "7",
+      "when": 1792889656512,
+      "tag": "0398_deep_dive_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 399,
+      "version": "7",
+      "when": 1792889657512,
+      "tag": "0399_deep_dive_boards",
+      "breakpoints": true
+    },
+    {
+      "idx": 400,
+      "version": "7",
+      "when": 1792889658512,
+      "tag": "0400_deep_dive_opportunities",
+      "breakpoints": true
+    },
+    {
+      "idx": 401,
+      "version": "7",
+      "when": 1792889659512,
+      "tag": "0401_deep_dive_traceability",
+      "breakpoints": true
+    },
+    {
+      "idx": 402,
+      "version": "7",
+      "when": 1792889660512,
+      "tag": "0402_client_deliverable_publications",
+      "breakpoints": true
     }
   ]
 }

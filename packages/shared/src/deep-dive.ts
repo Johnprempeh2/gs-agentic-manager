@@ -57,7 +57,12 @@ export type DeepDiveStreamStatus = (typeof DEEP_DIVE_STREAM_STATUSES)[number];
 export const DEEP_DIVE_DEPTHS = ["full", "reduced"] as const;
 export type DeepDiveDepth = (typeof DEEP_DIVE_DEPTHS)[number];
 
-/** Internal is the default; nothing is created Shared. */
+/**
+ * Internal is the default; nothing is created Shared, and only a person sets
+ * Shared (GRE-2366). Visibility is the `visibility` column of the item's case,
+ * not a key of `fields`: only Shared items of the item's own client reach that
+ * client.
+ */
 export const DEEP_DIVE_VISIBILITIES = ["internal", "shared"] as const;
 export type DeepDiveVisibility = (typeof DEEP_DIVE_VISIBILITIES)[number];
 
@@ -85,7 +90,6 @@ export interface DeepDiveStreamFields {
   status: DeepDiveStreamStatus;
   depth: DeepDiveDepth;
   depthReason: string;
-  visibility: DeepDiveVisibility;
   knowledge: Record<DeepDiveGifKey, DeepDiveKnowledge>;
 }
 
@@ -95,7 +99,6 @@ export function defaultDeepDiveStreamFields(stream: DeepDiveStreamKey): DeepDive
     status: "not_started",
     depth: "full",
     depthReason: "",
-    visibility: "internal",
     knowledge: Object.fromEntries(DEEP_DIVE_GIF.map((gif) => [gif.key, "unknown"])) as Record<DeepDiveGifKey, DeepDiveKnowledge>,
   };
 }
@@ -106,7 +109,7 @@ function pick<T extends string>(value: unknown, allowed: readonly T[], fallback:
 
 /**
  * Read stream fields defensively: anything missing or unrecognised falls back
- * to the default (Unknown, Internal), never to Known or Shared.
+ * to the default (Unknown), never to Known.
  */
 export function readDeepDiveStreamFields(stream: DeepDiveStreamKey, raw: Record<string, unknown> | null | undefined): DeepDiveStreamFields {
   const fallback = defaultDeepDiveStreamFields(stream);
@@ -117,11 +120,23 @@ export function readDeepDiveStreamFields(stream: DeepDiveStreamKey, raw: Record<
     status: pick(source.status, DEEP_DIVE_STREAM_STATUSES, fallback.status),
     depth: pick(source.depth, DEEP_DIVE_DEPTHS, fallback.depth),
     depthReason: typeof source.depthReason === "string" ? source.depthReason : "",
-    visibility: pick(source.visibility, DEEP_DIVE_VISIBILITIES, fallback.visibility),
     knowledge: Object.fromEntries(
       DEEP_DIVE_GIF.map((gif) => [gif.key, pick(rawKnowledge[gif.key], DEEP_DIVE_KNOWLEDGE, "unknown")]),
     ) as Record<DeepDiveGifKey, DeepDiveKnowledge>,
   };
+}
+
+export const DEEP_DIVE_REDUCED_NEEDS_REASON =
+  "Name the reason. A stream is never dropped, only reduced with a named reason.";
+
+/**
+ * Book V, Ch 7: a stream is never dropped, only reduced with a named reason.
+ * Returns the message to show when stored stream fields break that rule, else null.
+ */
+export function deepDiveDepthError(raw: Record<string, unknown> | null | undefined): string | null {
+  if (raw?.depth !== "reduced") return null;
+  const reason = typeof raw.depthReason === "string" ? raw.depthReason.trim() : "";
+  return reason ? null : DEEP_DIVE_REDUCED_NEEDS_REASON;
 }
 
 /** The stub body for a missing GIF document: only a heading and the question. */

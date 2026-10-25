@@ -75,6 +75,11 @@ import {
   setCaseNdaSchema,
   setCaseEngagementSchema,
   acceptClientEngagementSchema,
+  createClientPublicationSchema,
+  registerClientApproverSchema,
+  rejectClientPublicationSchema,
+  submitClientPublicationSchema,
+  withdrawClientPublicationSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -369,6 +374,40 @@ import {
   replaceChatEndpointResourcesSchema,
   updateChatEndpointSchema,
   updateNotificationPreferencesSchema,
+  decideDeepDiveFindingSchema,
+  listDeepDiveFindingsQuerySchema,
+  proposeDeepDiveFindingSchema,
+  setDeepDiveFindingVisibilitySchema,
+  addDeepDiveSessionQuestionSchema,
+  answerToDeepDiveFindingSchema,
+  planDeepDiveSessionSchema,
+  updateDeepDiveSessionQuestionSchema,
+  updateDeepDiveSessionSchema,
+  createDeepDiveOfferingSchema,
+  createDeepDivePersonSchema,
+  createDeepDiveProcessSchema,
+  createDeepDiveTaskSchema,
+  createDeepDiveUnitSchema,
+  recordDeepDiveHandoffSchema,
+  saveDeepDiveProcessLayoutSchema,
+  updateDeepDiveHandoffSchema,
+  updateDeepDiveOfferingSchema,
+  updateDeepDivePersonSchema,
+  updateDeepDiveProcessSchema,
+  updateDeepDiveTaskSchema,
+  updateDeepDiveUnitSchema,
+  createDeepDiveBuildSchema,
+  createDeepDiveKpiSchema,
+  createDeepDiveOpportunitySchema,
+  updateDeepDiveBuildSchema,
+  updateDeepDiveKpiSchema,
+  updateDeepDiveOpportunitySchema,
+  createDeepDiveCommercialSchema,
+  createDeepDiveRoadmapItemSchema,
+  updateDeepDiveCommercialSchema,
+  updateDeepDiveRoadmapItemSchema,
+  linkDeepDiveFileSchema,
+  patchDeepDiveFileSchema,
 } from "@greatstone/shared";
 import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
@@ -5137,6 +5176,146 @@ registry.registerPath({
   summary:
     "Public, no sign-in: the client accepts the engagement pack with their name, optional role and email. The " +
     "client's engagement moves to accepted. 409 when already accepted",
+  request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
+});
+
+// Clients > Deliverables publishing and the engagement timeline (GRE-2373).
+const casePath = z.object({ caseId: z.string() });
+const publicationPath = z.object({ id: z.string() });
+const boardOnly = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict };
+
+registry.registerPath({
+  method: "get",
+  path: "/api/cases/{caseId}/publications",
+  tags: ["issues"],
+  summary: "The client's registered approvers, deliverable publications with their audit, what blocks publishing, and whether receipts can be sent",
+  request: { params: casePath },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/cases/{caseId}/timeline",
+  tags: ["issues"],
+  summary: "The client's engagement timeline from stored events: stages entered and left, NDA, engagement and publishing milestones. ?view=client returns only what the client may see",
+  request: { params: casePath, query: z.object({ view: z.enum(["client"]).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/approvers",
+  tags: ["issues"],
+  summary: "Register a company member as an approver of this client's deliverables (a person with Work cases)",
+  request: { params: casePath, body: jsonBody(registerClientApproverSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/cases/{caseId}/approvers/{approverId}",
+  tags: ["issues"],
+  summary: "Remove a registered approver (a person with Work cases); the audit keeps who it was",
+  request: { params: z.object({ caseId: z.string(), approverId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/publications",
+  tags: ["issues"],
+  summary: "Start a draft publication from a deliverable filed under one of the client's stages (Work cases)",
+  request: { params: casePath, body: jsonBody(createClientPublicationSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/submit",
+  tags: ["issues"],
+  summary: "Freeze the newest version and its content fingerprint, and ask one registered approver (Work cases)",
+  request: { params: publicationPath, body: jsonBody(submitClientPublicationSchema) },
+  responses: { ...boardOnly, 400: r.badRequest, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/approve",
+  tags: ["issues"],
+  summary: "Approve (only the named, still-registered approver). 409 fingerprint_mismatch when the content changed since it was submitted",
+  request: { params: publicationPath },
+  responses: boardOnly,
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/reject",
+  tags: ["issues"],
+  summary: "Send back to draft with a reason (only the named approver)",
+  request: { params: publicationPath, body: jsonBody(rejectClientPublicationSchema) },
+  responses: { ...boardOnly, 400: r.badRequest },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/publish",
+  tags: ["issues"],
+  summary: "Publish exactly what was approved (a person with Work cases). 409 when the NDA or engagement blocks it or the fingerprint no longer matches",
+  request: { params: publicationPath },
+  responses: boardOnly,
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/acceptance-link",
+  tags: ["issues"],
+  summary: "Make the client's link to read and accept a published deliverable (a person with Work cases). Returned once; a new link replaces the old",
+  request: { params: publicationPath },
+  responses: { ...boardOnly, 201: r.ok() },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/withdraw",
+  tags: ["issues"],
+  summary: "Withdraw before acceptance, with a reason (a person with Work cases); the client's link stops working",
+  request: { params: publicationPath, body: jsonBody(withdrawClientPublicationSchema) },
+  responses: { ...boardOnly, 400: r.badRequest },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-publications/{id}/receipt",
+  tags: ["issues"],
+  summary: "Send the acceptance receipt again after it failed or before the sending-only Resend key was set (a person with Work cases)",
+  request: { params: publicationPath },
+  responses: boardOnly,
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-deliverable/{token}",
+  tags: ["issues"],
+  summary: "Public, no sign-in: what a client sees for a published deliverable. 404 when the link is unknown, withdrawn or expired",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-deliverable/{token}/content",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the published file, served sandboxed, only while it still has the published fingerprint",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-deliverable/{token}/accept",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the client accepts the published deliverable; a receipt email is sent. 409 when already accepted",
   request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
 });
@@ -16723,4 +16902,526 @@ registerCurrentRoute({
   tags: ["ai-connections"], summary: "Check the local operator's subscription sign-in without saving a connection",
   body: localAiConnectionSchema,
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+// Deep Dive findings (GRE-2367). Proposed by a person or an agent; only a
+// person validates, rejects or shares. A finding is never edited.
+const findingResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/findings",
+  tags: ["deep-dive"],
+  summary: "List the company's Deep Dive findings, optionally for one Investigation Stream",
+  query: listDeepDiveFindingsQuerySchema,
+  responses: findingResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/findings",
+  tags: ["deep-dive"],
+  summary:
+    "Propose a finding in one GIF cell of a stream, citing evidence of the stream's client; supersedesFindingId " +
+    "proposes a replacement for a validated finding (409 when one is already proposed)",
+  body: proposeDeepDiveFindingSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/findings/{findingId}",
+  tags: ["deep-dive"],
+  summary: "Get one Deep Dive finding with its evidence",
+  responses: findingResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/findings/{findingId}/decision",
+  tags: ["deep-dive"],
+  summary: "Validate or reject a proposed finding (people only); validating a replacement supersedes the old finding",
+  body: decideDeepDiveFindingSchema,
+  responses: { ...findingResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/findings/{findingId}",
+  tags: ["deep-dive"],
+  summary: "Set a finding Internal or Shared (people only); any other change is refused with 409, a finding is never edited",
+  body: setDeepDiveFindingVisibilitySchema,
+  responses: { ...findingResponses, 409: r.conflict },
+});
+
+// Deep Dive evidence and files (GRE-2395). One client file can be linked to
+// many Deep Dive items; each link is Internal unless a person shares it.
+const deepDiveFileResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/files",
+  tags: ["deep-dive"],
+  summary: "Evidence and files screen: each client file with where it came from, and held vs missing per Deep Dive item",
+  responses: deepDiveFileResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{id}/deep-dive-files",
+  tags: ["deep-dive"],
+  summary:
+    "Link one file or document request of the item's client to a Deep Dive item; Internal by default, " +
+    "only a person may link it Shared (409 when already linked)",
+  body: linkDeepDiveFileSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/cases/{id}/deep-dive-files/{linkId}",
+  tags: ["deep-dive"],
+  summary: "Set a file link Internal or Shared (only a person may share)",
+  body: patchDeepDiveFileSchema,
+  responses: { ...deepDiveFileResponses, 400: r.badRequest },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{id}/deep-dive-files/{linkId}",
+  tags: ["deep-dive"],
+  summary: "Unlink a file from one Deep Dive item; the file and its other links stay",
+  responses: deepDiveFileResponses,
+});
+
+// Deep Dive sessions (GRE-2368). Planned -> Live -> Closed; each question comes
+// back with what is already known about its GIF cell.
+const sessionResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const sessionWriteResponses = { ...sessionResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/sessions",
+  tags: ["deep-dive"],
+  summary: "List the company's Deep Dive sessions with question and answer counts",
+  responses: sessionResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/sessions",
+  tags: ["deep-dive"],
+  summary: "Plan a session (Planned, Internal), optionally with questions in GIF cells of the company's streams",
+  body: planDeepDiveSessionSchema,
+  responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/sessions/{sessionId}",
+  tags: ["deep-dive"],
+  summary: "Get a session with its questions, each with what is already known about its GIF cell",
+  responses: sessionResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/sessions/{sessionId}",
+  tags: ["deep-dive"],
+  summary: "Change a session's title or date until it closes, or set it Internal/Shared (only a person may share)",
+  body: updateDeepDiveSessionSchema,
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/sessions/{sessionId}/start",
+  tags: ["deep-dive"],
+  summary: "Start a planned session that has questions (Planned -> Live)",
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/sessions/{sessionId}/close",
+  tags: ["deep-dive"],
+  summary: "Close a live session (Live -> Closed); a closed session is kept as it was run",
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/sessions/{sessionId}/questions",
+  tags: ["deep-dive"],
+  summary: "Add a question in one GIF cell to a planned or live session; the prompt defaults to the GIF question",
+  body: addDeepDiveSessionQuestionSchema,
+  responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/session-questions/{questionId}",
+  tags: ["deep-dive"],
+  summary: "Change a question's prompt while planned, or record its answer while live",
+  body: updateDeepDiveSessionQuestionSchema,
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/session-questions/{questionId}",
+  tags: ["deep-dive"],
+  summary: "Remove a question while its session is planned",
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/session-questions/{questionId}/finding",
+  tags: ["deep-dive"],
+  summary:
+    "Turn an answer into a proposed finding in the question's stream and GIF cell (once per answer); " +
+    "the statement defaults to the answer",
+  body: answerToDeepDiveFindingSchema,
+  responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+// Deep Dive boards (GRE-2369). Every write answers with the whole board it
+// changed. An arrow on the process board is a recorded handoff, nothing else.
+const boardResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const boardWriteResponses = { ...boardResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/organisation",
+  tags: ["deep-dive"],
+  summary: "Get the organisation board: units, people (placed and unplaced) and each person's tasks with their fate",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/org-units",
+  tags: ["deep-dive"],
+  summary: "Add a unit (Internal) to the organisation board",
+  body: createDeepDiveUnitSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/org-units/{unitId}",
+  tags: ["deep-dive"],
+  summary: "Change a unit: name, type, parent, lead, headcount, order, or Internal/Shared (only a person may share)",
+  body: updateDeepDiveUnitSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/org-units/{unitId}",
+  tags: ["deep-dive"],
+  summary: "Remove a unit; units under it move to the top and its people become unplaced",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/people",
+  tags: ["deep-dive"],
+  summary: "Add a person (Internal), placed in a unit or unplaced",
+  body: createDeepDivePersonSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/people/{personId}",
+  tags: ["deep-dive"],
+  summary: "Change a person: name, role, side, unit, who they report to, or Internal/Shared (only a person may share)",
+  body: updateDeepDivePersonSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/people/{personId}",
+  tags: ["deep-dive"],
+  summary: "Remove a person and their tasks",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/people/{personId}/tasks",
+  tags: ["deep-dive"],
+  summary: "Record a task a person does, with hours and its fate in the target state",
+  body: createDeepDiveTaskSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/person-tasks/{taskId}",
+  tags: ["deep-dive"],
+  summary: "Change a task, its hours or its fate, or Internal/Shared (only a person may share)",
+  body: updateDeepDiveTaskSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/person-tasks/{taskId}",
+  tags: ["deep-dive"],
+  summary: "Remove a task",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/process-board",
+  tags: ["deep-dive"],
+  summary: "Get the process board: offerings (lanes), processes with saved positions, and recorded handoffs (the only arrows)",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/deep-dive/process-board/layout",
+  tags: ["deep-dive"],
+  summary: "Save where process cards sit; layout only, it never draws an arrow",
+  body: saveDeepDiveProcessLayoutSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/offerings",
+  tags: ["deep-dive"],
+  summary: "Add an offering (a lane on the process board)",
+  body: createDeepDiveOfferingSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/offerings/{offeringId}",
+  tags: ["deep-dive"],
+  summary: "Rename or reorder an offering, or set it Internal/Shared (only a person may share)",
+  body: updateDeepDiveOfferingSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/offerings/{offeringId}",
+  tags: ["deep-dive"],
+  summary: "Remove an offering; its processes move to the lane no offering names",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/processes",
+  tags: ["deep-dive"],
+  summary: "Add a process (Internal) to a lane",
+  body: createDeepDiveProcessSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/processes/{processId}",
+  tags: ["deep-dive"],
+  summary: "Change a process: name, offering (lane), who runs it, unit, or Internal/Shared (only a person may share)",
+  body: updateDeepDiveProcessSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/processes/{processId}",
+  tags: ["deep-dive"],
+  summary: "Remove a process with its handoffs and their arrows",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/handoffs",
+  tags: ["deep-dive"],
+  summary: "Record a handoff between two processes, naming what is handed over; this is the only way an arrow appears",
+  body: recordDeepDiveHandoffSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/handoffs/{handoffId}",
+  tags: ["deep-dive"],
+  summary: "Change what a handoff hands over, or set it Internal/Shared (only a person may share)",
+  body: updateDeepDiveHandoffSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/handoffs/{handoffId}",
+  tags: ["deep-dive"],
+  summary: "Remove a handoff and its arrow",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/opportunities",
+  tags: ["deep-dive"],
+  summary: "Get opportunities with the validated findings that point at them, builds, and KPIs with the processes that move them",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/opportunities",
+  tags: ["deep-dive"],
+  summary: "Add an opportunity (Internal); it needs a desired outcome and links only validated findings",
+  body: createDeepDiveOpportunitySchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/opportunities/{opportunityId}",
+  tags: ["deep-dive"],
+  summary: "Change an opportunity or the set of findings that point at it; only a person validates or shares it",
+  body: updateDeepDiveOpportunitySchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/opportunities/{opportunityId}",
+  tags: ["deep-dive"],
+  summary: "Remove an opportunity; its builds stay and serve no opportunity",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/builds",
+  tags: ["deep-dive"],
+  summary: "Add a proposed build (Internal), optionally serving one opportunity",
+  body: createDeepDiveBuildSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/builds/{buildId}",
+  tags: ["deep-dive"],
+  summary: "Change a build, its state (some states need a reason) or the opportunity it serves; only a person shares it",
+  body: updateDeepDiveBuildSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/builds/{buildId}",
+  tags: ["deep-dive"],
+  summary: "Remove a build",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/kpis",
+  tags: ["deep-dive"],
+  summary: "Add a KPI (Internal) with its owner, baseline (value, definition, period) and target, and the processes that move it",
+  body: createDeepDiveKpiSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/kpis/{kpiId}",
+  tags: ["deep-dive"],
+  summary: "Change a KPI or the set of processes that move it; only a person shares it",
+  body: updateDeepDiveKpiSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/kpis/{kpiId}",
+  tags: ["deep-dive"],
+  summary: "Remove a KPI and its process links",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/traceability",
+  tags: ["deep-dive"],
+  summary: "Get the chain North Star → Source → Finding → Opportunity → Design → Commercial → Roadmap → KPI and every link that is broken",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/overview",
+  tags: ["deep-dive"],
+  summary: "Get what is next, progress by stream, the next session, open findings and the work only a person can do",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/commercials",
+  tags: ["deep-dive"],
+  summary: "Add a commercial case (Internal), optionally for one design",
+  body: createDeepDiveCommercialSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/commercials/{commercialId}",
+  tags: ["deep-dive"],
+  summary: "Change a commercial case or the design it is for; only a person shares it",
+  body: updateDeepDiveCommercialSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/commercials/{commercialId}",
+  tags: ["deep-dive"],
+  summary: "Remove a commercial case; roadmap items that delivered it stay and show as broken",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/roadmap",
+  tags: ["deep-dive"],
+  summary: "Add a roadmap item (Internal), optionally delivering one commercial case and moving KPIs",
+  body: createDeepDiveRoadmapItemSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/roadmap/{roadmapItemId}",
+  tags: ["deep-dive"],
+  summary: "Change a roadmap item, its commercial case or the set of KPIs it moves; only a person shares it",
+  body: updateDeepDiveRoadmapItemSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/roadmap/{roadmapItemId}",
+  tags: ["deep-dive"],
+  summary: "Remove a roadmap item and its KPI links",
+  responses: boardWriteResponses,
 });
