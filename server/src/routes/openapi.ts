@@ -391,6 +391,12 @@ import {
   updateDeepDiveProcessSchema,
   updateDeepDiveTaskSchema,
   updateDeepDiveUnitSchema,
+  createDeepDiveBuildSchema,
+  createDeepDiveKpiSchema,
+  createDeepDiveOpportunitySchema,
+  updateDeepDiveBuildSchema,
+  updateDeepDiveKpiSchema,
+  updateDeepDiveOpportunitySchema,
   linkDeepDiveFileSchema,
   patchDeepDiveFileSchema,
 } from "@greatstone/shared";
@@ -17114,5 +17120,91 @@ registerCurrentRoute({
   path: "/api/deep-dive/handoffs/{handoffId}",
   tags: ["deep-dive"],
   summary: "Remove a handoff and its arrow",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/opportunities",
+  tags: ["deep-dive"],
+  summary: "Get opportunities with the validated findings that point at them, builds, and KPIs with the processes that move them",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/opportunities",
+  tags: ["deep-dive"],
+  summary: "Add an opportunity (Internal); it needs a desired outcome and links only validated findings",
+  body: createDeepDiveOpportunitySchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/opportunities/{opportunityId}",
+  tags: ["deep-dive"],
+  summary: "Change an opportunity or the set of findings that point at it; only a person validates or shares it",
+  body: updateDeepDiveOpportunitySchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/opportunities/{opportunityId}",
+  tags: ["deep-dive"],
+  summary: "Remove an opportunity; its builds stay and serve no opportunity",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/builds",
+  tags: ["deep-dive"],
+  summary: "Add a proposed build (Internal), optionally serving one opportunity",
+  body: createDeepDiveBuildSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/builds/{buildId}",
+  tags: ["deep-dive"],
+  summary: "Change a build, its state (some states need a reason) or the opportunity it serves; only a person shares it",
+  body: updateDeepDiveBuildSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/builds/{buildId}",
+  tags: ["deep-dive"],
+  summary: "Remove a build",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/kpis",
+  tags: ["deep-dive"],
+  summary: "Add a KPI (Internal) with its owner, baseline (value, definition, period) and target, and the processes that move it",
+  body: createDeepDiveKpiSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/kpis/{kpiId}",
+  tags: ["deep-dive"],
+  summary: "Change a KPI or the set of processes that move it; only a person shares it",
+  body: updateDeepDiveKpiSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/kpis/{kpiId}",
+  tags: ["deep-dive"],
+  summary: "Remove a KPI and its process links",
   responses: boardWriteResponses,
 });

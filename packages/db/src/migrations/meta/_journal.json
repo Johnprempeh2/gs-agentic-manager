@@ -2787,6 +2787,13 @@
       "when": 1792889657512,
       "tag": "0399_deep_dive_boards",
       "breakpoints": true
+    },
+    {
+      "idx": 400,
+      "version": "7",
+      "when": 1792889658512,
+      "tag": "0400_deep_dive_opportunities",
+      "breakpoints": true
     }
   ]
 }
