@@ -52,6 +52,7 @@ const TaskChatLab = lazyPage(() => import("./pages/TaskChatLab"), "TaskChatLab")
 const Cases = lazyPage(() => import("./pages/Cases"), "Cases");
 const CaseDetail = lazyPage(() => import("./pages/CaseDetail"), "CaseDetail");
 const DeepDive = lazyPage(() => import("./pages/DeepDive"), "DeepDive");
+const DeepDiveFiles = lazyPage(() => import("./pages/DeepDiveFiles"), "DeepDiveFiles");
 const DashboardLive = lazyPage(() => import("./pages/DashboardLive"), "DashboardLive");
 const Companies = lazyPage(() => import("./pages/Companies"), "Companies");
 const AgentDetail = lazyPage(() => import("./pages/AgentDetail"), "AgentDetail");
@@ -351,6 +352,10 @@ function boardRoutes() {
       <Route
         path="deep-dive"
         element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/files"
+        element={<DeepDiveExperimentalGate><DeepDiveFiles /></DeepDiveExperimentalGate>}
       />
       <Route
         path="status"
@@ -875,6 +880,7 @@ export function App() {
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
           <Route path="cases/:caseIdentifier" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/files" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
