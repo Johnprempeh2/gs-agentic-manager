@@ -536,6 +536,9 @@ export function DeepDive() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Deep Dive</h1>
           <div className="flex flex-wrap items-baseline gap-x-3">
+            <Link to="/deep-dive/overview" className="text-xs font-medium underline-offset-4 hover:underline">
+              Overview
+            </Link>
             <Link to="/deep-dive/sessions" className="text-xs font-medium underline-offset-4 hover:underline">
               Sessions
             </Link>
