@@ -261,6 +261,11 @@ export const pipelineCaseDocumentRequests = pgTable(
     note: text("note"),
     position: integer("position").notNull().default(0),
     evidenceId: uuid("evidence_id").references(() => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    // The client answered it on the website (GRE-2439): when, who, and the
+    // site's own reference to what they sent. The file itself stays on the site.
+    websiteAnsweredAt: timestamp("website_answered_at", { withTimezone: true }),
+    websiteAnsweredBy: jsonb("website_answered_by").$type<{ customerId: string; name: string | null; email: string | null }>(),
+    websiteAnswer: jsonb("website_answer").$type<{ answerId: string; note: string | null; fileName: string | null }>(),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
