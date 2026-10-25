@@ -16206,6 +16206,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/style`,
+  tags: ["website"],
+  summary: "The site's style at a glance (website:view): colours with roles and contrast ratings, fonts, the type scale, building blocks (buttons, links, cards, pills), radius, spacing and motion tokens and background surfaces, read from the site's deployed stylesheet with the release theme tokens on top",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/enquiries`,
   tags: ["website"],
   summary: "List website enquiries in GSAM, newest first (website:view; pipelines:cases for the enquiry pipeline)",

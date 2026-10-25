@@ -57,6 +57,7 @@ import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wak
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { websiteHomeService } from "../services/website/home.js";
+import { websiteStyleService } from "../services/website/style.js";
 import { websiteEnquiryService, type WebsiteEnquiryCopy, type WebsiteEnquiryReader } from "../services/website/enquiries.js";
 import { websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
@@ -183,6 +184,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   }
   const publishApprovals = websitePublishApprovals(db);
   const home = websiteHomeService(db);
+  const style = websiteStyleService();
   const enquiries = websiteEnquiryService(db, options.enquiryReader
     ? options.enquiryCopy ?? websiteEnquiryPipedriveCopy(db)
     : undefined);
@@ -429,6 +431,14 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     res.json(await home.summary(site, gsamOriginsFor(req)));
+  });
+
+  // ---- style (the Website Style tab and the agents' style read, GRE-2520) ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.style, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await style.read(site, { fresh: req.query.fresh === "1" }));
   });
 
   // ---- front door and enquiries ----

@@ -711,6 +711,7 @@ export const queryKeys = {
     sitemapOptions: (companyId: string, siteId: string) => ["website", companyId, "sitemap-options", siteId] as const,
     sitemapXml: (companyId: string, siteId: string) => ["website", companyId, "sitemap-xml", siteId] as const,
     home: (companyId: string, siteId: string) => ["website", companyId, "home", siteId] as const,
+    style: (companyId: string, siteId: string) => ["website", companyId, "style", siteId] as const,
     /** The website admin bridge's status (GRE-2323). */
     dataBridge: (companyId: string, siteId: string) => ["website", companyId, "data-bridge", siteId] as const,
     /** Records read through the bridge (Commerce, GRE-2383). */

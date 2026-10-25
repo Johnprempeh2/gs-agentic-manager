@@ -23,6 +23,7 @@ import {
   type WebsitePageComment,
   type WebsiteRelease,
   type WebsiteHomeSummary,
+  type WebsiteSiteStyle,
   type WebsiteEnquiryLead,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
@@ -178,6 +179,9 @@ export const websiteModuleApi = {
   },
   /** The Website Home at a glance: counts, releases and the last 8 events in one read. */
   home: (companyId: string, siteId: string) => api.get<WebsiteHomeSummary>(`${sitePath(companyId, siteId)}/home`),
+  /** The site's colours, fonts and building blocks from its live stylesheet and release theme (GRE-2520). `fresh` reads it again now. */
+  style: (companyId: string, siteId: string, fresh = false) =>
+    api.get<WebsiteSiteStyle>(`${sitePath(companyId, siteId)}/style${fresh ? "?fresh=1" : ""}`),
   /** Releases of a site, newest first (GRE-2108). */
   releases: (companyId: string, siteId: string) => api.get<WebsiteRelease[]>(`${sitePath(companyId, siteId)}/releases`),
   release: (companyId: string, siteId: string, releaseId: string) =>

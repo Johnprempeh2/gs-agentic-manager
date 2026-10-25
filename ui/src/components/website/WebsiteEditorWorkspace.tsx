@@ -18,6 +18,7 @@ import {
   MessageSquarePlus,
   MessagesSquare,
   MoreHorizontal,
+  Palette,
   PenLine,
   Plus,
   Redo2,
@@ -107,6 +108,7 @@ import { WebsiteChangeRequestPanel, websiteScreenshotFile, type WebsiteChangeTar
 import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComments";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
+import { WebsiteStyleForSite } from "./WebsiteStyle";
 import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type PickedWebsiteMedia } from "./WebsiteStudioMedia";
 
 // The Website editor (GRE-2296). The Pages tab lists the site's pages; Edit
@@ -121,7 +123,7 @@ const ORIGIN_CHANGED_NOTICE = "The editor address for this site changed. Reload 
 
 type Mode = "edit" | "preview";
 type Source = "draft" | "live";
-type Drawer = "history" | "media" | "motion" | "change" | "comments" | null;
+type Drawer = "history" | "media" | "motion" | "change" | "comments" | "style" | null;
 
 const PAGE_STATUS_COPY: Record<WebsitePageStatus, { label: string; tone: string }> = {
   planned: { label: "Planned", tone: "bg-muted text-muted-foreground" },
@@ -763,6 +765,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onClick={() => toggleDrawer("comments")}
             />
             <IconButton label="History" icon={History} labelled="2xl" pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
+            <IconButton label="Style" icon={Palette} labelled="2xl" pressed={drawer === "style"} onClick={() => toggleDrawer("style")} />
             {copy ? null : (
               <>
                 <IconButton label="Media" icon={ImageIcon} labelled="2xl" pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
@@ -974,6 +977,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 }}
               />
             ) : null}
+            {drawer === "style" ? <WebsiteStyleForSite companyId={companyId} site={site} compact /> : null}
             {drawer === "media" ? (
               <MediaPanel
                 companyId={companyId}
@@ -1104,6 +1108,7 @@ const DRAWER_TITLES: Record<Exclude<Drawer, null>, string> = {
   motion: "Background",
   change: "Ask an agent",
   comments: "Comments",
+  style: "Style",
 };
 
 /**
@@ -1373,6 +1378,10 @@ function MoreMenu({
         <DropdownMenuItem onSelect={() => onDrawer("history")}>
           <History />
           History{drawer === "history" ? " (open)" : ""}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onDrawer("style")}>
+          <Palette />
+          Style{drawer === "style" ? " (open)" : ""}
         </DropdownMenuItem>
         {copy ? null : (
           <>
