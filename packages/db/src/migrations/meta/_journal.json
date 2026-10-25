@@ -2801,6 +2801,13 @@
       "when": 1792889659512,
       "tag": "0401_deep_dive_traceability",
       "breakpoints": true
+    },
+    {
+      "idx": 402,
+      "version": "7",
+      "when": 1792889660512,
+      "tag": "0402_client_deliverable_publications",
+      "breakpoints": true
     }
   ]
 }
