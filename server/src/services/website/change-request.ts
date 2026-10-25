@@ -159,7 +159,9 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
           "",
           ...reference,
           "",
-          "No screenshot was sent: the site's editor cannot capture one yet.",
+          request.screenshot
+            ? `A screenshot of ${blockId ? "the block" : "the page"} as the person saw it is attached to this task.`
+            : "No screenshot was sent: the site's editor did not capture one.",
           "",
           "Make the change on the page's draft (or in the engine), then say on this task what changed. The person sees your draft in the editor. Do not publish: publishing stays a request a person approves.",
           "",
