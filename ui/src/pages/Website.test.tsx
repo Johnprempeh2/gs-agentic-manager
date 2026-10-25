@@ -324,7 +324,7 @@ describe("Website hub tabs", () => {
     await render("/website");
     await waitForText("Link the website project");
     const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
-    expect(tabs).toEqual(["Home", "Preview", "Progress", "Sitemap", "Pages", "Collections", "Releases", "Traffic"]);
+    expect(tabs).toEqual(["Home", "Preview", "Progress", "Sitemap", "Pages", "Collections", "Style", "Releases", "Traffic"]);
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Home");
     // The site leads the Home: the hero frame comes before anything else.
     const home = container.querySelector('[data-testid="website-home"]')!;
