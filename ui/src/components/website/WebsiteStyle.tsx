@@ -164,7 +164,7 @@ function ColourCard({ colour, canvas, onAsk }: { colour: WebsiteStyleColour; can
         <div className="flex min-w-0 items-center justify-between gap-2">
           <p className="truncate text-sm font-medium">{colour.name}</p>
           {colour.source === "release" ? (
-            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary" title={`Set by the release theme: ${colour.token}`}>
+            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-micro font-medium text-primary" title={`Set by the release theme: ${colour.token}`}>
               Theme
             </span>
           ) : null}
@@ -264,7 +264,7 @@ function BlockCard({ block, canvas, onAsk }: { block: WebsiteStyleComponent; can
           <span className="inline-flex items-center" style={blockStyle(block.declarations)}>{BLOCK_SAMPLE[block.kind]}</span>
         )}
         {hasNoFill(block) ? (
-          <span className="absolute bottom-1 left-1 rounded bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground">No fill (base class)</span>
+          <span className="absolute bottom-1 left-1 rounded bg-card px-1.5 py-0.5 text-micro text-muted-foreground">No fill (base class)</span>
         ) : null}
       </div>
       <div className="space-y-1 p-3">
@@ -503,14 +503,14 @@ export function WebsiteStyleView({
           {style.textStyles.length ? (
             <ol className="overflow-hidden rounded-lg border" style={canvas} data-testid="website-style-type-scale">
               {style.textStyles.map((text) => (
-                <li key={text.selector} className={cn("grid grid-cols-1 gap-2 border-b p-4 last:border-b-0", !compact && "md:grid-cols-[12rem_minmax(0,1fr)] md:gap-4")}>
+                <li key={text.selector} className={cn("flex flex-col gap-2 border-b p-4 last:border-b-0", !compact && "md:flex-row md:gap-4")}>
                   {/* The meta reads in GSAM's own card colours; the sample in the site's. */}
-                  <div className="min-w-0 self-start rounded-md bg-card p-2 text-card-foreground">
+                  <div className={cn("min-w-0 self-start rounded-md bg-card p-2 text-card-foreground", !compact && "md:w-48 md:shrink-0")}>
                     <p className="text-sm font-medium">{text.label}</p>
                     <p className="font-mono text-xs text-muted-foreground">{text.selector}</p>
                     <p className="text-xs text-muted-foreground">{textMeta(text)}</p>
                   </div>
-                  <p className="min-w-0 break-words" style={textSample(text)}>
+                  <p className="min-w-0 flex-1 break-words" style={textSample(text)}>
                     {text.selector.startsWith("h") ? "Software that ships on time" : "The quick brown fox jumps over the lazy dog, and the release goes out on Friday."}
                   </p>
                 </li>
