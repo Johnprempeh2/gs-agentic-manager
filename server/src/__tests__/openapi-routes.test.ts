@@ -23,6 +23,7 @@ const apiPrefixes: Record<string, string> = {
   "cases.ts": "/api",
   "deep-dive-findings.ts": "/api",
   "deep-dive-sessions.ts": "/api",
+  "deep-dive-interviews.ts": "/api",
   "deep-dive-boards.ts": "/api",
   "deep-dive-opportunities.ts": "/api",
   "deep-dive-traceability.ts": "/api",

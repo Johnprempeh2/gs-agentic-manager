@@ -381,6 +381,10 @@ import {
   addDeepDiveSessionQuestionSchema,
   answerToDeepDiveFindingSchema,
   planDeepDiveSessionSchema,
+  createDeepDiveInterviewRoundSchema,
+  updateDeepDiveInterviewRoundSchema,
+  draftDeepDiveInterviewSetSchema,
+  updateDeepDiveInterviewSetSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -17208,6 +17212,80 @@ registerCurrentRoute({
     "the statement defaults to the answer",
   body: answerToDeepDiveFindingSchema,
   responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+// Parallel Interview rounds (GRE-2611): one round per Deep Dive, a question set
+// per team or person drafted from what is known, and a person's approval.
+const interviewResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const interviewWriteResponses = { ...interviewResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/interview-round",
+  tags: ["deep-dive"],
+  summary: "Get the Parallel Interview round (or null) with its question sets, and the teams or people not yet given a set",
+  responses: interviewResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/interview-round",
+  tags: ["deep-dive"],
+  summary: "Set up the company's one interview round: per team or per person, target length and Everest's context pack",
+  body: createDeepDiveInterviewRoundSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/interview-rounds/{roundId}",
+  tags: ["deep-dive"],
+  summary: "Change the round's mode, length or context pack while it is in Setup (the mode only while it has no sets)",
+  body: updateDeepDiveInterviewRoundSchema,
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/sets",
+  tags: ["deep-dive"],
+  summary:
+    "Draft a question set for one team or person: Known cells are placed, Indicated validated, Unknown investigated",
+  body: draftDeepDiveInterviewSetSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/interview-sets/{setId}",
+  tags: ["deep-dive"],
+  summary: "Replace a set's questions while the round is in Setup; the set goes back to Draft",
+  body: updateDeepDiveInterviewSetSchema,
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-sets/{setId}/redraft",
+  tags: ["deep-dive"],
+  summary: "Draft a set again from what the Deep Dive knows now; the set goes back to Draft",
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-sets/{setId}/approve",
+  tags: ["deep-dive"],
+  summary: "Approve a set's questions (only a person may approve)",
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/interview-sets/{setId}",
+  tags: ["deep-dive"],
+  summary: "Remove a question set while the round is in Setup",
+  responses: interviewWriteResponses,
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it
