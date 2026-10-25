@@ -86,6 +86,14 @@ export function pipelineCaseDocumentRequestsService(db: Db) {
           receivedAt: evidence.createdAt.toISOString(),
         }
         : null,
+      websiteAnswer: request.websiteAnsweredAt && request.websiteAnsweredBy
+        ? {
+          answeredAt: request.websiteAnsweredAt.toISOString(),
+          answeredBy: request.websiteAnsweredBy,
+          note: request.websiteAnswer?.note ?? null,
+          fileName: request.websiteAnswer?.fileName ?? null,
+        }
+        : null,
     }));
   }
 

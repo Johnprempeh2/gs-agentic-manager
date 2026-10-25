@@ -76,6 +76,7 @@ import { websiteRoutes } from "./routes/website.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
 import { websiteFeaturesRoutes } from "./routes/website-features.js";
 import { websiteDataBridgeRoutes } from "./routes/website-data-bridge.js";
+import { websiteBridgeInboundRoutes, websiteDeepDiveSyncRoutes } from "./routes/website-deep-dive-sync.js";
 import { websiteDataBridgeService } from "./services/website/data-bridge.js";
 import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
 import { websiteEnquiryPipedriveCopy } from "./services/website/enquiry-pipedrive.js";
@@ -793,6 +794,9 @@ export async function createApp(
   );
   api.use(websiteFeaturesRoutes(db));
   api.use(websiteDataBridgeRoutes(db));
+  api.use(websiteDeepDiveSyncRoutes(db));
+  // The site's signed call back (GRE-2439): no sign-in, the gs-bridge-v1 signature is the key.
+  api.use(websiteBridgeInboundRoutes(db));
   // "Approve and Publish" on a website_publish card starts the Publish (GRE-2139).
   registerWebsitePublishStarter(websitePublishStarter(db));
   api.use(intelligenceRoutes(db));

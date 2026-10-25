@@ -451,6 +451,8 @@ import {
   updateWebsiteSitemapOptionSchema,
   createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
+  setWebsiteBridgeSiteKeySchema,
+  websiteDocumentRequestAnswerSchema,
   updateWebsiteFeatureSchema,
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
@@ -1630,6 +1632,9 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/website/sites/{siteId}/releases/{releaseId}/rollback",
   // The website data bridge's read key is made by a person (GRE-2323).
   "POST /api/companies/{companyId}/website/sites/{siteId}/data-bridge/key",
+  // Sending a client's Deep Dive to the site, and the site's call-back key, are a person's click only (GRE-2439).
+  "POST /api/companies/{companyId}/website/sites/{siteId}/deep-dive-sync/{clientCaseId}",
+  "PUT /api/companies/{companyId}/website/sites/{siteId}/data-bridge/site-key",
   "POST /api/companies/{companyId}/workflow-templates",
   "PATCH /api/workflow-templates/{id}",
   "GET /api/companies/{companyId}/releases",
@@ -16619,6 +16624,45 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Read one of the site's own records by id through the signed admin bridge (website:view)",
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
+});
+
+// ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/deep-dive-sync/{clientCaseId}/preview`,
+  tags: ["website"],
+  summary: "Exactly what a Deep Dive sync would send the site for one client, without sending it: Shared items, Shared files, document requests linked Shared, published deliverables (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/deep-dive-sync/{clientCaseId}`,
+  tags: ["website"],
+  summary: "Send one client's Deep Dive snapshot to the site with the write key, replacing what the site held for that client (website:publish, people only). Internal items never leave GSAM",
+  responses: { ...websiteModuleResponses, 409: r.conflict, 502: { description: "The website refused the sync or did not answer; the message says which" } },
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: `${siteParams}/data-bridge/site-key`,
+  tags: ["website"],
+  summary: "Record the site's own Ed25519 public key for its signed calls back to GSAM (website:publish, people only). One key id names one site",
+  body: setWebsiteBridgeSiteKeySchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/website-bridge/v1/tenants/{tenantId}/document-requests/{requestId}/answer",
+  tags: ["website"],
+  summary:
+    "No GSAM sign-in: the website's call back, signed gs-bridge-v1 with the site's own key, when a client answers a " +
+    "document request. GSAM marks the request received with its own time and the answering client. Errors are " +
+    "{ error: { code } } only: bad_key, expired, bad_signature or replay (401), bad_request (400), not_found (404)",
+  request: { params: z.object({ tenantId: z.string(), requestId: z.string() }), body: jsonBody(websiteDocumentRequestAnswerSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
 });
 
 // ─── Website features (GRE-2325) ───────────────────────────────────────────────

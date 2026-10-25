@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -74,6 +75,19 @@ export const websiteSite = pgTable(
     dataBridgeUrl: text("data_bridge_url"),
     dataBridgeReadKeyId: text("data_bridge_read_key_id"),
     dataBridgeReadSecretId: uuid("data_bridge_read_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
+    /**
+     * Deep Dive sync (GRE-2439): GSAM pushes a client's Shared items with a
+     * separate `write` key, kept in the vault like the read key.
+     */
+    dataBridgeWriteKeyId: text("data_bridge_write_key_id"),
+    dataBridgeWriteSecretId: uuid("data_bridge_write_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
+    /**
+     * The site's own key for its calls back to GSAM (a client answered a
+     * document request). The site keeps the private key; GSAM keeps only the
+     * raw Ed25519 public key (base64url) and its id.
+     */
+    dataBridgeSiteKeyId: text("data_bridge_site_key_id"),
+    dataBridgeSitePublicKey: text("data_bridge_site_public_key"),
     liveReleaseId: uuid("live_release_id"),
     publishLeaseId: uuid("publish_lease_id"),
     publishLeaseKind: text("publish_lease_kind"),
@@ -87,6 +101,25 @@ export const websiteSite = pgTable(
     unique("website_site_company_id_uq").on(t.companyId, t.id),
     uniqueIndex("website_site_company_domain_uq").on(t.companyId, t.domain),
     index("website_site_property_idx").on(t.propertyId),
+    // A call back names its key; the key names one site, so one company.
+    uniqueIndex("website_site_data_bridge_site_key_uq").on(t.dataBridgeSiteKeyId).where(sql`${t.dataBridgeSiteKeyId} is not null`),
+  ],
+);
+
+/**
+ * Nonces of the site's signed calls back to GSAM (GRE-2439): a nonce works
+ * once per key. Rows older than the 60 s time window are pruned on insert.
+ */
+export const websiteBridgeInboundNonces = pgTable(
+  "website_bridge_inbound_nonces",
+  {
+    keyId: text("key_id").notNull(),
+    nonce: text("nonce").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.keyId, t.nonce] }),
+    index("website_bridge_inbound_nonces_expires_idx").on(t.expiresAt),
   ],
 );
 
