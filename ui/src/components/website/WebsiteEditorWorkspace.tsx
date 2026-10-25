@@ -647,17 +647,18 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             />
           ) : null}
           {editing ? (
-            <>
+            // On a phone Undo and Redo sit in More, so the page name keeps its room.
+            <div className="hidden items-center gap-1 sm:flex">
               <IconButton label="Undo (⌘Z)" icon={Undo2} disabled={!canUndo} onClick={() => run("undo")} />
               <IconButton label="Redo (⇧⌘Z)" icon={Redo2} disabled={!canRedo} onClick={() => run("redo")} />
-            </>
+            </div>
           ) : null}
           <div className="hidden items-center gap-1 lg:flex">
             {layoutTools ? (
               <>
                 <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-                <IconButton label="Add block" icon={Plus} labelled disabled={!canAddBlock} onClick={() => run("add-block")} />
-                <IconButton label="Outline" icon={ListTree} labelled disabled={!canOutline} pressed={outlineOn} onClick={() => run("outline", !outlineOn)} />
+                <IconButton label="Add block" icon={Plus} labelled compact={layoutTools} disabled={!canAddBlock} onClick={() => run("add-block")} />
+                <IconButton label="Outline" icon={ListTree} labelled compact={layoutTools} disabled={!canOutline} pressed={outlineOn} onClick={() => run("outline", !outlineOn)} />
               </>
             ) : null}
             <Segmented
@@ -677,11 +678,11 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 onChange={(value) => void switchView({ source: value })}
               />
             ) : null}
-            <IconButton label="History" icon={History} labelled pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
+            <IconButton label="History" icon={History} labelled compact={layoutTools} pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
             {copy ? null : (
               <>
-                <IconButton label="Media" icon={ImageIcon} labelled pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
-                <IconButton label="Motion" icon={Waves} labelled pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
+                <IconButton label="Media" icon={ImageIcon} labelled compact={layoutTools} pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
+                <IconButton label="Motion" icon={Waves} labelled compact={layoutTools} pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
               </>
             )}
           </div>
@@ -713,12 +714,16 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             device={device}
             drawer={drawer}
             waiting={waiting}
+            canUndo={canUndo}
+            canRedo={canRedo}
             canAddBlock={canAddBlock}
             canOutline={canOutline}
             outlineOn={outlineOn}
             onMode={() => void switchView({ mode: mode === "preview" ? "edit" : "preview", source: "draft" })}
             onDevice={setDevice}
             onDrawer={toggleDrawer}
+            onUndo={() => run("undo")}
+            onRedo={() => run("redo")}
             onAddBlock={() => run("add-block")}
             onOutline={() => run("outline", !outlineOn)}
             onRequestPublish={() => void askToPublish()}
@@ -1005,6 +1010,7 @@ function IconButton({
   disabled,
   pressed,
   labelled,
+  compact,
 }: {
   label: string;
   icon: typeof Undo2;
@@ -1013,6 +1019,8 @@ function IconButton({
   pressed?: boolean;
   /** Show the label beside the icon where the bar has room (xl and up). */
   labelled?: boolean;
+  /** Layout's fuller bar: the label only from 2xl, so the page name keeps its room. */
+  compact?: boolean;
 }) {
   const name = label.replace(/ \(.+\)$/, "");
   return (
@@ -1025,10 +1033,10 @@ function IconButton({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className={cn(labelled && "w-9 xl:w-auto", pressed && PRESSED)}
+      className={cn(labelled && (compact ? "w-9 2xl:w-auto" : "w-9 xl:w-auto"), pressed && PRESSED)}
     >
       <Icon />
-      {labelled ? <span className="hidden xl:inline">{name}</span> : null}
+      {labelled ? <span className={compact ? "hidden 2xl:inline" : "hidden xl:inline"}>{name}</span> : null}
     </Button>
   );
 }
@@ -1135,12 +1143,16 @@ function MoreMenu({
   device,
   drawer,
   waiting,
+  canUndo,
+  canRedo,
   canAddBlock,
   canOutline,
   outlineOn,
   onMode,
   onDevice,
   onDrawer,
+  onUndo,
+  onRedo,
   onAddBlock,
   onOutline,
   onRequestPublish,
@@ -1151,12 +1163,16 @@ function MoreMenu({
   device: WebsitePreviewDevice;
   drawer: Drawer;
   waiting: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   canAddBlock: boolean;
   canOutline: boolean;
   outlineOn: boolean;
   onMode: () => void;
   onDevice: (device: WebsitePreviewDevice) => void;
   onDrawer: (drawer: Exclude<Drawer, null>) => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onAddBlock: () => void;
   onOutline: () => void;
   onRequestPublish: () => void;
@@ -1177,6 +1193,18 @@ function MoreMenu({
           <Send />
           {waiting ? "Waiting for approval" : "Request publish"}
         </DropdownMenuItem>
+        {mode === "edit" ? (
+          <>
+            <DropdownMenuItem onSelect={onUndo} disabled={!canUndo} className="sm:hidden">
+              <Undo2 />
+              Undo
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onRedo} disabled={!canRedo} className="sm:hidden">
+              <Redo2 />
+              Redo
+            </DropdownMenuItem>
+          </>
+        ) : null}
         {mode === "edit" && !copy ? (
           <>
             <DropdownMenuItem onSelect={onAddBlock} disabled={!canAddBlock}>
