@@ -378,6 +378,19 @@ import {
   planDeepDiveSessionSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
+  createDeepDiveOfferingSchema,
+  createDeepDivePersonSchema,
+  createDeepDiveProcessSchema,
+  createDeepDiveTaskSchema,
+  createDeepDiveUnitSchema,
+  recordDeepDiveHandoffSchema,
+  saveDeepDiveProcessLayoutSchema,
+  updateDeepDiveHandoffSchema,
+  updateDeepDiveOfferingSchema,
+  updateDeepDivePersonSchema,
+  updateDeepDiveProcessSchema,
+  updateDeepDiveTaskSchema,
+  updateDeepDiveUnitSchema,
   linkDeepDiveFileSchema,
   patchDeepDiveFileSchema,
 } from "@greatstone/shared";
@@ -16916,4 +16929,190 @@ registerCurrentRoute({
     "the statement defaults to the answer",
   body: answerToDeepDiveFindingSchema,
   responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+// Deep Dive boards (GRE-2369). Every write answers with the whole board it
+// changed. An arrow on the process board is a recorded handoff, nothing else.
+const boardResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const boardWriteResponses = { ...boardResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/organisation",
+  tags: ["deep-dive"],
+  summary: "Get the organisation board: units, people (placed and unplaced) and each person's tasks with their fate",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/org-units",
+  tags: ["deep-dive"],
+  summary: "Add a unit (Internal) to the organisation board",
+  body: createDeepDiveUnitSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/org-units/{unitId}",
+  tags: ["deep-dive"],
+  summary: "Change a unit: name, type, parent, lead, headcount, order, or Internal/Shared (only a person may share)",
+  body: updateDeepDiveUnitSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/org-units/{unitId}",
+  tags: ["deep-dive"],
+  summary: "Remove a unit; units under it move to the top and its people become unplaced",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/people",
+  tags: ["deep-dive"],
+  summary: "Add a person (Internal), placed in a unit or unplaced",
+  body: createDeepDivePersonSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/people/{personId}",
+  tags: ["deep-dive"],
+  summary: "Change a person: name, role, side, unit, who they report to, or Internal/Shared (only a person may share)",
+  body: updateDeepDivePersonSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/people/{personId}",
+  tags: ["deep-dive"],
+  summary: "Remove a person and their tasks",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/people/{personId}/tasks",
+  tags: ["deep-dive"],
+  summary: "Record a task a person does, with hours and its fate in the target state",
+  body: createDeepDiveTaskSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/person-tasks/{taskId}",
+  tags: ["deep-dive"],
+  summary: "Change a task, its hours or its fate, or Internal/Shared (only a person may share)",
+  body: updateDeepDiveTaskSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/person-tasks/{taskId}",
+  tags: ["deep-dive"],
+  summary: "Remove a task",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/process-board",
+  tags: ["deep-dive"],
+  summary: "Get the process board: offerings (lanes), processes with saved positions, and recorded handoffs (the only arrows)",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/deep-dive/process-board/layout",
+  tags: ["deep-dive"],
+  summary: "Save where process cards sit; layout only, it never draws an arrow",
+  body: saveDeepDiveProcessLayoutSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/offerings",
+  tags: ["deep-dive"],
+  summary: "Add an offering (a lane on the process board)",
+  body: createDeepDiveOfferingSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/offerings/{offeringId}",
+  tags: ["deep-dive"],
+  summary: "Rename or reorder an offering, or set it Internal/Shared (only a person may share)",
+  body: updateDeepDiveOfferingSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/offerings/{offeringId}",
+  tags: ["deep-dive"],
+  summary: "Remove an offering; its processes move to the lane no offering names",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/processes",
+  tags: ["deep-dive"],
+  summary: "Add a process (Internal) to a lane",
+  body: createDeepDiveProcessSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/processes/{processId}",
+  tags: ["deep-dive"],
+  summary: "Change a process: name, offering (lane), who runs it, unit, or Internal/Shared (only a person may share)",
+  body: updateDeepDiveProcessSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/processes/{processId}",
+  tags: ["deep-dive"],
+  summary: "Remove a process with its handoffs and their arrows",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/handoffs",
+  tags: ["deep-dive"],
+  summary: "Record a handoff between two processes, naming what is handed over; this is the only way an arrow appears",
+  body: recordDeepDiveHandoffSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/handoffs/{handoffId}",
+  tags: ["deep-dive"],
+  summary: "Change what a handoff hands over, or set it Internal/Shared (only a person may share)",
+  body: updateDeepDiveHandoffSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/handoffs/{handoffId}",
+  tags: ["deep-dive"],
+  summary: "Remove a handoff and its arrow",
+  responses: boardWriteResponses,
 });
