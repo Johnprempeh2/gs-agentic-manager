@@ -75,7 +75,10 @@ export function needsTwoStepSetup(actor: Request["actor"]) {
     actor.type === "board" &&
     (actor.source === "session" || actor.source === "board_key") &&
     actor.twoFactorEnabled !== true &&
-    !isTwoStepExemptEmail(actor.userEmail)
+    !isTwoStepExemptEmail(actor.userEmail) &&
+    // An agent's QA log-in (GRE-2387) has no password to protect: its only way
+    // in is a server-issued session, and it is fenced by qaLoginGuard.
+    !actor.qaLogin
   );
 }
 

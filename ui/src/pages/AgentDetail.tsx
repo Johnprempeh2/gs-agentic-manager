@@ -54,6 +54,7 @@ import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { Identity } from "../components/Identity";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { AgentQaLoginButton } from "../components/AgentQaLoginButton";
 import { AgentActionButtons } from "../components/AgentActionButtons";
 import { InlineBanner } from "../components/InlineBanner";
 import { BuiltInBundlePanel } from "../components/BuiltInBundlePanel";
@@ -1332,6 +1333,9 @@ export function AgentDetail() {
               starred: next,
             })}
           />
+          {resolvedCompanyId ? (
+            <AgentQaLoginButton agentId={agent.id} agentName={agent.name} companyId={resolvedCompanyId} />
+          ) : null}
           <AgentActionButtons
             agent={agent}
             companyId={resolvedCompanyId}

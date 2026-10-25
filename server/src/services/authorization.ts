@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
+  agentQaLogins,
   agents,
   authUsers,
   companyMemberships,
@@ -670,6 +671,16 @@ export function authorizationService(db: Db | DbTransaction) {
     return promise;
   }
 
+  async function isQaLoginUser(companyId: string, userId: string) {
+    const row = await db
+      .select({ id: agentQaLogins.id })
+      .from(agentQaLogins)
+      .where(and(eq(agentQaLogins.companyId, companyId), eq(agentQaLogins.userId, userId)))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    return Boolean(row);
+  }
+
   async function findGrant(
     companyId: string,
     principalType: PrincipalType,
@@ -713,6 +724,23 @@ export function authorizationService(db: Db | DbTransaction) {
         reason: "deny_missing_membership",
         explanation: `${input.principalType} principal ${input.principalId} is not an active member of company ${input.companyId}.`,
       });
+    }
+
+    // An agent's browser QA log-in (GRE-2387) holds its role's defaults and
+    // nothing more: no extra grant can give it publish, approve or money rights.
+    if (input.principalType === "user" && (await isQaLoginUser(input.companyId, input.principalId))) {
+      const role = normalizeHumanRole(membership.membershipRole, "viewer");
+      const roleDefault =
+        grantsForHumanRole(role).some((g) => g.permissionKey === input.permissionKey)
+        || pipelineRoleDefaultAllows(role, input.permissionKey)
+        || websiteRoleDefaultAllows(role, input.permissionKey);
+      if (input.permissionKey === "website:publish" || !roleDefault) {
+        return deny({
+          action: input.action,
+          reason: "deny_missing_grant",
+          explanation: `A browser QA log-in cannot hold ${input.permissionKey}.`,
+        });
+      }
     }
 
     const grant = await findGrant(input.companyId, input.principalType, input.principalId, input.permissionKey);

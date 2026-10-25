@@ -3828,6 +3828,42 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/agents/me/qa-browser-login",
+  tags: ["agents"],
+  summary:
+    "Get a one-time browser login link for this agent's QA log-in. Open `url` in the browser within 90 seconds; it works once and makes a normal session. 404 when a board owner has not given this agent browser QA access.",
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/qa-login",
+  tags: ["agents"],
+  summary: "Get the agent's live browser QA access, or null (board)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/qa-login",
+  tags: ["agents"],
+  summary: "Give the agent browser QA access: role viewer or operator, expiresInDays 1-30, default 7 (board owner only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/agents/{id}/qa-login",
+  tags: ["agents"],
+  summary: "Revoke the agent's browser QA access now (board owner only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/agents/me/recent-done",
   tags: ["agents"],
