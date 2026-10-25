@@ -29,6 +29,67 @@ export function flatten(tree: Tree): Array<{ node: Node; depth: number }> {
   return rows;
 }
 
+/** One row of the vertical Tree (GRE-2509): what to draw to its left and whether it folds. */
+export interface OutlineRow {
+  node: Node;
+  depth: number;
+  /** One per level above this row's own: true when that ancestor has a later sibling, so its line runs on past this row. */
+  rails: boolean[];
+  /** The last of its siblings: its connector stops at its own row. */
+  last: boolean;
+  childCount: number;
+  folded: boolean;
+}
+
+/** The Tree's rows read top to bottom, skipping the sub-pages of folded pages. */
+export function outlineRows(tree: Tree, folded: ReadonlySet<string>): OutlineRow[] {
+  const rows: OutlineRow[] = [];
+  const walk = (parentId: string | null, depth: number, rails: boolean[]) => {
+    const siblings = childrenOf(tree, parentId);
+    siblings.forEach((node, index) => {
+      const childCount = childrenOf(tree, node.id).length;
+      const last = index === siblings.length - 1;
+      const isFolded = childCount > 0 && folded.has(node.id);
+      rows.push({ node, depth, rails, last, childCount, folded: isFolded });
+      // Top-level pages draw no connector, so their sub-pages carry no rail for them.
+      if (!isFolded) walk(node.id, depth + 1, depth === 0 ? [] : [...rails, !last]);
+    });
+  };
+  walk(null, 0, []);
+  return rows;
+}
+
+/** Sections with more sub-pages than this open folded, below the top two levels. */
+export const OUTLINE_FOLD_OVER = 12;
+
+/** Opening fold: Home and its sections stay open; a deeper page with more than 12 sub-pages starts folded. */
+export function defaultFolded(tree: Tree): Set<string> {
+  const folded = new Set<string>();
+  for (const { node, depth } of flatten(tree)) {
+    if (depth >= 2 && childrenOf(tree, node.id).length > OUTLINE_FOLD_OVER) folded.add(node.id);
+  }
+  return folded;
+}
+
+/**
+ * The part of a page's URL its parent does not already say (GRE-2509): under
+ * `/consultancy/services` the page `/consultancy/services/websites` shows
+ * `/websites`. A path that does not sit under its parent's shows in full.
+ */
+export function ownSlug(path: string, parentPath: string | undefined): string {
+  const base = parentPath?.replace(/\/+$/, "");
+  if (!base || !path.startsWith(`${base}/`) || path.length === base.length + 1) return path;
+  return path.slice(base.length);
+}
+
+/** The pages above a page, nearest first. */
+export function ancestorIds(tree: Tree, id: string): string[] {
+  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
+  const out: string[] = [];
+  for (let parent = byId.get(id)?.parentId; parent && !out.includes(parent); parent = byId.get(parent)?.parentId) out.push(parent);
+  return out;
+}
+
 export function descendantIds(tree: Tree, id: string): Set<string> {
   const out = new Set<string>();
   const walk = (parentId: string) => {

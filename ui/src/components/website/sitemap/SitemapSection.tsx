@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Pencil } from "lucide-react";
 import type { WebsitePage, WebsiteSite, WebsiteSitemapOption, WebsiteSitemapTree } from "@greatstone/shared";
+import { authApi } from "../../../api/auth";
 import { websiteModuleApi } from "../../../api/website";
+import { websiteFeaturesApi } from "../../../api/website-features";
 import { queryKeys } from "../../../lib/queryKeys";
 import {
   AlertDialog,
@@ -24,7 +26,8 @@ import { ErrorState, errorStateMessage } from "../../ErrorState";
 import { SitemapBoardView } from "./SitemapBoard";
 import { pagesLookup } from "./model";
 import { SitemapCompareView } from "./SitemapCompare";
-import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView, SitemapTreeView } from "./SitemapViews";
+import { SitemapTreeView } from "./SitemapTree";
+import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./SitemapViews";
 
 // The Sitemap section (GRE-2111): see, compare, edit and approve the site's
 // structure. Every view edits one local draft of the chosen option; Save
@@ -35,13 +38,45 @@ export type SitemapView = "tree" | "board" | "menus" | "journeys" | "list" | "co
 
 export const SITEMAP_VIEWS: { value: SitemapView; label: string }[] = [
   { value: "tree", label: "Tree" },
-  { value: "board", label: "Board" },
+  { value: "board", label: "Board (across)" },
   { value: "menus", label: "Menus" },
   { value: "journeys", label: "Journeys" },
   { value: "list", label: "List" },
   { value: "compare", label: "Compare" },
   { value: "xml", label: "sitemap.xml" },
 ];
+
+/** The view a person last chose, kept per person in this browser (GRE-2509). The vertical Tree is the default. */
+export function sitemapViewKey(userId: string) {
+  return `gsam.sitemap.view.${userId}`;
+}
+
+function readSitemapView(userId: string | null): SitemapView | null {
+  if (!userId) return null;
+  try {
+    const stored = window.localStorage.getItem(sitemapViewKey(userId));
+    return SITEMAP_VIEWS.some((entry) => entry.value === stored) ? (stored as SitemapView) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function useSitemapView(): [SitemapView, (view: SitemapView) => void] {
+  const session = useQuery({ queryKey: queryKeys.auth.session, queryFn: () => authApi.getSession(), retry: false });
+  const userId = session.data?.user?.id ?? null;
+  const [chosen, setChosen] = useState<SitemapView | null>(null);
+  const view = chosen ?? readSitemapView(userId) ?? "tree";
+  const choose = (next: SitemapView) => {
+    setChosen(next);
+    if (!userId) return;
+    try {
+      window.localStorage.setItem(sitemapViewKey(userId), next);
+    } catch {
+      // Storage blocked: the choice lasts for this visit.
+    }
+  };
+  return [view, choose];
+}
 
 /** A first option from the site's current pages, so a site with pages starts from what it has. */
 export function treeFromPages(pages: WebsitePage[]): WebsiteSitemapTree {
@@ -192,7 +227,12 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
   const [optionId, setOptionId] = useState<string>(approved?.id ?? options[0]?.id ?? "");
   const option = options.find((entry) => entry.id === optionId) ?? approved ?? options[0]!;
   const [draft, setDraft] = useState<WebsiteSitemapTree | null>(null);
-  const [view, setView] = useState<SitemapView>("tree");
+  const [view, setView] = useSitemapView();
+  const features = useQuery({
+    queryKey: queryKeys.website.features(companyId, site.id),
+    queryFn: () => websiteFeaturesApi.list(companyId, site.id),
+    retry: false,
+  });
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(option.name);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -362,7 +402,9 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
         <Tabs value={view} onValueChange={(value) => setView(value as SitemapView)} className="mb-4">
           <PageTabBar items={SITEMAP_VIEWS} value={view} onValueChange={(value) => setView(value as SitemapView)} align="start" ariaLabel="Sitemap view" />
         </Tabs>
-        {view === "tree" ? <SitemapTreeView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} onEditPage={onEditPage} /> : null}
+        {view === "tree" ? (
+          <SitemapTreeView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} onEditPage={onEditPage} features={features.data ?? []} />
+        ) : null}
         {view === "board" ? <SitemapBoardView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} storageKey={`sitemap-board.${option.id}`} /> : null}
         {view === "menus" ? <SitemapMenusView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
         {view === "journeys" ? <SitemapJourneysView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}

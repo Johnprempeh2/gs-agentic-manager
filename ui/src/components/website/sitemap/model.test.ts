@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   addNode,
+  ancestorIds,
   boardLayout,
   copyBranch,
+  defaultFolded,
   flatten,
   indent,
   menuItems,
   moveSibling,
   moveTo,
   outdent,
+  outlineRows,
+  ownSlug,
   placeInMenu,
   removeNode,
   type Tree,
@@ -68,5 +72,37 @@ describe("sitemap model", () => {
     expect(layout.get("home")!.x).toBe(0);
     expect(layout.get("c")!.x).toBeGreaterThan(0);
     expect(layout.get("t")).toEqual({ x: 900, y: 40 });
+  });
+
+  it("reads the vertical tree top to bottom with a rail for each ancestor that has more below (GRE-2509)", () => {
+    const wider: Tree = { ...tree, nodes: [...tree.nodes, { id: "e", title: "Executive", path: "/consultancy/executive", parentId: "c", order: 1, menu: "none", menuOrder: null }] };
+    const rows = outlineRows(wider, new Set());
+    expect(rows.map((row) => [row.node.id, row.depth, row.rails, row.last, row.childCount])).toEqual([
+      ["home", 0, [], true, 2],
+      ["c", 1, [], false, 2],
+      ["d", 2, [true], false, 0],
+      ["e", 2, [true], true, 0],
+      ["t", 1, [], true, 0],
+    ]);
+    const folded = outlineRows(wider, new Set(["c"]));
+    expect(folded.map((row) => row.node.id)).toEqual(["home", "c", "t"]);
+    expect(folded[1]).toMatchObject({ folded: true, childCount: 2 });
+    expect(ancestorIds(wider, "e")).toEqual(["c", "home"]);
+  });
+
+  it("opens Home and its sections, and folds a deeper page with more than 12 sub-pages", () => {
+    const many = (parentId: string, count: number, prefix: string) =>
+      Array.from({ length: count }, (_, i) => ({ id: `${prefix}${i}`, title: `${prefix}${i}`, path: `/${prefix}/${i}`, parentId, order: i, menu: "none" as const, menuOrder: null }));
+    const big: Tree = { ...tree, nodes: [...tree.nodes, ...many("home", 14, "s"), ...many("c", 13, "p"), ...many("t", 12, "q")] };
+    expect([...defaultFolded({ ...big, nodes: [...big.nodes, ...many("d", 13, "r")] })]).toEqual(["d"]);
+    expect(defaultFolded(big).size).toBe(0);
+  });
+
+  it("shows only the part of a URL its parent does not already say (GRE-2509)", () => {
+    expect(ownSlug("/consultancy/services/websites/business-build", "/consultancy/services/websites")).toBe("/business-build");
+    expect(ownSlug("/consultancy", "/")).toBe("/consultancy");
+    expect(ownSlug("/", undefined)).toBe("/");
+    expect(ownSlug("/tools/kit", "/consultancy")).toBe("/tools/kit");
+    expect(ownSlug("/toolset", "/tools")).toBe("/toolset");
   });
 });
