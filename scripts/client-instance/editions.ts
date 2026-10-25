@@ -51,14 +51,12 @@ export const MANAGED_FEATURES_OFF = [
   "enableSummaries",
   "enableStatusCards",
   "enableTeamChat",
-  "enableConferenceRoomChat",
   "enableChatConnectors",
   "enableMemoryConnectors",
   "enableExternalObjects",
   "enableSmokeLab",
   "enableWorktreeRunExecution",
   "enableSandboxDuplexBridge",
-  "enableNativeRunner",
   "enableEnvironments",
   "enableOwnerInstanceAdmin",
   // GRE-1382: Strategy module (KPI cascade and readings). Off in Managed; it is
@@ -91,6 +89,10 @@ export const SIGNED_KEY_ONLY = {
  */
 export const CLIENT_DEFAULT_OK = {
   enableApps: "Compatibility key; Apps is always on and the app ignores the value.",
+  enableNativeRunner:
+    "Compatibility key; Runner graduated (GRE-1436), is always on and the app ignores the value (Everest on GRE-2398).",
+  enableConferenceRoomChat:
+    "Compatibility key; Conference Room Chat graduated (GRE-1624), is always on and the app ignores the value (Everest on GRE-2398).",
   enableMcpAggregators: "Compatibility key; MCP aggregators are always on and the app ignores the value.",
   enableRunnerPreviewIngress: "Deprecated compatibility key; runner ingress follows the Runner setting.",
   enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
