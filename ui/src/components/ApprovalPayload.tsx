@@ -1,4 +1,4 @@
-import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound, Globe } from "lucide-react";
+import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound, Globe, ReceiptText } from "lucide-react";
 import { MarkdownBody } from "./MarkdownBody";
 import { formatCents } from "../lib/utils";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
@@ -11,6 +11,7 @@ export const typeLabel: Record<string, string> = {
   request_board_approval: "Needs your approval",
   permission_grant: "Permission request",
   website_publish: "Publish proposal",
+  commerce_refund_request: "Refund request",
 };
 
 /**
@@ -21,6 +22,7 @@ export const typeLabel: Record<string, string> = {
 export function approvalActionLabels(type: string) {
   if (type === "permission_grant") return { approve: "Grant", approving: "Granting...", reject: "Deny", rejecting: "Denying..." };
   if (type === "website_publish") return { approve: "Approve and Publish", approving: "Starting Publish...", reject: "Not now", rejecting: "Declining..." };
+  if (type === "commerce_refund_request") return { approve: "Approve refund", approving: "Recording...", reject: "Reject refund", rejecting: "Recording..." };
   return { approve: "Approve", approving: "Approving...", reject: "Reject", rejecting: "Rejecting..." };
 }
 
@@ -59,6 +61,7 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   request_board_approval: ShieldCheck,
   permission_grant: KeyRound,
   website_publish: Globe,
+  commerce_refund_request: ReceiptText,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -197,6 +200,7 @@ const PERMISSION_KEY_LABELS: Record<PermissionKey, string> = {
   "website:view": "See the website's pages and content",
   "website:edit": "Edit website drafts",
   "website:publish": "Publish the website",
+  "website:commerce": "Change the website's catalogue, prices and invoices, and ask for refunds",
 };
 
 /** Plain words for a permission key, e.g. "tasks:assign" becomes "Assign tasks". */
@@ -361,6 +365,24 @@ function WebsitePublishPayload({ payload }: { payload: Record<string, unknown> }
   );
 }
 
+/** GRE-2354 2c(b): a refund request on a website order. Approving records the decision; a person refunds in Stripe. */
+function CommerceRefundRequestPayload({ payload }: { payload: Record<string, unknown> }) {
+  const amount = typeof payload.amountMinor === "number"
+    ? `${typeof payload.currency === "string" ? `${payload.currency} ` : ""}${(payload.amountMinor / 100).toFixed(2)}`
+    : null;
+  return (
+    <div className="mt-3 space-y-1.5 text-sm">
+      <PayloadField label="Site" value={payload.siteName} />
+      <PayloadField label="Order" value={payload.orderId} />
+      <PayloadField label="Amount" value={amount} />
+      <PayloadField label="Reason" value={payload.reason} />
+      <PayloadField label="Asked by" value={payload.requestedBy} />
+      <PayloadField label="On the site" value={payload.requestStatus ?? "Not confirmed yet: deciding sends the request first"} />
+      <p className="leading-6 text-muted-foreground">Approving records the decision on the website. A person still makes the refund in Stripe.</p>
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -374,6 +396,7 @@ export function ApprovalPayloadRenderer({
   if (type === "budget_override_required") return <BudgetOverridePayload payload={payload} />;
   if (type === "permission_grant") return <PermissionGrantPayload payload={payload} />;
   if (type === "website_publish") return <WebsitePublishPayload payload={payload} />;
+  if (type === "commerce_refund_request") return <CommerceRefundRequestPayload payload={payload} />;
   if (type === "request_board_approval") {
     return <BoardApprovalPayload payload={payload} hideTitle={hidePrimaryTitle} />;
   }
