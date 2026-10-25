@@ -243,7 +243,8 @@ const BLOCK_SAMPLE: Record<WebsiteStyleComponent["kind"], string> = {
 /** A base class (`.btn`, `.badge`) sets shape and type but no fill or border; its variants add those. */
 function hasNoFill(block: WebsiteStyleComponent): boolean {
   if (block.kind !== "button" && block.kind !== "pill") return false;
-  return !["background", "background-color", "border", "border-color"].some((prop) => block.declarations[prop] && !/^(none|transparent|0)$/.test(block.declarations[prop]));
+  // `border: 1px solid transparent` keeps the size of a bordered variant but draws nothing.
+  return !["background", "background-color", "border", "border-color"].some((prop) => block.declarations[prop] && !/^(none|0)$|transparent/.test(block.declarations[prop]));
 }
 
 function BlockCard({ block, canvas, onAsk }: { block: WebsiteStyleComponent; canvas: CSSProperties; onAsk: () => void }) {

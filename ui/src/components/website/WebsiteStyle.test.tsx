@@ -32,7 +32,7 @@ const style: WebsiteSiteStyle = {
     { selector: "h1", label: "Heading 1", fontFamily: "Montserrat", fontSize: "4rem", fontWeight: "700", lineHeight: "1.05", letterSpacing: null, textTransform: null, color: null },
   ],
   components: [
-    { kind: "button", selector: ".btn", className: "btn", label: "Btn", declarations: { padding: "12px 20px", "border-radius": "999px" }, inPage: true },
+    { kind: "button", selector: ".btn", className: "btn", label: "Btn", declarations: { padding: "12px 20px", border: "1px solid transparent", "border-radius": "999px" }, inPage: true },
     { kind: "button", selector: ".btn--primary", className: "btn btn--primary", label: "Btn primary", declarations: { background: "#c8ff00", color: "#0b0b0c", "border-radius": "999px" }, inPage: true },
     { kind: "button", selector: ".btn-danger", className: "btn btn-danger", label: "Btn danger", declarations: { background: "#e74c3c" }, inPage: false },
   ],
