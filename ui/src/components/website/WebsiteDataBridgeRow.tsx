@@ -60,7 +60,7 @@ export function WebsiteDataBridgeRow({ companyId, site, canManage }: { companyId
       {made ? (
         <div className="space-y-1 rounded-md border p-2">
           <p>Add this entry to the site's <span className="font-mono">GSAM_BRIDGE_KEYS</span> list and redeploy the site. It is a public key, so it is safe to copy. A live site key goes on John's release task.</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px]" data-testid="website-data-bridge-entry">{JSON.stringify(made.keysEntry)}</pre>
+          <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-micro" data-testid="website-data-bridge-entry">{JSON.stringify(made.keysEntry)}</pre>
           <div className="flex gap-2">
             <Button type="button" size="xs" variant="ghost" onClick={() => void copyEntry.copy(JSON.stringify(made.keysEntry))}>
               {copyEntry.copied ? "Copied" : copyEntry.failed ? "Could not copy" : "Copy"}
