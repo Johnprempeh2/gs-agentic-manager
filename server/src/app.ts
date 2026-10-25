@@ -28,6 +28,7 @@ import type { InspectDatabaseBackupHealthOptions } from "./services/database-bac
 import type { InspectLiveBackupHealthOptions } from "./services/live-backup-health.js";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
+import { qaLoginGuard } from "./middleware/qa-login-guard.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { twoStepRequiredGuard } from "./auth/two-step-requirement.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
@@ -151,6 +152,7 @@ import { serverVersion } from "./version.js";
 import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { issueFollowRoutes } from "./routes/issue-follows.js";
+import { agentQaLoginRoutes } from "./routes/agent-qa-logins.js";
 import { issueTreeRoutes } from "./routes/issue-tree.js";
 import { projectTreeRoutes } from "./routes/project-tree.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
@@ -640,6 +642,8 @@ export async function createApp(
   // REPLACES whatever actor the request otherwise resolved to, and only on
   // the one endpoint it authorizes (see the middleware for the contract).
   app.use(cloudControlMiddleware());
+  // An agent's browser QA log-in never approves, publishes or moves money (GRE-2387).
+  app.use("/api", qaLoginGuard());
   // A memory_only key reaches organization memory and nothing else (GRE-958),
   // and only while it belongs to an active person's app link (GRE-1081).
   app.use(memoryOnlyKeyGuard(db));
@@ -962,6 +966,7 @@ export async function createApp(
   api.use(resourceMembershipRoutes(db));
   api.use(inboxDismissalRoutes(db));
   api.use(issueFollowRoutes(db));
+  api.use(agentQaLoginRoutes(db));
   api.use(issueTreeRoutes(db));
   api.use(projectTreeRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(instanceSettingsRoutes(db));

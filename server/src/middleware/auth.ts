@@ -27,6 +27,7 @@ import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "./logger.js";
 import { captureRunIdentity } from "../services/run-identity.js";
 import { boardAuthService } from "../services/board-auth.js";
+import { agentQaLoginService, type QaLoginStanding } from "../services/agent-qa-logins.js";
 
 const CLOUD_TENANT_WRITE_DEBOUNCE_MS = 5_000;
 const CLOUD_TENANT_WRITE_DEBOUNCE_MAX = 1_000;
@@ -209,6 +210,24 @@ async function auditAgentKeyMissingResponsibleUser(
   }
 }
 
+/**
+ * A QA account (GRE-2387) acts only in its own company, only while its grant
+ * is live, and is never an instance admin. Returns null when it must be
+ * treated as signed out (revoked, expired, or past its expiry before the
+ * sweep ran).
+ */
+function narrowForQaLogin<T extends { companyId: string }>(
+  standing: QaLoginStanding,
+  memberships: T[],
+): { memberships: T[]; qaLogin: NonNullable<Express.Request["actor"]["qaLogin"]> | undefined } | null {
+  if (standing.kind === "not_qa") return { memberships, qaLogin: undefined };
+  if (standing.kind === "inactive") return null;
+  return {
+    memberships: memberships.filter((row) => row.companyId === standing.companyId),
+    qaLogin: { loginId: standing.loginId, companyId: standing.companyId, agentId: standing.agentId, expiresAt: standing.expiresAt.toISOString() },
+  };
+}
+
 interface ActorMiddlewareOptions {
   deploymentMode: DeploymentMode;
   resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
@@ -282,6 +301,7 @@ function attachUnauthenticatedRunIdHeader(req: Request, runIdHeader: string | un
 
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   const boardAuth = boardAuthService(db);
+  const qaLogins = agentQaLoginService(db);
   return async (req, _res, next) => {
     req.actor =
       opts.deploymentMode === "local_trusted"
@@ -343,29 +363,35 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
         }
         if (session?.user?.id && session.session?.id) {
           const userId = session.user.id;
-          const [roleRow, memberships] = await Promise.all([
+          const [roleRow, allMemberships, qaStanding] = await Promise.all([
             db
               .select({ id: instanceUserRoles.id })
               .from(instanceUserRoles)
               .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
               .then((rows) => rows[0] ?? null),
             loadActiveUserCompanyMemberships(db, userId),
+            qaLogins.standingForUser(userId),
           ]);
-          req.actor = {
-            type: "board",
-            userId,
-            sessionId: session.session.id,
-            userName: session.user.name ?? null,
-            userEmail: session.user.email ?? null,
-            companyIds: memberships.map((row) => row.companyId),
-            memberships,
-            isInstanceAdmin: Boolean(roleRow),
-            twoFactorEnabled: session.user.twoFactorEnabled === true,
-            runId: runIdHeader ?? undefined,
-            source: "session",
-          };
-          next();
-          return;
+          const qa = narrowForQaLogin(qaStanding, allMemberships);
+          if (qa) {
+            const memberships = qa.memberships;
+            req.actor = {
+              type: "board",
+              userId,
+              sessionId: session.session.id,
+              userName: session.user.name ?? null,
+              userEmail: session.user.email ?? null,
+              companyIds: memberships.map((row) => row.companyId),
+              memberships,
+              isInstanceAdmin: qa.qaLogin ? false : Boolean(roleRow),
+              twoFactorEnabled: session.user.twoFactorEnabled === true,
+              runId: runIdHeader ?? undefined,
+              source: "session",
+              ...(qa.qaLogin ? { qaLogin: qa.qaLogin } : {}),
+            };
+            next();
+            return;
+          }
         }
       }
       attachUnauthenticatedRunIdHeader(req, runIdHeader);
@@ -391,16 +417,24 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     const boardKey = await boardAuth.findBoardApiKeyByToken(token);
     if (boardKey) {
       const access = await boardAuth.resolveBoardAccess(boardKey.userId);
-      if (access.user) {
+      const qa = access.user
+        ? narrowForQaLogin(await qaLogins.standingForUser(boardKey.userId), access.memberships)
+        : null;
+      if (access.user && !qa) {
+        next(unauthorized("This QA log-in has expired or was revoked"));
+        return;
+      }
+      if (access.user && qa) {
         await boardAuth.touchBoardApiKey(boardKey.id);
         req.actor = {
           type: "board",
           userId: boardKey.userId,
           userName: access.user?.name ?? null,
           userEmail: access.user?.email ?? null,
-          companyIds: access.companyIds,
-          memberships: access.memberships,
-          isInstanceAdmin: access.isInstanceAdmin,
+          companyIds: qa.memberships.map((row) => row.companyId),
+          memberships: qa.memberships,
+          isInstanceAdmin: qa.qaLogin ? false : access.isInstanceAdmin,
+          ...(qa.qaLogin ? { qaLogin: qa.qaLogin } : {}),
           keyId: boardKey.id,
           runId: runIdHeader || undefined,
           source: "board_key",

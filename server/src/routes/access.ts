@@ -1,3 +1,4 @@
+import { agentQaLoginService } from "../services/agent-qa-logins.js";
 import {
   generateKeyPairSync,
   randomBytes,
@@ -4529,12 +4530,24 @@ export function accessRoutes(
     });
     const withRemoval = await addCompanyMemberRemovalAccess(req, db, access, companyId, members);
     const twoStep = await describeMemberTwoStepControls(db, { actor: req.actor, companyId, members });
+    // Agents' browser QA log-ins (GRE-2387): the "QA for <agent>" badge and expiry.
+    const qaLoginSvc = agentQaLoginService(db);
+    const [activeQaLogins, qaUserIds] = await Promise.all([
+      qaLoginSvc.listActiveForCompany(companyId),
+      qaLoginSvc.listQaUserIds(companyId),
+    ]);
+    const activeQaByUser = new Map(activeQaLogins.map((row) => [row.userId, row]));
     res.json({
-      members: withRemoval.map((member) => ({
-        ...member,
-        handover: handover.get(member.id) ?? null,
-        twoStep: twoStep.get(member.id) ?? null,
-      })),
+      members: withRemoval.map((member) => {
+        const qa = member.principalType === "user" ? activeQaByUser.get(member.principalId) : undefined;
+        return {
+          ...member,
+          handover: handover.get(member.id) ?? null,
+          twoStep: twoStep.get(member.id) ?? null,
+          qaAccount: member.principalType === "user" && qaUserIds.has(member.principalId),
+          qaLogin: qa ? { agentId: qa.agentId, agentName: qa.agentName, role: qa.role, expiresAt: qa.expiresAt.toISOString() } : null,
+        };
+      }),
       access: {
         ...currentAccess,
         currentUserId: req.actor.type === "board" ? req.actor.userId ?? null : null,

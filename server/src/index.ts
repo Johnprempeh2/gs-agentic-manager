@@ -120,6 +120,7 @@ import {
 } from "./services/device-login-reaper.js";
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
+import { agentQaLoginService } from "./services/agent-qa-logins.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
 import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
 import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
@@ -1376,6 +1377,7 @@ async function startServerWithDatabaseTeardown(
     ["status_delivery", () => deliverExecutionStatuses(db)],
     ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
+    ["agent_qa_login_expiry", () => agentQaLoginService(db).reapExpired()],
     // GRE-1363: a dated budget change takes effect on its date, with no restart.
     ["budget_scheduled_changes", () => budgets.applyDueChanges(new Date())],
     // GRE-1371: a top-up whose card was decided but not applied (stop between the two writes).
