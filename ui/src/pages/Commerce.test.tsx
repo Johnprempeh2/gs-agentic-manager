@@ -122,6 +122,23 @@ describe("CommercePage", () => {
     expect(links).toContainEqual(["Open its order", "/commerce/orders/ord-1"]);
   });
 
+  it("keeps the area description on lists but not on a record, and does not repeat the reference as a field", async () => {
+    render("/commerce/quotes");
+    await flush();
+    expect(container.textContent).toContain("read from stg.greatstone.example");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.bridge.get.mockResolvedValue({ item: { ...quotes[1], contact_name: "Ada" } });
+    render("/commerce/quotes/q-new");
+    await flush();
+    expect(container.textContent).not.toContain("read from stg.greatstone.example");
+    expect(container.querySelector("h2")?.textContent).toContain("Q-002");
+    const labels = [...container.querySelectorAll("dt")].map((dt) => dt.textContent);
+    expect(labels).not.toContain("Reference");
+    expect(labels).toContain("Contact");
+  });
+
   it("shows the bridge's error when the site cannot be read", async () => {
     mocks.bridge.list.mockRejectedValue(new Error("Website data is not set up for this site yet."));
     render("/commerce/orders");

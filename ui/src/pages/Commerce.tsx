@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Building2, ShoppingBag, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, ShoppingBag, X } from "lucide-react";
 import { organisationsApi } from "@/api/organisations";
 import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { EmptyState } from "@/components/EmptyState";
@@ -37,6 +37,7 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 // through the admin bridge. Read only: there is no button here that changes the site, moves money or calls Stripe.
 
 const PAGE_SIZE = 50;
+const RECORD_LINK = "inline-flex w-fit items-center gap-1 rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const TABS = COMMERCE_RESOURCES.map((value) => ({ value, label: COMMERCE_COPY[value].label }));
 
 function StatusPill({ status }: { status: unknown }) {
@@ -217,7 +218,7 @@ function LineItems({ record }: { record: CommerceRecord }) {
           const line = formatMinor(item.line_total_minor, item.currency);
           return (
             <li key={text(item.id) ?? index} className="flex min-w-0 items-baseline gap-3 px-4 py-2.5 text-sm">
-              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <span className="min-w-0 flex-1 break-words sm:truncate">{name}</span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                 {text(item.qty) ?? "1"} × {unit ?? "No price"}
               </span>
@@ -271,9 +272,11 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
   const customerId = text(record.customer_id);
   const customer = customerId ? customers.get(customerId) ?? null : null;
   const organisation = organisationFor(customer, organisations.data ?? []);
+  const title = recordTitle(resource, record);
+  // The heading already shows the reference (or invoice number); repeating it as the first fact only pushes the record down.
   const facts = DETAIL_FIELDS[resource].flatMap(([label, key, kind]) => {
     const value = fieldValue(record, key, kind);
-    return value ? [{ label, value }] : [];
+    return value && value !== title ? [{ label, value }] : [];
   });
   const total = recordTotal(resource, record);
   const related = relatedLinks(resource, record);
@@ -288,7 +291,7 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
         <div className="min-w-0 space-y-1">
           <p className="text-xs font-medium text-muted-foreground">{copy.singular}</p>
           <h2 className="flex flex-wrap items-center gap-2 break-words text-xl font-bold">
-            {recordTitle(resource, record)}
+            {title}
             <StatusPill status={record.status} />
           </h2>
         </div>
@@ -319,25 +322,30 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-sm sm:flex-row sm:items-center sm:gap-4">
           <span className="min-w-0 break-words font-medium sm:flex-1">{customerName(record, customers) ?? "No customer account"}</span>
           {organisation ? (
-            <Link to={`/organisations/${organisation.id}`} className="inline-flex shrink-0 items-center gap-1.5 font-medium underline-offset-2 hover:underline">
-              <Building2 className="size-4 text-muted-foreground" aria-hidden="true" />
+            <Link to={`/organisations/${organisation.id}`} className={cn(RECORD_LINK, "gap-1.5 sm:shrink-0")}>
+              <Building2 className="size-4" aria-hidden="true" />
               {organisation.name} in Organisations
+              <ArrowRight className="size-3.5" aria-hidden="true" />
             </Link>
           ) : customer ? (
             <span className="text-xs text-muted-foreground">No organisation in GSAM has this customer's domain or name.</span>
           ) : null}
           {customerId ? (
-            <Link to={`/commerce/${resource}?customer=${encodeURIComponent(customerId)}`} className="font-medium underline-offset-2 hover:underline">
+            <Link to={`/commerce/${resource}?customer=${encodeURIComponent(customerId)}`} className={cn(RECORD_LINK, "sm:shrink-0")}>
               Their {copy.label.toLowerCase()}
+              <ArrowRight className="size-3.5" aria-hidden="true" />
             </Link>
           ) : null}
         </div>
       </section>
 
       {related.length ? (
-        <nav className="flex flex-wrap gap-2" aria-label="Linked records">
+        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Linked records">
           {related.map((link) => (
-            <Button key={link.to} asChild variant="outline" size="sm"><Link to={link.to}>{link.label}</Link></Button>
+            <Link key={link.to} to={link.to} className={RECORD_LINK}>
+              {link.label}
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
           ))}
         </nav>
       ) : null}
@@ -385,9 +393,11 @@ export function CommercePage() {
           <ShoppingBag className="size-5 text-muted-foreground" aria-hidden="true" />
           Commerce
         </h1>
-        <p className="text-sm text-muted-foreground">
-          The website's quotes, orders, invoices and licences, read from {commerce.site.domain}. Read only: changes are still made on the site.
-        </p>
+        {recordId ? null : (
+          <p className="text-sm text-muted-foreground">
+            The website's quotes, orders, invoices and licences, read from {commerce.site.domain}. Read only: changes are still made on the site.
+          </p>
+        )}
       </header>
       <Tabs value={resource} onValueChange={openTab}>
         <PageTabBar items={TABS} value={resource} onValueChange={openTab} align="start" ariaLabel="Commerce records" />
