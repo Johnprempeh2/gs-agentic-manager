@@ -179,6 +179,11 @@ export type RestoreWebsiteRevision = z.infer<typeof restoreWebsiteRevisionSchema
 export const WEBSITE_COMMENT_WIDTHS = ["laptop", "tablet", "phone"] as const;
 export type WebsiteCommentWidth = (typeof WEBSITE_COMMENT_WIDTHS)[number];
 
+/** Most marks one drawing keeps (GRE-2518). */
+export const WEBSITE_MARKUP_MAX_MARKS = 100;
+/** Longest text label on a drawing. */
+export const WEBSITE_MARKUP_MAX_LABEL = 120;
+
 /**
  * Click to change (GRE-2121) and Ask an agent (GRE-2350). With a block, the
  * task is about that block; with no `blockId` and `blockType`, it is about the
@@ -203,15 +208,39 @@ export const createWebsiteChangeRequestSchema = z
       .strict()
       .nullable()
       .optional(),
-    /** The change, in the person's own words. */
-    request: z.string().trim().min(1).max(4000),
+    /** The change, in the person's own words. May be empty when they drew it instead. */
+    request: z.string().trim().max(4000),
     /** The editor captured a PNG (GRE-2361); GSAM attaches it to the task right after. */
     screenshot: z.boolean().optional(),
+    /**
+     * GRE-2518: the person drew on the screenshot. GSAM attaches the marked-up
+     * PNG and the drawing's vector JSON right after; this is what the task
+     * says about them, so the agent can read the labels without the image.
+     */
+    markup: z
+      .object({
+        /** Marks drawn: pen, arrow, box, highlight, label and marker each count one. */
+        marks: z.number().int().positive().max(WEBSITE_MARKUP_MAX_MARKS),
+        /** Numbered markers, 1 to `markers`. */
+        markers: z.number().int().min(0).max(WEBSITE_MARKUP_MAX_MARKS),
+        /** The text labels, in the order drawn. */
+        labels: z.array(z.string().trim().min(1).max(WEBSITE_MARKUP_MAX_LABEL)).max(WEBSITE_MARKUP_MAX_MARKS),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((value) => (value.blockId === undefined) === (value.blockType === undefined), {
     message: "Send blockId and blockType together, or neither for the whole page.",
     path: ["blockType"],
+  })
+  .refine((value) => value.request.length > 0 || value.markup !== undefined, {
+    message: "Describe or draw what you want changed.",
+    path: ["request"],
+  })
+  .refine((value) => value.markup === undefined || value.screenshot === true, {
+    message: "A drawing needs the screenshot it was drawn on.",
+    path: ["markup"],
   });
 export type CreateWebsiteChangeRequest = z.infer<typeof createWebsiteChangeRequestSchema>;
 
