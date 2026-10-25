@@ -32,7 +32,7 @@ describe("draftDeepDiveInterviewSet (GRE-2611)", () => {
   it("never asks a Known cell, and places it for the interviewer instead", () => {
     const cells = allCells((cell) =>
       cell.streamKey === "operations" && cell.gifKey === "current-state"
-        ? { knowledge: "known", cellText: "# Current state\n\nOrders are keyed by hand into Sage." }
+        ? { knowledge: "known", cellText: "# Current state\n\nWhat exists today?\n\nOrders are keyed by hand into Sage." }
         : { knowledge: "known" },
     );
     const draft = draftDeepDiveInterviewSet({ cells, target: team, targetMinutes: 20 });

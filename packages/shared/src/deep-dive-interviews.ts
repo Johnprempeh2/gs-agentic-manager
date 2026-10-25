@@ -228,6 +228,7 @@ const GIF_PRIORITY: DeepDiveGifKey[] = [
 ];
 
 const STREAM_LABEL = new Map(DEEP_DIVE_STREAMS.map((stream) => [stream.key, stream.label]));
+const GIF_QUESTIONS = new Set<string>(DEEP_DIVE_GIF.map((gif) => gif.question));
 
 function topic(streamKey: DeepDiveStreamKey) {
   const label = STREAM_LABEL.get(streamKey) ?? streamKey;
@@ -259,11 +260,11 @@ function firstLine(cell: DeepDiveInterviewCell): string | null {
   const finding =
     cell.findings.find((f) => f.status === "validated") ?? cell.findings.find((f) => f.status === "proposed");
   const text = finding?.statement ?? cell.cellText ?? "";
-  // The cell document opens with its heading and the GIF question; skip headings.
+  // The cell document opens with its heading and the GIF question; skip both.
   const line = text
     .split("\n")
     .map((part) => part.trim())
-    .find((part) => part.length > 0 && !part.startsWith("#"));
+    .find((part) => part.length > 0 && !part.startsWith("#") && !GIF_QUESTIONS.has(part));
   if (!line) return null;
   return line.length > 240 ? `${line.slice(0, 237)}...` : line;
 }

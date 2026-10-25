@@ -157,7 +157,7 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
     const company = await seedCompany("DIR");
     const { stream, cells } = await seedStream(company.id, "operations", {
       knowledge: { "current-state": "known", "business-impact": "indicated" },
-      bodies: { "current-state": "# Current state\n\nOrders are keyed by hand into Sage." },
+      bodies: { "current-state": "# Current state\n\nWhat exists today?\n\nOrders are keyed by hand into Sage." },
     });
     await db.insert(deepDiveFindings).values({
       companyId: company.id,
