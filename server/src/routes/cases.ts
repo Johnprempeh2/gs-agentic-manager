@@ -32,6 +32,7 @@ import {
   caseLabels,
   cases,
   companies,
+  deepDiveFindings,
   deepDiveItemFiles,
   documents,
   documentRevisions,
@@ -1294,6 +1295,15 @@ export function caseRoutes(db: Db, storage: StorageService) {
           lockedAt: link.document.lockedAt,
         });
       }
+      // A finding sits in this GIF cell for good (GRE-2367): keep the cell.
+      const finding = await tx
+        .select({ id: deepDiveFindings.id })
+        .from(deepDiveFindings)
+        .innerJoin(caseDocuments, eq(caseDocuments.id, deepDiveFindings.gifDocumentId))
+        .where(eq(caseDocuments.documentId, link.document.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (finding) throw conflict("Findings sit in this GIF cell, so its document is kept", { key });
       await tx.delete(caseDocuments).where(eq(caseDocuments.documentId, link.document.id));
       await tx.delete(documents).where(eq(documents.id, link.document.id));
     });

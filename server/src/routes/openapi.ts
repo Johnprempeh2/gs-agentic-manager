@@ -369,6 +369,10 @@ import {
   replaceChatEndpointResourcesSchema,
   updateChatEndpointSchema,
   updateNotificationPreferencesSchema,
+  decideDeepDiveFindingSchema,
+  listDeepDiveFindingsQuerySchema,
+  proposeDeepDiveFindingSchema,
+  setDeepDiveFindingVisibilitySchema,
 } from "@greatstone/shared";
 import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
@@ -16723,4 +16727,54 @@ registerCurrentRoute({
   tags: ["ai-connections"], summary: "Check the local operator's subscription sign-in without saving a connection",
   body: localAiConnectionSchema,
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+// Deep Dive findings (GRE-2367). Proposed by a person or an agent; only a
+// person validates, rejects or shares. A finding is never edited.
+const findingResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/findings",
+  tags: ["deep-dive"],
+  summary: "List the company's Deep Dive findings, optionally for one Investigation Stream",
+  query: listDeepDiveFindingsQuerySchema,
+  responses: findingResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/findings",
+  tags: ["deep-dive"],
+  summary:
+    "Propose a finding in one GIF cell of a stream, citing evidence of the stream's client; supersedesFindingId " +
+    "proposes a replacement for a validated finding (409 when one is already proposed)",
+  body: proposeDeepDiveFindingSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/findings/{findingId}",
+  tags: ["deep-dive"],
+  summary: "Get one Deep Dive finding with its evidence",
+  responses: findingResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/findings/{findingId}/decision",
+  tags: ["deep-dive"],
+  summary: "Validate or reject a proposed finding (people only); validating a replacement supersedes the old finding",
+  body: decideDeepDiveFindingSchema,
+  responses: { ...findingResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/findings/{findingId}",
+  tags: ["deep-dive"],
+  summary: "Set a finding Internal or Shared (people only); any other change is refused with 409, a finding is never edited",
+  body: setDeepDiveFindingVisibilitySchema,
+  responses: { ...findingResponses, 409: r.conflict },
 });

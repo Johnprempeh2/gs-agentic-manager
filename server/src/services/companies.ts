@@ -29,6 +29,7 @@ import {
   principalPermissionGrants,
   companyMemberships,
   companySkills,
+  deepDiveFindings,
   documents,
   routineRuns,
   routineTriggers,
@@ -775,6 +776,8 @@ export function companyService(db: Db) {
         await tx.delete(routineRevisions).where(eq(routineRevisions.companyId, id));
         await tx.delete(routines).where(eq(routines.companyId, id));
         await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
+        // Findings point at GIF documents and evidence without a cascade (GRE-2367).
+        await tx.delete(deepDiveFindings).where(eq(deepDiveFindings.companyId, id));
         await tx.delete(documents).where(eq(documents.companyId, id));
         await tx.delete(issues).where(eq(issues.companyId, id));
         await tx.delete(motionStudies).where(eq(motionStudies.companyId, id));
