@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { queryKeys } from "@/lib/queryKeys";
+import { formatDateTime } from "@/lib/utils";
 
 /** Client mirror of the route guard: board owners only. The server stays authoritative. */
 export function canGiveQaLogin(companyId: string, access: CurrentBoardAccess | undefined) {
@@ -23,10 +24,6 @@ export function canGiveQaLogin(companyId: string, access: CurrentBoardAccess | u
   if (access.source === "local_implicit" || access.isInstanceAdmin) return true;
   const membership = access.memberships?.find((item) => item.companyId === companyId && item.status === "active");
   return membership?.membershipRole === "owner";
-}
-
-function formatExpiry(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 /**
@@ -78,7 +75,7 @@ export function AgentQaLoginButton({ agentId, agentName, companyId }: { agentId:
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground" title={qaLogin.email}>
-          Browser QA ({qaLogin.role === "operator" ? "Operator" : "Viewer"}) until {formatExpiry(qaLogin.expiresAt)}
+          Browser QA ({qaLogin.role === "operator" ? "Operator" : "Viewer"}) until {formatDateTime(qaLogin.expiresAt)}
         </span>
         <Button size="sm" variant="outline" onClick={() => revoke.mutate()} disabled={revoke.isPending}>
           Revoke now
