@@ -282,6 +282,39 @@ describe("set-motion (GRE-2232)", () => {
     });
   });
 
+  it("reads the GRE-2522 library: preview, description, safe settings and plain surfaces", () => {
+    const veil = {
+      id: "bg.veil",
+      label: "Veil",
+      still: "/motion/veil-dark.webp",
+      study: "019",
+      preview: "/effect-preview/bg.veil",
+      description: "Veil ambient study.",
+      settings: {
+        intensity: ["off", "subtle", "full"],
+        speed: ["still", "slow", "normal"],
+        colour: ["emerald", "teal"],
+        defaults: { intensity: "subtle", speed: "slow", colour: "emerald" },
+      },
+      textSafety: { quietZone: "copy", minimumBodyContrast: "7:1", limeBehindCopy: false, reducedMotion: "still" },
+    };
+    const backgroundSurfaces = [
+      { id: "none", label: "None" },
+      { id: "panel", label: "Panel" },
+    ];
+    const received = receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: ack({ blocks: [], motionEffects: [veil, { ...veil, id: "bg.orbit", preview: "https://x.example/p" }], backgroundSurfaces }) },
+      ctx(null),
+    );
+    const payload = received.ok && received.message.type === "hello-ack" ? received.message.payload : null;
+    const { textSafety: _textSafety, ...known } = veil;
+    expect(payload?.motionEffects?.[0]).toEqual(known);
+    // An off-origin preview is dropped, never the effect.
+    expect(payload?.motionEffects?.[1]?.preview).toBeUndefined();
+    expect(payload?.backgroundSurfaces).toEqual(backgroundSurfaces);
+    expect(receive("set-motion-result", { requestId: "r1", ok: false, code: "frozen_page" }).ok).toBe(true);
+  });
+
   it("drops a bad motion list but keeps the handshake", () => {
     const received = receiveWebsiteFrameMessage(
       {
@@ -305,6 +338,14 @@ describe("set-motion (GRE-2232)", () => {
     expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "extreme" } }).success).toBe(false);
     expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "<b>", intensity: "full" } }).success).toBe(false);
     expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "none", intensity: "off" }, code: "x" }).success).toBe(false);
+    // GRE-2522: speed, colour and a plain surface; a block takes an effect or a surface, not both.
+    expect(
+      websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle", speed: "slow", colour: "teal" } }).success,
+    ).toBe(true);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle", speed: "fast" } }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "none", intensity: "off" }, surface: "panel" }).success).toBe(true);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle" }, surface: "panel" }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.veil", intensity: "subtle" }, surface: "none" }).success).toBe(true);
   });
 
   it("accepts set-motion-result with each refusal code the site sends", () => {
@@ -313,6 +354,7 @@ describe("set-motion (GRE-2232)", () => {
       "block_has_no_motion",
       "effect_not_allowed",
       "invalid_payload",
+      "frozen_page",
       "error",
     ]);
     expect(receive("set-motion-result", { requestId: "m8", ok: true }).ok).toBe(true);
