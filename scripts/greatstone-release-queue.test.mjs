@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nextBatch, proposeTitle, refProblem } from "./greatstone-release-queue.mjs";
+import { coveringItem, nextBatch, proposeTitle, refProblem, releasingItem } from "./greatstone-release-queue.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const queueScript = join(scriptsDir, "greatstone-release-queue.mjs");
@@ -58,6 +58,7 @@ if (a.includes("--print")) {
 `,
   "greatstone-preview.sh": `#!/usr/bin/env bash
 echo "preview $*" >>"$CALLS"
+echo "$1 item=\${GSAM_RELEASE_QUEUE_ITEM:-} run=\${GSAM_RUN_ID:-}" >>"$CALLS.preview-env"
 [ "$1" != switch-tests ] || [ -z "\${SWITCH_FAIL:-}" ] || { echo "preview: switch test failed"; exit 1; }
 `,
   "greatstone-release.sh": `#!/usr/bin/env bash
@@ -540,4 +541,89 @@ test("a release with a database change still runs the preview and its switch tes
   const calls = box.callLines();
   assert.deepEqual(calls.map((c) => c.split(" ").slice(0, 2).join(" ")).filter((c) => c.startsWith("preview")), ["preview stop", "preview start", "preview switch-tests"]);
   assert.match(readFileSync(box.state().items[0].log, "utf8"), /preview: starting rc-\S+ on a copy of the live data \(the database changes between [0-9a-f]{9} and [0-9a-f]{9}: packages\/db\/src\/migrations\/0001_sandbox\.sql\)/);
+});
+
+// GRE-2486: an agent's preview start (Flint's daily-candidate check) holds the preview lock.
+function agentPreviewLock(box, t, { lifeMs = 60_000 } = {}) {
+  const agent = spawn(process.execPath, ["-e", `setTimeout(() => {}, ${lifeMs})`], { stdio: "ignore" });
+  t.after(() => agent.kill("SIGKILL"));
+  const dir = join(box.root, "locks", "preview.lock");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "owner"), `pid=${agent.pid}\ncommand=greatstone-preview.sh start rc-2026-10-25.9\nrun_id=run-flint\nissue_id=issue-2466\ntakeovers=0\n`);
+  return { agent, ended: new Promise((r) => agent.on("exit", (_code, signal) => r(signal ?? "exited"))) };
+}
+
+test("an agent's preview in the way gets a grace period, is then stopped and recorded, and its task is told and woken (GRE-2486)", async (t) => {
+  const box = await sandbox(t);
+  box.merge("migration");
+  const { ended } = agentPreviewLock(box, t);
+  const a = enqueue(box, "main", "Migration");
+  const { code, out } = await box.worker({ GSAM_RELEASE_QUEUE_PREVIEW_GRACE_SECONDS: "0.5", GSAM_RUN_ID: "run-of-whoever-started-the-worker" }).done;
+  assert.equal(code, 0, out);
+  assert.equal(await ended, "SIGTERM");
+  const item = box.state().items.find((i) => i.id === a.id);
+  assert.equal(item.status, "released");
+  assert.deepEqual(item.previewStopped.map(({ runId, issueId, what }) => ({ runId, issueId, what })), [{ runId: "run-flint", issueId: "issue-2466", what: "greatstone-preview.sh start rc-2026-10-25.9" }]);
+  assert.match(item.previewStopped[0].note, /^stopped; the task was told and woken$/);
+  const comment = box.fake.calls.find((c) => c.what === "comment" && c.issueId === "issue-2466");
+  assert.equal(comment.body.resume, true);
+  assert.match(comment.body.body, new RegExp(`^The release queue stopped this task's preview \\(greatstone-preview\\.sh start rc-2026-10-25\\.9, run run-flint\\) after 1 s, so release ${a.id} of [0-9a-f]{9} \\(rc-\\S+\\) can run its own preview\\. Do not start the preview again`));
+  // It was stopped before the queue's own preview started; every queue preview step is the queue's, with no run.
+  const calls = box.callLines().filter((c) => c.startsWith("preview"));
+  assert.deepEqual(calls.map((c) => c.split(" ")[1]), ["stop", "stop", "start", "switch-tests"], calls.join("\n"));
+  const envs = readFileSync(`${join(box.root, "calls.txt")}.preview-env`, "utf8").trim().split("\n");
+  assert.deepEqual(envs.map((l) => l.split(" ").slice(1).join(" ")), Array(4).fill(`item=${a.id} run=`));
+  assert.match(readFileSync(item.log, "utf8"), /preview: an agent's preview is in the way \(greatstone-preview\.sh start rc-2026-10-25\.9, run run-flint, task issue-2466\)/);
+});
+
+test("an agent's preview that ends within the grace period is left alone (GRE-2486)", async (t) => {
+  const box = await sandbox(t);
+  box.merge("migration");
+  const { agent, ended } = agentPreviewLock(box, t);
+  const a = enqueue(box, "main", "Migration");
+  const run = box.worker({ GSAM_RELEASE_QUEUE_PREVIEW_GRACE_SECONDS: "20" });
+  await waitFor("the queue to wait for the agent's preview", () => /in the way/.test(box.state().items[0]?.detail ?? ""));
+  agent.kill("SIGKILL"); // the agent's start ends by itself, as far as the queue knows
+  const { code, out } = await run.done;
+  assert.equal(code, 0, out);
+  assert.equal(await ended, "SIGKILL", "the queue sent no signal");
+  const item = box.state().items.find((i) => i.id === a.id);
+  assert.equal(item.status, "released");
+  assert.equal(item.previewStopped, undefined);
+  assert.equal(box.fake.calls.some((c) => c.what === "comment" && c.issueId === "issue-2466"), false);
+  assert.match(readFileSync(item.log, "utf8"), /preview: the agent's preview ended on its own/);
+});
+
+test("releasing and covers: what the preview guard and the daily candidate ask the queue (GRE-2486)", async (t) => {
+  assert.equal(releasingItem([{ id: "a", status: "queued" }, { id: "b", status: "released" }]), null);
+  assert.equal(releasingItem([{ id: "a", status: "queued" }, { id: "b", status: "running" }]).id, "b");
+  const history = { c1: [], c2: ["c1"], c3: ["c1", "c2"] };
+  const anc = (a, b) => history[b]?.includes(a) ?? false;
+  const items = [{ id: "r1", status: "released", commit: "c2" }, { id: "f", status: "failed", commit: "c3" }];
+  assert.equal(coveringItem(items, "c1", anc).id, "r1", "a newer main released");
+  assert.equal(coveringItem(items, "c2", anc).id, "r1", "the same commit released");
+  assert.equal(coveringItem(items, "c3", anc), null, "a failed release covers nothing");
+  assert.equal(coveringItem([{ id: "q", status: "running", commit: "c3" }], "c2", anc).id, "q", "a newer main releasing");
+
+  const box = await sandbox(t);
+  const older = box.merge("older");
+  git(box.dev, "fetch", "--quiet", "origin");
+  git(box.dev, "tag", "-a", "rc-2026-10-25.9", older, "-m", "daily");
+  const newer = box.merge("newer");
+  git(box.dev, "fetch", "--quiet", "origin");
+  const notReleasing = box.cli(["releasing"]);
+  assert.deepEqual([notReleasing.status, notReleasing.stdout], [1, ""]);
+  const uncovered = box.cli(["covers", "rc-2026-10-25.9"]);
+  assert.equal(uncovered.status, 1);
+  assert.match(uncovered.stdout, /^Not covered: the queue has not released or started releasing rc-2026-10-25\.9/);
+  const a = enqueue(box, "main");
+  const file = join(box.root, "release-queue", "queue.json");
+  const s = JSON.parse(readFileSync(file, "utf8"));
+  Object.assign(s.items.find((i) => i.id === a.id), { status: "running", step: "preview", commit: newer, tag: "rc-2026-10-25.10" });
+  writeFileSync(file, JSON.stringify(s));
+  const releasing = box.cli(["releasing"]);
+  assert.deepEqual([releasing.status, releasing.stdout.trim()], [0, `${newer.slice(0, 9)} (${a.id}, rc-2026-10-25.10)`]);
+  const covered = box.cli(["covers", "rc-2026-10-25.9"]);
+  assert.equal(covered.status, 0, covered.stderr);
+  assert.equal(covered.stdout.trim(), `Covered: ${a.id} is releasing ${newer.slice(0, 9)} (rc-2026-10-25.10), which includes rc-2026-10-25.9 (${older.slice(0, 9)}). The queue's preview covers it; skip this preview.`);
 });

@@ -19,7 +19,8 @@
 #   scripts/greatstone-preview.sh stop          stop the preview (only the preview)
 #
 # start, switch-tests and stop run one at a time (the "preview" lock in
-# ~/GSAM/locks); a second one fails and names the run that holds it.
+# ~/GSAM/locks); a second one fails and names the run that holds it. While the
+# release queue releases, an agent run's start, switch-tests and stop are refused.
 #
 # The preview lives in ~/GSAM/preview: code/ is its own clone at <tag>, data/
 # is a fresh copy of the live data. It only reads ~/GSAM/data and never talks
@@ -375,13 +376,24 @@ cmd_evidence() {
 # cannot remove the data copy or stop the server another is using (gs_lock).
 preview_lock() { LOCK_PROBLEM="$(gs_lock preview "$@")" || die "$LOCK_PROBLEM"; trap "rm -rf '$GS_ROOT/locks/preview.lock'" EXIT; }
 
+# While a release-queue request is past "queued", the preview is the queue's:
+# an agent run's start, switch-tests or stop is refused, so it cannot take the
+# preview from the release or stop the queue's own (GRE-2486). The queue's own
+# steps set GSAM_RELEASE_QUEUE_ITEM; people (no GSAM_RUN_ID) are not stopped.
+queue_guard() {
+  [ -n "${GSAM_RUN_ID:-}" ] && [ -z "${GSAM_RELEASE_QUEUE_ITEM:-}" ] || return 0
+  local releasing
+  releasing="$(GSAM_ROOT="$GS_ROOT" node "$(dirname "${BASH_SOURCE[0]}")/greatstone-release-queue.mjs" releasing 2>/dev/null)" || return 0
+  die "The release queue is releasing $releasing; its own preview covers this. Check the queue status: node scripts/greatstone-release-queue.mjs status"
+}
+
 case "${1:-}" in
-  start) preview_lock "$@"; shift; cmd_start "$@" ;;
+  start) queue_guard; preview_lock "$@"; shift; cmd_start "$@" ;;
   status) cmd_status ;;
-  switch-tests) preview_lock "$@"; cmd_switch_tests ;;
+  switch-tests) queue_guard; preview_lock "$@"; cmd_switch_tests ;;
   shot) shift; cmd_shot "$@" ;;
   script) shift; cmd_script "$@" ;;
   evidence) shift; cmd_evidence "$@" ;;
-  stop) preview_lock "$@"; cmd_stop ;;
+  stop) queue_guard; preview_lock "$@"; cmd_stop ;;
   *) die "usage: greatstone-preview.sh start <tag> | status | switch-tests | shot <page path> <name> | script <file.mjs> [args] | evidence [<tag>] | stop" ;;
 esac

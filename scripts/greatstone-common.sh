@@ -323,8 +323,14 @@ preview_running() {
 # run and issue; the caller removes it on exit.
 # A lock whose holder is gone (killed with SIGKILL, so no exit trap) is taken
 # over. Fails, naming the holder, when another step holds it.
+# An agent run takes over its own lock once (takeovers=1 in the owner file).
+# On 25 Oct 2026 Flint's run started the preview again and again for 50 min:
+# each start was killed (no exit trap) and the next took over its own lock
+# and began from scratch, while a release waited (GRE-2486). The second
+# takeover by the same run fails and says why.
 gs_lock() {
-  local dir="$GS_ROOT/locks/$1.lock" pid age
+  local dir="$GS_ROOT/locks/$1.lock" pid age run_id takeovers=0 owner_run owner_takeovers
+  run_id="$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')"
   mkdir -p "$GS_ROOT/locks"
   if ! mkdir "$dir" 2>/dev/null; then
     pid="$(sed -n 's/^pid=//p' "$dir/owner" 2>/dev/null || true)"
@@ -334,13 +340,22 @@ gs_lock() {
       say "another $1 step runs ($(tr '\n' ' ' <"$dir/owner" 2>/dev/null | sed 's/ $//')); wait for it to end. If none runs, remove $dir."
       return 1
     fi
+    owner_run="$(sed -n 's/^run_id=//p' "$dir/owner" 2>/dev/null || true)"
+    owner_takeovers="$(sed -n 's/^takeovers=//p' "$dir/owner" 2>/dev/null || true)"
+    if [ -n "$run_id" ] && [ "$owner_run" = "$run_id" ]; then
+      if [ "${owner_takeovers:-0}" -ge 1 ] 2>/dev/null; then
+        say "this run ($run_id) already took over its own $1 lock once, and that step (pid ${pid:-<none>}) was also stopped before it ended, most likely by a tool time limit. Not starting a third time. A preview start takes 8 to 12 minutes: run it in the background and follow it with 'greatstone-preview.sh status', or say on the task why it cannot finish. Check the release queue first: node scripts/greatstone-release-queue.mjs status"
+        return 1
+      fi
+      takeovers=$(( ${owner_takeovers:-0} + 1 ))
+    fi
     rm -rf "$dir"
     mkdir "$dir" 2>/dev/null || { say "another $1 step took the lock just now; try again."; return 1; }
     say "Took over the $1 lock from pid ${pid:-<none>}, which no longer runs." >&2
   fi
-  printf 'pid=%s\ncommand=%s\nrun_id=%s\nissue_id=%s\nstarted_at=%s\n' "$$" "$(basename "$0") ${*:2}" \
-    "$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')" "$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')" \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$dir/owner"
+  printf 'pid=%s\ncommand=%s\nrun_id=%s\nissue_id=%s\nstarted_at=%s\ntakeovers=%s\n' "$$" "$(basename "$0") ${*:2}" \
+    "$run_id" "$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$takeovers" >"$dir/owner"
 }
 
 # preview_check <commit> <tag>
