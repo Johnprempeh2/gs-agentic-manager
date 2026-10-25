@@ -11,7 +11,7 @@ import { waitForPendingRunFailureReports } from "./services/run-failure-report.j
 import { setBoardIdentityDeploymentMode } from "./services/board-identity.js";
 import { verifyStoppedNativeSessionForReplacement } from "./services/native-runtime/native-session-executor.js";
 import { embeddedPostgresOwnerPort } from "./embedded-postgres-owner.js";
-import { isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
+import { findPortWithoutSocketLock, isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
 import { deliverExecutionStatuses } from "./services/execution-status-delivery.js";
 import { deliverReconciledExecutions, settleUnrecoverableExecutions } from "./services/execution-recovery-resolution.js";
 import { reconcileSafeNativeReplacements } from "./services/native-runtime/native-safe-replacement.js";
@@ -42,6 +42,7 @@ import {
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
   prepareEmbeddedPostgresNativeRuntime,
+  hasEmbeddedPostgresSocketLock,
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
@@ -658,7 +659,11 @@ async function startServerWithDatabaseTeardown(
           port = await startOnFreePort({
             requestedPort: configuredPort,
             findFreePort: async (from) => {
-              const detectedPort = await detectPort(from);
+              const detectedPort = await findPortWithoutSocketLock({
+                from,
+                detectFreePort: (candidate) => detectPort(candidate),
+                hasSocketLock: (candidate) => hasEmbeddedPostgresSocketLock(candidate),
+              });
               if (detectedPort !== from) {
                 logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${from}, selectedPort=${detectedPort})`);
               }
