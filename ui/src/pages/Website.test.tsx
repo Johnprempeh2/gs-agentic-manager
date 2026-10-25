@@ -34,7 +34,7 @@ vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompa
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { useSearchParams: actual.useSearchParams, Link: actual.Link };
+  return { useSearchParams: actual.useSearchParams, useLocation: actual.useLocation, useNavigate: actual.useNavigate, Navigate: actual.Navigate, Link: actual.Link };
 });
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 
@@ -188,7 +188,7 @@ describe("Website page", () => {
     expect(container.querySelector('[data-testid="website-setup"]')).toBeNull();
   });
 
-  it("sets up a website without a GA4 id and opens the hub on Overview", async () => {
+  it("sets up a website without a GA4 id and opens the hub on Home", async () => {
     const created = property({ ga4PropertyId: null, projectId: "proj-1", connectionStatus: "not_connected" });
     websiteApiMock.overview.mockResolvedValueOnce(overview({ properties: [] })).mockResolvedValue(overview({ properties: [created] }));
     websiteApiMock.create.mockResolvedValue(created);
@@ -217,7 +217,7 @@ describe("Website page", () => {
         projectId: "proj-1",
       }),
     );
-    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Overview"));
+    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Home"));
     expect(location).toBe("/website");
   });
 
@@ -320,14 +320,35 @@ describe("Website page", () => {
 });
 
 describe("Website hub tabs", () => {
-  it("opens on Overview with the five tabs and asks once for the website project", async () => {
+  it("puts Home first and opens on it, with the live site as its hero", async () => {
     await render("/website");
     await waitForText("Link the website project");
     const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
-    expect(tabs).toEqual(["Overview", "Progress", "Sitemap", "Preview", "Traffic"]);
-    expect(text()).toContain("Live site");
-    expect(text()).toContain("greatstone.example");
-    expect(websiteApiMock.report).not.toHaveBeenCalled();
+    expect(tabs).toEqual(["Home", "Preview", "Progress", "Sitemap", "Pages", "Collections", "Releases", "Traffic"]);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Home");
+    // The site leads the Home: the hero frame comes before anything else.
+    const home = container.querySelector('[data-testid="website-home"]')!;
+    expect(home.firstElementChild?.getAttribute("data-testid")).toBe("website-home-hero");
+    // No connected site in this test: the hero holds the live site back with its placeholder and Open in new tab.
+    expect(home.querySelector('[data-testid="website-home-frame-placeholder"] a')?.getAttribute("href")).toBe("https://greatstone.example/");
+  });
+
+  it("opens Home for the old ?tab=overview link, keeps other tabs, and drops the tab from the URL on Home", async () => {
+    await render("/website?tab=overview");
+    await vi.waitFor(() => expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Home"));
+    const previewTab = Array.from(container.querySelectorAll('[role="tab"]')).find((el) => el.textContent === "Preview") as HTMLElement;
+    await act(async () => {
+      previewTab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      previewTab.click();
+    });
+    await vi.waitFor(() => expect(location).toBe("/website?tab=preview"));
+    const homeTab = Array.from(container.querySelectorAll('[role="tab"]')).find((el) => el.textContent === "Home") as HTMLElement;
+    await act(async () => {
+      homeTab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      homeTab.click();
+    });
+    await vi.waitFor(() => expect(location).toBe("/website"));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Home");
   });
 
   it("links the chosen project through the property settings", async () => {

@@ -87,6 +87,7 @@ import {
 } from "../services/index.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { setAgentPipelineAccess } from "../services/agent-pipeline-access.js";
+import { setAgentWebsiteAccess } from "../services/agent-website-access.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
@@ -5157,13 +5158,19 @@ export function agentRoutes(
       canContributeMemory,
       canApproveMemory,
       pipelineAccess,
+      websiteAccess,
       ...permissionFlags
     } = req.body;
-    // Pipeline access levels (GRE-1072) are changed only by board users who
-    // may manage permissions. Checked before anything is written.
-    if (pipelineAccess) {
+    // Pipeline access levels (GRE-1072) and website access (GRE-2239) are
+    // changed only by board users who may manage permissions. Checked before
+    // anything is written.
+    if (pipelineAccess || websiteAccess) {
       if (req.actor.type !== "board") {
-        throw forbidden("Only board users with users:manage_permissions can change pipeline access");
+        throw forbidden(
+          pipelineAccess
+            ? "Only board users with users:manage_permissions can change pipeline access"
+            : "Only board users with users:manage_permissions can change website access",
+        );
       }
       const decision = await access.decide({
         actor: req.actor,
@@ -5215,8 +5222,30 @@ export function agentRoutes(
           grantedByUserId,
         })
       : null;
+    const websiteAccessChange = websiteAccess
+      ? await setAgentWebsiteAccess(access, {
+          companyId: agent.companyId,
+          agentId: agent.id,
+          level: websiteAccess,
+          grantedByUserId,
+        })
+      : null;
 
     const actor = getActorInfo(req);
+    if (websiteAccessChange) {
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "agent.website_access_updated",
+        entityType: "agent",
+        entityId: agent.id,
+        details: { before: websiteAccessChange.before, after: websiteAccessChange.after },
+      });
+    }
     if (pipelineAccessChange) {
       await logActivity(db, {
         companyId: agent.companyId,

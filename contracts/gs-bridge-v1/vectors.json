@@ -1,0 +1,75 @@
+{
+  "_comment": "gs-bridge-v1 signing vectors (GRE-2323). The same file lives at this path in greatstone-website and gs-agentic-manager; change both or neither. TEST ONLY key: the seed is public.",
+  "key": {
+    "kid": "test-read-1",
+    "capability": "read",
+    "seedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "publicKey": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg"
+  },
+  "vectors": [
+    {
+      "name": "health",
+      "method": "GET",
+      "url": "https://staging.example.test/api/admin/v1/health",
+      "time": 1793000000,
+      "nonce": "AAECAwQFBgcICQoLDA0ODw",
+      "actor": "agent:d5651a41-e5e0-4512-8fb0-069815ff4278",
+      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "body": "",
+      "expected": {
+        "canonicalQuery": "",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "gs-bridge-v1\nGET\nstaging.example.test\n/api/admin/v1/health\n1793000000\nAAECAwQFBgcICQoLDA0ODw\nagent:d5651a41-e5e0-4512-8fb0-069815ff4278\n9ef9feeb-d13b-450d-b404-89a39e406161\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signature": "5yRNy1hYG5HYrhgDdPLmA-75yEhLMilJ2neXmFB9pP7JNc1eS8d-QrnhlLc6Y6B3_N6hfT2CgQwJQMGsRKl5Dw"
+      }
+    },
+    {
+      "name": "list with query, unsorted and encoded",
+      "method": "GET",
+      "url": "https://staging.example.test/api/admin/v1/orders?updatedSince=2026-10-01T00%3A00%3A00Z&limit=2&customer=11111111-1111-4111-8111-111111111111&cursor=a+b",
+      "time": 1793000001,
+      "nonce": "EBESExQVFhcYGRobHB0eHw",
+      "actor": "user:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP",
+      "run": null,
+      "body": "",
+      "expected": {
+        "canonicalQuery": "cursor=a%20b&customer=11111111-1111-4111-8111-111111111111&limit=2&updatedSince=2026-10-01T00%3A00%3A00Z",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "gs-bridge-v1\nGET\nstaging.example.test\n/api/admin/v1/orders?cursor=a%20b&customer=11111111-1111-4111-8111-111111111111&limit=2&updatedSince=2026-10-01T00%3A00%3A00Z\n1793000001\nEBESExQVFhcYGRobHB0eHw\nuser:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signature": "dMAFuTbgRXehlGIXB-k_4UKMmOFK7aU54Xk3U0jlmwvHB9L5snw933KeHjt15BnxQRgzSKKGjQmvbO_YmmVACw"
+      }
+    },
+    {
+      "name": "repeated names sort by value",
+      "method": "GET",
+      "url": "https://greatstoneint.com/api/admin/v1/quotes?b=2&a=z&a=y",
+      "time": 1793000002,
+      "nonce": "ICEiIyQlJicoKSorLC0uLw",
+      "actor": "agent:abc",
+      "run": null,
+      "body": "",
+      "expected": {
+        "canonicalQuery": "a=y&a=z&b=2",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "gs-bridge-v1\nGET\ngreatstoneint.com\n/api/admin/v1/quotes?a=y&a=z&b=2\n1793000002\nICEiIyQlJicoKSorLC0uLw\nagent:abc\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signature": "72D09umBOaHkB6RPUiIir4MIuAuVvyENngolKySRYcz8nXHlWfKp4XpqaLWi-Xe5jR8j_7jci1f8RRwWuvNfAA"
+      }
+    },
+    {
+      "name": "body hash (later capabilities)",
+      "method": "POST",
+      "url": "https://staging.example.test/api/admin/v1/refund-requests",
+      "time": 1793000003,
+      "nonce": "MDEyMzQ1Njc4OTo7PD0-Pw",
+      "actor": "user:john",
+      "run": null,
+      "body": "{\"orderId\":\"x\",\"amountMinor\":100}",
+      "expected": {
+        "canonicalQuery": "",
+        "bodySha256": "4606648bf65d71ea961160bc40a77873ea19c52b687f4d809b76a720033c0f50",
+        "canonical": "gs-bridge-v1\nPOST\nstaging.example.test\n/api/admin/v1/refund-requests\n1793000003\nMDEyMzQ1Njc4OTo7PD0-Pw\nuser:john\n-\n4606648bf65d71ea961160bc40a77873ea19c52b687f4d809b76a720033c0f50",
+        "signature": "hVxEXVeT8cQJolawSMZ2GzQsgZ0DjJj1xZRQuP-dhBpuXYOlxyUSYMAO3dvVHKy7gMGgxogXvxfxcmmoQmb_Cw"
+      }
+    }
+  ]
+}

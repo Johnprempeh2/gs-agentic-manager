@@ -54,7 +54,6 @@ const { issueTablingRoutes } = await import("../routes/issue-tabling.js");
 const { decisionsFeedRoutes } = await import("../routes/decisions-feed.js");
 const { sidebarBadgeRoutes } = await import("../routes/sidebar-badges.js");
 const { decisionsFeedService, taskIdOf } = await import("../services/decisions-feed.js");
-const { resolveReviewEscalationUserId } = await import("../services/review-escalation-user.js");
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -525,7 +524,8 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     // A question is answered, not reassigned or instructed (a comment would
     // close it unanswered); the blocker keeps its own way forward.
     expect(card.actions.map((candidate) => candidate.id)).toEqual(["open", "reassign_blocker", "instruct_blocker", "cancel_task", "not_now"]);
-    expect(card.decision).toBe("Which month?");
+    // A pending question on a blocked task is a real ask of John (GRE-2342).
+    expect(card.decision).toMatch(/^.+ is waiting on you: Which month\?$/);
     expect(card.questions).toEqual([{ prompt: "Which month?", options: [{ id: "sep", label: "September", description: null, recommended: false }] }]);
     expect(card.facts.blockerChain.map((ref) => ref.identifier)).toEqual(["GRE-158"]);
     // The blocker's actions act on the blocker; the task's own act on the task.
@@ -547,6 +547,30 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
 
     expect(feed.cards.map((card) => card.id)).toEqual([`task:${seeded.blocker}`]);
     expect(feed.cards[0]!.actions.map((candidate) => candidate.id)).not.toContain("reassign_blocker");
+  });
+
+  it("names the agent-owned blocker, not \"waiting on you\", for a plan with a step for John (GRE-2342)", async () => {
+    const seeded = await seedBlockedPair();
+    const keystoneId = randomUUID();
+    await db.insert(agents).values({
+      id: keystoneId, companyId: seeded.companyId, name: "Keystone", role: "engineer", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.update(issues).set({ assigneeAgentId: keystoneId }).where(eq(issues.id, seeded.blocker));
+    await addOpenDecision(seeded, seeded.blocked);
+    await db.insert(authUsers).values({ id: USER_ID, name: "John Prempeh", email: "john@example.com", createdAt: new Date(), updatedAt: new Date() });
+    await db.insert(issueComments).values({
+      companyId: seeded.companyId, issueId: seeded.blocked, authorAgentId: seeded.workerId,
+      body: "Plan:\n1. Keystone merges #99.\n2. I open the connection card.\n3. John: accept the card.",
+    });
+
+    try {
+      const card = cardFor(await build(seeded.companyId), seeded.blocked)!;
+      expect(card).toMatchObject({ kind: "blocked", title: "GRE-159 Ledger export" });
+      expect(card.decision).not.toMatch(/waiting on you/i);
+      expect(card.decision).toBe("Blocked by GRE-158 (Keystone): choose who takes it on, give an instruction, or cancel it.");
+    } finally {
+      await db.delete(authUsers).where(eq(authUsers.id, USER_ID));
+    }
   });
 
   it("groups a decision row into its origin issue's card, even without a related issue (GRE-431)", async () => {
@@ -1055,7 +1079,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       reviewer: { type: "user"; userId: string } | { type: "agent" };
       responsibleUserId?: string;
       changesRequestedCount?: number;
-      /** The agent stage escalated to this user after its last round. */
+      /** Holds the stage though not listed in it (the old round-cap escalation). */
       escalatedTo?: string;
     }) {
       const companyId = randomUUID();
@@ -1244,74 +1268,142 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       expect(await db.select().from(issueExecutionDecisions).where(eq(issueExecutionDecisions.issueId, seeded.issueId))).toEqual([]);
     });
 
-    it("escalates an old local-board task to the real owner after the agent's last round, who can then approve", async () => {
-      const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: "local-board", changesRequestedCount: 2 });
-      // Only John is an active human owner; the second user is a plain member.
-      await db.update(companyMemberships).set({ membershipRole: "member" })
-        .where(eq(companyMemberships.principalId, OTHER_USER_ID));
-      function agentApp(agentId: string) {
-        const runId = randomUUID();
-        return db.insert(heartbeatRuns).values({
-          id: runId, companyId: seeded.companyId, agentId, invocationSource: "assignment",
-          status: "running", contextSnapshot: { issueId: seeded.issueId },
-        }).then(() => app(seeded.companyId, { type: "agent", agentId, companyId: seeded.companyId, source: "agent_key", runId }));
-      }
+    function agentAppFor(seeded: { companyId: string; issueId: string }, agentId: string) {
+      const runId = randomUUID();
+      return db.insert(heartbeatRuns).values({
+        id: runId, companyId: seeded.companyId, agentId, invocationSource: "assignment",
+        status: "running", contextSnapshot: { issueId: seeded.issueId },
+      }).then(() => app(seeded.companyId, { type: "agent", agentId, companyId: seeded.companyId, source: "agent_key", runId }));
+    }
 
-      const third = await request(await agentApp(seeded.keystoneId)).patch(`/api/issues/${seeded.issueId}`)
-        .send({ status: "in_progress", comment: "Not ready: the HTML part is still raw." });
+    // GRE-2161: on GRE-2118 the author's resubmit after three rounds handed
+    // Keystone's PR review to John, who was not in the stage.
+    it("keeps an agent stage with its agent reviewer after the agent's last round", async () => {
+      const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: USER_ID, changesRequestedCount: 2 });
+
+      const third = await request(await agentAppFor(seeded, seeded.keystoneId)).patch(`/api/issues/${seeded.issueId}`)
+        .send({ status: "in_progress", comment: "Not ready: the branch conflicts with main." });
       expect(third.status, JSON.stringify(third.body)).toBe(200);
-
-      // The last agent verdict still goes back to Mason (GRE-2049).
       const [returned] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
       expect(returned?.status).toBe("in_progress");
       expect(returned?.assigneeAgentId).toBe(seeded.masonId);
 
-      // Mason's fix then goes to John, not to another agent round.
-      const resubmit = await request(await agentApp(seeded.masonId)).patch(`/api/issues/${seeded.issueId}`)
-        .send({ status: "in_review", comment: "Rendered the HTML part as a page." });
+      const resubmit = await request(await agentAppFor(seeded, seeded.masonId)).patch(`/api/issues/${seeded.issueId}`)
+        .send({ status: "in_review", comment: "Merged main; mergeable again." });
       expect(resubmit.status, JSON.stringify(resubmit.body)).toBe(200);
 
       const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
-      const state = task?.executionState as { status?: string; currentParticipant?: { type: string; userId: string | null } } | null;
+      const state = task?.executionState as { status?: string; currentParticipant?: { type: string; agentId: string | null } } | null;
       expect(task?.status).toBe("in_review");
       expect(state?.status).toBe("pending");
-      expect(state?.currentParticipant).toEqual(expect.objectContaining({ type: "user", userId: USER_ID }));
-      expect(task?.assigneeUserId).toBe(USER_ID);
+      expect(state?.currentParticipant).toEqual(expect.objectContaining({ type: "agent", agentId: seeded.keystoneId }));
+      expect(task?.assigneeAgentId).toBe(seeded.keystoneId);
+      expect(task?.assigneeUserId).toBeNull();
+    });
 
-      const card = cardFor(await build(seeded.companyId), seeded.issueId);
-      expect(card?.reviewer).toEqual(expect.objectContaining({ id: USER_ID, isYou: true }));
-      await run(app(seeded.companyId), action(card, "approve"));
-      const [approved] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
-      expect(approved?.status).toBe("done");
+    // GRE-2164: the loop still needs a signal, but for agent work it goes to
+    // the author's manager, not to John, and once per loop.
+    describe("review loop notice", () => {
+      const NOTICE_TEXT = "times in a row on this review";
+
+      async function noticeComments(issueId: string) {
+        const rows = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+        return rows.filter((row) => row.body.includes(NOTICE_TEXT));
+      }
+
+      async function loopRound(seeded: { companyId: string; issueId: string; keystoneId: string; masonId: string }, round: number) {
+        const verdict = await request(await agentAppFor(seeded, seeded.keystoneId)).patch(`/api/issues/${seeded.issueId}`)
+          .send({ status: "in_progress", comment: `Round ${round}: the branch conflicts with main.` });
+        expect(verdict.status, JSON.stringify(verdict.body)).toBe(200);
+        const resubmit = await request(await agentAppFor(seeded, seeded.masonId)).patch(`/api/issues/${seeded.issueId}`)
+          .send({ status: "in_review", comment: `Round ${round}: merged main.` });
+        expect(resubmit.status, JSON.stringify(resubmit.body)).toBe(200);
+      }
+
+      it("tells the author's manager agent once at round 3, not a board user, and keeps the stage with the reviewer", async () => {
+        const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: USER_ID, changesRequestedCount: 1 });
+        const everestId = randomUUID();
+        await db.insert(agents).values({
+          id: everestId, companyId: seeded.companyId, name: "Everest", role: "ceo", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+        });
+        await db.update(agents).set({ reportsTo: everestId }).where(eq(agents.id, seeded.masonId));
+
+        await loopRound(seeded, 2);
+        expect(await noticeComments(seeded.issueId)).toEqual([]);
+
+        await loopRound(seeded, 3);
+        const [notice, ...extra] = await noticeComments(seeded.issueId);
+        expect(extra).toEqual([]);
+        expect(notice?.authorAgentId).toBeNull();
+        expect(notice?.authorUserId).toBeNull();
+        expect(notice?.body).toContain(`(agent://${everestId}`);
+        expect(notice?.body).toContain("Keystone has asked Mason for changes 3 times in a row");
+        expect(notice?.body).not.toContain("user://");
+        await vi.waitFor(() => expect(wakeup).toHaveBeenCalledWith(everestId, expect.objectContaining({
+          reason: "issue_comment_mentioned",
+          payload: expect.objectContaining({ issueId: seeded.issueId, commentId: notice!.id }),
+        })));
+
+        wakeup.mockClear();
+        await loopRound(seeded, 4);
+        await loopRound(seeded, 5);
+        expect(await noticeComments(seeded.issueId)).toHaveLength(1);
+        expect(wakeup).not.toHaveBeenCalledWith(everestId, expect.anything());
+
+        const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+        const state = task?.executionState as { status?: string; changesRequestedCount?: number; currentParticipant?: { type: string; agentId: string | null } } | null;
+        expect(task?.status).toBe("in_review");
+        expect(task?.assigneeAgentId).toBe(seeded.keystoneId);
+        expect(task?.assigneeUserId).toBeNull();
+        expect(state?.changesRequestedCount).toBe(5);
+        expect(state?.currentParticipant).toEqual(expect.objectContaining({ type: "agent", agentId: seeded.keystoneId }));
+      });
+
+      it("tells John when John created the issue", async () => {
+        const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: USER_ID, changesRequestedCount: 2 });
+        await db.update(issues).set({ createdByUserId: USER_ID }).where(eq(issues.id, seeded.issueId));
+
+        await loopRound(seeded, 3);
+        const notices = await noticeComments(seeded.issueId);
+        expect(notices).toHaveLength(1);
+        expect(notices[0]?.body).toContain(`(user://${USER_ID})`);
+        expect(notices[0]?.body).not.toContain("agent://");
+      });
+    });
+
+    it("lets the listed agent reviewer take back a stage left on a person outside it", async () => {
+      // The GRE-2118 data: Keystone's stage, held by John after the old round cap.
+      const seeded = await seedReview({ reviewer: { type: "agent" }, escalatedTo: USER_ID, changesRequestedCount: 3 });
+
+      const res = await request(await agentAppFor(seeded, seeded.keystoneId)).patch(`/api/issues/${seeded.issueId}`)
+        .send({ status: "in_review" });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+      const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+      const state = task?.executionState as { status?: string; currentParticipant?: { type: string; agentId: string | null } } | null;
+      expect(task?.status).toBe("in_review");
+      expect(task?.assigneeAgentId).toBe(seeded.keystoneId);
+      expect(task?.assigneeUserId).toBeNull();
+      expect(state?.status).toBe("pending");
+      expect(state?.currentParticipant).toEqual(expect.objectContaining({ type: "agent", agentId: seeded.keystoneId }));
     });
 
     it("says a comment sent with a refused reassignment was not saved, and a plain comment still posts", async () => {
-      const seeded = await seedReview({ reviewer: { type: "agent" }, escalatedTo: USER_ID, changesRequestedCount: 3 });
-      const otherApp = otherUserApp(seeded.companyId);
+      const seeded = await seedReview({ reviewer: { type: "agent" } });
+      const masonApp = await agentAppFor(seeded, seeded.masonId);
 
-      const refused = await request(otherApp).patch(`/api/issues/${seeded.issueId}`)
+      const refused = await request(masonApp).patch(`/api/issues/${seeded.issueId}`)
         .send({ comment: "looks like we are good to go", assigneeAgentId: seeded.masonId });
       expect(refused.status).toBe(422);
       expect(refused.body.error).toMatch(/^Comment not saved\./);
       expect(await db.select().from(issueComments).where(eq(issueComments.issueId, seeded.issueId))).toEqual([]);
 
-      const posted = await request(otherApp).post(`/api/issues/${seeded.issueId}/comments`)
+      const posted = await request(otherUserApp(seeded.companyId)).post(`/api/issues/${seeded.issueId}/comments`)
         .send({ body: "looks like we are good to go" });
       expect(posted.status).toBe(201);
       const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
       expect(task?.status).toBe("in_review");
-      expect((task?.executionState as { currentParticipant?: { userId: string | null } } | null)?.currentParticipant?.userId).toBe(USER_ID);
-    });
-
-    it("keeps local-board as the escalation when the owner is not clear", async () => {
-      const seeded = await seedReview({ reviewer: { type: "agent" }, responsibleUserId: "local-board" });
-      // Two human owners: no guess.
-      expect(await resolveReviewEscalationUserId(db, { companyId: seeded.companyId, responsibleUserId: "local-board" })).toBeUndefined();
-      // One owner: bound to that user. A real responsible user is never rebound.
-      await db.update(companyMemberships).set({ membershipRole: "member" })
-        .where(eq(companyMemberships.principalId, OTHER_USER_ID));
-      expect(await resolveReviewEscalationUserId(db, { companyId: seeded.companyId, responsibleUserId: "local-board" })).toBe(USER_ID);
-      expect(await resolveReviewEscalationUserId(db, { companyId: seeded.companyId, responsibleUserId: OTHER_USER_ID })).toBeUndefined();
+      expect((task?.executionState as { currentParticipant?: { agentId: string | null } } | null)?.currentParticipant?.agentId).toBe(seeded.keystoneId);
     });
 
     describe("a review left on the legacy local-board user", () => {
@@ -1681,7 +1773,71 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       });
       const card = cardFor(await build(seeded.companyId), seeded.stall)!;
       expect(card.escalation?.reason).toBe("named_in_comment");
-      expect(card.decision).toBe("Lintel is waiting on you. In Lintel's words: Waiting for John to reply \"Received\" to the test email in his inbox before I continue.");
+      // The card reaches John, but comment text never makes it "waiting on you" (GRE-2342).
+      expect(card.decision).toBe("Flint has no live next step on this task: choose who takes it on, give an instruction, or cancel it.");
+    });
+
+    /**
+     * GRE-2342, 25 Oct: GRE-2323's blocked card told John "Ridge is waiting on
+     * you: accept the card". The card did not exist yet; the real blocker was
+     * Keystone merging #99 (GRE-2338). The line came from Ridge's comment.
+     */
+    describe("says \"waiting on you\" only from a real ask or blocker (GRE-2342)", () => {
+      const JOHNS_COMMENT = [
+        "**Another false \"waiting on John\" (25 Oct, 23:28).** GRE-2323's blocked card told John \"Ridge is waiting on you: accept the card\". But the card didn't exist yet: the real blocker was Keystone merging #99 (GRE-2338). The \"waiting on you\" line came from parsing \"John: accept the card\" (step 3 of a plan) out of Ridge's latest comment.",
+        "",
+        "Rule for the John-facing card: say \"waiting on you\" **only** when there is a pending interaction or approval addressed to John on that task, or a blocker assigned to John. Never infer it from comment text. Otherwise show the real blocker (task and agent). Please add a test with exactly this comment.",
+      ].join("\n");
+
+      /** GRE-1770 belongs to Ridge and holds up two tasks, as GRE-2323 did. */
+      async function seedRidge() {
+        const seeded = await seedKinds();
+        const [ridgeId, keystoneId] = [randomUUID(), randomUUID()];
+        await db.insert(agents).values([[ridgeId, "Ridge"], [keystoneId, "Keystone"]].map(([id, name]) => ({
+          id: id!, companyId: seeded.companyId, name: name!, role: "engineer", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+        })));
+        await db.update(issues).set({ assigneeAgentId: ridgeId }).where(eq(issues.id, seeded.stall));
+        await db.insert(issueComments).values({ companyId: seeded.companyId, issueId: seeded.stall, authorAgentId: ridgeId, body: JOHNS_COMMENT });
+        return { ...seeded, ridgeId, keystoneId };
+      }
+
+      /** GRE-2338 "Merge #99" blocks GRE-1770. */
+      async function addBlocker(seeded: { companyId: string; stall: string }, assignee: { assigneeAgentId?: string; assigneeUserId?: string }) {
+        const blocker = randomUUID();
+        await db.insert(issues).values({
+          id: blocker, companyId: seeded.companyId, identifier: "GRE-2338", issueNumber: 2338, title: "Merge #99", status: "in_review", priority: "high", ...assignee,
+        });
+        await db.insert(issueRelations).values({ companyId: seeded.companyId, issueId: blocker, relatedIssueId: seeded.stall, type: "blocks" });
+        return blocker;
+      }
+
+      it("never says \"waiting on you\" for John's exact comment, and names the real blocker and its agent", async () => {
+        const seeded = await seedRidge();
+
+        // As on 25 Oct: nothing records the blocker, and the comment names John.
+        const before = cardFor(await build(seeded.companyId), seeded.stall)!;
+        expect(before.escalation?.reason).toBe("named_in_comment");
+        expect(before.decision).not.toMatch(/waiting on you/i);
+        expect(before.decision).toBe("Ridge has no live next step on this task: choose who takes it on, give an instruction, or cancel it.");
+
+        // With Keystone's merge recorded as the blocker, John sees that task and Keystone.
+        const blocker = await addBlocker(seeded, { assigneeAgentId: seeded.keystoneId });
+        const feed = await build(seeded.companyId);
+        expect(feed.cards.map((card) => card.decision).join("\n")).not.toMatch(/waiting on you/i);
+        const card = cardFor(feed, blocker)!;
+        expect(card).toMatchObject({ kind: "blocked", title: "GRE-2338 Merge #99", waiting: { id: seeded.keystoneId, name: "Keystone" } });
+        expect(card.decision).toBe("Keystone has no live next step on this task: choose who takes it on, give an instruction, or cancel it.");
+      });
+
+      it("says \"waiting on you\" when the unblock step is assigned to John", async () => {
+        const seeded = await seedRidge();
+        await db.update(issues).set({
+          unblockDescriptor: { owner: { userId: USER_ID }, action: "Accept the staging upload card." },
+          blockedTransitionAt: new Date(),
+        }).where(eq(issues.id, seeded.stall));
+        const card = cardFor(await build(seeded.companyId), seeded.stall)!;
+        expect(card.decision).toBe("Ridge is waiting on you to unblock this task: Accept the staging upload card.");
+      });
     });
 
     it("puts the question itself on a question card, with its options and the agent's recommendation", async () => {

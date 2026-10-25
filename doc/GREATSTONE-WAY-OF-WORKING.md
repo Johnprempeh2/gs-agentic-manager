@@ -59,7 +59,11 @@ to it.
    22 hours, 2.2 and 2.5 GB each, in worktrees that were already deleted.
 4. **Commit.** Small commits with plain-English messages that say what changed
    and why. Stage files by name; never `git add -A` or `git add .`.
-5. **Pull request.** `git push -u origin <branch>`, then
+5. **Pull request.** First run `git fetch origin` and merge `origin/main` into
+   your branch, and fix any conflicts on your branch. Do this again if `main`
+   moves before review. Several runs of one agent now work in parallel (this
+   repo and greatstone-website), so conflicts are more likely; Keystone still
+   merges. Then `git push -u origin <branch>`, then
    `gh pr create --base main`. The description says: what changed, why, the
    exact tests you ran and their results, and anything John should check by
    hand. Link the GRE issue. Put the pull request link on the issue, add
@@ -623,19 +627,24 @@ tests, the database backup before the switch, and the rollback command.
    GitHub-green release of code only goes gate, candidate, drain, release,
    about 4 to 6 minutes when no agent run has to finish.
 5. **Pausing new runs (the drain):** the task drain holds every new agent run
-   (queued work stays queued; timers and wakes wait). Running runs finish, for
-   at most 10 minutes. Nothing is stopped: if runs still run at the cap, the
-   drain is lifted, runs go on, and it tries again in 10 minutes, three times,
-   then ends the request with "nothing was released". The page says
-   "Releasing: new agent runs paused" while this lasts.
+   (queued work stays queued; timers and wakes wait) for the whole release, and
+   is never lifted between checks (GRE-2274: lifting it let new runs start, so
+   the drain never finished). Running runs get 5 minutes to finish. Then each
+   is asked, by a comment on its task, to save its work and stop; 3 minutes
+   later the ones left are cancelled, and each is recorded on the request with
+   its task. If runs still show as running a minute after that, the request
+   ends with "nothing was released". The page says "Releasing: new agent runs
+   paused" while this lasts, and task run chips say "Waiting for release".
 6. **Releasing:** the worker takes the release lock before step 5 (it waits
    while a release by hand holds it, with no run paused) and keeps it to the
    end, then runs `scripts/greatstone-release.sh <rc-tag>`, the same command
    as by hand: test gate and preview checks, backup, `live-*` tag, switch, hot
    restart, health check, and for a release with no database change an
    automatic rollback if live does not come up. Then the
-   drain is lifted, also when the release failed. The result keeps the
-   rollback command and the backup file.
+   drain is lifted, also when the release failed or was cancelled, and every
+   task whose run was stopped or held is woken again with the comment
+   "Paused for release live-…; resuming" (one per task; nobody restarts them
+   by hand). The result keeps the rollback command and the backup file.
 
 A request is cancelled at once while it waits, or before its next step while
 it runs (a GitHub wait or a running PC gate is stopped). The release step itself cannot be

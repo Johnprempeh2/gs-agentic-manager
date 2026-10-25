@@ -191,6 +191,23 @@ describe("issue validators", () => {
     }
   });
 
+  it("accepts a link to the card a task waits on (GRE-2286)", () => {
+    const owner = { agentId: "00000000-0000-4000-8000-000000000001" };
+    const interactionId = "00000000-0000-4000-8000-000000000002";
+    expect(
+      updateIssueSchema.parse({
+        status: "blocked",
+        unblockDescriptor: { owner, action: "Answer the upload card", interactionId },
+      }).unblockDescriptor,
+    ).toEqual({ owner, action: "Answer the upload card", interactionId });
+    expect(
+      updateIssueSchema.safeParse({
+        status: "blocked",
+        unblockDescriptor: { owner, action: "Answer the card", interactionId: "card-1" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates structured unblock descriptors", () => {
     expect(
       updateIssueSchema.parse({
@@ -289,7 +306,8 @@ describe("issue validators", () => {
       createdByUserId: "spoofed-creator",
       responsibleUserId: "spoofed-responsible",
     });
-    const updated = updateIssueSchema.parse({
+    // GRE-2329: create-only fields on an update are refused, not dropped.
+    const updated = updateIssueSchema.safeParse({
       title: "Do not update attribution",
       createdByUserId: "spoofed-creator",
       responsibleUserId: "spoofed-responsible",
@@ -297,8 +315,11 @@ describe("issue validators", () => {
 
     expect(created.createdByUserId).toBe("spoofed-creator");
     expect(created.responsibleUserId).toBe("spoofed-responsible");
-    expect(updated).not.toHaveProperty("createdByUserId");
-    expect(updated).not.toHaveProperty("responsibleUserId");
+    expect(updated.success).toBe(false);
+    expect(updated.error?.issues[0]).toMatchObject({
+      code: "unrecognized_keys",
+      keys: ["createdByUserId", "responsibleUserId"],
+    });
   });
 
   it("allows false-positive recovery resolutions to atomically restore the source issue status", () => {

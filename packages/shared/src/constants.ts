@@ -282,6 +282,7 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "connection_intent",
   "request_draft_review",
   "ask_agent",
+  "request_steps",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
 
@@ -350,6 +351,11 @@ export function legacyIssueThreadInteractionResolverPolicyAlias(
 export const REQUEST_CHECKBOX_CONFIRMATION_OPTION_LIMIT = 200;
 export const REQUEST_ITEM_VERDICTS_ITEM_LIMIT = REQUEST_CHECKBOX_CONFIRMATION_OPTION_LIMIT;
 
+/** Step-by-step cards (request_steps): an agent guides a person through steps only a person can do. */
+export const REQUEST_STEPS_MAX_STEPS = 12;
+export const REQUEST_STEPS_RISKS = ["safe", "careful", "money_or_live"] as const;
+export type RequestStepsRisk = (typeof REQUEST_STEPS_RISKS)[number];
+
 export const ISSUE_THREAD_INTERACTION_STATUSES = [
   "pending",
   "accepted",
@@ -402,6 +408,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "looks_finished_review",
   // Decisions: the lead agent's list of agent-side stalls to recover before a person sees them. originId: the company id.
   "decision_stall_recovery",
+  // Website: a release Pending for 30 minutes (GRE-2132, copy `alert.pending_long`). originId: the release id.
+  "website_pending_long",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

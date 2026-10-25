@@ -37,7 +37,16 @@ export interface InstanceSignInActivity {
   }>;
 }
 
+/** GET /instance/task-drain: true while a release pauses new runs. */
+export interface TaskDrainStatus {
+  draining: boolean;
+  startedAt: string | null;
+  expiresAt: string | null;
+}
+
 export const instanceSettingsApi = {
+  getTaskDrain: () =>
+    api.get<TaskDrainStatus>("/instance/task-drain"),
   get: () =>
     api.get<InstanceSettings>("/instance/settings"),
   update: (patch: PatchInstanceSettings) =>

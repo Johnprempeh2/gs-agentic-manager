@@ -23,6 +23,8 @@ import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { Badge } from "@/components/ui/badge";
+import { TaskRunStateChip } from "./TaskRunStateChip";
+import type { TaskRunState } from "../lib/task-run-state";
 
 export const issueTrailingColumns: InboxIssueColumn[] = ["assignee", "kickedOffBy", "project", "workspace", "parent", "labels", "updated"];
 
@@ -186,6 +188,8 @@ export function IssueColumnPicker({
 export function InboxIssueMetaLeading({
   issue,
   isLive,
+  runState,
+  issueLabel,
   subtreeLiveCount = 0,
   showSubtreeLiveChip = true,
   showStatus = true,
@@ -195,6 +199,12 @@ export function InboxIssueMetaLeading({
 }: {
   issue: Issue;
   isLive: boolean;
+  /**
+   * Running, queued or stuck (GRE-2246). When given, it replaces the plain
+   * "Live" badge, so a queued run no longer reads as live work.
+   */
+  runState?: TaskRunState | null;
+  issueLabel?: (issueId: string) => string | null | undefined;
   subtreeLiveCount?: number;
   showSubtreeLiveChip?: boolean;
   showStatus?: boolean;
@@ -206,7 +216,7 @@ export function InboxIssueMetaLeading({
     <>
       {showStatus ? (
         <span className="hidden shrink-0 items-center sm:inline-flex">
-          {statusSlot ?? <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} />}
+          {statusSlot ?? <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} queued={runState?.kind === "queued"} />}
         </span>
       ) : null}
       {checklistStepNumber !== null ? (
@@ -219,7 +229,9 @@ export function InboxIssueMetaLeading({
           {issue.identifier ?? issue.id.slice(0, 8)}
         </span>
       ) : null}
-      {isLive && (
+      {runState ? (
+        <TaskRunStateChip state={runState} issueLabel={issueLabel} hideLabelOnPhone />
+      ) : runState === undefined && isLive && (
         <Badge variant="ghost"
           className={cn(
             "px-1.5 sm:gap-1.5 sm:px-2",
@@ -245,7 +257,7 @@ export function InboxIssueMetaLeading({
           </span>
         </Badge>
       )}
-      {showSubtreeLiveChip && !isLive && subtreeLiveCount > 0 && (
+      {showSubtreeLiveChip && !(runState !== undefined ? runState : isLive) && subtreeLiveCount > 0 && (
         <Badge variant="outline"
           className={cn(
             "px-1.5 sm:gap-1.5 sm:px-2",

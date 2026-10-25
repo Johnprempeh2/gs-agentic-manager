@@ -29,7 +29,7 @@ import {
   websiteRelease,
   websiteSite,
 } from "@greatstone/db";
-import type { WebsitePageDetail, WebsiteRelease, WebsiteSite } from "@greatstone/shared";
+import type { WebsiteEntryDetail, WebsitePageDetail, WebsiteRelease, WebsiteSite } from "@greatstone/shared";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { approvalRoutes } from "../routes/approvals.js";
@@ -37,7 +37,7 @@ import { websiteModuleRoutes } from "../routes/website-module.js";
 import { instanceSettingsService } from "../services/index.js";
 import type { NetlifyDeploy, WebsiteNetlifyClient } from "../services/website/netlify-publish-client.js";
 import { registerWebsitePublishStarter } from "../services/website/publish-approval.js";
-import { websitePublishService, websitePublishStarter, type FetchedPage, type WebsitePublishOptions } from "../services/website/publish.js";
+import { reportedRelease, websitePublishService, websitePublishStarter, type FetchedPage, type WebsitePublishOptions } from "../services/website/publish.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -119,7 +119,10 @@ function fakeNetlify() {
     const published = state.publishedDeployId ? deploys.get(state.publishedDeployId) : null;
     const release = state.stalePagesShow ?? published?.release ?? null;
     const headers = new Headers();
-    if (new URL(url).pathname === "/_release") return { status: 200, headers, body: JSON.stringify({ release }) };
+    // The site engine's real /_release body (GRE-2272): `number`, no x-gsam-release header.
+    if (new URL(url).pathname === "/_release") {
+      return { status: 200, headers, body: JSON.stringify({ number: release, releaseId: `release-${release}`, engine: { commit: published?.commitRef ?? null } }) };
+    }
     return { status: 200, headers, body: `<html><head><meta name="gsam-release" content="${release}"></head><body>ok</body></html>` };
   }
 
@@ -137,6 +140,26 @@ function fakeNetlify() {
     },
   };
 }
+
+describe("reportedRelease", () => {
+  const page = (body: string, headers = new Headers()): FetchedPage => ({ status: 200, headers, body });
+
+  it("reads the site engine's /_release body", () => {
+    expect(reportedRelease(page(JSON.stringify({ number: 1, releaseId: "rel-1", engine: { commit: "abc" } })))).toBe("1");
+  });
+
+  it("still reads the header, the meta tag and the older { release } body", () => {
+    expect(reportedRelease(page("", new Headers({ "x-gsam-release": " 4 " })))).toBe("4");
+    expect(reportedRelease(page('<meta name="gsam-release" content="3">'))).toBe("3");
+    expect(reportedRelease(page(JSON.stringify({ release: 2 })))).toBe("2");
+  });
+
+  it("returns null when the page reports no release", () => {
+    expect(reportedRelease(page(JSON.stringify({ releaseId: "rel-1" })))).toBeNull();
+    expect(reportedRelease(page("null"))).toBeNull();
+    expect(reportedRelease(page("<html></html>"))).toBeNull();
+  });
+});
 
 // GRE-2108: Publish and rollback. The three tests the task names come first:
 // an agent key cannot Publish; no code path publishes without a person's
@@ -506,6 +529,29 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(await releaseCount(site.id)).toBe(0);
     expect(netlify.state.builds + netlify.state.restores).toBe(0);
     expect((await approvalById(proposal.id)).status).toBe("pending");
+  });
+
+  it("publishes approved collection fields under the engine release key and keeps an unapproved draft out", async () => {
+    const { page, base } = await seedSite();
+    await approveLatest(page.id);
+    const fields = { data: { id: "category-1", slug: "annotation", name: "Annotation", description: "Approved" } };
+    const entry = (await request(app()).post(`${base}/entries`)
+      .send({ collection: "category", entryKey: "annotation", content: fields }).expect(201)).body as WebsiteEntryDetail;
+    await request(app()).post(`${base}/entries/${entry.id}/submit`).send({}).expect(200);
+    await request(app()).post(`${base}/entries/${entry.id}/approve`).send({}).expect(200);
+
+    const first = await publish(base);
+    expect(first.status).toBe("live");
+    const firstFile = JSON.parse(netlify.blobs.get("releases/1.json")!.body);
+    expect(firstFile.collections.categories[0]).toMatchObject({ key: "annotation", fields });
+    expect(firstFile.collections.category).toBeUndefined();
+
+    await request(app()).put(`${base}/entries/${entry.id}/content`)
+      .send({ baseRevisionId: entry.latestRevisionId, content: { data: { ...fields.data, description: "Unapproved" } } }).expect(200);
+    const second = await publish(base);
+    expect(second.status).toBe("live");
+    const secondFile = JSON.parse(netlify.blobs.get("releases/2.json")!.body);
+    expect(secondFile.collections.categories[0].fields).toEqual(fields);
   });
 
   // ---- lease and fence ----

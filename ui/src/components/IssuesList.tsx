@@ -1,4 +1,6 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { TaskRunStateChip } from "./TaskRunStateChip";
+import { runStateForTask } from "../lib/task-run-state";
 import { useImageCovers } from "./ImageCoverControls";
 import { startTransition, useDeferredValue, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
@@ -53,6 +55,7 @@ import {
 import { cn, formatDurationMs, formatTokens, formatNumber } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { collectSubtreeLiveCounts } from "../lib/liveIssueIds";
+import { useTaskRunStates } from "../hooks/useTaskRunStates";
 import {
   InboxIssueMetaLeading,
   InboxIssueTrailingColumns,
@@ -1231,9 +1234,22 @@ export function IssuesList({
     [isolatedWorkspacesEnabled],
   );
   const availableIssueColumnSet = useMemo(() => new Set(availableIssueColumns), [availableIssueColumns]);
+  // Queued, running or stuck per task (GRE-2246); replaces the plain Live badge on rows.
+  const runStateByIssueId = useTaskRunStates(selectedCompanyId);
+  const issueLabelById = useMemo(() => {
+    const labels = new Map(issues.map((candidate) => [candidate.id, candidate.identifier]));
+    return (issueId: string) => labels.get(issueId) ?? null;
+  }, [issues]);
+  // "n live below" counts sub-tasks that are actually running, not queued.
+  const runningIssueIds = useMemo(() => {
+    if (runStateByIssueId.size === 0) return liveIssueIds ?? new Set<string>();
+    const ids = new Set<string>();
+    for (const [issueId, state] of runStateByIssueId) if (state.kind !== "queued") ids.add(issueId);
+    return ids;
+  }, [liveIssueIds, runStateByIssueId]);
   const subtreeLiveCounts = useMemo(
-    () => collectSubtreeLiveCounts(issues, liveIssueIds ?? new Set<string>()),
-    [issues, liveIssueIds],
+    () => collectSubtreeLiveCounts(issues, runningIssueIds),
+    [issues, runningIssueIds],
   );
   const visibleTrailingIssueColumns = useMemo(
     () => issueTrailingColumns.filter((column) =>
@@ -2528,7 +2544,7 @@ export function IssuesList({
                         }</>) : undefined}
                         statusSlot={rowPresentation === "task" ? (
                           <span className="relative inline-flex items-start self-stretch sm:items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                            <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
+                            <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} queued={runStateForTask(runStateByIssueId, issue)?.kind === "queued"} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                             {hasChildren && isExpanded ? (
                               <span aria-hidden="true" className="pointer-events-none absolute top-5 -bottom-2.5 left-1/2 w-px bg-border sm:hidden" />
                             ) : null}
@@ -2538,12 +2554,15 @@ export function IssuesList({
                           <InboxIssueMetaLeading
                             issue={issue}
                             isLive={liveIssueIds?.has(issue.id) === true}
+                            runState={runStateForTask(runStateByIssueId, issue) ?? null}
+                            issueLabel={issueLabelById}
                             subtreeLiveCount={subtreeLiveCounts.get(issue.id) ?? 0}
                             showStatus={false}
                             showIdentifier={false}
                             checklistStepNumber={checklistStepNumber}
                           />
                         ) : undefined}
+                        mobileRunState={runStateForTask(runStateByIssueId, issue) ? <TaskRunStateChip state={runStateForTask(runStateByIssueId, issue)!} issueLabel={issueLabelById} /> : null}
                         showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
                         mobileLeading={<>{rowLeading}{
                           hasChildren ? (
@@ -2552,7 +2571,7 @@ export function IssuesList({
                             </button>
                           ) : (
                             <span className="inline-flex items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                              <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
+                              <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} queued={runStateForTask(runStateByIssueId, issue)?.kind === "queued"} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                             </span>
                           )
                         }</>}
@@ -2574,13 +2593,15 @@ export function IssuesList({
                             <InboxIssueMetaLeading
                               issue={issue}
                               isLive={liveIssueIds?.has(issue.id) === true}
+                              runState={runStateForTask(runStateByIssueId, issue) ?? null}
+                              issueLabel={issueLabelById}
                               subtreeLiveCount={subtreeLiveCounts.get(issue.id) ?? 0}
                               showStatus={visibleIssueColumnSet.has("status") && availableIssueColumnSet.has("status")}
                               showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
                               checklistStepNumber={checklistStepNumber}
                               statusSlot={(
                                 <span className="inline-flex items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                                  <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
+                                  <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} queued={runStateForTask(runStateByIssueId, issue)?.kind === "queued"} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                                 </span>
                               )}
                             />

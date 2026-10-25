@@ -1,4 +1,5 @@
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
+import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
@@ -71,6 +72,7 @@ import {
 import {
   addIssueCommentSchema,
   acceptIssueThreadInteractionSchema,
+  stepsProgressSchema,
   attachmentArtifactWorkProductMetadataSchema,
   cancelIssueThreadInteractionSchema,
   skipIssueThreadInteractionSchema,
@@ -90,6 +92,7 @@ import {
   createDocumentAnnotationThreadSchema,
   documentEvidenceBulletIdSchema,
   upsertDocumentEvidenceSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
   createChildIssueSchema,
   createIssueSchema,
   resolveCreateIssueStatusDefault,
@@ -216,6 +219,7 @@ import {
 import { artifactReviewDocumentService } from "../services/artifact-review-documents.js";
 import { documentEvidenceService } from "../services/document-evidence.js";
 import { assertCanResolveProposal } from "../services/secret-proposal-authorization.js";
+import { assertSecretDefinitionAdmin } from "./secrets.js";
 import {
   buildDocumentReviewContext,
   buildPlanReviewContext,
@@ -296,11 +300,14 @@ import {
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../services/issue-dependency-wakeups.js";
 import {
+  buildCardAnsweredWakeKey,
   handOffBlockedDependents,
   releaseReadyDependents,
+  releaseTasksWaitingOnCards,
   resolveDuplicateOfFromComment,
   type BlockerHandoff,
   type BlockerHandoffResult,
+  type ReleasedCardWaiter,
   type ReleasedDependent,
 } from "../services/issue-blocker-handoff.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -341,13 +348,13 @@ import {
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
-import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
 import { userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
 import {
   authorizeReviewOverride,
   describeReviewOverride,
   issueReviewOverrideFieldsSchema,
 } from "../services/review-override.js";
+import { prepareReviewLoopNotice } from "../services/review-loop-notice.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -412,9 +419,11 @@ import {
 } from "../services/issue-queued-comment-queue.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
+// `.extend` keeps the shared schema strict; `.merge` would let unknown keys through.
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
-}).merge(issueReviewOverrideFieldsSchema);
+  ...issueReviewOverrideFieldsSchema.shape,
+});
 const queuedCommentMutationTargetSchema = z.object({
   queueId: z.string().min(1),
   revision: z.string().min(1),
@@ -2695,6 +2704,73 @@ async function readBlockedPathLostAfterResolution(
   });
 }
 
+/**
+ * Frees the blocked tasks that wait on an answered card and wakes each agent
+ * assignee once with the note that says so. Failures are logged; the card
+ * backstop retries on its next pass. Returns the freed task ids.
+ */
+async function releaseAndWakeTasksWaitingOnCard(input: {
+  db: Db;
+  heartbeat: ReturnType<typeof heartbeatService>;
+  companyId: string;
+  interactionId: string;
+  actor: { actorType: "user" | "agent"; actorId: string };
+  skipWakeForIssueId: string | null;
+}): Promise<Set<string>> {
+  let released = new Map<string, ReleasedCardWaiter>();
+  try {
+    released = await releaseTasksWaitingOnCards(issueService(input.db), input.db, {
+      companyId: input.companyId,
+      interactionIds: [input.interactionId],
+      actor: {
+        agentId: input.actor.actorType === "agent" ? input.actor.actorId : null,
+        userId: input.actor.actorType === "user" ? input.actor.actorId : null,
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      { err, interactionId: input.interactionId },
+      "failed to free tasks waiting on an answered card",
+    );
+  }
+  for (const [issueId, freed] of released) {
+    if (!freed.assigneeAgentId || issueId === input.skipWakeForIssueId) continue;
+    await input.heartbeat
+      .wakeup(freed.assigneeAgentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "issue_status_changed",
+        payload: {
+          issueId,
+          interactionId: freed.interactionId,
+          interactionStatus: freed.interactionStatus,
+          commentId: freed.commentId,
+          mutation: "card_answered",
+        },
+        idempotencyKey: buildCardAnsweredWakeKey(issueId, freed.interactionId),
+        requestedByActorType: input.actor.actorType,
+        requestedByActorId: input.actor.actorId,
+        contextSnapshot: {
+          issueId,
+          taskId: issueId,
+          interactionId: freed.interactionId,
+          interactionStatus: freed.interactionStatus,
+          commentId: freed.commentId,
+          wakeCommentId: freed.commentId,
+          wakeReason: "issue_status_changed",
+          source: "issue.card_answered",
+        },
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, issueId, interactionId: freed.interactionId },
+          "failed to wake assignee of a task freed by an answered card",
+        ),
+      );
+  }
+  return new Set(released.keys());
+}
+
 async function queueResolvedInteractionContinuationWakeup(input: {
   db: Db;
   heartbeat: ReturnType<typeof heartbeatService>;
@@ -2721,6 +2797,25 @@ async function queueResolvedInteractionContinuationWakeup(input: {
   newlyResolvedItemIds?: string[];
   idempotencyKey?: string | null;
 }) {
+  // GRE-2286: tasks whose unblock note links this card leave `blocked` now.
+  // The card's own task keeps its continuation wake below when it has one.
+  const freedOwnTask = await releaseAndWakeTasksWaitingOnCard({
+    db: input.db,
+    heartbeat: input.heartbeat,
+    companyId: input.issue.companyId,
+    interactionId: input.interaction.id,
+    actor: input.actor,
+    skipWakeForIssueId:
+      input.interaction.continuationPolicy === "wake_assignee" ||
+      (input.interaction.continuationPolicy === "wake_assignee_on_accept" &&
+        (input.interaction.status === "accepted" ||
+          input.interaction.status === "answered"))
+        ? input.issue.id
+        : null,
+  });
+  if (freedOwnTask.has(input.issue.id)) {
+    input = { ...input, issue: { ...input.issue, status: "todo" } };
+  }
   if (!input.issue.assigneeAgentId || isClosedIssueStatus(input.issue.status))
     return;
 
@@ -2855,12 +2950,19 @@ async function queueResolvedInteractionContinuationWakeup(input: {
       ? readNonEmptyString(readObject(input.interaction.result).reason)
       : null;
   const draftReviewMessage = buildDraftReviewAgentMessage(input.interaction);
+  const stepsMessage = buildStepsAgentMessage(input.interaction);
   const rejectionAgentMessage = draftReviewMessage
     ? {
         text: draftReviewMessage,
         source: "draft_review",
         sessionId: input.interaction.id,
       }
+    : stepsMessage
+      ? {
+          text: stepsMessage,
+          source: "request_steps",
+          sessionId: input.interaction.id,
+        }
     : genericRejectionReason
       ? {
           text: genericRejectionReason,
@@ -3045,7 +3147,6 @@ function diffExecutionParticipants(
 }
 
 const STAGE_PARTICIPANT_REFUSALS = [
-  "Only the escalated reviewer can advance the current execution stage",
   "Only the active reviewer or approver can advance the current execution stage",
 ];
 
@@ -6001,9 +6102,10 @@ export function issueRoutes(
         interaction,
         additionalRestriction: resolverPolicyRestriction,
         governedAction:
-          interaction.kind === "request_confirmation" &&
-          (payload?.toolAction !== undefined ||
-            payload?.secretProposal !== undefined),
+          interaction.kind === "request_steps" ||
+          (interaction.kind === "request_confirmation" &&
+            (payload?.toolAction !== undefined ||
+              payload?.secretProposal !== undefined)),
       });
     if (!decision.allowed) {
       return denyIssueThreadInteractionResolution(res, {
@@ -14575,11 +14677,6 @@ export function issueRoutes(
         req.body.executionPolicy !== undefined && monitorChanged,
       );
 
-      // Only a resubmission after changes-requested escalates (GRE-2049); bind a legacy board id to the real owner (GRE-870).
-      const reviewEscalationUserId =
-        parseIssueExecutionState(existing.executionState)?.status === "changes_requested"
-          ? await resolveReviewEscalationUserId(db, existing)
-          : undefined;
       // An owner decides a stage that waits on the legacy `local-board` user.
       const actorUserIdAliases = await stageParticipantAliasesForActor(
         db,
@@ -14621,7 +14718,6 @@ export function issueRoutes(
         },
         allowBoardOverride: req.actor.type === "board",
         commentBody: reviewOverride ? (commentBody || reviewOverride.reason) : commentBody,
-        reviewEscalationUserId,
         actorUserIdAliases,
         reviewOverride: Boolean(reviewOverride),
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
@@ -14707,6 +14803,28 @@ export function issueRoutes(
               "Unblock owner user must be an active company member",
             );
         }
+        // GRE-2286: the linked card is what frees the task, so it must be a
+        // card in this company that is still waiting for an answer.
+        if (descriptor.interactionId) {
+          const card = await db
+            .select({ status: issueThreadInteractions.status })
+            .from(issueThreadInteractions)
+            .where(
+              and(
+                eq(issueThreadInteractions.id, descriptor.interactionId),
+                eq(issueThreadInteractions.companyId, existing.companyId),
+              ),
+            )
+            .then((rows) => rows[0] ?? null);
+          if (!card)
+            throw unprocessable(
+              "unblockDescriptor.interactionId must be a card in the issue company",
+            );
+          if (card.status !== "pending")
+            throw unprocessable(
+              `unblockDescriptor.interactionId names a card that is already ${card.status}`,
+            );
+        }
       }
       const enteringBlocked =
         existing.status !== "blocked" && updateFields.status === "blocked";
@@ -14763,9 +14881,9 @@ export function issueRoutes(
           !pendingApproval &&
           !descriptor
         ) {
-          res.status(422).json({
-            error:
-              "Entering blocked requires unresolved blockers, a pending interaction/approval, or unblockDescriptor",
+          res.status(400).json({
+            error: BLOCKED_WITHOUT_REASON_MESSAGE,
+            code: "issue_blocked_without_reason",
           });
           return;
         }
@@ -15133,6 +15251,17 @@ export function issueRoutes(
       });
       const decision =
         transition.decision && decisionId ? transition.decision : null;
+      // The 3rd agent change request in a row tells the author's manager, or
+      // the responsible person, without moving the stage (GRE-2164).
+      let reviewLoopNotice: Awaited<ReturnType<typeof prepareReviewLoopNotice>> = null;
+      if (decision && transition.reviewLoopNotice) {
+        try {
+          reviewLoopNotice = await prepareReviewLoopNotice(db, existing, transition.reviewLoopNotice);
+        } catch (err) {
+          logger.warn({ err, issueId: existing.id }, "failed to prepare the review loop notice");
+        }
+      }
+      let reviewLoopNoticeCommentId: string | null = null;
       let attachmentComment: Awaited<ReturnType<typeof svc.addComment>> | null =
         null;
       const attachmentCommentSourceTrust = commentAttachmentIds?.length
@@ -15198,6 +15327,11 @@ export function issueRoutes(
               if (transition.skippedStageNote) {
                 // Say why a later stage never ran (GRE-1903).
                 await svc.addComment(updated.id, transition.skippedStageNote, {}, { authorType: "system" }, tx);
+              }
+              if (reviewLoopNotice) {
+                // Commits with the round's decision, so a loop gets one notice.
+                const noticeComment = await svc.addComment(updated.id, reviewLoopNotice.body, {}, { authorType: "system" }, tx);
+                reviewLoopNoticeCommentId = noticeComment.id;
               }
               if (reviewOverride) {
                 // The waiting reviewer sees who decided for them and why.
@@ -16345,6 +16479,25 @@ export function issueRoutes(
               },
             });
           }
+        }
+
+        if (reviewLoopNoticeCommentId && reviewLoopNotice?.recipient.type === "agent") {
+          addWakeup(reviewLoopNotice.recipient.agentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_comment_mentioned",
+            payload: { issueId: issue.id, commentId: reviewLoopNoticeCommentId },
+            requestedByActorType: "system",
+            requestedByActorId: null,
+            contextSnapshot: {
+              issueId: issue.id,
+              taskId: issue.id,
+              commentId: reviewLoopNoticeCommentId,
+              wakeCommentId: reviewLoopNoticeCommentId,
+              wakeReason: "issue_comment_mentioned",
+              source: "review.loop_notice",
+            },
+          });
         }
 
         for (const dependent of blockerHandoffResult.value?.dependents ?? []) {
@@ -17953,15 +18106,93 @@ export function issueRoutes(
         throw unprocessable(
           "Remembered permission is only supported for tool reviews",
         );
-      const { interaction, createdIssues, continuationIssue } =
-        await interactionSvc.acceptInteraction(issue, interactionId, req.body, {
-          agentId: actor.agentId,
-          runId: actor.runId,
-          userId: actor.actorType === "user" ? actor.actorId : null,
-          resolverPolicyRestriction:
-            resolutionAuthorization.resolverPolicyRestriction,
-          suggestedTaskEffectsAuthorized,
-        });
+      // The typed secret never travels past this point: it is taken off the
+      // body, saved by the steps service and only its id and name come back.
+      const { secretValue, ...acceptBody } = req.body as typeof req.body & {
+        secretValue?: string;
+      };
+      if (
+        secretValue !== undefined &&
+        (current.kind !== "request_steps" || !current.payload.secret)
+      ) {
+        throw unprocessable("secretValue is only accepted on step-by-step cards that ask for a secret");
+      }
+      let acceptOptions: Parameters<typeof interactionSvc.acceptInteraction>[4];
+      if (current.kind === "request_steps") {
+        if (req.actor.type !== "board") {
+          throw forbidden("Only a person can finish a step-by-step card");
+        }
+        const stepsSecret = current.payload.secret ?? null;
+        if (stepsSecret) {
+          if (!secretValue?.trim()) {
+            throw unprocessable(`Enter ${stepsSecret.secretName} to finish these steps`);
+          }
+          await assertCanSaveStepsSecret(db, req.actor, issue.companyId);
+          acceptOptions = {
+            acceptResultExtrasInTransaction: async (tx, locked) => ({
+              secret: await saveStepsSecret({
+                db,
+                tx: tx as unknown as Db,
+                actor: req.actor,
+                companyId: issue.companyId,
+                interactionId: locked.id,
+                issueId: issue.id,
+                secret: stepsSecret,
+                value: secretValue,
+              }),
+            }),
+          };
+        }
+      }
+      // A binding card approves its binding, and the pending secret it needs,
+      // inside the accept transaction (GRE-2313). If approval fails, the accept
+      // rolls back too: the card stays open with the reason, ready to retry.
+      const cardSecretProposalId =
+        current.kind === "request_confirmation" &&
+        typeof current.payload.secretProposal?.proposalId === "string"
+          ? current.payload.secretProposal.proposalId
+          : null;
+      let approvedCardProposal: NonNullable<Awaited<ReturnType<typeof secretProposals.getById>>> | null = null;
+      if (cardSecretProposalId && !opts.approveSecretProposal) {
+        const proposal = await secretProposals.getById(issue.companyId, cardSecretProposalId);
+        if (
+          !proposal ||
+          proposal.kind !== "binding" ||
+          proposal.originIssueId !== issue.id ||
+          proposal.interactionId !== current.id
+        ) {
+          throw notFound("Secret proposal not found");
+        }
+        const resolvedByUserId = actor.actorType === "user" ? actor.actorId : "board";
+        acceptOptions = {
+          afterResolveInTransaction: async (tx) => {
+            await secretProposals.approveInTransaction(tx as unknown as Db, issue.companyId, proposal.id, {
+              resolvedByUserId,
+              cascade: true,
+              assertCanResolve: (lockedProposal, txDb) =>
+                assertCanResolveProposal({
+                  db: txDb,
+                  actor: req.actor,
+                  companyId: issue.companyId,
+                  proposal: lockedProposal,
+                  assertSecretDefinitionAdmin: () => assertSecretDefinitionAdmin(req, issue.companyId),
+                }),
+            });
+          },
+        };
+        approvedCardProposal = proposal;
+      }
+      const acceptActor = {
+        agentId: actor.agentId,
+        runId: actor.runId,
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        resolverPolicyRestriction:
+          resolutionAuthorization.resolverPolicyRestriction,
+        suggestedTaskEffectsAuthorized,
+      };
+      const { interaction, createdIssues, continuationIssue } = acceptOptions
+        ? await interactionSvc.acceptInteraction(issue, interactionId, acceptBody, acceptActor, acceptOptions)
+        : await interactionSvc.acceptInteraction(issue, interactionId, acceptBody, acceptActor);
       await markIssueReadByAnsweringUser(req, issue);
       const toolAction =
         interaction.payload && typeof interaction.payload === "object"
@@ -18034,36 +18265,17 @@ export function issueRoutes(
                 userId: actor.actorType === "user" ? actor.actorId : null,
               },
             });
-          } else {
-            const proposal = await secretProposals.getById(
-              issue.companyId,
-              secretProposal.proposalId,
-            );
-            if (
-              !proposal ||
-              proposal.kind !== "binding" ||
-              proposal.originIssueId !== issue.id ||
-              proposal.interactionId !== interaction.id
-            ) {
-              throw notFound("Secret proposal not found");
-            }
-            await secretProposals.approve(issue.companyId, proposal.id, {
-              resolvedByUserId,
-              assertCanResolve: (lockedProposal, txDb) =>
-                assertCanResolveProposal({
-                  db: txDb,
-                  actor: req.actor,
-                  companyId: issue.companyId,
-                  proposal: lockedProposal,
-                }),
-            });
+          } else if (approvedCardProposal) {
+            // Approved and committed together with the accept above.
             await notifySecretProposalResolution({
-              proposal,
+              proposal: approvedCardProposal,
               status: "approved",
               userId: resolvedByUserId,
               issues: svc,
               heartbeat,
             });
+          } else {
+            throw conflict("Secret proposal was not approved with this card");
           }
           continuationInteraction =
             await interactionSvc.recordSecretProposalExecutionResult(
@@ -18236,6 +18448,34 @@ export function issueRoutes(
   );
 
   router.post(
+    "/issues/:id/interactions/:interactionId/steps-progress",
+    validate(stepsProgressSchema),
+    async (req, res) => {
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(req.params.id as string),
+        "Issue not found",
+      );
+      if (!issue) return;
+      const authorizedResolution =
+        await getIssueThreadInteractionResolutionAuthorization(
+          req,
+          res,
+          issue,
+          req.params.interactionId as string,
+        );
+      if (!authorizedResolution) return;
+      const updated = await authorizedResolution.interactionSvc.saveStepsProgress(
+        issue,
+        authorizedResolution.current.id,
+        req.body.tickedSteps,
+      );
+      res.json(updated);
+    },
+  );
+
+  router.post(
     "/issues/:id/interactions/:interactionId/reject",
     validate(rejectIssueThreadInteractionSchema),
     async (req, res) => {
@@ -18328,7 +18568,8 @@ export function issueRoutes(
             interaction.kind === "suggest_tasks"
               ? (interaction.result?.rejectionReason ?? null)
               : interaction.kind === "request_confirmation" ||
-                  interaction.kind === "request_checkbox_confirmation"
+                  interaction.kind === "request_checkbox_confirmation" ||
+                  interaction.kind === "request_steps"
                 ? (interaction.result?.reason ?? null)
                 : null,
         },

@@ -162,7 +162,7 @@ describe("Project tree page", () => {
     expect(keyCard.querySelector('[aria-label="3 of 5 sub-tasks done"]')).not.toBeNull();
     expect(container.querySelector(`[data-tree-node="${UNSORTED}"]`)?.textContent).toContain("Unsorted: 1 open task");
     // The blocked path runs from Tax rules to the unsorted task it waits on.
-    expect(container.querySelector('[data-tree-node="12"]')?.textContent).toContain("Waiting on GRE-30");
+    expect(container.querySelector('[data-tree-node="12"]')?.textContent).toContain("Blocked by GRE-30");
   });
 
   it("folds and unfolds a branch", async () => {
@@ -222,6 +222,11 @@ describe("Project tree page", () => {
     await renderPage();
     expect(container.querySelector("[data-project-lead]")?.textContent).toContain("covering");
     expect(container.querySelector("[data-no-key-tasks]")).not.toBeNull();
+    // The counts cover key tasks only, so with none they would say "0 of 0 done"
+    // over open tasks (GRE-2325): they are left out.
+    const header = container.querySelector('[data-slot="task-tree-header"]')!;
+    expect(header.textContent).not.toContain("done");
+    expect(header.textContent).not.toContain("Nothing is blocked");
   });
 
   it("shows an outline with the Tidy button on a phone", async () => {

@@ -362,7 +362,7 @@ function interactionDetail(input: {
 
   return {
     kind: "confirmation",
-    promptExcerpt: excerpt(input.payload.prompt ?? input.payload.purpose ?? input.payload.detailsMarkdown),
+    promptExcerpt: excerpt(input.payload.prompt ?? input.payload.purpose ?? input.payload.why ?? input.payload.detailsMarkdown),
     isPlanTarget: false,
     images: input.images,
     deliverables: input.deliverables,
@@ -712,6 +712,8 @@ function interactionLabel(kind: string) {
       return "Item verdicts need a decision";
     case "request_draft_review":
       return "Draft needs your review";
+    case "request_steps":
+      return "Steps for you to do";
     default:
       return "Interaction needs a decision";
   }
@@ -1516,6 +1518,9 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               issueId: interaction.issueId,
               createdByAgentId: interaction.createdByAgentId,
               askType: interaction.kind === "request_confirmation" ? readAskType(payload) : null,
+              ...(interaction.kind === "request_steps"
+                ? { steps: { minutes: payload.minutes ?? null, risk: payload.risk ?? null } }
+                : {}),
               isPlanTarget,
               targetDocumentKey: isPlanTarget ? "plan" : null,
             },

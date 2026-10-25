@@ -54,6 +54,7 @@ import type {
   RequestConfirmationInteraction,
   RequestConfirmationTarget,
   RequestDraftReviewInteraction,
+  RequestStepsInteraction,
   RequestItemVerdictsInteraction,
   RequestItemVerdictsResult,
   RequestItemVerdictsResultItem,
@@ -85,6 +86,8 @@ import {
   requestConfirmationResultSchema,
   requestDraftReviewPayloadSchema,
   requestDraftReviewResultSchema,
+  requestStepsPayloadSchema,
+  requestStepsResultSchema,
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultSchema,
   skipIssueThreadInteractionSchema,
@@ -97,6 +100,7 @@ import {
 } from "@greatstone/shared";
 import { z } from "zod";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { sameCompanyAgentIds, stepsSecretAccess } from "./request-steps.js";
 import { getTelemetryClient } from "../telemetry.js";
 import {
   logActivity,
@@ -193,6 +197,15 @@ export type IssueThreadInteractionServiceOptions = {
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type InteractionResolutionMutationOptions = {
   beforeResolveInTransaction?: (tx: DbTransaction) => Promise<void>;
+  /**
+   * Runs under the interaction row lock, after the pending check, and merges
+   * what it returns into the accepted result. A request_steps card saves its
+   * secret here, so a throw leaves the card open and nothing half-done.
+   */
+  acceptResultExtrasInTransaction?: (
+    tx: DbTransaction,
+    interaction: IssueThreadInteraction,
+  ) => Promise<Record<string, unknown> | undefined>;
   afterResolveInTransaction?: (
     tx: DbTransaction,
     interaction: IssueThreadInteraction,
@@ -387,6 +400,8 @@ export const DEFAULT_RESOLVER_POLICY_BY_KIND: Record<
   connection_intent: "human_only",
   // A person edits or approves a draft; the drafting agent never signs off its own.
   request_draft_review: "human_only",
+  // Only a person can follow the steps (and type a secret); never an agent.
+  request_steps: "human_only",
   // Only the agent the question was asked of answers it, through its own route.
   ask_agent: "not_creator",
 };
@@ -420,7 +435,7 @@ export function resolveInteractionPolicy(args: {
   let effectiveResolverPolicy = requestedResolverPolicy;
   let effectiveResolverPolicySource: IssueThreadInteractionEffectiveResolverPolicySource =
     "requested";
-  if (args.hasToolAction || args.hasSecretProposal || args.kind === "request_draft_review") {
+  if (args.hasToolAction || args.hasSecretProposal || args.kind === "request_draft_review" || args.kind === "request_steps") {
     effectiveResolverPolicy = "human_only";
     effectiveResolverPolicySource = "governed_action";
   } else if (kindGovernance?.cap) {
@@ -625,8 +640,18 @@ function isEquivalentCreateRequest(
     (row.summary ?? null) === (input.summary ?? null) &&
     (row.createdByAgentId ?? null) === (actor.agentId ?? null) &&
     (row.createdByUserId ?? null) === (actor.userId ?? null) &&
-    isDeepStrictEqual(row.payload, input.payload)
+    isDeepStrictEqual(
+      withoutServerOwnedPayload(row.kind, row.payload),
+      withoutServerOwnedPayload(input.kind, input.payload),
+    )
   );
+}
+
+/** request_steps ticks and secret access are written by the server, not the asker. */
+function withoutServerOwnedPayload(kind: string, payload: unknown) {
+  if (kind !== "request_steps" || !payload || typeof payload !== "object") return payload;
+  const { progress: _progress, secretAccess: _secretAccess, ...rest } = payload as Record<string, unknown>;
+  return rest;
 }
 
 /**
@@ -780,6 +805,17 @@ function hydrateInteraction(
           row,
         ),
       } satisfies RequestDraftReviewInteraction;
+    case "request_steps":
+      return {
+        ...base,
+        kind: "request_steps",
+        payload: requestStepsPayloadSchema.parse(row.payload),
+        result: parseStoredInteractionResult(
+          requestStepsResultSchema,
+          row.result,
+          row,
+        ),
+      } satisfies RequestStepsInteraction;
     case "connection_intent":
       return {
         ...base,
@@ -949,6 +985,18 @@ function normalizeCreateInteractionInput(
         ...input,
         payload: {
           ...input.payload,
+          supersedeOnUserComment: input.payload.supersedeOnUserComment ?? false,
+        },
+      };
+    case "request_steps":
+      // progress and secretAccess are server-owned: never taken from the agent.
+      return {
+        ...input,
+        title: input.title ?? input.payload.title,
+        payload: {
+          ...input.payload,
+          progress: null,
+          secretAccess: null,
           supersedeOnUserComment: input.payload.supersedeOnUserComment ?? false,
         },
       };
@@ -1458,6 +1506,7 @@ async function emitInteractionResolvedTelemetry(
       interactionKind:
         interaction.kind === "connection_intent" ||
         interaction.kind === "request_draft_review" ||
+        interaction.kind === "request_steps" ||
         interaction.kind === "ask_agent"
           ? "other"
           : interaction.kind,
@@ -1495,6 +1544,7 @@ function emitInteractionCreatedTelemetry(args: {
       interactionKind:
         args.interactionKind === "connection_intent" ||
         args.interactionKind === "request_draft_review" ||
+        args.interactionKind === "request_steps" ||
         args.interactionKind === "ask_agent"
           ? "other"
           : args.interactionKind,
@@ -2266,6 +2316,19 @@ export function issueThreadInteractionService(
         interaction.kind === "request_draft_review"
           ? buildDraftReviewResult(interaction, args.input)
           : undefined;
+      const extras = await args.mutationOptions?.acceptResultExtrasInTransaction?.(
+        tx,
+        interaction,
+      );
+      // Defence in depth: a steps card that asks for a secret only finishes
+      // through the route that saved it.
+      if (
+        interaction.kind === "request_steps" &&
+        interaction.payload.secret &&
+        !extras?.secret
+      ) {
+        throw unprocessable("Enter the secret to finish these steps");
+      }
 
       const [updated] = await tx
         .update(issueThreadInteractions)
@@ -2276,6 +2339,7 @@ export function issueThreadInteractionService(
             outcome: "accepted",
             ...(selectedOptionIds ? { selectedOptionIds } : {}),
             ...(draft ? { draft } : {}),
+            ...(extras ?? {}),
           },
           resolvedByAgentId: args.actor.agentId ?? null,
           resolvedByRunId: args.actor.runId ?? null,
@@ -2471,8 +2535,12 @@ export function issueThreadInteractionService(
       args.current,
     ) as RequestConfirmationLikeInteraction;
     const reason = args.input.reason?.trim() ?? "";
+    if (args.current.kind === "request_steps" && reason.length === 0) {
+      throw unprocessable("Say briefly why you can't do these steps");
+    }
     if (
       interaction.kind !== "request_draft_review" &&
+      args.current.kind !== "request_steps" &&
       interaction.payload.rejectRequiresReason === true &&
       reason.length === 0
     ) {
@@ -3656,6 +3724,33 @@ export function issueThreadInteractionService(
         }
       }
 
+      if (normalizedData.kind === "request_steps") {
+        // Addressed to the task's responsible person unless the agent names
+        // someone (or null for anyone).
+        if (normalizedData.addresseeUserId === undefined && !normalizedData.addresseeAgentId) {
+          const [owner] = await db
+            .select({ responsibleUserId: issues.responsibleUserId, createdByUserId: issues.createdByUserId })
+            .from(issues)
+            .where(and(eq(issues.id, issue.id), eq(issues.companyId, issue.companyId)));
+          normalizedData.addresseeUserId = owner?.responsibleUserId ?? owner?.createdByUserId ?? null;
+        }
+        if (normalizedData.addresseeAgentId) {
+          throw unprocessable("A step-by-step card is for a person, not an agent");
+        }
+        const secret = normalizedData.payload.secret;
+        if (secret) {
+          const wanted = secret.linkToAgentIds ?? [];
+          const sameCompany = await sameCompanyAgentIds(db, issue.companyId, wanted);
+          if (sameCompany.length !== wanted.length) {
+            throw unprocessable("linkToAgentIds must all be agents in this company");
+          }
+          normalizedData.payload = {
+            ...normalizedData.payload,
+            secretAccess: await stepsSecretAccess(db, issue.companyId, normalizedData.addresseeUserId ?? null),
+          };
+        }
+      }
+
       if (normalizedData.idempotencyKey) {
         const existing = await getIdempotentInteraction({
           issueId: issue.id,
@@ -3785,14 +3880,14 @@ export function issueThreadInteractionService(
               title: data.title ?? null,
               summary: data.summary ?? null,
               createdByAgentId: actor.agentId ?? null,
-              addresseeAgentId: data.addresseeAgentId ?? null,
-              addresseeUserId: data.addresseeUserId ?? null,
+              addresseeAgentId: normalizedData.addresseeAgentId ?? null,
+              addresseeUserId: normalizedData.addresseeUserId ?? null,
               createdByUserId: actor.userId ?? null,
               // The decision card reads it from the stored payload; the kind's
               // payload schema strips it on every other read.
               payload: (data.recommendation
-                ? { ...data.payload, recommendation: data.recommendation }
-                : data.payload) as typeof data.payload,
+                ? { ...normalizedData.payload, recommendation: data.recommendation }
+                : normalizedData.payload) as typeof data.payload,
             })
             .returning();
 
@@ -3913,6 +4008,38 @@ export function issueThreadInteractionService(
       return interaction;
     },
 
+    /**
+     * Saves which steps a person has ticked on a pending request_steps card,
+     * so ticks survive a reload. Only `payload.progress` changes.
+     */
+    saveStepsProgress: async (
+      issue: { id: string; companyId: string; status?: string },
+      interactionId: string,
+      tickedSteps: number[],
+    ): Promise<IssueThreadInteraction> => {
+      const current = await getPendingInteractionForResolution({ issue, interactionId });
+      if (current.kind !== "request_steps") {
+        throw unprocessable("Only step-by-step cards keep ticks");
+      }
+      const payload = requestStepsPayloadSchema.parse({
+        ...(current.payload as object),
+        progress: { tickedSteps },
+      });
+      const [updated] = await db
+        .update(issueThreadInteractions)
+        .set({ payload, updatedAt: new Date() })
+        .where(
+          and(
+            eq(issueThreadInteractions.id, current.id),
+            eq(issueThreadInteractions.companyId, issue.companyId),
+            eq(issueThreadInteractions.status, "pending"),
+          ),
+        )
+        .returning();
+      if (!updated) throw interactionTerminalError(current);
+      return hydrateInteraction(updated);
+    },
+
     acceptInteraction: async (
       issue: {
         id: string;
@@ -3949,6 +4076,20 @@ export function issueThreadInteractionService(
             issue,
             sourceRunId: current.sourceRunId,
           });
+          const accepted = await acceptRequestConfirmation({
+            issue,
+            current,
+            input: data,
+            actor,
+            mutationOptions,
+          });
+          return {
+            interaction: accepted.interaction,
+            continuationIssue: accepted.continuationIssue,
+            createdIssues: [],
+          };
+        }
+        case "request_steps": {
           const accepted = await acceptRequestConfirmation({
             issue,
             current,
@@ -4216,6 +4357,7 @@ export function issueThreadInteractionService(
         case "request_confirmation":
         case "request_checkbox_confirmation":
         case "request_draft_review":
+        case "request_steps":
           return rejectRequestConfirmation({
             issue,
             current,

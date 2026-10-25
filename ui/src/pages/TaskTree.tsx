@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { TaskRunStatesContext, useTaskRunStates } from "../hooks/useTaskRunStates";
 import { useQuery } from "@tanstack/react-query";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { FileText, Network } from "lucide-react";
+import { FileText, Maximize2, Network } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -18,6 +19,7 @@ import { ErrorState } from "../components/ErrorState";
 import { TaskTreeCanvas } from "../components/task-tree/TaskTreeCanvas";
 import { TaskTreeHeader, countTreeStatuses } from "../components/task-tree/TaskTreeHeader";
 import { TaskTreeOutline } from "../components/task-tree/TaskTreeOutline";
+import { DiagramFind } from "../components/diagram/DiagramFrame";
 import { useTaskTreeView } from "../components/task-tree/useTaskTreeView";
 
 /** The tree refreshes on its own so statuses stay current. */
@@ -40,6 +42,8 @@ export function TaskTree() {
   const navigate = useNavigate();
   const location = useLocation();
   const isPhone = useIsPhone();
+  // Working, queued or stuck per node (GRE-2246).
+  const taskRunStates = useTaskRunStates(selectedCompanyId);
   const people = useTaskTreePeople(selectedCompanyId);
 
   const treeQuery = useQuery({
@@ -51,11 +55,16 @@ export function TaskTree() {
 
   const index = useMemo(() => (treeQuery.data ? indexTaskTree(treeQuery.data) : null), [treeQuery.data]);
   const [showFinished, setShowFinished] = useState(false);
-  const { toggleCollapsed, visibleRoot, trace, waitingOnById, focusRequest, selectBlocker } = useTaskTreeView(index, {
+  const storageKey = issueId ? `task-tree.${issueId}` : undefined;
+  const view = useTaskTreeView(index, {
     viewerUserId: people.viewerUserId ?? null,
     isPhone,
     showFinished,
+    storageKey,
+    people,
   });
+  const { toggleCollapsed, visibleRoot, trace, waitingOnById, blockReasonById, focusRequest, selectBlocker } = view;
+  const [diagramOpen, setDiagramOpen] = useState(false);
 
   const root = index?.root;
   const project = treeQuery.data?.project ?? null;
@@ -94,6 +103,15 @@ export function TaskTree() {
         <ToggleSwitch checked={showFinished} onCheckedChange={setShowFinished} aria-label="Show finished work" />
         <span>Show finished work</span>
       </label>
+      <label className="inline-flex items-center gap-2 text-sm">
+        <ToggleSwitch
+          checked={view.blockedOnly}
+          onCheckedChange={view.setBlockedOnly}
+          aria-label="Only what's blocked and why"
+          data-blocked-only-toggle=""
+        />
+        <span>Only what's blocked and why</span>
+      </label>
       {project ? (
         <Button asChild variant="outline" size="sm">
           <Link to={`/projects/${project.id}/tree`}>
@@ -113,40 +131,72 @@ export function TaskTree() {
 
   return (
     // The task route drops the shell's top padding for the thread; the tree puts it back so its header sits where every other page's does.
-    <div className="flex h-full min-h-0 w-full flex-col gap-6 md:pt-6" data-task-tree-page="">
-      <TaskTreeHeader
-        root={root}
-        counts={countTreeStatuses(index.byId.values(), root.id)}
-        rootBlockers={trace.rootBlockers}
-        people={people}
-        onSelectBlocker={selectBlocker}
-        truncatedNote={truncatedNote}
-        actions={actions}
-      />
-      {isPhone ? (
-        <TaskTreeOutline
-          visibleRoot={visibleRoot}
-          trace={trace}
+    <TaskRunStatesContext.Provider value={taskRunStates}>
+      <div className="flex h-full min-h-0 w-full flex-col gap-6 md:pt-6" data-task-tree-page="">
+        <TaskTreeHeader
+          root={root}
+          counts={countTreeStatuses(index.byId.values(), root.id)}
+          rootBlockers={trace.rootBlockers}
           people={people}
-          hrefFor={(item: VisibleTaskItem) => taskHref(item.node)}
-          waitingOnById={waitingOnById}
-          onToggleCollapsed={toggleCollapsed}
-          onShowFinished={() => setShowFinished(true)}
-          highlightId={focusRequest?.id ?? null}
+          onSelectBlocker={selectBlocker}
+          truncatedNote={truncatedNote}
+          actions={actions}
         />
-      ) : (
-        <TaskTreeCanvas
-          className="min-h-96 flex-1"
-          visibleRoot={visibleRoot}
-          trace={trace}
-          people={people}
-          waitingOnById={waitingOnById}
-          onOpen={(node) => navigate(taskHref(node))}
-          onToggleCollapsed={toggleCollapsed}
-          onShowFinished={() => setShowFinished(true)}
-          focusRequest={focusRequest}
-        />
-      )}
-    </div>
+        {view.blockedOnly && view.blockedOnlyIds?.size === 0 ? (
+          <p className="text-sm text-muted-foreground" data-nothing-blocked="">
+            Nothing here is blocked. Turn off "Only what's blocked and why" to see all the work.
+          </p>
+        ) : null}
+        {isPhone && !diagramOpen ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
+              <Maximize2 />
+              Open the diagram full screen
+            </Button>
+            <DiagramFind items={view.findItems} onPick={view.reveal} />
+          </div>
+        ) : null}
+        {isPhone && !diagramOpen ? (
+          <TaskTreeOutline
+            visibleRoot={visibleRoot}
+            trace={trace}
+            people={people}
+            hrefFor={(item: VisibleTaskItem) => taskHref(item.node)}
+            waitingOnById={waitingOnById}
+            blockReasonById={blockReasonById}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
+            onToggleCollapsed={toggleCollapsed}
+            onShowFinished={() => setShowFinished(true)}
+            highlightId={focusRequest?.id ?? null}
+          />
+        ) : (
+          <TaskTreeCanvas
+            className="min-h-96 flex-1"
+            visibleRoot={visibleRoot}
+            trace={trace}
+            people={people}
+            waitingOnById={waitingOnById}
+            blockReasonById={blockReasonById}
+            blockLinks={view.visibleBlockLinks}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
+            onOpen={(node) => navigate(taskHref(node))}
+            onToggleCollapsed={toggleCollapsed}
+            onShowFinished={() => setShowFinished(true)}
+            focusRequest={focusRequest}
+            homeIds={view.blockedFocusIds}
+            homeRequest={view.homeRequest}
+            storageKey={storageKey}
+            findItems={view.findItems}
+            onFind={view.reveal}
+            onCollapseAll={view.collapseAll}
+            onExpandAll={view.expandAll}
+            startFullscreen={isPhone}
+            onExitFullscreen={() => setDiagramOpen(false)}
+          />
+        )}
+      </div>
+    </TaskRunStatesContext.Provider>
   );
 }

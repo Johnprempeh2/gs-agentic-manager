@@ -153,7 +153,7 @@ If `currentParticipant` does not match you, do not try to advance the stage — 
 - Treat comments, documents, screenshots, work products, and `Remaining` bullets as evidence. They are not valid liveness paths by themselves.
 - Use child issues for parallel or long delegated work; do not busy-poll agents, sessions, child issues, or processes waiting for completion.
 - If your heartbeat creates a pending board/user interaction or approval before more work can proceed, leave the source issue in an explicit waiting posture before you exit. Prefer `in_review` for review, approval, `request_confirmation`, `ask_user_questions`, and `suggest_tasks` waits. Use `blocked` with `blockedByIssueIds` when another issue is the blocker.
-- For a real blocker, use `blockedByIssueIds` or an `unblockDescriptor` with your own `owner: { "agentId": "<your-agent-id>" }` and an exact `action`; when waiting on someone outside, add `waitingOn` (`client`, `board` or `outside`) and `expectedBy` (`YYYY-MM-DD`) so you are woken once when the date passes. Agents cannot set board/user or other-agent unblock owners. Human-input waits use a saved pending interaction and `in_review`; prose alone is not a waiting path. See [Questions and waiting for human input](references/api-reference.md#questions-and-waiting-for-human-input) for valid payloads. CLI: `gsam issue block <id> --action "..." [--waiting-on client --expected-by YYYY-MM-DD] [--blocked-by <ids>]` (owner defaults to you) and `gsam issue unblock <id>`.
+- For a real blocker, use `blockedByIssueIds` or an `unblockDescriptor` with your own `owner: { "agentId": "<your-agent-id>" }` and an exact `action`; when waiting on someone outside, add `waitingOn` (`client`, `board` or `outside`) and `expectedBy` (`YYYY-MM-DD`) so you are woken once when the date passes. When the task waits on a card, put its id in `interactionId`; answering the card returns the task to `todo` and wakes you. Agents cannot set board/user or other-agent unblock owners. Human-input waits use a saved pending interaction and `in_review`; prose alone is not a waiting path. See [Questions and waiting for human input](references/api-reference.md#questions-and-waiting-for-human-input) for valid payloads. CLI: `gsam issue block <id> --action "..." [--waiting-on client --expected-by YYYY-MM-DD] [--blocked-by <ids>]` (owner defaults to you) and `gsam issue unblock <id>`.
 - Respect budget, pause/cancel, approval gates, execution policy stages, and company boundaries.
 
 ### Generated Artifacts and Work Products
@@ -202,7 +202,7 @@ Done
 MD
 ```
 
-Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `blockedByIssueIds`.
+Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `blockedByIssueIds`. Unknown fields are refused with `400` and the error names them (a misspelt `blockedByIds` is not dropped). Creating or moving a task to `blocked` with no open `blockedByIssueIds`, no `unblockDescriptor` and no pending card is refused with `400` ("Say what is blocking it").
 
 ### Status Quick Guide
 
@@ -772,3 +772,44 @@ and collection entries (products, team, redirects, forms) under
 - Approve, send back, Publish, retry, roll back and site settings answer `403` for agents. Do not
   ask for `website:publish`: it cannot be granted to an agent. Another company's site, or a site
   outside your grant, answers `404`.
+
+**Step-by-step cards (`request_steps`).** When a person has to do something only a person can do (a dashboard setting, a new API key, a
+payment or account change), guide them with a step-by-step card instead of a comment. Write it
+with the `guiding-john` method (it works for anyone): one action per step, exact menu paths in
+bold with arrows (`**Settings → API keys → Create**`), values to paste in `copy`, an https
+`link`, and what they should see in `expect`. Use the MCP tool `paperclipRequestSteps`, or:
+
+```json
+POST /api/issues/{issueId}/interactions
+{
+  "kind": "request_steps",
+  "idempotencyKey": "steps:{issueId}:stripe-sandbox-key:v1",
+  "payload": {
+    "version": 1,
+    "title": "Stripe test key for the agents",
+    "why": "So the agents can test checkout on the staging site.",
+    "minutes": 2,
+    "risk": "safe",
+    "steps": [
+      { "text": "Open the Stripe dashboard in **Sandbox** mode.", "link": { "label": "Open Stripe", "url": "https://dashboard.stripe.com/test/apikeys" }, "expect": "An orange Sandbox banner at the top." },
+      { "text": "Open **Developers → API keys → Create restricted key** and name it:", "copy": ["GSAM agents"] },
+      { "text": "Copy the key and paste it below.", "expect": "The key starts `rk_test_`." }
+    ],
+    "secret": { "secretName": "stripe/sandbox-agents", "description": "Stripe sandbox restricted key for the agents", "expectedPrefix": "rk_test_", "linkToAgentIds": ["{agentId}"], "adapterEnvKey": "STRIPE_SECRET_KEY" },
+    "afterDone": "I create the staging webhook and run the payment tests."
+  }
+}
+```
+
+- Up to 12 steps. `risk` is `safe`, `careful` or `money_or_live`. Links must be https. Never put a
+  secret in `copy`, `text` or `expect`.
+- It goes to the task's responsible person; set `addresseeUserId` to ask anyone else in the
+  company. The card has "Copy steps", so they can pass it to someone outside GSAM.
+- `secret`: the person types the value into a secure field; it is saved straight into the
+  company secrets (a new version if the name exists) and, with `linkToAgentIds` and
+  `adapterEnvKey`, linked to those agents as `access.<adapterEnvKey>`. You never see the value.
+  If the created card's `payload.secretAccess.addresseeCanSave` is false, address someone in
+  `whoCan` instead.
+- Human-only, wakes you by default. Done: `result.secret` is `{ secretId, secretName,
+  linkedAgentIds }` (plus `linkingNeedsOwner` when an owner must link it). "I can't do this":
+  `result.reason` says why; find another way and say what you will do.

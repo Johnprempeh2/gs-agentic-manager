@@ -71,7 +71,7 @@ function Compare() {
         canApprove
         canEdit={false}
         onApprove={() => {}}
-        onCopy={() => {}}
+        onCopy={async () => null}
         busy={false}
       />
     </Frame>

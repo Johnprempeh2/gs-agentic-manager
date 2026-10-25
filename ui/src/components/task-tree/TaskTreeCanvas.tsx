@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type SVGProps } from "react";
+import { TaskRunStateChip } from "@/components/TaskRunStateChip";
+import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
-import { Maximize, Minus, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DiagramFrame, type DiagramFindItem } from "@/components/diagram/DiagramFrame";
+import { fitView, useDiagramViewport, type DiagramView } from "@/components/diagram/useDiagramViewport";
 import { StatusIcon } from "@/components/StatusIcon";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import {
+  blockLinkMidpoint,
+  blockLinkPath,
+  connectorMidpoint,
   connectorPath,
   edgeKey,
   flattenVisible,
@@ -16,25 +21,29 @@ import {
   type VisibleTaskItem,
 } from "@/lib/task-tree";
 import { taskStatusLabel } from "@/lib/task-status-labels";
+import type { TreeBlockReason } from "@/lib/task-tree-block-reason";
+import { routeBlockLinks } from "@/lib/task-tree-links";
 import { cn, relativeTime } from "@/lib/utils";
+import { TaskTreeBlockReason } from "./TaskTreeBlockReason";
 import { TASK_TREE_CARD_HEIGHT, TASK_TREE_CARD_WIDTH, TaskTreeCard } from "./TaskTreeCard";
 import { ownerName, type TaskTreePeople } from "./TaskTreeOwner";
+import type { VisibleBlockLink } from "./useTaskTreeView";
+
+/** How a "blocks" line is drawn: dashed, with an arrow on the task it holds up. */
+const BLOCK_DASH = "6 5";
+/** Loop links are violet and dotted, so they never read as the red "leads to a block" line. */
+const LOOP_DASH = "1 5";
+/** Lines that do not touch the hovered or selected card fade to this. */
+const FADED_LINK = 0.15;
 
 const DONE_PILL = { width: 112, height: 32 };
 const LAYOUT = { siblingGap: 28, levelGap: 72, padding: 48 };
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 2;
-/** "Fit to screen" never shrinks cards below this; past it, the root stays in view instead. */
+/** The tree opens no smaller than this; past it, the root stays in view instead. "Fit to screen" shows it all. */
 const MIN_READABLE_ZOOM = 0.6;
 const FIT_MARGIN = 32;
-const DRAG_THRESHOLD = 4;
 const GRID = 20;
 
-export interface TaskTreeView {
-  x: number;
-  y: number;
-  k: number;
-}
+export type TaskTreeView = DiagramView;
 
 export interface TaskTreeCanvasProps {
   visibleRoot: VisibleTaskItem;
@@ -42,17 +51,38 @@ export interface TaskTreeCanvasProps {
   people: TaskTreePeople;
   /** Blocker outside the tree that each task waits on, by task id. */
   waitingOnById?: ReadonlyMap<string, string>;
+  /** Why each blocked task is blocked, by task id. */
+  blockReasonById?: ReadonlyMap<string, TreeBlockReason>;
+  /** Every "blocks" link, between the cards that show its ends (GRE-2290). */
+  blockLinks?: VisibleBlockLink[];
+  /** Tasks in a blocking loop. */
+  loopIds?: ReadonlySet<string>;
+  /** Names of the tasks each task blocks and is blocked by, for the hover card. */
+  linkNamesById?: ReadonlyMap<string, { blockedBy: string[]; blocks: string[] }>;
   onOpen: (node: IssueTreeNode) => void;
   onToggleCollapsed: (id: string) => void;
   onShowFinished: () => void;
   /** Pan to this item; bump `nonce` to pan again to the same one. */
   focusRequest?: { id: string; nonce: number } | null;
+  /** With "Only what's blocked and why" on: the cards the view opens fitted to. */
+  homeIds?: ReadonlySet<string> | null;
+  /** Go back to the home view whenever this changes. */
+  homeRequest?: number;
   /** A control for a card's footer. */
   actionFor?: (node: IssueTreeNode) => ReactNode;
+  /** Remembers zoom and place for this tree. */
+  storageKey?: string;
+  /** Every task "Find" can jump to, folded or not. */
+  findItems?: DiagramFindItem[];
+  /** Unfold the way to a task and bring it into view (sets `focusRequest`). */
+  onFind?: (id: string) => void;
+  onCollapseAll?: () => void;
+  onExpandAll?: () => void;
+  /** Open in full screen straight away (the phone opens the diagram this way). */
+  startFullscreen?: boolean;
+  onExitFullscreen?: () => void;
   className?: string;
 }
-
-const clampZoom = (k: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k));
 
 function cssMilliseconds(name: string, fallback: number) {
   if (typeof window === "undefined") return fallback;
@@ -102,26 +132,38 @@ function useGlide(layout: TreeLayout, reduced: boolean) {
 
 /**
  * The tree on a pannable, zoomable canvas: SVG connectors under HTML cards.
- * Drag to pan; wheel, pinch or the buttons to zoom; arrow keys move between
- * tasks, Enter opens one, Space folds its branch.
+ * Drag or scroll to pan; Ctrl or Cmd with the wheel, pinch, + and - or the
+ * buttons to zoom; 0 fits. Arrow keys move between tasks, Enter opens one,
+ * Space folds its branch. Find, fold all, minimap and full screen come from
+ * the shared DiagramFrame.
  */
 export function TaskTreeCanvas({
   visibleRoot,
   trace,
   people,
   waitingOnById,
+  blockReasonById,
+  blockLinks = [],
+  loopIds,
+  linkNamesById,
   onOpen,
   onToggleCollapsed,
   onShowFinished,
   focusRequest,
+  homeIds,
+  homeRequest,
   actionFor,
+  storageKey,
+  findItems,
+  onFind,
+  onCollapseAll,
+  onExpandAll,
+  startFullscreen,
+  onExitFullscreen,
   className,
 }: TaskTreeCanvasProps) {
   const reduced = usePrefersReducedMotion();
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [view, setView] = useState<TaskTreeView>({ x: 0, y: 0, k: 1 });
-  const viewRef = useRef(view);
-  viewRef.current = view;
+  const markerId = useId().replace(/:/g, "");
 
   const layout = useMemo(
     () =>
@@ -133,6 +175,10 @@ export function TaskTreeCanvas({
     [visibleRoot],
   );
   const items = useMemo(() => new Map(flattenVisible(visibleRoot).map((item) => [item.id, item])), [visibleRoot]);
+  // One line per pair of tasks (GRE-2384): blocking between a parent and its
+  // child, or along a chain of such lines, restyles those lines instead of
+  // drawing a second one beside them.
+  const routed = useMemo(() => routeBlockLinks(blockLinks, layout.edges), [blockLinks, layout.edges]);
   const positions = useGlide(layout, reduced);
   const boxAt = useCallback(
     (id: string): LayoutBox | null => {
@@ -145,73 +191,62 @@ export function TaskTreeCanvas({
   );
 
   // ── View ────────────────────────────────────────────────────────────────
-  const fit = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const width = viewport.clientWidth;
-    const height = viewport.clientHeight;
-    if (width === 0 || height === 0) return;
-    const whole = Math.min(1, (width - FIT_MARGIN * 2) / layout.width, (height - FIT_MARGIN * 2) / layout.height);
-    if (whole >= MIN_READABLE_ZOOM) {
-      setView({ k: whole, x: (width - layout.width * whole) / 2, y: Math.max(FIT_MARGIN, (height - layout.height * whole) / 2) });
-      return;
-    }
-    // Too big to fit and still read: keep the cards legible, top of the tree in view,
-    // centred on the whole tree's width (centring on the root cut off a wide branch).
-    // Too big to fit and still read: keep the cards legible, the top of the tree in
-    // view, and centre on the span from the root to the first root blocker, so the
-    // task holding everything up is on screen when the tree opens.
-    const k = MIN_READABLE_ZOOM;
-    const rootBox = layout.boxes.find((box) => box.depth === 0);
-    const blockerBox = trace.rootBlockers
-      .map((blocker) => layout.byId.get(blocker.anchorId))
-      .find((box) => box !== undefined);
-    const span = [rootBox, blockerBox].filter((box): box is NonNullable<typeof box> => box !== undefined);
-    const left = span.length ? Math.min(...span.map((box) => box.x)) : 0;
-    const right = span.length ? Math.max(...span.map((box) => box.x + box.width)) : layout.width;
-    setView({ k, x: width / 2 - ((left + right) / 2) * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k });
-  }, [layout, trace]);
+  // Where the tree opens and "Reset" returns to: the whole tree when it fits
+  // and still reads. Otherwise cards stay legible and the view opens on a
+  // blocking chain: the first root blocker and as many of the tasks it holds
+  // up as fit, nearest first, so both ends of its lines are on screen. With
+  // nothing blocked it opens on the top of the tree.
+  const home = useCallback(
+    (viewport: { width: number; height: number }): TaskTreeView => {
+      const focus = [...(homeIds ?? [])].flatMap((id) => layout.byId.get(id) ?? []);
+      if (focus.length > 0) return fitBounds(focus.map(boundsOf).reduce(joinBounds), viewport);
+      const whole = fitView(layout, viewport);
+      if (whole.k >= MIN_READABLE_ZOOM) return { ...whole, y: Math.max(FIT_MARGIN, whole.y) };
+      const k = MIN_READABLE_ZOOM;
+      const blocker = trace.rootBlockers.find((entry) => layout.byId.has(entry.anchorId));
+      const anchor = blocker ? layout.byId.get(blocker.anchorId)! : null;
+      if (!blocker || !anchor) {
+        const rootBox = layout.boxes.find((box) => box.depth === 0);
+        const centre = rootBox ? rootBox.x + rootBox.width / 2 : layout.width / 2;
+        return { k, x: viewport.width / 2 - centre * k, y: FIT_MARGIN - (rootBox?.y ?? 0) * k };
+      }
+      const fits = (span: Bounds) =>
+        (span.right - span.left) * k <= viewport.width - FIT_MARGIN * 2 &&
+        (span.bottom - span.top) * k <= viewport.height - FIT_MARGIN * 2;
+      const distance = (box: LayoutBox) => Math.hypot(box.x - anchor.x, box.y - anchor.y);
+      let span = boundsOf(anchor);
+      const heldUp = blocker.holdsUp
+        .map((id) => layout.byId.get(id))
+        .filter((box): box is LayoutBox => box !== undefined)
+        .sort((a, b) => distance(a) - distance(b));
+      for (const box of heldUp) {
+        const wider = joinBounds(span, boundsOf(box));
+        if (fits(wider)) span = wider;
+      }
+      return {
+        k,
+        x: viewport.width / 2 - ((span.left + span.right) / 2) * k,
+        y: viewport.height / 2 - ((span.top + span.bottom) / 2) * k,
+      };
+    },
+    [layout, trace, homeIds],
+  );
+  const viewport = useDiagramViewport({ content: layout, storageKey: storageKey ? `${storageKey}.view` : undefined, home });
+  const { view, viewportRef, reveal, reset, suppressClick } = viewport;
 
-  const fittedOnce = useRef(false);
-  useLayoutEffect(() => {
-    if (fittedOnce.current) return;
-    fittedOnce.current = true;
-    fit();
-  }, [fit]);
-
-  const zoomAt = useCallback((factor: number, at?: Point) => {
-    const viewport = viewportRef.current;
-    const current = viewRef.current;
-    const k = clampZoom(current.k * factor);
-    const px = at?.x ?? (viewport?.clientWidth ?? 0) / 2;
-    const py = at?.y ?? (viewport?.clientHeight ?? 0) / 2;
-    setView({ k, x: px - (px - current.x) * (k / current.k), y: py - (py - current.y) * (k / current.k) });
-  }, []);
+  const homeSeen = useRef(homeRequest);
+  useEffect(() => {
+    if (homeSeen.current === homeRequest) return;
+    homeSeen.current = homeRequest;
+    reset();
+  }, [homeRequest, reset]);
 
   const panTo = useCallback(
     (id: string, onlyIfHidden = false) => {
-      const viewport = viewportRef.current;
       const box = layout.byId.get(id);
-      if (!viewport || !box) return;
-      const { k, x, y } = viewRef.current;
-      const left = box.x * k + x;
-      const top = box.y * k + y;
-      if (
-        onlyIfHidden &&
-        left >= 0 &&
-        top >= 0 &&
-        left + box.width * k <= viewport.clientWidth &&
-        top + box.height * k <= viewport.clientHeight
-      ) {
-        return;
-      }
-      setView({
-        k,
-        x: viewport.clientWidth / 2 - (box.x + box.width / 2) * k,
-        y: viewport.clientHeight / 2 - (box.y + box.height / 2) * k,
-      });
+      if (box) reveal(box, onlyIfHidden);
     },
-    [layout],
+    [layout, reveal],
   );
 
   useEffect(() => {
@@ -224,84 +259,7 @@ export function TaskTreeCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest]);
 
-  // Wheel zoom needs a non-passive listener to keep the page from scrolling.
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = viewport.getBoundingClientRect();
-      const factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.01 : 0.002));
-      zoomAt(factor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
-    };
-    viewport.addEventListener("wheel", onWheel, { passive: false });
-    return () => viewport.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
-
-  // ── Pointer: drag to pan, two fingers to pinch ──────────────────────────
-  const pointers = useRef(new Map<number, Point>());
-  const gesture = useRef<{ start: Point; view: TaskTreeView; moved: boolean; pinch?: { distance: number; mid: Point } } | null>(null);
-  const suppressClick = useRef(false);
-
-  const localPoint = (event: { clientX: number; clientY: number }): Point => {
-    const rect = viewportRef.current!.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  };
-
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 && event.pointerType === "mouse") return;
-    pointers.current.set(event.pointerId, localPoint(event));
-    suppressClick.current = false;
-    const points = [...pointers.current.values()];
-    if (points.length === 2) {
-      const [a, b] = points as [Point, Point];
-      gesture.current = {
-        start: a,
-        view: viewRef.current,
-        moved: true,
-        pinch: { distance: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } },
-      };
-    } else {
-      gesture.current = { start: localPoint(event), view: viewRef.current, moved: false };
-    }
-  };
-
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointers.current.has(event.pointerId) || !gesture.current) return;
-    pointers.current.set(event.pointerId, localPoint(event));
-    const current = gesture.current;
-    const points = [...pointers.current.values()];
-    if (current.pinch && points.length >= 2) {
-      const [a, b] = points as [Point, Point];
-      const distance = Math.hypot(a.x - b.x, a.y - b.y);
-      const k = clampZoom(current.view.k * (distance / Math.max(current.pinch.distance, 1)));
-      const mid = current.pinch.mid;
-      setView({
-        k,
-        x: mid.x - (mid.x - current.view.x) * (k / current.view.k),
-        y: mid.y - (mid.y - current.view.y) * (k / current.view.k),
-      });
-      return;
-    }
-    const point = pointers.current.get(event.pointerId)!;
-    const dx = point.x - current.start.x;
-    const dy = point.y - current.start.y;
-    if (!current.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    if (!current.moved) {
-      current.moved = true;
-      // Capture only once it is a drag, so a plain click still reaches the card.
-      viewportRef.current?.setPointerCapture?.(event.pointerId);
-    }
-    setView({ ...current.view, x: current.view.x + dx, y: current.view.y + dy });
-  };
-
-  const onPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
-    pointers.current.delete(event.pointerId);
-    if (gesture.current?.moved) suppressClick.current = true;
-    if (pointers.current.size === 0) gesture.current = null;
-  };
-
-  // ── Keyboard and focus ──────────────────────────────────────────────────
+// ── Keyboard and focus ──────────────────────────────────────────────────
   const [focusedId, setFocusedId] = useState<string>(visibleRoot.id);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [keyboardFocus, setKeyboardFocus] = useState(false);
@@ -318,6 +276,7 @@ export function TaskTreeCanvas({
 
   const activate = (item: VisibleItem) => {
     if (item.kind === "done") onShowFinished();
+    else if (item.group) onToggleCollapsed(item.id);
     else onOpen(item.node);
   };
 
@@ -360,34 +319,31 @@ export function TaskTreeCanvas({
     }
   };
 
+  // ── Find ────────────────────────────────────────────────────────────────
+  const [foundId, setFoundId] = useState<string | null>(null);
+  const find = useMemo(
+    () =>
+      findItems && onFind
+        ? {
+            items: findItems,
+            onPick: (id: string) => {
+              setFoundId(id);
+              onFind(id);
+            },
+          }
+        : undefined,
+    [findItems, onFind],
+  );
+
   // ── Paint ───────────────────────────────────────────────────────────────
   const hoverItem = hoveredId ? items.get(hoveredId) : keyboardFocus ? items.get(activeFocusId) : undefined;
   const hoverBox = hoverItem?.kind === "task" ? boxAt(hoverItem.id) : null;
 
-  return (
-    <div
-      ref={viewportRef}
-      data-slot="task-tree-canvas"
-      className={cn(
-        "task-tree-canvas relative h-full min-h-0 w-full touch-none select-none overflow-hidden rounded-xl border border-border",
-        gesture.current?.moved ? "cursor-grabbing" : "cursor-grab",
-        className,
-      )}
-      style={{
-        backgroundSize: `${GRID * view.k}px ${GRID * view.k}px`,
-        backgroundPosition: `${view.x}px ${view.y}px`,
-      }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerEnd}
-      onPointerCancel={onPointerEnd}
-    >
-      <div
-        role="tree"
-        aria-label="Task tree"
-        className="absolute left-0 top-0 origin-top-left"
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, width: layout.width, height: layout.height }}
-      >
+  // The cards and lines do not depend on the view, so panning and zooming
+  // only move the layer: smooth with hundreds of tasks.
+  const layer = useMemo(
+    () => (
+      <>
         <svg
           aria-hidden="true"
           width={layout.width}
@@ -397,7 +353,7 @@ export function TaskTreeCanvas({
           {layout.edges.map((edge) => {
             const from = boxAt(edge.from);
             const to = boxAt(edge.to);
-            if (!from || !to) return null;
+            if (!from || !to || routed.onEdges.has(edgeKey(edge.from, edge.to))) return null;
             const onPath = trace.pathEdges.has(edgeKey(edge.from, edge.to));
             const d = connectorPath(from, to);
             return (
@@ -450,6 +406,7 @@ export function TaskTreeCanvas({
             );
           }
           const node = item.node;
+          const found = foundId === node.id;
           return (
             <div
               key={item.id}
@@ -457,7 +414,11 @@ export function TaskTreeCanvas({
               aria-expanded={item.descendants > 0 ? !item.collapsed : undefined}
               aria-label={`${node.identifier ? `${node.identifier} ` : ""}${node.title}, ${taskStatusLabel(node.status)}`}
               data-on-blocked-path={trace.pathNodeIds.has(node.id) ? "" : undefined}
-              className="group/tree-node absolute left-0 top-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              data-found={found ? "" : undefined}
+              className={cn(
+                "group/tree-node absolute left-0 top-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                found && "ring-2 ring-ring ring-offset-4 ring-offset-background",
+              )}
               onPointerEnter={() => setHoveredId(node.id)}
               onPointerLeave={() => setHoveredId((current) => (current === node.id ? null : current))}
             >
@@ -468,6 +429,10 @@ export function TaskTreeCanvas({
                 onBlockedPath={trace.pathNodeIds.has(node.id)}
                 isRootBlocker={trace.rootBlockers.some((blocker) => blocker.inTree && blocker.id === node.id)}
                 waitingOn={waitingOnById?.get(node.id) ?? null}
+                blockReason={blockReasonById?.get(node.id) ?? null}
+                projectName={item.outside ? item.outside.projectName ?? "No project" : null}
+                inLoop={loopIds?.has(node.id) ?? false}
+                isGroup={item.group}
                 descendants={item.descendants}
                 collapsed={item.collapsed}
                 onToggleCollapsed={() => onToggleCollapsed(node.id)}
@@ -476,34 +441,221 @@ export function TaskTreeCanvas({
             </div>
           );
         })}
-      </div>
+      </>
+    ),
+    // The handlers inside read current state through setters and refs; the layer redraws when what it shows changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layout, routed, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, loopIds, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+  );
 
-      {hoverItem?.kind === "task" && hoverBox ? (
-        <TaskTreeHoverCard
-          node={hoverItem.node}
-          people={people}
-          left={(hoverBox.x + hoverBox.width) * view.k + view.x + 10}
-          top={hoverBox.y * view.k + view.y}
-        />
-      ) : null}
+  // "Blocks" lines sit over the sub-task lines and under the cards. They draw
+  // apart from the cards, so hovering a card redraws only the lines: its own
+  // come to full strength and the rest fade, so one chain reads by eye.
+  const emphasisId = hoveredId ?? (keyboardFocus ? activeFocusId : null) ?? foundId;
+  const nameOf = useCallback(
+    (id: string) => {
+      const item = items.get(id);
+      return item?.kind === "task" ? item.node.identifier ?? item.node.title : id;
+    },
+    [items],
+  );
+  const blockLayer = useMemo(
+    () =>
+      blockLinks.length === 0 ? null : (
+        <svg
+          aria-hidden="true"
+          width={layout.width}
+          height={layout.height}
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
+        >
+          <defs>
+            <marker id={`${markerId}-block`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-warning" />
+            </marker>
+            <marker id={`${markerId}-loop`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-review" />
+            </marker>
+          </defs>
+          {layout.edges.map((edge) => {
+            const key = edgeKey(edge.from, edge.to);
+            const carried = routed.onEdges.get(key);
+            const from = boxAt(edge.from);
+            const to = boxAt(edge.to);
+            if (!carried || !from || !to) return null;
+            const ends = new Set([...carried.links, ...carried.via.map((hop) => hop.link)].flatMap((link) => [link.from, link.to]));
+            const touches = emphasisId !== null && ends.has(emphasisId);
+            const faded = emphasisId !== null && !touches;
+            const loop = carried.links.some((link) => link.loop);
+            const folded = carried.links.every((link) => link.folded);
+            const down = carried.links.some((link) => link.from === edge.from);
+            const up = carried.links.some((link) => link.from === edge.to);
+            const marker = `url(#${markerId}-${loop ? "loop" : "block"})`;
+            const d = connectorPath(from, to);
+            const title = [
+              ...carried.links.flatMap((link) => link.labels),
+              ...carried.via.flatMap(({ link, through }) =>
+                link.labels.map((label) => `${label}, through ${through.map(nameOf).join(", ")}`),
+              ),
+            ].join("\n");
+            return (
+              <BlockLine
+                key={`edge:${key}`}
+                d={d}
+                title={title}
+                mid={loop ? connectorMidpoint(from, to) : null}
+                opacity={faded ? FADED_LINK : folded && !touches ? 0.6 : 1}
+                pathProps={{
+                  "data-block-edge": key,
+                  "data-block-loop": loop ? "" : undefined,
+                  "data-block-emphasis": touches ? "" : faded ? "faded" : undefined,
+                  strokeWidth: (loop ? 2.5 : 1.75) + (touches ? 1 : 0),
+                  strokeDasharray: loop ? LOOP_DASH : BLOCK_DASH,
+                  markerEnd: down ? marker : undefined,
+                  markerStart: up ? marker : undefined,
+                  className: loop ? "stroke-status-review" : "stroke-status-warning",
+                }}
+              />
+            );
+          })}
+          {routed.lines.map((link) => {
+            const from = boxAt(link.from);
+            const to = boxAt(link.to);
+            if (!from || !to) return null;
+            const touches = emphasisId === link.from || emphasisId === link.to;
+            const faded = emphasisId !== null && !touches;
+            return (
+              <BlockLine
+                key={`block:${link.from}>${link.to}`}
+                d={blockLinkPath(from, to)}
+                title={link.labels.join("\n")}
+                mid={link.loop ? blockLinkMidpoint(from, to) : null}
+                opacity={faded ? FADED_LINK : link.folded && !touches ? 0.6 : 1}
+                pathProps={{
+                  "data-block-link": edgeKey(link.from, link.to),
+                  "data-block-loop": link.loop ? "" : undefined,
+                  "data-block-folded": link.folded ? "" : undefined,
+                  "data-block-emphasis": touches ? "" : faded ? "faded" : undefined,
+                  strokeWidth: (link.loop ? 2.5 : 1.75) + (touches ? 1 : 0),
+                  strokeDasharray: link.loop ? LOOP_DASH : BLOCK_DASH,
+                  markerEnd: `url(#${markerId}-${link.loop ? "loop" : "block"})`,
+                  className: link.loop ? "stroke-status-review" : "stroke-status-warning",
+                }}
+              />
+            );
+          })}
+        </svg>
+      ),
+    [blockLinks.length, routed, layout.edges, boxAt, emphasisId, layout.width, layout.height, markerId, nameOf],
+  );
 
+  return (
+    <DiagramFrame
+      label="Task tree"
+      viewport={viewport}
+      content={layout}
+      boxes={layout.boxes}
+      find={find}
+      onCollapseAll={onCollapseAll}
+      onExpandAll={onExpandAll}
+      startFullscreen={startFullscreen}
+      onExitFullscreen={onExitFullscreen}
+      className={className}
+    >
       <div
-        className="absolute bottom-3 right-3 z-raised flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-sm"
-        onPointerDown={(event) => event.stopPropagation()}
+        ref={viewportRef}
+        data-slot="task-tree-canvas"
+        className={cn(
+          "task-tree-canvas relative h-full min-h-0 w-full flex-1 touch-none select-none overflow-hidden rounded-xl border border-border",
+          viewport.panning ? "cursor-grabbing" : "cursor-grab",
+        )}
+        style={{
+          backgroundSize: `${GRID * view.k}px ${GRID * view.k}px`,
+          backgroundPosition: `${view.x}px ${view.y}px`,
+        }}
+        {...viewport.panHandlers}
       >
-        <Button variant="ghost" size="icon-xs" aria-label="Zoom out" title="Zoom out" onClick={() => zoomAt(1 / 1.2)}>
-          <Minus />
-        </Button>
-        <span className="w-10 text-center text-xs tabular-nums text-muted-foreground" aria-live="polite">
-          {Math.round(view.k * 100)}%
-        </span>
-        <Button variant="ghost" size="icon-xs" aria-label="Zoom in" title="Zoom in" onClick={() => zoomAt(1.2)}>
-          <Plus />
-        </Button>
-        <Button variant="ghost" size="icon-xs" aria-label="Fit to screen" title="Fit to screen" onClick={fit}>
-          <Maximize />
-        </Button>
+        <div
+          role="tree"
+          aria-label="Task tree"
+          className="absolute left-0 top-0 origin-top-left"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, width: layout.width, height: layout.height }}
+        >
+          {blockLayer}
+          {layer}
+        </div>
+
+        {blockLinks.length > 0 ? <TaskTreeLinkLegend loops={blockLinks.some((link) => link.loop)} paths={trace.pathEdges.size > 0} /> : null}
+
+        {hoverItem?.kind === "task" && !hoverItem.group && hoverBox ? (
+          <TaskTreeHoverCard
+            node={hoverItem.node}
+            people={people}
+            links={linkNamesById?.get(hoverItem.node.id) ?? null}
+            blockReason={blockReasonById?.get(hoverItem.node.id) ?? null}
+            left={(hoverBox.x + hoverBox.width) * view.k + view.x + 10}
+            top={hoverBox.y * view.k + view.y}
+          />
+        ) : null}
       </div>
+    </DiagramFrame>
+  );
+}
+
+/**
+ * One "blocks" line: dashed, with an arrow on the task it holds up, and a
+ * wide clear stroke over it so hovering the line names the link.
+ */
+function BlockLine({
+  d,
+  title,
+  mid,
+  opacity,
+  pathProps,
+}: {
+  d: string;
+  title: string;
+  mid: { x: number; y: number } | null;
+  opacity: number;
+  pathProps: SVGProps<SVGPathElement> & Record<`data-${string}`, string | undefined>;
+}) {
+  return (
+    <g strokeOpacity={opacity}>
+      <path d={d} fill="none" strokeLinecap="round" {...pathProps} />
+      <path data-block-hit="" d={d} fill="none" stroke="transparent" strokeWidth={12} pointerEvents="stroke">
+        <title>{title}</title>
+      </path>
+      {mid ? (
+        <text
+          x={mid.x}
+          y={mid.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fillOpacity={opacity}
+          className="fill-status-review text-sm font-semibold"
+        >
+          ↻
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
+/** What the lines mean, in the corner of the canvas. */
+function TaskTreeLinkLegend({ loops, paths }: { loops: boolean; paths: boolean }) {
+  const sample = (className: string, dash?: string) => (
+    <svg aria-hidden="true" width="28" height="8" className="shrink-0">
+      <line x1="1" y1="4" x2="27" y2="4" strokeWidth="2" strokeLinecap="round" strokeDasharray={dash} className={className} />
+    </svg>
+  );
+  return (
+    <div
+      data-slot="task-tree-link-legend"
+      className="pointer-events-none absolute left-3 top-3 z-raised flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm"
+    >
+      <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Part of</span>
+      <span className="inline-flex items-center gap-1.5">{sample("stroke-status-warning", "4 3")}Blocks</span>
+      {paths ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger")}Leads to a block</span> : null}
+      {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-review", "0.5 4")}↻ Loop</span> : null}
     </div>
   );
 }
@@ -511,14 +663,19 @@ export function TaskTreeCanvas({
 function TaskTreeHoverCard({
   node,
   people,
+  links,
+  blockReason,
   left,
   top,
 }: {
   node: IssueTreeNode;
   people: TaskTreePeople;
+  links: { blockedBy: string[]; blocks: string[] } | null;
+  blockReason: TreeBlockReason | null;
   left: number;
   top: number;
 }) {
+  const runState = useTaskRunStateFor(node);
   return (
     <div
       role="tooltip"
@@ -527,18 +684,59 @@ function TaskTreeHoverCard({
       style={{ left, top }}
     >
       <div className="flex items-center gap-1.5 text-xs font-medium">
-        <StatusIcon status={node.status} size="sm" />
+        <StatusIcon status={node.status} size="sm" queued={runState?.kind === "queued"} />
         {taskStatusLabel(node.status)}
       </div>
+      {runState ? <TaskRunStateChip state={runState} variant="full" className="flex-wrap" /> : null}
       <p className="text-xs text-muted-foreground">
         Owner: <span className="text-foreground">{ownerName(people, node) ?? "No owner yet"}</span>
       </p>
-      {node.unblockAction ? (
+      {blockReason ? (
+        <TaskTreeBlockReason reason={blockReason} />
+      ) : node.unblockAction ? (
         <p className="text-xs text-muted-foreground">
           Needs: <span className="text-foreground">{node.unblockAction}</span>
         </p>
       ) : null}
-      <p className="text-xs text-muted-foreground">Updated {relativeTime(node.updatedAt)}</p>
+      {links?.blockedBy.length ? (
+        <p className="text-xs text-muted-foreground" data-hover-blocked-by="">
+          Blocked by: <span className="text-foreground">{links.blockedBy.join(", ")}</span>
+        </p>
+      ) : null}
+      {links?.blocks.length ? (
+        <p className="text-xs text-muted-foreground" data-hover-blocks="">
+          Blocks: <span className="text-foreground">{links.blocks.join(", ")}</span>
+        </p>
+      ) : null}
+      {new Date(node.updatedAt).getTime() > 0 ? <p className="text-xs text-muted-foreground">Updated {relativeTime(node.updatedAt)}</p> : null}
     </div>
   );
+}
+
+type Bounds = { left: number; right: number; top: number; bottom: number };
+
+/**
+ * The view that shows `span` as large as reads, up to full size. When it is
+ * too big even at the smallest readable zoom, its top-left stays on screen.
+ */
+function fitBounds(span: Bounds, viewport: { width: number; height: number }): TaskTreeView {
+  const width = span.right - span.left;
+  const height = span.bottom - span.top;
+  const room = { width: viewport.width - FIT_MARGIN * 2, height: viewport.height - FIT_MARGIN * 2 };
+  const k = Math.max(MIN_READABLE_ZOOM, Math.min(1, room.width / Math.max(width, 1), room.height / Math.max(height, 1)));
+  const place = (start: number, size: number, available: number, total: number) =>
+    size * k <= available ? total / 2 - (start + size / 2) * k : FIT_MARGIN - start * k;
+  return {
+    k,
+    x: place(span.left, width, room.width, viewport.width),
+    y: place(span.top, height, room.height, viewport.height),
+  };
+}
+
+function boundsOf(box: LayoutBox): Bounds {
+  return { left: box.x, right: box.x + box.width, top: box.y, bottom: box.y + box.height };
+}
+
+function joinBounds(a: Bounds, b: Bounds): Bounds {
+  return { left: Math.min(a.left, b.left), right: Math.max(a.right, b.right), top: Math.min(a.top, b.top), bottom: Math.max(a.bottom, b.bottom) };
 }

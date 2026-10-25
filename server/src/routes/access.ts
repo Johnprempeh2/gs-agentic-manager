@@ -1,3 +1,4 @@
+import { agentQaLoginService } from "../services/agent-qa-logins.js";
 import {
   generateKeyPairSync,
   randomBytes,
@@ -56,6 +57,7 @@ import {
   tooManyRequests,
   unprocessable,
 } from "../errors.js";
+import { INVITE_RATE_LIMIT_PATH, inviteRateLimitMiddleware } from "../middleware/invite-rate-limit.js";
 import { REVIEW_OVERRIDE_PERMISSION } from "../services/review-override.js";
 import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
@@ -2678,36 +2680,10 @@ export function accessRoutes(
     ? { ...defaultInviteResolutionNetwork, ...opts.inviteResolutionNetwork }
     : inviteResolutionNetwork;
 
-  // Per-IP rate limit for the public, unauthenticated invite-token endpoints
-  // (`/invites/:token*`). The token is looked up by hash, so without a limit the
-  // token space would be online-enumerable. Applied as a router-level middleware
-  // so every current and future `/invites/:token` sub-route is covered.
-  //
-  // The key is deliberately NOT `requestIp()`: that helper prefers the
-  // client-supplied `X-Forwarded-For` header (fine for log/audit fields,
-  // but trivially spoofable as a rate-limit key — rotating fake XFF values
-  // would mint a fresh budget per request). `req.ip` honors Express's
-  // `trust proxy` setting (configured from TRUST_PROXY in app.ts, default:
-  // trust nothing), so it is the socket's remote address unless the
-  // operator explicitly trusts a proxy — an unforgeable key either way.
+  // Per-IP rate limit for the public invite-token endpoints; see
+  // middleware/invite-rate-limit.ts for why the key is `req.ip`.
   const inviteRateLimiter = opts.inviteRateLimiter ?? createInviteRateLimiter();
-  router.use("/invites/:token", (req, res, next) => {
-    const result = inviteRateLimiter.consume(
-      req.ip || req.socket?.remoteAddress || "unknown",
-    );
-    res.setHeader("X-RateLimit-Limit", String(result.limit));
-    res.setHeader("X-RateLimit-Remaining", String(result.remaining));
-    if (!result.allowed) {
-      res.setHeader("Retry-After", String(result.retryAfterSeconds));
-      next(
-        tooManyRequests("Too many invite requests", {
-          retryAfterSeconds: result.retryAfterSeconds,
-        }),
-      );
-      return;
-    }
-    next();
-  });
+  router.use(INVITE_RATE_LIMIT_PATH, inviteRateLimitMiddleware(inviteRateLimiter));
 
   async function assertInstanceAdmin(req: Request) {
     if (req.actor.type !== "board") throw unauthorized();
@@ -4554,12 +4530,24 @@ export function accessRoutes(
     });
     const withRemoval = await addCompanyMemberRemovalAccess(req, db, access, companyId, members);
     const twoStep = await describeMemberTwoStepControls(db, { actor: req.actor, companyId, members });
+    // Agents' browser QA log-ins (GRE-2387): the "QA for <agent>" badge and expiry.
+    const qaLoginSvc = agentQaLoginService(db);
+    const [activeQaLogins, qaUserIds] = await Promise.all([
+      qaLoginSvc.listActiveForCompany(companyId),
+      qaLoginSvc.listQaUserIds(companyId),
+    ]);
+    const activeQaByUser = new Map(activeQaLogins.map((row) => [row.userId, row]));
     res.json({
-      members: withRemoval.map((member) => ({
-        ...member,
-        handover: handover.get(member.id) ?? null,
-        twoStep: twoStep.get(member.id) ?? null,
-      })),
+      members: withRemoval.map((member) => {
+        const qa = member.principalType === "user" ? activeQaByUser.get(member.principalId) : undefined;
+        return {
+          ...member,
+          handover: handover.get(member.id) ?? null,
+          twoStep: twoStep.get(member.id) ?? null,
+          qaAccount: member.principalType === "user" && qaUserIds.has(member.principalId),
+          qaLogin: qa ? { agentId: qa.agentId, agentName: qa.agentName, role: qa.role, expiresAt: qa.expiresAt.toISOString() } : null,
+        };
+      }),
       access: {
         ...currentAccess,
         currentUserId: req.actor.type === "board" ? req.actor.userId ?? null : null,

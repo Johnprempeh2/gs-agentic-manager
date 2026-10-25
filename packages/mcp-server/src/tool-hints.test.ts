@@ -28,6 +28,7 @@ const WRITES = [
   "paperclipRequestConfirmation",
   "paperclipRequestCheckboxConfirmation",
   "request_draft_review",
+  "paperclipRequestSteps",
   "paperclipUpsertIssueDocument",
   "paperclipRestoreIssueDocumentRevision",
   "paperclipLinkIssueApproval",

@@ -3,11 +3,29 @@ import {
   checkWebsiteEditorOrigin,
   createWebsiteFrameNonce,
   inspectWebsitePuckData,
+  isWebsiteEditorContractCurrent,
+  isWebsiteFrameAssetUrl,
   isWebsiteFrameNonce,
+  WEBSITE_EDITOR_CONTRACT,
+  WEBSITE_EDITOR_COPY_CONTRACT,
+  websiteEditorContractOf,
+  websiteEditorHasCopyMode,
+  websiteFrameHelloMessage,
   parseWebsiteEditorOrigin,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
+  WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES,
+  WEBSITE_EDITOR_COMMANDS,
+  WEBSITE_FRAME_SET_MOTION_ERROR_CODES,
+  websiteFrameEditorCommandSchema,
+  websiteFrameSetMotionSchema,
+  websiteFrameInsertMediaSchema,
   websiteFrameSrc,
+  isWebsiteFramePngDataUrl,
+  WEBSITE_FRAME_CAPTURE_MAX_BYTES,
+  WEBSITE_FRAME_COMMENT_MESSAGES,
+  websiteFrameCaptureSchema,
+  websiteFrameCommentPinsSchema,
 } from "./website-frame.js";
 
 const ORIGIN = "https://editor.example.com";
@@ -126,5 +144,340 @@ describe("source hint (test 8)", () => {
     expect(sanitizeWebsiteFrameSourceHint({ file: "src/<b>.tsx", line: 1 })).toBeNull();
     expect(sanitizeWebsiteFrameSourceHint({ file: "src/a.tsx", line: 0 })).toBeNull();
     expect(sanitizeWebsiteFrameSourceHint(null)).toBeNull();
+  });
+});
+
+describe("insert-media (host to frame)", () => {
+  const valid = {
+    blockId: "hero-1",
+    field: "image",
+    mediaEntryId: "entry-1",
+    assetUrl: "https://media.example.com/hero.webp",
+    alt: "A stone bridge at dawn",
+  };
+  const parses = (overrides: Record<string, unknown>) =>
+    websiteFrameInsertMediaSchema.safeParse({ ...valid, ...overrides }).success;
+
+  it("parses a valid payload, with an https URL or a site-relative path", () => {
+    expect(websiteFrameInsertMediaSchema.parse(valid)).toEqual(valid);
+    expect(parses({ assetUrl: "/media/hero.webp" })).toBe(true);
+    expect(parses({ alt: "" })).toBe(true);
+  });
+
+  it("refuses a bad block id or field", () => {
+    expect(parses({ blockId: "" })).toBe(false);
+    expect(parses({ blockId: "hero 1" })).toBe(false);
+    expect(parses({ blockId: "a".repeat(97) })).toBe(false);
+    expect(parses({ field: "items[0].image" })).toBe(false);
+    expect(parses({ field: "__proto__.x" })).toBe(false);
+  });
+
+  it("refuses a bad URL", () => {
+    for (const url of [
+      "http://media.example.com/a.png",
+      "javascript:alert(1)",
+      "data:image/png;base64,AAAA",
+      "blob:https://media.example.com/1",
+      "//evil.example/a.png",
+      "/\\evil.example/a.png",
+      "https://u:p@media.example.com/a.png",
+      "hero.webp",
+      "",
+    ]) {
+      expect(isWebsiteFrameAssetUrl(url)).toBe(false);
+      expect(parses({ assetUrl: url })).toBe(false);
+    }
+  });
+
+  it("refuses oversized fields and unknown keys", () => {
+    expect(parses({ alt: "a".repeat(501) })).toBe(false);
+    expect(parses({ mediaEntryId: "a".repeat(201) })).toBe(false);
+    expect(parses({ field: "a".repeat(65) })).toBe(false);
+    expect(parses({ assetUrl: `https://media.example.com/${"a".repeat(2048)}` })).toBe(false);
+    expect(parses({ extra: true })).toBe(false);
+  });
+
+  it("parses a payload with the media blob, and the old payload without it", () => {
+    const media = { blob: new Blob(["png"], { type: "image/png" }), alt: "A stone bridge at dawn", width: 1600, height: 900 };
+    const parsed = websiteFrameInsertMediaSchema.parse({ ...valid, media });
+    expect(parsed.media?.blob).toBe(media.blob);
+    expect(parsed.media).toMatchObject({ alt: media.alt, width: 1600, height: 900 });
+    expect(parses({ media: { ...media, width: null, height: null } })).toBe(true);
+    expect(websiteFrameInsertMediaSchema.parse(valid).media).toBeUndefined();
+  });
+
+  it("refuses a media entry that is not a blob or has unknown keys", () => {
+    const media = { blob: new Blob(["png"]), alt: "", width: null, height: null };
+    expect(parses({ media: { ...media, blob: "data:image/png;base64,AAAA" } })).toBe(false);
+    expect(parses({ media: { ...media, blob: undefined } })).toBe(false);
+    expect(parses({ media: { ...media, width: -1 } })).toBe(false);
+    expect(parses({ media: { ...media, alt: "a".repeat(501) } })).toBe(false);
+    expect(parses({ media: { ...media, url: "https://media.example.com/a.png" } })).toBe(false);
+  });
+});
+
+describe("insert-media-result (frame to host)", () => {
+  const message = (payload: unknown) => ({
+    gs: "website-frame",
+    protocol: 1,
+    session: nonce,
+    id: "m9",
+    type: "insert-media-result",
+    payload,
+  });
+  const receive = (payload: unknown) =>
+    receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: message(payload) }, ctx(1));
+
+  it("accepts ok", () => {
+    expect(receive({ requestId: "m8", ok: true })).toEqual({
+      ok: true,
+      message: { type: "insert-media-result", id: "m9", payload: { requestId: "m8", ok: true } },
+    });
+  });
+
+  it("accepts each refusal code", () => {
+    expect(WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES).toEqual([
+      "block_not_found",
+      "field_not_found",
+      "field_not_media",
+      "invalid_payload",
+      "error",
+    ]);
+    for (const code of WEBSITE_FRAME_INSERT_MEDIA_ERROR_CODES) {
+      expect(receive({ requestId: "m8", ok: false, code, message: "No such block." }).ok).toBe(true);
+    }
+  });
+
+  it("drops a refusal with no code or an unknown code, and anything before hello-ack", () => {
+    expect(receive({ requestId: "m8", ok: false }).ok).toBe(false);
+    expect(receive({ requestId: "m8", ok: false, code: "nope" }).ok).toBe(false);
+    expect(receive({ ok: true }).ok).toBe(false);
+    expect(receive({ requestId: "m8", ok: false, code: "error", message: "a".repeat(2001) }).ok).toBe(false);
+    expect(
+      receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: message({ requestId: "m8", ok: true }) }, ctx(null)).ok,
+    ).toBe(false);
+  });
+});
+
+describe("set-motion (GRE-2232)", () => {
+  const receive = (type: string, payload: unknown) =>
+    receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: { gs: "website-frame", protocol: 1, session: nonce, id: "m9", type, payload } },
+      ctx(1),
+    );
+
+  it("reads the engine's motion choices from hello-ack, the same shape the site sends", () => {
+    const motion = { effects: ["none", "bg.ascent"], default: { effect: "none", intensity: "off" } };
+    const motionEffects = [
+      { id: "hero.stone", label: "Hero stone", still: "/motion/stone-still.png" },
+      { id: "bg.ascent", label: "Ascent", still: "/motion/ascent-dark.webp", study: "016" },
+    ];
+    const received = receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: ack({ blocks: [{ type: "Hero", label: "Hero", motion }], motionEffects }) },
+      ctx(null),
+    );
+    expect(received.ok && received.message.type === "hello-ack" && received.message.payload).toMatchObject({
+      blocks: [{ type: "Hero", motion }],
+      motionEffects,
+    });
+  });
+
+  it("drops a bad motion list but keeps the handshake", () => {
+    const received = receiveWebsiteFrameMessage(
+      {
+        origin: ORIGIN,
+        source: frameWindow,
+        data: ack({
+          blocks: [{ type: "Hero", label: "Hero", motion: { effects: ["BG ASCENT"], default: {} } }],
+          motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "https://elsewhere.example/a.webp" }],
+        }),
+      },
+      ctx(null),
+    );
+    expect(received.ok).toBe(true);
+    const payload = received.ok && received.message.type === "hello-ack" ? received.message.payload : null;
+    expect(payload?.blocks[0]?.motion).toBeUndefined();
+    expect(payload?.motionEffects).toBeUndefined();
+  });
+
+  it("sends only a block id and a release choice", () => {
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "subtle" } }).success).toBe(true);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "bg.ascent", intensity: "extreme" } }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "<b>", intensity: "full" } }).success).toBe(false);
+    expect(websiteFrameSetMotionSchema.safeParse({ blockId: "h1", motion: { effect: "none", intensity: "off" }, code: "x" }).success).toBe(false);
+  });
+
+  it("accepts set-motion-result with each refusal code the site sends", () => {
+    expect(WEBSITE_FRAME_SET_MOTION_ERROR_CODES).toEqual([
+      "block_not_found",
+      "block_has_no_motion",
+      "effect_not_allowed",
+      "invalid_payload",
+      "error",
+    ]);
+    expect(receive("set-motion-result", { requestId: "m8", ok: true }).ok).toBe(true);
+    for (const code of WEBSITE_FRAME_SET_MOTION_ERROR_CODES) {
+      expect(receive("set-motion-result", { requestId: "m8", ok: false, code, message: "No." }).ok).toBe(true);
+    }
+    expect(receive("set-motion-result", { requestId: "m8", ok: false, code: "field_not_media" }).ok).toBe(false);
+  });
+});
+
+describe("full-screen editor messages (GRE-2296)", () => {
+  const receive = (type: string, payload: unknown, protocol: number | null = 1) =>
+    receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: { gs: "website-frame", protocol: 1, session: nonce, id: "m9", type, payload } },
+      ctx(protocol),
+    );
+  const helloAck = (overrides: Record<string, unknown>) => {
+    const result = receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: ack(overrides) }, ctx(null));
+    if (!result.ok || result.message.type !== "hello-ack") throw new Error("hello-ack was dropped");
+    return result.message.payload;
+  };
+
+  it("reads the engine's editor commands from hello-ack, keeping only known ones", () => {
+    expect(WEBSITE_EDITOR_COMMANDS).toEqual(["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"]);
+    expect(helloAck({ editorCommands: ["undo", "redo", "save", "teleport"] }).editorCommands).toEqual(["undo", "redo", "save"]);
+    expect(helloAck({}).editorCommands).toBeUndefined();
+    // A malformed list is dropped, never the handshake.
+    expect(helloAck({ editorCommands: "undo" }).editorCommands).toBeUndefined();
+  });
+
+  it("editor contract (GRE-2357): only a current engine lets the editor open", () => {
+    expect(WEBSITE_EDITOR_CONTRACT).toBe(1);
+    // Missing: an engine from before the full-screen editor sends neither marker.
+    expect(websiteEditorContractOf(helloAck({}))).toBeNull();
+    expect(isWebsiteEditorContractCurrent(helloAck({}))).toBe(false);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorCommands: "undo" }))).toBe(false);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: "1" }))).toBe(false);
+    // Below required.
+    expect(isWebsiteEditorContractCurrent({ editorContract: 0 })).toBe(false);
+    expect(isWebsiteEditorContractCurrent({ editorContract: WEBSITE_EDITOR_CONTRACT - 1 })).toBe(false);
+    // Current: website PR #98 lists editorCommands; a later engine says its contract.
+    expect(websiteEditorContractOf(helloAck({ editorCommands: [] }))).toBe(1);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorCommands: ["undo"] }))).toBe(true);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: 1 }))).toBe(true);
+    expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: 2 }))).toBe(true);
+  });
+
+  it("Edit copy (GRE-2394): only a contract 2 engine with the layout command has it", () => {
+    expect(WEBSITE_EDITOR_COPY_CONTRACT).toBe(2);
+    expect(websiteEditorHasCopyMode(helloAck({ editorContract: 2, editorCommands: ["undo", "layout"] }))).toBe(true);
+    // Contract 1, or no layout command: today's full editor.
+    expect(websiteEditorHasCopyMode(helloAck({ editorContract: 1, editorCommands: ["undo", "layout"] }))).toBe(false);
+    expect(websiteEditorHasCopyMode(helloAck({ editorContract: 2, editorCommands: ["undo"] }))).toBe(false);
+    expect(websiteEditorHasCopyMode(helloAck({ editorCommands: ["layout"] }))).toBe(false);
+  });
+
+  it("hello-ack's liveContent is kept when valid and dropped, never the handshake, when not", () => {
+    expect(helloAck({ liveContent: { blocks: 6 } }).liveContent).toEqual({ blocks: 6 });
+    expect(helloAck({ liveContent: null }).liveContent).toBeNull();
+    expect(helloAck({}).liveContent).toBeUndefined();
+    expect(helloAck({ liveContent: { blocks: 0 } }).liveContent).toBeUndefined();
+    expect(helloAck({ liveContent: "yes" }).liveContent).toBeUndefined();
+  });
+
+  it("hello carries the edit mode in the editor only", () => {
+    const hello = (mode: "editor" | "preview") =>
+      websiteFrameHelloMessage({ id: "h", siteId: "s", nonce, mode, pageId: "p", editMode: "copy" }).payload as Record<string, unknown>;
+    expect(hello("editor").editMode).toBe("copy");
+    expect("editMode" in hello("preview")).toBe(false);
+  });
+
+  it("editor-command carries one known command and nothing else", () => {
+    const parses = (payload: unknown) => websiteFrameEditorCommandSchema.safeParse(payload).success;
+    expect(parses({ command: "undo" })).toBe(true);
+    expect(parses({ command: "outline", on: true })).toBe(true);
+    expect(parses({ command: "layout", on: false })).toBe(true);
+    expect(parses({ command: "import-live" })).toBe(true);
+    expect(parses({ command: "publish" })).toBe(false);
+    expect(parses({ command: "save", data: {} })).toBe(false);
+  });
+
+  it("accepts editor-state with a selection or none, and drops a bad block id", () => {
+    const selection = { blockId: "h1", blockType: "Hero", label: "Hero banner" };
+    expect(receive("editor-state", { selection, canUndo: true, canRedo: false }).ok).toBe(true);
+    expect(receive("editor-state", { selection: null, canUndo: false, canRedo: false, outline: true }).ok).toBe(true);
+    expect(receive("editor-state", { selection: { ...selection, blockId: "../x" }, canUndo: true, canRedo: false }).ok).toBe(false);
+    expect(receive("editor-state", { selection: null }).ok).toBe(false);
+    expect(receive("editor-state", { selection: null, canUndo: false, canRedo: false }, null).ok).toBe(false);
+  });
+
+  it("accepts editor-key escape only", () => {
+    expect(receive("editor-key", { key: "escape" }).ok).toBe(true);
+    expect(receive("editor-key", { key: "s" }).ok).toBe(false);
+  });
+
+  it("accepts media-requested for a block's image or animation field", () => {
+    expect(receive("media-requested", { blockId: "h1", field: "image", kind: "image", label: "Hero banner" }).ok).toBe(true);
+    expect(receive("media-requested", { blockId: "h1", field: "image", kind: "video" }).ok).toBe(false);
+    expect(receive("media-requested", { blockId: "h1", field: "a.b", kind: "image" }).ok).toBe(false);
+  });
+});
+
+describe("comment messages (GRE-2361)", () => {
+  const receive = (type: string, payload: unknown, protocol: number | null = 1) =>
+    receiveWebsiteFrameMessage(
+      { origin: ORIGIN, source: frameWindow, data: { gs: "website-frame", protocol: 1, session: nonce, id: "m9", type, payload } },
+      ctx(protocol),
+    );
+  const helloAck = (overrides: Record<string, unknown>) => {
+    const result = receiveWebsiteFrameMessage({ origin: ORIGIN, source: frameWindow, data: ack(overrides) }, ctx(null));
+    if (!result.ok || result.message.type !== "hello-ack") throw new Error("hello-ack was dropped");
+    return result.message.payload;
+  };
+  const png = (bytes: number) => `data:image/png;base64,${"A".repeat(Math.ceil(bytes / 3) * 4)}`;
+
+  it("reads editorMessages from hello-ack, keeping only known ones; an older engine leaves it out", () => {
+    expect(WEBSITE_FRAME_COMMENT_MESSAGES).toEqual(["comment-pins", "pin-clicked", "ask-agent", "capture"]);
+    expect(helloAck({ editorMessages: ["comment-pins", "capture", "teleport"] }).editorMessages).toEqual(["comment-pins", "capture"]);
+    expect(helloAck({}).editorMessages).toBeUndefined();
+    expect(helloAck({ editorMessages: { pins: true } }).editorMessages).toBeUndefined();
+  });
+
+  it("comment-pins takes block ids and positive numbers only", () => {
+    const parses = (payload: unknown) => websiteFrameCommentPinsSchema.safeParse(payload).success;
+    expect(parses({ pins: [] })).toBe(true);
+    expect(parses({ pins: [{ blockId: "hero-1", number: 1 }] })).toBe(true);
+    expect(parses({ pins: [{ blockId: "hero 1", number: 1 }] })).toBe(false);
+    expect(parses({ pins: [{ blockId: "hero-1", number: 0 }] })).toBe(false);
+    expect(parses({ pins: [{ blockId: "hero-1", number: 1, html: "<b>" }] })).toBe(false);
+    expect(parses({ pins: Array.from({ length: 201 }, (_, index) => ({ blockId: `b${index}`, number: index + 1 })) })).toBe(false);
+  });
+
+  it("pin-clicked and ask-agent pass with a valid block and are dropped otherwise", () => {
+    expect(receive("pin-clicked", { blockId: "hero-1", number: 2 })).toMatchObject({ ok: true, message: { payload: { blockId: "hero-1", number: 2 } } });
+    expect(receive("pin-clicked", { blockId: "hero-1", number: -1 }).ok).toBe(false);
+    expect(receive("pin-clicked", { blockId: "hero-1", number: 2 }, null).ok).toBe(false);
+    expect(receive("ask-agent", { blockId: "hero-1", blockType: "Hero", label: "Hero banner" }).ok).toBe(true);
+    expect(receive("ask-agent", { blockId: "hero-1", blockType: "hero", label: "Hero" }).ok).toBe(false);
+    expect(receive("ask-agent", { blockId: "hero-1", blockType: "Hero", label: "x".repeat(201) }).ok).toBe(false);
+  });
+
+  it("capture names a block or null for the page", () => {
+    const parses = (payload: unknown) => websiteFrameCaptureSchema.safeParse(payload).success;
+    expect(parses({ blockId: "hero-1" })).toBe(true);
+    expect(parses({ blockId: null })).toBe(true);
+    expect(parses({})).toBe(false);
+    expect(parses({ blockId: "../x" })).toBe(false);
+  });
+
+  it("capture-result takes a PNG data URL of at most 2 MB, or a refusal", () => {
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(1000), width: 1440 }).ok).toBe(true);
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(WEBSITE_FRAME_CAPTURE_MAX_BYTES), width: 1440 }).ok).toBe(true);
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(WEBSITE_FRAME_CAPTURE_MAX_BYTES + 3), width: 1440 }).ok).toBe(false);
+    expect(receive("capture-result", { requestId: "r1", ok: true, png: png(1000), width: 0 }).ok).toBe(false);
+    expect(receive("capture-result", { requestId: "r1", ok: false, message: "Could not draw the page." }).ok).toBe(true);
+    expect(receive("capture-result", { requestId: "r1", ok: false }).ok).toBe(true);
+  });
+
+  it("a screenshot is a base64 PNG data URL and nothing else", () => {
+    expect(isWebsiteFramePngDataUrl("data:image/png;base64,iVBORw0KGgo=")).toBe(true);
+    expect(isWebsiteFramePngDataUrl("data:image/jpeg;base64,iVBORw0KGgo=")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/svg+xml;base64,PHN2Zz4=")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/png,<svg>")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/png;base64,abc")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("data:image/png;base64,")).toBe(false);
+    expect(isWebsiteFramePngDataUrl("https://example.com/shot.png")).toBe(false);
   });
 });

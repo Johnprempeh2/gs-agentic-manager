@@ -40,16 +40,20 @@ import { projectsApi } from "../api/projects";
 import { PageTabBar } from "../components/PageTabBar";
 import {
   WEBSITE_TABS,
-  WebsiteOverviewTab,
   WebsitePreviewTab,
+  WebsiteReleasesTab,
   WebsiteProgressTab,
   WebsiteProjectLink,
   WebsiteSitemapTab,
+  WEBSITE_DEFAULT_TAB,
   liveSiteUrl,
   websiteTabFrom,
   type WebsiteTab,
 } from "../components/website/WebsiteHub";
+import { WebsitePagesTab, useOpenWebsiteEditor } from "../components/website/WebsiteEditorWorkspace";
 import { WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
+import { WebsiteCollectionsTab } from "../components/website/WebsiteCollections";
+import { WebsiteHomeTab } from "../components/website/WebsiteHome";
 
 /* ---- Formatting ---- */
 
@@ -623,9 +627,10 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
   });
   const project = projectsQuery.data?.find((entry) => entry.id === property.projectId) ?? null;
   const siteUrl = liveSiteUrl(property.siteUrl);
+  const openEditor = useOpenWebsiteEditor();
   const openTab = (next: WebsiteTab) => {
     const params = new URLSearchParams(searchParams);
-    if (next === "overview") params.delete("tab");
+    if (next === WEBSITE_DEFAULT_TAB) params.delete("tab");
     else params.set("tab", next);
     setSearchParams(params, { replace: true });
   };
@@ -665,9 +670,12 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       <Tabs value={tab} onValueChange={(value) => openTab(value as WebsiteTab)} className="mb-4">
         <PageTabBar items={WEBSITE_TABS} value={tab} onValueChange={(value) => openTab(value as WebsiteTab)} align="start" ariaLabel="Website section" />
       </Tabs>
-      {tab === "overview" ? <WebsiteOverviewTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
+      {tab === "home" ? <WebsiteHomeTab companyId={companyId} property={property} onOpenTab={openTab} onEditPages={() => openEditor({ propertyId: property.id })} /> : null}
       {tab === "progress" ? <WebsiteProgressTab companyId={companyId} property={property} /> : null}
-      {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} /> : null}
+      {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} onEditPage={(pageId) => openEditor({ propertyId: property.id, pageId })} /> : null}
+      {tab === "editor" ? <WebsitePagesTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
+      {tab === "collections" ? <WebsiteCollectionsTab companyId={companyId} property={property} /> : null}
+      {tab === "releases" ? <WebsiteReleasesTab companyId={companyId} property={property} /> : null}
       {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
       {tab === "traffic" ? (
         <PropertyReport companyId={companyId} property={property} signInAvailable={signInAvailable} notice={notice} canManage={canManage} />
@@ -723,7 +731,7 @@ export function Website() {
           <WebsiteSetupForm
             companyId={selectedCompanyId}
             onCreated={(created) => {
-              // The hub opens on Overview.
+              // The hub opens on Home, with the site itself as its hero.
               setPropertyId(created.id);
               const next = new URLSearchParams(searchParams);
               next.delete("tab");

@@ -1,18 +1,27 @@
 import { Router, type Request, type Response } from "express";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import publicImport from "../services/website/public-import-v1.json" with { type: "json" };
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { websiteProperties } from "@greatstone/db";
+import { assets, websiteProperties } from "@greatstone/db";
 import {
   WEBSITE_MODULE_API_ROUTES,
+  websiteCollectionDefinition,
+  websiteCollectionFieldSchema,
   WEBSITE_SITEMAP_API_ROUTES,
   createWebsiteSitemapOptionSchema,
   importWebsiteSitemapOptionSchema,
   sitemapTreeFromImport,
   updateWebsiteSitemapOptionSchema,
   websiteSitemapTreeSchema,
+  createWebsiteChangeRequestSchema,
   createWebsiteEntrySchema,
   createWebsitePageSchema,
   createWebsiteSiteSchema,
+  checkWebsiteEditorOrigin,
+  parseWebsiteEditorOrigin,
+  restoreWebsiteRevisionSchema,
   saveWebsiteContentSchema,
   sendBackWebsiteContentSchema,
   updateWebsiteEntrySchema,
@@ -20,9 +29,10 @@ import {
   updateWebsiteSiteSchema,
   websiteReleaseActionSchema,
   type PermissionKey,
+  type WebsiteAccess,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
-import { HttpError, unprocessable } from "../errors.js";
+import { HttpError, conflict, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
@@ -31,6 +41,7 @@ import {
   toWebsitePage,
   toWebsiteSite,
   websiteModuleService,
+  type PageRow,
   type SiteRow,
   type WebsiteActor,
 } from "../services/website/module.js";
@@ -40,10 +51,15 @@ import {
   type WebsitePerson,
   type WebsitePublishOptions,
 } from "../services/website/publish.js";
+import { websiteChangeRequestService } from "../services/website/change-request.js";
+import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
+import { websiteHomeService } from "../services/website/home.js";
+import { websiteEnquiryService, type WebsiteEnquiryCopy, type WebsiteEnquiryReader } from "../services/website/enquiries.js";
+import { websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
 
@@ -57,20 +73,120 @@ const REFUSAL: Record<WebsitePermission, WebsiteMessageKey> = {
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const unitInterval = z.number().min(0).max(1);
+/** A website `media` entry's content. `width` and `height` are kept when an import stored them. */
+const mediaContentSchema = z
+  .object({
+    assetId: z.string().regex(UUID_RE, "must be an asset id"),
+    alt: z.string().trim().min(1, "alt text is required"),
+    caption: z.string().nullable().optional(),
+    focalPoint: z.object({ x: unitInterval, y: unitInterval }).strict().optional(),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+  })
+  .strict();
+
+export interface WebsiteModuleRouteOptions {
+  publish?: WebsitePublishOptions;
+  /** Origins GSAM is served from (public URL, allowed hostnames). The editor frame may never be one of them (rule C1.1). */
+  gsamOrigins?: readonly string[];
+  /** Allow an `http://localhost` editor frame origin (development and sandboxes only). */
+  allowLocalhostEditor?: boolean;
+  /** Wakes the website agent when click to change gives it a task. */
+  heartbeat?: IssueAssignmentWakeupDeps;
+  /** The read-only admin bridge reader. Tests can supply a fake. */
+  enquiryReader?: WebsiteEnquiryReader;
+  /** Test seam for the Pipedrive copy; production uses the connected Pipedrive writer. */
+  enquiryCopy?: WebsiteEnquiryCopy;
+}
+
+/** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
+export function gsamServedOrigins(publicBaseUrl: string | undefined, allowedHostnames: readonly string[]): string[] {
+  const origins = new Set<string>();
+  if (publicBaseUrl) {
+    try {
+      origins.add(new URL(publicBaseUrl).origin);
+    } catch {
+      // An unparsable public URL serves nothing.
+    }
+  }
+  for (const hostname of allowedHostnames) {
+    const host = hostname.trim();
+    if (!host) continue;
+    origins.add(`https://${host}`);
+    origins.add(`http://${host}`);
+  }
+  return [...origins];
+}
+
+const EDITOR_ORIGIN_PROBLEMS = {
+  invalid: "The editor address must be an https:// origin with no path, like https://editor.example.com.",
+  "public-origin": "The editor address must be its own host, not the public site's address.",
+  "gsam-origin": "The editor address cannot be an address GSAM is served from.",
+} as const;
+
 // Website module routes (GRE-2105, ADR GRE-1914 section 6). Order of checks on
 // every route: company access, then the website permission, then a lookup by
 // (company_id, id). A site, page or entry that is not in this company, or a
 // site outside the caller's scoped grant, answers 404, never 403, so ids
 // cannot be probed.
-export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishOptions } = {}) {
+export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions = {}) {
   const router = Router();
   const service = websiteModuleService(db);
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
+  const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
   const access = accessService(db);
+  const collectionValidator = new Ajv2020({ allErrors: true });
+  const fieldValidators = new Map<string, ReturnType<typeof collectionValidator.compile>>();
+
+  /**
+   * A `media` entry is not in the release schema: it points at an asset GSAM
+   * already holds (ADR section 2: `{ assetId, alt, caption, focalPoint }`).
+   * The asset must be in the same company, and alt text is required (GRE-2107 copy section 7).
+   */
+  async function assertMediaFields(companyId: string, content: unknown) {
+    const parsed = mediaContentSchema.safeParse(content);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const where = first?.path.length ? `/${first.path.join("/")}` : "fields";
+      throw unprocessable(`The media fields are incomplete: ${where} ${first?.message ?? "is invalid"}`, { code: "website_media_fields_invalid" });
+    }
+    const [asset] = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(and(eq(assets.id, parsed.data.assetId), eq(assets.companyId, companyId)));
+    if (!asset) throw unprocessable("That asset is not in this company", { code: "website_media_asset_not_found" });
+  }
+
+  /** The entry's fields: `media` by its own check, every other collection by the release schema. */
+  async function assertEntryFields(companyId: string, collection: string, content: unknown) {
+    if (collection === "media") return assertMediaFields(companyId, content);
+    assertCollectionFields(collection, content);
+  }
+
+  function assertCollectionFields(collection: string, content: unknown) {
+    const definition = websiteCollectionDefinition(collection);
+    if (!definition) throw unprocessable("This collection is not in the site's release schema", { code: "website_collection_unknown" });
+    let check = fieldValidators.get(collection);
+    if (!check) {
+      check = collectionValidator.compile({ $defs: websiteCollectionFieldSchema.$defs, $ref: definition.ref });
+      fieldValidators.set(collection, check);
+    }
+    if (!check(content)) {
+      const first = check.errors?.[0];
+      throw unprocessable(`The entry fields are incomplete: ${first?.instancePath || "fields"} ${first?.message || "is invalid"}`, { code: "website_collection_fields_invalid" });
+    }
+  }
   const publishApprovals = websitePublishApprovals(db);
+  const home = websiteHomeService(db);
+  const enquiries = websiteEnquiryService(db, options.enquiryReader
+    ? options.enquiryCopy ?? websiteEnquiryPipedriveCopy(db)
+    : undefined);
 
   router.use(WEBSITE_MODULE_API_ROUTES.sites, requireEntitlement(db, "enableWebsiteView"));
+  router.use(WEBSITE_MODULE_API_ROUTES.tokenSecrets, requireEntitlement(db, "enableWebsiteView"));
+  router.use(WEBSITE_MODULE_API_ROUTES.access, requireEntitlement(db, "enableWebsiteView"));
 
   function actorOf(req: Request): WebsiteActor {
     const info = getActorInfo(req);
@@ -114,12 +230,21 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     const siteId = req.params.siteId as string;
     assertCompanyAccess(req, companyId);
     // A malformed id is simply not found (never a database error).
-    const idsValid = ["siteId", "pageId", "entryId", "optionId", "releaseId"].every((key) => req.params[key] === undefined || UUID_RE.test(req.params[key] as string));
+    const idsValid = ["siteId", "pageId", "entryId", "optionId", "revisionId", "releaseId"].every((key) => req.params[key] === undefined || UUID_RE.test(req.params[key] as string));
     const permitted = (await allowed(req, companyId, permission, siteId, refusal)) && idsValid;
     const site = permitted ? await service.getSite(companyId, siteId) : null;
     if (!site) {
       res.status(404).json({ error: NOT_FOUND });
       return null;
+    }
+    return site;
+  }
+
+  /** Writes to pages and entries need a connected site: a disconnected (archived) site answers 409. */
+  async function writableSiteFor(req: Request, res: Response, refusal?: { person?: WebsiteMessageKey; agent?: WebsiteMessageKey }): Promise<SiteRow | null> {
+    const site = await siteFor(req, res, "website:edit", refusal);
+    if (site?.archivedAt) {
+      throw conflict("This site is disconnected. Connect it again before you edit or Publish.", { code: "website_site_disconnected" });
     }
     return site;
   }
@@ -148,6 +273,29 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     if (!row) throw unprocessable("That website property is not in this company", { code: "website_property_not_found" });
   }
 
+  /** The origins GSAM is served from: the configured ones and this request's. */
+  function gsamOriginsFor(req: Request) {
+    const host = req.get("host");
+    return [...(options.gsamOrigins ?? []), ...(host ? [`${req.protocol}://${host}`] : [])];
+  }
+
+  /** Rule C1.1, on every save of the setting and again when the editor opens. */
+  function editorOriginProblem(req: Request, site: Pick<SiteRow, "domain">, editorFrameOrigin: string) {
+    return checkWebsiteEditorOrigin(editorFrameOrigin, {
+      publicOrigin: `https://${site.domain}`,
+      gsamOrigins: gsamOriginsFor(req),
+      allowLocalhost: options.allowLocalhostEditor,
+    });
+  }
+
+  /** The stored form of a new editor frame origin, or a 422. */
+  function normaliseEditorFrameOrigin(req: Request, domain: string, value: string | null | undefined) {
+    if (value === undefined || value === null) return value;
+    const problem = editorOriginProblem(req, { domain }, value);
+    if (problem) throw unprocessable(EDITOR_ORIGIN_PROBLEMS[problem], { code: "website_editor_origin_refused", problem });
+    return parseWebsiteEditorOrigin(value, { allowLocalhost: options.allowLocalhostEditor });
+  }
+
   function sendSave(res: Response, result: WebsiteSaveResult) {
     const status = result.state === "saved" ? 200 : result.state === "conflict" ? 409 : 422;
     res.status(status).json(result);
@@ -155,15 +303,54 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
 
   // ---- sites ----
 
+  /** The site as the API returns it: the token secret's name, never its value. */
+  async function siteView(row: SiteRow) {
+    return toWebsiteSite(row, await service.tokenSecretName(row));
+  }
+
   router.get(WEBSITE_MODULE_API_ROUTES.sites, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const rows = await service.listSites(companyId);
     const visible = [];
     for (const row of rows) {
-      if (await allowed(req, companyId, "website:view", row.id)) visible.push(toWebsiteSite(row));
+      if (await allowed(req, companyId, "website:view", row.id)) visible.push(await siteView(row));
     }
     res.json(visible);
+  });
+
+  // What the caller may do, so the page shows only the buttons the routes above will accept (GRE-2136).
+  // Same decision as `allowed`: with no siteId it is the company-wide right (connect a site), with one
+  // it is that site's right (change it). A site outside this company answers all false.
+  router.get(WEBSITE_MODULE_API_ROUTES.access, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const siteId = typeof req.query.siteId === "string" && req.query.siteId ? req.query.siteId : undefined;
+    const none: WebsiteAccess = { view: false, edit: false, publish: false };
+    if (siteId && !(UUID_RE.test(siteId) && (await service.getSite(companyId, siteId)))) {
+      res.json(none);
+      return;
+    }
+    const can = async (permission: WebsitePermission) => {
+      if (permission === "website:publish" && req.actor.type === "agent") return false;
+      const decision = await access.decide({
+        actor: req.actor,
+        action: permission,
+        resource: { type: "company", companyId },
+        scope: siteId ? { siteId } : null,
+      });
+      return decision.allowed;
+    };
+    const result: WebsiteAccess = { view: await can("website:view"), edit: await can("website:edit"), publish: await can("website:publish") };
+    res.json(result);
+  });
+
+  // Saved secrets a person with Publish rights can choose as a site's Netlify token: names only.
+  router.get(WEBSITE_MODULE_API_ROUTES.tokenSecrets, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    await allowed(req, companyId, "website:publish", undefined, { person: "perm.settings" });
+    res.json(await service.listTokenSecrets(companyId));
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.sites, validate(createWebsiteSiteSchema), async (req, res) => {
@@ -171,28 +358,94 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     assertCompanyAccess(req, companyId);
     await allowed(req, companyId, "website:publish", undefined, { person: "perm.settings" });
     await assertPropertyInCompany(companyId, req.body.propertyId);
-    const row = await service.createSite(companyId, req.body, actorOf(req));
+    const editorFrameOrigin = normaliseEditorFrameOrigin(req, req.body.domain, req.body.editorFrameOrigin);
+    const row = await service.createSite(companyId, { ...req.body, editorFrameOrigin }, actorOf(req));
     await log(req, companyId, "website.site_connected", "website_site", row.id, {
       domain: row.domain,
       netlifyToken: Boolean(row.netlifyTokenSecretId),
+      netlifyTokenSource: row.netlifyTokenSecretId ? (row.netlifyTokenSecretOwned ? "own" : "shared") : null,
+      editorFrameOrigin: row.editorFrameOrigin,
     });
-    res.status(201).json(toWebsiteSite(row));
+    res.status(201).json(await siteView(row));
   });
 
   router.get(WEBSITE_MODULE_API_ROUTES.site, async (req, res) => {
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
-    res.json(toWebsiteSite(site));
+    res.json(await siteView(site));
   });
 
   router.patch(WEBSITE_MODULE_API_ROUTES.site, validate(updateWebsiteSiteSchema), async (req, res) => {
     const site = await siteFor(req, res, "website:publish", { person: "perm.settings" });
     if (!site) return;
     await assertPropertyInCompany(site.companyId, req.body.propertyId);
-    const row = await service.updateSite(site, req.body, actorOf(req));
-    const fields = Object.keys(req.body).map((key) => (key === "netlifyToken" ? "netlifyToken (rotated)" : key));
+    const input = { ...req.body };
+    if (input.editorFrameOrigin !== undefined) {
+      input.editorFrameOrigin = normaliseEditorFrameOrigin(req, input.domain ?? site.domain, input.editorFrameOrigin);
+    } else if (input.domain !== undefined && site.editorFrameOrigin && editorOriginProblem(req, { domain: input.domain }, site.editorFrameOrigin)) {
+      throw unprocessable(EDITOR_ORIGIN_PROBLEMS["public-origin"], { code: "website_editor_origin_refused", problem: "public-origin" });
+    }
+    const row = await service.updateSite(site, input, actorOf(req));
+    const fields = Object.keys(req.body).map((key) => {
+      if (key === "netlifyToken") return site.netlifyTokenSecretId && site.netlifyTokenSecretOwned ? "netlifyToken (rotated)" : "netlifyToken (new site secret)";
+      if (key === "netlifyTokenSecretId") return req.body.netlifyTokenSecretId ? "netlifyTokenSecretId (shared secret linked)" : "netlifyTokenSecretId (unlinked)";
+      return key;
+    });
     await log(req, site.companyId, "website.site_updated", "website_site", site.id, { fields });
-    res.json(toWebsiteSite(row));
+    // Rule C2.2 and C2.3: old and new value in the log; the live event tells open editors to close.
+    if (row.editorFrameOrigin !== site.editorFrameOrigin) {
+      await log(req, site.companyId, "website.site_editor_origin_changed", "website_site", site.id, {
+        from: site.editorFrameOrigin,
+        to: row.editorFrameOrigin,
+      });
+    }
+    res.json(await siteView(row));
+  });
+
+  // ---- home (the Website Home tab, 24 Oct 2026) ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.home, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await home.summary(site, gsamOriginsFor(req)));
+  });
+
+  // ---- front door and enquiries ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.enquiries, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const rows = await enquiries.list(site.companyId, site.id);
+    if (rows[0]) {
+      const decision = await access.decide({
+        actor: req.actor,
+        action: "pipelines:cases",
+        resource: { type: "company", companyId: site.companyId },
+        scope: { pipelineId: rows[0].pipelineId },
+      });
+      if (!decision.allowed) throw new HttpError(403, decision.explanation, { code: "pipeline_cases_forbidden" });
+    }
+    res.json(rows.map((row) => ({
+      id: row.id,
+      pipelineId: row.pipelineId,
+      title: row.title,
+      organisationId: row.organisationId,
+      contactEmail: typeof row.fields.contactEmail === "string" ? row.fields.contactEmail : null,
+      source: typeof row.fields.source === "string" ? row.fields.source : null,
+      page: typeof row.fields.page === "string" ? row.fields.page : null,
+      submittedAt: typeof row.fields.submittedAt === "string" ? row.fields.submittedAt : null,
+      createdAt: row.createdAt.toISOString(),
+    })));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.enquiriesCheck, async (req, res) => {
+    const site = await siteFor(req, res, "website:edit");
+    if (!site) return;
+    assertBoard(req);
+    if (!options.enquiryReader) throw conflict("The website data bridge is not connected yet", { code: "website_bridge_unavailable" });
+    const result = await enquiries.importFromBridge(site.companyId, site.id, options.enquiryReader);
+    await log(req, site.companyId, "website.enquiries.checked", "website_site", site.id, result);
+    res.json(result);
   });
 
   // ---- pages ----
@@ -204,22 +457,32 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.pages, validate(createWebsitePageSchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:edit");
+    const site = await writableSiteFor(req, res);
     if (!site) return;
     const page = await service.createPage(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.page_created", "website_page", page.id, { siteId: site.id, slug: page.slug });
     res.status(201).json(page);
   });
 
-  async function pageFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
-    const site = await siteFor(req, res, permission, refusal);
+  async function sitePageFor(
+    req: Request,
+    res: Response,
+    permission: WebsitePermission,
+    refusal?: { agent?: WebsiteMessageKey },
+  ): Promise<{ site: SiteRow; page: PageRow } | null> {
+    // Edits (save, restore, page changes) need a connected site; reads do not.
+    const site = permission === "website:edit" ? await writableSiteFor(req, res, refusal) : await siteFor(req, res, permission, refusal);
     if (!site) return null;
     const page = await service.getPageRow(site.companyId, site.id, req.params.pageId as string);
     if (!page) {
       res.status(404).json({ error: NOT_FOUND });
       return null;
     }
-    return page;
+    return { site, page };
+  }
+
+  async function pageFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
+    return (await sitePageFor(req, res, permission, refusal))?.page ?? null;
   }
 
   router.get(WEBSITE_MODULE_API_ROUTES.page, async (req, res) => {
@@ -243,10 +506,20 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   });
 
   router.put(WEBSITE_MODULE_API_ROUTES.pageContent, validate(saveWebsiteContentSchema), async (req, res) => {
-    const page = await pageFor(req, res, "website:edit");
-    if (!page) return;
+    const found = await sitePageFor(req, res, "website:edit");
+    if (!found) return;
+    const { site, page } = found;
     if (page.archivedAt) {
-      sendSave(res, { state: "failed", message: "This page is archived. Restore it before editing." });
+      sendSave(res, { state: "failed", code: "archived", message: "This page is archived. Restore it before editing." });
+      return;
+    }
+    // Rule C2.4: a save from an editor session opened on an older editor address never lands.
+    if (req.body.editorOrigin !== undefined && req.body.editorOrigin !== site.editorFrameOrigin) {
+      sendSave(res, {
+        state: "failed",
+        code: "origin-changed",
+        message: "The editor address for this site changed. Reload to continue.",
+      });
       return;
     }
     const result = await service.store.saveRevision({
@@ -276,6 +549,103 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     const page = await pageFor(req, res, "website:view");
     if (!page) return;
     res.json(await service.store.listRevisions(page.companyId, page.documentId));
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.pageRevision, async (req, res) => {
+    const page = await pageFor(req, res, "website:view");
+    if (!page) return;
+    const found = await service.pageRevision(page, req.params.revisionId as string);
+    if (!found) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    let content: unknown = null;
+    try {
+      content = JSON.parse(found.body);
+    } catch {
+      content = null;
+    }
+    res.json({ revision: found.revision, content });
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.pageRevisionRestore, validate(restoreWebsiteRevisionSchema), async (req, res) => {
+    const page = await pageFor(req, res, "website:edit");
+    if (!page) return;
+    if (page.archivedAt) {
+      sendSave(res, { state: "failed", code: "archived", message: "This page is archived. Restore it before editing." });
+      return;
+    }
+    const revisionId = req.params.revisionId as string;
+    const result = await service.restorePageRevision(page, revisionId, req.body.baseRevisionId, actorOf(req));
+    if (!result) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    if (result.state === "saved") {
+      await log(req, page.companyId, "website.page_restored", "website_page", page.id, {
+        siteId: page.siteId,
+        restoredRevisionId: revisionId,
+        revisionNumber: result.revisionNumber,
+      });
+    }
+    sendSave(res, result);
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.pageEditor, async (req, res) => {
+    // website:view is enough to load the draft (preview); every save checks website:edit again.
+    const found = await sitePageFor(req, res, "website:view");
+    if (!found) return;
+    const { site, page } = found;
+    // No editor without a frame origin that passes rule C1.1 now.
+    if (!site.editorFrameOrigin) {
+      throw unprocessable("Set the editor address for this site before editing pages.", { code: "website_editor_origin_missing" });
+    }
+    const problem = editorOriginProblem(req, site, site.editorFrameOrigin);
+    if (problem) throw unprocessable(EDITOR_ORIGIN_PROBLEMS[problem], { code: "website_editor_origin_refused", problem });
+    const load = await service.editorLoad(site, page, site.editorFrameOrigin);
+    if (!load) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    res.json(load);
+  });
+
+  // Ask an agent (GRE-2350): the page's open comments, for anyone who can see the page.
+  router.get(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, async (req, res) => {
+    const page = await pageFor(req, res, "website:view");
+    if (!page) return;
+    res.json(await changeRequests.listOpen(page));
+  });
+
+  // Click to change (GRE-2121) and Ask an agent (GRE-2350): website:edit, the
+  // page in this company, and the picked block (if any) in that revision of
+  // the page. One task per requestId.
+  router.post(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, validate(createWebsiteChangeRequestSchema), async (req, res) => {
+    const found = await sitePageFor(req, res, "website:edit");
+    if (!found) return;
+    const { site, page } = found;
+    const revision = await service.pageRevision(page, req.body.pageRevisionId);
+    if (!revision) {
+      throw unprocessable("That version of the page is not found. Reload the preview and pick the block again.", { code: "website_change_revision_unknown" });
+    }
+    const { result, created } = await changeRequests.create({ site, page, revisionBody: revision.body, request: req.body, actor: actorOf(req) });
+    if (created) {
+      await log(req, site.companyId, "website.change_requested", "website_page", page.id, {
+        siteId: site.id,
+        issueId: result.issueId,
+        blockId: req.body.blockId,
+        blockType: req.body.blockType,
+        pageRevisionId: req.body.pageRevisionId,
+        width: req.body.width,
+      });
+    }
+    res.status(created ? 201 : 200).json(result);
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.media, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await service.listMedia(site.companyId, site.id));
   });
 
   // ---- review: submit (edit), approve and send back (people with Publish rights) ----
@@ -318,16 +688,39 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     res.json(await service.listEntries(site.companyId, site.id, collection, req.query.includeArchived === "true"));
   });
 
-  router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
-    const site = await siteFor(req, res, "website:edit");
+  router.post(WEBSITE_MODULE_API_ROUTES.entryImport, async (req, res) => {
+    const site = await siteFor(req, res, "website:publish");
     if (!site) return;
+    const rows = [
+      ...publicImport.vendors.map((item) => ({ collection: "vendor", entryKey: item.id, content: { data: item } })),
+      ...publicImport.categories.map((item) => ({ collection: "category", entryKey: item.id, content: { data: item } })),
+      ...publicImport.products.map((item) => ({ collection: "product", entryKey: item.id, content: { data: item } })),
+      ...publicImport.people.map((item, index) => ({ collection: "public-person", entryKey: `public-person-${index + 1}`, content: item })),
+      ...publicImport.forms.map((item) => ({ collection: "form", entryKey: item.key, content: item })),
+    ];
+    const existing = new Set((await service.listEntries(site.companyId, site.id, undefined, true)).map((item) => `${item.collection}:${item.entryKey}`));
+    let imported = 0;
+    for (const row of rows) {
+      if (existing.has(`${row.collection}:${row.entryKey}`)) continue;
+      assertCollectionFields(row.collection, row.content);
+      await service.createEntry(site.companyId, site.id, row, actorOf(req));
+      imported++;
+    }
+    await log(req, site.companyId, "website.public_drafts_imported", "website_site", site.id, { imported, skipped: rows.length - imported, capturedAt: publicImport.capturedAt });
+    res.json({ imported, skipped: rows.length - imported, capturedAt: publicImport.capturedAt });
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
+    const site = await writableSiteFor(req, res);
+    if (!site) return;
+    await assertEntryFields(site.companyId, req.body.collection, req.body.content);
     const entry = await service.createEntry(site.companyId, site.id, req.body, actorOf(req));
     await log(req, site.companyId, "website.entry_created", "website_entry", entry.id, { siteId: site.id, collection: entry.collection });
     res.status(201).json(entry);
   });
 
   async function entryFor(req: Request, res: Response, permission: WebsitePermission, refusal?: { agent?: WebsiteMessageKey }) {
-    const site = await siteFor(req, res, permission, refusal);
+    const site = permission === "website:edit" ? await writableSiteFor(req, res, refusal) : await siteFor(req, res, permission, refusal);
     if (!site) return null;
     const entry = await service.getEntryRow(site.companyId, site.id, req.params.entryId as string);
     if (!entry) {
@@ -361,12 +754,11 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     const entry = await entryFor(req, res, "website:edit");
     if (!entry) return;
     if (entry.archivedAt) {
-      sendSave(res, { state: "failed", message: "This entry is archived. Restore it before editing." });
+      sendSave(res, { state: "failed", code: "archived", message: "This entry is archived. Restore it before editing." });
       return;
     }
-    const result = await service.store.saveRevision({
-      companyId: entry.companyId,
-      documentId: entry.documentId,
+    await assertEntryFields(entry.companyId, entry.collection, req.body.content);
+    const result = await service.saveEntryRevision(entry, {
       content: req.body.content,
       baseRevisionId: req.body.baseRevisionId,
       changeSummary: req.body.changeSummary,
@@ -391,6 +783,15 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
     const entry = await entryFor(req, res, "website:view");
     if (!entry) return;
     res.json(await service.store.listRevisions(entry.companyId, entry.documentId));
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.entryRevision, async (req, res) => {
+    const entry = await entryFor(req, res, "website:view");
+    if (!entry) return;
+    const revisionId = req.params.revisionId as string;
+    const revision = UUID_RE.test(revisionId) ? await service.store.readRevision(entry.companyId, entry.documentId, revisionId) : null;
+    if (!revision) { res.status(404).json({ error: NOT_FOUND }); return; }
+    res.json(revision);
   });
 
   // ---- releases: Publish, Retry, Rollback (GRE-2108) ----
@@ -490,6 +891,8 @@ export function websiteModuleRoutes(db: Db, options: { publish?: WebsitePublishO
   router.post(WEBSITE_MODULE_API_ROUTES.entryApprove, async (req, res) => {
     const entry = await entryFor(req, res, "website:publish", APPROVER);
     if (!entry) return;
+    const detail = await service.entryDetail(entry);
+    await assertEntryFields(entry.companyId, entry.collection, detail?.content);
     const updated = await service.approveEntry(entry);
     await log(req, entry.companyId, "website.entry_approved", "website_entry", entry.id, { siteId: entry.siteId, revisionId: updated.approvedRevisionId });
     const { doc } = await service.withDoc(updated);

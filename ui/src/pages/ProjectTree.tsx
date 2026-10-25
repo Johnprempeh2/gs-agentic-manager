@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
+import { TaskRunStatesContext, useTaskRunStates } from "../hooks/useTaskRunStates";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { IssueTreeNode, ProjectTree as ProjectTreeData } from "@greatstone/shared";
-import { List, Sparkles } from "lucide-react";
+import { List, Maximize2, Sparkles } from "lucide-react";
 import { Link, useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -23,6 +24,7 @@ import { ErrorState } from "../components/ErrorState";
 import { TaskTreeCanvas } from "../components/task-tree/TaskTreeCanvas";
 import { TaskTreeHeader } from "../components/task-tree/TaskTreeHeader";
 import { TaskTreeOutline } from "../components/task-tree/TaskTreeOutline";
+import { DiagramFind } from "../components/diagram/DiagramFrame";
 import { TaskTreeOwner } from "../components/task-tree/TaskTreeOwner";
 import { useTaskTreeView } from "../components/task-tree/useTaskTreeView";
 
@@ -69,6 +71,8 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
     enabled: !!projectRef,
   });
   const project = projectQuery.data;
+  // Working, queued or stuck per node (GRE-2246).
+  const taskRunStates = useTaskRunStates(project?.companyId ?? selectedCompanyId);
   const people = useTaskTreePeople(project?.companyId ?? selectedCompanyId);
   const [showFinished, setShowFinished] = useState(false);
   const treeQuery = useQuery({
@@ -81,16 +85,18 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
   const data: ProjectTreeData | undefined = treeQuery.data;
   const shaped = useMemo(() => (data ? projectTreeAsTaskTree(data) : null), [data]);
   const index = useMemo(() => (shaped ? indexTaskTree(shaped.tree, shaped.hiddenDone) : null), [shaped]);
-  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished });
-  const { setCollapsed } = view;
+  const storageKey = projectRef ? `project-tree.${projectRef}` : undefined;
+  const view = useTaskTreeView(index, { viewerUserId: people.viewerUserId ?? null, isPhone, showFinished, storageKey, people });
+  const { setCollapsed, restored } = view;
+  const [diagramOpen, setDiagramOpen] = useState(false);
 
-  // Key tasks whose work is all done start folded, once per visit.
+  // Key tasks whose work is all done start folded, once per visit, unless the viewer's own fold is remembered.
   const [foldedFor, setFoldedFor] = useState<string | null>(null);
   useEffect(() => {
     if (!data || foldedFor === data.project.id) return;
     setFoldedFor(data.project.id);
-    setCollapsed(initiallyCollapsed(data));
-  }, [data, foldedFor, setCollapsed]);
+    if (!restored) setCollapsed(initiallyCollapsed(data));
+  }, [data, foldedFor, setCollapsed, restored]);
 
   const ref = project ? projectRouteRef(project) : projectRef;
   const listHref = `/projects/${ref}/issues`;
@@ -202,6 +208,15 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
         <ToggleSwitch checked={showFinished} onCheckedChange={setShowFinished} aria-label="Show finished work" />
         <span>Show finished work</span>
       </label>
+      <label className="inline-flex items-center gap-2 text-sm">
+        <ToggleSwitch
+          checked={view.blockedOnly}
+          onCheckedChange={view.setBlockedOnly}
+          aria-label="Only what's blocked and why"
+          data-blocked-only-toggle=""
+        />
+        <span>Only what's blocked and why</span>
+      </label>
       <Button asChild variant="outline" size="sm">
         <Link to={listHref}>
           <List />
@@ -212,63 +227,96 @@ export function ProjectTreeView({ projectRef, embedded = false }: { projectRef: 
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-6" data-project-tree-page="">
-      <TaskTreeHeader
-        root={index.root}
-        counts={data.counts}
-        rootBlockers={trace.rootBlockers}
-        people={people}
-        onSelectBlocker={view.selectBlocker}
-        truncatedNote={truncatedNote}
-        subtitle={subtitle}
-        actions={actions}
-      />
-      {data.nodes.length === 0 && data.keyTaskIds.length === 0 ? (
-        <div className="flex flex-wrap items-center gap-3" data-no-key-tasks="">
-          <p className="text-sm text-muted-foreground">
-            No tasks in this project yet. The tree shows the project's work, branch by branch, as tasks are added.
-          </p>
-          <Button size="sm" onClick={() => openNewIssue({ projectId: data.project.id })}>
-            New task
-          </Button>
-        </div>
-      ) : data.keyTaskIds.length === 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-no-key-tasks="">
-          <p className="text-sm text-muted-foreground">
-            No key tasks yet. The project lead marks the 3 to 7 tasks that drive the project; you can mark one from its
-            properties.
-          </p>
-          <Link to={listHref} className="text-sm font-medium text-foreground underline underline-offset-2">
-            Open the task list
-          </Link>
-        </div>
-      ) : null}
-      {isPhone ? (
-        <TaskTreeOutline
-          visibleRoot={visibleRoot}
-          trace={trace}
+    <TaskRunStatesContext.Provider value={taskRunStates}>
+      <div className="flex h-full min-h-0 w-full flex-col gap-6" data-project-tree-page="">
+        <TaskTreeHeader
+          root={index.root}
+          counts={data.counts}
+          rootBlockers={trace.rootBlockers}
           people={people}
-          hrefFor={hrefFor}
-          waitingOnById={view.waitingOnById}
-          onToggleCollapsed={view.toggleCollapsed}
-          onShowFinished={() => setShowFinished(true)}
-          highlightId={view.focusRequest?.id ?? null}
-          actionFor={tidyAction}
+          onSelectBlocker={view.selectBlocker}
+          truncatedNote={truncatedNote}
+          subtitle={subtitle}
+          actions={actions}
+          showSummary={data.keyTaskIds.length > 0}
         />
-      ) : (
-        <TaskTreeCanvas
-          className="min-h-96 flex-1"
-          visibleRoot={visibleRoot}
-          trace={trace}
-          people={people}
-          waitingOnById={view.waitingOnById}
-          onOpen={openTask}
-          onToggleCollapsed={view.toggleCollapsed}
-          onShowFinished={() => setShowFinished(true)}
-          focusRequest={view.focusRequest}
-          actionFor={tidyAction}
-        />
-      )}
-    </div>
+        {data.nodes.length === 0 && data.keyTaskIds.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-3" data-no-key-tasks="">
+            <p className="text-sm text-muted-foreground">
+              No tasks in this project yet. The tree shows the project's work, branch by branch, as tasks are added.
+            </p>
+            <Button size="sm" onClick={() => openNewIssue({ projectId: data.project.id })}>
+              New task
+            </Button>
+          </div>
+        ) : data.keyTaskIds.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-no-key-tasks="">
+            <p className="text-sm text-muted-foreground">
+              No key tasks yet. The project lead marks the 3 to 7 tasks that drive the project; you can mark one from its
+              properties.
+            </p>
+            <Link to={listHref} className="text-sm font-medium text-foreground underline underline-offset-2">
+              Open the task list
+            </Link>
+          </div>
+        ) : null}
+        {view.blockedOnly && view.blockedOnlyIds?.size === 0 ? (
+          <p className="text-sm text-muted-foreground" data-nothing-blocked="">
+            Nothing here is blocked. Turn off "Only what's blocked and why" to see all the work.
+          </p>
+        ) : null}
+        {isPhone && !diagramOpen ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDiagramOpen(true)} data-open-diagram="">
+              <Maximize2 />
+              Open the diagram full screen
+            </Button>
+            <DiagramFind items={view.findItems} onPick={view.reveal} />
+          </div>
+        ) : null}
+        {isPhone && !diagramOpen ? (
+          <TaskTreeOutline
+            visibleRoot={visibleRoot}
+            trace={trace}
+            people={people}
+            hrefFor={hrefFor}
+            waitingOnById={view.waitingOnById}
+            blockReasonById={view.blockReasonById}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
+            onToggleCollapsed={view.toggleCollapsed}
+            onShowFinished={() => setShowFinished(true)}
+            highlightId={view.focusRequest?.id ?? null}
+            actionFor={tidyAction}
+          />
+        ) : (
+          <TaskTreeCanvas
+            className="min-h-96 flex-1"
+            visibleRoot={visibleRoot}
+            trace={trace}
+            people={people}
+            waitingOnById={view.waitingOnById}
+            blockReasonById={view.blockReasonById}
+            blockLinks={view.visibleBlockLinks}
+            loopIds={view.loopIds}
+            linkNamesById={view.linkNamesById}
+            onOpen={openTask}
+            onToggleCollapsed={view.toggleCollapsed}
+            onShowFinished={() => setShowFinished(true)}
+            focusRequest={view.focusRequest}
+            homeIds={view.blockedFocusIds}
+            homeRequest={view.homeRequest}
+            actionFor={tidyAction}
+            storageKey={storageKey}
+            findItems={view.findItems}
+            onFind={view.reveal}
+            onCollapseAll={view.collapseAll}
+            onExpandAll={view.expandAll}
+            startFullscreen={isPhone}
+            onExitFullscreen={() => setDiagramOpen(false)}
+          />
+        )}
+      </div>
+    </TaskRunStatesContext.Provider>
   );
 }

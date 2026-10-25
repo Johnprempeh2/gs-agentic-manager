@@ -12,6 +12,7 @@ import type {
   WebsiteReleaseKind,
   WebsiteReleaseStatus,
 } from "@greatstone/shared";
+import { websiteCollectionDefinition } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { getStorageService } from "../../storage/index.js";
@@ -133,15 +134,21 @@ export function toWebsiteRelease(row: ReleaseRow): WebsiteRelease {
   };
 }
 
-/** The release number a live page reports: `x-gsam-release`, `<meta name="gsam-release">` or `/_release` JSON. */
+/**
+ * The release number a live page reports: `x-gsam-release`, `<meta name="gsam-release">`
+ * or `/_release` JSON. The site engine's `/_release` sends `{ number, releaseId, engine }`;
+ * `{ release }` is the older shape.
+ */
 export function reportedRelease(page: FetchedPage): string | null {
   const header = page.headers.get(RELEASE_HEADER);
   if (header) return header.trim();
   const meta = page.body.match(RELEASE_META_RE) ?? page.body.match(RELEASE_META_REVERSED_RE);
   if (meta) return meta[1].trim();
   try {
-    const json = JSON.parse(page.body) as { release?: unknown };
-    if (json && (typeof json.release === "number" || typeof json.release === "string")) return String(json.release);
+    const json = JSON.parse(page.body) as { number?: unknown; release?: unknown };
+    for (const value of [json?.number, json?.release]) {
+      if (typeof value === "number" || typeof value === "string") return String(value);
+    }
   } catch {
     // not JSON
   }
@@ -191,7 +198,8 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   async function defaultNetlifyFor(site: SiteRow): Promise<WebsiteNetlifyClient> {
     if (!site.netlifyTokenSecretId) throw unprocessable("This site has no Netlify token. Add it in the site settings first.", { code: "website_netlify_token_missing" });
-    // Only this site's own token, read for this company (ADR 4.4). Never the shared agent token.
+    // Only the secret this site names, read for this company (ADR 4.4): its own pasted token or a company secret a
+    // person with Publish rights chose for it. Read only; the job never rotates or deletes it, owned or shared.
     const token = await secrets.resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
       accessContext: {
         consumerType: "system",
@@ -405,7 +413,8 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     for (const { entry, revisionId } of releasedEntries) {
       const fields = parse(revisionId, `${entry.collection}/${entry.entryKey}`);
       const item = { id: entry.id, key: entry.entryKey, orgId: entry.orgId, sortOrder: entry.sortOrder, fields };
-      (collections[entry.collection] ??= []).push(item);
+      const releaseKey = websiteCollectionDefinition(entry.collection)?.releaseKey ?? entry.collection;
+      (collections[releaseKey] ??= []).push(item);
       if (entry.collection === "redirect") redirects.push(fields);
       if (entry.collection === "media" && fields && typeof (fields as { assetId?: unknown }).assetId === "string") {
         mediaAssetIds.push((fields as { assetId: string }).assetId);

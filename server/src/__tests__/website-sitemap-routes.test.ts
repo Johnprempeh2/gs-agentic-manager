@@ -24,6 +24,7 @@ import {
   sitemapTreeProblems,
   websiteSitemapTreeSchema,
   type ImportWebsiteSitemapOption,
+  type WebsiteHomeSummary,
   type WebsitePage,
   type WebsiteSitemapApproveResult,
   type WebsiteSitemapOption,
@@ -33,6 +34,7 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
 import { buildSitemapXml } from "../services/website/sitemap.js";
+import { framingFromHeaders } from "../services/website/home.js";
 import { instanceSettingsService } from "../services/index.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -60,6 +62,61 @@ describe("diffSitemapTrees", () => {
     expect(byPath.get("/new")).toEqual(["added"]);
     // Same site page under a new path and parent: one moved page, not a remove and an add.
     expect(byPath.get("/about/team")).toEqual(["moved"]);
+  });
+
+  it("pairs a page with a new address by its title when no site page links them (GRE-2193)", () => {
+    const a: WebsiteSitemapTree = {
+      nodes: [
+        node("1", "Services", "/services", null),
+        node("2", "Business website build", "/services/business-website-build", "1"),
+        node("3", "SEO", "/services/seo", "1"),
+        node("4", "Overview", "/services/web-overview", "1"),
+        node("5", "Overview", "/services/seo-overview", "1"),
+        node("6", "Retainer", "/services/retainer", "1"),
+      ],
+      journeys: [],
+    };
+    const b: WebsiteSitemapTree = {
+      nodes: [
+        node("a", "Services", "/services", null),
+        node("b", "Websites and web apps", "/services/websites-web-apps", "a"),
+        node("c", "Business website build", "/services/websites-web-apps/business-website-build", "b"),
+        node("d", "SEO", "/services/seo", "a"),
+        node("e", "Overview", "/services/websites-web-apps/overview", "b"),
+        node("f", "Overview", "/services/growth/overview", "a"),
+      ],
+      journeys: [],
+    };
+    const diff = diffSitemapTrees(a, b);
+    const moved = diff.find((entry) => entry.a?.id === "2")!;
+    // One moved row, with both addresses, not a removed row and an added row.
+    expect(moved.b?.id).toBe("c");
+    expect(moved.changes).toEqual(["moved"]);
+    expect(diff.find((entry) => entry.a?.id === "3")!.changes).toEqual([]);
+    // A title on two pages is not unique, so those stay removed and added.
+    expect(diff.filter((entry) => entry.a?.title === "Overview" || entry.b?.title === "Overview").map((entry) => entry.changes)).toEqual([
+      ["removed"], ["removed"], ["added"], ["added"],
+    ]);
+    expect(diff.find((entry) => entry.a?.id === "6")!.changes).toEqual(["removed"]);
+    expect(diff.find((entry) => entry.b?.id === "b")!.changes).toEqual(["added"]);
+  });
+});
+
+describe("framingFromHeaders", () => {
+  it("reads X-Frame-Options and CSP frame-ancestors", () => {
+    expect(framingFromHeaders(new Headers({ "x-frame-options": "SAMEORIGIN" }))).toBe("refused");
+    expect(framingFromHeaders(new Headers({ "content-security-policy": "default-src 'self'; frame-ancestors 'none'" }))).toBe("refused");
+    expect(framingFromHeaders(new Headers({ "content-security-policy": "frame-ancestors *" }))).toBe("allowed");
+    expect(framingFromHeaders(new Headers({ "content-security-policy": "default-src 'self'" }))).toBe("allowed");
+    expect(framingFromHeaders(new Headers())).toBe("allowed");
+  });
+
+  it("allows a frame-ancestors list that names GSAM's own origin", () => {
+    const csp = new Headers({ "content-security-policy": "frame-ancestors 'self' https://gsam.example.test:3100" });
+    expect(framingFromHeaders(csp, ["https://gsam.example.test:3100"])).toBe("allowed");
+    expect(framingFromHeaders(csp, ["https://gsam.example.test:3100/"])).toBe("allowed");
+    expect(framingFromHeaders(csp, ["http://localhost:3121"])).toBe("refused");
+    expect(framingFromHeaders(csp)).toBe("refused");
   });
 });
 
@@ -194,6 +251,33 @@ describeEmbeddedPostgres("website sitemap routes", () => {
     ],
     journeys: [{ name: "Leader", paths: ["/", "/consultancy", "/consultancy/how-we-work", "/consultancy/executive-discovery", "/consultancy/deep-dive"] }],
   };
+
+  it("sums up the site for the Home: page counts, the approved option, options awaiting review and recent events (GRE Website Home)", async () => {
+    const { base, siteId } = await seedSite("Greatstone", "www.greatstone.test");
+    const http = request(app());
+    const empty = (await http.get(`${base}/home`).expect(200)).body as WebsiteHomeSummary;
+    expect(empty.pages).toEqual({ planned: 0, draft: 0, review: 0, approved: 0, published: 0 });
+    expect(empty.sitemap).toEqual({ approved: null, awaitingReview: 0 });
+    expect(empty.releases).toEqual({ latest: null, live: null });
+    expect(empty.publishApproval).toBeNull();
+    // No editor address and no development address: nothing to check.
+    expect(empty.devFraming).toBe("unknown");
+
+    const a = (await http.post(`${base}/sitemap/options/import`).send(optionA).expect(201)).body as WebsiteSitemapOption;
+    await http.post(`${base}/sitemap/options/${a.id}/approve`).expect(200);
+    await http.post(`${base}/sitemap/options/import`).send({ ...optionA, name: "Option B" }).expect(201);
+    const home = (await http.get(`${base}/home`).expect(200)).body as WebsiteHomeSummary;
+    expect(home.pages.planned).toBe(8);
+    expect(home.sitemap.approved).toMatchObject({ id: a.id, name: "Option A: two doors", changedSinceApproval: false });
+    expect(home.sitemap.awaitingReview).toBe(1);
+    expect(home.activity[0]).toMatchObject({ action: "website.sitemap_option_imported", subject: "Option B", actorName: "Board" });
+    expect(home.activity.map((event) => event.action)).toContain("website.sitemap_option_approved");
+    expect(home.activity.length).toBeLessThanOrEqual(8);
+
+    // Another company's site is not found, never forbidden.
+    const other = await seedSite("Other", "www.other.test");
+    await http.get(`/api/companies/${other.companyId}/website/sites/${siteId}/home`).expect(404);
+  });
 
   it("lets an agent propose and import options, but only a person approves", async () => {
     const { companyId, base } = await seedSite("Greatstone", "www.greatstone.test");

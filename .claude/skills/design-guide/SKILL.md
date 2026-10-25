@@ -298,6 +298,27 @@ Use `InlineEditor` component — click text to edit, Enter saves, Escape cancels
 
 StatusIcon and PriorityIcon use Radix Popover for inline selection. Follow this pattern for any clickable property that opens a picker.
 
+### Diagrams (pan, zoom, full screen)
+
+Every pannable diagram (task and project trees, the sitemap board) uses
+`DiagramFrame` with `useDiagramViewport` from `ui/src/components/diagram/`.
+Do not write another pan and zoom.
+
+- The toolbar sits 16px above the canvas (`gap-4`): find by name, Collapse
+  all and Expand all, zoom out, the zoom percentage, zoom in, Fit to screen,
+  Reset and Full screen.
+- Drag empty space or scroll to pan; Ctrl or Cmd with the wheel, a trackpad
+  pinch or two fingers zoom. `+` and `-` zoom, `0` fits; arrow keys move
+  between nodes and Enter opens one.
+- Full screen uses the browser Fullscreen API on the frame, so the toolbar
+  comes along and Tab stays inside; phones get a fixed full-viewport overlay
+  (`z-dialog`) that Esc or "Exit full screen" closes.
+- A minimap shows bottom left when the diagram is bigger than the view.
+- Zoom, place and folded branches are remembered per diagram in
+  localStorage (`gsam.diagram.<key>`), always inside try/catch.
+- Keep the node layer memoised so panning only moves the transform; it must
+  stay smooth at 300 nodes.
+
 ---
 
 ## 9. Layout System

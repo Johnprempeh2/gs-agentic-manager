@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
+import { assets, companySecrets, documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
 import {
   WEBSITE_CONTENT_MAX_BYTES,
   type CreateWebsiteEntry,
@@ -11,7 +11,9 @@ import {
   type UpdateWebsiteSite,
   type WebsiteEntry,
   type WebsiteEntryStatus,
+  type WebsiteMediaItem,
   type WebsitePage,
+  type WebsitePageEditorLoad,
   type WebsitePageMenu,
   type WebsitePageSeo,
   type WebsitePageStatus,
@@ -19,7 +21,7 @@ import {
   type WebsiteSaveResult,
   type WebsiteSite,
 } from "@greatstone/shared";
-import { conflict, unprocessable } from "../../errors.js";
+import { conflict, notFound, unprocessable } from "../../errors.js";
 import { secretService } from "../secrets.js";
 import { WEBSITE_MESSAGES } from "./messages.js";
 
@@ -38,7 +40,8 @@ export interface WebsiteActor {
   userId: string | null;
 }
 
-export function toWebsiteSite(row: SiteRow): WebsiteSite {
+/** `secretName` is the linked secret's name (never its value). */
+export function toWebsiteSite(row: SiteRow, secretName: string | null = null): WebsiteSite {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -47,11 +50,16 @@ export function toWebsiteSite(row: SiteRow): WebsiteSite {
     repoUrl: row.repoUrl,
     netlifySiteId: row.netlifySiteId,
     hasNetlifyToken: Boolean(row.netlifyTokenSecretId),
+    netlifyTokenSource: row.netlifyTokenSecretId ? (row.netlifyTokenSecretOwned ? "own" : "shared") : null,
+    netlifyTokenSecretName: row.netlifyTokenSecretId ? secretName : null,
     blobsStoreName: row.blobsStoreName,
     engineVersion: row.engineVersion,
     releaseSchemaVersion: row.releaseSchemaVersion,
     propertyId: row.propertyId,
     editorOrigins: row.editorOrigins,
+    editorFrameOrigin: row.editorFrameOrigin,
+    livePreviewUrl: row.livePreviewUrl,
+    devPreviewUrl: row.devPreviewUrl,
     checkPaths: row.checkPaths,
     liveReleaseId: row.liveReleaseId,
     archivedAt: row.archivedAt?.toISOString() ?? null,
@@ -175,6 +183,7 @@ export function websiteDocumentStore(db: Db) {
     baseRevisionId: string;
     changeSummary?: string | null;
     actor: WebsiteActor;
+    afterSave?: (tx: Tx) => Promise<void>;
   }): Promise<WebsiteSaveResult> {
     const serialised = serialiseWebsiteContent(input.content);
     if ("error" in serialised) return { state: "failed", message: serialised.error };
@@ -222,6 +231,7 @@ export function websiteDocumentStore(db: Db) {
             updatedAt: now,
           })
           .where(eq(documents.id, doc.id));
+        await input.afterSave?.(tx);
         return { state: "saved", revisionId: revision.id, revisionNumber } as const;
       });
     } catch (err) {
@@ -248,6 +258,13 @@ export function websiteDocumentStore(db: Db) {
     return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
   }
 
+  async function readRevision(companyId: string, documentId: string, revisionId: string) {
+    const [revision] = await db.select({ body: documentRevisions.body, revisionNumber: documentRevisions.revisionNumber })
+      .from(documentRevisions)
+      .where(and(eq(documentRevisions.companyId, companyId), eq(documentRevisions.documentId, documentId), eq(documentRevisions.id, revisionId)));
+    return revision ? { revisionNumber: revision.revisionNumber, content: parseBody(revision.body) } : null;
+  }
+
   async function readDocument(companyId: string, documentId: string) {
     const [doc] = await db
       .select()
@@ -256,7 +273,22 @@ export function websiteDocumentStore(db: Db) {
     return doc ?? null;
   }
 
-  return { createDocument, saveRevision, listRevisions, readDocument };
+  /** The whole revision row (id, author, time), for page history and restore. */
+  async function readRevisionRow(companyId: string, documentId: string, revisionId: string) {
+    const [row] = await db
+      .select()
+      .from(documentRevisions)
+      .where(
+        and(
+          eq(documentRevisions.companyId, companyId),
+          eq(documentRevisions.documentId, documentId),
+          eq(documentRevisions.id, revisionId),
+        ),
+      );
+    return row ?? null;
+  }
+
+  return { createDocument, saveRevision, listRevisions, readRevision, readRevisionRow, readDocument };
 }
 
 function parseBody(body: string): unknown {
@@ -265,6 +297,20 @@ function parseBody(body: string): unknown {
   } catch {
     return null;
   }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function positiveInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 const EMPTY_PAGE = { root: { props: {} }, content: [], zones: {} };
@@ -291,18 +337,64 @@ export function websiteModuleService(db: Db) {
     return row ?? null;
   }
 
-  async function storeNetlifyToken(companyId: string, site: Pick<SiteRow, "id" | "domain" | "netlifyTokenSecretId">, token: string, userId: string | null) {
-    if (site.netlifyTokenSecretId) {
+  /** Company secrets a site can use as its Netlify token: active, company scope, names only. */
+  async function listTokenSecrets(companyId: string) {
+    return db
+      .select({ id: companySecrets.id, name: companySecrets.name })
+      .from(companySecrets)
+      .where(and(eq(companySecrets.companyId, companyId), eq(companySecrets.scope, "company"), eq(companySecrets.status, "active")))
+      .orderBy(asc(companySecrets.name));
+  }
+
+  /** The name of a site's linked token secret, or null. Never the value. */
+  async function tokenSecretName(site: Pick<SiteRow, "companyId" | "netlifyTokenSecretId">) {
+    if (!site.netlifyTokenSecretId) return null;
+    const [row] = await db
+      .select({ name: companySecrets.name })
+      .from(companySecrets)
+      .where(and(eq(companySecrets.companyId, site.companyId), eq(companySecrets.id, site.netlifyTokenSecretId)));
+    return row?.name ?? null;
+  }
+
+  /**
+   * A shared token secret must be one the Publish job can read: this company's, company scope, active.
+   * Another company's secret (or a person's own secret) is simply not found.
+   */
+  async function assertLinkableSecret(companyId: string, secretId: string) {
+    const secret = await secrets.getById(secretId);
+    if (!secret || secret.companyId !== companyId || secret.scope !== "company" || secret.status === "deleted") {
+      throw notFound("That secret is not in this company", { code: "website_token_secret_not_found" });
+    }
+    if (secret.status !== "active") {
+      throw unprocessable("That secret is not active. Choose an active secret or paste a token.", { code: "website_token_secret_inactive" });
+    }
+  }
+
+  /**
+   * Store a pasted token. Rotates the site's secret only when the site owns it; when the site uses a
+   * shared secret, a new site-owned secret is created and the shared one is left untouched.
+   */
+  async function storeNetlifyToken(
+    companyId: string,
+    site: Pick<SiteRow, "id" | "domain" | "netlifyTokenSecretId" | "netlifyTokenSecretOwned">,
+    token: string,
+    userId: string | null,
+  ) {
+    if (site.netlifyTokenSecretId && site.netlifyTokenSecretOwned) {
       const existing = await secrets.getById(site.netlifyTokenSecretId);
       if (existing && existing.status === "active" && existing.companyId === companyId) {
         await secrets.rotate(existing.id, { value: token }, { userId });
         return existing.id;
       }
     }
+    // A site that switched to a shared secret may have left its earlier own secret behind: never reuse that name.
+    const base = `Website Netlify token ${site.id.slice(0, 8)}`;
+    let name = base;
+    for (let n = 2; await secrets.getByName(companyId, name); n += 1) name = `${base} ${n}`;
     const created = await secrets.create(
       companyId,
       {
-        name: `Website Netlify token ${site.id.slice(0, 8)}`,
+        name,
         provider: "local_encrypted",
         value: token,
         description: `Netlify token for ${site.domain}, used only to publish this site (Website module).`,
@@ -313,6 +405,7 @@ export function websiteModuleService(db: Db) {
   }
 
   async function createSite(companyId: string, input: CreateWebsiteSite, actor: WebsiteActor) {
+    if (input.netlifyTokenSecretId) await assertLinkableSecret(companyId, input.netlifyTokenSecretId);
     let row: SiteRow;
     try {
       [row] = await db
@@ -323,8 +416,12 @@ export function websiteModuleService(db: Db) {
           domain: input.domain,
           repoUrl: input.repoUrl ?? null,
           netlifySiteId: input.netlifySiteId,
+          ...(input.netlifyTokenSecretId ? { netlifyTokenSecretId: input.netlifyTokenSecretId, netlifyTokenSecretOwned: false } : {}),
           propertyId: input.propertyId ?? null,
           editorOrigins: input.editorOrigins ?? [],
+          editorFrameOrigin: input.editorFrameOrigin ?? null,
+          livePreviewUrl: input.livePreviewUrl ?? null,
+          devPreviewUrl: input.devPreviewUrl ?? null,
           checkPaths: input.checkPaths ?? ["/"],
         })
         .returning();
@@ -333,17 +430,34 @@ export function websiteModuleService(db: Db) {
       throw err;
     }
     if (input.netlifyToken) {
-      const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
-      [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId }).where(eq(websiteSite.id, row.id)).returning();
+      // The secret lives in its own store, so a failure removes the new site row rather than leaving it without a token.
+      try {
+        const secretId = await storeNetlifyToken(companyId, row, input.netlifyToken, actor.userId);
+        [row] = await db.update(websiteSite).set({ netlifyTokenSecretId: secretId, netlifyTokenSecretOwned: true }).where(eq(websiteSite.id, row.id)).returning();
+      } catch (err) {
+        await db.delete(websiteSite).where(and(eq(websiteSite.companyId, companyId), eq(websiteSite.id, row.id)));
+        throw err;
+      }
     }
     return row;
   }
 
   async function updateSite(site: SiteRow, input: UpdateWebsiteSite, actor: WebsiteActor) {
-    const { netlifyToken, archived, ...rest } = input;
+    const { netlifyToken, netlifyTokenSecretId, archived, ...rest } = input;
     const patch: Partial<typeof websiteSite.$inferInsert> = { ...rest, updatedAt: new Date() };
     if (archived !== undefined) patch.archivedAt = archived ? new Date() : null;
-    if (netlifyToken) patch.netlifyTokenSecretId = await storeNetlifyToken(site.companyId, site, netlifyToken, actor.userId);
+    if (netlifyToken) {
+      patch.netlifyTokenSecretId = await storeNetlifyToken(site.companyId, site, netlifyToken, actor.userId);
+      patch.netlifyTokenSecretOwned = true;
+    } else if (netlifyTokenSecretId === null) {
+      // Unlink only. The secret stays in the company's secrets, shared or not.
+      patch.netlifyTokenSecretId = null;
+      patch.netlifyTokenSecretOwned = true;
+    } else if (netlifyTokenSecretId && netlifyTokenSecretId !== site.netlifyTokenSecretId) {
+      await assertLinkableSecret(site.companyId, netlifyTokenSecretId);
+      patch.netlifyTokenSecretId = netlifyTokenSecretId;
+      patch.netlifyTokenSecretOwned = false;
+    }
     try {
       const [row] = await db
         .update(websiteSite)
@@ -439,19 +553,21 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updatePage(row: PageRow, input: UpdateWebsitePage) {
-    if (input.parentPageId !== undefined) await assertParent(row.companyId, row.siteId, row.id, input.parentPageId);
+    const { archived, ...fields } = input;
+    if (fields.parentPageId !== undefined) await assertParent(row.companyId, row.siteId, row.id, fields.parentPageId);
+    const slug = fields.slug ?? row.slug;
     try {
       const [updated] = await db
         .update(websitePage)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(websitePage.companyId, row.companyId), eq(websitePage.id, row.id)))
         .returning();
-      if (input.title !== undefined) {
-        await db.update(documents).set({ title: input.title }).where(and(eq(documents.id, row.documentId), eq(documents.companyId, row.companyId)));
+      if (fields.title !== undefined) {
+        await db.update(documents).set({ title: fields.title }).where(and(eq(documents.id, row.documentId), eq(documents.companyId, row.companyId)));
       }
       return updated;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`A page with the path ${input.slug} already exists on this site`, { code: "website_page_slug_taken" });
+      if (isUniqueViolation(err)) throw conflict(`A page with the path ${slug} already exists on this site`, { code: "website_page_slug_taken" });
       throw err;
     }
   }
@@ -526,6 +642,7 @@ export function websiteModuleService(db: Db) {
 
   async function approveEntry(row: EntryRow) {
     assertReviewable(row);
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.not_in_review"], { code: "website_review_not_in_review" });
     return setEntryReview(row, { status: "approved", approvedRevisionId: await latestRevisionId(row) });
   }
 
@@ -605,15 +722,16 @@ export function websiteModuleService(db: Db) {
   }
 
   async function updateEntry(row: EntryRow, input: UpdateWebsiteEntry) {
+    const { archived, ...fields } = input;
     try {
       const [updated] = await db
         .update(websiteEntry)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)))
         .returning();
       return updated;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`${row.collection} already has an entry ${input.entryKey}`, { code: "website_entry_key_taken" });
+      if (isUniqueViolation(err)) throw conflict(`${row.collection} already has an entry ${fields.entryKey ?? row.entryKey}`, { code: "website_entry_key_taken" });
       throw err;
     }
   }
@@ -627,9 +745,131 @@ export function websiteModuleService(db: Db) {
     return updated;
   }
 
+  // ---- editor ----
+
+  /** A revision of this page's own document, or null (another page's or company's revision is not found). */
+  async function pageRevision(row: PageRow, revisionId: string) {
+    const revision = await store.readRevisionRow(row.companyId, row.documentId, revisionId);
+    if (!revision) return null;
+    return {
+      revision: {
+        id: revision.id,
+        revisionNumber: revision.revisionNumber,
+        changeSummary: revision.changeSummary,
+        createdByAgentId: revision.createdByAgentId,
+        createdByUserId: revision.createdByUserId,
+        createdAt: revision.createdAt.toISOString(),
+      },
+      body: revision.body,
+    };
+  }
+
+  /** Restore = a new revision with the old content, so restoring can itself be undone. */
+  async function restorePageRevision(row: PageRow, revisionId: string, baseRevisionId: string, actor: WebsiteActor): Promise<WebsiteSaveResult | null> {
+    const found = await pageRevision(row, revisionId);
+    if (!found) return null;
+    return store.saveRevision({
+      companyId: row.companyId,
+      documentId: row.documentId,
+      content: parseBody(found.body),
+      baseRevisionId,
+      changeSummary: `Restored version ${found.revision.revisionNumber}`,
+      actor,
+    });
+  }
+
+  /**
+   * The site's media entries whose asset is in the same company (ADR section 2:
+   * `{ assetId, alt, caption, focalPoint }`). An entry naming another
+   * company's asset, or none, is left out.
+   */
+  async function listMedia(companyId: string, siteId: string): Promise<WebsiteMediaItem[]> {
+    const rows = await db
+      .select({ entry: websiteEntry, body: documents.latestBody })
+      .from(websiteEntry)
+      .innerJoin(documents, and(eq(documents.id, websiteEntry.documentId), eq(documents.companyId, companyId)))
+      .where(
+        and(
+          eq(websiteEntry.companyId, companyId),
+          eq(websiteEntry.siteId, siteId),
+          eq(websiteEntry.collection, "media"),
+          isNull(websiteEntry.archivedAt),
+        ),
+      )
+      .orderBy(sql`${websiteEntry.sortOrder} asc nulls last`, asc(websiteEntry.entryKey));
+    const parsed = rows.map((row) => ({ entry: row.entry, fields: asRecord(parseBody(row.body)) }));
+    const assetIds = [...new Set(parsed.map((row) => row.fields.assetId).filter(isUuid))];
+    if (assetIds.length === 0) return [];
+    const assetRows = await db
+      .select({ id: assets.id, contentType: assets.contentType, byteSize: assets.byteSize })
+      .from(assets)
+      .where(and(eq(assets.companyId, companyId), inArray(assets.id, assetIds)));
+    const byId = new Map(assetRows.map((row) => [row.id, row]));
+    const media: WebsiteMediaItem[] = [];
+    for (const { entry, fields } of parsed) {
+      const asset = isUuid(fields.assetId) ? byId.get(fields.assetId) : undefined;
+      if (!asset) continue;
+      media.push({
+        entryId: entry.id,
+        entryKey: entry.entryKey,
+        assetId: asset.id,
+        alt: typeof fields.alt === "string" ? fields.alt : "",
+        caption: typeof fields.caption === "string" ? fields.caption : null,
+        contentType: asset.contentType,
+        byteSize: asset.byteSize,
+        width: positiveInt(fields.width),
+        height: positiveInt(fields.height),
+        contentPath: `/api/assets/${asset.id}/content`,
+      });
+    }
+    return media;
+  }
+
+  async function editorLoad(site: SiteRow, row: PageRow, editorFrameOrigin: string): Promise<WebsitePageEditorLoad | null> {
+    const doc = await store.readDocument(row.companyId, row.documentId);
+    if (!doc || !doc.latestRevisionId) return null;
+    const pages = await listPages(site.companyId, site.id);
+    return {
+      page: toWebsitePage(row, doc),
+      revisionId: doc.latestRevisionId,
+      data: parseBody(doc.latestBody),
+      theme: site.theme ?? {},
+      site: {
+        name: site.name,
+        settings: { domain: site.domain },
+        navigation: pages
+          .filter((page) => page.menu !== "none")
+          .map((page) => ({ pageId: page.id, title: page.title, slug: page.slug, menu: page.menu, menuOrder: page.menuOrder })),
+      },
+      editorFrameOrigin,
+      media: await listMedia(site.companyId, site.id),
+    };
+  }
+
+  async function saveEntryRevision(row: EntryRow, input: {
+    content: unknown; baseRevisionId: string; changeSummary?: string; actor: WebsiteActor;
+  }) {
+    return store.saveRevision({
+      companyId: row.companyId,
+      documentId: row.documentId,
+      ...input,
+      afterSave: async (tx) => {
+        await tx.update(websiteEntry)
+          .set({ status: "draft", approvedRevisionId: null, updatedAt: new Date() })
+          .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id)));
+      },
+    });
+  }
+
   return {
     store,
+    pageRevision,
+    restorePageRevision,
+    listMedia,
+    editorLoad,
     listSites,
+    listTokenSecrets,
+    tokenSecretName,
     getSite,
     createSite,
     updateSite,
@@ -649,6 +889,7 @@ export function websiteModuleService(db: Db) {
     createEntry,
     updateEntry,
     archiveEntry,
+    saveEntryRevision,
     submitEntry,
     approveEntry,
     sendBackEntry,

@@ -14,7 +14,8 @@ import { findLeadAgentId } from "./looks-finished.js";
 // one of them. A person's new top-level task wakes one agent to place it; the
 // project lead tidies the rest on request.
 
-export const PROJECT_TREE_MAX_NODES = 300;
+/** High enough that a whole project's work fits, finished work included (GRE-2290). */
+export const PROJECT_TREE_MAX_NODES = 2000;
 export const PROJECT_TREE_MAX_DEPTH = 12;
 export const PROJECT_TASK_PLACEMENT_REASON = "project_task_placement";
 export const PROJECT_TIDY_ORIGIN_KIND = "project_tidy";
@@ -230,7 +231,7 @@ export function projectTreeService(
     // its parent, or under "Unsorted" when it has none here.
     const parentIdOf = (row: (typeof kept)[number]) =>
       row.keyTaskAt == null && row.parentId && keptIds.has(row.parentId) ? row.parentId : null;
-    const { nodes, externalBlockers } = await buildTreeNodes(db, companyId, kept, {
+    const { nodes, externalBlockers, blockLinks } = await buildTreeNodes(db, companyId, kept, {
       depthOf: (row) => depthById.get(row.id) ?? 0,
       parentIdOf,
       canRead: options.canRead,
@@ -244,6 +245,7 @@ export function projectTreeService(
       unsortedIds: kept.filter((row) => row.keyTaskAt == null && parentIdOf(row) === null).map((row) => row.id),
       nodes,
       externalBlockers,
+      blockLinks,
       hiddenDoneByParent: pick(shaped.folded),
       keyTaskProgress: pick(shaped.progress),
       counts: shaped.counts,

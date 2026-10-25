@@ -9,10 +9,25 @@ import {
   type CreateWebsiteSite,
   type UpdateWebsiteProperty,
   type UpdateWebsiteSite,
+  type WebsiteMediaItem,
   type WebsitePage,
+  type WebsitePageDetail,
+  type WebsitePageEditorLoad,
+  type WebsiteRevision,
+  type WebsiteSaveResult,
+  type WebsiteEntry,
+  type WebsiteEntryDetail,
+  type CreateWebsiteEntry,
+  type CreateWebsiteChangeRequest,
+  type WebsiteChangeRequestResult,
+  type WebsitePageComment,
   type WebsiteRelease,
+  type WebsiteHomeSummary,
+  type WebsiteEnquiryLead,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
+  type WebsiteTokenSecretOption,
+  type WebsiteAccess,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
   type WebsiteOverview,
@@ -63,17 +78,87 @@ export const websiteApi = {
 
 const sitesPath = (companyId: string) => `/companies/${encodeURIComponent(companyId)}/website/sites`;
 const sitePath = (companyId: string, siteId: string) => `${sitesPath(companyId)}/${encodeURIComponent(siteId)}`;
+const entryPath = (companyId: string, siteId: string, entryId: string) =>
+  `${sitePath(companyId, siteId)}/entries/${encodeURIComponent(entryId)}`;
 const releasePath = (companyId: string, siteId: string, releaseId: string) =>
   `${sitePath(companyId, siteId)}/releases/${encodeURIComponent(releaseId)}`;
 
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
   sites: (companyId: string) => api.get<WebsiteSite[]>(sitesPath(companyId)),
+  enquiries: (companyId: string, siteId: string) =>
+    api.get<WebsiteEnquiryLead[]>(`${sitePath(companyId, siteId)}/enquiries`),
+  checkEnquiries: (companyId: string, siteId: string) =>
+    api.post<{ created: number; skipped: number }>(`${sitePath(companyId, siteId)}/enquiries/check`, {}),
+  /** What the caller may do: for the company, or for one site when `siteId` is given. */
+  access: (companyId: string, siteId?: string | null) =>
+    api.get<WebsiteAccess>(
+      `/companies/${encodeURIComponent(companyId)}/website/access${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`,
+    ),
+  /** Saved company secrets a site can use as its Netlify token: names only (website:publish). */
+  tokenSecrets: (companyId: string) =>
+    api.get<WebsiteTokenSecretOption[]>(`/companies/${encodeURIComponent(companyId)}/website/token-secrets`),
   /** Connect a site (website:publish). The Netlify token goes to the company's secrets and is never returned. */
   createSite: (companyId: string, input: CreateWebsiteSite) => api.post<WebsiteSite>(sitesPath(companyId), input),
   updateSite: (companyId: string, siteId: string, patch: UpdateWebsiteSite) =>
     api.patch<WebsiteSite>(sitePath(companyId, siteId), patch),
   pages: (companyId: string, siteId: string) => api.get<WebsitePage[]>(`${sitePath(companyId, siteId)}/pages`),
+  page: (companyId: string, siteId: string, pageId: string) => api.get<WebsitePageDetail>(pagePath(companyId, siteId, pageId)),
+  /** Draft, theme, site and media for the editor frame's `load-draft`. */
+  pageEditor: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsitePageEditorLoad>(`${pagePath(companyId, siteId, pageId)}/editor`, { cache: "no-store" }),
+  /** A save; `conflict` (409) and `failed` (422) answers are returned, not thrown. */
+  savePageContent: (
+    companyId: string,
+    siteId: string,
+    pageId: string,
+    body: { baseRevisionId: string; content: unknown; editorOrigin?: string; changeSummary?: string },
+  ) => saveAnswer(api.put<WebsiteSaveResult>(`${pagePath(companyId, siteId, pageId)}/content`, body)),
+  revisions: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsiteRevision[]>(`${pagePath(companyId, siteId, pageId)}/revisions`),
+  revision: (companyId: string, siteId: string, pageId: string, revisionId: string) =>
+    api.get<{ revision: WebsiteRevision; content: unknown }>(
+      `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}`,
+    ),
+  /** Request publish: draft to review. A person with Publish rights approves it; nothing goes live here. */
+  submitPage: (companyId: string, siteId: string, pageId: string) =>
+    api.post<WebsitePage>(`${pagePath(companyId, siteId, pageId)}/submit`, {}),
+  restoreRevision: (companyId: string, siteId: string, pageId: string, revisionId: string, baseRevisionId: string) =>
+    saveAnswer(
+      api.post<WebsiteSaveResult>(
+        `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}/restore`,
+        { baseRevisionId },
+      ),
+    ),
+  /** Click to change: one task for the website agent (website:edit). The same requestId returns the same task. */
+  /** The page's open comments for the agents (GRE-2350), oldest first and numbered. */
+  pageComments: (companyId: string, siteId: string, pageId: string) =>
+    api.get<WebsitePageComment[]>(`${pagePath(companyId, siteId, pageId)}/change-requests`),
+  requestChange: (companyId: string, siteId: string, pageId: string, input: CreateWebsiteChangeRequest) =>
+    api.post<WebsiteChangeRequestResult>(`${pagePath(companyId, siteId, pageId)}/change-requests`, input),
+  media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
+  entries: (companyId: string, siteId: string, collection: string) =>
+    api.get<WebsiteEntry[]>(`${sitePath(companyId, siteId)}/entries?collection=${encodeURIComponent(collection)}`),
+  importPublicDrafts: (companyId: string, siteId: string) =>
+    api.post<{ imported: number; skipped: number; capturedAt: string }>(`${sitePath(companyId, siteId)}/entries/import-public-drafts`, {}),
+  entry: (companyId: string, siteId: string, entryId: string) =>
+    api.get<WebsiteEntryDetail>(entryPath(companyId, siteId, entryId)),
+  createEntry: (companyId: string, siteId: string, input: CreateWebsiteEntry) =>
+    api.post<WebsiteEntryDetail>(`${sitePath(companyId, siteId)}/entries`, input),
+  saveEntry: (companyId: string, siteId: string, entryId: string, input: { baseRevisionId: string; content: unknown }) =>
+    api.put<WebsiteSaveResult>(`${entryPath(companyId, siteId, entryId)}/content`, input),
+  updateEntry: (companyId: string, siteId: string, entryId: string, patch: { status?: "draft" | "review"; entryKey?: string; sortOrder?: number | null }) =>
+    api.patch<WebsiteEntry>(entryPath(companyId, siteId, entryId), patch),
+  submitEntry: (companyId: string, siteId: string, entryId: string) =>
+    api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/submit`, {}),
+  approveEntry: (companyId: string, siteId: string, entryId: string) =>
+    api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/approve`, {}),
+  archiveEntry: (companyId: string, siteId: string, entryId: string) =>
+    api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/archive`, {}),
+  entryRevisions: (companyId: string, siteId: string, entryId: string) =>
+    api.get<WebsiteRevision[]>(`${entryPath(companyId, siteId, entryId)}/revisions`),
+  entryRevision: (companyId: string, siteId: string, entryId: string, revisionId: string) =>
+    api.get<{ revisionNumber: number; content: unknown }>(`${entryPath(companyId, siteId, entryId)}/revisions/${encodeURIComponent(revisionId)}`),
   /** Sitemap options (GRE-2111). */
   sitemapOptions: (companyId: string, siteId: string) =>
     api.get<WebsiteSitemapOption[]>(`${sitePath(companyId, siteId)}/sitemap/options`),
@@ -91,6 +176,8 @@ export const websiteModuleApi = {
     if (!res.ok) throw new ApiError(plainHttpErrorMessage(res.status), res.status, null);
     return res.text();
   },
+  /** The Website Home at a glance: counts, releases and the last 8 events in one read. */
+  home: (companyId: string, siteId: string) => api.get<WebsiteHomeSummary>(`${sitePath(companyId, siteId)}/home`),
   /** Releases of a site, newest first (GRE-2108). */
   releases: (companyId: string, siteId: string) => api.get<WebsiteRelease[]>(`${sitePath(companyId, siteId)}/releases`),
   release: (companyId: string, siteId: string, releaseId: string) =>
@@ -108,6 +195,20 @@ export const websiteModuleApi = {
   rollback: (companyId: string, siteId: string, releaseId: string, confirmRebuild: boolean) =>
     api.post<WebsiteRelease>(`${releasePath(companyId, siteId, releaseId)}/rollback`, confirmRebuild ? { confirmRebuild: true } : {}),
 };
+
+const pagePath = (companyId: string, siteId: string, pageId: string) =>
+  `${sitePath(companyId, siteId)}/pages/${encodeURIComponent(pageId)}`;
+
+/** Conflict and failed saves come back as 409 and 422 with a `WebsiteSaveResult` body. */
+async function saveAnswer(pending: Promise<WebsiteSaveResult>): Promise<WebsiteSaveResult> {
+  try {
+    return await pending;
+  } catch (error) {
+    const body = error instanceof ApiError ? (error.body as Partial<WebsiteSaveResult> | null) : null;
+    if (body && (body.state === "conflict" || body.state === "failed")) return body as WebsiteSaveResult;
+    throw error;
+  }
+}
 
 /** The `code` of a website API refusal, for example `website_rebuild_needs_confirm`. */
 export function websiteErrorCode(error: unknown): string | null {

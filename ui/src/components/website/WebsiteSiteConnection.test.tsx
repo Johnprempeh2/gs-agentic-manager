@@ -8,13 +8,11 @@ import type { WebsiteProperty, WebsiteSite } from "@greatstone/shared";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const moduleMock = vi.hoisted(() => ({ sites: vi.fn(), createSite: vi.fn(), updateSite: vi.fn(), pages: vi.fn() }));
-const canManage = vi.hoisted(() => ({ value: true }));
+const moduleMock = vi.hoisted(() => ({ sites: vi.fn(), access: vi.fn(), tokenSecrets: vi.fn(), createSite: vi.fn(), updateSite: vi.fn(), pages: vi.fn() }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
   return { ...actual, websiteModuleApi: moduleMock };
 });
-vi.mock("./WebsiteSetup", () => ({ useCanManageWebsite: () => ({ canManage: canManage.value, isLoading: false }) }));
 
 import { WebsiteSiteConnection, domainFromSiteUrl } from "./WebsiteSiteConnection";
 
@@ -44,11 +42,16 @@ function site(overrides: Partial<WebsiteSite> = {}): WebsiteSite {
     repoUrl: "https://github.com/acme/site",
     netlifySiteId: "netlify-123",
     hasNetlifyToken: true,
+    netlifyTokenSource: "own",
+    netlifyTokenSecretName: "Website Netlify token site-1",
     blobsStoreName: "gsam-content",
     engineVersion: null,
     releaseSchemaVersion: 1,
     propertyId: "prop-1",
     editorOrigins: [],
+    editorFrameOrigin: null,
+    livePreviewUrl: null,
+    devPreviewUrl: null,
     checkPaths: ["/"],
     liveReleaseId: null,
     archivedAt: null,
@@ -76,8 +79,9 @@ describe("WebsiteSiteConnection", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    canManage.value = true;
     vi.clearAllMocks();
+    moduleMock.access.mockResolvedValue({ view: true, edit: true, publish: true });
+    moduleMock.tokenSecrets.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -107,7 +111,8 @@ describe("WebsiteSiteConnection", () => {
     await render();
     const text = container.textContent ?? "";
     expect(text).toContain("netlify-123");
-    expect(text).toContain("Stored in this company's secrets");
+    expect(text).toContain("Token saved.");
+    expect(text).toContain("Live address");
     expect(container.querySelector("button")?.textContent).toBe("Change");
   });
 
@@ -115,7 +120,9 @@ describe("WebsiteSiteConnection", () => {
     moduleMock.sites.mockResolvedValue([]);
     moduleMock.createSite.mockResolvedValue(site());
     await render();
-    const connect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Connect site")!;
+    const connect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Connect a site")!;
+    expect(container.textContent).toContain("Connect your website");
+    expect(container.textContent).not.toMatch(/published/i);
     await act(async () => connect.click());
     const domain = container.querySelector<HTMLInputElement>("#website-site-prop-1-domain")!;
     expect(domain.value).toBe("www.greatstone.example");
@@ -137,11 +144,107 @@ describe("WebsiteSiteConnection", () => {
     });
   });
 
-  it("tells people who cannot publish who can connect it", async () => {
-    canManage.value = false;
+  it("says which saved secret a site uses, by name only", async () => {
+    moduleMock.sites.mockResolvedValue([site({ netlifyTokenSource: "shared", netlifyTokenSecretName: "Netlify PAT (agents)" })]);
+    await render();
+    expect(container.textContent).toContain("Saved secret Netlify PAT (agents). GSAM reads it and never changes it.");
+  });
+
+  it("links a saved secret instead of a pasted token", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.tokenSecrets.mockResolvedValue([{ id: "secret-1", name: "Netlify PAT (agents)" }]);
+    moduleMock.updateSite.mockResolvedValue(site({ netlifyTokenSource: "shared", netlifyTokenSecretName: "Netlify PAT (agents)" }));
+    await render();
+    await act(async () => container.querySelector("button")!.click());
+    const saved = [...container.querySelectorAll<HTMLButtonElement>("[role=radio]")].find((button) => button.textContent?.includes("Use a saved secret"))!;
+    await act(async () => saved.click());
+    await flush();
+    const select = container.querySelector<HTMLSelectElement>("#website-site-prop-1-token-secret")!;
+    expect([...select.options].map((option) => option.textContent)).toEqual(["Choose a secret", "Netlify PAT (agents)"]);
+    await act(async () => {
+      select.value = "secret-1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(moduleMock.updateSite).toHaveBeenCalledWith("co-1", "site-1", expect.objectContaining({ netlifyTokenSecretId: "secret-1" }));
+    expect(moduleMock.updateSite.mock.calls[0]![2]).not.toHaveProperty("netlifyToken");
+  });
+
+  it("sets the editor address, sending it only when it changes", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.updateSite.mockResolvedValue(site({ editorFrameOrigin: "https://editor.greatstone.example" }));
+    await render();
+    expect(container.textContent).toContain("Not set. Editing pages needs it.");
+    const change = [...container.querySelectorAll("button")].find((button) => button.textContent === "Change")!;
+    await act(async () => change.click());
+    await act(async () => {
+      setValue(container.querySelector<HTMLInputElement>("#website-site-prop-1-editor")!, "https://editor.greatstone.example");
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    expect(moduleMock.updateSite).toHaveBeenCalledWith("co-1", "site-1", expect.objectContaining({ editorFrameOrigin: "https://editor.greatstone.example" }));
+  });
+
+  it("sets the two preview addresses as https addresses, sending only what changed, with the exact-copy rule in the help", async () => {
+    moduleMock.sites.mockResolvedValue([site({ editorFrameOrigin: "https://editor.greatstone.example" })]);
+    moduleMock.updateSite.mockResolvedValue(site());
+    await render();
+    expect(container.textContent).toContain("Live site viewThe live address");
+    expect(container.textContent).toContain("In developmentThe editor address");
+    const change = [...container.querySelectorAll("button")].find((button) => button.textContent === "Change")!;
+    await act(async () => change.click());
+    const live = container.querySelector<HTMLInputElement>("#website-site-prop-1-live-preview")!;
+    const dev = container.querySelector<HTMLInputElement>("#website-site-prop-1-dev-preview")!;
+    expect(live.type).toBe("url");
+    expect(live.pattern).toBe("https://.*");
+    expect(dev.placeholder).toBe("https://editor.greatstone.example");
+    expect(container.querySelector("#website-site-prop-1-live-preview-help")!.textContent).toContain("must be an exact copy of the live deploy");
+    await act(async () => setValue(live, "https://abc--greatstone.netlify.app/"));
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    const sent = moduleMock.updateSite.mock.calls[0]![2];
+    expect(sent).toMatchObject({ livePreviewUrl: "https://abc--greatstone.netlify.app/" });
+    expect(sent).not.toHaveProperty("devPreviewUrl");
+  });
+
+  it("tells people without Publish rights who can connect it", async () => {
+    moduleMock.access.mockResolvedValue({ view: true, edit: true, publish: false });
     moduleMock.sites.mockResolvedValue([]);
     await render();
-    expect(container.textContent).toContain("A company owner or admin can connect it.");
+    expect(moduleMock.access).toHaveBeenCalledWith("co-1", null);
+    expect(container.textContent).toContain("Only people with Publish rights can change site settings, the theme and the token.");
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  // GRE-2136: the buttons follow the server's website:publish decision, not the owner/admin role.
+  it("offers Connect a site to someone granted website:publish for the company", async () => {
+    moduleMock.access.mockResolvedValue({ view: true, edit: true, publish: true });
+    moduleMock.sites.mockResolvedValue([]);
+    await render();
+    expect(moduleMock.access).toHaveBeenCalledWith("co-1", null);
+    expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Connect a site"]);
+  });
+
+  it("shows Change from the grant for this site, and hides it when the grant is for another site", async () => {
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.access.mockImplementation(async (_companyId: string, siteId: string | null) => ({ view: true, edit: true, publish: siteId === "site-1" }));
+    await render();
+    expect(moduleMock.access).toHaveBeenCalledWith("co-1", "site-1");
+    expect(container.querySelector("button")?.textContent).toBe("Change");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    vi.clearAllMocks();
+    moduleMock.sites.mockResolvedValue([site()]);
+    moduleMock.access.mockImplementation(async (_companyId: string, siteId: string | null) => ({ view: true, edit: true, publish: siteId === "other-site" }));
+    await render();
     expect(container.querySelector("button")).toBeNull();
   });
 });

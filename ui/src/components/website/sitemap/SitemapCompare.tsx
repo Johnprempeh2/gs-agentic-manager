@@ -14,10 +14,12 @@ const CHANGE_LABELS: Record<SitemapChange, { label: string; className: string }>
   renamed: { label: "Renamed", className: "bg-status-warning-soft text-status-warning-foreground" },
 };
 
-function OptionColumn({ option, tree, changesById, pagesById, side }: {
+function OptionColumn({ option, tree, changesById, newAddressById, pagesById, side }: {
   option: WebsiteSitemapOption;
   tree: Tree;
   changesById: Map<string, SitemapChange[]>;
+  /** Pages at a new address: the address in the other option (GRE-2193). */
+  newAddressById: Map<string, string>;
   pagesById: Map<string, WebsitePage>;
   side: "a" | "b";
 }) {
@@ -42,6 +44,9 @@ function OptionColumn({ option, tree, changesById, pagesById, side }: {
               {changes.map((change) => (
                 <Pill key={change} className={CHANGE_LABELS[change].className}>{CHANGE_LABELS[change].label}</Pill>
               ))}
+              {newAddressById.has(node.id) ? (
+                <p className="w-full break-all font-mono text-xs text-muted-foreground">{newAddressById.get(node.id)}</p>
+              ) : null}
               {status === "planned" && node.menu !== "none" ? <p className="w-full text-xs text-muted-foreground">{plannedHiddenNote(node.title)}</p> : null}
             </li>
           );
@@ -54,7 +59,8 @@ function OptionColumn({ option, tree, changesById, pagesById, side }: {
 /**
  * Compare (GRE-2111): two options side by side, with added, removed, moved
  * and renamed pages marked. Pick one (approve it), or copy a branch from one
- * option into the other to mix them.
+ * option into a copy of the other to mix them: the mix is a new option, shown
+ * on the right, and the two options compared do not change (GRE-2143).
  */
 export function SitemapCompareView({ options, pagesById, initialA, initialB, canApprove, canEdit, onApprove, onCopy, busy }: {
   options: WebsiteSitemapOption[];
@@ -64,7 +70,8 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
   canApprove: boolean;
   canEdit: boolean;
   onApprove: (optionId: string) => void;
-  onCopy: (targetOptionId: string, tree: Tree) => void;
+  /** Saves the mix as a new option and resolves to its id (null when the save fails). */
+  onCopy: (targetOptionId: string, tree: Tree) => Promise<string | null>;
   busy: boolean;
 }) {
   const [aId, setAId] = useState(initialA ?? options[0]?.id ?? "");
@@ -76,16 +83,22 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
   const [copyParent, setCopyParent] = useState("");
 
   const diff = useMemo(() => (a && b ? diffSitemapTrees(a.tree, b.tree) : []), [a, b]);
-  const { aChanges, bChanges, counts } = useMemo(() => {
+  const { aChanges, bChanges, aAddresses, bAddresses, counts } = useMemo(() => {
     const aChanges = new Map<string, SitemapChange[]>();
     const bChanges = new Map<string, SitemapChange[]>();
+    const aAddresses = new Map<string, string>();
+    const bAddresses = new Map<string, string>();
     const counts: Record<SitemapChange, number> = { added: 0, removed: 0, moved: 0, renamed: 0 };
     for (const entry of diff) {
       for (const change of entry.changes) counts[change] += 1;
       if (entry.a) aChanges.set(entry.a.id, entry.changes);
       if (entry.b) bChanges.set(entry.b.id, entry.changes);
+      if (entry.a && entry.b && entry.a.path !== entry.b.path) {
+        aAddresses.set(entry.a.id, `Now at ${entry.b.path}`);
+        bAddresses.set(entry.b.id, `Was at ${entry.a.path}`);
+      }
     }
-    return { aChanges, bChanges, counts };
+    return { aChanges, bChanges, aAddresses, bAddresses, counts };
   }, [diff]);
 
   if (options.length < 2) {
@@ -122,13 +135,13 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
       {a && b ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="min-w-0 space-y-2">
-            <OptionColumn option={a} tree={a.tree} changesById={aChanges} pagesById={pagesById} side="a" />
+            <OptionColumn option={a} tree={a.tree} changesById={aChanges} newAddressById={aAddresses} pagesById={pagesById} side="a" />
             {canApprove && a.status !== "approved" ? (
               <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(a.id)}>Use this option</Button>
             ) : null}
           </div>
           <div className="min-w-0 space-y-2">
-            <OptionColumn option={b} tree={b.tree} changesById={bChanges} pagesById={pagesById} side="b" />
+            <OptionColumn option={b} tree={b.tree} changesById={bChanges} newAddressById={bAddresses} pagesById={pagesById} side="b" />
             {canApprove && b.status !== "approved" ? (
               <Button type="button" size="sm" disabled={busy} onClick={() => onApprove(b.id)}>Use this option</Button>
             ) : null}
@@ -142,14 +155,25 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
           onSubmit={(event) => {
             event.preventDefault();
             if (!copyNode) return;
-            onCopy(target.id, copyBranch(source.tree, copyNode, target.tree, copyParent || null));
-            setCopyNode("");
+            const targetId = target.id;
+            void onCopy(targetId, copyBranch(source.tree, copyNode, target.tree, copyParent || null)).then((createdId) => {
+              if (!createdId) return;
+              // Keep the base option on the left and show the new mix on the right.
+              setAId(targetId);
+              setBId(createdId);
+              setCopyFrom("a");
+              setCopyNode("");
+              setCopyParent("");
+            });
           }}
         >
           <h3 id="sitemap-copy-branch" className="text-sm font-semibold">Mix: copy a branch</h3>
-          <p className="text-xs text-muted-foreground">Copies a page and its sub-pages into the other option. Paths already in use get a number on the end.</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-sm">
+          <p className="text-xs text-muted-foreground">
+            Copies a page and its sub-pages into a copy of the other option and saves it as a new option. The options you compare do not change. Paths already in use get a number on the end.
+          </p>
+          {/* One field per row on a phone; a row from sm up (GRE-2143). */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="font-medium">From</span>
               <NativeSelect value={copyFrom} onChange={(event) => {
                 setCopyFrom(event.target.value as "a" | "b");
@@ -160,7 +184,7 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
                 <option value="b">{b?.name}</option>
               </NativeSelect>
             </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm sm:max-w-xs">
+            <label className="flex min-w-0 flex-col gap-1 text-sm sm:max-w-xs sm:flex-1">
               <span className="font-medium">Page and its sub-pages</span>
               <NativeSelect value={copyNode} onChange={(event) => setCopyNode(event.target.value)}>
                 <option value="">Choose a page</option>
@@ -169,8 +193,8 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
                 ))}
               </NativeSelect>
             </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm sm:max-w-xs">
-              <span className="font-medium">Into {target.name}, under</span>
+            <label className="flex min-w-0 flex-col gap-1 text-sm sm:max-w-xs sm:flex-1">
+              <span className="font-medium">Into a copy of {target.name}, under</span>
               <NativeSelect value={copyParent} onChange={(event) => setCopyParent(event.target.value)}>
                 <option value="">Top level</option>
                 {flatten(target.tree).map(({ node }) => (
@@ -178,7 +202,7 @@ export function SitemapCompareView({ options, pagesById, initialA, initialB, can
                 ))}
               </NativeSelect>
             </label>
-            <Button type="submit" size="sm" variant="outline" disabled={!copyNode || busy || target.status === "archived"}>
+            <Button type="submit" size="sm" variant="outline" className="self-start sm:self-auto" disabled={!copyNode || busy}>
               <Copy aria-hidden="true" />
               Copy branch
             </Button>

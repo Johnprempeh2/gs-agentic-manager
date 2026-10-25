@@ -1,0 +1,274 @@
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { PenLine } from "lucide-react";
+import type { CreateWebsiteChangeRequest, WebsiteChangeRequestResult, WebsiteCommentWidth, WebsitePage } from "@greatstone/shared";
+import { issuesApi } from "../../api/issues";
+import { websiteModuleApi } from "../../api/website";
+import { queryKeys } from "../../lib/queryKeys";
+import { Link } from "@/lib/router";
+import { issueUrl } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { errorStateMessage } from "../ErrorState";
+
+// Click to change (GRE-2121, plan 3.4). The person picks a block in the
+// preview, says what to change, and sees it back before anything is made.
+// Confirm makes one task for the website agent; Cancel makes nothing. A
+// change to words or an image can go straight into the draft instead.
+//
+// Ask an agent (GRE-2350) is the same box from the full-screen editor's top
+// bar: the selected block, or with nothing selected the whole page. The task
+// is a comment on the page; the Comments drawer lists the open ones.
+//
+// GRE-2361: on Create task GSAM asks the site's editor for a PNG of the block
+// or the page and attaches it to the task. An older engine, or no answer in
+// 5 s, makes the task without one, and the task says so.
+
+/** What the comment is about: a block (picked in preview or selected in the editor) or the whole page. */
+export type WebsiteChangeTarget =
+  | { kind: "page" }
+  | {
+      kind: "block";
+      blockId: string;
+      blockType: string;
+      label: string;
+      /** From a preview pick: the revision the frame showed. Else the page's latest draft. */
+      pageRevisionId?: string;
+      engine?: CreateWebsiteChangeRequest["engine"];
+      source?: CreateWebsiteChangeRequest["source"];
+    };
+
+const WIDTH_NAMES: Record<WebsiteCommentWidth, string> = { laptop: "Laptop", tablet: "Tablet", phone: "Phone" };
+
+type Step = "describe" | "confirm" | "created";
+
+/** A screenshot the editor captured, ready to attach. */
+export interface WebsiteScreenshot {
+  file: File;
+  width: number;
+}
+
+/** The frame's checked PNG data URL as a file to attach, e.g. `website-hero-1.png`. */
+export function websiteScreenshotFile(dataUrl: string, name: string): File {
+  const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new File([bytes], `website-${name}.png`, { type: "image/png" });
+}
+
+/** A v4 UUID. `randomUUID` needs a secure context; a phone on plain http has only `getRandomValues`. */
+function newRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function WebsiteChangeRequestPanel({
+  companyId,
+  siteId,
+  page,
+  target,
+  width,
+  dirty = false,
+  capture,
+  onCancel,
+  onEditBlock,
+}: {
+  companyId: string;
+  siteId: string;
+  page: WebsitePage;
+  target: WebsiteChangeTarget;
+  /** The editor width the person sees the page at. */
+  width: WebsiteCommentWidth;
+  /** The editor has edits that are not saved: the task names the saved draft. */
+  dirty?: boolean;
+  /** Asks the site's editor for a screenshot; null when it cannot give one. */
+  capture?: () => Promise<WebsiteScreenshot | null>;
+  /** Clears the pick. Nothing is created. */
+  onCancel: () => void;
+  /** Opens the block in the editor for a words or image change (preview picks only). */
+  onEditBlock?: (blockId: string, blockName: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [step, setStep] = useState<Step>("describe");
+  const [request, setRequest] = useState("");
+  // One id per pick: a repeated confirm returns the same task, never a second one.
+  const [requestId] = useState(newRequestId);
+  const [created, setCreated] = useState<WebsiteChangeRequestResult | null>(null);
+  /** What happened to the screenshot: none taken, attached, or taken but not uploaded. */
+  const [shot, setShot] = useState<"none" | "attached" | "failed">("none");
+  const block = target.kind === "block" ? target : null;
+  const blockName = block ? block.label.trim() || block.blockType : "The whole page";
+  const pageRevisionId = block?.pageRevisionId ?? page.latestRevisionId;
+  const panelRef = useRef<HTMLElement>(null);
+
+  // On a phone the panel sits below the page controls; bring it into view on each pick.
+  useEffect(() => {
+    panelRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, []);
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const screenshot = capture ? await capture().catch(() => null) : null;
+      const result = await websiteModuleApi.requestChange(companyId, siteId, page.id, {
+        requestId,
+        pageRevisionId: pageRevisionId!,
+        ...(block
+          ? {
+              blockId: block.blockId,
+              blockType: block.blockType,
+              blockLabel: block.label.trim().slice(0, 200) || undefined,
+              ...(block.engine ? { engine: block.engine } : {}),
+              ...(block.source !== undefined ? { source: block.source } : {}),
+            }
+          : {}),
+        width,
+        request: request.trim(),
+        ...(screenshot ? { screenshot: true } : {}),
+      });
+      if (!screenshot) {
+        setShot("none");
+        return result;
+      }
+      try {
+        await issuesApi.uploadAttachment(companyId, result.issueId, screenshot.file);
+        setShot("attached");
+      } catch (error) {
+        setShot("failed");
+        // The task says a screenshot is attached: correct it on the task, so the agent is not left looking.
+        await issuesApi
+          .addComment(result.issueId, `The screenshot did not upload (${errorStateMessage(error)}). No screenshot is attached to this task.`)
+          .catch(() => undefined);
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      setCreated(result);
+      setStep("created");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.website.pageComments(companyId, siteId, page.id) });
+    },
+  });
+
+  const subject = (
+    <div className="min-w-0">
+      <p className="truncate text-sm font-medium" data-testid="website-change-block">
+        {blockName} on {page.title}
+      </p>
+      <p className="truncate text-xs text-muted-foreground">
+        {block ? `${block.blockType} · ` : ""}Seen at {WIDTH_NAMES[width]} width
+      </p>
+    </div>
+  );
+
+  return (
+    <section
+      ref={panelRef}
+      aria-label="Ask an agent"
+      data-testid="website-change-request"
+      data-step={step}
+      className="scroll-mt-20 space-y-3 rounded-lg border border-primary/40 bg-card p-3 shadow-xs"
+    >
+      <div className="flex flex-wrap items-start gap-2">
+        <span className="mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+          {block ? "Selected block" : "Whole page"}
+        </span>
+        <div className="min-w-0 flex-1">{subject}</div>
+      </div>
+
+      {!pageRevisionId ? (
+        <p role="alert" className="text-sm text-status-warning-foreground">
+          This page has no saved draft yet. Save it once, then ask an agent.
+        </p>
+      ) : dirty && step !== "created" ? (
+        <p className="text-xs text-status-warning-foreground" data-testid="website-change-unsaved">
+          Your unsaved edits are not in the task. Save first if the agent should see them.
+        </p>
+      ) : null}
+
+      {step === "describe" ? (
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (request.trim()) setStep("confirm");
+          }}
+        >
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">What should change?</span>
+            <Textarea
+              value={request}
+              onChange={(event) => setRequest(event.target.value)}
+              maxLength={4000}
+              rows={3}
+              placeholder="For example: make the heading shorter and use our new tagline."
+              autoFocus
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="sm" disabled={!request.trim() || !pageRevisionId}>Review</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+            {block && onEditBlock ? (
+              <Button type="button" size="sm" variant="outline" className="sm:ml-auto" onClick={() => onEditBlock(block.blockId, blockName)}>
+                <PenLine />
+                Edit words or image myself
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
+
+      {step === "confirm" ? (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">The website agent gets this task</p>
+            <blockquote className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm" data-testid="website-change-summary">
+              {request.trim()}
+            </blockquote>
+            <p className="text-xs text-muted-foreground">
+              The website agent will change {block ? "this" : "the page"} on {page.title} ({page.slug}) and save it as a draft for you to see here. Nothing goes live until a person publishes it.
+            </p>
+          </div>
+          {submit.error ? (
+            <p role="alert" className="text-sm text-status-danger-foreground">
+              The task was not created: {errorStateMessage(submit.error)}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" disabled={submit.isPending} onClick={() => submit.mutate()}>
+              {submit.isPending ? "Creating task" : "Create task"}
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={submit.isPending} onClick={() => setStep("describe")}>Back</Button>
+            <Button type="button" size="sm" variant="ghost" disabled={submit.isPending} onClick={onCancel}>Cancel</Button>
+          </div>
+        </div>
+      ) : null}
+
+      {step === "created" && created ? (
+        <div role="status" className="space-y-3">
+          <p className="text-sm">
+            Task{" "}
+            <Link to={issueUrl({ id: created.issueId, identifier: created.identifier })} className="font-medium underline underline-offset-2">
+              {created.identifier ?? "created"}
+            </Link>{" "}
+            {created.assigneeAgentId
+              ? "is with the website agent. Its replies show under Comments."
+              : "is created. No website agent leads this site's project yet, so assign it on the task."}
+          </p>
+          {shot === "attached" ? (
+            <p className="text-xs text-muted-foreground" data-testid="website-change-screenshot">
+              A screenshot of {block ? "the block" : "the page"} is attached to the task.
+            </p>
+          ) : shot === "failed" ? (
+            <p className="text-xs text-status-warning-foreground" data-testid="website-change-screenshot">
+              The screenshot did not upload, so the task has no screenshot. The task says so.
+            </p>
+          ) : null}
+          <Button type="button" size="sm" variant="outline" onClick={onCancel}>Done</Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}

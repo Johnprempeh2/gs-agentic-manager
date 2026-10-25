@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
@@ -7,17 +7,16 @@ import {
   Globe,
   Image as ImageIcon,
   Laptop,
-  Link2,
   Map as MapIcon,
   MonitorPlay,
   Smartphone,
   Tablet,
 } from "lucide-react";
-import type { Agent, DecisionCard, Project, ProjectTree, WebsiteProperty } from "@greatstone/shared";
+import { websitePreviewAddresses, type Agent, type DecisionCard, type ProjectTree, type WebsiteProperty } from "@greatstone/shared";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
 import { projectsApi } from "../../api/projects";
-import { websiteApi, type WebsiteHubPreviewLink, type WebsiteHubSitemap, type WebsiteHubWorkItem } from "../../api/website";
+import { websiteApi, websiteModuleApi, type WebsiteHubPreviewLink, type WebsiteHubSitemap } from "../../api/website";
 import { useDialogActions } from "../../context/DialogContext";
 import { useDecisionsFeed } from "../../hooks/useDecisionsFeed";
 import { queryKeys } from "../../lib/queryKeys";
@@ -31,32 +30,37 @@ import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 import { LivePreviewCard, pickLivePreviewService } from "../LivePreviewCard";
 import { ScaledFrame } from "../AttachmentPreviewPanel";
-import { StatusIcon } from "../StatusIcon";
-import { ProgressRing } from "../task-tree/ProgressRing";
-import { TaskTreeProgress } from "../task-tree/TaskTreeHeader";
 import { ProjectTreeView } from "../../pages/ProjectTree";
 import { WebsiteSiteConnection, useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteReleases } from "./WebsiteReleases";
 import { useCanManageWebsite } from "./WebsiteSetup";
 import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapSection";
 
-// The website hub (23 Oct 2026): the Website page's Overview, Progress,
+// The website hub (23 Oct 2026): the Website page's Releases, Progress,
 // Sitemap and Preview tabs. Everything is read from what GSAM already keeps:
 // the linked project's tree, the decisions feed, the project's tasks' work
 // products, attachments and comments, and the project workspace's preview.
 
-export type WebsiteTab = "overview" | "progress" | "sitemap" | "preview" | "traffic";
+export type WebsiteTab = "home" | "preview" | "progress" | "sitemap" | "editor" | "collections" | "releases" | "traffic";
+
+/** The admin's at-a-glance Home leads (John, 24 Oct 2026), with the live site as its hero. */
+export const WEBSITE_DEFAULT_TAB: WebsiteTab = "home";
 
 export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
-  { value: "overview", label: "Overview" },
+  { value: "home", label: "Home" },
+  { value: "preview", label: "Preview" },
   { value: "progress", label: "Progress" },
   { value: "sitemap", label: "Sitemap" },
-  { value: "preview", label: "Preview" },
+  { value: "editor", label: "Pages" },
+  { value: "collections", label: "Collections" },
+  { value: "releases", label: "Releases" },
   { value: "traffic", label: "Traffic" },
 ];
 
+/** The tab named in `?tab=`. The old Overview became Home, so `?tab=overview` opens Home. */
 export function websiteTabFrom(value: string | null): WebsiteTab {
-  return WEBSITE_TABS.some((tab) => tab.value === value) ? (value as WebsiteTab) : "overview";
+  if (value === "overview") return "home";
+  return WEBSITE_TABS.some((tab) => tab.value === value) ? (value as WebsiteTab) : WEBSITE_DEFAULT_TAB;
 }
 
 /** The public address of a Search Console property: `sc-domain:example.com` → `https://example.com/`. */
@@ -88,7 +92,7 @@ export function websiteDecisionCards(cards: DecisionCard[], projectId: string, p
   });
 }
 
-const WORK_TYPE_LABELS: Record<string, string> = {
+export const WORK_TYPE_LABELS: Record<string, string> = {
   deliverable: "Deliverable",
   preview_url: "Preview",
   runtime_service: "Preview service",
@@ -114,11 +118,11 @@ export function sitemapApprovalState(sitemap: WebsiteHubSitemap, hasApprovalCard
   return "none";
 }
 
-function taskHref(task: { id: string; identifier: string | null }) {
+export function taskHref(task: { id: string; identifier: string | null }) {
   return `/issues/${task.identifier ?? task.id}`;
 }
 
-function When({ at }: { at: string }) {
+export function When({ at }: { at: string }) {
   return (
     <time dateTime={at} title={formatDateTime(at)}>
       {relativeTime(at)}
@@ -142,7 +146,6 @@ function Panel({ title, action, children, className }: { title: string; action?:
   );
 }
 
-const textLink = "font-medium text-foreground underline underline-offset-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /* ---- Linking the website to its project ---- */
 
@@ -207,7 +210,7 @@ export function WebsiteProjectLink({
   );
 }
 
-function LinkProjectFirst({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
+export function LinkProjectFirst({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   return (
     <Panel title="Link the website project">
       <p className="text-sm text-muted-foreground">
@@ -220,7 +223,7 @@ function LinkProjectFirst({ companyId, property }: { companyId: string; property
 
 /* ---- Shared data ---- */
 
-function useHub(companyId: string, propertyId: string, enabled: boolean) {
+export function useHub(companyId: string, propertyId: string, enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.website.hub(companyId, propertyId),
     queryFn: () => websiteApi.hub(companyId, propertyId),
@@ -230,7 +233,7 @@ function useHub(companyId: string, propertyId: string, enabled: boolean) {
 }
 
 /** Everything a decision card needs besides the card. */
-function useDecisionCardContext(companyId: string) {
+export function useDecisionCardContext(companyId: string) {
   const agentsQuery = useQuery({
     queryKey: queryKeys.agents.list(companyId),
     queryFn: () => agentsApi.list(companyId),
@@ -245,7 +248,7 @@ function useDecisionCardContext(companyId: string) {
   return { agentMap, currentUserId: session?.user?.id ?? session?.session?.userId ?? null };
 }
 
-function useWebsiteCards(companyId: string, projectId: string, tree: ProjectTree | undefined) {
+export function useWebsiteCards(companyId: string, projectId: string, tree: ProjectTree | undefined) {
   const feed = useDecisionsFeed(companyId);
   const cards = useMemo(() => {
     if (!feed.data) return [];
@@ -255,158 +258,13 @@ function useWebsiteCards(companyId: string, projectId: string, tree: ProjectTree
   return { cards, assignableAgents: feed.data?.assignableAgents ?? [], isLoading: feed.isLoading, error: feed.error };
 }
 
-/* ---- Overview ---- */
+/* ---- Releases ---- */
 
-function LiveSitePanel({ property, project }: { property: WebsiteProperty; project: Project | undefined }) {
-  const url = liveSiteUrl(property.siteUrl);
-  const preview = pickLivePreviewService(project?.workspaces.flatMap((workspace) => workspace.runtimeServices ?? []));
-  const google = property.connectionStatus === "connected"
-    ? { label: "Google connected", className: "bg-status-success-soft text-status-success-foreground" }
-    : property.connectionStatus === "needs_reconnect"
-      ? { label: "Google needs reconnecting", className: "bg-status-warning-soft text-status-warning-foreground" }
-      : { label: "Google not connected", className: "bg-muted text-muted-foreground" };
-  return (
-    <Panel title="Live site">
-      {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className={cn(textLink, "inline-flex max-w-full items-center gap-1.5 break-all font-mono text-sm")}>
-          {url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-          <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="sr-only">(opens in a new tab)</span>
-        </a>
-      ) : (
-        <p className="break-all font-mono text-sm">{property.siteUrl}</p>
-      )}
-      <ul className="space-y-1.5 text-xs text-muted-foreground">
-        <li className="flex flex-wrap items-center gap-2">
-          <Pill className={google.className}>{google.label}</Pill>
-          <span>
-            Last traffic pull:{" "}
-            <span className="text-foreground">{property.lastPullAt ? <When at={property.lastPullAt} /> : "never"}</span>
-          </span>
-        </li>
-        <li className="flex flex-wrap items-center gap-2">
-          {preview ? (
-            <Pill className="bg-status-success-soft text-status-success-foreground">Preview running</Pill>
-          ) : (
-            <Pill className="bg-muted text-muted-foreground">No preview running</Pill>
-          )}
-          {project ? <span>Project status: <span className="text-foreground">{project.status.replace(/_/g, " ")}</span></span> : null}
-        </li>
-      </ul>
-    </Panel>
-  );
-}
-
-function ProgressPanel({ tree, onOpenTree }: { tree: ProjectTree; onOpenTree: () => void }) {
-  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
-  const keyTasks = tree.keyTaskIds.map((id) => byId.get(id)).filter((node) => node !== undefined);
-  return (
-    <Panel
-      title="Progress"
-      action={<Button type="button" variant="outline" size="sm" onClick={onOpenTree}>Open the tree</Button>}
-    >
-      <TaskTreeProgress counts={tree.counts} />
-      {keyTasks.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No key tasks yet. The project lead marks the tasks that drive the website.</p>
-      ) : (
-        <ul className="divide-y divide-border/60" aria-label="Key tasks">
-          {keyTasks.map((node) => {
-            const progress = tree.keyTaskProgress[node.id] ?? { done: 0, total: 0 };
-            return (
-              <li key={node.id} className="flex min-w-0 items-center gap-2 py-2">
-                <StatusIcon status={node.status} size="sm" />
-                <Link to={taskHref(node)} className="min-w-0 flex-1 truncate rounded-sm text-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {node.identifier ? <span className="font-mono text-xs text-muted-foreground">{node.identifier} </span> : null}
-                  {node.title}
-                </Link>
-                <ProgressRing done={progress.done} total={progress.total} />
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
-function workItemIcon(type: string) {
+export function workItemIcon(type: string) {
   if (type === "screenshot") return ImageIcon;
   if (type === "pull_request" || type === "branch" || type === "commit") return GitPullRequest;
   if (type === "preview_url" || type === "runtime_service") return MonitorPlay;
   return FileText;
-}
-
-function RecentWorkPanel({ items }: { items: WebsiteHubWorkItem[] }) {
-  return (
-    <Panel title="Latest work">
-      {items.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nothing made yet. Deliverables, previews and screenshots from the website tasks show here.</p>
-      ) : (
-        <ul className="divide-y divide-border/60" aria-label="Latest website work">
-          {items.map((item) => {
-            const Icon = workItemIcon(item.type);
-            const href = item.url ?? item.contentPath;
-            const isImage = item.contentPath && item.contentType?.startsWith("image/");
-            return (
-              <li key={item.id} className="flex min-w-0 items-center gap-3 py-2">
-                {isImage ? (
-                  <img src={item.contentPath!} alt="" className="size-10 shrink-0 rounded-md border border-border object-cover" loading="lazy" />
-                ) : (
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-                    <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  {href ? (
-                    <a href={href} target="_blank" rel="noreferrer" className="block truncate rounded-sm text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {item.title}
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                  ) : (
-                    <p className="truncate text-sm font-medium">{item.title}</p>
-                  )}
-                  <p className="truncate text-xs text-muted-foreground">
-                    {WORK_TYPE_LABELS[item.type] ?? item.type} ·{" "}
-                    <Link to={taskHref(item.task)} className="hover:underline">{item.task.identifier ?? item.task.title}</Link> · <When at={item.createdAt} />
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
-function NeedsYouPanel({ companyId, projectId, tree }: { companyId: string; projectId: string; tree: ProjectTree | undefined }) {
-  const { cards, assignableAgents, isLoading, error } = useWebsiteCards(companyId, projectId, tree);
-  const { agentMap, currentUserId } = useDecisionCardContext(companyId);
-  return (
-    <section className="space-y-4" aria-labelledby="website-needs-you">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="website-needs-you" className="text-lg font-semibold">What needs you</h2>
-        <Link to="/decisions" className={cn(textLink, "text-sm")}>All decisions</Link>
-      </div>
-      {error ? <ErrorState error={error} compact /> : null}
-      {isLoading ? <p className="text-sm text-muted-foreground">Loading decisions</p> : null}
-      {!isLoading && !error && cards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing on the website needs you right now.</p>
-      ) : null}
-      <div className="space-y-4">
-        {cards.map((card) => (
-          <DecisionFeedCard
-            key={card.id}
-            card={card}
-            companyId={companyId}
-            assignableAgents={assignableAgents}
-            agentMap={agentMap}
-            currentUserId={currentUserId}
-          />
-        ))}
-      </div>
-    </section>
-  );
 }
 
 /** Releases and Publish, once the site is connected (GRE-2133). */
@@ -415,58 +273,12 @@ function SiteReleases({ companyId, property }: { companyId: string; property: We
   return site ? <WebsiteReleases companyId={companyId} site={site} /> : null;
 }
 
-export function WebsiteOverviewTab({
-  companyId,
-  property,
-  onOpenTab,
-}: {
-  companyId: string;
-  property: WebsiteProperty;
-  onOpenTab: (tab: WebsiteTab) => void;
-}) {
-  const projectId = property.projectId;
-  const projectQuery = useQuery({
-    queryKey: [...queryKeys.projects.detail(projectId ?? ""), companyId],
-    queryFn: () => projectsApi.get(projectId!, companyId),
-    enabled: !!projectId,
-  });
-  const treeQuery = useQuery({
-    queryKey: queryKeys.projectTree(projectId ?? "", false),
-    queryFn: () => projectsApi.getTree(projectId!, false),
-    enabled: !!projectId,
-  });
-  const hubQuery = useHub(companyId, property.id, !!projectId);
-
-  if (!projectId) {
-    return (
-      <div className="space-y-6">
-        <LiveSitePanel property={property} project={undefined} />
-        <WebsiteSiteConnection companyId={companyId} property={property} />
-        <SiteReleases companyId={companyId} property={property} />
-        <LinkProjectFirst companyId={companyId} property={property} />
-      </div>
-    );
-  }
+/** The Releases tab: the site connection, then Releases and Publish (moved here from the old Overview). */
+export function WebsiteReleasesTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <LiveSitePanel property={property} project={projectQuery.data} />
-        {treeQuery.data ? (
-          <ProgressPanel tree={treeQuery.data} onOpenTree={() => onOpenTab("progress")} />
-        ) : treeQuery.error ? (
-          <ErrorState error={treeQuery.error} compact onRetry={() => void treeQuery.refetch()} />
-        ) : (
-          <Panel title="Progress"><p className="text-xs text-muted-foreground">Loading progress</p></Panel>
-        )}
-      </div>
+    <div className="space-y-6" data-testid="website-releases-tab">
       <WebsiteSiteConnection companyId={companyId} property={property} />
       <SiteReleases companyId={companyId} property={property} />
-      <NeedsYouPanel companyId={companyId} projectId={projectId} tree={treeQuery.data} />
-      {hubQuery.error ? (
-        <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
-      ) : (
-        <RecentWorkPanel items={hubQuery.data?.recentWork ?? []} />
-      )}
     </div>
   );
 }
@@ -489,7 +301,15 @@ export function WebsiteProgressTab({ companyId, property }: { companyId: string;
  * pages or sitemap options; until then the sitemap file attached to the
  * project's tasks (the website hub), with a way to start the section.
  */
-export function WebsiteSitemapTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
+export function WebsiteSitemapTab({
+  companyId,
+  property,
+  onEditPage,
+}: {
+  companyId: string;
+  property: WebsiteProperty;
+  onEditPage?: (pageId: string) => void;
+}) {
   const { site, isLoading: siteLoading } = useWebsiteSite(companyId, property.id);
   const { options, pages } = useSitemapData(companyId, site?.id ?? null);
   const { canManage } = useCanManageWebsite(companyId);
@@ -503,7 +323,7 @@ export function WebsiteSitemapTab({ companyId, property }: { companyId: string; 
   }
   if (site && optionList.length > 0) {
     // Board users who are not viewers can edit; the server checks website:edit on every save.
-    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit />;
+    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit onEditPage={site.editorFrameOrigin ? onEditPage : undefined} />;
   }
   // A site with pages but no option yet: start from its pages. No pages: the attached sitemap file stays.
   if (site && pageList.length > 0) return <StartSitemap companyId={companyId} site={site} pages={pageList} />;
@@ -599,13 +419,48 @@ function WebsiteSitemapAttachment({ companyId, property }: { companyId: string; 
 
 /* ---- Preview ---- */
 
-type Device = "laptop" | "tablet" | "phone";
+export type WebsitePreviewDevice = "laptop" | "tablet" | "phone";
+type Device = WebsitePreviewDevice;
 
-const DEVICES: { value: Device; label: string; width: number; icon: typeof Laptop }[] = [
+/** Preview widths: laptop, tablet and phone (plan 3.4). */
+export const WEBSITE_PREVIEW_DEVICES: { value: Device; label: string; width: number; icon: typeof Laptop }[] = [
   { value: "laptop", label: "Laptop", width: 1440, icon: Laptop },
   { value: "tablet", label: "Tablet", width: 768, icon: Tablet },
   { value: "phone", label: "Phone", width: 390, icon: Smartphone },
 ];
+
+/** Which site the Preview tab shows (John, 24 Oct 2026): the live site, the one in development, or both. */
+export type WebsitePreviewMode = "live" | "dev" | "side";
+
+export const WEBSITE_PREVIEW_MODES: { value: WebsitePreviewMode; label: string }[] = [
+  { value: "live", label: "Live" },
+  { value: "dev", label: "In development" },
+  { value: "side", label: "Side by side" },
+];
+
+const PREVIEW_MODE_KEY = "gsam.website.preview-mode";
+// Also kept in memory, so "Compare side by side" works where storage is blocked.
+let previewModeMemory: WebsitePreviewMode | null = null;
+
+/** The viewer's last Preview mode, if any. */
+export function rememberedPreviewMode(): WebsitePreviewMode | null {
+  if (previewModeMemory) return previewModeMemory;
+  try {
+    const value = window.localStorage.getItem(PREVIEW_MODE_KEY);
+    return WEBSITE_PREVIEW_MODES.some((mode) => mode.value === value) ? (value as WebsitePreviewMode) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPreviewMode(mode: WebsitePreviewMode) {
+  previewModeMemory = mode;
+  try {
+    window.localStorage.setItem(PREVIEW_MODE_KEY, mode);
+  } catch {
+    // Private windows and blocked storage: the memory copy is enough for this visit.
+  }
+}
 
 /** The live preview may run its own scripts, but never steer this page. */
 const PREVIEW_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups";
@@ -652,6 +507,168 @@ function PreviewLinksList({
   );
 }
 
+/** How long a frame may take to load before the page offers the new tab instead. */
+const PREVIEW_SLOW_MS = 8_000;
+
+const hostOf = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+
+/**
+ * The site in a frame, never a blank box: a calm placeholder while it loads,
+ * and, if it has not loaded after a while (most often a site that refuses
+ * to be framed), a clear message with "Open in new tab". `refused`: the
+ * server's header check says the address refuses frames, so the message
+ * shows at once.
+ */
+export function PreviewStage({ url, device, width, label = "Website", refused = false, className = "h-(--sz-80vh) min-h-96 rounded-xl border border-border" }: {
+  url: string;
+  device: Device;
+  width: number;
+  /** Names the frame for screen readers when two show at once. */
+  label?: string;
+  refused?: boolean;
+  /** The stage's size and frame; the Home hero sets its own. */
+  className?: string;
+}) {
+  const [loadState, setState] = useState<"loading" | "loaded" | "slow">("loading");
+  useEffect(() => {
+    setState("loading");
+    const timer = window.setTimeout(() => setState((current) => (current === "loading" ? "slow" : current)), PREVIEW_SLOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [url]);
+  const state = refused ? "slow" : loadState;
+  return (
+    <div className={cn("relative overflow-hidden bg-muted", className)} data-preview-state={state}>
+      {refused ? null : (
+        <ScaledFrame
+          key={url}
+          src={url}
+          title={`${label} preview, ${device} width`}
+          width={width}
+          sandbox={PREVIEW_SANDBOX}
+          testId="website-preview-frame"
+          viewport={device}
+          onLoad={() => setState("loaded")}
+        />
+      )}
+      {state === "loaded" ? null : (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted p-6" data-testid="website-preview-placeholder">
+          <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full border border-border bg-card">
+              <Globe className="size-5 text-muted-foreground" aria-hidden="true" />
+            </span>
+            {state === "loading" ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Loading <span className="font-mono text-foreground">{hostOf(url)}</span>
+              </p>
+            ) : (
+              <>
+                <p className="text-sm font-medium">The site is not showing here</p>
+                <p className="text-xs text-muted-foreground">
+                  {refused
+                    ? "It does not allow being shown inside another page. That is the site keeping itself safe; open it in a new tab instead."
+                    : "It may still be starting, or it may not allow being shown inside another page. That is the site keeping itself safe; open it in a new tab instead."}
+                </p>
+                <Button asChild size="sm">
+                  <a href={url} target="_blank" rel="noreferrer">
+                    <ExternalLink />
+                    Open in new tab
+                  </a>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One site in the Preview tab: its name, address and "Open in new tab", then the frame. */
+function PreviewPane({ title, detail, url, device, width, refused, note, empty, stageClassName, testId }: {
+  title: string;
+  detail: string | null;
+  url: string | null;
+  device: Device;
+  width: number;
+  refused: boolean;
+  note?: string | null;
+  empty: ReactNode;
+  stageClassName?: string;
+  testId: string;
+}) {
+  const problem = url ? framingProblem(url, window.location.protocol) : null;
+  return (
+    <section className="flex min-w-0 flex-col gap-2" aria-label={title} data-testid={testId}>
+      <div className="flex min-h-7 items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={url ?? undefined}>
+          <span className="font-medium text-foreground">{title}</span>
+          {detail ? <span> {detail}</span> : null}
+          {url ? <span className="font-mono"> {hostOf(url)}</span> : null}
+        </p>
+        {url ? (
+          <Button asChild size="xs" variant="ghost" className="shrink-0">
+            <a href={url} target="_blank" rel="noreferrer">
+              <ExternalLink />
+              Open in new tab
+              <span className="sr-only"> ({title})</span>
+            </a>
+          </Button>
+        ) : null}
+      </div>
+      {!url ? (
+        empty
+      ) : problem ? (
+        <div className="flex h-(--sz-50vh) flex-col items-center justify-center gap-3 rounded-xl border border-border bg-muted p-6 text-center">
+          <p role="alert" className="max-w-md text-sm text-muted-foreground">{problem}</p>
+          <Button asChild size="sm">
+            <a href={url} target="_blank" rel="noreferrer">
+              <ExternalLink />
+              Open in new tab
+            </a>
+          </Button>
+        </div>
+      ) : (
+        <PreviewStage url={url} device={device} width={width} label={title} refused={refused} className={stageClassName} />
+      )}
+      {/* Below the frame, so two frames side by side stay level. */}
+      {note ? <p className="text-xs text-muted-foreground" data-testid="website-preview-mirror-note">{note}</p> : null}
+    </section>
+  );
+}
+
+/** A small set of buttons where one is pressed, as the width toggle already reads. */
+function Toggle<T extends string>({ label, options, value, onChange }: {
+  label: string;
+  options: { value: T; label: string; icon?: typeof Laptop; title?: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label={label}>
+      {options.map((entry) => {
+        const Icon = entry.icon;
+        const active = entry.value === value;
+        return (
+          <button
+            key={entry.value}
+            type="button"
+            aria-pressed={active}
+            title={entry.title}
+            onClick={() => onChange(entry.value)}
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
+            {entry.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function WebsitePreviewTab({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const projectId = property.projectId;
   const projectQuery = useQuery({
@@ -661,97 +678,126 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
     refetchInterval: 30_000,
   });
   const hubQuery = useHub(companyId, property.id, !!projectId);
+  const { site } = useWebsiteSite(companyId, property.id);
+  // The Home's read: the server's frame check of the two addresses.
+  const homeQuery = useQuery({
+    queryKey: queryKeys.website.home(companyId, site?.id ?? ""),
+    queryFn: () => websiteModuleApi.home(companyId, site!.id),
+    enabled: !!site,
+  });
   const [device, setDevice] = useState<Device>("laptop");
   const [chosenUrl, setChosenUrl] = useState<string | null>(null);
+  const [storedMode, setStoredMode] = useState<WebsitePreviewMode | null>(rememberedPreviewMode);
 
-  if (!projectId) return <LinkProjectFirst companyId={companyId} property={property} />;
-  if (projectQuery.error) return <ErrorState error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data;
   const service = pickLivePreviewService(project?.workspaces.flatMap((workspace) => workspace.runtimeServices ?? []));
-  const url = chosenUrl ?? service?.url ?? null;
-  const source = chosenUrl
-    ? "Deploy preview"
-    : service
-      ? `Workspace preview (${service.serviceName}${service.port ? `, port ${service.port}` : ""})`
-      : null;
-  const problem = url ? framingProblem(url, window.location.protocol) : null;
-  const width = DEVICES.find((entry) => entry.value === device)!.width;
+  const addresses = site ? websitePreviewAddresses(site) : null;
+  const liveUrl = addresses?.live ?? liveSiteUrl(property.siteUrl);
+  const liveName = site?.domain ?? (liveUrl ? new URL(liveUrl).host : null);
+  // A chosen deploy preview, else the site's development address, else the running workspace preview.
+  const devUrl = chosenUrl ?? addresses?.dev ?? service?.url ?? null;
+  const devDetail = chosenUrl
+    ? "· Deploy preview"
+    : addresses?.dev
+      ? null
+      : service
+        ? `· Workspace preview (${service.serviceName}${service.port ? `, port ${service.port}` : ""})`
+        : null;
+  // Nothing remembered: the site being worked on, when it has an address.
+  const mode: WebsitePreviewMode = storedMode ?? (devUrl ? "dev" : "live");
+  const width = WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width;
+  const home = homeQuery.data;
+  const liveRefused = !!home && liveUrl === addresses?.live && home.liveFraming === "refused";
+  const devRefused = !!home && devUrl === addresses?.dev && home.devFraming === "refused";
+
+  const chooseMode = (next: WebsitePreviewMode) => {
+    rememberPreviewMode(next);
+    setStoredMode(next);
+  };
+  const showDeployPreview = (url: string) => {
+    setChosenUrl(url);
+    if (mode === "live") chooseMode("dev");
+  };
+
+  const side = mode === "side";
+  const stageClassName = side ? "h-(--sz-70vh) min-h-96 rounded-xl border border-border" : undefined;
+  const livePane = (
+    <PreviewPane
+      testId="website-preview-live"
+      title={liveName ? `Live (${liveName})` : "Live"}
+      detail={null}
+      url={liveUrl}
+      device={device}
+      width={width}
+      refused={liveRefused}
+      note={addresses?.liveIsMirror ? "Showing an exact copy of the live site." : null}
+      stageClassName={stageClassName}
+      empty={<EmptyState icon={Globe} title="No live address" message="Connect the site under Releases, or give the website its address." />}
+    />
+  );
+  const devPane = (
+    <PreviewPane
+      testId="website-preview-dev"
+      title="In development"
+      detail={devDetail}
+      url={devUrl}
+      device={device}
+      width={width}
+      refused={devRefused}
+      stageClassName={stageClassName}
+      empty={
+        <EmptyState
+          icon={Globe}
+          title="No development address yet"
+          message="Set it under Releases, Site connection, or start the workspace preview from the card below. The Greatstone Website project serves its preview on port 4100."
+        />
+      }
+    />
+  );
 
   return (
-    <div className="space-y-6" data-testid="website-preview">
-      {project ? <LivePreviewCard project={project} companyId={companyId} /> : null}
+    <div className="space-y-6" data-testid="website-preview" data-preview-mode={mode}>
       <section className="space-y-4" aria-labelledby="website-preview-frame">
+        {/* The site leads; the controls stay quiet above it. */}
+        <h2 id="website-preview-frame" className="sr-only">Preview</h2>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <h2 id="website-preview-frame" className="text-lg font-semibold">Preview</h2>
-            <p className="truncate text-xs text-muted-foreground">
-              {url ? <>{source}: <span className="font-mono">{url}</span></> : "No preview is running."}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-md border border-border" role="group" aria-label="Preview width">
-              {DEVICES.map((entry) => {
-                const Icon = entry.icon;
-                const active = entry.value === device;
-                return (
-                  <button
-                    key={entry.value}
-                    type="button"
-                    aria-pressed={active}
-                    title={`${entry.label} width (${entry.width} px)`}
-                    onClick={() => setDevice(entry.value)}
-                    className={cn(
-                      "inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-3.5" aria-hidden="true" />
-                    {entry.label}
-                  </button>
-                );
-              })}
-            </div>
-            {chosenUrl && service?.url ? (
-              <Button type="button" size="sm" variant="ghost" onClick={() => setChosenUrl(null)}>Back to workspace preview</Button>
-            ) : null}
-            {url ? (
-              <Button asChild size="sm" variant="outline">
-                <a href={url} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                  Open in new tab
-                </a>
+          <Toggle label="Which site" options={WEBSITE_PREVIEW_MODES} value={mode} onChange={chooseMode} />
+          <div className="flex flex-wrap items-center gap-1">
+            <Toggle
+              label="Preview width"
+              options={WEBSITE_PREVIEW_DEVICES.map((entry) => ({ ...entry, title: `${entry.label} width (${entry.width} px)` }))}
+              value={device}
+              onChange={setDevice}
+            />
+            {chosenUrl ? (
+              <Button type="button" size="xs" variant="ghost" onClick={() => setChosenUrl(null)}>
+                {addresses?.dev || service?.url ? "Back to the development site" : "Clear the deploy preview"}
               </Button>
             ) : null}
           </div>
         </div>
-        {!url ? (
-          <EmptyState
-            icon={Globe}
-            title="No preview to show"
-            message="Start the preview from the card above, or pick a deploy preview below. The Greatstone Website project serves its preview on port 4100."
-          />
-        ) : problem ? (
-          <div role="alert" className="rounded-lg border border-status-warning/40 bg-status-warning-soft px-4 py-3 text-sm text-status-warning-foreground">
-            {problem}
+        {side ? (
+          // Two columns from 900 px; below that they stack, live first.
+          <div className="grid gap-6 min-[900px]:grid-cols-2 min-[900px]:gap-4" data-testid="website-preview-side-by-side">
+            {livePane}
+            {devPane}
           </div>
-        ) : (
-          <>
-            <div className="relative h-(--sz-70vh) overflow-hidden rounded-xl border border-border bg-muted">
-              <ScaledFrame key={url} src={url} title={`Website preview, ${device} width`} width={width} sandbox={PREVIEW_SANDBOX} testId="website-preview-frame" viewport={device} />
-            </div>
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <Link2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-              If the frame stays blank, the site does not allow being shown inside another page. That is the site keeping itself safe; open it in a new tab instead.
-            </p>
-          </>
-        )}
+        ) : mode === "live" ? livePane : devPane}
       </section>
-      {hubQuery.error ? (
-        <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
+      {!projectId ? (
+        <LinkProjectFirst companyId={companyId} property={property} />
+      ) : projectQuery.error ? (
+        <ErrorState error={projectQuery.error} compact onRetry={() => void projectQuery.refetch()} />
       ) : (
-        <PreviewLinksList links={hubQuery.data?.previewLinks ?? []} selected={chosenUrl} onShow={setChosenUrl} />
+        <>
+          {project ? <LivePreviewCard project={project} companyId={companyId} /> : null}
+          {hubQuery.error ? (
+            <ErrorState error={hubQuery.error} compact onRetry={() => void hubQuery.refetch()} />
+          ) : (
+            <PreviewLinksList links={hubQuery.data?.previewLinks ?? []} selected={chosenUrl} onShow={showDeployPreview} />
+          )}
+        </>
       )}
     </div>
   );
 }
-

@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders } from "node:http";
 import { betterAuth, type Auth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { twoFactor } from "better-auth/plugins";
+import { qaBrowserLoginPlugin } from "./qa-browser-login-plugin.js";
 import { toNodeHandler } from "better-auth/node";
 import type { Db } from "@greatstone/db";
 import {
@@ -44,7 +45,7 @@ export type BetterAuthSessionUser = {
 };
 
 export type BetterAuthSessionResult = {
-  session: { id: string; userId: string } | null;
+  session: { id: string; userId: string; createdAt?: Date | null } | null;
   user: BetterAuthSessionUser | null;
 };
 
@@ -314,6 +315,9 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     // from the email. After the invite gate, so a sign-up without an invite
     // still gets the usual refusal.
     ...(config.deploymentMode === "authenticated" ? [passwordPolicyPlugin()] : []),
+    // One-time browser login link for an agent's QA log-in (GRE-2387). The QA
+    // account has no password; this link is the only way in.
+    ...(config.deploymentMode === "authenticated" ? [qaBrowserLoginPlugin({ db })] : []),
     // Registered only for a managed workspace instance: the plugin is what makes
     // `Open workspace` password-independent, and a control-plane instance that
     // was never handed a workspace key must not expose the exchange at all.
@@ -442,11 +446,12 @@ export async function resolveBetterAuthSessionFromHeaders(
   if (!sessionValue || typeof sessionValue !== "object") return null;
 
   const value = sessionValue as {
-    session?: { id?: string; userId?: string } | null;
+    session?: { id?: string; userId?: string; createdAt?: Date | string | null } | null;
     user?: { id?: string; email?: string | null; name?: string | null; twoFactorEnabled?: boolean | null } | null;
   };
+  const createdAt = value.session?.createdAt ? new Date(value.session.createdAt) : null;
   const session = value.session?.id && value.session.userId
-    ? { id: value.session.id, userId: value.session.userId }
+    ? { id: value.session.id, userId: value.session.userId, createdAt: createdAt && Number.isFinite(createdAt.getTime()) ? createdAt : null }
     : null;
   const user = value.user?.id
     ? {

@@ -141,6 +141,10 @@ export type CompanyMember = {
   handover?: MemberHandoverControls | null;
   /** Whether two-step sign-in is on, and whether this viewer may reset it (lost phone). */
   twoStep?: { enabled: boolean; canReset: boolean; resetReason: string | null } | null;
+  /** An agent's browser QA log-in (GRE-2387), active or ended. */
+  qaAccount?: boolean;
+  /** Set while the QA grant is live: the "QA for <agent>" badge and its expiry. */
+  qaLogin?: { agentId: string; agentName: string; role: "viewer" | "operator"; expiresAt: string } | null;
 };
 
 export type ArchiveCompanyMemberResponse = {

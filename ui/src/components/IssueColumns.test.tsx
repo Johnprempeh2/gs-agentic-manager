@@ -95,6 +95,29 @@ describe("InboxIssueMetaLeading live state", () => {
     expect(text).not.toContain("live below");
   });
 
+  it("shows Queued, not Live, when the task's run waits for its agent (GRE-2246)", () => {
+    const text = renderLeading(
+      <InboxIssueMetaLeading
+        issue={makeIssue({ id: "gre-2019", identifier: "GRE-2019", status: "in_progress" })}
+        isLive
+        runState={{
+          kind: "queued",
+          runId: "run-2",
+          agentId: "lintel",
+          agentName: "Lintel",
+          reason: { kind: "behind", blockingIssueId: "gre-2217", blockingRunId: "run-1", maxConcurrentRuns: 1 },
+          position: 1,
+          queueLength: 1,
+        }}
+        issueLabel={() => "GRE-2217"}
+      />,
+    );
+    expect(text).toContain("Queued");
+    expect(text).toContain("Behind GRE-2217 (Lintel runs 1 at a time)");
+    expect(text).not.toContain("Live");
+    expect(container!.querySelector(".animate-spin, .motion-safe\\:animate-spin")).toBeNull();
+  });
+
   it("shows the distinct subtree chip for a done parent with live descendants", () => {
     const text = renderLeading(
       <InboxIssueMetaLeading

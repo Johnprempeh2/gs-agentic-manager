@@ -432,6 +432,8 @@ export {
 
 export {
   createIssueSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
+  describeUnknownIssueFields,
   createIssueInputSchema,
   createChildIssueSchema,
   createAcceptedPlanDecompositionSchema,
@@ -503,6 +505,10 @@ export {
   requestItemVerdictsResultSchema,
   requestDraftReviewPayloadSchema,
   requestDraftReviewResultSchema,
+  requestStepsPayloadSchema,
+  requestStepsInputPayloadSchema,
+  requestStepsResultSchema,
+  stepsProgressSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,

@@ -3850,7 +3850,7 @@ function summarizeIssueRelationRow(
   };
 }
 
-async function terminalExplicitBlockersByRoot(
+export async function terminalExplicitBlockersByRoot(
   companyId: string,
   roots: IssueRelationIssueSummary[],
   dbOrTx: DbReader,

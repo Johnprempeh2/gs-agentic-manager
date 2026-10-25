@@ -220,6 +220,13 @@ export {
   type PipelineGrantScopeState,
 } from "./pipeline-access.js";
 export {
+  AGENT_WEBSITE_ACCESS_LEVELS,
+  WEBSITE_EDIT_PERMISSION_KEY,
+  WEBSITE_VIEW_PERMISSION_KEY,
+  agentWebsiteAccessLevel,
+  type AgentWebsiteAccessLevel,
+} from "./agent-website-access.js";
+export {
   caseTypeMatchesPipeline,
   deriveCaseType,
   type CaseTypePipelineRef,
@@ -336,6 +343,13 @@ export type {
   BlockedWorkRootCause,
   BlockedWorkTidyReason,
 } from "./types/blocked-work.js";
+export type {
+  BlockCheckIssueRef,
+  BlockCheckItem,
+  BlockCheckKind,
+  BlockCheckProject,
+  BlockCheckResult,
+} from "./types/block-check.js";
 export type { RecoveryHold, RecoveryHoldList } from "./types/recovery-holds.js";
 export type {
   DecisionQueue,
@@ -485,7 +499,10 @@ export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
 export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
+export * from "./types/deep-dive-files.js";
+export * from "./validators/deep-dive-files.js";
 export * from "./client-journey.js";
+export * from "./client-deliverable-publishing.js";
 export * from "./deliverable-versions.js";
 export * from "./draft-diff.js";
 export * from "./types/workflow-template.js";
@@ -496,9 +513,12 @@ export * from "./document-evidence.js";
 export * from "./types/website.js";
 export * from "./validators/website.js";
 export * from "./types/website-module.js";
+export * from "./website-collections.js";
 export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
+export * from "./website-features.js";
 export * from "./website-frame.js";
+export * from "./types/website-data-bridge.js";
 export * from "./types/intelligence.js";
 export * from "./validators/intelligence.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
@@ -787,6 +807,7 @@ export {
   type IssueCommentPresentationTone,
   type IssueCommentPresentationDensity,
   type IssueThreadInteractionKind,
+  type RequestStepsRisk,
   type IssueThreadInteractionCanonicalResolverPolicy,
   type IssueThreadInteractionLegacyResolverPolicyAlias,
   type IssueThreadInteractionResolverPolicy,
@@ -796,6 +817,8 @@ export {
   type IssueThreadInteractionContinuationPolicy,
   REQUEST_CHECKBOX_CONFIRMATION_OPTION_LIMIT,
   REQUEST_ITEM_VERDICTS_ITEM_LIMIT,
+  REQUEST_STEPS_MAX_STEPS,
+  REQUEST_STEPS_RISKS,
   type BuiltInIssueOriginKind,
   type PluginIssueOriginKind,
   type IssueOriginKind,
@@ -1434,6 +1457,12 @@ export type {
   RequestCheckboxConfirmationInteraction,
   RequestItemVerdictsInteraction,
   RequestDraftReviewInteraction,
+  RequestStepsInteraction,
+  RequestStepsPayload,
+  RequestStepsResult,
+  RequestStepsResultSecret,
+  RequestStepsSecretField,
+  RequestStepsStep,
   ConnectionIntentInteraction,
   AskAgentInteraction,
   IssueThreadInteraction,
@@ -1584,8 +1613,11 @@ export type {
   IssueFollowState,
   RecentlyOpenedIssue,
   IssueTree,
+  IssueTreeBlockLink,
   IssueTreeExternalBlocker,
   IssueTreeNode,
+  IssueTreePendingCard,
+  IssueTreeWaitReason,
   ProjectTree,
   ProjectTreeLead,
   AccessUserProfile,
@@ -2269,6 +2301,8 @@ export {
   type CompanySearchExtractQuery,
   type CompanySearchQuery,
   createIssueSchema,
+  BLOCKED_WITHOUT_REASON_MESSAGE,
+  describeUnknownIssueFields,
   createIssueInputSchema,
   createChildIssueSchema,
   createAcceptedPlanDecompositionSchema,
@@ -2334,6 +2368,10 @@ export {
   requestItemVerdictsResultSchema,
   requestDraftReviewPayloadSchema,
   requestDraftReviewResultSchema,
+  requestStepsPayloadSchema,
+  requestStepsInputPayloadSchema,
+  requestStepsResultSchema,
+  stepsProgressSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,
@@ -3196,10 +3234,17 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export * from "./deep-dive-findings.js";
+export * from "./deep-dive-sessions.js";
+export * from "./deep-dive-boards.js";
+export * from "./deep-dive-opportunities.js";
+export * from "./deep-dive-traceability.js";
+export * from "./deep-dive-overview.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";
 export * from "./video-generation.js";
+export * from "./motion-studies.js";
 export {
   AGENT_TEAM_COLORS,
   addAgentTeamMemberSchema,

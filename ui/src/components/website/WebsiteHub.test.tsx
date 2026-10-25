@@ -5,18 +5,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DecisionCard, WebsiteHub, WebsiteHubSitemap, WebsiteProperty } from "@greatstone/shared";
+import type { DecisionCard, WebsiteHomeSummary, WebsiteHub, WebsiteHubSitemap, WebsiteProperty, WebsiteSite } from "@greatstone/shared";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const websiteApiMock = vi.hoisted(() => ({ hub: vi.fn(), update: vi.fn() }));
+const moduleApiMock = vi.hoisted(() => ({ sites: vi.fn(), home: vi.fn() }));
 const projectsMock = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), getTree: vi.fn() }));
 const openNewIssue = vi.hoisted(() => vi.fn());
 const feedMock = vi.hoisted(() => ({ cards: [] as DecisionCard[] }));
 
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
-  return { ...actual, websiteApi: websiteApiMock };
+  return { ...actual, websiteApi: websiteApiMock, websiteModuleApi: moduleApiMock };
 });
 vi.mock("../../api/projects", () => ({ projectsApi: projectsMock }));
 vi.mock("@/lib/router", async () => {
@@ -42,6 +43,7 @@ vi.mock("../../pages/ProjectTree", () => ({ ProjectTreeView: () => <div data-tes
 
 import {
   WebsitePreviewTab,
+  rememberPreviewMode,
   WebsiteSitemapTab,
   framingProblem,
   liveSiteUrl,
@@ -149,6 +151,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   feedMock.cards = [];
+  moduleApiMock.sites.mockResolvedValue([]);
   projectsMock.getTree.mockResolvedValue({ nodes: [{ id: "task-1" }], keyTaskIds: [], keyTaskProgress: {}, counts: { done: 0, active: 0, blocked: 0, waiting: 0 } });
 });
 
@@ -192,8 +195,10 @@ describe("WebsitePreviewTab", () => {
       previewLinks: [{ url: "https://deploy-preview-3--gs.netlify.app", source: "comment", label: "Mason", task, postedAt: "2026-10-22T09:00:00.000Z" }],
     }));
     await render(<WebsitePreviewTab companyId="co-1" property={property()} />);
-    await vi.waitFor(() => expect(container.querySelector('[data-testid="website-preview-frame"]')).not.toBeNull());
-    expect(container.querySelector('[data-testid="website-preview-frame"]')!.getAttribute("src")).toBe("http://127.0.0.1:4100");
+    // The live site shows at once; the running workspace preview takes over when it is known.
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="website-preview-frame"]')?.getAttribute("src")).toBe("http://127.0.0.1:4100"),
+    );
     expect(text()).toContain("Workspace preview (preview, port 4100)");
     const widths = Array.from(container.querySelectorAll('[aria-label="Preview width"] button')).map((el) => el.textContent);
     expect(widths).toEqual(["Laptop", "Tablet", "Phone"]);
@@ -202,5 +207,88 @@ describe("WebsitePreviewTab", () => {
     const show = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Show here")!;
     await act(async () => { show.click(); });
     expect(container.querySelector('[data-testid="website-preview-frame"]')!.getAttribute("src")).toBe("https://deploy-preview-3--gs.netlify.app");
+  });
+
+  it("shows the live site when no preview runs, with a placeholder until it loads and Open in new tab if it never does", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      projectsMock.get.mockResolvedValue({ id: "proj-1", workspaces: [] });
+      websiteApiMock.hub.mockResolvedValue(hub());
+      await render(<WebsitePreviewTab companyId="co-1" property={property()} />);
+      const frame = container.querySelector('[data-testid="website-preview-frame"]')!;
+      expect(frame.getAttribute("src")).toBe("https://greatstone.example/");
+      expect(text()).toContain("Live (greatstone.example)");
+      expect(container.querySelector('[data-testid="website-preview-placeholder"]')?.textContent).toContain("Loading greatstone.example");
+      await act(async () => { vi.advanceTimersByTime(8_000); });
+      const fallback = container.querySelector('[data-testid="website-preview-placeholder"]')!;
+      expect(fallback.textContent).toContain("The site is not showing here");
+      expect(fallback.querySelector('a[target="_blank"]')?.getAttribute("href")).toBe("https://greatstone.example/");
+      // Once the frame loads, the site shows and the placeholder goes.
+      await act(async () => { frame.dispatchEvent(new Event("load")); });
+      expect(container.querySelector('[data-testid="website-preview-placeholder"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  const connected = {
+    id: "site-1",
+    name: "Greatstone",
+    domain: "greatstone.example",
+    propertyId: "prop-1",
+    archivedAt: null,
+    editorFrameOrigin: "https://dev.greatstone.example",
+    livePreviewUrl: "https://mirror--greatstone.netlify.app/",
+    devPreviewUrl: null,
+  } as WebsiteSite;
+  const frames = () => Array.from(container.querySelectorAll<HTMLIFrameElement>('[data-testid="website-preview-frame"]'));
+  const button = (group: string, label: string) =>
+    Array.from(container.querySelectorAll(`[aria-label="${group}"] button`)).find((el) => el.textContent === label) as HTMLButtonElement;
+
+  it("switches between Live, In development and Side by side, remembering the choice, with the live copy named", async () => {
+    window.localStorage.clear();
+    moduleApiMock.sites.mockResolvedValue([connected]);
+    moduleApiMock.home.mockResolvedValue({ liveFraming: "allowed", devFraming: "allowed" } as WebsiteHomeSummary);
+    projectsMock.get.mockResolvedValue({ id: "proj-1", workspaces: [] });
+    websiteApiMock.hub.mockResolvedValue(hub());
+    await render(<WebsitePreviewTab companyId="co-1" property={property()} />);
+    // Nothing remembered: the site in development leads, at the editor address.
+    await vi.waitFor(() => expect(frames().map((frame) => frame.getAttribute("src"))).toEqual(["https://dev.greatstone.example/"]));
+    expect(Array.from(container.querySelectorAll('[aria-label="Which site"] button')).map((el) => el.textContent)).toEqual(["Live", "In development", "Side by side"]);
+
+    await act(async () => { button("Which site", "Live").click(); });
+    expect(frames().map((frame) => frame.getAttribute("src"))).toEqual(["https://mirror--greatstone.netlify.app/"]);
+    expect(container.querySelector('[data-testid="website-preview-mirror-note"]')?.textContent).toBe("Showing an exact copy of the live site.");
+    expect(window.localStorage.getItem("gsam.website.preview-mode")).toBe("live");
+
+    await act(async () => { button("Which site", "Side by side").click(); });
+    const side = container.querySelector('[data-testid="website-preview-side-by-side"]')!;
+    expect(side.className).toContain("min-[900px]:grid-cols-2");
+    const live = side.querySelector('[data-testid="website-preview-live"]')!;
+    const dev = side.querySelector('[data-testid="website-preview-dev"]')!;
+    expect(live.getAttribute("aria-label")).toBe("Live (greatstone.example)");
+    expect(dev.getAttribute("aria-label")).toBe("In development");
+    expect(live.querySelector('a[target="_blank"]')?.getAttribute("href")).toBe("https://mirror--greatstone.netlify.app/");
+    expect(dev.querySelector('a[target="_blank"]')?.getAttribute("href")).toBe("https://dev.greatstone.example/");
+    expect(frames().map((frame) => frame.title)).toEqual(["Live (greatstone.example) preview, laptop width", "In development preview, laptop width"]);
+
+    // One width toggle drives both frames.
+    await act(async () => { button("Preview width", "Phone").click(); });
+    expect(frames().map((frame) => frame.style.width)).toEqual(["390px", "390px"]);
+    expect(frames().map((frame) => frame.title)).toEqual(["Live (greatstone.example) preview, phone width", "In development preview, phone width"]);
+    expect(window.localStorage.getItem("gsam.website.preview-mode")).toBe("side");
+  });
+
+  it("opens in the mode the Home asked for, and shows the refused placeholder at once for an address that refuses frames", async () => {
+    rememberPreviewMode("side");
+    moduleApiMock.sites.mockResolvedValue([{ ...connected, livePreviewUrl: null }]);
+    moduleApiMock.home.mockResolvedValue({ liveFraming: "refused", devFraming: "allowed" } as WebsiteHomeSummary);
+    projectsMock.get.mockResolvedValue({ id: "proj-1", workspaces: [] });
+    websiteApiMock.hub.mockResolvedValue(hub());
+    await render(<WebsitePreviewTab companyId="co-1" property={property()} />);
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="website-preview-live"] [data-testid="website-preview-placeholder"]')?.textContent).toContain("does not allow being shown"));
+    expect(container.querySelector('[data-testid="website-preview-live"] [data-testid="website-preview-frame"]')).toBeNull();
+    expect(container.querySelector('[data-testid="website-preview-mirror-note"]')).toBeNull();
+    expect(container.querySelector('[data-testid="website-preview-dev"] [data-testid="website-preview-frame"]')?.getAttribute("src")).toBe("https://dev.greatstone.example/");
   });
 });

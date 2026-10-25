@@ -36,13 +36,15 @@ import {
   ISSUE_WATCHDOG_DISCOVERY_KINDS,
   REQUEST_CHECKBOX_CONFIRMATION_OPTION_LIMIT,
   REQUEST_ITEM_VERDICTS_ITEM_LIMIT,
+  REQUEST_STEPS_MAX_STEPS,
+  REQUEST_STEPS_RISKS,
 } from "../constants.js";
 import { multilineTextSchema } from "./text.js";
 import {
   lowTrustReviewPresetPolicySchema,
   trustAuthorizationPolicySchema,
 } from "./trust-policy.js";
-import { objectWithoutDefaults } from "./partial.js";
+import { shapeWithoutDefaults } from "./partial.js";
 
 export const issueBlockedInboxStateSchema = z.enum([
   "needs_attention",
@@ -690,7 +692,43 @@ const issueDueDateSchema = z
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }, "Not a real calendar date");
 
-const createIssueBaseSchema = z.object({
+// Misspelt fields seen from agents and scripts, with the field they meant.
+const ISSUE_FIELD_SUGGESTIONS: Record<string, string> = {
+  blockedByIds: "blockedByIssueIds",
+  blockedBy: "blockedByIssueIds",
+  blockerIds: "blockedByIssueIds",
+  blockers: "blockedByIssueIds",
+  blockedByIssues: "blockedByIssueIds",
+  assigneeId: "assigneeAgentId",
+  agentId: "assigneeAgentId",
+  parentIssueId: "parentId",
+  labels: "labelIds",
+  body: "description (or comment on update)",
+};
+
+/**
+ * GRE-2329: an unknown field is refused, not dropped. A dropped
+ * `blockedByIds` once saved a task as blocked with no blocker.
+ */
+export function describeUnknownIssueFields(keys: readonly string[]): string {
+  const named = keys.map((key) => {
+    const suggestion = ISSUE_FIELD_SUGGESTIONS[key];
+    return suggestion ? `"${key}" (did you mean ${suggestion}?)` : `"${key}"`;
+  });
+  return `Unknown issue field${keys.length === 1 ? "" : "s"}: ${named.join(", ")}`;
+}
+
+/** A strict issue body object: unknown keys fail with a message that names them. */
+function issueBodyObject<T extends z.ZodRawShape>(shape: T) {
+  return z.strictObject(shape, {
+    error: (issue) =>
+      issue.code === "unrecognized_keys"
+        ? describeUnknownIssueFields(issue.keys)
+        : undefined,
+  });
+}
+
+const createIssueBaseSchema = issueBodyObject({
   projectId: z.string().guid().optional().nullable(),
   projectWorkspaceId: z.string().guid().optional().nullable(),
   goalId: z.string().guid().optional().nullable(),
@@ -706,6 +744,8 @@ const createIssueBaseSchema = z.object({
       action: multilineTextSchema.pipe(z.string().trim().min(1).max(2_000)),
       waitingOn: z.enum(ISSUE_UNBLOCK_WAITING_ON).optional(),
       expectedBy: issueDueDateSchema.optional(),
+      // The card the task waits on. Answering it frees the task (GRE-2286).
+      interactionId: z.string().guid().optional(),
       // Server-owned marker. Accepted so a descriptor read back from the API
       // can be sent again, but the server ignores the value sent.
       expectedByWokenFor: issueDueDateSchema.optional(),
@@ -785,6 +825,48 @@ function requireBlockedStatusForUnblockDescriptor(
   }
 }
 
+export const BLOCKED_WITHOUT_REASON_MESSAGE =
+  "Say what is blocking it: send blockedByIssueIds (the open tasks it waits on), " +
+  "or unblockDescriptor { owner, action } (who must act and what they must do), " +
+  "or (on an existing task) open a card on it first.";
+
+/**
+ * GRE-2329: a new task cannot start blocked with nothing blocking it. It has
+ * no cards yet, so a blocker or an unblock descriptor is the only reason.
+ */
+function requireReasonForBlockedCreate(
+  value: {
+    status?: string;
+    blockedByIssueIds?: string[];
+    unblockDescriptor?: unknown;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (
+    value.status === "blocked" &&
+    (value.blockedByIssueIds?.length ?? 0) === 0 &&
+    value.unblockDescriptor == null
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: BLOCKED_WITHOUT_REASON_MESSAGE,
+      path: ["status"],
+    });
+  }
+}
+
+function refineCreateIssue(
+  value: {
+    status?: string;
+    blockedByIssueIds?: string[];
+    unblockDescriptor?: unknown;
+  },
+  ctx: z.RefinementCtx,
+) {
+  requireBlockedStatusForUnblockDescriptor(value, ctx);
+  requireReasonForBlockedCreate(value, ctx);
+}
+
 const createIssueDuplicateGuardSchema = {
   initialPlan: z.string().min(1).max(200000).optional().nullable(),
   idempotencyKey: z.string().trim().min(1).max(255).optional().nullable(),
@@ -815,7 +897,7 @@ export const createIssueSchema = withCreateIssueStatusDefault(
     ...createIssueDuplicateGuardSchema,
     ...onboardingFirstTaskMarkerSchema,
   }),
-).superRefine(requireBlockedStatusForUnblockDescriptor);
+).superRefine(refineCreateIssue);
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;
 
@@ -842,7 +924,7 @@ export const createChildIssueSchema = withCreateIssueStatusDefault(
         .optional(),
       blockParentUntilDone: z.boolean().optional().default(false),
     }),
-).superRefine(requireBlockedStatusForUnblockDescriptor);
+).superRefine(refineCreateIssue);
 
 export type CreateChildIssue = z.infer<typeof createChildIssueSchema>;
 
@@ -886,12 +968,17 @@ export const blockedDependentsHandoffSchema = z.discriminatedUnion("action", [
 ]);
 export type BlockedDependentsHandoff = z.infer<typeof blockedDependentsHandoffSchema>;
 
-export const updateIssueSchema = objectWithoutDefaults(
-  createIssueBaseSchema.omit({
-    createdByUserId: true,
-    responsibleUserId: true,
-    watchdog: true,
-  }),
+export const updateIssueSchema = issueBodyObject(
+  shapeWithoutDefaults(
+    createIssueBaseSchema.omit({
+      createdByUserId: true,
+      responsibleUserId: true,
+      watchdog: true,
+    }).shape,
+  ) as Omit<
+    typeof createIssueBaseSchema.shape,
+    "createdByUserId" | "responsibleUserId" | "watchdog"
+  >,
 )
   .partial()
   .extend({
@@ -1851,6 +1938,126 @@ export const requestDraftReviewResultSchema = requestConfirmationResultSchema.ex
     .optional(),
 });
 
+const httpsUrlSchema = z
+  .string()
+  .trim()
+  .max(2000)
+  .url()
+  .refine((value) => {
+    try {
+      return new URL(value).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Links must use https");
+
+export const requestStepsStepSchema = z.object({
+  text: multilineTextSchema.pipe(z.string().min(1).max(2000)),
+  copy: z.array(z.string().trim().min(1).max(500)).max(6).optional(),
+  link: z
+    .object({ label: z.string().trim().min(1).max(80), url: httpsUrlSchema })
+    .nullable()
+    .optional(),
+  expect: z.string().trim().min(1).max(500).nullable().optional(),
+});
+
+/** Same shape as a company secret name: slash-separated, no spaces. */
+const STEPS_SECRET_NAME_RE = /^[^/\s]+(?:\/[^/\s]+)*$/;
+const STEPS_ADAPTER_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export const requestStepsSecretFieldSchema = z
+  .object({
+    secretName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(STEPS_SECRET_NAME_RE, "secretName must be a slash-separated name without spaces"),
+    description: z.string().trim().min(1).max(500),
+    expectedPrefix: z.string().trim().min(1).max(40).nullable().optional(),
+    linkToAgentIds: z.array(z.string().guid()).max(10).optional(),
+    adapterEnvKey: z
+      .string()
+      .trim()
+      .max(120)
+      .regex(STEPS_ADAPTER_ENV_KEY_RE, "adapterEnvKey must look like an environment variable name")
+      .nullable()
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    const linking = (value.linkToAgentIds?.length ?? 0) > 0;
+    if (linking !== Boolean(value.adapterEnvKey)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linkToAgentIds and adapterEnvKey go together: give both or neither",
+        path: [linking ? "adapterEnvKey" : "linkToAgentIds"],
+      });
+    }
+    if (new Set(value.linkToAgentIds ?? []).size !== (value.linkToAgentIds?.length ?? 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linkToAgentIds must be unique",
+        path: ["linkToAgentIds"],
+      });
+    }
+  });
+
+export const stepsProgressSchema = z.object({
+  tickedSteps: z
+    .array(z.number().int().min(0).max(REQUEST_STEPS_MAX_STEPS - 1))
+    .max(REQUEST_STEPS_MAX_STEPS)
+    .transform((steps) => [...new Set(steps)].sort((a, b) => a - b)),
+});
+
+/** What an agent sends: everything except the server-owned fields. */
+export const requestStepsInputPayloadSchema = z.object({
+  version: z.literal(1),
+  title: z.string().trim().min(1).max(160),
+  why: z.string().trim().min(1).max(240),
+  minutes: z.number().positive().max(600),
+  risk: z.enum(REQUEST_STEPS_RISKS),
+  steps: z.array(requestStepsStepSchema).min(1).max(REQUEST_STEPS_MAX_STEPS),
+  secret: requestStepsSecretFieldSchema.nullable().optional(),
+  afterDone: z.string().trim().min(1).max(240).nullable().optional(),
+  supersedeOnUserComment: z.boolean().optional(),
+});
+
+export const requestStepsPayloadSchema = requestStepsInputPayloadSchema
+  .extend({
+    progress: stepsProgressSchema.nullable().optional(),
+    secretAccess: z
+      .object({
+        addresseeCanSave: z.boolean(),
+        whoCan: z.array(z.string().trim().min(1).max(200)).max(5),
+      })
+      .nullable()
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    for (const [index, step] of (value.progress?.tickedSteps ?? []).entries()) {
+      if (step >= value.steps.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "progress.tickedSteps must reference existing steps",
+          path: ["progress", "tickedSteps", index],
+        });
+      }
+    }
+  });
+
+export const requestStepsResultSchema = requestConfirmationResultSchema.extend({
+  secret: z
+    .object({
+      secretId: z.string().guid(),
+      secretName: z.string().min(1).max(120),
+      linkedAgentIds: z.array(z.string().guid()),
+      linkingNeedsOwner: z.boolean().optional(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
+});
+
 export const requestItemVerdictValueSchema = z.enum([
   "approve",
   "reject",
@@ -2132,6 +2339,19 @@ export const createIssueThreadInteractionSchema = z.discriminatedUnion("kind", [
       .default("wake_assignee"),
     payload: requestDraftReviewPayloadSchema,
   }),
+  z.object({
+    ...createIssueThreadInteractionCommon,
+    kind: z.literal("request_steps"),
+    idempotencyKey: z.string().trim().max(255).nullable().optional(),
+    sourceCommentId: z.string().guid().nullable().optional(),
+    sourceRunId: z.string().guid().nullable().optional(),
+    title: z.string().trim().max(240).nullable().optional(),
+    summary: z.string().trim().max(1000).nullable().optional(),
+    continuationPolicy: issueThreadInteractionContinuationPolicySchema
+      .optional()
+      .default("wake_assignee"),
+    payload: requestStepsPayloadSchema,
+  }),
 ]);
 
 export type CreateIssueThreadInteraction = z.infer<
@@ -2154,6 +2374,11 @@ export const acceptIssueThreadInteractionSchema = z
     editedBody: multilineTextSchema.pipe(z.string().min(1).max(50000)).optional(),
     /** request_draft_review: false stops the agent noting these edits. */
     learnFromEdits: z.boolean().optional(),
+    /**
+     * request_steps: the secret the person typed. The server saves it straight
+     * into the company secrets and never stores or returns it.
+     */
+    secretValue: z.string().min(1).max(10000).optional(),
   })
   .superRefine((value, ctx) => {
     const seenClientKeys = new Set<string>();

@@ -735,12 +735,13 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
   it("brings the Leads inbox across as cases, links notes to them, and moves converted leads", async () => {
     const { companyId, actor, connectionId } = await seed();
     let pages = recordedPages();
+    pages["/api/v1/leads"][0].data.push({ id: "gsam-copy", title: "Website enquiry copy", origin_id: "gsam:website:abc" });
     pages["/api/v1/notes"][0].data.push({ id: 7003, content: "Asked about SSO.", add_time: "2026-10-03 09:00:00", user_id: 9001, lead_id: "adf21080-0e10-11eb-879b-05d71fb426ec" });
     const pipedrive = fakePipedrive(() => pages);
 
     const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(first.status).toBe(200);
-    expect(first.body.leads).toEqual({ created: 2, updated: 0, skipped: 0, errors: 0 });
+    expect(first.body.leads).toEqual({ created: 2, updated: 0, skipped: 1, errors: 0 });
     expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
     expect(pipedrive.calls.some((call) => call.url.includes("/api/v1/leads") && call.url.includes("archived_status=all"))).toBe(true);
 
@@ -749,6 +750,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
       .then((rows) => rows[0]!);
     let cases = await casesByKey(companyId);
     const open = cases.get("pipedrive-lead-adf21080-0e10-11eb-879b-05d71fb426ec")!;
+    expect(cases.has("pipedrive-lead-gsam-copy")).toBe(false);
     expect(open).toMatchObject({ title: "Tunde Bakare CLI enquiry", pipelineKey: "pipedrive-leads", stageKey: "lead_open", organisationId: blueHarbour.id });
     expect(open.fields).toMatchObject({
       leadValue: 5000,
@@ -775,7 +777,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
 
     // Same answers again: nothing changes.
     const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
-    expect(rerun.body.leads).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
+    expect(rerun.body.leads).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
 
     // Converted to a deal in Pipedrive: the lead is gone from the list.
     pages = recordedPages();

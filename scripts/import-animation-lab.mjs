@@ -1,0 +1,286 @@
+#!/usr/bin/env node
+// One-off import of the Greatstone Animation Lab into GS Studio's Motion
+// section (GRE-2212). Reads the live gallery: index.html holds the ANIMS
+// array, and each study page is anims/<slug>.html. A Notion catalogue export
+// (JSON rows with "No.", Notes, Status, Decision) adds the notes; without it,
+// every study arrives New and Undecided.
+//
+//   node scripts/import-animation-lab.mjs --company <companyId> [--catalogue rows.json] [--dry-run out.json] [--no-posters]
+//
+// Each study is also rendered once in headless Chromium, with no network, and
+// a still frame about two seconds in becomes its card poster. Modules a
+// study maps to a CDN are bundled into the page, since the sandbox has no network.
+//
+// Uses GSAM_API_URL and GSAM_API_KEY. Matching is by slug on the server, so
+// running it again refreshes files and fields and keeps decisions made since.
+
+import { readFile, writeFile } from "node:fs/promises";
+import { runInNewContext } from "node:vm";
+
+export const DEFAULT_GALLERY_URL = "https://greatstone-animation-lab.netlify.app/";
+
+const STATUSES = new Set(["new", "reviewed", "approved", "implemented", "archived"]);
+const DECISIONS = new Set(["undecided", "implement", "maybe", "pass"]);
+
+/** Pulls the ANIMS array literal out of the gallery page and evaluates it with no globals. */
+export function parseAnims(indexHtml) {
+  const start = indexHtml.indexOf("const ANIMS");
+  if (start < 0) throw new Error("The gallery page has no ANIMS array");
+  const open = indexHtml.indexOf("[", start);
+  let depth = 0;
+  let quote = null;
+  for (let index = open; index < indexHtml.length; index += 1) {
+    const char = indexHtml[index];
+    if (quote) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") quote = char;
+    else if (char === "[") depth += 1;
+    else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        const literal = indexHtml.slice(open, index + 1);
+        const anims = runInNewContext(`(${literal})`, Object.create(null), { timeout: 1000 });
+        if (!Array.isArray(anims)) throw new Error("ANIMS is not an array");
+        // Plain data back in this realm, not objects tied to the sandbox context.
+        return JSON.parse(JSON.stringify(anims));
+      }
+    }
+  }
+  throw new Error("The ANIMS array is not closed");
+}
+
+/** Notion rows keyed by study number, for example "021". */
+export function catalogueByNumber(rows) {
+  const byNumber = new Map();
+  for (const row of rows ?? []) {
+    const number = String(row["No."] ?? "").trim();
+    if (number) byNumber.set(number.padStart(3, "0"), row);
+  }
+  return byNumber;
+}
+
+function lower(value, allowed, fallback) {
+  const normalised = String(value ?? "").trim().toLowerCase();
+  return allowed.has(normalised) ? normalised : fallback;
+}
+
+/** A study page that loads code from elsewhere cannot run in the sandbox; say so on its record. */
+export function externalScriptNote(html) {
+  const external = /<script[^>]+src=["']https?:|"imports"\s*:\s*\{[^}]*https?:|import[^;]+from\s+["']https?:/i.test(html);
+  return external
+    ? "In GSAM: this study loads code from the internet, which the Motion sandbox blocks, so its preview stays dark until that code is bundled into the page."
+    : null;
+}
+
+/**
+ * The sandbox has no network, so images a study links by relative path (the
+ * Greatstone logo) are fetched once and written into the page as data URIs.
+ */
+export async function inlineRelativeImages(html, pageUrl, fetchBytes) {
+  const sources = new Set();
+  for (const match of html.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["']/gi)) {
+    const source = match[1];
+    if (!/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(source)) sources.add(source);
+  }
+  let inlined = html;
+  for (const source of sources) {
+    const { bytes, contentType } = await fetchBytes(new URL(source, pageUrl));
+    const dataUri = `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+    inlined = inlined.split(`"${source}"`).join(`"${dataUri}"`).split(`'${source}'`).join(`'${dataUri}'`);
+  }
+  return inlined;
+}
+
+const IMPORT_MAP = /<script\b[^>]*type=["']importmap["'][^>]*>([\s\S]*?)<\/script>/i;
+const MODULE_SCRIPT = /(<script\b[^>]*type=["']module["'][^>]*>)([\s\S]*?)(<\/script>)/gi;
+
+/** The import map's URL for a bare specifier: an exact key, or the longest key ending in "/" that prefixes it. */
+function mapSpecifier(imports, specifier) {
+  if (imports[specifier]) return imports[specifier];
+  const prefix = Object.keys(imports)
+    .filter((key) => key.endsWith("/") && specifier.startsWith(key))
+    .sort((a, b) => b.length - a.length)[0];
+  return prefix ? imports[prefix] + specifier.slice(prefix.length) : null;
+}
+
+/**
+ * The sandbox has no network, so a study that maps modules to a CDN (006
+ * Summit loads three.js from jsDelivr) has its module scripts bundled with
+ * those modules into one inline script, and the import map is dropped.
+ */
+export async function bundleMappedModules(html, fetchText, { build } = {}) {
+  const map = html.match(IMPORT_MAP);
+  if (!map) return html;
+  const imports = JSON.parse(map[1]).imports ?? {};
+  if (!Object.values(imports).some((url) => /^https?:/i.test(url))) return html;
+  const esbuild = build ?? (await import("esbuild")).build;
+  const cdn = {
+    name: "import-map-cdn",
+    setup(plugin) {
+      plugin.onResolve({ filter: /.*/ }, (args) => {
+        if (/^https?:/i.test(args.path)) return { path: args.path, namespace: "cdn" };
+        if (args.namespace === "cdn" && /^\.{1,2}\//.test(args.path)) {
+          return { path: new URL(args.path, args.importer).toString(), namespace: "cdn" };
+        }
+        const mapped = mapSpecifier(imports, args.path);
+        if (mapped) return { path: mapped, namespace: "cdn" };
+        return { errors: [{ text: `${args.path} is not in the study's import map` }] };
+      });
+      plugin.onLoad({ filter: /.*/, namespace: "cdn" }, async (args) => ({ contents: await fetchText(args.path), loader: "js" }));
+    },
+  };
+  const bundles = [];
+  for (const [, , code] of html.matchAll(MODULE_SCRIPT)) {
+    const result = await esbuild({
+      stdin: { contents: code, loader: "js", resolveDir: "/" },
+      bundle: true,
+      format: "esm",
+      minify: true,
+      write: false,
+      legalComments: "none",
+      plugins: [cdn],
+    });
+    // Escaped so the bundle cannot close its own script element.
+    bundles.push(result.outputFiles[0].text.replace(/<\/(script)/gi, "<\\/$1"));
+  }
+  let index = 0;
+  return html.replace(map[0], "").replace(MODULE_SCRIPT, (_whole, open, _code, close) => `${open}${bundles[index++]}${close}`);
+}
+
+/** One import entry: title, concept, theme and tech from ANIMS; notes and decisions from Notion when given. */
+export function toImportStudy(anim, html, galleryUrl, catalogue) {
+  const number = String(anim.no).padStart(3, "0");
+  const row = catalogue?.get(number) ?? null;
+  const notes = [row?.Notes?.trim() || null, externalScriptNote(html)].filter(Boolean).join("\n\n") || null;
+  return {
+    number,
+    slug: anim.slug,
+    title: anim.title,
+    concept: anim.concept ?? "",
+    theme: Array.isArray(anim.theme) ? anim.theme : [],
+    tech: anim.tech || row?.Tech || "",
+    notes,
+    studyDate: anim.date ?? null,
+    sourceUrl: new URL(`anims/${anim.slug}.html`, galleryUrl).toString(),
+    html,
+    status: lower(row?.Status, STATUSES, "new"),
+    decision: lower(row?.Decision, DECISIONS, "undecided"),
+  };
+}
+
+/** The stage a study is drawn on, as in the Motion section. */
+export const POSTER_STAGE = { width: 1280, height: 720 };
+export const POSTER_DELAY_MS = 2000;
+
+/**
+ * Renders each study the way the sandbox does (no network) and keeps one JPEG
+ * frame. Returns posters by slug; a study that fails to render has none.
+ */
+export async function capturePosters(studies, { delayMs = POSTER_DELAY_MS, launch } = {}) {
+  const browser = await (launch ?? (async () => (await import("@playwright/test")).chromium.launch()))();
+  const posters = new Map();
+  try {
+    for (const study of studies) {
+      const page = await browser.newPage({ viewport: POSTER_STAGE, deviceScaleFactor: 0.5 });
+      try {
+        await page.route("**/*", (route) => route.abort());
+        await page.setContent(study.html, { waitUntil: "load", timeout: 10_000 });
+        await page.waitForTimeout(delayMs);
+        const bytes = await page.screenshot({ type: "jpeg", quality: 80 });
+        posters.set(study.slug, { contentType: "image/jpeg", dataBase64: Buffer.from(bytes).toString("base64") });
+      } catch (error) {
+        console.warn(`No poster for ${study.slug}: ${error instanceof Error ? error.message : error}`);
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+  return posters;
+}
+
+/** Splits the import so each request stays well under the server's body limit. */
+export function inBatches(items, size) {
+  const batches = [];
+  for (let index = 0; index < items.length; index += size) batches.push(items.slice(index, index + size));
+  return batches;
+}
+
+function argValue(args, name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+async function fetchText(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  return response.text();
+}
+
+async function fetchBytes(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  const contentType = (response.headers.get("content-type") ?? "application/octet-stream").split(";")[0].trim();
+  return { bytes: new Uint8Array(await response.arrayBuffer()), contentType };
+}
+
+async function main(args) {
+  const galleryUrl = argValue(args, "--gallery") ?? DEFAULT_GALLERY_URL;
+  const companyId = argValue(args, "--company") ?? process.env.GSAM_COMPANY_ID;
+  const cataloguePath = argValue(args, "--catalogue");
+  const dryRun = argValue(args, "--dry-run");
+  if (!companyId && !dryRun) throw new Error("Give --company <companyId> or set GSAM_COMPANY_ID");
+
+  const anims = parseAnims(await fetchText(galleryUrl));
+  const catalogue = cataloguePath ? catalogueByNumber(JSON.parse(await readFile(cataloguePath, "utf8"))) : null;
+  const studies = [];
+  for (const anim of anims) {
+    const pageUrl = new URL(`anims/${anim.slug}.html`, galleryUrl);
+    const html = await bundleMappedModules(await inlineRelativeImages(await fetchText(pageUrl), pageUrl, fetchBytes), fetchText);
+    studies.push(toImportStudy(anim, html, galleryUrl, catalogue));
+  }
+  console.log(`Read ${studies.length} studies from ${galleryUrl}${catalogue ? ` with ${catalogue.size} catalogue rows` : ""}`);
+
+  if (!args.includes("--no-posters")) {
+    const posters = await capturePosters(studies);
+    for (const study of studies) study.poster = posters.get(study.slug) ?? null;
+    console.log(`Captured ${posters.size} posters`);
+  }
+
+  if (dryRun) {
+    await writeFile(dryRun, JSON.stringify({ studies }, null, 2));
+    console.log(`Wrote the import to ${dryRun}; nothing was sent`);
+    return;
+  }
+
+  const base = (process.env.GSAM_API_URL ?? "http://localhost:3100").replace(/\/+$/, "").replace(/\/api$/, "");
+  let created = 0;
+  let updated = 0;
+  for (const batch of inBatches(studies, 5)) {
+    const response = await fetch(`${base}/api/companies/${companyId}/motion-studies/import`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.GSAM_API_KEY ? { Authorization: `Bearer ${process.env.GSAM_API_KEY}` } : {}),
+        ...(process.env.GSAM_RUN_ID ? { "X-Paperclip-Run-Id": process.env.GSAM_RUN_ID } : {}),
+      },
+      body: JSON.stringify({ studies: batch }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`Import answered ${response.status}: ${JSON.stringify(body)}`);
+    created += body.created;
+    updated += body.updated;
+  }
+  console.log(`Imported: ${created} new, ${updated} refreshed`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

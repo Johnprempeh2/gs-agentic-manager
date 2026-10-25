@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   foreignKey,
   index,
@@ -19,6 +20,7 @@ import { companySecrets } from "./company_secrets.js";
 import { documents } from "./documents.js";
 import { documentRevisions } from "./document_revisions.js";
 import { approvals } from "./approvals.js";
+import { projects } from "./projects.js";
 import { websiteProperties } from "./website.js";
 
 /**
@@ -39,13 +41,39 @@ export const websiteSite = pgTable(
     netlifySiteId: text("netlify_site_id").notNull(),
     /** The site's own Netlify token lives only in the vault. */
     netlifyTokenSecretId: uuid("netlify_token_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
+    /** True when the site created the token secret (a pasted token). A shared secret (false) is never rotated or deleted by the site. */
+    netlifyTokenSecretOwned: boolean("netlify_token_secret_owned").notNull().default(true),
     blobsStoreName: text("blobs_store_name").notNull().default("gsam-content"),
     engineVersion: text("engine_version"),
     releaseSchemaVersion: integer("release_schema_version").notNull().default(1),
     theme: jsonb("theme").$type<Record<string, unknown>>().notNull().default({}),
     propertyId: uuid("property_id").references(() => websiteProperties.id, { onDelete: "set null" }),
     editorOrigins: text("editor_origins").array().notNull().default(sql`'{}'::text[]`),
+    /**
+     * The frame's own origin: the dedicated editor host that serves `/editor`
+     * and `/preview` (GRE-1916 contract section 2, rules C1 and C2). Null
+     * until a person with website:publish sets it; GSAM opens no editor until then.
+     */
+    editorFrameOrigin: text("editor_frame_origin"),
+    /**
+     * Preview addresses for the Preview tab's Live and In development views
+     * (24 Oct 2026), set by a person with website:publish. The live view is an
+     * optional frameable exact copy of the live deploy (null: the live domain);
+     * the development view defaults to the editor address when null.
+     */
+    livePreviewUrl: text("live_preview_url"),
+    devPreviewUrl: text("dev_preview_url"),
     checkPaths: jsonb("check_paths").$type<string[]>().notNull().default(["/"]),
+    /**
+     * The website admin bridge (GRE-2323): GSAM reads the site's customer
+     * records by calling `<url>/api/admin/v1/*`, signed with an Ed25519 read
+     * key. Null url: `https://<domain>`. The private key lives only in the
+     * vault; the key id is shown so a person can match it to the site's
+     * `GSAM_BRIDGE_KEYS`.
+     */
+    dataBridgeUrl: text("data_bridge_url"),
+    dataBridgeReadKeyId: text("data_bridge_read_key_id"),
+    dataBridgeReadSecretId: uuid("data_bridge_read_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
     liveReleaseId: uuid("live_release_id"),
     publishLeaseId: uuid("publish_lease_id"),
     publishLeaseKind: text("publish_lease_kind"),
@@ -225,5 +253,49 @@ export const websiteSitemapOption = pgTable(
     index("website_sitemap_option_site_idx").on(t.companyId, t.siteId),
     uniqueIndex("website_sitemap_option_site_approved_uq").on(t.siteId).where(sql`${t.status} = 'approved'`),
     check("website_sitemap_option_status_chk", sql`${t.status} in ('draft', 'approved', 'archived')`),
+  ],
+);
+
+/**
+ * Website features (GRE-2325, plan of 24 Oct 2026): the big parts of a site,
+ * each with its slice of the sitemap (route prefixes) and collections. Owner
+ * and lead agent are optional. Switching a feature off hides its screens and
+ * never deletes data; removing one archives the registry row only.
+ */
+export const websiteFeature = pgTable(
+  "website_feature",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id").notNull(),
+    /** Stable key per site, for example `shop`. */
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    purpose: text("purpose").notNull().default(""),
+    icon: text("icon").notNull().default("blocks"),
+    ownerUserId: text("owner_user_id"),
+    /** A name shown as a hint in Settings; never sets the owner on its own. */
+    suggestedOwner: text("suggested_owner"),
+    leadAgentId: uuid("lead_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** Admin screens planned for this feature, each naming the task that moves it in: `{ name, issue }[]`. */
+    adminScreens: jsonb("admin_screens").$type<Array<{ name: string; issue: string | null }>>().notNull().default([]),
+    routePrefixes: text("route_prefixes").array().notNull().default(sql`'{}'::text[]`),
+    collections: text("collections").array().notNull().default(sql`'{}'::text[]`),
+    enabled: boolean("enabled").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("website_feature_company_id_uq").on(t.companyId, t.id),
+    foreignKey({
+      columns: [t.companyId, t.siteId],
+      foreignColumns: [websiteSite.companyId, websiteSite.id],
+      name: "website_feature_company_site_fk",
+    }).onDelete("cascade"),
+    index("website_feature_site_idx").on(t.companyId, t.siteId),
+    uniqueIndex("website_feature_site_key_uq").on(t.siteId, t.key).where(sql`${t.archivedAt} is null`),
   ],
 );
