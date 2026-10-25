@@ -1,30 +1,46 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, Building2, CalendarClock, FileText, History, Mail, Pencil, Phone, Sparkles, Star, StickyNote } from "lucide-react";
+import { Building2, History, Mail, Pencil, Phone, Sparkles, Star } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
-  type CrmFile,
   type CrmRecordField,
-  type CrmTimelineEntry,
   type OrganisationContact,
+  type OrganisationDetail,
+  type OrganisationHistory,
   type OrganisationHistoryCase,
   type OrganisationHistoryStageChange,
 } from "@greatstone/shared";
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
-import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
+import {
+  ActivityPanel,
+  BillingPanel,
+  ClientViewPanel,
+  CommercePanel,
+  DeepDivePanel,
+  DeliverablesPanel,
+  DiscoveryPanel,
+  DocumentsPanel,
+  EngagementSummary,
+  InterviewsPanel,
+  useClientShared,
+  useEngagementCase,
+} from "@/components/OrganisationHub";
+import { PageTabBar } from "@/components/PageTabBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Tabs } from "@/components/ui/tabs";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { organisationAskContext } from "@/lib/ask-everest";
 import { openAskEverest } from "@/lib/ask-everest-events";
-import { Link, useParams } from "@/lib/router";
-import { formatBytes } from "@/lib/issue-output";
+import { ORGANISATION_HUB_TABS, engagementCaseId, organisationHubTab, type OrganisationHubTab } from "@/lib/organisation-hub";
+import { Link, useParams, useSearchParams } from "@/lib/router";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { ORGANISATION_STATUS_BADGE, OrganisationDialogContent } from "./Organisations";
 
@@ -41,16 +57,18 @@ function stageChangeText(change: OrganisationHistoryStageChange) {
 }
 
 /**
- * Company page for one organisation (GRE-1480): company info, country owner,
- * contacts and engagement history (pipeline cases with stage changes, linked
- * projects and tasks, last contact date).
+ * Company page for one organisation (GRE-1480), and the per-client hub
+ * (GRE-2614): one tab for each thing collected from or delivered to the
+ * client, each read from and linked to the record that owns it.
  */
 export function OrganisationPage() {
   const { organisationId = "" } = useParams<{ organisationId: string }>();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(false);
   const companyId = selectedCompanyId ?? "";
+  const tab = organisationHubTab(searchParams.get("tab"));
 
   const detail = useQuery({
     queryKey: queryKeys.organisations.detail(companyId, organisationId),
@@ -62,11 +80,24 @@ export function OrganisationPage() {
     queryFn: () => organisationsApi.history(companyId, organisationId),
     enabled: Boolean(selectedCompanyId && organisationId),
   });
+  const cases = history.data?.cases ?? [];
+  const caseIds = cases.map((item) => item.id);
+  const caseId = engagementCaseId(cases, searchParams.get("case"));
+  const engagement = useEngagementCase(caseId);
+  const { shared } = useClientShared(companyId, engagement.isClient ? caseId : null);
 
   const name = detail.data?.name;
   useEffect(() => {
     setBreadcrumbs([{ label: "Organisations", href: "/organisations" }, { label: name ?? "Organisation" }]);
   }, [setBreadcrumbs, name]);
+
+  const setParam = (key: "tab" | "case", value: string | null) => {
+    const params = new URLSearchParams(searchParams);
+    if (value) params.set(key, value);
+    else params.delete(key);
+    setSearchParams(params, { replace: true });
+  };
+  const openTab = (next: OrganisationHubTab) => setParam("tab", next === "overview" ? null : next);
 
   if (detail.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading organisation…</p>;
@@ -84,28 +115,7 @@ export function OrganisationPage() {
 
   const organisation = detail.data;
   const contacts = organisation.contacts.filter((contact) => !contact.archivedAt);
-  const info: Array<[string, ReactNode]> = [
-    ["Country owner", organisation.countryOwner ?? "Not set"],
-    ["Country", organisation.country ?? "Not set"],
-    ["Industry", organisation.industry ?? "Not set"],
-    [
-      "Website",
-      organisation.website ? (
-        <a
-          href={/^https?:\/\//i.test(organisation.website) ? organisation.website : `https://${organisation.website}`}
-          target="_blank"
-          rel="noreferrer"
-          className="break-all hover:underline"
-        >
-          {organisation.website}
-        </a>
-      ) : "Not set",
-    ],
-    [
-      "Last contact",
-      history.isLoading ? "Loading…" : history.data?.lastContactAt ? formatDate(history.data.lastContactAt) : "No contact yet",
-    ],
-  ];
+  const clientCaseId = engagement.isClient ? caseId : null;
 
   return (
     <div className="flex max-w-5xl flex-col gap-6">
@@ -144,6 +154,99 @@ export function OrganisationPage() {
         </div>
       </div>
 
+      {cases.length > 1 && caseId ? (
+        <label className="flex max-w-md flex-col gap-1 text-xs font-medium text-muted-foreground">
+          Engagement shown
+          <NativeSelect
+            aria-label="Engagement shown"
+            value={caseId}
+            onChange={(event) => setParam("case", event.target.value)}
+            className="h-9 text-sm text-foreground"
+          >
+            {cases.map((item) => (
+              <option key={item.id} value={item.id}>{item.title} · {item.pipelineName} · {item.stageName}</option>
+            ))}
+          </NativeSelect>
+        </label>
+      ) : null}
+
+      <div>
+        <Tabs value={tab} onValueChange={(value) => openTab(value as OrganisationHubTab)} className="mb-4">
+          <PageTabBar items={ORGANISATION_HUB_TABS} value={tab} onValueChange={(value) => openTab(value as OrganisationHubTab)} align="start" ariaLabel="Client section" />
+        </Tabs>
+        <div className="flex flex-col gap-6" data-testid={`organisation-tab-${tab}`}>
+          {tab === "overview" ? (
+            <>
+              {engagement.detail ? (
+                <EngagementSummary companyId={companyId} caseIds={caseIds} detail={engagement.detail} isClient={engagement.isClient} />
+              ) : null}
+              <OverviewDetails organisation={organisation} companyId={companyId} contacts={contacts} history={history} />
+            </>
+          ) : null}
+          {tab === "discovery" ? <DiscoveryPanel detail={engagement.detail} history={history.data} /> : null}
+          {tab === "interviews" ? <InterviewsPanel /> : null}
+          {tab === "deep-dive" ? <DeepDivePanel companyId={companyId} caseIds={caseIds} shared={shared} /> : null}
+          {tab === "documents" ? (
+            <DocumentsPanel caseId={clientCaseId} organisationId={organisation.id} history={history.data} shared={shared} />
+          ) : null}
+          {tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
+          {tab === "commerce" ? <CommercePanel companyId={companyId} organisation={organisation} /> : null}
+          {tab === "billing" ? <BillingPanel /> : null}
+          {tab === "activity" ? <ActivityPanel detail={engagement.detail} history={history.data} /> : null}
+          {tab === "client-view" ? <ClientViewPanel companyId={companyId} caseId={clientCaseId} /> : null}
+        </div>
+      </div>
+
+      <Dialog open={editing} onOpenChange={setEditing}>
+        {editing && selectedCompanyId ? (
+          <OrganisationDialogContent
+            companyId={selectedCompanyId}
+            organisation={organisation}
+            onDone={() => setEditing(false)}
+          />
+        ) : null}
+      </Dialog>
+    </div>
+  );
+}
+
+/** Company info, contacts and the engagement history: the Overview tab below the engagement. */
+function OverviewDetails({
+  organisation,
+  companyId,
+  contacts,
+  history,
+}: {
+  organisation: OrganisationDetail;
+  companyId: string;
+  contacts: OrganisationContact[];
+  history: { data?: OrganisationHistory; isLoading: boolean; error: unknown };
+}) {
+  const info: Array<[string, ReactNode]> = [
+    ["Country owner", organisation.countryOwner ?? "Not set"],
+    ["Country", organisation.country ?? "Not set"],
+    ["Industry", organisation.industry ?? "Not set"],
+    [
+      "Website",
+      organisation.website ? (
+        <a
+          href={/^https?:\/\//i.test(organisation.website) ? organisation.website : `https://${organisation.website}`}
+          target="_blank"
+          rel="noreferrer"
+          className="break-all hover:underline"
+        >
+          {organisation.website}
+        </a>
+      ) : "Not set",
+    ],
+    [
+      "Last contact",
+      history.isLoading ? "Loading…" : history.data?.lastContactAt ? formatDate(history.data.lastContactAt) : "No contact yet",
+    ],
+  ];
+
+  return (
+    <>
       <section aria-label="Company info" className="rounded-lg border border-border p-4">
         <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
           {info.map(([label, value]) => (
@@ -164,8 +267,6 @@ export function OrganisationPage() {
           </div>
         ) : null}
       </section>
-
-      <OrganisationCommerce companyId={companyId} organisation={organisation} />
 
       <section aria-label="Contacts" className="space-y-2">
         <h2 className="text-sm font-semibold">Contacts</h2>
@@ -196,113 +297,7 @@ export function OrganisationPage() {
           </ul>
         )}
       </section>
-
-      {history.data?.timeline?.length ? (
-        <section aria-label="Activities and notes" className="space-y-2">
-          <h2 className="text-sm font-semibold">Activities and notes</h2>
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {history.data.timeline.map((entry) => <TimelineRow key={entry.id} entry={entry} />)}
-          </ul>
-        </section>
-      ) : null}
-
-      {history.data?.files?.length ? (
-        <section aria-label="Files" className="space-y-2">
-          <h2 className="text-sm font-semibold">Files</h2>
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {history.data.files.map((file) => <FileRow key={file.id} file={file} />)}
-          </ul>
-        </section>
-      ) : null}
-
-      <Dialog open={editing} onOpenChange={setEditing}>
-        {editing && selectedCompanyId ? (
-          <OrganisationDialogContent
-            companyId={selectedCompanyId}
-            organisation={organisation}
-            onDone={() => setEditing(false)}
-          />
-        ) : null}
-      </Dialog>
-    </div>
-  );
-}
-
-const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone, email: Mail, stage_change: ArrowRightLeft, field_change: Pencil } as const;
-
-function timelineTitle(entry: CrmTimelineEntry) {
-  if (entry.subject) return entry.subject;
-  if (entry.kind === "note") return "Note";
-  if (entry.kind === "call") return "Call";
-  if (entry.kind === "email") return "Email";
-  if (entry.kind === "stage_change") return "Stage change";
-  if (entry.kind === "field_change") return "Field change";
-  return entry.activityType ? entry.activityType.charAt(0).toUpperCase() + entry.activityType.slice(1) : "Activity";
-}
-
-function timelineMeta(entry: CrmTimelineEntry) {
-  const parts: string[] = [];
-  if (entry.occurredAt) parts.push(formatDateTime(entry.occurredAt));
-  if (entry.kind === "activity") {
-    if (entry.activityType) parts.push(entry.activityType);
-    parts.push(entry.done ? "Done" : "Planned");
-  }
-  if (entry.durationMinutes) parts.push(`${entry.durationMinutes} min`);
-  if (entry.kind === "email") {
-    const from = Array.isArray(entry.details.from) ? entry.details.from.join(", ") : "";
-    const to = Array.isArray(entry.details.to) ? entry.details.to.join(", ") : "";
-    if (from) parts.push(`from ${from}`);
-    if (to) parts.push(`to ${to}`);
-  }
-  if (entry.ownerName) parts.push(entry.ownerName);
-  if (entry.contactName) parts.push(`with ${entry.contactName}`);
-  return parts.join(" · ");
-}
-
-/** One imported activity, note or call. */
-function TimelineRow({ entry }: { entry: CrmTimelineEntry }) {
-  const Icon = TIMELINE_ICONS[entry.kind] ?? CalendarClock;
-  return (
-    <li className="flex gap-2 px-3 py-2 text-sm">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium">{timelineTitle(entry)}</span>
-          {entry.caseId && entry.caseTitle ? <span className="text-xs text-muted-foreground">{entry.caseTitle}</span> : null}
-        </div>
-        <p className="text-xs text-muted-foreground">{timelineMeta(entry)}</p>
-        {entry.body ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{entry.body}</p> : null}
-      </div>
-    </li>
-  );
-}
-
-/** One file imported from a CRM: opens the copy in GSAM, or the CRM's link when it was not copied. */
-function FileRow({ file }: { file: CrmFile }) {
-  const href = file.contentPath ?? file.remoteUrl;
-  const meta = [
-    file.addedAt ? formatDate(file.addedAt) : null,
-    file.byteSize ? formatBytes(file.byteSize) : null,
-    file.ownerName,
-    file.contactName ? `on ${file.contactName}` : null,
-  ].filter(Boolean).join(" · ");
-  return (
-    <li className="flex gap-2 px-3 py-2 text-sm">
-      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          {href ? (
-            <a href={href} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">{file.name}</a>
-          ) : (
-            <span className="font-medium">{file.name}</span>
-          )}
-          {file.caseId && file.caseTitle ? <span className="text-xs text-muted-foreground">{file.caseTitle}</span> : null}
-        </div>
-        {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
-        {file.notCopied ? <p className="text-xs text-muted-foreground">Not copied into GSAM: {file.notCopied}</p> : null}
-        {file.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{file.description}</p> : null}
-      </div>
-    </li>
+    </>
   );
 }
 
