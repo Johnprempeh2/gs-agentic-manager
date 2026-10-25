@@ -896,6 +896,106 @@ describe("full-screen editor (GRE-2296)", () => {
   });
 });
 
+describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
+  const copyAck = { editorContract: 2, editorCommands: ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"] };
+  const empty = { ...load, data: { root: { props: {} }, content: [] } };
+  const modeToggle = () => document.body.querySelector<HTMLElement>('[data-testid="website-edit-mode"]');
+  const modeButton = (label: string) => [...modeToggle()!.querySelectorAll("button")].find((el) => el.textContent?.includes(label))!;
+  const notBuilt = () => document.body.querySelector<HTMLElement>('[data-testid="website-not-built"]');
+  const importWarning = () => document.body.querySelector<HTMLElement>('[data-testid="website-import-warning"]');
+
+  it("opens in Edit copy: no Add block, Outline, Media or Motion; Save, History and Preview stay", async () => {
+    await render();
+    const editor = await connect(copyAck);
+    const hello = editor.posted.mock.calls[0]![0] as { payload: Record<string, unknown> };
+    expect(hello.payload.editMode).toBe("copy");
+    expect(modeButton("Edit copy").getAttribute("aria-pressed")).toBe("true");
+    expect(modeButton("Layout").getAttribute("aria-pressed")).toBe("false");
+    for (const name of ["Add block", "Outline", "Media", "Motion"]) expect(labelled(name)).toBeNull();
+    expect(labelled("History")).not.toBeNull();
+    expect(button("Preview")).toBeDefined();
+    // Save still goes to the editor.
+    await key({ key: "s", metaKey: true });
+    expect(editor.sent("editor-command").map((message) => message.payload)).toEqual([{ command: "save" }]);
+    // Words saved in Edit copy go through GSAM as before.
+    api.savePageContent.mockResolvedValue({ state: "saved", revisionId: "rev-3", revisionNumber: 3, savedAt: "2026-10-25T10:00:00.000Z" });
+    await editor.save("11111111-1111-4111-8111-111111111111");
+    expect(api.savePageContent).toHaveBeenCalledTimes(1);
+  });
+
+  it("Layout shows Add block, Outline, Media and Motion, and tells the editor; Edit copy hides them again", async () => {
+    await render();
+    const editor = await connect(copyAck);
+    await act(async () => modeButton("Layout").click());
+    await flush();
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "layout", on: true });
+    for (const name of ["Add block", "Outline", "Media", "Motion"]) expect(labelled(name)).not.toBeNull();
+    await act(async () => labelled("Add block").click());
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "add-block" });
+    await act(async () => labelled("Media").click());
+    expect(drawer()).not.toBeNull();
+    await act(async () => modeButton("Edit copy").click());
+    await flush();
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "layout", on: false });
+    expect(labelled("Add block")).toBeNull();
+    // The Media drawer closes with it.
+    expect(drawer()).toBeNull();
+  });
+
+  it("an editor host without Edit copy (contract 1) opens as today, in Layout, with no switch", async () => {
+    await render();
+    const editor = await connect({ editorCommands: ["undo", "redo", "save", "add-block", "deselect", "outline"] });
+    expect(editor.sent("load-draft")).toHaveLength(1);
+    expect(modeToggle()).toBeNull();
+    expect(labelled("Add block")).not.toBeNull();
+    expect(labelled("Media")).not.toBeNull();
+  });
+
+  it("an empty draft with nothing live shows Not built yet, never a blank canvas", async () => {
+    api.pageEditor.mockResolvedValue(empty);
+    await render();
+    await connect({ ...copyAck, liveContent: null });
+    expect(notBuilt()).not.toBeNull();
+    expect(notBuilt()!.textContent).toContain("Not built yet");
+    expect(notBuilt()!.textContent).toContain("Home");
+    expect(notBuilt()!.textContent).toContain("/");
+    // Says who acts, so nobody waits for work that is not running.
+    expect(notBuilt()!.textContent).toContain("Ask an agent to build it, or switch to Layout to add blocks yourself.");
+    expect(importWarning()).toBeNull();
+    // Layout keeps the canvas to add blocks, with one line that says so.
+    await act(async () => modeButton("Layout").click());
+    await flush();
+    expect(document.body.querySelector('[data-testid="website-empty-page"]')).toBeNull();
+    expect(notBuilt()!.textContent).toContain("Use Add block");
+  });
+
+  it("a draft with content shows neither empty state", async () => {
+    await render();
+    await connect({ ...copyAck, liveContent: { blocks: 3 } });
+    expect(notBuilt()).toBeNull();
+    expect(importWarning()).toBeNull();
+  });
+
+  it("live content not in GSAM: Import it asks the editor to import, and its save fills the draft", async () => {
+    api.pageEditor.mockResolvedValue(empty);
+    api.savePageContent.mockResolvedValue({ state: "saved", revisionId: "rev-3", revisionNumber: 3, savedAt: "2026-10-25T10:00:00.000Z" });
+    await render();
+    const editor = await connect({ ...copyAck, liveContent: { blocks: 1 } });
+    expect(importWarning()!.textContent).toContain("This page has live content that isn't in GSAM yet");
+    expect(notBuilt()).toBeNull();
+    await act(async () => button("Import it").click());
+    await flush();
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "import-live" });
+    expect(button("Importing").disabled).toBe(true);
+    // The frame saves the imported page, block ids kept, through GSAM.
+    await editor.save("22222222-2222-4222-8222-222222222222");
+    expect(api.savePageContent).toHaveBeenCalledTimes(1);
+    expect(api.savePageContent.mock.calls[0]![3]).toMatchObject({ content: data });
+    expect(importWarning()).toBeNull();
+    expect(text()).toContain("The live page is now in the draft. Nothing is published.");
+  });
+});
+
 describe("WebsitePagesTab (GRE-2296)", () => {
   function Where() {
     const location = useLocation();

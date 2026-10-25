@@ -7,7 +7,10 @@ import {
   isWebsiteFrameAssetUrl,
   isWebsiteFrameNonce,
   WEBSITE_EDITOR_CONTRACT,
+  WEBSITE_EDITOR_COPY_CONTRACT,
   websiteEditorContractOf,
+  websiteEditorHasCopyMode,
+  websiteFrameHelloMessage,
   parseWebsiteEditorOrigin,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
@@ -328,7 +331,7 @@ describe("full-screen editor messages (GRE-2296)", () => {
   };
 
   it("reads the engine's editor commands from hello-ack, keeping only known ones", () => {
-    expect(WEBSITE_EDITOR_COMMANDS).toEqual(["undo", "redo", "save", "add-block", "deselect", "outline"]);
+    expect(WEBSITE_EDITOR_COMMANDS).toEqual(["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"]);
     expect(helloAck({ editorCommands: ["undo", "redo", "save", "teleport"] }).editorCommands).toEqual(["undo", "redo", "save"]);
     expect(helloAck({}).editorCommands).toBeUndefined();
     // A malformed list is dropped, never the handshake.
@@ -352,10 +355,36 @@ describe("full-screen editor messages (GRE-2296)", () => {
     expect(isWebsiteEditorContractCurrent(helloAck({ editorContract: 2 }))).toBe(true);
   });
 
+  it("Edit copy (GRE-2394): only a contract 2 engine with the layout command has it", () => {
+    expect(WEBSITE_EDITOR_COPY_CONTRACT).toBe(2);
+    expect(websiteEditorHasCopyMode(helloAck({ editorContract: 2, editorCommands: ["undo", "layout"] }))).toBe(true);
+    // Contract 1, or no layout command: today's full editor.
+    expect(websiteEditorHasCopyMode(helloAck({ editorContract: 1, editorCommands: ["undo", "layout"] }))).toBe(false);
+    expect(websiteEditorHasCopyMode(helloAck({ editorContract: 2, editorCommands: ["undo"] }))).toBe(false);
+    expect(websiteEditorHasCopyMode(helloAck({ editorCommands: ["layout"] }))).toBe(false);
+  });
+
+  it("hello-ack's liveContent is kept when valid and dropped, never the handshake, when not", () => {
+    expect(helloAck({ liveContent: { blocks: 6 } }).liveContent).toEqual({ blocks: 6 });
+    expect(helloAck({ liveContent: null }).liveContent).toBeNull();
+    expect(helloAck({}).liveContent).toBeUndefined();
+    expect(helloAck({ liveContent: { blocks: 0 } }).liveContent).toBeUndefined();
+    expect(helloAck({ liveContent: "yes" }).liveContent).toBeUndefined();
+  });
+
+  it("hello carries the edit mode in the editor only", () => {
+    const hello = (mode: "editor" | "preview") =>
+      websiteFrameHelloMessage({ id: "h", siteId: "s", nonce, mode, pageId: "p", editMode: "copy" }).payload as Record<string, unknown>;
+    expect(hello("editor").editMode).toBe("copy");
+    expect("editMode" in hello("preview")).toBe(false);
+  });
+
   it("editor-command carries one known command and nothing else", () => {
     const parses = (payload: unknown) => websiteFrameEditorCommandSchema.safeParse(payload).success;
     expect(parses({ command: "undo" })).toBe(true);
     expect(parses({ command: "outline", on: true })).toBe(true);
+    expect(parses({ command: "layout", on: false })).toBe(true);
+    expect(parses({ command: "import-live" })).toBe(true);
     expect(parses({ command: "publish" })).toBe(false);
     expect(parses({ command: "save", data: {} })).toBe(false);
   });

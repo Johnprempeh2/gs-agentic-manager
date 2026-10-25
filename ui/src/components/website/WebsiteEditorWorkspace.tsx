@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   ChevronsUpDown,
+  CloudDownload,
   Eye,
   FileText,
   Film,
@@ -29,6 +30,7 @@ import {
   WEBSITE_FRAME_SANDBOX,
   createWebsiteFrameNonce,
   websiteFrameSrc,
+  type WebsiteEditMode,
   type WebsiteEditorCommand,
   type WebsiteFrameEditorState,
   type WebsiteFrameInsertMediaResult,
@@ -326,6 +328,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const page = pages.find((entry) => entry.id === searchParams.get("page")) ?? pages[0] ?? null;
   const openComments = useWebsitePageComments(companyId, site.id, page?.id ?? null).data?.length ?? 0;
   const [mode, setMode] = useState<Mode>("edit");
+  /** GRE-2394: Edit copy on every open; a GS Studio hand-off needs Motion, so it opens in Layout. */
+  const [editMode, setEditMode] = useState<WebsiteEditMode>(() => (searchParams.get("motion") ? "layout" : "copy"));
   const [source, setSource] = useState<Source>("draft");
   const [device, setDevice] = useState<WebsitePreviewDevice>("laptop");
   /** GS Studio's Use on website: the study number or effect to place, from `?motion=`. */
@@ -347,6 +351,12 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const [frameError, setFrameError] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<WebsiteFrameEditorState | null>(null);
   const [commands, setCommands] = useState<ReadonlySet<WebsiteEditorCommand>>(new Set());
+  /** What the engine said in its hello-ack (GRE-2394): Edit copy, and live content for this page. */
+  const [copyAvailable, setCopyAvailable] = useState(false);
+  const [liveContent, setLiveContent] = useState<{ blocks: number } | null>(null);
+  /** The draft the frame shows has no blocks; null until it is loaded. */
+  const [draftEmpty, setDraftEmpty] = useState<boolean | null>(null);
+  const [importing, setImporting] = useState(false);
   /** Click to change or Ask an agent: what the comment is about; each one starts a fresh request. */
   const [ask, setAsk] = useState<{ n: number; target: WebsiteChangeTarget; picked: boolean } | null>(null);
   const sessionRef = useRef<WebsiteFrameHostSession<Window> | null>(null);
@@ -360,6 +370,10 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     setFrameError(null);
     setEditorState(null);
     setCommands(new Set());
+    setCopyAvailable(false);
+    setLiveContent(null);
+    setDraftEmpty(null);
+    setImporting(false);
     setAsk(null);
     setDrawer((current) => (current === "change" ? null : current));
     hadSelection.current = false;
@@ -614,6 +628,25 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   // GRE-2357: an editor host older than the shell's contract never shows its own studio.
   const outOfDate = editing && connection.phase === "out-of-date";
   const toggleDrawer = (next: Exclude<Drawer, null>) => setDrawer((current) => (current === next ? null : next));
+  // GRE-2394: Edit copy changes words only. An engine without it opens as today, in Layout.
+  const copy = editing && copyAvailable && editMode === "copy";
+  const layoutTools = editing && !copy;
+  const changeEditMode = (next: WebsiteEditMode) => {
+    if (next === editMode || !sessionRef.current?.setEditMode(next)) return;
+    setEditMode(next);
+    if (next === "copy") {
+      if (drawer === "media" || drawer === "motion") setDrawer(null);
+      if (outlineOn) setEditorState((current) => (current ? { ...current, outline: false } : current));
+    }
+  };
+  const emptyDraft = ready && draftEmpty === true && (editing || source === "draft");
+  const importable = emptyDraft && editing && liveContent !== null;
+  /** Edit copy and Preview cover an empty canvas; Layout keeps it to add blocks, with a line above. */
+  const coverCanvas = emptyDraft && (!editing || copy);
+  const importLive = () => {
+    if (sessionRef.current?.importLive()) setImporting(true);
+    else setMessage({ text: "GSAM could not ask the site's editor to import this page. Reload and try again.", tone: "warn" });
+  };
 
   return (
     <FullScreen>
@@ -622,19 +655,34 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
         <PagePicker pages={pages} page={page} onOpen={(id) => void openPage(id)} />
         <SaveStatePill mode={mode} connection={connection} saveState={saveState} dirty={dirty} status={page.status} />
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+          {editing && copyAvailable ? (
+            <Segmented
+              label="Edit mode"
+              value={editMode}
+              options={[
+                { value: "copy", label: "Edit copy", short: "Copy", title: "Edit copy: click words on the page to change them" },
+                { value: "layout", label: "Layout", title: "Layout: add, move and set up blocks" },
+              ]}
+              onChange={changeEditMode}
+              disabled={!ready}
+              strong
+              testId="website-edit-mode"
+            />
+          ) : null}
           {editing ? (
-            <>
+            // On a phone Undo and Redo sit in More, so the page name keeps its room.
+            <div className="hidden items-center gap-1 sm:flex">
               <IconButton label="Undo (⌘Z)" icon={Undo2} disabled={!canUndo} onClick={() => run("undo")} />
               <IconButton label="Redo (⇧⌘Z)" icon={Redo2} disabled={!canRedo} onClick={() => run("redo")} />
-            </>
+            </div>
           ) : null}
           <IconButton label="Ask an agent" icon={MessageSquarePlus} labelled pressed={drawer === "change" && !ask?.picked} onClick={askAgent} />
           <div className="hidden items-center gap-1 lg:flex">
-            {editing ? (
+            {layoutTools ? (
               <>
                 <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-                <IconButton label="Add block" icon={Plus} labelled disabled={!canAddBlock} onClick={() => run("add-block")} />
-                <IconButton label="Outline" icon={ListTree} labelled disabled={!canOutline} pressed={outlineOn} onClick={() => run("outline", !outlineOn)} />
+                <IconButton label="Add block" icon={Plus} labelled="2xl" disabled={!canAddBlock} onClick={() => run("add-block")} />
+                <IconButton label="Outline" icon={ListTree} labelled="2xl" disabled={!canOutline} pressed={outlineOn} onClick={() => run("outline", !outlineOn)} />
               </>
             ) : null}
             <Segmented
@@ -663,8 +711,12 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onClick={() => toggleDrawer("comments")}
             />
             <IconButton label="History" icon={History} labelled="2xl" pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
-            <IconButton label="Media" icon={ImageIcon} labelled="2xl" pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
-            <IconButton label="Motion" icon={Waves} labelled="2xl" pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
+            {copy ? null : (
+              <>
+                <IconButton label="Media" icon={ImageIcon} labelled="2xl" pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
+                <IconButton label="Motion" icon={Waves} labelled="2xl" pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
+              </>
+            )}
           </div>
           <Button
             type="button"
@@ -690,16 +742,21 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
           </Button>
           <MoreMenu
             mode={mode}
+            copy={copy}
             device={device}
             drawer={drawer}
             openComments={openComments}
             waiting={waiting}
+            canUndo={canUndo}
+            canRedo={canRedo}
             canAddBlock={canAddBlock}
             canOutline={canOutline}
             outlineOn={outlineOn}
             onMode={() => void switchView({ mode: mode === "preview" ? "edit" : "preview", source: "draft" })}
             onDevice={setDevice}
             onDrawer={toggleDrawer}
+            onUndo={() => run("undo")}
+            onRedo={() => run("redo")}
             onAddBlock={() => run("add-block")}
             onOutline={() => run("outline", !outlineOn)}
             onRequestPublish={() => void askToPublish()}
@@ -724,6 +781,19 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
       {message ? (
         <Strip tone={message.tone === "success" ? "success" : "warning"} onClose={() => setMessage(null)}>{message.text}</Strip>
       ) : null}
+      {!notice && emptyDraft && !coverCanvas ? (
+        importable ? (
+          <Strip
+            tone="warning"
+            testId="website-import-warning"
+            action={{ label: importing ? "Importing" : "Import it", onClick: importLive, icon: CloudDownload, disabled: importing }}
+          >
+            This page has live content that isn't in GSAM yet.
+          </Strip>
+        ) : (
+          <Strip tone="neutral" testId="website-not-built">This page is not built yet. Use Add block to start it.</Strip>
+        )
+      ) : null}
       <div className="relative flex min-h-0 flex-1">
         <div className={cn("relative min-w-0 flex-1", width ? "bg-muted" : "bg-background")}>
           {notice ? null : outOfDate ? (
@@ -746,6 +816,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               site={site}
               page={page}
               mode={mode}
+              editMode={editMode}
               source={source}
               width={width}
               device={device}
@@ -756,9 +827,23 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onConnection={(next) => {
                 // Removing an out-of-date frame tears its session down; the screen keeps saying why.
                 setConnection((current) => (current.phase === "out-of-date" && next.phase === "closed" ? current : next));
-                if (next.phase === "ready") setCommands(new Set(sessionRef.current?.editorCommands ?? []));
+                if (next.phase === "ready") {
+                  setCommands(new Set(sessionRef.current?.editorCommands ?? []));
+                  setCopyAvailable(Boolean(sessionRef.current?.hasCopyMode));
+                  setLiveContent(sessionRef.current?.liveContent ?? null);
+                }
               }}
-              onSaveState={setSaveState}
+              onSaveState={(next) => {
+                setSaveState(next);
+                if (next.status === "saved") {
+                  // The import's save fills the empty draft.
+                  setDraftEmpty(sessionRef.current?.draftEmpty ?? null);
+                  setImporting((was) => {
+                    if (was) setMessage({ text: "The live page is now in the draft. Nothing is published.", tone: "success" });
+                    return false;
+                  });
+                } else if (next.status === "failed" || next.status === "conflict") setImporting(false);
+              }}
               onFrameError={setFrameError}
               onBlockPicked={(picked) => {
                 const target: WebsiteChangeTarget = {
@@ -777,10 +862,39 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onEditorKey={() => escape()}
               onMediaRequested={onMediaRequested}
               onDirty={setDirty}
-              onDraftLoaded={() => setDraftLoads((count) => count + 1)}
+              onDraftLoaded={() => {
+                setDraftLoads((count) => count + 1);
+                setDraftEmpty(sessionRef.current?.draftEmpty ?? null);
+              }}
               onOriginChanged={() => setNotice(ORIGIN_CHANGED_NOTICE)}
             />
           )}
+          {!notice && !outOfDate && coverCanvas ? (
+            <div className="absolute inset-0 z-raised flex overflow-auto bg-background" data-testid="website-empty-page">
+              {importable ? (
+                <EmptyPageState
+                  testId="website-import-warning"
+                  icon={CloudDownload}
+                  title="Live content, not in GSAM"
+                  page={page}
+                  help="This page has live content that isn't in GSAM yet. Import it to change the words here. Nothing is published."
+                  action={{ label: importing ? "Importing" : "Import it", onClick: importLive, disabled: importing }}
+                />
+              ) : (
+                <EmptyPageState
+                  testId="website-not-built"
+                  icon={FileText}
+                  title="Not built yet"
+                  page={page}
+                  help={
+                    editing
+                      ? "This page has no content yet. Ask an agent to build it, or switch to Layout to add blocks yourself."
+                      : "This page has no content yet. Switch to Edit to build it."
+                  }
+                />
+              )}
+            </div>
+          ) : null}
         </div>
         {drawer ? (
           <EditorDrawer
@@ -866,6 +980,41 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
         ) : null}
       </div>
     </FullScreen>
+  );
+}
+
+/** A page with nothing to edit (GRE-2394): never a blank canvas. */
+function EmptyPageState({
+  icon: Icon,
+  title,
+  page,
+  help,
+  action,
+  testId,
+}: {
+  icon: typeof FileText;
+  title: string;
+  page: WebsitePage;
+  help: string;
+  action?: { label: string; onClick: () => void; disabled?: boolean };
+  testId: string;
+}) {
+  return (
+    <div className="m-auto flex max-w-md flex-col items-center px-6 py-12 text-center" data-testid={testId} role="status">
+      <div className="gs-empty-tile gs-glass-card mb-5 rounded-xl border p-4">
+        <Icon className="brand-mark size-9" aria-hidden="true" />
+      </div>
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <p className="mt-1 text-sm font-medium text-foreground">{page.title}</p>
+      <p className="font-mono text-xs text-muted-foreground">{page.slug}</p>
+      <p className="mt-3 text-sm text-muted-foreground">{help}</p>
+      {action ? (
+        <Button type="button" className="mt-5" onClick={action.onClick} disabled={action.disabled}>
+          <CloudDownload />
+          {action.label}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -1056,31 +1205,42 @@ function SaveStatePill({
 /** Everything the top bar does not show on a phone. */
 function MoreMenu({
   mode,
+  copy,
   device,
   drawer,
   openComments,
   waiting,
+  canUndo,
+  canRedo,
   canAddBlock,
   canOutline,
   outlineOn,
   onMode,
   onDevice,
   onDrawer,
+  onUndo,
+  onRedo,
   onAddBlock,
   onOutline,
   onRequestPublish,
 }: {
   mode: Mode;
+  /** Edit copy (GRE-2394): no Add block, Outline, Media or Motion. */
+  copy: boolean;
   device: WebsitePreviewDevice;
   drawer: Drawer;
   openComments: number;
   waiting: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   canAddBlock: boolean;
   canOutline: boolean;
   outlineOn: boolean;
   onMode: () => void;
   onDevice: (device: WebsitePreviewDevice) => void;
   onDrawer: (drawer: Exclude<Drawer, null>) => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onAddBlock: () => void;
   onOutline: () => void;
   onRequestPublish: () => void;
@@ -1103,6 +1263,18 @@ function MoreMenu({
         </DropdownMenuItem>
         {mode === "edit" ? (
           <>
+            <DropdownMenuItem onSelect={onUndo} disabled={!canUndo} className="sm:hidden">
+              <Undo2 />
+              Undo
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onRedo} disabled={!canRedo} className="sm:hidden">
+              <Redo2 />
+              Redo
+            </DropdownMenuItem>
+          </>
+        ) : null}
+        {mode === "edit" && !copy ? (
+          <>
             <DropdownMenuItem onSelect={onAddBlock} disabled={!canAddBlock}>
               <Plus />
               Add block
@@ -1122,14 +1294,18 @@ function MoreMenu({
           <History />
           History{drawer === "history" ? " (open)" : ""}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onDrawer("media")}>
-          <ImageIcon />
-          Media{drawer === "media" ? " (open)" : ""}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onDrawer("motion")}>
-          <Waves />
-          Motion{drawer === "motion" ? " (open)" : ""}
-        </DropdownMenuItem>
+        {copy ? null : (
+          <>
+            <DropdownMenuItem onSelect={() => onDrawer("media")}>
+              <ImageIcon />
+              Media{drawer === "media" ? " (open)" : ""}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onDrawer("motion")}>
+              <Waves />
+              Motion{drawer === "motion" ? " (open)" : ""}
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground">Width</DropdownMenuLabel>
         {WEBSITE_PREVIEW_DEVICES.map((entry) => (
@@ -1149,27 +1325,48 @@ function Segmented<T extends string>({
   value,
   options,
   onChange,
+  disabled,
+  strong,
+  testId,
 }: {
   label: string;
   value: T;
-  options: { value: T; label: string; title?: string }[];
+  /** `short`: the label below sm, where the top bar is narrow. */
+  options: { value: T; label: string; short?: string; title?: string }[];
   onChange: (value: T) => void;
+  disabled?: boolean;
+  /** The chosen segment takes the primary fill, so the control stands out from Width. */
+  strong?: boolean;
+  testId?: string;
 }) {
   return (
-    <div className="flex rounded-md border border-border" role="group" aria-label={label}>
+    <div className="flex shrink-0 rounded-md border border-border" role="group" aria-label={label} data-testid={testId}>
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           aria-pressed={option.value === value}
           title={option.title}
+          disabled={disabled}
           onClick={() => onChange(option.value)}
           className={cn(
             "inline-flex h-8 items-center px-2.5 text-xs font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            option.value === value ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            option.value === value
+              ? strong
+                ? "bg-primary text-primary-foreground"
+                : "bg-accent text-foreground"
+              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            "disabled:pointer-events-none disabled:opacity-50",
           )}
         >
-          {option.label}
+          {option.short ? (
+            <>
+              <span className="sm:hidden">{option.short}</span>
+              <span className="hidden sm:inline">{option.label}</span>
+            </>
+          ) : (
+            option.label
+          )}
         </button>
       ))}
     </div>
@@ -1194,7 +1391,7 @@ function Strip({
 }: {
   tone: keyof typeof STRIP_TONES;
   children: ReactNode;
-  action?: { label: string; onClick: () => void } | null;
+  action?: { label: string; onClick: () => void; icon?: typeof RefreshCw; disabled?: boolean } | null;
   onClose?: () => void;
   testId?: string;
   state?: string;
@@ -1208,8 +1405,8 @@ function Strip({
     >
       <span className="min-w-0 flex-1">{children}</span>
       {action ? (
-        <Button type="button" size="xs" variant="outline" onClick={action.onClick}>
-          <RefreshCw />
+        <Button type="button" size="xs" variant="outline" onClick={action.onClick} disabled={action.disabled}>
+          {action.icon ? <action.icon /> : <RefreshCw />}
           {action.label}
         </Button>
       ) : null}
@@ -1293,6 +1490,7 @@ function EditorFrame({
   site,
   page,
   mode,
+  editMode,
   source,
   width,
   device,
@@ -1314,6 +1512,8 @@ function EditorFrame({
   site: WebsiteSite;
   page: WebsitePage;
   mode: Mode;
+  /** How a new editor session asks to open; switching later goes through the session. */
+  editMode: WebsiteEditMode;
   source: Source;
   width: number | null;
   device: WebsitePreviewDevice;
@@ -1357,6 +1557,7 @@ function EditorFrame({
       siteId: site.id,
       pageId: page.id,
       mode: mode === "edit" ? "editor" : "preview",
+      editMode,
       editorOrigin,
       nonce: createWebsiteFrameNonce(),
       source: frameWindow,
