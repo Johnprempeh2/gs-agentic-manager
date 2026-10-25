@@ -24,6 +24,7 @@ describe("attention feed resolver audience", () => {
   it("carries the open default with the creator named", () => {
     expect(interactionResolverAudience(row(), agentName)).toEqual({
       requestedResolverPolicy: "anyone",
+      resolverUserIds: [],
       effectiveResolverPolicy: "anyone",
       effectiveResolverPolicySource: "requested",
       resolverPolicyProvenance: "inherited",

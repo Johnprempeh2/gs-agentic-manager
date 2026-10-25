@@ -6051,6 +6051,7 @@ export function issueRoutes(
       resolverPolicyProvenance?: string | null;
       addresseeAgentId?: string | null;
       addresseeUserId?: string | null;
+      resolverUserIds?: readonly string[] | null;
       kind: string;
       status: string;
       payload?: unknown;
@@ -17765,6 +17766,7 @@ export function issueRoutes(
           continuationPolicy: interaction.continuationPolicy,
           addresseeAgentId: interaction.addresseeAgentId ?? null,
           addresseeUserId: interaction.addresseeUserId ?? null,
+          resolverUserIds: interaction.resolverUserIds ?? [],
           requestedResolverPolicy: interaction.requestedResolverPolicy,
           effectiveResolverPolicy: interaction.effectiveResolverPolicy,
           resolverPolicyProvenance: interaction.resolverPolicyProvenance,

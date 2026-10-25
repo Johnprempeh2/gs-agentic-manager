@@ -48,6 +48,7 @@ export const issueThreadInteractions = pgTable(
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id),
     addresseeAgentId: uuid("addressee_agent_id").references(() => agents.id, { onDelete: "set null" }),
     addresseeUserId: text("addressee_user_id"),
+    resolverUserIds: text("resolver_user_ids").array().notNull().default(sql`'{}'::text[]`),
     createdByUserId: text("created_by_user_id"),
     resolvedByAgentId: uuid("resolved_by_agent_id").references(() => agents.id),
     resolvedByRunId: uuid("resolved_by_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),

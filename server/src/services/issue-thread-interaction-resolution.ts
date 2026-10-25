@@ -55,6 +55,7 @@ export type IssueThreadInteractionResolverAudienceInput = {
     sourceRunId?: string | null;
     addresseeAgentId?: string | null;
     addresseeUserId?: string | null;
+    resolverUserIds?: readonly string[] | null;
     effectiveResolverPolicy: IssueThreadInteractionResolverPolicy | string;
     resolverPolicyProvenance?: string | null;
   };
@@ -176,6 +177,7 @@ export function evaluateIssueThreadInteractionResolverAudience(
     || additionalRestriction?.policy === "not_creator";
   const humanOnly =
     Boolean(input.governedAction)
+    || Boolean(input.interaction.resolverUserIds?.length)
     || persistedPolicy === "human_only"
     || additionalRestriction?.policy === "human_only";
   const effectiveResolverPolicy: IssueThreadInteractionCanonicalResolverPolicy = humanOnly
@@ -190,16 +192,30 @@ export function evaluateIssueThreadInteractionResolverAudience(
 
   if (input.actor.type === "user") {
     if (
-      input.interaction.addresseeUserId
-      && input.interaction.addresseeUserId !== input.actor.userId
-      && !input.actor.userIdAliases?.includes(input.interaction.addresseeUserId)
+      input.interaction.resolverUserIds?.length
+      && !input.interaction.resolverUserIds.includes(input.actor.userId)
+      && !input.actor.userIdAliases?.some((id) => input.interaction.resolverUserIds?.includes(id))
     ) {
       return {
         allowed: false,
         effectiveResolverPolicy,
         status: 403,
         code: "interaction_addressee_mismatch",
-        message: "Only the addressed user may resolve this issue-thread interaction",
+        message: "Only a named resolver may answer this card",
+      };
+    }
+    if (
+      input.interaction.addresseeUserId
+      && input.interaction.addresseeUserId !== input.actor.userId
+      && !input.actor.userIdAliases?.includes(input.interaction.addresseeUserId)
+      && !input.interaction.resolverUserIds?.includes(input.actor.userId)
+    ) {
+      return {
+        allowed: false,
+        effectiveResolverPolicy,
+        status: 403,
+        code: "interaction_addressee_mismatch",
+        message: "Only an addressed user may resolve this issue-thread interaction",
       };
     }
     if (
@@ -264,7 +280,7 @@ export function evaluateIssueThreadInteractionResolverAudience(
     };
   }
 
-  if (input.interaction.addresseeUserId) {
+  if (input.interaction.addresseeUserId || input.interaction.resolverUserIds?.length) {
     return {
       allowed: false,
       effectiveResolverPolicy,

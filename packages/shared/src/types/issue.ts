@@ -1723,6 +1723,8 @@ export interface IssueThreadInteractionBase extends IssueThreadInteractionActorF
   sourceIdentityContextId?: string | null;
   addresseeAgentId?: string | null;
   addresseeUserId?: string | null;
+  /** Named people who may resolve this card; the first terminal answer wins. */
+  resolverUserIds?: string[];
   title?: string | null;
   summary?: string | null;
   status: IssueThreadInteractionStatus;
