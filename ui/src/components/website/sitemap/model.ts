@@ -71,6 +71,17 @@ export function defaultFolded(tree: Tree): Set<string> {
   return folded;
 }
 
+/**
+ * The part of a page's URL its parent does not already say (GRE-2509): under
+ * `/consultancy/services` the page `/consultancy/services/websites` shows
+ * `/websites`. A path that does not sit under its parent's shows in full.
+ */
+export function ownSlug(path: string, parentPath: string | undefined): string {
+  const base = parentPath?.replace(/\/+$/, "");
+  if (!base || !path.startsWith(`${base}/`) || path.length === base.length + 1) return path;
+  return path.slice(base.length);
+}
+
 /** The pages above a page, nearest first. */
 export function ancestorIds(tree: Tree, id: string): string[] {
   const byId = new Map(tree.nodes.map((node) => [node.id, node]));

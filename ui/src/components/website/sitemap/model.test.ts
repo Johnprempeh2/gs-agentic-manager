@@ -12,6 +12,7 @@ import {
   moveTo,
   outdent,
   outlineRows,
+  ownSlug,
   placeInMenu,
   removeNode,
   type Tree,
@@ -95,5 +96,13 @@ describe("sitemap model", () => {
     const big: Tree = { ...tree, nodes: [...tree.nodes, ...many("home", 14, "s"), ...many("c", 13, "p"), ...many("t", 12, "q")] };
     expect([...defaultFolded({ ...big, nodes: [...big.nodes, ...many("d", 13, "r")] })]).toEqual(["d"]);
     expect(defaultFolded(big).size).toBe(0);
+  });
+
+  it("shows only the part of a URL its parent does not already say (GRE-2509)", () => {
+    expect(ownSlug("/consultancy/services/websites/business-build", "/consultancy/services/websites")).toBe("/business-build");
+    expect(ownSlug("/consultancy", "/")).toBe("/consultancy");
+    expect(ownSlug("/", undefined)).toBe("/");
+    expect(ownSlug("/tools/kit", "/consultancy")).toBe("/tools/kit");
+    expect(ownSlug("/toolset", "/tools")).toBe("/toolset");
   });
 });
