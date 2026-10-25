@@ -451,6 +451,7 @@ import {
   updateWebsiteSitemapOptionSchema,
   createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
+  websiteCommerceRefundRequestSchema,
   setWebsiteBridgeSiteKeySchema,
   websiteDocumentRequestAnswerSchema,
   updateWebsiteFeatureSchema,
@@ -16613,7 +16614,7 @@ registerCurrentRoute({
   method: "post",
   path: `${siteParams}/data-bridge/key`,
   tags: ["website"],
-  summary: "Make a new Ed25519 read key for the site's admin bridge (website:publish, people only). The private key goes to the company's secrets; the answer is the public key to add to the site's GSAM_BRIDGE_KEYS",
+  summary: "Make a new Ed25519 key for the site's admin bridge (website:publish, people only): capability read (default), write (Deep Dive sync and commerce writes) or refund_request. The private key goes to the company's secrets; the answer is the public key to add to the site's GSAM_BRIDGE_KEYS",
   body: createWebsiteDataBridgeKeySchema,
   responses: { ...websiteModuleResponses, 201: r.ok() },
 });
@@ -16668,6 +16669,41 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Read one commerce record by id through the signed admin bridge (website:view). An import job comes with a page of its rows (cursor, limit)",
   responses: commerceReadResponses,
+});
+
+// ─── Website commerce writes and refund requests (GRE-2354 2c(b)) ─────────────
+
+const commerceWriteResponses = {
+  ...websiteModuleResponses, 201: r.ok(), 409: r.conflict, 413: r.payloadTooLarge, 422: r.unprocessable,
+  502: { description: "The website's data bridge refused the change or did not answer; the message says which" },
+};
+const commerceWriteSummary = (method: string) => `${method} one typed commerce change on the site through the signed admin bridge's write key `
+  + "(website:commerce). {path} is one of the site's write operations, e.g. offerings, offerings/{id}, offerings/{id}/variants/{variantId}, "
+  + "pricing-rules/{id}/targets, quotes/{id}, quotes/{id}/convert, invoices/{id}, imports. People only (403 for an agent or a board API key): "
+  + "…/{id}/publish, …/{id}/archive, PATCH fx, imports/{id}/apply, invoices/{id}/issue. The body is the site's to check. Optional "
+  + "Idempotency-Key header (22 base64url characters) makes a repeat write once. 409 capability_not_configured when the site has no write "
+  + "key, with no call to the site; 409 website_bridge_conflict with details.current on a stale expectedRowVersion";
+
+for (const method of ["post", "patch", "delete"] as const) {
+  registerCurrentRoute({
+    method,
+    path: `${siteParams}/commerce/{path}`,
+    tags: ["website"],
+    summary: commerceWriteSummary(method.toUpperCase()),
+    responses: commerceWriteResponses,
+  });
+}
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/commerce/refund-requests`,
+  tags: ["website"],
+  summary: "Ask for a refund on a website order (website:commerce; agents may). Records the request on the site with the refund_request key "
+    + "and opens a commerce_refund_request approval; a person with website:commerce decides it with POST /api/approvals/{id}/approve or "
+    + "/reject, which sends the decision to the site in their name. Moves no money: a person refunds in Stripe. 201 recorded; 202 the card "
+    + "is open but the site's answer was lost (deciding records it first, once); 409 capability_not_configured, over_refundable",
+  body: websiteCommerceRefundRequestSchema,
+  responses: { ...commerceWriteResponses, 202: { description: "The card is open; the site's answer was lost" } },
 });
 
 // ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────

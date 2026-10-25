@@ -77,10 +77,17 @@ export const websiteSite = pgTable(
     dataBridgeReadSecretId: uuid("data_bridge_read_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
     /**
      * Deep Dive sync (GRE-2439): GSAM pushes a client's Shared items with a
-     * separate `write` key, kept in the vault like the read key.
+     * separate `write` key, kept in the vault like the read key. The same key
+     * makes the commerce writes (GRE-2354 2c(b)). Null: commerce writes are off.
      */
     dataBridgeWriteKeyId: text("data_bridge_write_key_id"),
     dataBridgeWriteSecretId: uuid("data_bridge_write_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
+    /**
+     * The `refund_request` key (GRE-2354 2c(b)): records a refund request on
+     * the site, which a person then decides. It moves no money. Null: off.
+     */
+    dataBridgeRefundKeyId: text("data_bridge_refund_key_id"),
+    dataBridgeRefundSecretId: uuid("data_bridge_refund_secret_id").references(() => companySecrets.id, { onDelete: "set null" }),
     /**
      * The site's own key for its calls back to GSAM (a client answered a
      * document request). The site keeps the private key; GSAM keeps only the
