@@ -119,8 +119,8 @@ describe("SitemapSection", () => {
     const consultancy = [...container.querySelectorAll("[data-testid=sitemap-tree-row]")][1]!;
     expect(consultancy.textContent).toContain("Consultancy pages");
     await act(async () => {
-      tab("Board (across)").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
-      tab("Board (across)").click();
+      tab("Board").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      tab("Board").click();
     });
     expect(window.localStorage.getItem(sitemapViewKey("user-1"))).toBe("board");
     act(() => root.unmount());

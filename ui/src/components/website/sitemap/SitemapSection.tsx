@@ -38,7 +38,7 @@ export type SitemapView = "tree" | "board" | "menus" | "journeys" | "list" | "co
 
 export const SITEMAP_VIEWS: { value: SitemapView; label: string }[] = [
   { value: "tree", label: "Tree" },
-  { value: "board", label: "Board (across)" },
+  { value: "board", label: "Board" },
   { value: "menus", label: "Menus" },
   { value: "journeys", label: "Journeys" },
   { value: "list", label: "List" },
@@ -405,7 +405,10 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
         {view === "tree" ? (
           <SitemapTreeView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} onEditPage={onEditPage} features={features.data ?? []} />
         ) : null}
-        {view === "board" ? <SitemapBoardView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} storageKey={`sitemap-board.${option.id}`} /> : null}
+        {view === "board" ? (
+          // A new key (GRE-2542): views and folds saved for the old left-to-right board do not fit the top-down one.
+          <SitemapBoardView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} onEditPage={onEditPage} storageKey={`sitemap-board-down.${option.id}`} />
+        ) : null}
         {view === "menus" ? <SitemapMenusView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
         {view === "journeys" ? <SitemapJourneysView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}
         {view === "list" ? <SitemapListView tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} /> : null}

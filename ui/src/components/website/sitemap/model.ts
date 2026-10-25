@@ -284,26 +284,102 @@ export function nodeStatus(node: Node, pagesById: Map<string, WebsitePage>): Sit
   return "drafted";
 }
 
-/* ---- Board layout ---- */
+/* ---- Board layout (GRE-2542) ---- */
 
-export const BOARD_CARD = { width: 208, height: 64, gapX: 56, gapY: 16 } as const;
+/** Card size and spacing on the Board, in board pixels. At 100% the title is 14px and the path 12px. */
+export const BOARD_CARD = { width: 232, height: 96 } as const;
+export const BOARD_GAP = {
+  /** Between two section columns. */
+  column: 32,
+  /** From Home down to the sections, and from a section down to its first page. */
+  level: 48,
+  /** Between pages stacked in a column. */
+  stack: 12,
+  /** How far a page sits in from its parent, so the parent's line runs down its left. */
+  indent: 24,
+} as const;
+/** The "+N pages" button under a folded page. */
+export const BOARD_MORE = { width: 120, height: 32 } as const;
 
-/** Card positions: stored x/y when set, otherwise a left-to-right tree (depth across, leaves down). */
-export function boardLayout(tree: Tree): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>();
-  let row = 0;
-  const place = (parentId: string | null, depth: number): number[] => {
-    const ys: number[] = [];
-    for (const node of childrenOf(tree, parentId)) {
-      const childYs = place(node.id, depth + 1);
-      // A parent sits level with its first sub-page, so the top-left of the board is always the start.
-      const y = childYs.length ? childYs[0]! : row++ * (BOARD_CARD.height + BOARD_CARD.gapY);
-      const auto = { x: depth * (BOARD_CARD.width + BOARD_CARD.gapX), y };
-      positions.set(node.id, { x: node.x ?? auto.x, y: node.y ?? auto.y });
-      ys.push(y);
+/** Sections with more sub-pages than this open folded on the Board. */
+export const BOARD_FOLD_OVER = 8;
+
+export interface BoardBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BoardLayout {
+  cards: Map<string, BoardBox>;
+  /** One "+N pages" button per folded page, keyed by that page's id. */
+  more: Map<string, BoardBox & { count: number }>;
+  /** The page at the top (usually Home), when the site has a single top page. */
+  topId: string | null;
+  width: number;
+  height: number;
+}
+
+/**
+ * A top-down tree (GRE-2542): Home at the top, its sections in a row under it,
+ * and each section's pages stacked in a column under that section, one step in
+ * per level. Folded pages hide their sub-pages behind a "+N pages" button.
+ * Stored x/y from the old left-to-right board are ignored: the board is always tidy.
+ */
+export function boardLayout(tree: Tree, folded: ReadonlySet<string> = new Set()): BoardLayout {
+  const cards = new Map<string, BoardBox>();
+  const more = new Map<string, BoardBox & { count: number }>();
+  const roots = childrenOf(tree, null);
+  const top = roots.length === 1 ? roots[0]! : null;
+  const sections = top ? childrenOf(tree, top.id) : roots;
+  const sectionY = top ? BOARD_CARD.height + BOARD_GAP.level : 0;
+
+  // Stack a page's sub-pages under it; returns the bottom edge and the widest right edge.
+  const stack = (parent: Node, box: BoardBox): { bottom: number; right: number } => {
+    let bottom = box.y + box.height;
+    let right = box.x + box.width;
+    const x = box.x + BOARD_GAP.indent;
+    const kids = childrenOf(tree, parent.id);
+    if (kids.length === 0) return { bottom, right };
+    if (folded.has(parent.id)) {
+      const button = { x, y: bottom + BOARD_GAP.stack, ...BOARD_MORE, count: descendantIds(tree, parent.id).size };
+      more.set(parent.id, button);
+      return { bottom: button.y + button.height, right: Math.max(right, x + button.width) };
     }
-    return ys;
+    for (const [index, kid] of kids.entries()) {
+      // A section's first page sits a level below it; the rest stack close.
+      const gap = index === 0 && parent.parentId === (top?.id ?? null) ? BOARD_GAP.level / 2 : BOARD_GAP.stack;
+      const kidBox = { x, y: bottom + gap, ...BOARD_CARD };
+      cards.set(kid.id, kidBox);
+      const below = stack(kid, kidBox);
+      bottom = below.bottom;
+      right = Math.max(right, below.right);
+    }
+    return { bottom, right };
   };
-  place(null, 0);
-  return positions;
+
+  let x = 0;
+  let height = top ? BOARD_CARD.height : 0;
+  for (const section of sections) {
+    const box = { x, y: sectionY, ...BOARD_CARD };
+    cards.set(section.id, box);
+    const { bottom, right } = stack(section, box);
+    height = Math.max(height, bottom);
+    x = right + BOARD_GAP.column;
+  }
+  const rowWidth = Math.max(0, x - BOARD_GAP.column);
+  const width = Math.max(rowWidth, top ? BOARD_CARD.width : 0);
+  if (top) {
+    cards.set(top.id, { x: (width - BOARD_CARD.width) / 2, y: 0, ...BOARD_CARD });
+    // Home's own sub-pages are the sections; Home only folds from the toolbar, never on its own.
+  }
+  return { cards, more, topId: top?.id ?? null, width, height };
+}
+
+/** Opening fold on the Board: every page below Home with more than 8 sub-pages starts folded. */
+export function boardDefaultFolded(tree: Tree): Set<string> {
+  const roots = childrenOf(tree, null);
+  const top = roots.length === 1 ? roots[0]!.id : null;
+  return new Set(tree.nodes.filter((node) => node.id !== top && childrenOf(tree, node.id).length > BOARD_FOLD_OVER).map((node) => node.id));
 }
