@@ -279,6 +279,29 @@ export interface WebsiteChangeRequestResult {
   projectId: string | null;
 }
 
+/**
+ * An open comment on a page (GRE-2350): a change request task that is not done
+ * or cancelled. `number` is its place among the page's open comments, oldest
+ * first, as the editor shows it. `blockId` null means the whole page.
+ */
+export interface WebsitePageComment {
+  number: number;
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  /** The person's words, as sent. */
+  request: string;
+  blockId: string | null;
+  blockType: string | null;
+  blockLabel: string | null;
+  pageRevisionId: string | null;
+  width: string | null;
+  assigneeAgentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const WEBSITE_MODULE_API_ROUTES = {
   /** GET → `WebsiteSite[]` the caller can view. POST `CreateWebsiteSite` → 201 `WebsiteSite` (website:publish). */
   sites: "/companies/:companyId/website/sites",
@@ -304,7 +327,10 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageRevisionRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions/:revisionId/restore",
   /** GET → `WebsitePageEditorLoad` (website:view; saves need website:edit). 404 until the site's editor frame origin is set and passes C1.1. */
   pageEditor: "/companies/:companyId/website/sites/:siteId/pages/:pageId/editor",
-  /** POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId. */
+  /**
+   * GET → `WebsitePageComment[]`, the page's open comments, oldest first (website:view).
+   * POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId.
+   */
   pageChangeRequests: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
   media: "/companies/:companyId/website/sites/:siteId/media",

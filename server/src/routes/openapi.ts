@@ -16068,9 +16068,17 @@ registerCurrentRoute({
   method: "post",
   path: `${siteParams}/pages/{pageId}/change-requests`,
   tags: ["website"],
-  summary: "Click to change: create one task for the website agent with the picked block's durable reference (page, revision, block id and type, engine commit; file and line only as a hint). 201 created, 200 with the same task on a repeated requestId; 422 when the block or revision is not on the page (website:edit)",
+  summary: "Click to change and Ask an agent: create one task for the website agent with the page, revision and width, and the picked block's durable reference when there is one (block id and type, engine commit; file and line only as a hint). No block means the whole page. 201 created, 200 with the same task on a repeated requestId; 422 when the block or revision is not on the page (website:edit)",
   body: createWebsiteChangeRequestSchema,
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}/change-requests`,
+  tags: ["website"],
+  summary: "List the page's open comments for the agents (change request tasks not done or cancelled), oldest first and numbered (website:view)",
+  responses: websiteModuleResponses,
 });
 
 registerCurrentRoute({
