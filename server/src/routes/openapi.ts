@@ -397,6 +397,10 @@ import {
   updateDeepDiveBuildSchema,
   updateDeepDiveKpiSchema,
   updateDeepDiveOpportunitySchema,
+  createDeepDiveCommercialSchema,
+  createDeepDiveRoadmapItemSchema,
+  updateDeepDiveCommercialSchema,
+  updateDeepDiveRoadmapItemSchema,
   linkDeepDiveFileSchema,
   patchDeepDiveFileSchema,
 } from "@greatstone/shared";
@@ -17162,5 +17166,65 @@ registerCurrentRoute({
   path: "/api/deep-dive/kpis/{kpiId}",
   tags: ["deep-dive"],
   summary: "Remove a KPI and its process links",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/traceability",
+  tags: ["deep-dive"],
+  summary: "Get the chain North Star → Source → Finding → Opportunity → Design → Commercial → Roadmap → KPI and every link that is broken",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/commercials",
+  tags: ["deep-dive"],
+  summary: "Add a commercial case (Internal), optionally for one design",
+  body: createDeepDiveCommercialSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/commercials/{commercialId}",
+  tags: ["deep-dive"],
+  summary: "Change a commercial case or the design it is for; only a person shares it",
+  body: updateDeepDiveCommercialSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/commercials/{commercialId}",
+  tags: ["deep-dive"],
+  summary: "Remove a commercial case; roadmap items that delivered it stay and show as broken",
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/roadmap",
+  tags: ["deep-dive"],
+  summary: "Add a roadmap item (Internal), optionally delivering one commercial case and moving KPIs",
+  body: createDeepDiveRoadmapItemSchema,
+  responses: { ...boardWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/roadmap/{roadmapItemId}",
+  tags: ["deep-dive"],
+  summary: "Change a roadmap item, its commercial case or the set of KPIs it moves; only a person shares it",
+  body: updateDeepDiveRoadmapItemSchema,
+  responses: boardWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/roadmap/{roadmapItemId}",
+  tags: ["deep-dive"],
+  summary: "Remove a roadmap item and its KPI links",
   responses: boardWriteResponses,
 });
