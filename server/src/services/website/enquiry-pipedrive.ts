@@ -80,7 +80,7 @@ export function websiteEnquiryPipedriveCopy(
       ))
       .orderBy(asc(crmSyncBindings.createdAt))
       .limit(1);
-    if (!binding) throw new Error("No active Pipedrive sync connection is available for website enquiries");
+    if (!binding) return { externalId: null, created: false };
     const connection = binding.connection;
     const [alreadyLinked] = await db.select({ externalId: crmSyncRecordLinks.externalId })
       .from(crmSyncRecordLinks).where(and(
