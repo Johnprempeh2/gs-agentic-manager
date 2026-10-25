@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEEP_DIVE_GIF, DEEP_DIVE_STREAMS, defaultDeepDiveStreamFields } from "@greatstone/shared";
 import { ApiError } from "@/api/client";
-import type { CaseDetail, CaseSummary, CreateCaseInput, PatchCaseInput } from "@/api/cases";
+import type { CaseDetail, CaseSummary, CreateCaseInput } from "@/api/cases";
 import { DeepDive, startDeepDiveRecord } from "./DeepDive";
 
 // Generic fixtures only: "Client company", prefix C001. Never a real client.
@@ -78,10 +78,6 @@ function insertCase(input: CreateCaseInput): StoredCase {
     status: "draft",
     fields: structuredClone(input.fields ?? {}),
     parentCaseId: input.parentCaseId ?? null,
-    // The server stores every new item Internal (GRE-2366).
-    visibility: "internal",
-    clientCaseId: null,
-    clientEditableFields: [],
     createdByAgentId: null,
     createdByUserId: "user-1",
     completedAt: null,
@@ -135,10 +131,9 @@ function installFakeServer() {
     }
     return toDetail(insertCase(input));
   });
-  mockCasesApi.patch.mockImplementation(async (id: string, input: PatchCaseInput) => {
+  mockCasesApi.patch.mockImplementation(async (id: string, input: { fields?: Record<string, unknown> }) => {
     const row = findStored(id);
     if (input.fields) row.fields = structuredClone(input.fields);
-    if (input.visibility) row.visibility = input.visibility;
     return toDetail(row);
   });
   mockCasesApi.upsertDocument.mockImplementation(
@@ -350,6 +345,7 @@ describe("DeepDive", () => {
       stream: "data",
       depth: "reduced",
       depthReason: "Covered by the Technology stream this round",
+      visibility: "internal",
       knowledge: { evidence: "known" },
     });
     await waitFor(() =>
@@ -365,8 +361,7 @@ describe("DeepDive", () => {
     const streams = stored().filter((row) => row.caseType === "deep_dive_stream");
     expect(streams).toHaveLength(9);
     for (const row of streams) {
-      expect(row.visibility).toBe("internal");
-      expect(row.fields).not.toHaveProperty("visibility");
+      expect(row.fields.visibility).toBe("internal");
       expect(Object.values(row.fields.knowledge as Record<string, string>).every((k) => k === "unknown")).toBe(true);
     }
     expect(JSON.stringify(mockCasesApi.create.mock.calls)).not.toContain("shared");
@@ -376,18 +371,5 @@ describe("DeepDive", () => {
     expect(container.querySelector('[data-testid="deep-dive-coverage"]')?.textContent).toBe(
       "0 of 45 cells known. 0 indicated, 45 unknown.",
     );
-  });
-
-  it("shares a stream through its visibility column, leaving its fields alone", async () => {
-    await renderPage();
-    [...container.querySelectorAll("button")].find((b) => b.textContent === "Start the deep dive record")!.click();
-    await waitFor(() => expect(container.querySelectorAll("[data-deep-dive-stream]")).toHaveLength(9));
-
-    const select = selectIn(streamSection(container, "data"), "Visibility");
-    setSelect(select, "shared");
-    await waitFor(() => expect(mockCasesApi.patch).toHaveBeenCalledTimes(1));
-    const [, patch] = mockCasesApi.patch.mock.calls[0]!;
-    expect(patch).toEqual({ visibility: "shared" });
-    await waitFor(() => expect(selectIn(streamSection(container, "data"), "Visibility").value).toBe("shared"));
   });
 });

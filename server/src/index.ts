@@ -11,7 +11,7 @@ import { waitForPendingRunFailureReports } from "./services/run-failure-report.j
 import { setBoardIdentityDeploymentMode } from "./services/board-identity.js";
 import { verifyStoppedNativeSessionForReplacement } from "./services/native-runtime/native-session-executor.js";
 import { embeddedPostgresOwnerPort } from "./embedded-postgres-owner.js";
-import { findPortWithoutSocketLock, isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
+import { isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
 import { deliverExecutionStatuses } from "./services/execution-status-delivery.js";
 import { deliverReconciledExecutions, settleUnrecoverableExecutions } from "./services/execution-recovery-resolution.js";
 import { reconcileSafeNativeReplacements } from "./services/native-runtime/native-safe-replacement.js";
@@ -42,7 +42,6 @@ import {
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
   prepareEmbeddedPostgresNativeRuntime,
-  hasEmbeddedPostgresSocketLock,
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
@@ -121,6 +120,7 @@ import {
 } from "./services/device-login-reaper.js";
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
+import { agentQaLoginService } from "./services/agent-qa-logins.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
 import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
 import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
@@ -659,11 +659,7 @@ async function startServerWithDatabaseTeardown(
           port = await startOnFreePort({
             requestedPort: configuredPort,
             findFreePort: async (from) => {
-              const detectedPort = await findPortWithoutSocketLock({
-                from,
-                detectFreePort: (candidate) => detectPort(candidate),
-                hasSocketLock: (candidate) => hasEmbeddedPostgresSocketLock(candidate),
-              });
+              const detectedPort = await detectPort(from);
               if (detectedPort !== from) {
                 logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${from}, selectedPort=${detectedPort})`);
               }
@@ -1381,6 +1377,7 @@ async function startServerWithDatabaseTeardown(
     ["status_delivery", () => deliverExecutionStatuses(db)],
     ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
+    ["agent_qa_login_expiry", () => agentQaLoginService(db).reapExpired()],
     // GRE-1363: a dated budget change takes effect on its date, with no restart.
     ["budget_scheduled_changes", () => budgets.applyDueChanges(new Date())],
     // GRE-1371: a top-up whose card was decided but not applied (stop between the two writes).

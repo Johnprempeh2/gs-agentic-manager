@@ -610,8 +610,16 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.json(load);
   });
 
-  // Click to change (GRE-2121): website:edit, the page in this company, and
-  // the picked block in that revision of the page. One task per requestId.
+  // Ask an agent (GRE-2350): the page's open comments, for anyone who can see the page.
+  router.get(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, async (req, res) => {
+    const page = await pageFor(req, res, "website:view");
+    if (!page) return;
+    res.json(await changeRequests.listOpen(page));
+  });
+
+  // Click to change (GRE-2121) and Ask an agent (GRE-2350): website:edit, the
+  // page in this company, and the picked block (if any) in that revision of
+  // the page. One task per requestId.
   router.post(WEBSITE_MODULE_API_ROUTES.pageChangeRequests, validate(createWebsiteChangeRequestSchema), async (req, res) => {
     const found = await sitePageFor(req, res, "website:edit");
     if (!found) return;
@@ -628,6 +636,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
         blockId: req.body.blockId,
         blockType: req.body.blockType,
         pageRevisionId: req.body.pageRevisionId,
+        width: req.body.width,
       });
     }
     res.status(created ? 201 : 200).json(result);

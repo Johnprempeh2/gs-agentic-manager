@@ -5,13 +5,17 @@ import {
   WEBSITE_FRAME_PROTOCOLS,
   WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS,
   inspectWebsitePuckData,
+  isWebsiteEditorContractCurrent,
   receiveWebsiteFrameMessage,
   sanitizeWebsiteFrameSourceHint,
   isWebsiteEditorCommand,
+  websiteEditorContractOf,
+  websiteEditorHasCopyMode,
   websiteFrameHelloMessage,
   websiteFrameInsertMediaSchema,
   websiteFrameMessage,
   websiteFrameSetMotionSchema,
+  type WebsiteEditMode,
   type WebsiteEditorCommand,
   type WebsiteFrameBlockPicked,
   type WebsiteFrameEditorState,
@@ -40,6 +44,12 @@ export type WebsiteFrameConnection =
   | { phase: "connecting" }
   | { phase: "ready"; protocol: number; engine: WebsiteFrameHelloAck["engine"] }
   | { phase: "no-answer" }
+  /**
+   * Editor only (GRE-2357): the editor host is older than `WEBSITE_EDITOR_CONTRACT`
+   * or did not answer. `contract` is what it said, null when it said nothing.
+   * No draft is sent; the host shows "Editor host is out of date", not the frame.
+   */
+  | { phase: "out-of-date"; contract: number | null }
   | { phase: "refused-protocol"; supported: number[] }
   | { phase: "refused-site" }
   | { phase: "closed" };
@@ -91,6 +101,11 @@ export interface WebsiteFrameHostOptions<Source> {
   siteId: string;
   pageId: string;
   mode: WebsiteFrameMode;
+  /**
+   * Editor only (GRE-2394): open in Edit copy or Layout. An engine without Edit
+   * copy opens in Layout whatever this says. Default `copy`.
+   */
+  editMode?: WebsiteEditMode;
   editorOrigin: string;
   nonce: string;
   /** The iframe's `contentWindow`. Messages from any other window are dropped. */
@@ -125,6 +140,32 @@ export interface WebsiteFrameMotionCapabilities {
 
 type ReplyType = "insert-media-result" | "set-motion-result";
 
+/** Commands Edit copy never sends: they add blocks or open the block outline. */
+const COPY_MODE_REFUSED = new Set<WebsiteEditorCommand>(["add-block", "outline"]);
+
+/** The same block ids, in the same order, with the same types. */
+function sameBlocks(before: Map<string, WebsitePuckBlockInfo>, after: Map<string, WebsitePuckBlockInfo>) {
+  if (before.size !== after.size) return false;
+  const a = [...before.values()];
+  const b = [...after.values()];
+  return a.every((block, index) => block.id === b[index]!.id && block.type === b[index]!.type);
+}
+
+/** Brand text colour and highlight classes, e.g. `gs-rt-c-accent` or `gs-rt-bg-teal`. */
+const TEXT_COLOUR_CLASS = /\bgs-rt-(?:c|bg)-[a-z0-9-]+/g;
+
+function textColourCounts(data: unknown) {
+  const counts = new Map<string, number>();
+  for (const name of JSON.stringify(data ?? null).match(TEXT_COLOUR_CLASS) ?? []) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return counts;
+}
+
+/** True when `after` colours more words than `before`. Deleting a coloured word is a wording change. */
+export function addsTextColour(before: unknown, after: unknown) {
+  const was = textColourCounts(before);
+  return [...textColourCounts(after)].some(([name, count]) => count > (was.get(name) ?? 0));
+}
+
 let fallbackId = 0;
 function defaultCreateId() {
   return globalThis.crypto?.randomUUID?.() ?? `msg-${Date.now()}-${++fallbackId}`;
@@ -143,6 +184,11 @@ export class WebsiteFrameHostSession<Source> {
   private shownData: unknown = null;
   private motion: WebsiteFrameMotionCapabilities = { blocks: new Map(), effects: [] };
   private commands = new Set<WebsiteEditorCommand>();
+  private copySupported = false;
+  private editMode: WebsiteEditMode;
+  private live: { blocks: number } | null = null;
+  /** `import-live` was sent to an empty draft: its save may add blocks in Edit copy. */
+  private importing = false;
   /** `insert-media` and `set-motion` requests waiting for their result, by message id. */
   private replies = new Map<string, { type: ReplyType; resolve: (result: never) => void; timer: ReturnType<typeof setTimeout> }>();
   /** Saves by `pageId:requestId`. Scoped to this session (one nonce). */
@@ -154,6 +200,7 @@ export class WebsiteFrameHostSession<Source> {
   constructor(options: WebsiteFrameHostOptions<Source>) {
     this.options = options;
     this.createId = options.createId ?? defaultCreateId;
+    this.editMode = options.editMode ?? "copy";
   }
 
   get state(): WebsiteFrameConnection {
@@ -169,13 +216,16 @@ export class WebsiteFrameHostSession<Source> {
       nonce: this.options.nonce,
       mode: this.options.mode,
       pageId: this.options.pageId,
+      ...(this.options.mode === "editor" ? { editMode: this.editMode } : {}),
     });
     const send = () => this.options.post(hello, this.options.editorOrigin);
     send();
     this.helloTimer = setInterval(send, WEBSITE_FRAME_HELLO_INTERVAL_MS);
     this.helloDeadline = setTimeout(() => {
       this.stopHello();
-      if (this.connection.phase === "connecting") this.setConnection({ phase: "no-answer" });
+      if (this.connection.phase !== "connecting") return;
+      // A silent editor host is treated as one too old for the full-screen editor.
+      this.setConnection(this.options.mode === "editor" ? { phase: "out-of-date", contract: null } : { phase: "no-answer" });
     }, WEBSITE_FRAME_HELLO_TIMEOUT_MS);
   }
 
@@ -232,6 +282,7 @@ export class WebsiteFrameHostSession<Source> {
         return;
       case "media-requested":
         if (this.options.mode !== "editor") return this.drop("media-requested outside the editor");
+        if (this.copyMode) return this.drop("media-requested in Edit copy");
         this.options.onMediaRequested?.(message.payload);
         return;
     }
@@ -270,6 +321,7 @@ export class WebsiteFrameHostSession<Source> {
   insertMedia(payload: WebsiteFrameInsertMedia): Promise<WebsiteFrameInsertMediaResult | null> {
     const parsed = websiteFrameInsertMediaSchema.safeParse(payload);
     if (!parsed.success) return this.invalid("insert-media");
+    if (this.copyMode) return Promise.resolve(null);
     return this.request("insert-media", parsed.data, "insert-media-result", WEBSITE_FRAME_INSERT_MEDIA_TIMEOUT_MS);
   }
 
@@ -286,6 +338,7 @@ export class WebsiteFrameHostSession<Source> {
   setMotion(payload: WebsiteFrameSetMotion): Promise<WebsiteFrameSetMotionResult | null> {
     const parsed = websiteFrameSetMotionSchema.safeParse(payload);
     if (!parsed.success) return this.invalid("set-motion");
+    if (this.copyMode) return Promise.resolve(null);
     return this.request("set-motion", parsed.data, "set-motion-result", WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS);
   }
 
@@ -300,6 +353,59 @@ export class WebsiteFrameHostSession<Source> {
    * the editor, not ready, or the engine did not offer that command).
    */
   command(command: WebsiteEditorCommand, on?: boolean): boolean {
+    // Edit mode and import have their own calls; Edit copy adds and moves nothing.
+    if (command === "layout" || command === "import-live") return false;
+    if (this.copyMode && COPY_MODE_REFUSED.has(command)) return false;
+    return this.sendCommand(command, on);
+  }
+
+  /** True when the engine has Edit copy (contract 2 with the `layout` command). */
+  get hasCopyMode(): boolean {
+    return this.copySupported;
+  }
+
+  /** True while the editor is in Edit copy: no add, move, delete, duplicate, block settings, media or motion. */
+  get copyMode(): boolean {
+    return this.options.mode === "editor" && this.copySupported && this.editMode === "copy";
+  }
+
+  /** The edit mode the person sees: always Layout on an engine without Edit copy. */
+  get currentEditMode(): WebsiteEditMode {
+    return this.copySupported ? this.editMode : "layout";
+  }
+
+  /**
+   * Switch between Edit copy and Layout once the draft is loaded. Returns false
+   * when the frame cannot be asked or the engine has no Edit copy.
+   */
+  setEditMode(mode: WebsiteEditMode): boolean {
+    if (!this.copySupported || !this.sendCommand("layout", mode === "layout")) return false;
+    this.editMode = mode;
+    return true;
+  }
+
+  /** What the engine said the live site has for this page, or null. */
+  get liveContent(): { blocks: number } | null {
+    return this.live;
+  }
+
+  /** The draft shown in the frame has no blocks. */
+  get draftEmpty(): boolean {
+    return this.shownRevisionId !== null && this.shownBlocks.size === 0;
+  }
+
+  /**
+   * Put the live page into the empty draft (GRE-2394). The frame saves it with
+   * a normal `save`, block ids kept. False when there is nothing to import.
+   */
+  importLive(): boolean {
+    if (!this.live || !this.draftEmpty) return false;
+    if (!this.sendCommand("import-live")) return false;
+    this.importing = true;
+    return true;
+  }
+
+  private sendCommand(command: WebsiteEditorCommand, on?: boolean): boolean {
     if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null) return false;
     if (!this.commands.has(command)) return false;
     return this.send("editor-command", on === undefined ? { command } : { command, on }) !== null;
@@ -330,6 +436,10 @@ export class WebsiteFrameHostSession<Source> {
       return;
     }
     this.stopHello();
+    if (this.options.mode === "editor" && !isWebsiteEditorContractCurrent(ack)) {
+      this.setConnection({ phase: "out-of-date", contract: websiteEditorContractOf(ack) });
+      return;
+    }
     this.protocol = ack.protocol;
     this.engineTypes = new Set(ack.blocks.map((block) => block.type));
     this.motion = {
@@ -337,6 +447,8 @@ export class WebsiteFrameHostSession<Source> {
       effects: ack.motionEffects ?? [],
     };
     this.commands = new Set((ack.editorCommands ?? []).filter(isWebsiteEditorCommand));
+    this.copySupported = this.options.mode === "editor" && websiteEditorHasCopyMode(ack);
+    this.live = this.options.mode === "editor" && this.copySupported ? (ack.liveContent ?? null) : null;
     this.setConnection({ phase: "ready", protocol: ack.protocol, engine: ack.engine });
 
     let draft: WebsiteFrameDraft;
@@ -394,6 +506,15 @@ export class WebsiteFrameHostSession<Source> {
     if (save.pageId !== this.options.pageId) return refuse("The save is for another page.");
     const inspected = inspectWebsitePuckData(save.data, this.engineTypes ?? undefined);
     if (!inspected.ok) return refuse(inspected.reason);
+    // Edit copy changes words only: the blocks, their order and their types stay.
+    // The one exception is the import of live content into an empty draft.
+    const importSave = this.importing && this.shownBlocks.size === 0;
+    if (this.copyMode && !importSave && !sameBlocks(this.shownBlocks, inspected.blocks)) {
+      return refuse("Edit copy changes words only. Switch to Layout to add, move or remove blocks.");
+    }
+    if (this.copyMode && !importSave && addsTextColour(this.shownData, save.data)) {
+      return refuse("Edit copy changes words only. Switch to Layout to change text colour.");
+    }
     if (this.inFlight) {
       return Promise.resolve(answer(fail("busy", "Another save is still running.", true)));
     }
@@ -421,7 +542,10 @@ export class WebsiteFrameHostSession<Source> {
         // requestId saves again. Saved and conflict answers are replayed.
         if (result.outcome === "failed" && result.retryable) this.saves.delete(key);
         this.retryable = result.outcome === "failed" && result.retryable ? save : null;
-        if (result.outcome === "saved") this.rememberShown(result.revisionId, save.data);
+        if (result.outcome === "saved") {
+          this.importing = false;
+          this.rememberShown(result.revisionId, save.data);
+        }
         this.options.onSaveState?.(
           result.outcome === "saved"
             ? { status: "saved", revisionId: result.revisionId, savedAt: result.savedAt }

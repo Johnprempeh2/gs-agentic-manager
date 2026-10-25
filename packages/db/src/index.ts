@@ -39,10 +39,6 @@ export {
 } from "./embedded-postgres-native.js";
 export { loadWithoutEmbeddedPostgresExitHooks } from "./embedded-postgres-lifecycle.js";
 export {
-  EMBEDDED_POSTGRES_SOCKET_DIR,
-  hasEmbeddedPostgresSocketLock,
-} from "./embedded-postgres-socket-lock.js";
-export {
   EMBEDDED_POSTGRES_USER,
   embeddedPostgresConnectionString,
   ensureEmbeddedPostgresPasswordFile,

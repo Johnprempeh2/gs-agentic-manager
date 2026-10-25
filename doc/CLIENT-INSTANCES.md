@@ -99,7 +99,7 @@ scripts/client-instance.sh create --root /path/to/instances/c001 --edition manag
 
 # Managed plus: list ONLY features whose Beacon verdict on GRE-81 has passed
 scripts/client-instance.sh create --root /path/to/instances/c002 \
-  --edition managed-plus --passed-features enablePipelines
+  --edition managed-plus --passed-features enablePipelines,enableWebsiteView
 
 # Greatstone's own install (no edition values; never for a client)
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
@@ -108,17 +108,6 @@ scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition in
 Managed and Managed plus pin `enableManagedSandboxOnly` off (GRE-160: with it
 on and no sandbox provider, every run is refused). `internal` sets no
 edition values.
-
-Website screens (Site Studio, GRE-2346) are not an edition value and cannot be
-passed with `--passed-features`. In both editions they are on only while a
-valid signed entitlement document carries `enableWebsiteView`. With no hub key,
-no document, an expired document (past grace) or a bad signature, the Website
-menu is hidden, every Website API route answers 403 and the stored data stays.
-A client install never gets Deep Dive, the Intelligence page, Greatstone's own
-website features (shop and licences, client portal, Deep Dive portal, front
-door, intelligence hub), Fleet, the fleet hub or the Releases page, whatever
-the env values, hidden settings or signed document say. To give a client the
-Website screens, see "Website key (Site Studio, GRE-2396)" below.
 
 Graduated switches keep their client gate (Everest on GRE-1632, GRE-1633).
 Greatstone's own install and self-hosted read them on, and a stored "off" is
@@ -134,8 +123,8 @@ Greatstone house style). `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
-free from 55400), `--company-name`, `--client-email`, the install limits,
-the AI access settings and the hub key (`--entitlement-*`) below.
+free from 55400), `--company-name`, `--client-email`, the install limits
+and the AI access settings below.
 `create` also skips the ports in each sibling folder's `client-instance.json`
 (stopped instances too), and refuses a `--port` or `--db-port` that a sibling claims.
 
@@ -266,83 +255,6 @@ Settings.
 
 It stops with an error if any check fails; the instance stays up so you can look.
 
-### Website key (Site Studio, GRE-2396)
-
-The hub (Greatstone) signs an entitlement document with its private key. The
-instance has only the hub's **public** key. The private key never goes to the
-instance, the script, an issue or a log. A client edition shows the Website
-screens only while a valid signed document grants `enableWebsiteView`
-(GRE-2346). Details of the document: `doc/ENTITLEMENT-DOCUMENT.md`.
-
-| Flag (on `create` or `entitlement`) | Meaning |
-| --- | --- |
-| `--entitlement-public-key K` | The hub Ed25519 public key: a PEM file, PEM text or the raw 32 bytes in base64url. A private key is refused. Passed as `GSAM_ENTITLEMENT_PUBLIC_KEY` at every start. |
-| `--entitlement-file F` | The signed file the server reads. Must be inside the instance folder. Default `<root>/instances/default/entitlements/entitlement.json`. Passed as `GSAM_ENTITLEMENT_FILE`. |
-| `--entitlement-client C` | The client code (not a name). A document for another client is refused. Passed as `GSAM_ENTITLEMENT_CLIENT`. |
-
-All three are kept in `<root>/client-instance.json`. `internal` takes none of
-them. With no hub key the instance runs as before and the Website screens are
-off. With a hub key the document also governs the other signed features
-(`doc/ENTITLEMENT-DOCUMENT.md`): a governed feature the document leaves out is
-off. On Managed plus, put each passed feature that is governed (for example
-`enablePipelines`) in every document, or `verify` fails and names it.
-
-Sandbox only until John approves a real client on the issue.
-
-**Set the hub key** (new or existing instance; the next start uses it):
-
-```sh
-scripts/client-instance.sh create --root <root> --edition managed \
-  --entitlement-public-key /path/to/hub.pub.pem --entitlement-client c001
-# or, on an existing instance:
-scripts/client-instance.sh entitlement --root <root> --entitlement-public-key /path/to/hub.pub.pem --entitlement-client c001
-scripts/client-instance.sh stop --root <root> && scripts/client-instance.sh start --root <root>
-scripts/client-instance.sh entitlement --root <root>   # show
-```
-
-With the key and no file, the state is `floor` and the Website screens are off.
-
-**Give the Website key.** The hub signs a document for the client code with
-`"enableWebsiteView": true` in `features` (and every other feature the client
-keeps). Put it in place:
-
-```sh
-CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh entitlement --root <root> --install /path/to/signed.json
-CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh verify --root <root>
-```
-
-`--install` checks the signature against the hub key and the client code,
-refuses a version that is not higher than the file in place, then writes the
-file (mode 600). With the operator password set it asks the server to read it
-at once ("Sync now") and prints the state; without it the server reads it
-within a minute. No restart.
-
-**Renew.** Before `validUntil`, the hub signs the same features with a higher
-`version` and a later `validUntil`; install it the same way. After
-`validUntil` the last document still applies for 14 days (`grace`; `verify`
-says when grace ends), then the base floor applies and the Website screens go
-off.
-
-**Take the Website key back.** The hub signs a higher `version` without
-`enableWebsiteView`; install it. The screens go off within a minute (at once
-with the password), every Website API route answers 403, and the stored
-website data stays. Deleting the file does **not** take the key back: the
-server keeps the last good copy until grace ends. To remove the hub key
-altogether (every signed feature off, data kept):
-
-```sh
-scripts/client-instance.sh entitlement --root <root> --off yes
-scripts/client-instance.sh stop --root <root> && scripts/client-instance.sh start --root <root>
-```
-
-Prove it on a sandbox (throwaway hub key in the scratch folder; no key gives
-403, the signed key 200, taken back 403 with the data kept, edition values
-unchanged):
-
-```sh
-scripts/client-instance/entitlement.sandbox-test.sh <empty scratch dir>
-```
-
 ### Add board, Exco and owner log-ins (GRE-1189)
 
 `create` makes one client log-in, and invites stay hidden for clients. To add
@@ -409,9 +321,7 @@ is the one in `client-instance.json`; board approval for new agents is on (or
 off when created with `--board-approval off`); the client log-in
 gets 403 on the release API (`instance.releases`, no Releases page on a client
 edition); every agent has a monthly budget (when the instance has install
-limits); the entitlement state (`disabled` with no hub key, else `active`,
-`grace` or `floor`), that `enableWebsiteView` matches the signed key and that
-the Website API answers 200 or 403 to match; new sign-ups are refused. A refused request
+limits); new sign-ups are refused. A refused request
 changes nothing. If one is accepted, the script puts the old value back and
 fails.
 
@@ -1120,5 +1030,5 @@ A client install from the Stable image (GRE-138, see "Stable image" in
 
 ```sh
 scripts/client-instance.sh edition-env --edition managed
-scripts/client-instance.sh edition-env --edition managed-plus --passed-features enablePipelines
+scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableWebsiteView
 ```

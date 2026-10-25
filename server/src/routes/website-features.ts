@@ -3,17 +3,15 @@ import type { Db } from "@greatstone/db";
 import {
   WEBSITE_FEATURES_API_ROUTES,
   createWebsiteFeatureSchema,
-  isGreatstoneOnlyWebsiteFeatureKey,
   updateWebsiteFeatureSchema,
   type PermissionKey,
 } from "@greatstone/shared";
 import { HttpError } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, logActivity } from "../services/index.js";
-import { greatstoneOnly, isClientInstall } from "../services/client-install.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { websiteModuleService, type SiteRow } from "../services/website/module.js";
-import { keyFromName, toWebsiteFeature, websiteFeaturesService, type FeatureRow } from "../services/website/features.js";
+import { toWebsiteFeature, websiteFeaturesService, type FeatureRow } from "../services/website/features.js";
 import { WEBSITE_MESSAGES } from "../services/website/messages.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -72,11 +70,6 @@ export function websiteFeaturesRoutes(db: Db) {
     return { site, row };
   }
 
-  /** GRE-2346: a client install cannot add or switch on one of Greatstone's own website features. */
-  function refuseGreatstoneFeature(key: string) {
-    if (isClientInstall() && isGreatstoneOnlyWebsiteFeatureKey(key)) throw greatstoneOnly(`The "${key}" website feature`);
-  }
-
   async function log(req: Request, companyId: string, action: string, entityId: string, details: Record<string, unknown>) {
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -107,7 +100,6 @@ export function websiteFeaturesRoutes(db: Db) {
   router.post(WEBSITE_FEATURES_API_ROUTES.features, validate(createWebsiteFeatureSchema), async (req, res) => {
     const site = await siteFor(req, res, "website:publish");
     if (!site) return;
-    refuseGreatstoneFeature(req.body.key ?? keyFromName(req.body.name, new Set()));
     const row = await features.create(site, req.body);
     await log(req, site.companyId, "website.feature_created", row.id, { siteId: site.id, key: row.key, name: row.name });
     res.status(201).json(toWebsiteFeature(row));
@@ -122,7 +114,6 @@ export function websiteFeaturesRoutes(db: Db) {
   router.patch(WEBSITE_FEATURES_API_ROUTES.feature, validate(updateWebsiteFeatureSchema), async (req, res) => {
     const found = await featureFor(req, res, "website:publish");
     if (!found) return;
-    if (req.body.enabled === true) refuseGreatstoneFeature(found.row.key);
     const row = await features.update(found.row, req.body);
     const action = req.body.enabled === undefined || req.body.enabled === found.row.enabled
       ? "website.feature_updated"

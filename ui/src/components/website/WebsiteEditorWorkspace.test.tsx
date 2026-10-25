@@ -20,11 +20,15 @@ const api = vi.hoisted(() => ({
   restoreRevision: vi.fn(),
   media: vi.fn(),
   requestChange: vi.fn(),
+  pageComments: vi.fn(),
   createEntry: vi.fn(),
   submitPage: vi.fn(),
   images: vi.fn(),
 }));
+const issues = vi.hoisted(() => ({ listComments: vi.fn(), addComment: vi.fn(), update: vi.fn() }));
 vi.mock("../../api/images", () => ({ imagesApi: { list: api.images } }));
+vi.mock("../../api/issues", () => ({ issuesApi: issues }));
+vi.mock("../MarkdownBody", () => ({ MarkdownBody: ({ children }: { children: string }) => <div>{children}</div> }));
 vi.mock("../../api/videos", () => ({ videosApi: { list: vi.fn() } }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
@@ -103,6 +107,8 @@ beforeEach(() => {
   api.pageEditor.mockResolvedValue(load);
   api.revisions.mockResolvedValue(revisions);
   api.media.mockResolvedValue(load.media);
+  api.pageComments.mockResolvedValue([]);
+  issues.listComments.mockResolvedValue([]);
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["png"], { type: "image/png" }) })));
   vi.stubGlobal("confirm", vi.fn(() => true));
   api.images.mockResolvedValue({
@@ -188,7 +194,7 @@ async function connect(ackExtra: Record<string, unknown> = {}) {
   };
   await fromFrame({
     type: "hello-ack",
-    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], ...ackExtra },
+    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], editorContract: 1, ...ackExtra },
   });
   const sent = (type: string) => posted.mock.calls.map((call) => call[0] as { type: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
   const save = (requestId: string) => fromFrame({ protocol: 1, session: nonce, type: "save", payload: { requestId, pageId: "page-1", baseRevisionId: "rev-2", data } });
@@ -363,6 +369,7 @@ describe("WebsiteFullScreenEditor", () => {
       blockLabel: "Hero banner",
       engine: { version: "1.0.0", commit: "b".repeat(40) },
       source: { file: "src/blocks/Hero.tsx", line: 12 },
+      width: "laptop",
       request: "Make the heading shorter.",
     });
     expect(panel()!.dataset.step).toBe("created");
@@ -408,6 +415,111 @@ describe("WebsiteFullScreenEditor", () => {
     expect(editor.sent("load-draft")).toHaveLength(1);
     expect(editor.sent("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
     expect(api.requestChange).not.toHaveBeenCalled();
+  });
+
+  describe("Ask an agent and comments (GRE-2350)", () => {
+    const created = { issueId: "issue-7", identifier: "GRE-9007", title: "Website change", assigneeAgentId: "lintel", projectId: "proj-1" };
+
+    async function askAndCreate(words: string) {
+      await act(async () => labelled("Ask an agent").click());
+      await flush();
+      await type(words);
+      await act(async () => button("Review").click());
+      await act(async () => button("Create task").click());
+      await flush();
+    }
+
+    it("with nothing selected, the comment is about the whole page at the current width", async () => {
+      api.requestChange.mockResolvedValue(created);
+      await render();
+      await connect();
+      await act(async () => labelled("Ask an agent").click());
+      await flush();
+      expect(panel()!.textContent).toContain("Whole page");
+      expect(panel()!.textContent).toContain("The whole page on Home");
+      expect(panel()!.textContent).toContain("Seen at Laptop width");
+      expect(panel()!.textContent).not.toContain("Edit words or image myself");
+
+      await askAndCreate("The page feels too long.");
+      expect(api.requestChange).toHaveBeenCalledTimes(1);
+      const [, , pageId, input] = api.requestChange.mock.calls[0]!;
+      expect(pageId).toBe("page-1");
+      expect(input).toEqual({ requestId: expect.stringMatching(/^[0-9a-f-]{36}$/), pageRevisionId: "rev-2", width: "laptop", request: "The page feels too long." });
+      expect(panel()!.dataset.step).toBe("created");
+      // The new comment shows in the list without a reload.
+      expect(api.pageComments.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it("with a block selected in the editor, the comment is about that block", async () => {
+      api.requestChange.mockResolvedValue(created);
+      await render();
+      const editor = await connect();
+      await editor.reply("editor-state", { selection: { blockId: "h1", blockType: "Hero", label: "Hero banner" }, canUndo: false, canRedo: false });
+      await act(async () => labelled("Ask an agent").click());
+      await flush();
+      expect(panel()!.textContent).toContain("Selected block");
+      expect(panel()!.textContent).toContain("Hero banner on Home");
+
+      await askAndCreate("Use the new tagline.");
+      const [, , , input] = api.requestChange.mock.calls[0]!;
+      expect(input).toEqual({
+        requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        pageRevisionId: "rev-2",
+        blockId: "h1",
+        blockType: "Hero",
+        blockLabel: "Hero banner",
+        width: "laptop",
+        request: "Use the new tagline.",
+      });
+    });
+
+    it("lists open comments numbered; a thread shows replies, the agent's draft and resolves", async () => {
+      api.pageComments.mockResolvedValue([
+        { number: 1, issueId: "issue-1", identifier: "GRE-1", title: "t", status: "todo", request: "Shorter heading", blockId: "h1", blockType: "Hero", blockLabel: "Hero banner", pageRevisionId: "rev-2", width: "phone", assigneeAgentId: "lintel", createdAt: "2026-10-23T09:30:00.000Z", updatedAt: "2026-10-23T09:30:00.000Z" },
+        { number: 2, issueId: "issue-2", identifier: "GRE-2", title: "t", status: "todo", request: "Warmer colours", blockId: null, blockType: null, blockLabel: null, pageRevisionId: "rev-2", width: null, assigneeAgentId: "lintel", createdAt: "2026-10-23T09:40:00.000Z", updatedAt: "2026-10-23T09:40:00.000Z" },
+      ]);
+      api.revisions.mockResolvedValue([
+        { id: "rev-3", revisionNumber: 3, changeSummary: "Shortened the heading", createdByAgentId: "lintel", createdByUserId: null, createdAt: "2026-10-23T11:00:00.000Z" },
+        ...revisions,
+      ]);
+      issues.listComments.mockResolvedValue([
+        { id: "c1", issueId: "issue-1", authorAgentId: "lintel", authorUserId: null, body: "Done: the heading is now one line.", createdAt: "2026-10-23T11:01:00.000Z" },
+      ]);
+      issues.update.mockResolvedValue({ id: "issue-1", status: "done" });
+      await render();
+      await connect();
+      expect(document.body.querySelector('[data-testid="website-comments-count"]')!.textContent).toBe("2");
+
+      await act(async () => labelled("Comments").click());
+      await flush();
+      const items = [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="website-comment-item"]')];
+      expect(items.map((item) => item.textContent)).toEqual([
+        expect.stringMatching(/^1Shorter headingHero banner · GRE-1/),
+        expect.stringMatching(/^2Warmer coloursWhole page · GRE-2/),
+      ]);
+
+      await act(async () => items[0]!.click());
+      await flush();
+      const thread = document.body.querySelector<HTMLElement>('[data-testid="website-comment-thread"]')!;
+      expect(thread.querySelector('[data-testid="website-comment-request"]')!.textContent).toBe("Shorter heading");
+      expect(thread.textContent).toContain("seen at Phone width");
+      expect(thread.textContent).toContain("Done: the heading is now one line.");
+      expect(thread.querySelector('[data-testid="website-comment-change"]')!.textContent).toContain("The agent saved draft 3");
+      expect(issues.listComments).toHaveBeenCalledWith("issue-1", { order: "asc" });
+
+      // Preview the change shows the latest draft in the preview.
+      await act(async () => button("Preview the change").click());
+      await flush();
+      expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/preview/page-1`);
+
+      api.pageComments.mockResolvedValue([]);
+      await act(async () => button("Mark resolved").click());
+      await flush();
+      expect(issues.update).toHaveBeenCalledWith("issue-1", { status: "done", comment: "Marked resolved in the website editor." });
+      expect(document.body.querySelector('[data-testid="website-comment-thread"]')).toBeNull();
+      expect(document.body.textContent).toContain("No open comments");
+      expect(document.body.querySelector('[data-testid="website-comments-count"]')).toBeNull();
+    });
   });
 
   describe("insert media into the selected block (GRE-2206)", () => {
@@ -670,7 +782,7 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "redo" });
   });
 
-  it("an engine without editor commands: undo stays off and Cmd+S says to use the editor's Save", async () => {
+  it("an engine that lists no editor commands: undo stays off and Cmd+S says to use the editor's Save", async () => {
     await render();
     const editor = await connect();
     await key({ key: "s", ctrlKey: true });
@@ -725,12 +837,162 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(text()).toContain("Home is waiting for approval");
   });
 
+  describe("editor host version check (GRE-2357)", () => {
+    const canvas = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-canvas"]');
+    const outOfDate = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-out-of-date"]');
+
+    it("an old engine (no editor contract) gets 'Editor host is out of date', not the frame", async () => {
+      await render();
+      const editor = await connect({ editorContract: undefined });
+      expect(outOfDate()!.textContent).toContain("Editor host is out of date");
+      expect(outOfDate()!.textContent).toContain(`Redeploy the editor host (${EDITOR})`);
+      expect(frame()).toBeNull();
+      expect(editor.sent("load-draft")).toHaveLength(0);
+      expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");
+    });
+
+    it("a silent engine gets 'Editor host is out of date' after the hello timeout, and Retry loads the frame again", async () => {
+      await render();
+      const iframe = frame()!;
+      vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
+      vi.useFakeTimers();
+      await act(async () => { iframe.dispatchEvent(new Event("load")); });
+      expect(canvas()!.dataset.hidden).toBe("true");
+      await act(async () => { vi.advanceTimersByTime(10_000); });
+      vi.useRealTimers();
+      await flush();
+      expect(outOfDate()!.textContent).toContain("Editor host is out of date");
+      expect(frame()).toBeNull();
+      await act(async () => button("Retry").click());
+      await flush();
+      expect(outOfDate()).toBeNull();
+      expect(frame()).not.toBeNull();
+    });
+
+    it("a current engine shows the canvas, hidden only until the handshake passes", async () => {
+      await render();
+      expect(canvas()!.dataset.hidden).toBe("true");
+      const editor = await connect(fullAck);
+      expect(outOfDate()).toBeNull();
+      expect(canvas()!.dataset.hidden).toBeUndefined();
+      expect(canvas()!.className).not.toContain("invisible");
+      expect(editor.sent("load-draft")).toHaveLength(1);
+    });
+
+    it("website PR #98's engine (editor commands, no contract number) opens", async () => {
+      await render();
+      const editor = await connect({ editorContract: undefined, ...fullAck });
+      expect(outOfDate()).toBeNull();
+      expect(editor.sent("load-draft")).toHaveLength(1);
+    });
+  });
+
   it("Add block and Outline drive the editor's own drawer and outline", async () => {
     await render();
     const editor = await connect(fullAck);
     await act(async () => labelled("Add block").click());
     await act(async () => labelled("Outline").click());
     expect(editor.sent("editor-command").map((message) => message.payload)).toEqual([{ command: "add-block" }, { command: "outline", on: true }]);
+  });
+});
+
+describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
+  const copyAck = { editorContract: 2, editorCommands: ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"] };
+  const empty = { ...load, data: { root: { props: {} }, content: [] } };
+  const modeToggle = () => document.body.querySelector<HTMLElement>('[data-testid="website-edit-mode"]');
+  const modeButton = (label: string) => [...modeToggle()!.querySelectorAll("button")].find((el) => el.textContent?.includes(label))!;
+  const notBuilt = () => document.body.querySelector<HTMLElement>('[data-testid="website-not-built"]');
+  const importWarning = () => document.body.querySelector<HTMLElement>('[data-testid="website-import-warning"]');
+
+  it("opens in Edit copy: no Add block, Outline, Media or Motion; Save, History and Preview stay", async () => {
+    await render();
+    const editor = await connect(copyAck);
+    const hello = editor.posted.mock.calls[0]![0] as { payload: Record<string, unknown> };
+    expect(hello.payload.editMode).toBe("copy");
+    expect(modeButton("Edit copy").getAttribute("aria-pressed")).toBe("true");
+    expect(modeButton("Layout").getAttribute("aria-pressed")).toBe("false");
+    for (const name of ["Add block", "Outline", "Media", "Motion"]) expect(labelled(name)).toBeNull();
+    expect(labelled("History")).not.toBeNull();
+    expect(button("Preview")).toBeDefined();
+    // Save still goes to the editor.
+    await key({ key: "s", metaKey: true });
+    expect(editor.sent("editor-command").map((message) => message.payload)).toEqual([{ command: "save" }]);
+    // Words saved in Edit copy go through GSAM as before.
+    api.savePageContent.mockResolvedValue({ state: "saved", revisionId: "rev-3", revisionNumber: 3, savedAt: "2026-10-25T10:00:00.000Z" });
+    await editor.save("11111111-1111-4111-8111-111111111111");
+    expect(api.savePageContent).toHaveBeenCalledTimes(1);
+  });
+
+  it("Layout shows Add block, Outline, Media and Motion, and tells the editor; Edit copy hides them again", async () => {
+    await render();
+    const editor = await connect(copyAck);
+    await act(async () => modeButton("Layout").click());
+    await flush();
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "layout", on: true });
+    for (const name of ["Add block", "Outline", "Media", "Motion"]) expect(labelled(name)).not.toBeNull();
+    await act(async () => labelled("Add block").click());
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "add-block" });
+    await act(async () => labelled("Media").click());
+    expect(drawer()).not.toBeNull();
+    await act(async () => modeButton("Edit copy").click());
+    await flush();
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "layout", on: false });
+    expect(labelled("Add block")).toBeNull();
+    // The Media drawer closes with it.
+    expect(drawer()).toBeNull();
+  });
+
+  it("an editor host without Edit copy (contract 1) opens as today, in Layout, with no switch", async () => {
+    await render();
+    const editor = await connect({ editorCommands: ["undo", "redo", "save", "add-block", "deselect", "outline"] });
+    expect(editor.sent("load-draft")).toHaveLength(1);
+    expect(modeToggle()).toBeNull();
+    expect(labelled("Add block")).not.toBeNull();
+    expect(labelled("Media")).not.toBeNull();
+  });
+
+  it("an empty draft with nothing live shows Not built yet, never a blank canvas", async () => {
+    api.pageEditor.mockResolvedValue(empty);
+    await render();
+    await connect({ ...copyAck, liveContent: null });
+    expect(notBuilt()).not.toBeNull();
+    expect(notBuilt()!.textContent).toContain("Not built yet");
+    expect(notBuilt()!.textContent).toContain("Home");
+    expect(notBuilt()!.textContent).toContain("/");
+    // Says who acts, so nobody waits for work that is not running.
+    expect(notBuilt()!.textContent).toContain("Ask an agent to build it, or switch to Layout to add blocks yourself.");
+    expect(importWarning()).toBeNull();
+    // Layout keeps the canvas to add blocks, with one line that says so.
+    await act(async () => modeButton("Layout").click());
+    await flush();
+    expect(document.body.querySelector('[data-testid="website-empty-page"]')).toBeNull();
+    expect(notBuilt()!.textContent).toContain("Use Add block");
+  });
+
+  it("a draft with content shows neither empty state", async () => {
+    await render();
+    await connect({ ...copyAck, liveContent: { blocks: 3 } });
+    expect(notBuilt()).toBeNull();
+    expect(importWarning()).toBeNull();
+  });
+
+  it("live content not in GSAM: Import it asks the editor to import, and its save fills the draft", async () => {
+    api.pageEditor.mockResolvedValue(empty);
+    api.savePageContent.mockResolvedValue({ state: "saved", revisionId: "rev-3", revisionNumber: 3, savedAt: "2026-10-25T10:00:00.000Z" });
+    await render();
+    const editor = await connect({ ...copyAck, liveContent: { blocks: 1 } });
+    expect(importWarning()!.textContent).toContain("This page has live content that isn't in GSAM yet");
+    expect(notBuilt()).toBeNull();
+    await act(async () => button("Import it").click());
+    await flush();
+    expect(editor.sent("editor-command").at(-1)!.payload).toEqual({ command: "import-live" });
+    expect(button("Importing").disabled).toBe(true);
+    // The frame saves the imported page, block ids kept, through GSAM.
+    await editor.save("22222222-2222-4222-8222-222222222222");
+    expect(api.savePageContent).toHaveBeenCalledTimes(1);
+    expect(api.savePageContent.mock.calls[0]![3]).toMatchObject({ content: data });
+    expect(importWarning()).toBeNull();
+    expect(text()).toContain("The live page is now in the draft. Nothing is published.");
   });
 });
 

@@ -36,7 +36,7 @@ import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { InvitesSection } from "@/components/access/InvitesSection";
 import { MemberHandoverDialog } from "@/components/access/MemberHandoverDialog";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatShortDate } from "@/lib/utils";
 
 const LEGACY_BOARD_USER_ID = "local-board";
 type EditableMemberStatus = "pending" | "active" | "suspended";
@@ -399,6 +399,14 @@ export function CompanyAccess() {
                           <AvatarFallback>{memberInitials(member)}</AvatarFallback>
                         </Avatar>
                         <span className="truncate font-medium">{displayName}</span>
+                        {member.qaLogin ? (
+                          <Badge variant="outline" title={`Expires ${formatDateTime(member.qaLogin.expiresAt)}`}>
+                            QA for {member.qaLogin.agentName} · until{" "}
+                            {formatShortDate(member.qaLogin.expiresAt)}
+                          </Badge>
+                        ) : member.qaAccount ? (
+                          <Badge variant="outline">QA log-in, ended</Badge>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-muted-foreground">

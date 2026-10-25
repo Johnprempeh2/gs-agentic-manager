@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { findPortWithoutSocketLock, isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
+import { isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
 
 const bindLost = new Error("bind lost");
 
@@ -59,36 +59,4 @@ it("gives up after the attempt budget", async () => {
     maxAttempts: 3,
   })).rejects.toBe(bindLost);
   expect(start.mock.calls.map(([p]) => p)).toEqual([54329, 54330, 54331]);
-});
-
-// GRE-2381: a sandbox killed without a clean stop left /tmp/.s.PGSQL.54330.lock;
-// its PID was reused, so Postgres refused 54330 though TCP showed it free.
-it("skips a free TCP port that has a stale socket lock", async () => {
-  const locked = new Set([54330]);
-  const detectFreePort = vi.fn(async (from: number) => from);
-
-  const port = await findPortWithoutSocketLock({
-    from: 54330,
-    detectFreePort,
-    hasSocketLock: (candidate) => locked.has(candidate),
-  });
-
-  expect(port).toBe(54331);
-  expect(detectFreePort.mock.calls.map(([p]) => p)).toEqual([54330, 54331]);
-});
-
-it("gives up after the lookahead when every port is locked", async () => {
-  await expect(findPortWithoutSocketLock({
-    from: 54330,
-    detectFreePort: async (from) => from,
-    hasSocketLock: () => true,
-    maxLookahead: 3,
-  })).rejects.toThrow(/54330 to 54332/);
-});
-
-it("treats a socket lock taken before the start as a lost race", () => {
-  expect(isPortInUseFailure([
-    'FATAL:  lock file "/tmp/.s.PGSQL.54330.lock" already exists',
-    "HINT:  Is another postmaster (PID 961) using socket file \"/tmp/.s.PGSQL.54330\"?",
-  ])).toBe(true);
 });

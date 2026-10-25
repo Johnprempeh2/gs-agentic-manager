@@ -4,7 +4,6 @@ import path from "node:path";
 import { ensurePostgresDatabase, getPostgresDataDirectory } from "./client.js";
 import { createEmbeddedPostgresLogBuffer, formatEmbeddedPostgresError } from "./embedded-postgres-error.js";
 import { prepareEmbeddedPostgresNativeRuntime } from "./embedded-postgres-native.js";
-import { hasEmbeddedPostgresSocketLock } from "./embedded-postgres-socket-lock.js";
 import {
   EMBEDDED_POSTGRES_USER,
   embeddedPostgresConnectionString,
@@ -72,14 +71,10 @@ async function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
-export async function findAvailablePort(
-  startPort: number,
-  options: { socketDir?: string } = {},
-): Promise<number> {
+async function findAvailablePort(startPort: number): Promise<number> {
   const maxLookahead = 20;
   let port = startPort;
   for (let i = 0; i < maxLookahead; i += 1, port += 1) {
-    if (hasEmbeddedPostgresSocketLock(port, options)) continue;
     if (!(await isPortInUse(port))) return port;
   }
   throw new Error(

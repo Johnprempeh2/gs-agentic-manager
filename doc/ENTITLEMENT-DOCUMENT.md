@@ -3,8 +3,7 @@
 An instance reads one signed document that says which managed product
 features the client has. The hub signs it; the instance checks the signature
 and applies it without a restart. The hub admin screen and delivery come later
-(after F1). Today the file is placed by hand; on a client instance use
-`scripts/client-instance.sh entitlement` (doc/CLIENT-INSTANCES.md, "Website key").
+(after F1). Today the file is placed by hand.
 
 ## Turn it on
 

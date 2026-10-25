@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { DEEP_DIVE_VISIBILITIES } from "@greatstone/shared";
 
 export const CASE_STATUSES = [
   "draft",
@@ -24,14 +23,6 @@ export const documentKeySchema = z
   .max(120)
   .regex(/^[A-Za-z0-9_.:-]+$/);
 
-// Deep Dive sharing (GRE-2366): Internal or Shared, the client the item is
-// about, and the `fields` keys that client may change. Deep Dive items only.
-const deepDiveSharingShape = {
-  visibility: z.enum(DEEP_DIVE_VISIBILITIES).optional(),
-  clientCaseId: z.string().guid().nullable().optional(),
-  clientEditableFields: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
-};
-
 export const createCaseSchema = z
   .object({
     projectId: z.string().guid().nullable().optional(),
@@ -42,9 +33,6 @@ export const createCaseSchema = z
     status: caseStatusSchema.optional(),
     fields: jsonObjectSchema.optional(),
     parentCaseId: z.string().guid().nullable().optional(),
-    ...deepDiveSharingShape,
-    // An imported source row, kept unchanged once set (GRE-2366).
-    sourceValues: jsonObjectSchema.optional(),
   })
   .strict();
 
@@ -58,7 +46,6 @@ export const patchCaseSchema = z
     parentCaseId: z.string().guid().nullable().optional(),
     labels: z.array(z.string().guid()).max(100).optional(),
     labelIds: z.array(z.string().guid()).max(100).optional(),
-    ...deepDiveSharingShape,
   })
   .strict();
 

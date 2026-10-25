@@ -11,16 +11,14 @@ import {
   DEEP_DIVE_STREAM_STATUSES,
   DEEP_DIVE_STREAMS,
   DEEP_DIVE_VISIBILITIES,
-  deepDiveDepthError,
   deepDiveGifStubBody,
   defaultDeepDiveStreamFields,
   readDeepDiveStreamFields,
   type DeepDiveKnowledge,
   type DeepDiveStreamFields,
-  type DeepDiveVisibility,
 } from "@greatstone/shared";
 import { ApiError } from "@/api/client";
-import { casesApi, type CaseDetail, type CaseSummary, type PatchCaseInput } from "@/api/cases";
+import { casesApi, type CaseDetail, type CaseSummary } from "@/api/cases";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link, useCaseHref, useNavigate } from "@/lib/router";
@@ -198,7 +196,6 @@ function StreamRow({
   row,
   detail,
   onSave,
-  onShare,
   saving,
 }: {
   index: number;
@@ -207,7 +204,6 @@ function StreamRow({
   detail: CaseDetail | undefined;
   /** Resolves true once saved; false when the save failed (the page shows the error). */
   onSave: (row: CaseSummary, fields: DeepDiveStreamFields) => Promise<boolean>;
-  onShare: (row: CaseSummary, visibility: DeepDiveVisibility) => Promise<boolean>;
   saving: boolean;
 }) {
   const caseHref = useCaseHref();
@@ -225,9 +221,8 @@ function StreamRow({
   function submitReason(event: FormEvent) {
     event.preventDefault();
     const reason = (reasonDraft ?? "").trim();
-    const error = deepDiveDepthError({ depth: "reduced", depthReason: reason });
-    if (error) {
-      setReasonError(error);
+    if (!reason) {
+      setReasonError("Name the reason. A stream is never dropped, only reduced with a named reason.");
       return;
     }
     void save({ depth: "reduced", depthReason: reason }).then((saved) => {
@@ -290,11 +285,9 @@ function StreamRow({
             Visibility
             <select
               className={SELECT_CLASS}
-              value={row?.visibility === "shared" ? "shared" : "internal"}
+              value={fields.visibility}
               disabled={disabled}
-              onChange={(event) => {
-                if (row) void onShare(row, event.target.value as DeepDiveVisibility);
-              }}
+              onChange={(event) => void save({ visibility: event.target.value as DeepDiveStreamFields["visibility"] })}
             >
               {DEEP_DIVE_VISIBILITIES.map((value) => (
                 <option key={value} value={value}>
@@ -439,12 +432,12 @@ export function DeepDive() {
   }
 
   const saveMutation = useMutation({
-    mutationFn: ({ row, patch }: { row: CaseSummary; patch: Pick<PatchCaseInput, "fields" | "visibility"> }) =>
-      casesApi.patch(row.id, patch),
-    onMutate: ({ row, patch }) => {
+    mutationFn: ({ row, fields }: { row: CaseSummary; fields: Record<string, unknown> }) =>
+      casesApi.patch(row.id, { fields }),
+    onMutate: ({ row, fields }) => {
       // Show the choice at once instead of snapping back until the refetch.
       queryClient.setQueryData<CaseSummary[]>(deepDiveListQueryKey(selectedCompanyId ?? ""), (current) =>
-        current?.map((entry) => (entry.id === row.id ? { ...entry, ...patch } : entry)),
+        current?.map((entry) => (entry.id === row.id ? { ...entry, fields } : entry)),
       );
     },
     onSettled: refresh,
@@ -452,15 +445,7 @@ export function DeepDive() {
 
   function saveStream(row: CaseSummary, fields: DeepDiveStreamFields) {
     // Fields are written whole: keep any keys this page does not know about.
-    return saveMutation.mutateAsync({ row, patch: { fields: { ...row.fields, ...fields } } }).then(
-      () => true,
-      () => false,
-    );
-  }
-
-  /** Internal or Shared is the case's own column (GRE-2366), not a key of fields. */
-  function shareStream(row: CaseSummary, visibility: DeepDiveVisibility) {
-    return saveMutation.mutateAsync({ row, patch: { visibility } }).then(
+    return saveMutation.mutateAsync({ row, fields: { ...row.fields, ...fields } }).then(
       () => true,
       () => false,
     );
@@ -533,35 +518,7 @@ export function DeepDive() {
   return (
     <div className="space-y-4">
       <header className="space-y-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-xl font-bold">Deep Dive</h1>
-          <div className="flex flex-wrap items-baseline gap-x-3">
-            <Link to="/deep-dive/overview" className="text-xs font-medium underline-offset-4 hover:underline">
-              Overview
-            </Link>
-            <Link to="/deep-dive/sessions" className="text-xs font-medium underline-offset-4 hover:underline">
-              Sessions
-            </Link>
-            <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">
-              Findings
-            </Link>
-            <Link to="/deep-dive/organisation" className="text-xs font-medium underline-offset-4 hover:underline">
-              Organisation
-            </Link>
-            <Link to="/deep-dive/processes" className="text-xs font-medium underline-offset-4 hover:underline">
-              Processes
-            </Link>
-            <Link to="/deep-dive/opportunities" className="text-xs font-medium underline-offset-4 hover:underline">
-              Opportunities and KPIs
-            </Link>
-            <Link to="/deep-dive/traceability" className="text-xs font-medium underline-offset-4 hover:underline">
-              Traceability
-            </Link>
-            <Link to="/deep-dive/files" className="text-xs font-medium underline-offset-4 hover:underline">
-              Evidence and files
-            </Link>
-          </div>
-        </div>
+        <h1 className="text-xl font-bold">Deep Dive</h1>
         <p className="max-w-3xl text-sm text-muted-foreground">
           The nine Investigation Streams against the five GIF questions (Book V). Place the known, validate the
           indicated, investigate only the unknown. Open a cell to write its answer and attach the evidence.
@@ -609,7 +566,6 @@ export function DeepDive() {
               detail={row ? detailById.get(row.id) : undefined}
               saving={saveMutation.isPending}
               onSave={saveStream}
-              onShare={shareStream}
             />
           );
         })}

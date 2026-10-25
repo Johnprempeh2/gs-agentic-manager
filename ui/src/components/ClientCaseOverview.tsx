@@ -23,7 +23,6 @@ import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "./PipelineCaseCrmHistory";
 import { ClientJourneyOverview } from "./ClientJourneyOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
-import { ClientPublications, EngagementTimelineView } from "./ClientPublications";
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
@@ -307,16 +306,8 @@ export function ClientCaseOverview({
         <ClientJourneyStages caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
 
-      <OverviewSection title="Deliverables publishing" tour="client-publishing">
-        <ClientPublications caseId={detail.case.id} companyId={detail.case.companyId ?? null} />
-      </OverviewSection>
-
       <OverviewSection title="What the client sees on the portal" tour="client-portal">
         <ClientPortalPreview caseId={detail.case.id} />
-      </OverviewSection>
-
-      <OverviewSection title="Engagement timeline" tour="client-timeline">
-        <EngagementTimelineView caseId={detail.case.id} />
       </OverviewSection>
         </>
       )}

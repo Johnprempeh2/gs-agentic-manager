@@ -11,6 +11,28 @@ export const WEBSITE_FRAME_TAG = "website-frame" as const;
 /** Protocol versions this GSAM speaks, highest last. */
 export const WEBSITE_FRAME_PROTOCOLS = [1] as const;
 
+/**
+ * The full-screen editor contract (`editor-state` / `editor-command`, GRE-2296)
+ * GSAM's editor shell needs (GRE-2357). An editor host below it gets "Editor
+ * host is out of date" instead of the frame. See `websiteEditorContractOf`.
+ */
+export const WEBSITE_EDITOR_CONTRACT = 1;
+
+/**
+ * The editor contract that has Edit copy (GRE-2394): the `editMode` in `hello`,
+ * the `layout` and `import-live` commands and `liveContent` in `hello-ack`. An
+ * editor host at contract 1 still opens, in today's full Layout editor.
+ */
+export const WEBSITE_EDITOR_COPY_CONTRACT = 2;
+
+/**
+ * How the full-screen editor opens (GRE-2394). `copy`: click words on the page
+ * to change them; no adding, moving, deleting, duplicating or block settings.
+ * `layout`: the whole editor. GSAM always opens in `copy`.
+ */
+export const WEBSITE_EDIT_MODES = ["copy", "layout"] as const;
+export type WebsiteEditMode = (typeof WEBSITE_EDIT_MODES)[number];
+
 export const WEBSITE_FRAME_HELLO_INTERVAL_MS = 250;
 export const WEBSITE_FRAME_HELLO_TIMEOUT_MS = 10_000;
 export const WEBSITE_FRAME_SAVE_TIMEOUT_MS = 30_000;
@@ -256,8 +278,49 @@ export const websiteFrameHelloAckSchema = z.object({
     .transform((commands) => commands.filter(isWebsiteEditorCommand))
     .optional()
     .catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2357): the full-screen editor contract the engine
+   * speaks. An engine from website PR #98 leaves it out but sends
+   * `editorCommands`; that counts as contract 1.
+   */
+  editorContract: protocolNumber.optional().catch(undefined),
+  /**
+   * Added at editor contract 2 (GRE-2394): the page the hello named has content
+   * on the live site (`blocks` at the top level). `import-live` puts it in the
+   * draft. Null or left out: the live site has nothing GSAM can import.
+   */
+  liveContent: z
+    .object({ blocks: z.number().int().min(1).max(500) })
+    .nullable()
+    .optional()
+    .catch(undefined),
 });
 export type WebsiteFrameHelloAck = z.infer<typeof websiteFrameHelloAckSchema>;
+
+/**
+ * The editor contract an engine's `hello-ack` shows (GRE-2357): its
+ * `editorContract`, else 1 when it lists `editorCommands` (website PR #98),
+ * else null (an engine from before the full-screen editor).
+ */
+export function websiteEditorContractOf(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): number | null {
+  if (typeof ack.editorContract === "number") return ack.editorContract;
+  return Array.isArray(ack.editorCommands) ? 1 : null;
+}
+
+/** True when the engine speaks at least the editor contract GSAM's shell needs. */
+export function isWebsiteEditorContractCurrent(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): boolean {
+  const contract = websiteEditorContractOf(ack);
+  return contract !== null && contract >= WEBSITE_EDITOR_CONTRACT;
+}
+
+/**
+ * True when the engine has Edit copy (GRE-2394): contract 2 or later and the
+ * `layout` command. Otherwise the editor opens as today, in Layout.
+ */
+export function websiteEditorHasCopyMode(ack: Pick<WebsiteFrameHelloAck, "editorContract" | "editorCommands">): boolean {
+  const contract = websiteEditorContractOf(ack);
+  return contract !== null && contract >= WEBSITE_EDITOR_COPY_CONTRACT && (ack.editorCommands ?? []).includes("layout");
+}
 
 export const websiteFrameHelloRefusedSchema = z.object({
   nonce: z.string(),
@@ -450,8 +513,11 @@ export type WebsiteFrameSetMotionResult = z.infer<typeof websiteFrameSetMotionRe
  * - `add-block`: open the block library in the editor's drawer.
  * - `deselect`: clear the selected block and close the editor's drawer.
  * - `outline`: show (`on: true`) or hide the page outline.
+ * - `layout` (contract 2): the whole editor (`on: true`) or Edit copy (`on: false`).
+ * - `import-live` (contract 2): put the page's live content in the empty draft,
+ *   with its block ids, and save it (a normal `save`).
  */
-export const WEBSITE_EDITOR_COMMANDS = ["undo", "redo", "save", "add-block", "deselect", "outline"] as const;
+export const WEBSITE_EDITOR_COMMANDS = ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"] as const;
 export type WebsiteEditorCommand = (typeof WEBSITE_EDITOR_COMMANDS)[number];
 
 export function isWebsiteEditorCommand(value: unknown): value is WebsiteEditorCommand {
@@ -607,6 +673,8 @@ export function websiteFrameHelloMessage(input: {
   nonce: string;
   mode: WebsiteFrameMode;
   pageId: string;
+  /** Editor only (GRE-2394). An engine below contract 2 ignores it. */
+  editMode?: WebsiteEditMode;
 }) {
   return {
     gs: WEBSITE_FRAME_TAG,
@@ -618,6 +686,7 @@ export function websiteFrameHelloMessage(input: {
       nonce: input.nonce,
       mode: input.mode,
       pageId: input.pageId,
+      ...(input.mode === "editor" && input.editMode ? { editMode: input.editMode } : {}),
     },
   };
 }

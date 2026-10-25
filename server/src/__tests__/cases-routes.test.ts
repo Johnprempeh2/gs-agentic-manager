@@ -232,38 +232,6 @@ describeEmbeddedPostgres("cases routes", () => {
     await http.get(`/api/cases/${foreignId}`).expect(200, { handledBy: "pipelines" });
   });
 
-  it("refuses a Reduced deep dive stream with no reason, on create and on patch (Book V, Ch 7)", async () => {
-    await instanceSettingsService(db).updateExperimental({ enableDeepDive: true });
-    const company = await seedCompany("DDR");
-    const http = request(app(boardActor));
-    const streamFields = { stream: "data", status: "not_started", depth: "full", depthReason: "", visibility: "internal" };
-
-    await http
-      .post(`/api/companies/${company.id}/cases`)
-      .send({ caseType: "deep_dive_stream", key: "data", title: "Deep dive: Data", fields: { ...streamFields, depth: "reduced" } })
-      .expect(422);
-    const created = await http
-      .post(`/api/companies/${company.id}/cases`)
-      .send({ caseType: "deep_dive_stream", key: "data", title: "Deep dive: Data", fields: streamFields })
-      .expect(201);
-
-    const refused = await http
-      .patch(`/api/cases/${created.body.id}`)
-      .send({ fields: { ...streamFields, depth: "reduced", depthReason: "  " } })
-      .expect(422);
-    expect(refused.body.error).toContain("named reason");
-    await http
-      .patch(`/api/cases/${created.body.id}`)
-      .send({ fields: { ...streamFields, depth: "reduced", depthReason: "No data team yet" } })
-      .expect(200);
-
-    // Other case types may use a `depth` field freely.
-    await http
-      .post(`/api/companies/${company.id}/cases`)
-      .send({ caseType: "bug", title: "Bug", fields: { depth: "reduced" } })
-      .expect(201);
-  });
-
   it("creates cases and upserts idempotently by type and key", async () => {
     const company = await seedCompany("UPS");
     const http = request(app(boardActor));

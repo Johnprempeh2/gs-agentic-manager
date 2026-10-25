@@ -66,8 +66,8 @@ export function AddFeatureDialog({
             <DialogTitle>Add a feature</DialogTitle>
             <DialogDescription>A big part of the site, like a shop or a client portal. You can set an owner and a project after.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-            <div className="flex min-w-0 flex-col gap-1 text-sm">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="flex min-w-0 flex-col gap-1 text-sm sm:col-span-2">
               <label htmlFor="new-feature-name" className="font-medium">Name</label>
               <Input id="new-feature-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} autoFocus />
             </div>

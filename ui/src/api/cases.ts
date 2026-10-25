@@ -1,12 +1,4 @@
-import type {
-  DeepDiveFilesResponse,
-  DeepDiveItemFileLink,
-  DeepDiveVisibility,
-  DocumentRevision,
-  IssueDocument,
-  IssueLabel,
-  LinkDeepDiveFile,
-} from "@greatstone/shared";
+import type { DocumentRevision, IssueDocument, IssueLabel } from "@greatstone/shared";
 import { api } from "./client";
 
 // -----------------------------------------------------------------------------
@@ -43,12 +35,6 @@ export interface CaseSummary {
   status: CaseStatus;
   fields: Record<string, unknown>;
   parentCaseId: string | null;
-  /** Deep Dive items (GRE-2366): Internal unless a person sets Shared. */
-  visibility: DeepDiveVisibility;
-  /** The client a Deep Dive item is about; only that client sees it once Shared. */
-  clientCaseId: string | null;
-  /** `fields` keys the client may change; every other field is locked to the client. */
-  clientEditableFields: string[];
   createdByAgentId: string | null;
   createdByUserId: string | null;
   completedAt: string | null;
@@ -263,10 +249,6 @@ export interface PatchCaseInput {
   labelIds?: string[];
   /** Replaces the whole fields object (the server does not merge). */
   fields?: Record<string, unknown>;
-  /** Deep Dive items only. Only a person may set Shared. */
-  visibility?: DeepDiveVisibility;
-  /** Deep Dive items only: the client the item is about. Moving it makes it Internal and removes its file links. */
-  clientCaseId?: string | null;
 }
 
 /**
@@ -367,12 +349,4 @@ export const casesApi = {
     api.get<CaseDocumentRevisions>(`/cases/${idOrIdentifier}/documents/${encodeURIComponent(key)}/revisions`),
   listForIssue: (issueIdOrIdentifier: string) =>
     api.get<IssueCaseLink[]>(`/issues/${issueIdOrIdentifier}/cases`),
-  // Deep Dive evidence and files (GRE-2395): one client file, many items.
-  deepDiveFiles: (companyId: string) => api.get<DeepDiveFilesResponse>(`/companies/${companyId}/deep-dive/files`),
-  linkDeepDiveFile: (caseId: string, input: LinkDeepDiveFile) =>
-    api.post<DeepDiveItemFileLink>(`/cases/${caseId}/deep-dive-files`, input),
-  setDeepDiveFileVisibility: (caseId: string, linkId: string, visibility: DeepDiveVisibility) =>
-    api.patch<DeepDiveItemFileLink>(`/cases/${caseId}/deep-dive-files/${linkId}`, { visibility }),
-  unlinkDeepDiveFile: (caseId: string, linkId: string) =>
-    api.delete<{ deleted: true; link: DeepDiveItemFileLink }>(`/cases/${caseId}/deep-dive-files/${linkId}`),
 };

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PenLine } from "lucide-react";
-import type { WebsiteChangeRequestResult, WebsitePage } from "@greatstone/shared";
+import type { CreateWebsiteChangeRequest, WebsiteChangeRequestResult, WebsiteCommentWidth, WebsitePage } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
+import { queryKeys } from "../../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { issueUrl } from "@/lib/utils";
-import type { WebsiteFrameBlockPick } from "../../lib/website-frame-host";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { errorStateMessage } from "../ErrorState";
@@ -14,6 +14,26 @@ import { errorStateMessage } from "../ErrorState";
 // preview, says what to change, and sees it back before anything is made.
 // Confirm makes one task for the website agent; Cancel makes nothing. A
 // change to words or an image can go straight into the draft instead.
+//
+// Ask an agent (GRE-2350) is the same box from the full-screen editor's top
+// bar: the selected block, or with nothing selected the whole page. The task
+// is a comment on the page; the Comments drawer lists the open ones.
+
+/** What the comment is about: a block (picked in preview or selected in the editor) or the whole page. */
+export type WebsiteChangeTarget =
+  | { kind: "page" }
+  | {
+      kind: "block";
+      blockId: string;
+      blockType: string;
+      label: string;
+      /** From a preview pick: the revision the frame showed. Else the page's latest draft. */
+      pageRevisionId?: string;
+      engine?: CreateWebsiteChangeRequest["engine"];
+      source?: CreateWebsiteChangeRequest["source"];
+    };
+
+const WIDTH_NAMES: Record<WebsiteCommentWidth, string> = { laptop: "Laptop", tablet: "Tablet", phone: "Phone" };
 
 type Step = "describe" | "confirm" | "created";
 
@@ -31,26 +51,34 @@ export function WebsiteChangeRequestPanel({
   companyId,
   siteId,
   page,
-  pick,
+  target,
+  width,
+  dirty = false,
   onCancel,
   onEditBlock,
 }: {
   companyId: string;
   siteId: string;
   page: WebsitePage;
-  pick: WebsiteFrameBlockPick;
+  target: WebsiteChangeTarget;
+  /** The editor width the person sees the page at. */
+  width: WebsiteCommentWidth;
+  /** The editor has edits that are not saved: the task names the saved draft. */
+  dirty?: boolean;
   /** Clears the pick. Nothing is created. */
   onCancel: () => void;
-  /** Opens the block in the editor for a words or image change. */
-  onEditBlock: (blockId: string, blockName: string) => void;
+  /** Opens the block in the editor for a words or image change (preview picks only). */
+  onEditBlock?: (blockId: string, blockName: string) => void;
 }) {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>("describe");
   const [request, setRequest] = useState("");
   // One id per pick: a repeated confirm returns the same task, never a second one.
   const [requestId] = useState(newRequestId);
   const [created, setCreated] = useState<WebsiteChangeRequestResult | null>(null);
-  const { ref } = pick;
-  const blockName = pick.label.trim() || ref.blockType;
+  const block = target.kind === "block" ? target : null;
+  const blockName = block ? block.label.trim() || block.blockType : "The whole page";
+  const pageRevisionId = block?.pageRevisionId ?? page.latestRevisionId;
   const panelRef = useRef<HTMLElement>(null);
 
   // On a phone the panel sits below the page controls; bring it into view on each pick.
@@ -62,41 +90,61 @@ export function WebsiteChangeRequestPanel({
     mutationFn: () =>
       websiteModuleApi.requestChange(companyId, siteId, page.id, {
         requestId,
-        pageRevisionId: ref.pageRevisionId,
-        blockId: ref.blockId,
-        blockType: ref.blockType,
-        blockLabel: pick.label.trim().slice(0, 200) || undefined,
-        engine: ref.engine,
-        source: ref.source,
+        pageRevisionId: pageRevisionId!,
+        ...(block
+          ? {
+              blockId: block.blockId,
+              blockType: block.blockType,
+              blockLabel: block.label.trim().slice(0, 200) || undefined,
+              ...(block.engine ? { engine: block.engine } : {}),
+              ...(block.source !== undefined ? { source: block.source } : {}),
+            }
+          : {}),
+        width,
         request: request.trim(),
       }),
     onSuccess: (result) => {
       setCreated(result);
       setStep("created");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.website.pageComments(companyId, siteId, page.id) });
     },
   });
 
-  const block = (
+  const subject = (
     <div className="min-w-0">
       <p className="truncate text-sm font-medium" data-testid="website-change-block">
         {blockName} on {page.title}
       </p>
-      <p className="truncate text-xs text-muted-foreground">{ref.blockType}</p>
+      <p className="truncate text-xs text-muted-foreground">
+        {block ? `${block.blockType} · ` : ""}Seen at {WIDTH_NAMES[width]} width
+      </p>
     </div>
   );
 
   return (
     <section
       ref={panelRef}
-      aria-label="Ask for a change"
+      aria-label="Ask an agent"
       data-testid="website-change-request"
       data-step={step}
       className="scroll-mt-20 space-y-3 rounded-lg border border-primary/40 bg-card p-3 shadow-xs"
     >
       <div className="flex flex-wrap items-start gap-2">
-        <span className="mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">Selected block</span>
-        <div className="min-w-0 flex-1">{block}</div>
+        <span className="mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+          {block ? "Selected block" : "Whole page"}
+        </span>
+        <div className="min-w-0 flex-1">{subject}</div>
       </div>
+
+      {!pageRevisionId ? (
+        <p role="alert" className="text-sm text-status-warning-foreground">
+          This page has no saved draft yet. Save it once, then ask an agent.
+        </p>
+      ) : dirty && step !== "created" ? (
+        <p className="text-xs text-status-warning-foreground" data-testid="website-change-unsaved">
+          Your unsaved edits are not in the task. Save first if the agent should see them.
+        </p>
+      ) : null}
 
       {step === "describe" ? (
         <form
@@ -118,12 +166,14 @@ export function WebsiteChangeRequestPanel({
             />
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" disabled={!request.trim()}>Review</Button>
+            <Button type="submit" size="sm" disabled={!request.trim() || !pageRevisionId}>Review</Button>
             <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-            <Button type="button" size="sm" variant="outline" className="sm:ml-auto" onClick={() => onEditBlock(ref.blockId, blockName)}>
-              <PenLine />
-              Edit words or image myself
-            </Button>
+            {block && onEditBlock ? (
+              <Button type="button" size="sm" variant="outline" className="sm:ml-auto" onClick={() => onEditBlock(block.blockId, blockName)}>
+                <PenLine />
+                Edit words or image myself
+              </Button>
+            ) : null}
           </div>
         </form>
       ) : null}
@@ -136,7 +186,7 @@ export function WebsiteChangeRequestPanel({
               {request.trim()}
             </blockquote>
             <p className="text-xs text-muted-foreground">
-              The website agent will change this on {page.title} ({page.slug}). Nothing goes live until a person publishes it.
+              The website agent will change {block ? "this" : "the page"} on {page.title} ({page.slug}) and save it as a draft for you to see here. Nothing goes live until a person publishes it.
             </p>
           </div>
           {submit.error ? (
@@ -161,7 +211,9 @@ export function WebsiteChangeRequestPanel({
             <Link to={issueUrl({ id: created.issueId, identifier: created.identifier })} className="font-medium underline underline-offset-2">
               {created.identifier ?? "created"}
             </Link>{" "}
-            {created.assigneeAgentId ? "is with the website agent." : "is created. No website agent leads this site's project yet, so assign it on the task."}
+            {created.assigneeAgentId
+              ? "is with the website agent. Its replies show under Comments."
+              : "is created. No website agent leads this site's project yet, so assign it on the task."}
           </p>
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>Done</Button>
         </div>

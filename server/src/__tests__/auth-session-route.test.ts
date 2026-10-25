@@ -27,6 +27,8 @@ function createDb() {
     select: vi
       .fn()
       .mockImplementationOnce(() => createSelectChain([]))
+      .mockImplementationOnce(() => createSelectChain([]))
+      // The QA log-in check (GRE-2387): not a QA account.
       .mockImplementationOnce(() => createSelectChain([])),
   } as any;
 }

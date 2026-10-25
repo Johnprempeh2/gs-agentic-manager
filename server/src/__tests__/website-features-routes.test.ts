@@ -47,7 +47,7 @@ type Actor = Express.Request["actor"];
 
 const GREATSTONE_COMPANY_ID = "34dad57e-b5ad-4a72-9400-9eba645c99f6";
 
-/** Greatstone's six as migration 0392 seeds them (route prefixes from the Rev 10 sitemap). Test data only. */
+/** Greatstone's six as migration 0393 seeds them (route prefixes from the Rev 10 sitemap). Test data only. */
 const SIX = [
   { key: "public-site", name: "Public site", routePrefixes: ["/", "/consultancy", "/proof", "/insights", "/about", "/support", "/search", "/privacy", "/cookies", "/terms", "/refunds"] },
   { key: "shop", name: "Shop and licences", routePrefixes: ["/dev-tools", "/account/orders", "/account/quotes", "/account/licences"] },
@@ -59,7 +59,7 @@ const SIX = [
 
 /** The migration's last statement: the Greatstone-only seed. */
 async function greatstoneSeedStatement() {
-  const migration = await readFile(new URL("../../../packages/db/src/migrations/0392_website_features.sql", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../../../packages/db/src/migrations/0393_website_features.sql", import.meta.url), "utf8");
   const statement = migration.split("--> statement-breakpoint").pop()!;
   expect(statement).toContain('INSERT INTO "website_feature"');
   return statement;

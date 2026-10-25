@@ -1,6 +1,6 @@
 {
-  "id": "a8c88c9e-a648-4c52-bc78-724afa5bbce4",
-  "prevId": "a6df89a5-dad6-46d7-a2b0-66fc63543245",
+  "id": "a6df89a5-dad6-46d7-a2b0-66fc63543245",
+  "prevId": "1e941c82-b407-4f46-987f-a477441c9665",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6515,32 +6515,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'internal'"
-        },
-        "client_case_id": {
-          "name": "client_case_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "client_editable_fields": {
-          "name": "client_editable_fields",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "source_values": {
-          "name": "source_values",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by_agent_id": {
           "name": "created_by_agent_id",
           "type": "uuid",
@@ -6716,33 +6690,6 @@
           "method": "btree",
           "with": {}
         },
-        "cases_company_client_visibility_idx": {
-          "name": "cases_company_client_visibility_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "client_case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "visibility",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "cases_title_search_idx": {
           "name": "cases_title_search_idx",
           "columns": [
@@ -6832,19 +6779,6 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "cases_client_case_id_pipeline_cases_id_fk": {
-          "name": "cases_client_case_id_pipeline_cases_id_fk",
-          "tableFrom": "cases",
-          "tableTo": "pipeline_cases",
-          "columnsFrom": [
-            "client_case_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "cases_created_by_agent_id_agents_id_fk": {
           "name": "cases_created_by_agent_id_agents_id_fk",
           "tableFrom": "cases",
@@ -6866,10 +6800,6 @@
         "cases_status_check": {
           "name": "cases_status_check",
           "value": "\"cases\".\"status\" in ('draft', 'in_progress', 'in_review', 'approved', 'done', 'cancelled')"
-        },
-        "cases_visibility_check": {
-          "name": "cases_visibility_check",
-          "value": "\"cases\".\"visibility\" in ('internal', 'shared')"
         }
       },
       "isRLSEnabled": false
@@ -66075,6 +66005,194 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.agent_qa_logins": {
+      "name": "agent_qa_logins",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by_user_id": {
+          "name": "granted_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ended_by_user_id": {
+          "name": "ended_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "agent_qa_logins_active_agent_uq": {
+          "name": "agent_qa_logins_active_agent_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"agent_qa_logins\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_qa_logins_user_idx": {
+          "name": "agent_qa_logins_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_qa_logins_status_expires_idx": {
+          "name": "agent_qa_logins_status_expires_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "agent_qa_logins_company_id_companies_id_fk": {
+          "name": "agent_qa_logins_company_id_companies_id_fk",
+          "tableFrom": "agent_qa_logins",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "agent_qa_logins_agent_id_agents_id_fk": {
+          "name": "agent_qa_logins_agent_id_agents_id_fk",
+          "tableFrom": "agent_qa_logins",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_qa_logins_user_id_user_id_fk": {
+          "name": "agent_qa_logins_user_id_user_id_fk",
+          "tableFrom": "agent_qa_logins",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

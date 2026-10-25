@@ -13,7 +13,6 @@ import {
   MANAGED_FEATURES_OFF,
   MANAGED_FEATURES_ON,
   MANAGED_HIDDEN_SETTINGS,
-  SIGNED_KEY_ONLY,
   buildEditionValues,
 } from "./editions.js";
 
@@ -47,7 +46,6 @@ test("every feature switch has one client-install decision (GRE-575)", () => {
   const add = (key: string, list: string) => decisions.set(key, [...(decisions.get(key) ?? []), list]);
   for (const key of MANAGED_FEATURES_ON) add(key, "Managed on");
   for (const key of MANAGED_FEATURES_OFF) add(key, "Managed off");
-  for (const key of Object.keys(SIGNED_KEY_ONLY)) add(key, "signed key only");
   for (const key of Object.keys(CLIENT_DEFAULT_OK)) add(key, "default is OK");
 
   const missing = INSTANCE_FEATURE_KEYS.filter((key) => !decisions.has(key));
@@ -106,14 +104,6 @@ test("client installs never show Deep Dive (deep dive design, section 5 rule 12)
     assert.ok(parsed);
     assert.equal(parsed.features.enableDeepDive, false, edition);
     assert.ok(values.expectOff.includes("enableDeepDive"), edition);
-  }
-});
-
-test("signed-key-only switches are not pinned by either edition (GRE-2346)", () => {
-  for (const edition of ["managed", "managed-plus"] as const) {
-    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: buildEditionValues({ edition, catalogVersion }).managedConfig });
-    assert.ok(parsed);
-    for (const key of Object.keys(SIGNED_KEY_ONLY)) assert.equal(Object.hasOwn(parsed.features, key), false, `${edition}: ${key}`);
   }
 });
 
@@ -195,7 +185,7 @@ test("hidden settings are exactly section 5", () => {
   const values = buildEditionValues({ edition: "managed", catalogVersion });
   assert.equal(values.hiddenSettings, MANAGED_HIDDEN_SETTINGS.join(","));
   assert.equal(
-    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableTeamChat"], catalogVersion }).hiddenSettings,
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }).hiddenSettings,
     values.hiddenSettings,
   );
 });
@@ -203,15 +193,15 @@ test("hidden settings are exactly section 5", () => {
 test("both editions hide Releases (GRE-129)", () => {
   for (const values of [
     buildEditionValues({ edition: "managed", catalogVersion }),
-    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableTeamChat"], catalogVersion }),
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }),
   ]) {
     assert.ok(values.hiddenSettings.split(",").includes("instance.releases"));
   }
 });
 
 test("the same input gives the same values", () => {
-  const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableTeamChat", "enablePipelines"], catalogVersion });
-  const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableTeamChat"], catalogVersion });
+  const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView", "enablePipelines"], catalogVersion });
+  const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableWebsiteView"], catalogVersion });
   assert.deepEqual(a, b);
 });
 
@@ -220,7 +210,7 @@ test("Managed plus turns on only the passed features", () => {
   const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
   assert.ok(parsed);
   assert.equal(parsed.features.enablePipelines, true);
-  assert.equal(parsed.features.enableTeamChat, false);
+  assert.equal(parsed.features.enableWebsiteView, false);
   assert.ok(values.expectOn.includes("enablePipelines"));
   assert.ok(!values.expectOff.includes("enablePipelines"));
 });
@@ -232,7 +222,7 @@ test("Managed plus with no passed features equals Managed features", () => {
 });
 
 test("rejects features without a place in section 5", () => {
-  assert.throws(() => buildEditionValues({ edition: "managed", passedBetaFeatures: ["enableTeamChat"], catalogVersion }), /Managed edition/);
+  assert.throws(() => buildEditionValues({ edition: "managed", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }), /Managed edition/);
   assert.throws(
     () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableApps"], catalogVersion }),
     /not a Managed "off" beta feature/,
@@ -252,15 +242,6 @@ test("rejects features without a place in section 5", () => {
   assert.throws(
     () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableDeepDive"], catalogVersion }),
     /never part of a client install/,
-  );
-  assert.throws(
-    () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableIntelligence"], catalogVersion }),
-    /never part of a client install/,
-  );
-  // GRE-2346: the Website screens come from the signed key, never from an edition value.
-  assert.throws(
-    () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }),
-    /not a Managed "off" beta feature/,
   );
   assert.throws(() => buildEditionValues({ edition: "self-run" as never, catalogVersion }), /Unknown edition/);
 });

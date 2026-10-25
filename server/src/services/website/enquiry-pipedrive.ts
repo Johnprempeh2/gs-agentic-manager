@@ -116,7 +116,7 @@ export function websiteEnquiryPipedriveCopy(
       if (!externalId) {
         const personId = await personIdFor(client, input.enquiry);
         const lead = await client.createLead({
-          title: `${input.enquiry.name.trim()} — website enquiry`,
+          title: `${input.enquiry.name.trim()}: website enquiry`,
           personId,
           originId,
         });
