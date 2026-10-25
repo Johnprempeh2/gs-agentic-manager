@@ -3,6 +3,7 @@ import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import { fleetCheckIns, fleetInstances } from "@greatstone/db";
+import { isClientInstall } from "./client-install.js";
 import {
   FLEET_AUDIENCE,
   FLEET_CHECK_IN_SCHEMA,
@@ -42,9 +43,13 @@ export function fleetStateLimits(env: NodeJS.ProcessEnv = process.env) {
   return { staleAfterMinutes, downAfterMinutes: Math.max(staleAfterMinutes, minutes(env.GSAM_FLEET_DOWN_AFTER_MINUTES, 60)) };
 }
 
-/** The hub side is off unless this instance is the Greatstone hub. A client instance never answers fleet calls. */
+/**
+ * The hub side is off unless this instance is the Greatstone hub. A client
+ * instance never answers fleet calls: a managed config wins over
+ * GSAM_FLEET_HUB (GRE-2346).
+ */
 export function fleetHubEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.GSAM_FLEET_HUB?.trim() === "true";
+  return env.GSAM_FLEET_HUB?.trim() === "true" && !isClientInstall(env);
 }
 
 export type FleetRejection =

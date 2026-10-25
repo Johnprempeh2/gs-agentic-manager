@@ -39,7 +39,7 @@ import {
 } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
 import { getManagedInstanceConfig, type ManagedInstanceConfig } from "./managed-config.js";
-import { applyEntitlementsToExperimental } from "./entitlement-runtime.js";
+import { applyClientInstallRules, applyEntitlementsToExperimental } from "./entitlement-runtime.js";
 import { getOperatorSettingDefaults } from "./setting-defaults.js";
 
 const DEFAULT_SINGLETON_KEY = "default";
@@ -583,7 +583,10 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
     // features last, so neither a stored nor a managed "on" passes it.
     // GRE-1382: a dependent switch (Board on Strategy) reads off without what
     // it needs, whichever layer turned that off.
-    const experimental = applyFeatureDependencies(applyEntitlementsToExperimental(overlaid.experimental));
+    // GRE-2346: in a client install the Website screens need the signed key,
+    // and Greatstone-only switches read off whatever any layer says.
+    const narrowed = applyEntitlementsToExperimental(overlaid.experimental);
+    const experimental = applyFeatureDependencies(managedConfig ? applyClientInstallRules(narrowed) : narrowed);
     // Self-hosted responses stay byte-identical: no managedKeys field at all.
     return managedConfig ? { ...experimental, managedKeys } : experimental;
   }

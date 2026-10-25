@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { refuseInClientInstall } from "../services/client-install.js";
 import { hiddenSettingFloor } from "../services/settings-visibility.js";
 
 /**
@@ -6,9 +7,11 @@ import { hiddenSettingFloor } from "../services/settings-visibility.js";
  * GRE-129). Mount before every other router: each release route, reads
  * included, answers 403 `settings_operator_managed` for every actor, the
  * board too. With the key not hidden, requests pass through unchanged.
+ * GRE-2346: a client install refuses them even when the key is not hidden.
  */
 export function releasesFloorRoutes() {
   const router = Router();
+  router.use("/companies/:companyId/releases", refuseInClientInstall("releaseBoard"));
   router.use("/companies/:companyId/releases", hiddenSettingFloor("instance.releases", "Releasing"));
   return router;
 }

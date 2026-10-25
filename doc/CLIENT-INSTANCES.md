@@ -99,7 +99,7 @@ scripts/client-instance.sh create --root /path/to/instances/c001 --edition manag
 
 # Managed plus: list ONLY features whose Beacon verdict on GRE-81 has passed
 scripts/client-instance.sh create --root /path/to/instances/c002 \
-  --edition managed-plus --passed-features enablePipelines,enableWebsiteView
+  --edition managed-plus --passed-features enablePipelines
 
 # Greatstone's own install (no edition values; never for a client)
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
@@ -108,6 +108,16 @@ scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition in
 Managed and Managed plus pin `enableManagedSandboxOnly` off (GRE-160: with it
 on and no sandbox provider, every run is refused). `internal` sets no
 edition values.
+
+Website screens (Site Studio, GRE-2346) are not an edition value and cannot be
+passed with `--passed-features`. In both editions they are on only while a
+valid signed entitlement document carries `enableWebsiteView`. With no hub key,
+no document, an expired document (past grace) or a bad signature, the Website
+menu is hidden, every Website API route answers 403 and the stored data stays.
+A client install never gets Deep Dive, the Intelligence page, Greatstone's own
+website features (shop and licences, client portal, Deep Dive portal, front
+door, intelligence hub), Fleet, the fleet hub or the Releases page, whatever
+the env values, hidden settings or signed document say.
 
 Graduated switches keep their client gate (Everest on GRE-1632, GRE-1633).
 Greatstone's own install and self-hosted read them on, and a stored "off" is

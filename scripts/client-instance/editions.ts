@@ -13,6 +13,10 @@ import {
   type InstanceFeatureKey,
 } from "../../packages/shared/src/feature-catalog.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
+import {
+  GREATSTONE_ONLY_FEATURE_KEYS,
+  SIGNED_KEY_ONLY_FEATURE_KEYS,
+} from "../../packages/shared/src/client-install.js";
 
 export const EDITIONS = ["managed", "managed-plus"] as const;
 export type Edition = (typeof EDITIONS)[number];
@@ -35,8 +39,6 @@ export const MANAGED_FEATURES_OFF = [
   "enablePipelines",
   "enableCases",
   "enableDeepDive",
-  // GRE-1087: Website view; which edition gets it is Harbor and John's call.
-  "enableWebsiteView",
   // Intelligence page (Daily Pulse and AI hub): Greatstone internal for now.
   "enableIntelligence",
   // GRE-1621 graduated these for Greatstone and self-hosted; client editions
@@ -72,9 +74,19 @@ export const MANAGED_FEATURES_OFF = [
 ] as const satisfies readonly InstanceFeatureKey[];
 
 /**
+ * Not an edition value (GRE-2346): the Website screens (Site Studio) are on in
+ * a client install only while a valid signed entitlement document grants
+ * them, in both editions. The edition does not pin them; the app ignores a
+ * pinned value. Each key here needs a reason.
+ */
+export const SIGNED_KEY_ONLY = {
+  enableWebsiteView: "Site Studio: on only with the signed `enableWebsiteView` key (GRE-2346).",
+} as const satisfies Record<(typeof SIGNED_KEY_ONLY_FEATURE_KEYS)[number], string>;
+
+/**
  * Section 5, "Default is OK" (GRE-575): switches a client install leaves at the
  * app default, with the reason. Every catalog switch must be in exactly one of
- * MANAGED_FEATURES_ON, MANAGED_FEATURES_OFF or this list; editions.test.ts
+ * MANAGED_FEATURES_ON, MANAGED_FEATURES_OFF, SIGNED_KEY_ONLY or this list; editions.test.ts
  * fails and names any switch that has no decision.
  */
 export const CLIENT_DEFAULT_OK = {
@@ -180,8 +192,8 @@ export function buildEditionValues(input: EditionInput): EditionValues {
     if (key === "enableOwnerInstanceAdmin") {
       throw new Error(`"${key}" gives instance admin powers and is never part of Managed plus`);
     }
-    if (key === "enableDeepDive") {
-      throw new Error(`"${key}" is where Greatstone designs a client's team and is never part of a client install`);
+    if ((GREATSTONE_ONLY_FEATURE_KEYS as readonly string[]).includes(key)) {
+      throw new Error(`"${key}" is Greatstone-only and is never part of a client install`);
     }
     if (key === "enableManagedSandboxOnly") {
       throw new Error(`"${key}" needs a sandbox provider and is off in both editions (GRE-160)`);

@@ -22,7 +22,10 @@ import path from "node:path";
 import {
   ENTITLEMENT_FEATURE_KEYS,
   ENTITLEMENT_RELOAD_INTERVAL_MS,
+  GREATSTONE_ONLY_FEATURE_KEYS,
   RESTART_WIRED_ENTITLEMENT_KEYS,
+  SIGNED_KEY_ONLY_FEATURE_KEYS,
+  type InstanceFeatureKey,
   type EffectiveEntitlements,
   type EntitlementDocument,
   type EntitlementFeatureKey,
@@ -379,6 +382,23 @@ export function applyEntitlementsToExperimental<T extends Partial<Record<Entitle
   for (const key of ENTITLEMENT_FEATURE_KEYS) {
     if (!entitled[key]) next[key] = false;
   }
+  return next as T;
+}
+
+/**
+ * The client-install rules (GRE-2346), applied last on every read in an
+ * install with a managed config. A signed-key-only switch is on exactly while
+ * a valid signed document grants it (off with no hub key at all); a
+ * Greatstone-only switch is always off. Nothing stored is changed.
+ */
+export function applyClientInstallRules<T extends Partial<Record<InstanceFeatureKey, unknown>>>(
+  experimental: T,
+  runtime: EntitlementRuntime | null = activeRuntime,
+): T {
+  const entitled = runtime?.entitled() ?? null;
+  const next = { ...experimental } as Record<string, unknown>;
+  for (const key of SIGNED_KEY_ONLY_FEATURE_KEYS) next[key] = entitled?.[key] === true;
+  for (const key of GREATSTONE_ONLY_FEATURE_KEYS) next[key] = false;
   return next as T;
 }
 
