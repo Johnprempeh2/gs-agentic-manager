@@ -273,7 +273,7 @@ export function SitemapBoardView({
             className="absolute left-0 top-0 origin-top-left"
             style={{ width: bounds.width, height: bounds.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}
           >
-            <svg className="pointer-events-none absolute inset-0 text-muted-foreground/50" width={bounds.width} height={bounds.height} aria-hidden="true">
+            <svg className="pointer-events-none absolute inset-0 text-subtle-foreground" width={bounds.width} height={bounds.height} aria-hidden="true">
               {lines.map((line) => (
                 <path key={line.key} d={line.d} fill="none" stroke="currentColor" strokeWidth={1.5} strokeDasharray={line.dashed ? "4 4" : undefined} />
               ))}
