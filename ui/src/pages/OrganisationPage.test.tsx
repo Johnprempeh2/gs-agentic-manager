@@ -38,6 +38,7 @@ vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => false }));
 vi.mock("@/context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 
 const mockPipelines = vi.hoisted(() => ({
+  get: vi.fn(),
   getCase: vi.fn(),
   getCaseJourney: vi.fn(),
   getCaseFiles: vi.fn(),
@@ -134,17 +135,19 @@ function history(overrides: Partial<OrganisationHistory> = {}): OrganisationHist
   };
 }
 
+const STAGES = [
+  { id: "s1", key: "executive-discovery", name: "Executive Discovery", kind: "open", position: 0 },
+  { id: "s2", key: "deep-dive", name: "Deep Dive", kind: "working", position: 1 },
+];
+
+/** The item read as the server sends it: its pipeline carries no stages. */
 function caseDetail(caseId: string, caseType: string) {
-  const stages = [
-    { id: "s1", key: "executive-discovery", name: "Executive Discovery", kind: "active", position: 0 },
-    { id: "s2", key: "deep-dive", name: "Deep Dive", kind: "active", position: 1 },
-  ];
   return {
     case: { id: caseId, companyId: "company-1", pipelineId: "pipe-1", stageId: "s1", title: "Acme drill rig", fields: { owner: "Ama Owusu" }, organisationId: "org-1" },
     caseType,
     stageEnteredAt: "2026-10-05T09:00:00Z",
-    stage: stages[0],
-    pipeline: { id: "pipe-1", name: "Client journey", stages },
+    stage: STAGES[0],
+    pipeline: { id: "pipe-1", name: "Client journey" },
   };
 }
 
@@ -160,6 +163,7 @@ describe("Organisation company page", () => {
     for (const fn of [...Object.values(mockPipelines), ...Object.values(mockSites), ...Object.values(mockBridge)]) fn.mockReset();
     // A sales deal by default: no client journey, portal or website hub.
     mockPipelines.getCase.mockImplementation((caseId: string) => Promise.resolve(caseDetail(caseId, "sales")));
+    mockPipelines.get.mockImplementation(() => Promise.resolve({ id: "pipe-1", name: "Client journey", stages: STAGES }));
     mockPipelines.getCaseEvents.mockResolvedValue({ items: [], pagination: { limit: 50, offset: 0, nextOffset: null } });
     mockPipelines.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
     mockPipelines.listCaseEvidenceCandidates.mockResolvedValue({ attachments: [], documents: [] });
@@ -432,7 +436,10 @@ describe("Organisation company page", () => {
         "Deliverables", "Commerce", "Billing", "Activity", "Client view",
       ]);
       expect(container.querySelector('[data-testid="organisation-tab-overview"]')).not.toBeNull();
-      expect(container.querySelector('[data-testid="organisation-engagement"]')?.textContent).toContain("Ama Owusu");
+      const engagement = container.querySelector('[data-testid="organisation-engagement"]')!;
+      expect(engagement.textContent).toContain("Ama Owusu");
+      expect(engagement.textContent).toContain("Executive Discovery");
+      expect(mockPipelines.get).toHaveBeenCalledWith("pipe-1");
     });
 
     it("links the placeholder tabs to the tasks that build them", async () => {
@@ -495,6 +502,15 @@ describe("Organisation company page", () => {
       expect(rows[1]!.querySelector('[data-testid="shared-with-client"]')).toBeNull();
       expect(rows[2]!.textContent).toContain("Deep Dive · asked 1 Oct 2026 · received 4 Oct 2026");
       expect(rows[2]!.querySelector('a[href="/api/files/e1"]')).not.toBeNull();
+    });
+
+    it("waits for the engagement before a tab says there is none", async () => {
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      mockPipelines.getCase.mockReturnValue(new Promise(() => {}));
+      await render("/organisations/org-1?tab=documents");
+      expect(container.textContent).toContain("Loading the engagement…");
+      expect(container.textContent).not.toContain("no client engagement yet");
     });
 
     it("asks for no client journey data when the engagement is a sales deal", async () => {

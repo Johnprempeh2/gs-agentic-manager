@@ -6,7 +6,7 @@ import { casesApi } from "@/api/cases";
 import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOverview";
 import { deepDiveSessionsApi, deepDiveSessionsQueryKeys } from "@/api/deepDiveSessions";
 import { instanceSettingsApi } from "@/api/instanceSettings";
-import { pipelinesApi, type PipelineCaseDetail } from "@/api/pipelines";
+import { pipelinesApi, type PipelineCaseDetail, type PipelineStage } from "@/api/pipelines";
 import { websiteModuleApi } from "@/api/website";
 import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { StageStrip } from "@/components/ClientCaseOverview";
@@ -62,15 +62,21 @@ export function NoEngagement() {
   );
 }
 
-/** The engagement item, its pipeline and stages, in one read. */
+/** The engagement item and its pipeline's stages (the item's own read carries no stages). */
 export function useEngagementCase(caseId: string | null) {
   const query = useQuery({
     queryKey: queryKeys.pipelines.caseDetail(caseId ?? ""),
     queryFn: () => pipelinesApi.getCase(caseId!),
     enabled: Boolean(caseId),
   });
+  const pipelineId = query.data?.case.pipelineId ?? "";
+  const pipeline = useQuery({
+    queryKey: queryKeys.pipelines.detail(pipelineId),
+    queryFn: () => pipelinesApi.get(pipelineId),
+    enabled: Boolean(pipelineId),
+  });
   const detail = query.data ?? null;
-  return { query, detail, isClient: detail?.caseType === CLIENT_CASE_TYPE };
+  return { query, detail, stages: pipeline.data?.stages ?? [], isClient: detail?.caseType === CLIENT_CASE_TYPE };
 }
 
 function casePath(detail: PipelineCaseDetail) {
@@ -131,11 +137,13 @@ export function EngagementSummary({
   companyId,
   caseIds,
   detail,
+  stages,
   isClient,
 }: {
   companyId: string;
   caseIds: string[];
   detail: PipelineCaseDetail;
+  stages: PipelineStage[];
   isClient: boolean;
 }) {
   const record = readClientRecord(detail.case.fields);
@@ -145,7 +153,7 @@ export function EngagementSummary({
   return (
     <HubSection title="Engagement" action={<SourceLink to={casePath(detail)}>Open the engagement</SourceLink>}>
       <div className="space-y-4 rounded-lg border border-border p-4" data-testid="organisation-engagement">
-        <StageStrip stages={detail.pipeline.stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
+        <StageStrip stages={stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div className="min-w-0">
             <dt className="text-xs text-muted-foreground">Owner</dt>
@@ -205,8 +213,16 @@ export function EngagementSummary({
 
 const DISCOVERY_KINDS = new Set<CrmTimelineEntry["kind"]>(["note", "call", "activity", "email"]);
 
-export function DiscoveryPanel({ detail, history }: { detail: PipelineCaseDetail | null; history: OrganisationHistory | undefined }) {
-  const stage = detail?.pipeline.stages.find((item) => /executive discovery/i.test(item.name)) ?? null;
+export function DiscoveryPanel({
+  detail,
+  stages,
+  history,
+}: {
+  detail: PipelineCaseDetail | null;
+  stages: PipelineStage[];
+  history: OrganisationHistory | undefined;
+}) {
+  const stage = stages.find((item) => /executive discovery/i.test(item.name)) ?? null;
   const notes = (history?.timeline ?? []).filter((entry) => DISCOVERY_KINDS.has(entry.kind));
   return (
     <div className="space-y-6">
@@ -446,7 +462,15 @@ function actorName(event: { actorType: string; actorAgent?: { name: string } | n
   return "The system";
 }
 
-export function ActivityPanel({ detail, history }: { detail: PipelineCaseDetail | null; history: OrganisationHistory | undefined }) {
+export function ActivityPanel({
+  detail,
+  stages,
+  history,
+}: {
+  detail: PipelineCaseDetail | null;
+  stages: PipelineStage[];
+  history: OrganisationHistory | undefined;
+}) {
   const caseId = detail?.case.id ?? "";
   const events = useQuery({
     queryKey: [...queryKeys.pipelines.caseEvents(caseId), "hub"],
@@ -465,7 +489,7 @@ export function ActivityPanel({ detail, history }: { detail: PipelineCaseDetail 
             <ol className="divide-y divide-border rounded-md border border-border">
               {events.data.items.map((event) => (
                 <li key={event.id} className="flex flex-col gap-0.5 px-3 py-2 text-sm sm:flex-row sm:items-baseline sm:gap-3">
-                  <span className="min-w-0 flex-1 break-words">{formatPipelineItemEvent(event, detail.pipeline.stages)}</span>
+                  <span className="min-w-0 flex-1 break-words">{formatPipelineItemEvent(event, stages)}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">{actorName(event)} · {formatDateTime(event.createdAt)}</span>
                 </li>
               ))}

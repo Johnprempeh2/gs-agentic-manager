@@ -116,6 +116,9 @@ export function OrganisationPage() {
   const organisation = detail.data;
   const contacts = organisation.contacts.filter((contact) => !contact.archivedAt);
   const clientCaseId = engagement.isClient ? caseId : null;
+  // Until the engagement is known, a tab cannot tell "no engagement" from "not loaded yet".
+  const engagementLoading = history.isLoading || (Boolean(caseId) && engagement.query.isLoading);
+  const needsEngagement = !["overview", "interviews", "billing", "commerce"].includes(tab);
 
   return (
     <div className="flex max-w-5xl flex-col gap-6">
@@ -175,25 +178,28 @@ export function OrganisationPage() {
           <PageTabBar items={ORGANISATION_HUB_TABS} value={tab} onValueChange={(value) => openTab(value as OrganisationHubTab)} align="start" ariaLabel="Client section" />
         </Tabs>
         <div className="flex flex-col gap-6" data-testid={`organisation-tab-${tab}`}>
+          {engagementLoading && needsEngagement ? (
+            <p className="text-sm text-muted-foreground">Loading the engagement…</p>
+          ) : null}
           {tab === "overview" ? (
             <>
               {engagement.detail ? (
-                <EngagementSummary companyId={companyId} caseIds={caseIds} detail={engagement.detail} isClient={engagement.isClient} />
+                <EngagementSummary companyId={companyId} caseIds={caseIds} detail={engagement.detail} stages={engagement.stages} isClient={engagement.isClient} />
               ) : null}
               <OverviewDetails organisation={organisation} companyId={companyId} contacts={contacts} history={history} />
             </>
           ) : null}
-          {tab === "discovery" ? <DiscoveryPanel detail={engagement.detail} history={history.data} /> : null}
+          {!engagementLoading && tab === "discovery" ? <DiscoveryPanel detail={engagement.detail} stages={engagement.stages} history={history.data} /> : null}
           {tab === "interviews" ? <InterviewsPanel /> : null}
-          {tab === "deep-dive" ? <DeepDivePanel companyId={companyId} caseIds={caseIds} shared={shared} /> : null}
-          {tab === "documents" ? (
+          {!engagementLoading && tab === "deep-dive" ? <DeepDivePanel companyId={companyId} caseIds={caseIds} shared={shared} /> : null}
+          {!engagementLoading && tab === "documents" ? (
             <DocumentsPanel caseId={clientCaseId} organisationId={organisation.id} history={history.data} shared={shared} />
           ) : null}
-          {tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
+          {!engagementLoading && tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
           {tab === "commerce" ? <CommercePanel companyId={companyId} organisation={organisation} /> : null}
           {tab === "billing" ? <BillingPanel /> : null}
-          {tab === "activity" ? <ActivityPanel detail={engagement.detail} history={history.data} /> : null}
-          {tab === "client-view" ? <ClientViewPanel companyId={companyId} caseId={clientCaseId} /> : null}
+          {!engagementLoading && tab === "activity" ? <ActivityPanel detail={engagement.detail} stages={engagement.stages} history={history.data} /> : null}
+          {!engagementLoading && tab === "client-view" ? <ClientViewPanel companyId={companyId} caseId={clientCaseId} /> : null}
         </div>
       </div>
 
