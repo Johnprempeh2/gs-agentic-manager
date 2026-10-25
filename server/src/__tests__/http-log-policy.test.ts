@@ -107,6 +107,13 @@ describe("isPrivateWebhookHttpRequest", () => {
 });
 
 describe("isSecretSensitiveHttpRequest", () => {
+  it("covers website site create and update, which carry the Netlify token", () => {
+    expect(isSecretSensitiveHttpRequest("POST", "/api/companies/c-1/website/sites")).toBe(true);
+    expect(isSecretSensitiveHttpRequest("PATCH", "/api/companies/c-1/website/sites/s-1")).toBe(true);
+    expect(isSecretSensitiveHttpRequest("GET", "/api/companies/c-1/website/sites/s-1")).toBe(false);
+    expect(isSecretSensitiveHttpRequest("POST", "/api/companies/c-1/website/sites/s-1/pages")).toBe(false);
+  });
+
   it("identifies credential-bearing chat setup mutations", () => {
     expect(
       isSecretSensitiveHttpRequest(

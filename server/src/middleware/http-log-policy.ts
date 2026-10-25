@@ -43,6 +43,8 @@ const SECRET_SENSITIVE_HTTP_PATHS = [
   /^\/api\/companies\/[^/]+\/mailboxes\/?$/,
   // Mailbox sign-in app settings carry the OAuth client secret (GRE-1349).
   /^\/api\/companies\/[^/]+\/mailbox-oauth\/apps\/[^/]+\/?$/,
+  // Connecting a website site carries its Netlify token (GRE-2137).
+  /^\/api\/companies\/[^/]+\/website\/sites(?:\/[^/]+)?\/?$/,
 ];
 const SECRET_SENSITIVE_HTTP_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
