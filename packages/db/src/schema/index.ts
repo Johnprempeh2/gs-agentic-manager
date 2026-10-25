@@ -295,3 +295,8 @@ export {
   deepDiveKpis,
   deepDiveKpiProcesses,
 } from "./deep_dive_opportunities.js";
+export {
+  deepDiveCommercials,
+  deepDiveRoadmapItems,
+  deepDiveRoadmapKpis,
+} from "./deep_dive_traceability.js";
