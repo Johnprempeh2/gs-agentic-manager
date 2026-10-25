@@ -14,6 +14,7 @@ import {
   Layers,
   Microscope,
   Building2,
+  ShoppingBag,
   GitBranch,
   Package,
   Settings,
@@ -94,6 +95,7 @@ import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
+import { useCommerceSite } from "../hooks/useCommerceSite";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -360,6 +362,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showIntelligence = experimentalSettings?.enableIntelligence === true;
+  const { commerce } = useCommerceSite(selectedCompanyId);
+  const showCommerce = commerce !== null;
   // The one Decisions count (GRE-263): the Desk and Decisions badges show the same number.
   const attentionCount = useDecisionsCount(selectedCompanyId);
   // GRE-1633: Status Cards ignores the stored switch, but a client plan can still turn it off.
@@ -429,6 +433,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     calendar: link("/calendar", "Calendar", CalendarDays),
     // GRE-1477: CRM organisations, part of the pipelines module.
     organisations: gated(showPipelines, link("/organisations", "Organisations", Building2)),
+    // GRE-2383: the website's quotes, orders, invoices and licences. Greatstone only, while its Shop feature is on.
+    commerce: gated(showCommerce, link("/commerce", "Commerce", ShoppingBag)),
     pipelines: gated(showPipelines, {
       label: "Pipelines",
       icon: GitBranch,
