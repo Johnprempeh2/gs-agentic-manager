@@ -376,7 +376,8 @@ export function WebsiteStyleView({
           {roles.map(({ role, colours }) => (
             <div key={role} className="space-y-2">
               <h3 className="text-sm font-medium text-muted-foreground">{ROLE_LABELS[role]}</h3>
-              <ul className={grid("sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+              {/* Swatches are small: two to a row even on a phone and in the drawer, so the palette reads at a glance. */}
+              <ul className={cn("grid grid-cols-2 gap-3", !compact && "lg:grid-cols-3 xl:grid-cols-4")}>
                 {colours.map((colour) => (
                   <ColourCard
                     key={colour.cssVar}
