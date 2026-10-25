@@ -3293,3 +3293,12 @@ export type {
   AgentDailyDigestMove,
   AgentDailyDigestPayload,
 } from "./types/agent-daily-digest.js";
+export {
+  BLANK_CHECK_SAMPLE_SIZE,
+  BLANK_SCREENSHOT_MESSAGE,
+  BLANK_SCREENSHOT_RETAKE_HINT,
+  BLANK_SCREENSHOT_THRESHOLD,
+  dominantColourShare,
+  isScreenshotLikeFilename,
+  looksBlankScreenshot,
+} from "./screenshot-blank-check.js";

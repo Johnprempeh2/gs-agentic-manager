@@ -37,6 +37,7 @@ import {
 import { TaskChatSystemNotice } from "./TaskChatSystemNotice";
 import type { TaskChatMessageItem } from "./task-chat-model";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
+import { AttachmentThumbnail } from "../AttachmentThumbnail";
 
 interface TaskChatBubbleProps {
   item: TaskChatMessageItem;
@@ -304,15 +305,15 @@ function TaskChatBubbleContent({
                 <button
                   key={ref.url}
                   type="button"
-                  className="group aspect-video min-w-0 overflow-hidden rounded-md bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group relative aspect-video min-w-0 overflow-hidden rounded-md border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`Open ${ref.name || `image ${index + 1}`}`}
                   onClick={() => openImage(ref.url)}
                 >
-                  <img
+                  <AttachmentThumbnail
                     src={attachmentThumbnailSrc(ref.openPath ?? ref.url, 640)}
                     alt={ref.name}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform group-hover:scale-(--s-1_02)"
+                    filename={ref.name}
+                    className="transition-transform group-hover:scale-(--s-1_02)"
                   />
                 </button>
               ))}

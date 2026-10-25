@@ -14,6 +14,7 @@ import {
   type EntitlementSettingsReader,
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
+import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
 import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
@@ -20858,7 +20859,16 @@ export function issueRoutes(
         artifactWorkProductId: _artifactWorkProductId,
         ...attachmentResponse
       } = attachment;
-      res.status(201).json(withContentPath(attachmentResponse));
+      // Tell the uploader at once when a screenshot looks blank, so they retake it (GRE-2524).
+      const blankWarning = await blankScreenshotWarning({
+        contentType: attachment.contentType,
+        originalFilename: attachment.originalFilename,
+        body: file.buffer,
+      });
+      res.status(201).json({
+        ...withContentPath(attachmentResponse),
+        ...(blankWarning ? { warnings: [blankWarning] } : {}),
+      });
     },
   );
 

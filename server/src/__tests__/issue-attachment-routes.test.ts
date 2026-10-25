@@ -588,6 +588,44 @@ describe("issue attachment routes", () => {
     expect(res.headers["content-disposition"]).toBe('attachment; filename="notes.md"');
   });
 
+  it("warns the uploader when a screenshot is mostly one flat colour", async () => {
+    const sharp = (await vi.importActual<typeof import("sharp")>("sharp")).default;
+    const blank = await sharp({ create: { width: 1280, height: 800, channels: 3, background: "#ffffff" } })
+      .composite([{
+        input: await sharp({ create: { width: 1280, height: 40, channels: 3, background: "#1b5039" } }).png().toBuffer(),
+        top: 0,
+        left: 0,
+      }])
+      .png()
+      .toBuffer();
+    const busy = await sharp({
+      create: { width: 1280, height: 800, channels: 3, background: "#ffffff" },
+    })
+      .composite(Array.from({ length: 8 }, (_, i) => ({
+        input: { create: { width: 160, height: 800, channels: 3 as const, background: `#${(i * 31).toString(16).padStart(2, "0")}5039` } },
+        top: 0,
+        left: i * 160,
+      })))
+      .png()
+      .toBuffer();
+    const app = await createApp(createStorageService());
+    const upload = async (body: Buffer, filename: string) => {
+      mockIssueService.createAttachment.mockResolvedValue(makeAttachment("image/png", filename));
+      return request(app)
+        .post("/api/companies/company-1/issues/11111111-1111-4111-8111-111111111111/attachments")
+        .attach("file", body, { filename, contentType: "image/png" });
+    };
+
+    const flagged = await upload(blank, "after-laptop-thread.png");
+    expect(flagged.status).toBe(201);
+    expect(flagged.body.warnings).toEqual([expect.stringContaining("This screenshot looks blank")]);
+
+    // Not named like a screenshot: no check.
+    expect((await upload(blank, "logo.png")).body.warnings).toBeUndefined();
+    // A screenshot with content: no warning.
+    expect((await upload(busy, "before-board.png")).body.warnings).toBeUndefined();
+  });
+
   it("serves a small WebP for ?w= and falls back to the original when the image cannot be read", async () => {
     const sharp = (await vi.importActual<typeof import("sharp")>("sharp")).default;
     const png = await sharp({ create: { width: 1600, height: 1000, channels: 3, background: "#1b5039" } }).png().toBuffer();
