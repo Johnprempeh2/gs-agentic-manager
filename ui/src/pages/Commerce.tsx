@@ -316,10 +316,10 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
 
       <section className="space-y-2" aria-label="Customer">
         <h2 className="text-sm font-semibold">Customer</h2>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card p-4 text-sm">
-          <span className="min-w-0 flex-1 font-medium">{customerName(record, customers) ?? "No customer account"}</span>
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-sm sm:flex-row sm:items-center sm:gap-4">
+          <span className="min-w-0 break-words font-medium sm:flex-1">{customerName(record, customers) ?? "No customer account"}</span>
           {organisation ? (
-            <Link to={`/organisations/${organisation.id}`} className="inline-flex items-center gap-1.5 font-medium underline-offset-2 hover:underline">
+            <Link to={`/organisations/${organisation.id}`} className="inline-flex shrink-0 items-center gap-1.5 font-medium underline-offset-2 hover:underline">
               <Building2 className="size-4 text-muted-foreground" aria-hidden="true" />
               {organisation.name} in Organisations
             </Link>
