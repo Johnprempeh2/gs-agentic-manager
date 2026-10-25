@@ -98,8 +98,9 @@ export function AgentQaLoginButton({ agentId, agentName, companyId }: { agentId:
           <DialogHeader>
             <DialogTitle>Give {agentName} browser QA access</DialogTitle>
             <DialogDescription>
-              {agentName} gets its own member log-in, shown in Members as "QA for {agentName}". It has no password. It cannot
-              approve cards, publish or move money. It stops at the expiry, or when you revoke it.
+              {agentName} gets its own member log-in, shown in Members as "QA for {agentName}". It has no password: during a run,
+              {" "}{agentName} gets a login link that works once, for 90 seconds. It cannot approve cards, publish or move
+              money. It stops at the expiry, or when you revoke it.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">

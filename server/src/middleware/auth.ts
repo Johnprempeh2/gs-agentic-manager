@@ -28,6 +28,7 @@ import { logger } from "./logger.js";
 import { captureRunIdentity } from "../services/run-identity.js";
 import { boardAuthService } from "../services/board-auth.js";
 import { agentQaLoginService, type QaLoginStanding } from "../services/agent-qa-logins.js";
+import { QA_BROWSER_SESSION_MAX_AGE_MS } from "../auth/qa-browser-login.js";
 
 const CLOUD_TENANT_WRITE_DEBOUNCE_MS = 5_000;
 const CLOUD_TENANT_WRITE_DEBOUNCE_MAX = 1_000;
@@ -216,12 +217,19 @@ async function auditAgentKeyMissingResponsibleUser(
  * treated as signed out (revoked, expired, or past its expiry before the
  * sweep ran).
  */
-function narrowForQaLogin<T extends { companyId: string }>(
+export function narrowForQaLogin<T extends { companyId: string }>(
   standing: QaLoginStanding,
   memberships: T[],
+  /** Session path only: when the session was made. Null fails closed for a QA account. */
+  sessionCreatedAt?: Date | null,
 ): { memberships: T[]; qaLogin: NonNullable<Express.Request["actor"]["qaLogin"]> | undefined } | null {
   if (standing.kind === "not_qa") return { memberships, qaLogin: undefined };
   if (standing.kind === "inactive") return null;
+  // A QA browser session lasts at most 8 hours, even while the grant is live.
+  if (sessionCreatedAt !== undefined) {
+    const createdMs = sessionCreatedAt?.getTime() ?? Number.NaN;
+    if (!Number.isFinite(createdMs) || Date.now() - createdMs > QA_BROWSER_SESSION_MAX_AGE_MS) return null;
+  }
   return {
     memberships: memberships.filter((row) => row.companyId === standing.companyId),
     qaLogin: { loginId: standing.loginId, companyId: standing.companyId, agentId: standing.agentId, expiresAt: standing.expiresAt.toISOString() },
@@ -372,7 +380,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             loadActiveUserCompanyMemberships(db, userId),
             qaLogins.standingForUser(userId),
           ]);
-          const qa = narrowForQaLogin(qaStanding, allMemberships);
+          const qa = narrowForQaLogin(qaStanding, allMemberships, session.session.createdAt ?? null);
           if (qa) {
             const memberships = qa.memberships;
             req.actor = {

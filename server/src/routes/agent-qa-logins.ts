@@ -4,11 +4,24 @@
 import { Router, type Request } from "express";
 import { eq } from "drizzle-orm";
 import { agents, type Db } from "@greatstone/db";
-import { forbidden, notFound } from "../errors.js";
+import { forbidden, notFound, unauthorized } from "../errors.js";
+import {
+  buildQaBrowserLoginUrl,
+  issueQaBrowserLoginTicket,
+  resolveQaBrowserLoginKey,
+} from "../auth/qa-browser-login.js";
 import { agentQaLoginService } from "../services/agent-qa-logins.js";
+import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
 import { assertBoard, assertCompanyAccess, hasCompanyAccess, hasCompanyBoardRole } from "./authz.js";
 
-export function agentQaLoginRoutes(db: Db) {
+/** Where the login link points: the configured public origin, else the origin the agent called. */
+function linkOrigin(req: Request, authPublicBaseUrl: string | undefined): string {
+  const configured = runtimeCanonicalOrigin() || authPublicBaseUrl;
+  if (configured) return new URL(configured).origin;
+  return `${req.protocol}://${req.get("host") ?? "localhost"}`;
+}
+
+export function agentQaLoginRoutes(db: Db, opts: { authPublicBaseUrl?: string } = {}) {
   const router = Router();
   const qaLogins = agentQaLoginService(db);
 
@@ -56,6 +69,51 @@ export function agentQaLoginRoutes(db: Db) {
     const agent = await loadAgent(req);
     const userId = assertBoardOwner(req, agent.companyId);
     res.json({ qaLogin: await qaLogins.revoke({ companyId: agent.companyId, agentId: agent.id, byUserId: userId }) });
+  });
+
+  // During a run, the agent asks for a one-time browser login link for its own
+  // QA log-in. The link works once, for 90 seconds, and only while the grant is
+  // live. No password exists, so nothing is kept in secrets.
+  router.post("/agents/me/qa-browser-login", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      throw unauthorized("Only an agent can ask for its QA login link.");
+    }
+    const { agentId, companyId } = req.actor;
+    const login = await qaLogins.getActive(companyId, agentId);
+    if (
+      !login
+      || !(await qaLogins.isGrantLive({ loginId: login.id, userId: login.userId, companyId, agentId }))
+    ) {
+      throw notFound("This agent has no live browser QA access. A board owner can give it on the agent's page.");
+    }
+    const key = resolveQaBrowserLoginKey();
+    if (!key) {
+      res.status(503).json({ error: "QA browser login is not configured on this server." });
+      return;
+    }
+    const { ticket, payload } = issueQaBrowserLoginTicket({
+      key,
+      userId: login.userId,
+      loginId: login.id,
+      companyId,
+      agentId,
+    });
+    const linkExpiresAt = new Date(payload.exp * 1000);
+    await qaLogins.recordBrowserLoginIssued({
+      login,
+      companyId,
+      runId: req.actor.runId ?? null,
+      nonce: payload.jti,
+      linkExpiresAt,
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      url: buildQaBrowserLoginUrl({ origin: linkOrigin(req, opts.authPublicBaseUrl), ticket }),
+      linkExpiresAt: linkExpiresAt.toISOString(),
+      email: login.email,
+      role: login.role,
+      accessExpiresAt: login.expiresAt,
+    });
   });
 
   return router;

@@ -966,7 +966,7 @@ export async function createApp(
   api.use(resourceMembershipRoutes(db));
   api.use(inboxDismissalRoutes(db));
   api.use(issueFollowRoutes(db));
-  api.use(agentQaLoginRoutes(db));
+  api.use(agentQaLoginRoutes(db, { authPublicBaseUrl: opts.authPublicBaseUrl }));
   api.use(issueTreeRoutes(db));
   api.use(projectTreeRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(instanceSettingsRoutes(db));

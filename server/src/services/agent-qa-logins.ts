@@ -405,5 +405,76 @@ export function agentQaLoginService(db: Db) {
     return Boolean(row);
   }
 
-  return { grant, revoke, reapExpired, getActive, listActiveForCompany, listQaUserIds, standingForUser, anyQaUser };
+  /** True only while this exact grant is active, not past expiry, and its membership is active. */
+  async function isGrantLive(input: {
+    loginId: string;
+    userId: string;
+    companyId: string;
+    agentId: string;
+    now?: Date;
+  }): Promise<boolean> {
+    const now = input.now ?? new Date();
+    const row = await db
+      .select({ expiresAt: agentQaLogins.expiresAt, membershipStatus: companyMemberships.status })
+      .from(agentQaLogins)
+      .innerJoin(
+        companyMemberships,
+        and(
+          eq(companyMemberships.companyId, agentQaLogins.companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, agentQaLogins.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(agentQaLogins.id, input.loginId),
+          eq(agentQaLogins.userId, input.userId),
+          eq(agentQaLogins.companyId, input.companyId),
+          eq(agentQaLogins.agentId, input.agentId),
+          eq(agentQaLogins.status, "active"),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    return Boolean(row && row.membershipStatus === "active" && row.expiresAt.getTime() > now.getTime());
+  }
+
+  /** Audit: an agent asked for a one-time browser login link. The link itself is never logged. */
+  async function recordBrowserLoginIssued(input: {
+    login: AgentQaLoginView;
+    companyId: string;
+    runId: string | null;
+    nonce: string;
+    linkExpiresAt: Date;
+  }) {
+    await logActivity(db, {
+      companyId: input.companyId,
+      actorType: "agent",
+      actorId: input.login.agentId,
+      action: "agent_qa_login.browser_login_issued",
+      entityType: "agent",
+      entityId: input.login.agentId,
+      agentId: input.login.agentId,
+      runId: input.runId,
+      details: {
+        qaLoginId: input.login.id,
+        qaUserId: input.login.userId,
+        email: input.login.email,
+        nonce: input.nonce,
+        linkExpiresAt: input.linkExpiresAt.toISOString(),
+      },
+    });
+  }
+
+  return {
+    grant,
+    revoke,
+    reapExpired,
+    getActive,
+    listActiveForCompany,
+    listQaUserIds,
+    standingForUser,
+    anyQaUser,
+    isGrantLive,
+    recordBrowserLoginIssued,
+  };
 }
