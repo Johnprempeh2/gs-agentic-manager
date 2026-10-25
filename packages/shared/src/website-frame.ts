@@ -58,7 +58,9 @@ export type WebsiteFrameHostMessageType =
   | "teardown"
   | "insert-media"
   | "set-motion"
-  | "editor-command";
+  | "editor-command"
+  | "comment-pins"
+  | "capture";
 export type WebsiteFrameFrameMessageType =
   | "dirty"
   | "save"
@@ -68,7 +70,10 @@ export type WebsiteFrameFrameMessageType =
   | "set-motion-result"
   | "editor-state"
   | "editor-key"
-  | "media-requested";
+  | "media-requested"
+  | "pin-clicked"
+  | "ask-agent"
+  | "capture-result";
 
 // ---------------------------------------------------------------- nonce
 
@@ -292,6 +297,17 @@ export const websiteFrameHelloAckSchema = z.object({
   liveContent: z
     .object({ blocks: z.number().int().min(1).max(500) })
     .nullable()
+    .optional()
+    .catch(undefined),
+  /**
+   * Added in protocol 1 (GRE-2361): the comment messages the engine speaks
+   * (`WEBSITE_FRAME_COMMENT_MESSAGES`). An older engine leaves it out: GSAM
+   * sends no pins or captures and drops `pin-clicked` and `ask-agent`.
+   */
+  editorMessages: z
+    .array(z.string().max(40))
+    .max(20)
+    .transform((messages) => messages.filter(isWebsiteFrameCommentMessage))
     .optional()
     .catch(undefined),
 });
@@ -562,6 +578,81 @@ export const websiteFrameMediaRequestedSchema = z.object({
 });
 export type WebsiteFrameMediaRequested = z.infer<typeof websiteFrameMediaRequestedSchema>;
 
+// ---------------------------------------------------------------- comments (GRE-2361)
+
+/**
+ * The comment messages an engine lists in `hello-ack.editorMessages`. Each one
+ * goes only to, or is only taken from, an engine that lists it.
+ * - `comment-pins`, host to frame: a numbered pin on each block with an open comment.
+ * - `pin-clicked`, frame to host: the person clicked a pin; GSAM opens that thread.
+ * - `ask-agent`, frame to host: Ask an agent from the frame's block toolbar.
+ * - `capture`, host to frame, answered by `capture-result`: a PNG of a block or the page.
+ */
+export const WEBSITE_FRAME_COMMENT_MESSAGES = ["comment-pins", "pin-clicked", "ask-agent", "capture"] as const;
+export type WebsiteFrameCommentMessage = (typeof WEBSITE_FRAME_COMMENT_MESSAGES)[number];
+
+export function isWebsiteFrameCommentMessage(value: unknown): value is WebsiteFrameCommentMessage {
+  return typeof value === "string" && (WEBSITE_FRAME_COMMENT_MESSAGES as readonly string[]).includes(value);
+}
+
+/** Most pins one page shows. */
+export const WEBSITE_FRAME_MAX_PINS = 200;
+
+/**
+ * `comment-pins` payload, host to frame: sent after `load-draft` and each time
+ * the open comments change. The frame draws pin `number` on block `blockId`
+ * and removes every pin not in the list. A whole-page comment has no pin.
+ */
+export const websiteFrameCommentPinsSchema = z
+  .object({
+    pins: z
+      .array(z.object({ blockId: blockIdSchema, number: z.number().int().positive().max(9999) }).strict())
+      .max(WEBSITE_FRAME_MAX_PINS),
+  })
+  .strict();
+export type WebsiteFrameCommentPins = z.infer<typeof websiteFrameCommentPinsSchema>;
+
+/** `pin-clicked` payload, frame to host: one of the pins GSAM sent. */
+export const websiteFramePinClickedSchema = z.object({ blockId: blockIdSchema, number: z.number().int().positive().max(9999) });
+export type WebsiteFramePinClicked = z.infer<typeof websiteFramePinClickedSchema>;
+
+/** `ask-agent` payload, frame to host: Ask an agent about this block of the open draft. */
+export const websiteFrameAskAgentSchema = z.object({ blockId: blockIdSchema, blockType: blockTypeSchema, label: z.string().max(200) });
+export type WebsiteFrameAskAgent = z.infer<typeof websiteFrameAskAgentSchema>;
+
+/** How long the host waits for `capture-result`. No answer: the task says no screenshot was sent. */
+export const WEBSITE_FRAME_CAPTURE_TIMEOUT_MS = 5_000;
+/** Largest screenshot GSAM takes, in bytes of PNG. */
+export const WEBSITE_FRAME_CAPTURE_MAX_BYTES = 2 * 1024 * 1024;
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+const PNG_DATA_URL_MAX_LENGTH = PNG_DATA_URL_PREFIX.length + Math.ceil(WEBSITE_FRAME_CAPTURE_MAX_BYTES / 3) * 4;
+
+/** A base64 `data:image/png` URL of at most 2 MB of PNG. Any other type or encoding is refused. */
+export function isWebsiteFramePngDataUrl(value: string): boolean {
+  if (!value.startsWith(PNG_DATA_URL_PREFIX) || value.length > PNG_DATA_URL_MAX_LENGTH) return false;
+  const body = value.slice(PNG_DATA_URL_PREFIX.length);
+  return body.length > 0 && body.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(body);
+}
+
+/** `capture` payload, host to frame: a PNG of this block, or of the page as shown when `blockId` is null. */
+export const websiteFrameCaptureSchema = z.object({ blockId: blockIdSchema.nullable() }).strict();
+export type WebsiteFrameCapture = z.infer<typeof websiteFrameCaptureSchema>;
+
+/**
+ * `capture-result` payload, frame to host. `requestId` is the `id` of the
+ * `capture` it answers. `width` is the PNG's width in pixels.
+ */
+export const websiteFrameCaptureResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    requestId: idString,
+    ok: z.literal(true),
+    png: z.string().max(PNG_DATA_URL_MAX_LENGTH).refine(isWebsiteFramePngDataUrl),
+    width: z.number().int().positive().max(10_000),
+  }),
+  z.object({ requestId: idString, ok: z.literal(false), message: z.string().max(2000).optional() }),
+]);
+export type WebsiteFrameCaptureResult = z.infer<typeof websiteFrameCaptureResultSchema>;
+
 const framePayloadSchemas = {
   dirty: websiteFrameDirtySchema,
   save: websiteFrameSaveSchema,
@@ -572,6 +663,9 @@ const framePayloadSchemas = {
   "editor-state": websiteFrameEditorStateSchema,
   "editor-key": websiteFrameEditorKeySchema,
   "media-requested": websiteFrameMediaRequestedSchema,
+  "pin-clicked": websiteFramePinClickedSchema,
+  "ask-agent": websiteFrameAskAgentSchema,
+  "capture-result": websiteFrameCaptureResultSchema,
 } as const;
 
 /**
@@ -600,7 +694,10 @@ export type WebsiteFrameIncoming =
   | { type: "set-motion-result"; id: string; payload: WebsiteFrameSetMotionResult }
   | { type: "editor-state"; id: string; payload: WebsiteFrameEditorState }
   | { type: "editor-key"; id: string; payload: z.infer<typeof websiteFrameEditorKeySchema> }
-  | { type: "media-requested"; id: string; payload: WebsiteFrameMediaRequested };
+  | { type: "media-requested"; id: string; payload: WebsiteFrameMediaRequested }
+  | { type: "pin-clicked"; id: string; payload: WebsiteFramePinClicked }
+  | { type: "ask-agent"; id: string; payload: WebsiteFrameAskAgent }
+  | { type: "capture-result"; id: string; payload: WebsiteFrameCaptureResult };
 
 export interface WebsiteFrameReceiveContext<Source> {
   /** The site's `editorOrigin`. */
