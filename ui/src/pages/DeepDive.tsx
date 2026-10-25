@@ -551,6 +551,9 @@ export function DeepDive() {
             <Link to="/deep-dive/opportunities" className="text-xs font-medium underline-offset-4 hover:underline">
               Opportunities and KPIs
             </Link>
+            <Link to="/deep-dive/traceability" className="text-xs font-medium underline-offset-4 hover:underline">
+              Traceability
+            </Link>
             <Link to="/deep-dive/files" className="text-xs font-medium underline-offset-4 hover:underline">
               Evidence and files
             </Link>

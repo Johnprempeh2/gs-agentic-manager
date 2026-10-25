@@ -72,7 +72,7 @@ function toggled(ids: readonly string[], id: string, on: boolean): string[] {
 
 type Run = (write: () => Promise<DeepDiveOpportunityBoard>) => void;
 
-function VisibilitySelect({ value, label, onChange }: { value: DeepDiveVisibility; label: string; onChange: (value: DeepDiveVisibility) => void }) {
+export function VisibilitySelect({ value, label, onChange }: { value: DeepDiveVisibility; label: string; onChange: (value: DeepDiveVisibility) => void }) {
   return (
     <NativeSelect aria-label={label} className="h-8 w-auto text-xs" value={value} onChange={(event) => onChange(event.target.value as DeepDiveVisibility)}>
       {DEEP_DIVE_VISIBILITIES.map((option) => (
@@ -82,7 +82,7 @@ function VisibilitySelect({ value, label, onChange }: { value: DeepDiveVisibilit
   );
 }
 
-function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+export function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <Button type="button" variant="ghost" size="icon-sm" aria-label={label} title={label} onClick={onClick}>
       <X className="size-4" />
@@ -91,7 +91,7 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
 }
 
 /** A ticked list. Each tick saves the new set at once. */
-function LinkList({
+export function LinkList({
   legend,
   options,
   selected,
