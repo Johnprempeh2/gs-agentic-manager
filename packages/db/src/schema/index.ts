@@ -278,3 +278,4 @@ export { documentEvidenceLinks } from "./document_evidence_links.js";
 export { billingAccounts, billingInvoices } from "./billing_accounts.js";
 export { agentDailyDigests } from "./agent_daily_digests.js";
 export { deepDiveFindings, deepDiveFindingEvidence } from "./deep_dive_findings.js";
+export { deepDiveSessions, deepDiveSessionQuestions } from "./deep_dive_sessions.js";
