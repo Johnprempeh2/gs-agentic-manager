@@ -1,4 +1,4 @@
-import type { DocumentRevision, IssueDocument, IssueLabel } from "@greatstone/shared";
+import type { DeepDiveVisibility, DocumentRevision, IssueDocument, IssueLabel } from "@greatstone/shared";
 import { api } from "./client";
 
 // -----------------------------------------------------------------------------
@@ -35,6 +35,12 @@ export interface CaseSummary {
   status: CaseStatus;
   fields: Record<string, unknown>;
   parentCaseId: string | null;
+  /** Deep Dive items (GRE-2366): Internal unless a person sets Shared. */
+  visibility: DeepDiveVisibility;
+  /** The client a Deep Dive item is about; only that client sees it once Shared. */
+  clientCaseId: string | null;
+  /** `fields` keys the client may change; every other field is locked to the client. */
+  clientEditableFields: string[];
   createdByAgentId: string | null;
   createdByUserId: string | null;
   completedAt: string | null;
@@ -249,6 +255,8 @@ export interface PatchCaseInput {
   labelIds?: string[];
   /** Replaces the whole fields object (the server does not merge). */
   fields?: Record<string, unknown>;
+  /** Deep Dive items only. Only a person may set Shared. */
+  visibility?: DeepDiveVisibility;
 }
 
 /**
