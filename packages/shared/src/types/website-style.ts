@@ -10,9 +10,12 @@ export type WebsiteStyleColourRole = "background" | "text" | "accent" | "border"
 /** Where a value came from: a release theme token (wins, as on the site) or the stylesheet default. */
 export type WebsiteStyleSource = "release" | "stylesheet";
 
+/** One colour of the palette. Variables with the same value are one colour; the others are its aliases. */
 export interface WebsiteStyleColour {
   /** The CSS variable, e.g. `--gs-accent`. */
   cssVar: string;
+  /** Other variables with the same value, e.g. `--blue` beside `--primary`. */
+  aliases: string[];
   /** The release theme token that sets it, e.g. `gs.accent`; null when only the stylesheet sets it. */
   token: string | null;
   /** A readable name from the variable, e.g. "Accent dim". */
@@ -24,19 +27,31 @@ export interface WebsiteStyleColour {
   /** 0 to 1. */
   alpha: number;
   role: WebsiteStyleColourRole;
-  /** The kinds of property it is used in: text, background, border, shadow, other. Empty when unused. */
+  /** The kinds of property the page's rules use it in: text, background, border, shadow, other. Empty when unused. */
   usedFor: string[];
-  /** Up to four selectors that use it. */
+  /** Up to three selectors on the page that use it, the page's own type and the most used first. */
   usedIn: string[];
+  /** Defined, but no rule that applies to the page uses it (often a framework's palette). */
+  unused: boolean;
   source: WebsiteStyleSource;
 }
 
 export type WebsiteStyleContrastRating = "AAA" | "AA" | "AA large" | "Fail";
 
-/** One text colour on one background colour (WCAG 2 contrast ratio, alpha composited on the page background). */
+/**
+ * A text colour on the background it really sits on, from the site's rules: body text, headings and links
+ * on the page background, a button's text on its own fill, card text on the card (WCAG 2 contrast ratio).
+ */
 export interface WebsiteStyleContrast {
+  /** `#rrggbb`, composited on the background. */
   text: string;
+  /** The palette name of the text colour, or its hex when it is not a variable. */
+  textName: string;
+  /** `#rrggbb`. */
   background: string;
+  backgroundName: string;
+  /** Up to three selectors that set the pair, e.g. `body`, `h1`. */
+  usedIn: string[];
   ratio: number;
   rating: WebsiteStyleContrastRating;
 }
@@ -80,6 +95,8 @@ export interface WebsiteStyleComponent {
   label: string;
   /** The rule's declarations, property to value, in stylesheet order. */
   declarations: Record<string, string>;
+  /** The page uses this class (false: a variant the stylesheet defines but the page does not use). */
+  inPage: boolean;
 }
 
 export type WebsiteStyleTokenKind = "radius" | "spacing" | "size" | "motion" | "other";
@@ -92,6 +109,8 @@ export interface WebsiteStyleToken {
   value: string;
   kind: WebsiteStyleTokenKind;
   source: WebsiteStyleSource;
+  /** From a framework or library (Bootstrap breakpoints, slider keyframes), or not used by the page. */
+  framework: boolean;
 }
 
 /** A background surface: the page itself or a section or box class with its own background. */

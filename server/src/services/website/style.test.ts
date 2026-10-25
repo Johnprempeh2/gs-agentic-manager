@@ -68,13 +68,67 @@ describe("website style read", () => {
     expect(byVar["--gs-bg"].usedFor).toContain("background");
     expect(byVar["--gs-text"]).toMatchObject({ role: "text" });
     expect(byVar["--gs-accent"]).toMatchObject({ hex: "#ff3366", token: "gs.accent", source: "release", role: "accent" });
-    expect(byVar["--gs-line"]).toMatchObject({ hex: "#8a8a85", role: "border" });
+    // `--gs-line` is `var(--gs-muted)`: one colour, two names.
+    const muted = style.colours.find((c) => c.hex === "#8a8a85");
+    expect([muted?.cssVar, ...(muted?.aliases ?? [])].sort()).toEqual(["--gs-line", "--gs-muted"]);
+    expect(muted?.role).toBe("border");
     expect(byVar["--gs-surface"]).toMatchObject({ alpha: 0.04 });
     expect(style.releaseTokenCount).toBe(1);
 
-    const textOnBg = style.contrast.find((c) => c.text === "--gs-text" && c.background === "--gs-bg");
-    expect(textOnBg?.rating).toBe("AAA");
-    expect(textOnBg!.ratio).toBeGreaterThan(15);
+    // Body text on the page background leads; the button's text sits on its own fill (the release accent).
+    expect(style.contrast[0]).toMatchObject({ text: "#f5f5f0", textName: "Text", background: "#0b0b0c", backgroundName: "Bg", rating: "AAA" });
+    expect(style.contrast[0].usedIn[0]).toBe("body");
+    expect(style.contrast[0].ratio).toBeGreaterThan(15);
+    expect(style.contrast).toContainEqual(expect.objectContaining({ text: "#0b0b0c", background: "#ff3366", usedIn: [".btn--primary"] }));
+  });
+
+  it("merges variables with the same value into one colour with aliases", () => {
+    const style = buildSiteStyle({
+      siteId: "s1", siteUrl: "https://example.com/", theme: {}, stylesheets: [], fontStylesheets: [], problem: null,
+      css: ":root { --blue: #007bff; --primary: #007bff; --grey: #848896; --textgrey: #848896; } body { color: #848896; }",
+    });
+    expect(style.colours).toHaveLength(2);
+    expect(style.colours.find((c) => c.hex === "#007bff")).toMatchObject({ cssVar: "--primary", aliases: ["--blue"], role: "accent", unused: true });
+    expect(style.colours.find((c) => c.hex === "#848896")).toMatchObject({ cssVar: "--textgrey", aliases: ["--grey"], role: "text", usedIn: ["body"] });
+  });
+
+  it("counts only the rules that apply to the page, so a framework's unused parts fold away", () => {
+    const html = `<body><h1>Hi</h1><p>Copy</p><a class="btn btn-orange">Go</a><span class="text-white">x</span><div class="fade-in stack"></div></body>`;
+    const style = buildSiteStyle({
+      siteId: "s1", siteUrl: "https://example.com/", theme: {}, stylesheets: [], fontStylesheets: [], problem: null, html,
+      css: `:root { --orange: #f99e00; --teal: #20c997; --pink: #ff4c81; --breakpoint-md: 768px; --gap: 24px; }
+        body { color: #848896; background-color: #fff; font-family: Inter, sans-serif; }
+        h1 { color: #313441; }
+        code { color: var(--pink); font-family: SFMono-Regular, monospace; }
+        .btn { padding: 8px 16px; border-radius: 50px; }
+        .btn-orange { color: #fff; background-color: #f99e00; }
+        .btn-teal { color: #fff; background-color: var(--teal); }
+        .text-white { color: #fff; }
+        .stack { gap: var(--gap); }
+        .fade-in { animation: fade-up .3s ease; }
+        @keyframes fade-up { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes spinner-grow { to { transform: scale(1) } }`,
+    });
+    const byHex = Object.fromEntries(style.colours.map((c) => [c.hex, c]));
+    expect(byHex["#f99e00"]).toMatchObject({ role: "accent", unused: false, usedIn: [".btn-orange"] });
+    expect(byHex["#20c997"].unused).toBe(true);
+    // Pink is only used by `code`, which the page does not have.
+    expect(byHex["#ff4c81"].unused).toBe(true);
+
+    expect(style.contrast.map((c) => c.usedIn[0])).toEqual(["body", "h1", ".btn-orange"]);
+    expect(style.contrast[0]).toMatchObject({ text: "#848896", background: "#ffffff" });
+    // `.text-white` sits on a background the stylesheet does not say: no pair.
+    expect(style.contrast.some((c) => c.usedIn.includes(".text-white"))).toBe(false);
+
+    expect(style.components.filter((c) => c.kind === "button").map((c) => [c.selector, c.inPage])).toEqual([
+      [".btn", true], [".btn-orange", true], [".btn-teal", false],
+    ]);
+    const token = (name: string) => style.tokens.find((t) => t.name === name);
+    expect(token("--breakpoint-md")?.framework).toBe(true);
+    expect(token("--gap")?.framework).toBe(false);
+    expect(token("@keyframes fade-up")?.framework).toBe(false);
+    expect(token("@keyframes spinner-grow")?.framework).toBe(true);
+    expect(style.fonts.map((f) => f.family)).toEqual(["Inter"]);
   });
 
   it("counts rules that write the colour itself rather than the variable", () => {
@@ -87,8 +141,7 @@ describe("website style read", () => {
     expect(pink?.usedFor).toEqual(expect.arrayContaining(["text", "background"]));
     expect(pink?.usedIn).toEqual([".tag", ".hero"]);
     expect(style.colours.find((c) => c.cssVar === "--ink")?.usedIn).toEqual([]);
-    // A written-out use shows where the colour is used but does not set its role.
-    expect(style.colours.find((c) => c.cssVar === "--blue")).toMatchObject({ role: "other", usedIn: [".btn-blue"] });
+    expect(style.colours.find((c) => c.cssVar === "--blue")).toMatchObject({ usedIn: [".btn-blue"] });
   });
 
   it("reads fonts, the type scale, building blocks, tokens and surfaces", () => {

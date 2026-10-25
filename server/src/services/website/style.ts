@@ -294,6 +294,67 @@ function tokenKind(cssVar: string, value: string): WebsiteStyleTokenKind {
   return "other";
 }
 
+// ---- the page ----
+
+/** The classes, ids and tags the site's page uses, with how often, to tell the site's own rules from a framework's. */
+export interface PageIndex {
+  classes: Map<string, number>;
+  ids: Set<string>;
+  tags: Map<string, number>;
+}
+
+export function indexPage(html: string): PageIndex {
+  const page: PageIndex = { classes: new Map(), ids: new Set(), tags: new Map() };
+  for (const m of html.matchAll(/<([a-z][a-z0-9-]*)\b([^>]*)>/gi)) {
+    const tag = m[1].toLowerCase();
+    page.tags.set(tag, (page.tags.get(tag) ?? 0) + 1);
+    const cls = /\sclass\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(m[2]);
+    for (const name of (cls?.[1] ?? cls?.[2] ?? "").split(/\s+/)) {
+      if (name) page.classes.set(name, (page.classes.get(name) ?? 0) + 1);
+    }
+    const id = /\sid\s*=\s*["']([^"']+)["']/i.exec(m[2])?.[1];
+    if (id) page.ids.add(id);
+  }
+  return page;
+}
+
+/** The compound selectors of one selector, without states, pseudo-elements and attribute tests. */
+function compounds(part: string): string[] {
+  return part
+    .replace(/::?[\w-]+(\([^()]*\))?/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .split(/\s*[>+~]\s*|\s+/)
+    .filter(Boolean);
+}
+
+/** Every class, id and tag in the selector is on the page. `html`, `body` and `:root` always are. */
+function partInPage(part: string, page: PageIndex): boolean {
+  return compounds(part).every((compound) => {
+    const tag = /^[a-z][a-z0-9-]*/i.exec(compound)?.[0]?.toLowerCase();
+    if (tag && tag !== "html" && tag !== "body" && !page.tags.has(tag)) return false;
+    for (const m of compound.matchAll(/\.(-?[\w-]+)/g)) if (!page.classes.has(m[1])) return false;
+    for (const m of compound.matchAll(/#(-?[\w-]+)/g)) if (!page.ids.has(m[1])) return false;
+    return true;
+  });
+}
+
+/**
+ * About how many elements on the page the selector reaches: the rarest class or tag it names, so
+ * `.content__body a` counts as one block, not every link. The page itself counts as the most.
+ */
+function coverageOf(part: string, page: PageIndex | null): number {
+  const parts = compounds(part).filter((c) => !/^(html|body)$/i.test(c));
+  if (!parts.length) return 1_000_000;
+  if (!page) return 1;
+  const counts: number[] = [];
+  for (const compound of parts) {
+    for (const m of compound.matchAll(/\.(-?[\w-]+)/g)) counts.push(page.classes.get(m[1]) ?? 0);
+    const tag = /^[a-z][a-z0-9-]*/i.exec(compound)?.[0]?.toLowerCase();
+    if (tag) counts.push(page.tags.get(tag) ?? 0);
+  }
+  return counts.length ? Math.min(...counts) : 1;
+}
+
 // ---- the style read ----
 
 /** A generic family is the fallback, not a font the site chose. */
@@ -302,9 +363,19 @@ const GENERIC_FAMILY = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|u
 const ICON_FONT = /(awesome|icons?\b|icomoon|glyph|material symbols|slick|swiper|^lg$|^fa[- ])/i;
 /** The inside of a card (`.card-body`, `.card-title`) is not a card of its own. */
 const CARD_PART = /card[-_](body|title|subtitle|text|header|footer|img|image|link|group|deck|columns|tabs|pills)/;
+/** Variables a framework or library defines for itself: Bootstrap, Swiper, lightGallery, Font Awesome, Tailwind. */
+const LIBRARY_VAR = /^--(bs|swiper|lg|fa|breakpoint|tw|plyr|aos|glide|slick)-/i;
+/** Where the page's own text colour is set. */
+const KEY_TEXT = /^(html|body|p|h[1-6]|\.h[1-6])$/;
+/** Where the page's own background is set. */
+const KEY_BACKGROUND = /^(html|body|main)$/;
+/** Tags whose text sits on the page background, for the contrast pairs. */
+const PAGE_TEXT_TAG = /^(body|p|a|h[1-6]|small|li|blockquote|label|figcaption|strong|em)$/;
+const BUTTON_OR_PILL = /^\.(btn|button|cta|badge|pill|chip|tag)([-_][\w-]*)?$/;
 
 interface Sources {
   siteUrl: string;
+  html: string;
   sheets: Array<{ url: string; css: string }>;
   inlineCss: string;
   fontStylesheets: string[];
@@ -314,12 +385,33 @@ const VAR_REF = /var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\)/g
 /** A colour written out in a declaration: hex, rgb() or hsl(). */
 const LITERAL_COLOUR = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\([^()]*\)/gi;
 
+/** Where a colour or variable is used: per selector on the page, the kinds of property. */
+type Usage = Map<string, Set<string>>;
+
+function addUse(map: Map<string, Usage>, key: string, selector: string, kind: string) {
+  const usage = map.get(key) ?? new Map<string, Set<string>>();
+  const kinds = usage.get(selector) ?? new Set<string>();
+  kinds.add(kind);
+  usage.set(selector, kinds);
+  map.set(key, usage);
+}
+
+function mergeUsage(...all: Array<Usage | undefined>): Usage {
+  const out: Usage = new Map();
+  for (const usage of all) {
+    for (const [selector, kinds] of usage ?? []) out.set(selector, new Set([...(out.get(selector) ?? []), ...kinds]));
+  }
+  return out;
+}
+
 /** Build the style answer from what was read. Pure, so the tests can feed it a stylesheet. */
 export function buildSiteStyle(input: {
   siteId: string;
   siteUrl: string;
   theme: Record<string, unknown>;
   css: string;
+  /** The page's HTML. Without it every rule counts as the site's own. */
+  html?: string | null;
   stylesheets: string[];
   fontStylesheets: string[];
   problem: string | null;
@@ -327,6 +419,15 @@ export function buildSiteStyle(input: {
 }): WebsiteSiteStyle {
   const parsed = parseCss(input.css);
   const release = themeVariables(input.theme);
+  const page = input.html ? indexPage(input.html) : null;
+  const inPageCache = new Map<string, boolean>();
+  const inPage = (part: string) => {
+    if (!page) return true;
+    let hit = inPageCache.get(part);
+    if (hit === undefined) inPageCache.set(part, (hit = partInPage(part, page)));
+    return hit;
+  };
+  const coverage = (part: string) => coverageOf(part, page);
 
   // Variables on :root / html at the top level; a later rule wins, the release theme wins over all.
   const vars = new Map<string, { value: string; source: WebsiteStyleSource; token: string | null }>();
@@ -347,90 +448,102 @@ export function buildSiteStyle(input: {
     }), depth + 1);
   };
 
-  // Where each variable is used: property kinds and selectors.
-  type Usage = { kinds: Map<string, number>; selectors: string[] };
-  const usage = new Map<string, Usage>();
-  const emptyUsage = (): Usage => ({ kinds: new Map(), selectors: [] });
+  // Where the page's rules use each variable and each written-out colour. A rule whose selector
+  // names a class or tag the page does not have (a framework's unused variant) does not count.
+  const varUsage = new Map<string, Usage>();
+  const literalUsage = new Map<string, Usage>();
+  const colourKey = (c: Rgba) => `${toHex(c)}/${Math.round(c.a * 100)}`;
   for (const rule of parsed.rules) {
+    const parts = selectorList(rule.selector).filter(inPage);
+    if (!parts.length) continue;
     for (const [prop, value] of rule.declarations) {
-      for (const match of value.matchAll(VAR_REF)) {
-        const entry = usage.get(match[1]) ?? emptyUsage();
-        const kind = prop.startsWith("--") ? null : propertyKind(prop);
-        if (kind) entry.kinds.set(kind, (entry.kinds.get(kind) ?? 0) + 1);
-        if (!prop.startsWith("--") && entry.selectors.length < 4 && !entry.selectors.includes(rule.selector)) entry.selectors.push(rule.selector);
-        usage.set(match[1], entry);
+      if (prop.startsWith("--")) continue;
+      const kind = propertyKind(prop);
+      for (const match of value.matchAll(VAR_REF)) for (const part of parts) addUse(varUsage, match[1], part, kind);
+      for (const match of value.matchAll(LITERAL_COLOUR)) {
+        const rgba = parseColour(match[0]);
+        if (rgba) for (const part of parts) addUse(literalUsage, colourKey(rgba), part, kind);
       }
     }
   }
   // A variable that only feeds another variable takes that one's uses.
-  for (const [name, { value }] of vars) {
-    for (const match of value.matchAll(VAR_REF)) {
-      const from = usage.get(name);
+  for (let pass = 0; pass < 3; pass++) {
+    for (const [name, { value }] of vars) {
+      const from = varUsage.get(name);
       if (!from) continue;
-      const to = usage.get(match[1]) ?? emptyUsage();
-      for (const [k, c] of from.kinds) to.kinds.set(k, (to.kinds.get(k) ?? 0) + c);
-      for (const s of from.selectors) if (to.selectors.length < 4 && !to.selectors.includes(s)) to.selectors.push(s);
-      usage.set(match[1], to);
+      for (const match of value.matchAll(VAR_REF)) varUsage.set(match[1], mergeUsage(varUsage.get(match[1]), from));
     }
   }
 
-  // Many sites write the colour itself (`color: #ff4c81`) rather than the variable: those rules count too.
-  const literalUsage = new Map<string, Usage>();
-  const colourKey = (c: Rgba) => `${toHex(c)}/${Math.round(c.a * 100)}`;
-  for (const rule of parsed.rules) {
-    for (const [prop, value] of rule.declarations) {
-      if (prop.startsWith("--")) continue;
-      for (const match of value.matchAll(LITERAL_COLOUR)) {
-        const rgba = parseColour(match[0]);
-        if (!rgba) continue;
-        const key = colourKey(rgba);
-        const entry = literalUsage.get(key) ?? emptyUsage();
-        const kind = propertyKind(prop);
-        entry.kinds.set(kind, (entry.kinds.get(kind) ?? 0) + 1);
-        if (entry.selectors.length < 4 && !entry.selectors.includes(rule.selector)) entry.selectors.push(rule.selector);
-        literalUsage.set(key, entry);
-      }
-    }
-  }
+  const kindCounts = (usage: Usage) => {
+    const counts = new Map<string, number>();
+    for (const kinds of usage.values()) for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  };
+  /** The page's own type and background first, states (`:hover`) last, else the selectors that reach most of the page. */
+  const rankSelectors = (selectors: Iterable<string>) =>
+    [...selectors].sort((a, b) =>
+      Number(KEY_TEXT.test(b) || KEY_BACKGROUND.test(b)) - Number(KEY_TEXT.test(a) || KEY_BACKGROUND.test(a))
+      || Number(a.includes(":")) - Number(b.includes(":"))
+      || coverage(b) - coverage(a));
 
-  const colours: WebsiteStyleColour[] = [];
+  /** What a colour is for, from what the page's rules set with it; its name only when they say nothing. */
+  const roleOf = (usage: Usage, names: string[]): WebsiteStyleColourRole => {
+    const named = names.map(roleFromName);
+    if ([...usage].some(([sel, kinds]) => KEY_TEXT.test(sel) && kinds.has("text"))) return "text";
+    if ([...usage].some(([sel, kinds]) => KEY_BACKGROUND.test(sel) && kinds.has("background"))) return "background";
+    if (named.includes("status")) return "status";
+    const kinds = kindCounts(usage);
+    const fills = [...usage].some(([sel, k]) => BUTTON_OR_PILL.test(sel) && k.has("background"));
+    if (fills || (kinds.includes("text") && kinds.includes("background"))) return "accent";
+    const main = kinds[0];
+    if (main === "text" || main === "background" || main === "border") return main;
+    return named.includes("accent") ? "accent" : named.find((r): r is WebsiteStyleColourRole => r !== null) ?? "other";
+  };
+
+  // The palette: variables with the same value are one colour, the others listed as its aliases.
+  const groups = new Map<string, Array<{ cssVar: string; value: string; resolved: string; rgba: Rgba; source: WebsiteStyleSource; token: string | null }>>();
   const tokens: WebsiteStyleToken[] = [];
+  const refsInPage = new Set(varUsage.keys());
   for (const [cssVar, entry] of vars) {
     const resolved = resolve(entry.value);
     const rgba = parseColour(resolved);
-    const viaVar = usage.get(cssVar);
-    let used = viaVar;
-    const literal = rgba ? literalUsage.get(colourKey(rgba)) : undefined;
-    if (literal) {
-      const both = { kinds: new Map(used?.kinds ?? []), selectors: [...(used?.selectors ?? [])] };
-      for (const [k, c] of literal.kinds) both.kinds.set(k, (both.kinds.get(k) ?? 0) + c);
-      for (const s of literal.selectors) if (both.selectors.length < 4 && !both.selectors.includes(s)) both.selectors.push(s);
-      used = both;
-    }
     if (rgba) {
-      const byCount = (u: Usage | undefined) => [...(u?.kinds ?? new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
-      const kinds = byCount(used);
-      const named = roleFromName(cssVar);
-      // The role comes from the variable's own uses: a framework writes every palette colour into
-      // its generated button and table rules, which would make each one look like a background.
-      const main = byCount(viaVar)[0];
-      const fromUse: WebsiteStyleColourRole | null =
-        main === "text" ? "text" : main === "background" ? "background" : main === "border" ? "border" : null;
-      colours.push({
-        cssVar,
-        token: entry.token,
-        name: nameFromVariable(cssVar),
-        value: entry.value === resolved ? entry.value : `${resolved}`,
-        hex: toHex(rgba),
-        alpha: Math.round(rgba.a * 100) / 100,
-        role: named === "accent" || named === "status" ? named : fromUse ?? named ?? "other",
-        usedFor: kinds,
-        usedIn: used?.selectors ?? [],
-        source: entry.source,
-      });
+      const key = colourKey(rgba);
+      groups.set(key, [...(groups.get(key) ?? []), { cssVar, value: entry.value, resolved, rgba, source: entry.source, token: entry.token }]);
     } else if (!/^(["']|url\()/.test(resolved) && !/,\s*(serif|sans-serif|monospace|system-ui)/.test(resolved)) {
-      tokens.push({ name: cssVar, token: entry.token, value: resolved, kind: tokenKind(cssVar, resolved), source: entry.source });
+      tokens.push({
+        name: cssVar, token: entry.token, value: resolved, kind: tokenKind(cssVar, resolved), source: entry.source,
+        framework: entry.source !== "release" && (LIBRARY_VAR.test(cssVar) || !refsInPage.has(cssVar)),
+      });
     }
+  }
+  const colours: WebsiteStyleColour[] = [];
+  const colourCoverage = new Map<string, number>();
+  for (const [key, members] of groups) {
+    const usage = mergeUsage(literalUsage.get(key), ...members.map((m) => varUsage.get(m.cssVar)));
+    const role = roleOf(usage, members.map((m) => m.cssVar));
+    // The name that says what it is for leads: `--primary` over `--blue`, `--textgrey` over `--grey`.
+    const lead = [...members].sort((a, b) =>
+      Number(b.source === "release") - Number(a.source === "release")
+      || Number(roleFromName(b.cssVar) === role) - Number(roleFromName(a.cssVar) === role)
+      || (varUsage.get(b.cssVar)?.size ?? 0) - (varUsage.get(a.cssVar)?.size ?? 0))[0];
+    const usedIn = rankSelectors(usage.keys());
+    colourCoverage.set(lead.cssVar, usedIn.reduce((sum, sel) => sum + coverage(sel), 0));
+    colours.push({
+      cssVar: lead.cssVar,
+      aliases: members.filter((m) => m !== lead).map((m) => m.cssVar),
+      token: lead.token ?? members.find((m) => m.token)?.token ?? null,
+      name: nameFromVariable(lead.cssVar),
+      value: lead.resolved,
+      hex: toHex(lead.rgba),
+      alpha: Math.round(lead.rgba.a * 100) / 100,
+      role,
+      usedFor: kindCounts(usage),
+      usedIn: usedIn.slice(0, 3),
+      unused: usage.size === 0,
+      source: members.some((m) => m.source === "release") ? "release" : "stylesheet",
+    });
   }
 
   // Merged top-level declarations per simple selector, for the type scale, page and blocks.
@@ -451,24 +564,56 @@ export function buildSiteStyle(input: {
   // The page background: body, then html, then a background-role colour, then white.
   const pageBgValue = declared("body", "background-color") ?? declared("body", "background") ?? declared("html", "background-color") ?? declared("html", "background");
   const pageBgParsed = pageBgValue ? parseColour(pageBgValue.split(/\s+/)[0]) : null;
+  const white = { r: 255, g: 255, b: 255, a: 1 };
   const pageBg = pageBgParsed && pageBgParsed.a > 0
-    ? composite(pageBgParsed, { r: 255, g: 255, b: 255, a: 1 })
-    : parseColour(colours.find((c) => c.role === "background" && c.alpha === 1)?.hex ?? "#ffffff")!;
+    ? composite(pageBgParsed, white)
+    : composite(parseColour(colours.find((c) => c.role === "background" && c.alpha === 1)?.hex ?? "#ffffff")!, white);
 
-  const contrast: WebsiteStyleContrast[] = [];
-  const opaqueOn = (c: WebsiteStyleColour, under: Rgba) => toHex(composite({ ...parseColour(c.hex)!, a: c.alpha }, under));
-  const texts = colours.filter((c) => c.role === "text" || c.role === "accent").slice(0, 10);
-  const backgrounds = colours.filter((c) => c.role === "background").slice(0, 8);
-  for (const bg of backgrounds) {
-    const bgHex = opaqueOn(bg, pageBg);
-    for (const text of texts) {
-      if (text.cssVar === bg.cssVar) continue;
-      const ratio = Math.round(contrastRatio(opaqueOn(text, parseColour(bgHex)!), bgHex) * 100) / 100;
-      contrast.push({ text: text.cssVar, background: bg.cssVar, ratio, rating: contrastRating(ratio) });
-    }
+  // Contrast: each text colour on the background it really sits on. Page text (body, headings, links)
+  // on the page background; a rule that sets its own fill (a button, a badge) on that fill; card text on
+  // the card. A utility text class alone (`.text-white`) is left out: its background is not known.
+  const nameOf = new Map<string, string>();
+  for (const c of colours) if (c.alpha === 1 && !nameOf.has(c.hex)) nameOf.set(c.hex, c.name);
+  const bodyText = parseColour(declared("body", "color") ?? "");
+  const pairs = new Map<string, { text: string; background: string; selectors: string[]; coverage: number }>();
+  for (const [selector, decls] of merged) {
+    if (selector.includes(":") || !inPage(selector)) continue;
+    const ownBgValue = decls.has("background-color") ? declared(selector, "background-color") : decls.has("background") ? declared(selector, "background") : null;
+    if (ownBgValue && /gradient|url\(/i.test(ownBgValue)) continue;
+    const ownBg = ownBgValue ? parseColour(ownBgValue.split(/\s+/)[0]) : null;
+    const hasFill = !!ownBg && ownBg.a > 0;
+    const isTag = PAGE_TEXT_TAG.test(selector);
+    const isCard = /^\.[\w-]+$/.test(selector) && /(^|[-_])card([-_]|$)/.test(selector) && !CARD_PART.test(selector);
+    let text = decls.has("color") ? parseColour(declared(selector, "color") ?? "") : null;
+    if (!text && isCard && hasFill) text = bodyText;
+    if (!text || text.a === 0 || (!hasFill && !isTag)) continue;
+    const under = hasFill ? composite(ownBg!, pageBg) : pageBg;
+    const textHex = toHex(composite(text, under));
+    const bgHex = toHex(under);
+    const key = `${textHex} ${bgHex}`;
+    const pair = pairs.get(key) ?? { text: textHex, background: bgHex, selectors: [], coverage: 0 };
+    pair.selectors.push(selector);
+    pair.coverage += coverage(selector);
+    pairs.set(key, pair);
   }
+  // Most of the page first: body text leads, then headings and links, then the blocks the page uses most.
+  const contrast: WebsiteStyleContrast[] = [...pairs.values()]
+    .sort((a, b) => b.coverage - a.coverage)
+    .slice(0, 40)
+    .map((pair) => {
+      const ratio = Math.round(contrastRatio(pair.text, pair.background) * 100) / 100;
+      return {
+        text: pair.text,
+        textName: nameOf.get(pair.text) ?? pair.text,
+        background: pair.background,
+        backgroundName: nameOf.get(pair.background) ?? pair.background,
+        usedIn: rankSelectors(pair.selectors).slice(0, 3),
+        ratio,
+        rating: contrastRating(ratio),
+      };
+    });
 
-  // Fonts: every font-family the stylesheet sets, with the weights the site loads.
+  // Fonts: every font-family the page's rules set, with the weights the site loads.
   const googleWeights = new Map<string, number[]>();
   for (const href of input.fontStylesheets) {
     try {
@@ -505,18 +650,20 @@ export function buildSiteStyle(input: {
       usedIn: [],
       loadedFrom: googleWeights.has(key) ? "google" : faceWeights.has(key) ? "font-face" : "system",
     };
-    if (selector && font.usedIn.length < 6 && !font.usedIn.includes(selector)) font.usedIn.push(selector);
+    if (selector && !font.usedIn.includes(selector)) font.usedIn.push(selector);
     fonts.set(key, font);
   };
   for (const rule of parsed.rules) {
     for (const [prop, value] of rule.declarations) {
-      if (prop === "font-family") addFont(resolve(value), rule.selector);
+      if (prop !== "font-family") continue;
+      for (const part of selectorList(rule.selector).filter(inPage)) addFont(resolve(value), part);
     }
   }
   for (const [cssVar, entry] of vars) {
     const resolved = resolve(entry.value);
-    if (/font|family|ff/i.test(cssVar) && !parseColour(resolved) && /[a-z]/i.test(resolved)) addFont(resolved, null);
+    if ((!page || refsInPage.has(cssVar)) && /font|family|ff/i.test(cssVar) && !parseColour(resolved) && /[a-z]/i.test(resolved)) addFont(resolved, null);
   }
+  for (const font of fonts.values()) font.usedIn = rankSelectors(font.usedIn).slice(0, 6);
 
   // The type scale, H1 to small print, as the stylesheet sets it.
   const TEXT_STEPS: Array<[string, string]> = [
@@ -541,8 +688,8 @@ export function buildSiteStyle(input: {
     });
   }
 
-  // Building blocks: single-class rules for buttons, links, cards and pills.
-  const components: WebsiteStyleComponent[] = [];
+  // Building blocks: single-class rules for buttons, links, cards and pills; the ones the page uses first.
+  const candidates: WebsiteStyleComponent[] = [];
   const kindOf = (cls: string): WebsiteStyleComponentKind | null => {
     if (/^(btn|button|cta)([-_]|$)/.test(cls)) return "button";
     if (/^(link|text-link)([-_]|$)/.test(cls)) return "link";
@@ -550,52 +697,65 @@ export function buildSiteStyle(input: {
     if (/(^|[-_])card([-_]|$)/.test(cls) && !/__/.test(cls) && !CARD_PART.test(cls)) return "card";
     return null;
   };
-  const seen = new Set<string>();
-  for (const selector of merged.keys()) {
+  for (const [selector, own] of merged) {
     const simple = /^\.([\w-]+)$/.exec(selector)?.[1];
     const isLink = selector === "a";
     if (!simple && !isLink) continue;
     const kind = isLink ? "link" : kindOf(simple!);
-    if (!kind || seen.has(selector) || components.filter((c) => c.kind === kind).length >= 8) continue;
-    seen.add(selector);
-    const own = merged.get(selector)!;
-    if (own.size === 0) continue;
+    if (!kind || own.size === 0) continue;
     // A modifier (`.btn--primary`, `.btn-primary`) is drawn on top of its base class, as a page uses it.
     const base = simple ? /^([a-z0-9]+)(?:--|-)/i.exec(simple)?.[1] : undefined;
     const withBase = !isLink && base && base !== simple && merged.has(`.${base}`) && kindOf(base) === kind;
     const decls = withBase ? new Map([...merged.get(`.${base}`)!, ...own]) : own;
-    const className = isLink ? "" : withBase ? `${base} ${simple}` : simple!;
-    components.push({
+    candidates.push({
       kind,
       selector,
-      className,
+      className: isLink ? "" : withBase ? `${base} ${simple}` : simple!,
       label: isLink ? "Text link" : nameFromVariable(`--${simple!.replace(/--/g, "-")}`),
       declarations: Object.fromEntries([...decls].map(([p, v]) => [p, resolve(v)])),
+      inPage: inPage(selector),
     });
-    const radius = own.get("border-radius");
-    if (radius && !radius.includes("var(")) tokens.push({ name: `${selector} border-radius`, token: null, value: radius, kind: "radius", source: "stylesheet" });
+  }
+  const components: WebsiteStyleComponent[] = [];
+  for (const kind of ["link", "button", "card", "pill"] as const) {
+    const ofKind = candidates.filter((c) => c.kind === kind);
+    components.push(...ofKind.filter((c) => c.inPage), ...ofKind.filter((c) => !c.inPage).slice(0, 8));
+  }
+  for (const block of components) {
+    const radius = merged.get(block.selector)?.get("border-radius");
+    if (radius && !radius.includes("var(")) {
+      tokens.push({ name: `${block.selector} border-radius`, token: null, value: radius, kind: "radius", source: "stylesheet", framework: !block.inPage });
+    }
   }
 
-  // Motion in use: the keyframes the stylesheet defines.
-  for (const name of parsed.keyframes.slice(0, 12)) {
-    tokens.push({ name: `@keyframes ${name}`, token: null, value: "animation", kind: "motion", source: "stylesheet" });
+  // Motion: a keyframe is in use when a rule on the page runs it; the rest come with a framework.
+  const runs = new Set<string>();
+  for (const rule of parsed.rules) {
+    if (!selectorList(rule.selector).some(inPage)) continue;
+    for (const [prop, value] of rule.declarations) {
+      if (prop === "animation" || prop === "animation-name") for (const word of resolve(value).split(/[\s,]+/)) runs.add(word);
+    }
+  }
+  for (const name of parsed.keyframes) {
+    tokens.push({ name: `@keyframes ${name}`, token: null, value: "animation", kind: "motion", source: "stylesheet", framework: !runs.has(name) });
   }
 
-  // Background surfaces: the page and single-class sections or boxes with their own background.
+  // Background surfaces: the page and the section or box classes on the page with their own background.
   const surfaces: WebsiteStyleSurface[] = [];
   if (pageBgValue) surfaces.push({ selector: "body", label: "Page", background: pageBgValue });
   for (const [selector, decls] of merged) {
     if (surfaces.length >= 12) break;
     const cls = /^\.([\w-]+)$/.exec(selector)?.[1];
-    if (!cls || !/(section|hero|band|surface|panel|footer|header|banner|strip|block|bg)/.test(cls)) continue;
+    if (!cls || !inPage(selector) || !/(section|hero|band|surface|panel|footer|header|banner|strip|block|bg)/.test(cls)) continue;
     const background = decls.get("background") ?? decls.get("background-color");
     if (!background) continue;
     surfaces.push({ selector, label: nameFromVariable(`--${cls}`), background: resolve(background) });
   }
 
   const roleOrder: WebsiteStyleColourRole[] = ["background", "text", "accent", "border", "status", "other"];
-  // By role; within a role the colours rules use come first.
-  colours.sort((a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || Number(b.usedIn.length > 0) - Number(a.usedIn.length > 0));
+  // By role; within a role the colours that cover most of the page come first.
+  colours.sort((a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role)
+    || (colourCoverage.get(b.cssVar) ?? 0) - (colourCoverage.get(a.cssVar) ?? 0));
 
   return {
     siteId: input.siteId,
@@ -656,7 +816,7 @@ async function readSources(siteUrl: string): Promise<Sources> {
       if (!links.fonts.includes(m[1])) links.fonts.push(m[1]);
     }
   }
-  return { siteUrl, sheets: sheets.filter((s) => s.css), inlineCss: links.inline, fontStylesheets: links.fonts };
+  return { siteUrl, html, sheets: sheets.filter((s) => s.css), inlineCss: links.inline, fontStylesheets: links.fonts };
 }
 
 const cache = new Map<string, { at: number; value: WebsiteSiteStyle }>();
@@ -683,6 +843,7 @@ export function websiteStyleService() {
         siteUrl,
         theme,
         css: [...(sources?.sheets.map((s) => s.css) ?? []), sources?.inlineCss ?? ""].join("\n"),
+        html: sources?.html ?? null,
         stylesheets: sources?.sheets.map((s) => s.url) ?? [],
         fontStylesheets: sources?.fontStylesheets ?? [],
         problem,
