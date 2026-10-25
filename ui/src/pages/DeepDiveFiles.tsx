@@ -15,6 +15,8 @@ import {
   type LinkDeepDiveFile,
 } from "@greatstone/shared";
 import { casesApi, type CaseSummary } from "@/api/cases";
+import { websiteModuleApi } from "@/api/website";
+import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
@@ -60,7 +62,18 @@ export function deepDiveItems(rows: readonly CaseSummary[]): DeepDiveItem[] {
   return items;
 }
 
-/** Held and missing per item: a linked file is held; a linked request is held once it has a file. */
+/** A request is in once it has a file in GSAM or the client answered it on the website (GRE-2439). */
+export function requestIsIn(request: ClientDocumentRequest): boolean {
+  return Boolean(request.received || request.websiteAnswer);
+}
+
+/** Who answered on the website, in a few words. */
+export function websiteAnswerText(answer: NonNullable<ClientDocumentRequest["websiteAnswer"]>): string {
+  const who = answer.answeredBy.name || answer.answeredBy.email || "the client";
+  return `Answered on the website ${formatShortDate(answer.answeredAt)} by ${who}${answer.fileName ? `: ${answer.fileName}` : ""}`;
+}
+
+/** Held and missing per item: a linked file is held; a linked request is held once it is in. */
 export function heldAndMissing(
   itemId: string,
   links: readonly DeepDiveItemFileLink[],
@@ -72,7 +85,7 @@ export function heldAndMissing(
   for (const link of links) {
     if (link.caseId !== itemId) continue;
     if (link.evidenceId) held += 1;
-    else if (link.documentRequestId && requestById.get(link.documentRequestId)?.received) held += 1;
+    else if (link.documentRequestId && requestById.has(link.documentRequestId) && requestIsIn(requestById.get(link.documentRequestId)!)) held += 1;
     else missing += 1;
   }
   return { held, missing };
@@ -161,6 +174,68 @@ function LinkedItems({
   );
 }
 
+/**
+ * Send this client's Shared items to the website (GRE-2439). The site gets a
+ * whole snapshot, so anything unshared since the last send is removed there.
+ * Hidden when the company has no website.
+ */
+function WebsiteSyncCard({ companyId, clientCaseId }: { companyId: string; clientCaseId: string }) {
+  const sitesQuery = useQuery({
+    queryKey: queryKeys.website.sites(companyId),
+    queryFn: () => websiteModuleApi.sites(companyId),
+    retry: false,
+  });
+  const sites = sitesQuery.data ?? [];
+  const [siteDraft, setSiteDraft] = useState("");
+  const siteId = siteDraft || sites[0]?.id || "";
+  const send = useMutation({ mutationFn: () => websiteDataBridgeApi.deepDiveSync(companyId, siteId, clientCaseId) });
+  if (sites.length === 0) return null;
+  return (
+    <Card className="gap-2 px-4 py-3" data-testid="deep-dive-website-sync">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm font-medium">Client view on the website</p>
+          <p className="text-xs text-muted-foreground">
+            Sends only Shared items, Shared files and published deliverables. Anything unshared since the last send is
+            removed from the site.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {sites.length > 1 ? (
+            <select
+              aria-label="Website"
+              className={SELECT_CLASS}
+              value={siteId}
+              disabled={send.isPending}
+              onChange={(event) => setSiteDraft(event.target.value)}
+            >
+              {sites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <Button type="button" size="sm" variant="outline" disabled={!siteId || send.isPending} onClick={() => send.mutate()}>
+            {send.isPending ? "Sending..." : "Send to website"}
+          </Button>
+        </div>
+      </div>
+      {send.error instanceof Error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {send.error.message}
+        </p>
+      ) : null}
+      {send.data ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Sent {formatShortDate(send.data.syncedAt)}: {send.data.counts.items} items, {send.data.counts.files} files,{" "}
+          {send.data.counts.documentRequests} document requests, {send.data.counts.deliverables} deliverables.
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
 export function DeepDiveFiles() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -235,7 +310,7 @@ export function DeepDiveFiles() {
     onShare: (entry: DeepDiveItemFileLink, visibility: DeepDiveVisibility) => share.mutate({ link: entry, visibility }),
     onUnlink: (entry: DeepDiveItemFileLink) => unlink.mutate(entry),
   };
-  const missingRequests = requests.filter((request) => !request.received);
+  const missingRequests = requests.filter((request) => !requestIsIn(request));
 
   const header = (
     <header className="space-y-1">
@@ -314,6 +389,8 @@ export function DeepDiveFiles() {
           </p>
         ) : null}
       </Card>
+
+      {client ? <WebsiteSyncCard companyId={companyId} clientCaseId={client.id} /> : null}
 
       {actionError instanceof Error ? (
         <p role="alert" className="text-sm text-destructive">
@@ -412,11 +489,15 @@ export function DeepDiveFiles() {
                         <p className="text-xs text-muted-foreground">
                           {request.received
                             ? `Received ${formatShortDate(request.received.receivedAt)}: ${request.received.title}`
-                            : `Asked ${formatShortDate(request.createdAt)}, not received yet`}
+                            : request.websiteAnswer
+                              ? websiteAnswerText(request.websiteAnswer)
+                              : `Asked ${formatShortDate(request.createdAt)}, not received yet`}
                         </p>
                       </div>
                       {request.received ? (
                         <StatusBadge status="succeeded" label="Held" />
+                      ) : request.websiteAnswer ? (
+                        <StatusBadge status="succeeded" label="Received" />
                       ) : (
                         <StatusBadge status="warning" label="Missing" />
                       )}

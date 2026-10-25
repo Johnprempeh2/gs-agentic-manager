@@ -1,6 +1,10 @@
 import { api } from "./client";
 import type {
   CreateWebsiteDataBridgeKey,
+  DeepDiveSyncPayload,
+  DeepDiveSyncResult,
+  SetWebsiteBridgeSiteKey,
+  WebsiteBridgeSiteKey,
   WebsiteDataBridgeKey,
   WebsiteDataBridgeStatus,
   WebsiteDataListQuery,
@@ -33,4 +37,13 @@ export const websiteDataBridgeApi = {
   /** One record (website:view). */
   get: (companyId: string, siteId: string, resource: WebsiteDataResource, itemId: string) =>
     api.get<{ item: WebsiteDataRecord }>(`${dataPath(companyId, siteId, resource)}/${encodeURIComponent(itemId)}`),
+  /** The site's own key for its calls back to GSAM (website:publish, people only). */
+  setSiteKey: (companyId: string, siteId: string, input: SetWebsiteBridgeSiteKey) =>
+    api.put<WebsiteBridgeSiteKey>(`${bridgePath(companyId, siteId)}/site-key`, input),
+  /** What a Deep Dive sync would send for one client, not sent (website:view). GRE-2439. */
+  previewDeepDiveSync: (companyId: string, siteId: string, clientCaseId: string) =>
+    api.get<DeepDiveSyncPayload>(`${sitePath(companyId, siteId)}/deep-dive-sync/${encodeURIComponent(clientCaseId)}/preview`),
+  /** Send one client's Shared Deep Dive items to the site (website:publish, people only). GRE-2439. */
+  deepDiveSync: (companyId: string, siteId: string, clientCaseId: string) =>
+    api.post<DeepDiveSyncResult>(`${sitePath(companyId, siteId)}/deep-dive-sync/${encodeURIComponent(clientCaseId)}`, {}),
 };

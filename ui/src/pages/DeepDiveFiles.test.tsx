@@ -96,6 +96,10 @@ vi.mock("@/api/cases", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/cases")>()),
   casesApi: mockCasesApi,
 }));
+const mockWebsiteModuleApi = vi.hoisted(() => ({ sites: vi.fn() }));
+const mockBridgeApi = vi.hoisted(() => ({ deepDiveSync: vi.fn() }));
+vi.mock("@/api/website", () => ({ websiteModuleApi: mockWebsiteModuleApi }));
+vi.mock("@/api/website-data-bridge", () => ({ websiteDataBridgeApi: mockBridgeApi }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: COMPANY_ID }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/lib/router", () => ({
@@ -138,6 +142,7 @@ describe("Deep Dive evidence and files", () => {
     mockCasesApi.deepDiveFiles.mockResolvedValue(SCREEN);
     mockCasesApi.linkDeepDiveFile.mockResolvedValue(SCREEN.links[0]);
     mockCasesApi.unlinkDeepDiveFile.mockResolvedValue({ deleted: true, link: SCREEN.links[0] });
+    mockWebsiteModuleApi.sites.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -154,6 +159,43 @@ describe("Deep Dive evidence and files", () => {
     expect(heldAndMissing("record", SCREEN.links, SCREEN.requests)).toEqual({ held: 0, missing: 0 });
     const received = [{ ...SCREEN.requests[0]!, received: { evidenceId: "file-2", title: "Accounts", contentPath: null, receivedAt: "2026-10-13T00:00:00.000Z" } }];
     expect(heldAndMissing("data", SCREEN.links, received)).toEqual({ held: 2, missing: 0 });
+  });
+
+  it("counts a request answered on the website as in, and says who answered it", async () => {
+    const answered = [{ ...SCREEN.requests[0]!, websiteAnswer: {
+      answeredAt: "2026-10-14T09:00:00.000Z", answeredBy: { customerId: "cust-1", name: "Test Client", email: null }, note: null, fileName: "accounts.pdf",
+    } }];
+    expect(heldAndMissing("data", SCREEN.links, answered)).toEqual({ held: 2, missing: 0 });
+    mockCasesApi.deepDiveFiles.mockResolvedValue({ ...SCREEN, requests: answered });
+    const container = await render();
+    const row = container.querySelector("[data-deep-dive-request='request-1']")!;
+    expect(row.textContent).toContain("Answered on the website 14 Oct by Test Client: accounts.pdf");
+    expect(row.textContent).toContain("Received");
+    expect(container.textContent).toContain("Documents asked for (1, 0 missing)");
+  });
+
+  it("hides the website card with no site, and sends the client's Shared items when there is one", async () => {
+    let container = await render();
+    expect(container.querySelector("[data-testid='deep-dive-website-sync']")).toBeNull();
+    act(() => root?.unmount());
+    container.remove();
+
+    mockWebsiteModuleApi.sites.mockResolvedValue([{ id: "site-1", name: "Greatstone", domain: "www.greatstone.test" }]);
+    mockBridgeApi.deepDiveSync.mockResolvedValue({
+      tenantId: CLIENT.id, syncedAt: "2026-10-25T09:00:00.000Z", counts: { items: 3, files: 1, documentRequests: 1, deliverables: 0 },
+    });
+    container = await render();
+    for (let i = 0; i < 10 && !container.querySelector("[data-testid='deep-dive-website-sync']"); i += 1) {
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
+    const card = container.querySelector("[data-testid='deep-dive-website-sync']")!;
+    const button = [...card.querySelectorAll("button")].find((el) => el.textContent === "Send to website")!;
+    await act(async () => button.click());
+    for (let i = 0; i < 10 && !card.querySelector("[role='status']"); i += 1) {
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
+    expect(mockBridgeApi.deepDiveSync).toHaveBeenCalledWith(COMPANY_ID, "site-1", CLIENT.id);
+    expect(card.textContent).toContain("3 items, 1 files, 1 document requests, 0 deliverables");
   });
 
   it("shows where each file came from, who added it, and held and missing per item", async () => {
