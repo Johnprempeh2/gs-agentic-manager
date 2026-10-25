@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type SVGProps } from "react";
 import { TaskRunStateChip } from "@/components/TaskRunStateChip";
 import { useTaskRunStateFor } from "@/hooks/useTaskRunStates";
 import type { IssueTreeNode } from "@greatstone/shared";
@@ -9,6 +9,7 @@ import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import {
   blockLinkMidpoint,
   blockLinkPath,
+  connectorMidpoint,
   connectorPath,
   edgeKey,
   flattenVisible,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/task-tree";
 import { taskStatusLabel } from "@/lib/task-status-labels";
 import type { TreeBlockReason } from "@/lib/task-tree-block-reason";
+import { routeBlockLinks } from "@/lib/task-tree-links";
 import { cn, relativeTime } from "@/lib/utils";
 import { TaskTreeBlockReason } from "./TaskTreeBlockReason";
 import { TASK_TREE_CARD_HEIGHT, TASK_TREE_CARD_WIDTH, TaskTreeCard } from "./TaskTreeCard";
@@ -173,6 +175,10 @@ export function TaskTreeCanvas({
     [visibleRoot],
   );
   const items = useMemo(() => new Map(flattenVisible(visibleRoot).map((item) => [item.id, item])), [visibleRoot]);
+  // One line per pair of tasks (GRE-2384): blocking between a parent and its
+  // child, or along a chain of such lines, restyles those lines instead of
+  // drawing a second one beside them.
+  const routed = useMemo(() => routeBlockLinks(blockLinks, layout.edges), [blockLinks, layout.edges]);
   const positions = useGlide(layout, reduced);
   const boxAt = useCallback(
     (id: string): LayoutBox | null => {
@@ -347,7 +353,7 @@ export function TaskTreeCanvas({
           {layout.edges.map((edge) => {
             const from = boxAt(edge.from);
             const to = boxAt(edge.to);
-            if (!from || !to) return null;
+            if (!from || !to || routed.onEdges.has(edgeKey(edge.from, edge.to))) return null;
             const onPath = trace.pathEdges.has(edgeKey(edge.from, edge.to));
             const d = connectorPath(from, to);
             return (
@@ -439,13 +445,20 @@ export function TaskTreeCanvas({
     ),
     // The handlers inside read current state through setters and refs; the layer redraws when what it shows changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layout, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, loopIds, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
+    [layout, routed, positions, items, activeFocusId, foundId, trace, people, waitingOnById, blockReasonById, loopIds, visibleRoot.id, actionFor, onOpen, onToggleCollapsed, onShowFinished],
   );
 
   // "Blocks" lines sit over the sub-task lines and under the cards. They draw
   // apart from the cards, so hovering a card redraws only the lines: its own
   // come to full strength and the rest fade, so one chain reads by eye.
   const emphasisId = hoveredId ?? (keyboardFocus ? activeFocusId : null) ?? foundId;
+  const nameOf = useCallback(
+    (id: string) => {
+      const item = items.get(id);
+      return item?.kind === "task" ? item.node.identifier ?? item.node.title : id;
+    },
+    [items],
+  );
   const blockLayer = useMemo(
     () =>
       blockLinks.length === 0 ? null : (
@@ -463,46 +476,76 @@ export function TaskTreeCanvas({
               <path d="M 0 1 L 9 5 L 0 9 z" className="fill-status-review" />
             </marker>
           </defs>
-          {blockLinks.map((link) => {
+          {layout.edges.map((edge) => {
+            const key = edgeKey(edge.from, edge.to);
+            const carried = routed.onEdges.get(key);
+            const from = boxAt(edge.from);
+            const to = boxAt(edge.to);
+            if (!carried || !from || !to) return null;
+            const ends = new Set([...carried.links, ...carried.via.map((hop) => hop.link)].flatMap((link) => [link.from, link.to]));
+            const touches = emphasisId !== null && ends.has(emphasisId);
+            const faded = emphasisId !== null && !touches;
+            const loop = carried.links.some((link) => link.loop);
+            const folded = carried.links.every((link) => link.folded);
+            const down = carried.links.some((link) => link.from === edge.from);
+            const up = carried.links.some((link) => link.from === edge.to);
+            const marker = `url(#${markerId}-${loop ? "loop" : "block"})`;
+            const d = connectorPath(from, to);
+            const title = [
+              ...carried.links.flatMap((link) => link.labels),
+              ...carried.via.flatMap(({ link, through }) =>
+                link.labels.map((label) => `${label}, through ${through.map(nameOf).join(", ")}`),
+              ),
+            ].join("\n");
+            return (
+              <BlockLine
+                key={`edge:${key}`}
+                d={d}
+                title={title}
+                mid={loop ? connectorMidpoint(from, to) : null}
+                opacity={faded ? FADED_LINK : folded && !touches ? 0.6 : 1}
+                pathProps={{
+                  "data-block-edge": key,
+                  "data-block-loop": loop ? "" : undefined,
+                  "data-block-emphasis": touches ? "" : faded ? "faded" : undefined,
+                  strokeWidth: (loop ? 2.5 : 1.75) + (touches ? 1 : 0),
+                  strokeDasharray: loop ? LOOP_DASH : BLOCK_DASH,
+                  markerEnd: down ? marker : undefined,
+                  markerStart: up ? marker : undefined,
+                  className: loop ? "stroke-status-review" : "stroke-status-warning",
+                }}
+              />
+            );
+          })}
+          {routed.lines.map((link) => {
             const from = boxAt(link.from);
             const to = boxAt(link.to);
             if (!from || !to) return null;
             const touches = emphasisId === link.from || emphasisId === link.to;
             const faded = emphasisId !== null && !touches;
-            const mid = link.loop ? blockLinkMidpoint(from, to) : null;
             return (
-              <g key={`block:${link.from}>${link.to}`} strokeOpacity={faded ? FADED_LINK : link.folded && !touches ? 0.6 : 1}>
-                <path
-                  data-block-link={edgeKey(link.from, link.to)}
-                  data-block-loop={link.loop ? "" : undefined}
-                  data-block-folded={link.folded ? "" : undefined}
-                  data-block-emphasis={touches ? "" : faded ? "faded" : undefined}
-                  d={blockLinkPath(from, to)}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeWidth={(link.loop ? 2.5 : 1.75) + (touches ? 1 : 0)}
-                  strokeDasharray={link.loop ? LOOP_DASH : BLOCK_DASH}
-                  markerEnd={`url(#${markerId}-${link.loop ? "loop" : "block"})`}
-                  className={link.loop ? "stroke-status-review" : "stroke-status-warning"}
-                />
-                {mid ? (
-                  <text
-                    x={mid.x}
-                    y={mid.y}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fillOpacity={faded ? FADED_LINK : 1}
-                    className="fill-status-review text-sm font-semibold"
-                  >
-                    ↻
-                  </text>
-                ) : null}
-              </g>
+              <BlockLine
+                key={`block:${link.from}>${link.to}`}
+                d={blockLinkPath(from, to)}
+                title={link.labels.join("\n")}
+                mid={link.loop ? blockLinkMidpoint(from, to) : null}
+                opacity={faded ? FADED_LINK : link.folded && !touches ? 0.6 : 1}
+                pathProps={{
+                  "data-block-link": edgeKey(link.from, link.to),
+                  "data-block-loop": link.loop ? "" : undefined,
+                  "data-block-folded": link.folded ? "" : undefined,
+                  "data-block-emphasis": touches ? "" : faded ? "faded" : undefined,
+                  strokeWidth: (link.loop ? 2.5 : 1.75) + (touches ? 1 : 0),
+                  strokeDasharray: link.loop ? LOOP_DASH : BLOCK_DASH,
+                  markerEnd: `url(#${markerId}-${link.loop ? "loop" : "block"})`,
+                  className: link.loop ? "stroke-status-review" : "stroke-status-warning",
+                }}
+              />
             );
           })}
         </svg>
       ),
-    [blockLinks, boxAt, emphasisId, layout.width, layout.height, markerId],
+    [blockLinks.length, routed, layout.edges, boxAt, emphasisId, layout.width, layout.height, markerId, nameOf],
   );
 
   return (
@@ -558,6 +601,45 @@ export function TaskTreeCanvas({
   );
 }
 
+/**
+ * One "blocks" line: dashed, with an arrow on the task it holds up, and a
+ * wide clear stroke over it so hovering the line names the link.
+ */
+function BlockLine({
+  d,
+  title,
+  mid,
+  opacity,
+  pathProps,
+}: {
+  d: string;
+  title: string;
+  mid: { x: number; y: number } | null;
+  opacity: number;
+  pathProps: SVGProps<SVGPathElement> & Record<`data-${string}`, string | undefined>;
+}) {
+  return (
+    <g strokeOpacity={opacity}>
+      <path d={d} fill="none" strokeLinecap="round" {...pathProps} />
+      <path data-block-hit="" d={d} fill="none" stroke="transparent" strokeWidth={12} pointerEvents="stroke">
+        <title>{title}</title>
+      </path>
+      {mid ? (
+        <text
+          x={mid.x}
+          y={mid.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fillOpacity={opacity}
+          className="fill-status-review text-sm font-semibold"
+        >
+          ↻
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
 /** What the lines mean, in the corner of the canvas. */
 function TaskTreeLinkLegend({ loops, paths }: { loops: boolean; paths: boolean }) {
   const sample = (className: string, dash?: string) => (
@@ -570,7 +652,7 @@ function TaskTreeLinkLegend({ loops, paths }: { loops: boolean; paths: boolean }
       data-slot="task-tree-link-legend"
       className="pointer-events-none absolute left-3 top-3 z-raised flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm"
     >
-      <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Sub-task</span>
+      <span className="inline-flex items-center gap-1.5">{sample("stroke-border")}Part of</span>
       <span className="inline-flex items-center gap-1.5">{sample("stroke-status-warning", "4 3")}Blocks</span>
       {paths ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-danger")}Leads to a block</span> : null}
       {loops ? <span className="inline-flex items-center gap-1.5">{sample("stroke-status-review", "0.5 4")}↻ Loop</span> : null}

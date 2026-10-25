@@ -20,11 +20,15 @@ const api = vi.hoisted(() => ({
   restoreRevision: vi.fn(),
   media: vi.fn(),
   requestChange: vi.fn(),
+  pageComments: vi.fn(),
   createEntry: vi.fn(),
   submitPage: vi.fn(),
   images: vi.fn(),
 }));
+const issues = vi.hoisted(() => ({ listComments: vi.fn(), addComment: vi.fn(), update: vi.fn() }));
 vi.mock("../../api/images", () => ({ imagesApi: { list: api.images } }));
+vi.mock("../../api/issues", () => ({ issuesApi: issues }));
+vi.mock("../MarkdownBody", () => ({ MarkdownBody: ({ children }: { children: string }) => <div>{children}</div> }));
 vi.mock("../../api/videos", () => ({ videosApi: { list: vi.fn() } }));
 vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
@@ -103,6 +107,8 @@ beforeEach(() => {
   api.pageEditor.mockResolvedValue(load);
   api.revisions.mockResolvedValue(revisions);
   api.media.mockResolvedValue(load.media);
+  api.pageComments.mockResolvedValue([]);
+  issues.listComments.mockResolvedValue([]);
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["png"], { type: "image/png" }) })));
   vi.stubGlobal("confirm", vi.fn(() => true));
   api.images.mockResolvedValue({
@@ -363,6 +369,7 @@ describe("WebsiteFullScreenEditor", () => {
       blockLabel: "Hero banner",
       engine: { version: "1.0.0", commit: "b".repeat(40) },
       source: { file: "src/blocks/Hero.tsx", line: 12 },
+      width: "laptop",
       request: "Make the heading shorter.",
     });
     expect(panel()!.dataset.step).toBe("created");
@@ -408,6 +415,111 @@ describe("WebsiteFullScreenEditor", () => {
     expect(editor.sent("load-draft")).toHaveLength(1);
     expect(editor.sent("highlight").at(-1)!.payload).toEqual({ blockId: "h1" });
     expect(api.requestChange).not.toHaveBeenCalled();
+  });
+
+  describe("Ask an agent and comments (GRE-2350)", () => {
+    const created = { issueId: "issue-7", identifier: "GRE-9007", title: "Website change", assigneeAgentId: "lintel", projectId: "proj-1" };
+
+    async function askAndCreate(words: string) {
+      await act(async () => labelled("Ask an agent").click());
+      await flush();
+      await type(words);
+      await act(async () => button("Review").click());
+      await act(async () => button("Create task").click());
+      await flush();
+    }
+
+    it("with nothing selected, the comment is about the whole page at the current width", async () => {
+      api.requestChange.mockResolvedValue(created);
+      await render();
+      await connect();
+      await act(async () => labelled("Ask an agent").click());
+      await flush();
+      expect(panel()!.textContent).toContain("Whole page");
+      expect(panel()!.textContent).toContain("The whole page on Home");
+      expect(panel()!.textContent).toContain("Seen at Laptop width");
+      expect(panel()!.textContent).not.toContain("Edit words or image myself");
+
+      await askAndCreate("The page feels too long.");
+      expect(api.requestChange).toHaveBeenCalledTimes(1);
+      const [, , pageId, input] = api.requestChange.mock.calls[0]!;
+      expect(pageId).toBe("page-1");
+      expect(input).toEqual({ requestId: expect.stringMatching(/^[0-9a-f-]{36}$/), pageRevisionId: "rev-2", width: "laptop", request: "The page feels too long." });
+      expect(panel()!.dataset.step).toBe("created");
+      // The new comment shows in the list without a reload.
+      expect(api.pageComments.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it("with a block selected in the editor, the comment is about that block", async () => {
+      api.requestChange.mockResolvedValue(created);
+      await render();
+      const editor = await connect();
+      await editor.reply("editor-state", { selection: { blockId: "h1", blockType: "Hero", label: "Hero banner" }, canUndo: false, canRedo: false });
+      await act(async () => labelled("Ask an agent").click());
+      await flush();
+      expect(panel()!.textContent).toContain("Selected block");
+      expect(panel()!.textContent).toContain("Hero banner on Home");
+
+      await askAndCreate("Use the new tagline.");
+      const [, , , input] = api.requestChange.mock.calls[0]!;
+      expect(input).toEqual({
+        requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        pageRevisionId: "rev-2",
+        blockId: "h1",
+        blockType: "Hero",
+        blockLabel: "Hero banner",
+        width: "laptop",
+        request: "Use the new tagline.",
+      });
+    });
+
+    it("lists open comments numbered; a thread shows replies, the agent's draft and resolves", async () => {
+      api.pageComments.mockResolvedValue([
+        { number: 1, issueId: "issue-1", identifier: "GRE-1", title: "t", status: "todo", request: "Shorter heading", blockId: "h1", blockType: "Hero", blockLabel: "Hero banner", pageRevisionId: "rev-2", width: "phone", assigneeAgentId: "lintel", createdAt: "2026-10-23T09:30:00.000Z", updatedAt: "2026-10-23T09:30:00.000Z" },
+        { number: 2, issueId: "issue-2", identifier: "GRE-2", title: "t", status: "todo", request: "Warmer colours", blockId: null, blockType: null, blockLabel: null, pageRevisionId: "rev-2", width: null, assigneeAgentId: "lintel", createdAt: "2026-10-23T09:40:00.000Z", updatedAt: "2026-10-23T09:40:00.000Z" },
+      ]);
+      api.revisions.mockResolvedValue([
+        { id: "rev-3", revisionNumber: 3, changeSummary: "Shortened the heading", createdByAgentId: "lintel", createdByUserId: null, createdAt: "2026-10-23T11:00:00.000Z" },
+        ...revisions,
+      ]);
+      issues.listComments.mockResolvedValue([
+        { id: "c1", issueId: "issue-1", authorAgentId: "lintel", authorUserId: null, body: "Done: the heading is now one line.", createdAt: "2026-10-23T11:01:00.000Z" },
+      ]);
+      issues.update.mockResolvedValue({ id: "issue-1", status: "done" });
+      await render();
+      await connect();
+      expect(document.body.querySelector('[data-testid="website-comments-count"]')!.textContent).toBe("2");
+
+      await act(async () => labelled("Comments").click());
+      await flush();
+      const items = [...document.body.querySelectorAll<HTMLButtonElement>('[data-testid="website-comment-item"]')];
+      expect(items.map((item) => item.textContent)).toEqual([
+        expect.stringMatching(/^1Shorter headingHero banner · GRE-1/),
+        expect.stringMatching(/^2Warmer coloursWhole page · GRE-2/),
+      ]);
+
+      await act(async () => items[0]!.click());
+      await flush();
+      const thread = document.body.querySelector<HTMLElement>('[data-testid="website-comment-thread"]')!;
+      expect(thread.querySelector('[data-testid="website-comment-request"]')!.textContent).toBe("Shorter heading");
+      expect(thread.textContent).toContain("seen at Phone width");
+      expect(thread.textContent).toContain("Done: the heading is now one line.");
+      expect(thread.querySelector('[data-testid="website-comment-change"]')!.textContent).toContain("The agent saved draft 3");
+      expect(issues.listComments).toHaveBeenCalledWith("issue-1", { order: "asc" });
+
+      // Preview the change shows the latest draft in the preview.
+      await act(async () => button("Preview the change").click());
+      await flush();
+      expect(frame()!.getAttribute("src")).toBe(`${EDITOR}/preview/page-1`);
+
+      api.pageComments.mockResolvedValue([]);
+      await act(async () => button("Mark resolved").click());
+      await flush();
+      expect(issues.update).toHaveBeenCalledWith("issue-1", { status: "done", comment: "Marked resolved in the website editor." });
+      expect(document.body.querySelector('[data-testid="website-comment-thread"]')).toBeNull();
+      expect(document.body.textContent).toContain("No open comments");
+      expect(document.body.querySelector('[data-testid="website-comments-count"]')).toBeNull();
+    });
   });
 
   describe("insert media into the selected block (GRE-2206)", () => {
