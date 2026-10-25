@@ -17178,6 +17178,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/overview",
+  tags: ["deep-dive"],
+  summary: "Get what is next, progress by stream, the next session, open findings and the work only a person can do",
+  responses: boardResponses,
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/deep-dive/commercials",
   tags: ["deep-dive"],
