@@ -46,6 +46,12 @@ export interface TaskTreeHeaderProps {
   /** A line under the title, such as who leads the project. */
   subtitle?: ReactNode;
   actions?: ReactNode;
+  /**
+   * False when the counts would not describe the tasks shown, such as a
+   * project with no key tasks yet: hides "0 of 0 done" and "Nothing is
+   * blocked". Blockers still show if there are any.
+   */
+  showSummary?: boolean;
   className?: string;
 }
 
@@ -63,6 +69,7 @@ export function TaskTreeHeader({
   truncatedNote,
   subtitle,
   actions,
+  showSummary = true,
   className,
 }: TaskTreeHeaderProps) {
   const runState = useTaskRunStateFor(root);
@@ -85,9 +92,9 @@ export function TaskTreeHeader({
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
 
-      <TaskTreeProgress counts={counts} />
+      {showSummary ? <TaskTreeProgress counts={counts} /> : null}
 
-      <div className="space-y-2">
+      {!showSummary && rootBlockers.length === 0 ? null : <div className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">What is holding this up</h2>
         {rootBlockers.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -134,7 +141,7 @@ export function TaskTreeHeader({
             ))}
           </ul>
         )}
-      </div>
+      </div>}
 
       {truncatedNote ? <p className="text-xs text-muted-foreground">{truncatedNote}</p> : null}
     </section>

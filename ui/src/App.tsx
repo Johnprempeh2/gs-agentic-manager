@@ -86,6 +86,7 @@ const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
 const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverables");
 const Website = lazyPage(() => import("./pages/Website"), "Website");
 const WebsiteEditorPage = lazyPage(() => import("./pages/WebsiteEditorPage"), "WebsiteEditorPage");
+const WebsiteFeaturePage = lazyPage(() => import("./pages/WebsiteFeature"), "WebsiteFeaturePage");
 const Intelligence = lazyPage(() => import("./pages/Intelligence"), "Intelligence");
 const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
 const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
@@ -434,6 +435,7 @@ function boardRoutes() {
       <Route path="website" element={<Website />} />
       {/* The full-screen website editor (GRE-2296): it covers the shell, so it has no sidebar or header. */}
       <Route path="website/edit" element={<WebsiteEditorPage />} />
+      <Route path="website/sites/:siteId/features/:featureId" element={<WebsiteFeaturePage />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
       <Route path="whats-new" element={<WhatsNew />} />

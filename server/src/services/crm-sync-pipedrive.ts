@@ -17,7 +17,7 @@ const BASE_RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 30_000;
 
 export type PipedriveFetch = (url: string, init: {
-  method: "GET" | "PATCH";
+  method: "GET" | "PATCH" | "POST";
   headers: Record<string, string>;
   body?: string;
 }) => Promise<{
@@ -184,7 +184,7 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
 
   /** One request with retries on 429; throws on any answer that is not 2xx. */
   async function fetchOk(
-    method: "GET" | "PATCH",
+    method: "GET" | "PATCH" | "POST",
     path: string,
     query: Record<string, string | number | undefined>,
     payload?: Record<string, unknown>,
@@ -222,7 +222,7 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
   }
 
   async function send(
-    method: "GET" | "PATCH",
+    method: "GET" | "PATCH" | "POST",
     path: string,
     query: Record<string, string | number | undefined>,
     payload?: Record<string, unknown>,
@@ -368,6 +368,29 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       const extra = body.additional_data as { more_items_in_collection?: boolean; pagination?: { more_items_in_collection?: boolean } } | undefined;
       const more = extra?.more_items_in_collection ?? extra?.pagination?.more_items_in_collection ?? false;
       return { items, nextStart: more && items.length > 0 ? start + items.length : null };
+    },
+
+    /** Archived leads are separate since Pipedrive stopped honoring archived_status. */
+    async listArchivedLeadsPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/leads/archived", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** Create the contact before its lead; Pipedrive requires a linked person or organisation. */
+    async createPerson(input: { name: string; email: string }) {
+      const body = await send("POST", "/api/v2/persons", {}, {
+        name: input.name,
+        emails: [{ value: input.email, primary: true }],
+      });
+      return body.data as { id: number };
+    },
+
+    async createLead(input: { title: string; personId: number; originId: string }) {
+      const body = await send("POST", "/api/v1/leads", {}, {
+        title: input.title,
+        person_id: input.personId,
+        origin_id: input.originId,
+      });
+      return body.data as { id: string };
     },
 
     /** One page of every file: uploads on deals, people, organisations, activities and notes (read only). */

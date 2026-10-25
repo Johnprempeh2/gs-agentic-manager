@@ -116,7 +116,7 @@ export { calendarFeeds } from "./calendar_feeds.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
 export { websiteProperties, websitePulls } from "./website.js";
-export { websiteSite, websitePage, websiteEntry, websiteRelease, websiteSitemapOption } from "./website_module.js";
+export { websiteSite, websitePage, websiteEntry, websiteRelease, websiteSitemapOption, websiteFeature } from "./website_module.js";
 export { intelligenceReports, intelligenceBoardSnapshots, intelligenceRecommendations } from "./intelligence.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
