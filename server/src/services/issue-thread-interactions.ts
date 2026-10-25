@@ -3691,18 +3691,20 @@ export function issueThreadInteractionService(
             eq(companyMemberships.status, "active"),
           ))
         : [];
-      const ownerIds = memberRows.filter((row) => row.role === "owner" && row.userId !== "local-board")
+      const boardUserIds = memberRows.filter((row) => (row.role === "owner" || row.role === "admin") && row.userId !== "local-board")
         .map((row) => row.userId).sort();
       if (normalizedData.resolverUserIds?.some((id) => !memberRows.some((row) => row.userId === id))) {
         throw unprocessable("resolverUserIds must name active company members");
       }
-      // A board decision defaults to the active owners of this company. A
-      // specifically addressed non-owner remains a private, single-person ask.
+      // A board decision defaults to active owners and admins. A specifically
+      // addressed member outside that set remains a single-person ask.
       const resolverUserIds = normalizedData.resolverUserIds ?? (
         decisionKinds.has(normalizedData.kind)
         && !normalizedData.addresseeAgentId
-        && (!normalizedData.addresseeUserId || ownerIds.includes(normalizedData.addresseeUserId))
-          ? ownerIds : []
+        && (normalizedData.addresseeUserId
+          ? boardUserIds.includes(normalizedData.addresseeUserId)
+          : policy.effectiveResolverPolicy === "human_only")
+          ? boardUserIds : []
       );
 
       if (normalizedData.addresseeAgentId) {

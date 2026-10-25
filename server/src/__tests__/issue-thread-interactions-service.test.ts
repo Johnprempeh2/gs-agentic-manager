@@ -1924,8 +1924,18 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
     const { companyId, issueId } = await seedConfirmationIssue("Shared board answer");
     await db.insert(companyMemberships).values(["john", "ben"].map((userId) => ({
       companyId, principalType: "user", principalId: userId,
-      status: "active", membershipRole: "owner",
+      status: "active", membershipRole: userId === "john" ? "owner" : "admin",
     })));
+    const openCard = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation",
+      payload: { version: 1, prompt: "Open question?" },
+    }, { userId: "local-board" });
+    expect(openCard.resolverUserIds).toEqual([]);
+    const boardCard = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation", resolverPolicy: "human_only",
+      payload: { version: 1, prompt: "Board question?" },
+    }, { userId: "local-board" });
+    expect(boardCard.resolverUserIds).toEqual(expect.arrayContaining(["john", "ben"]));
     const card = await interactionsSvc.create({ id: issueId, companyId }, {
       kind: "request_confirmation",
       resolverPolicy: "human_only",

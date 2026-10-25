@@ -727,8 +727,9 @@ outcomes and resolver attribution are immutable.
 
 An explicit named agent or user addressee and a company-configured cap may narrow
 the effective audience. A decision card may name `resolverUserIds`, a set of active
-company members who can answer it. Board decision cards default to the company's
-active owner users when no set is supplied. For these cards the first answer wins;
+company members who can answer it. A decision addressed to an owner or admin,
+or an unaddressed `human_only` decision, defaults to the company's active owner
+and admin users when no set is supplied. For these cards the first answer wins;
 the winner and time remain in the interaction audit. Other addressed interactions
 remain limited to their exact addressee. A cap never widens the
 requested audience. Tool-action confirmations and
