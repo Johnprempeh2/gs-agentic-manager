@@ -64,8 +64,9 @@ describe("AttachmentThumbnail", () => {
 
   it("warns when a screenshot is mostly one flat colour", () => {
     render("after-laptop-thread.png");
-    expect(container.querySelector("[data-testid='attachment-blank-warning']")?.textContent)
-      .toBe("This screenshot looks blank");
+    const warning = container.querySelector("[data-testid='attachment-blank-warning']");
+    expect(warning?.querySelector(".sr-only")?.textContent).toBe("This screenshot looks blank");
+    expect(warning?.getAttribute("title")).toContain("Ask the agent to retake it");
   });
 
   it("does not warn for a screenshot with content", () => {

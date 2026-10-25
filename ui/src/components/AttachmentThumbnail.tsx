@@ -57,11 +57,17 @@ export function AttachmentThumbnail({
       />
       {blank ? (
         <span
-          className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1 bg-status-warning-soft px-1.5 py-1 text-(length:--text-micro) font-medium text-status-warning-foreground"
+          className="@container absolute inset-x-0 bottom-0 bg-status-warning-soft px-1.5 py-1 text-(length:--text-micro) font-medium text-status-warning-foreground"
           data-testid="attachment-blank-warning"
+          title={`${BLANK_SCREENSHOT_MESSAGE}. Ask the agent to retake it.`}
         >
-          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
-          <span className="truncate">{BLANK_SCREENSHOT_MESSAGE}</span>
+          {/* Small tiles (chat on a phone) fit only the short label. */}
+          <span className="flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+            <span className="sr-only">{BLANK_SCREENSHOT_MESSAGE}</span>
+            <span aria-hidden="true" className="truncate @[10rem]:hidden">Blank</span>
+            <span aria-hidden="true" className="hidden truncate @[10rem]:inline">{BLANK_SCREENSHOT_MESSAGE}</span>
+          </span>
         </span>
       ) : null}
     </>
