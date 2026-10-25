@@ -3235,6 +3235,7 @@ export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorksp
 export * from "./deep-dive.js";
 export * from "./deep-dive-findings.js";
 export * from "./deep-dive-sessions.js";
+export * from "./deep-dive-boards.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";
