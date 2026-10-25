@@ -535,9 +535,14 @@ export function DeepDive() {
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Deep Dive</h1>
-          <Link to="/deep-dive/files" className="text-xs font-medium underline-offset-4 hover:underline">
-            Evidence and files
-          </Link>
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">
+              Findings
+            </Link>
+            <Link to="/deep-dive/files" className="text-xs font-medium underline-offset-4 hover:underline">
+              Evidence and files
+            </Link>
+          </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
           The nine Investigation Streams against the five GIF questions (Book V). Place the known, validate the
