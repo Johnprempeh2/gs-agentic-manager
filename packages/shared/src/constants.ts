@@ -843,6 +843,9 @@ export const APPROVAL_TYPES = [
   // An agent (or a person without Publish rights) proposes a Publish of a site; a person
   // with website:publish approves it and the Publish runs in that person's name (GRE-2109).
   "website_publish",
+  // An agent or a person asks for a refund on a website order; the site records the request and a person with
+  // website:commerce decides it on the card, in their own name. GSAM moves no money (GRE-2354 2c(b)).
+  "commerce_refund_request",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
@@ -1225,6 +1228,9 @@ export const PERMISSION_KEYS = [
   "website:view",
   "website:edit",
   "website:publish",
+  // Commerce changes on the site through the bridge's write and refund keys (GRE-2354 2c(b)). Role default: owner
+  // and admin. An agent needs an explicit grant, and even then the people-only operations refuse it.
+  "website:commerce",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

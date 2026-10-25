@@ -262,7 +262,8 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     await http.get(`${base}/commerce/fx?x=1`).expect(422);
     await http.get(`${base}/commerce/payments?from=2026-11-01&to=2026-10-01`).expect(422);
     await http.get(`${base}/commerce/payments?from=yesterday`).expect(422);
-    await http.post(`${base}/commerce/offerings`).send({}).expect(404);
+    // writes are 2c(b)'s, behind website:commerce, which this agent does not hold
+    await http.post(`${base}/commerce/offerings`).send({}).expect(403);
     expect(seen).toHaveLength(calls);
 
     // A report that carries a Stripe id never reaches the caller.
