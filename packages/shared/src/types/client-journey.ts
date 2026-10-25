@@ -64,6 +64,15 @@ export interface ClientDocumentRequest {
   createdAt: string;
   /** The file that met the request, or null while it is outstanding. */
   received: ClientDocumentRequestReceived | null;
+  /** The client answered it on the website (GRE-2439); the file stays on the site. Null until then. */
+  websiteAnswer?: ClientDocumentRequestWebsiteAnswer | null;
+}
+
+export interface ClientDocumentRequestWebsiteAnswer {
+  answeredAt: string;
+  answeredBy: { customerId: string; name: string | null; email: string | null };
+  note: string | null;
+  fileName: string | null;
 }
 
 export interface ClientDocumentRequestReceived {

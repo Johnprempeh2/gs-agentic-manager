@@ -1,10 +1,11 @@
 // The website admin bridge client (GRE-2323): GSAM reads the site's customer
-// records by calling `<site>/api/admin/v1/*`, signed with an Ed25519 key it
+// records by calling `<site>/api/admin/v1/*` (and, GRE-2439, pushes one
+// client's Deep Dive snapshot there), signed with an Ed25519 key it
 // keeps in the vault. The signing contract is contracts/gs-bridge-v1, the same
 // file in greatstone-website; both test suites check against its vectors.
 import { createHash, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { z } from "zod";
-import type { WebsiteDataResource } from "@greatstone/shared";
+import { deepDiveSyncSitePath, type DeepDiveSyncPayload, type WebsiteDataResource } from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 
 export const BRIDGE_SCHEME = "gs-bridge-v1";
@@ -128,6 +129,7 @@ export const bridgeHealthSchema = z.object({
 });
 export const bridgeListSchema = z.object({ items: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable() });
 export const bridgeItemSchema = z.object({ item: z.record(z.string(), z.unknown()) });
+export const bridgeSyncAckSchema = z.object({ ok: z.literal(true), tenantId: z.string() });
 
 export interface WebsiteBridgeClientOptions {
   baseUrl: string;
@@ -162,12 +164,13 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     throw new WebsiteBridgeError("not_configured", null, "the bridge address must be https");
   }
 
-  async function attempt(url: URL, actor: WebsiteBridgeActor, deadline: number): Promise<unknown> {
-    const headers = signBridgeRequest({ method: "GET", url, kid: options.credential.kid, privateKey: options.credential.privateKey,
-      actor, nowSeconds: Math.floor(now() / 1000) });
+  async function attempt(method: "GET" | "PUT", url: URL, body: string | undefined, actor: WebsiteBridgeActor, deadline: number): Promise<unknown> {
+    const headers: Record<string, string> = signBridgeRequest({ method, url, body, kid: options.credential.kid,
+      privateKey: options.credential.privateKey, actor, nowSeconds: Math.floor(now() / 1000) });
+    if (body !== undefined) headers["content-type"] = "application/json";
     let res: Response;
     try {
-      res = await fetchImpl(url, { method: "GET", headers, redirect: "error",
+      res = await fetchImpl(url, { method, headers, body, redirect: "error",
         signal: AbortSignal.timeout(Math.max(1, Math.min(ATTEMPT_TIMEOUT_MS, deadline - now()))) });
     } catch (error) {
       const name = (error as { name?: string })?.name;
@@ -176,19 +179,23 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     if (res.ok) {
       try { return await res.json(); } catch { throw new WebsiteBridgeError("bad_response", res.status, "not JSON"); }
     }
-    const body = errorBody.safeParse(await res.json().catch(() => null));
-    throw new WebsiteBridgeError(codeFor(res.status, body.success ? body.data.error.code : undefined), res.status,
-      body.success ? body.data.error.code : `HTTP ${res.status}`, retryAfterMs(res));
+    const errBody = errorBody.safeParse(await res.json().catch(() => null));
+    throw new WebsiteBridgeError(codeFor(res.status, errBody.success ? errBody.data.error.code : undefined), res.status,
+      errBody.success ? errBody.data.error.code : `HTTP ${res.status}`, retryAfterMs(res));
   }
 
-  /** One GET: at most two retries, only after a network error, a timeout or a 502/503/504. 4xx is never retried. */
-  async function get<T>(path: string, query: Record<string, string | undefined>, actor: WebsiteBridgeActor, schema: z.ZodType<T>): Promise<T> {
+  /**
+   * One call: at most two retries, only after a network error, a timeout or a 502/503/504. 4xx is never retried.
+   * A PUT is retried too: it replaces the whole resource, so sending it twice is the same as once.
+   */
+  async function call<T>(method: "GET" | "PUT", path: string, query: Record<string, string | undefined>, body: string | undefined,
+    actor: WebsiteBridgeActor, schema: z.ZodType<T>): Promise<T> {
     const url = new URL(path, base);
     for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== "") url.searchParams.set(k, v);
     const deadline = now() + CALL_DEADLINE_MS;
     for (let tries = 0; ; tries += 1) {
       try {
-        const parsed = schema.safeParse(await attempt(url, actor, deadline));
+        const parsed = schema.safeParse(await attempt(method, url, body, actor, deadline));
         if (!parsed.success) throw new WebsiteBridgeError("bad_response", 200, parsed.error.issues[0]?.message);
         return parsed.data;
       } catch (error) {
@@ -200,6 +207,9 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     }
   }
 
+  const get = <T>(path: string, query: Record<string, string | undefined>, actor: WebsiteBridgeActor, schema: z.ZodType<T>) =>
+    call("GET", path, query, undefined, actor, schema);
+
   return {
     health: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeHealthSchema),
     list: (resource: WebsiteDataResource, filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
@@ -207,6 +217,9 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
         limit: filters.limit === undefined ? undefined : String(filters.limit) }, actor, bridgeListSchema),
     get: (resource: WebsiteDataResource, id: string, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/${resource}/${encodeURIComponent(id)}`, {}, actor, bridgeItemSchema),
+    /** Deep Dive sync (GRE-2439): replace one tenant's snapshot on the site. Needs a `write` key. */
+    putDeepDiveTenant: (tenantId: string, payload: DeepDiveSyncPayload, actor: WebsiteBridgeActor) =>
+      call("PUT", deepDiveSyncSitePath(tenantId), {}, JSON.stringify(payload), actor, bridgeSyncAckSchema),
   };
 }
 export type WebsiteBridgeClient = ReturnType<typeof createWebsiteBridgeClient>;
