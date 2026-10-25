@@ -769,14 +769,13 @@ export async function createApp(
   api.use(clientVersionRoutes());
   api.use(statusCardRoutes(db));
   api.use(websiteRoutes(db));
+  const websiteEnquiryReader = opts.websiteEnquiryReader ?? websiteDataBridgeService(db).enquiryReader;
   api.use(
     websiteModuleRoutes(db, {
       gsamOrigins: gsamServedOrigins(opts.authPublicBaseUrl, opts.allowedHostnames),
       allowLocalhostEditor: process.env.NODE_ENV !== "production",
       heartbeat: connectionIntentHeartbeat,
-      // The signed admin bridge (GRE-2323) answers "Check for enquiries". The 5-minute pull below stays off
-      // unless a reader is passed in, so connecting a read key does not start background imports by itself.
-      enquiryReader: opts.websiteEnquiryReader ?? websiteDataBridgeService(db).enquiryReader,
+      enquiryReader: websiteEnquiryReader,
     }),
   );
   api.use(websiteFeaturesRoutes(db));
@@ -1408,11 +1407,11 @@ export async function createApp(
   importTransferSweepTimer.unref?.();
   // CRM sync (GRE-1100): polls due Pipedrive bindings once a minute. Read only.
   const stopCrmSyncScheduler = startCrmSyncScheduler(db);
-  const stopWebsiteEnquiryScheduler = opts.websiteEnquiryReader
-    ? startWebsiteEnquiryScheduler(db, opts.websiteEnquiryReader, websiteEnquiryPipedriveCopy(db), (err, siteId) => {
+  const stopWebsiteEnquiryScheduler = startWebsiteEnquiryScheduler(
+    db, websiteEnquiryReader, websiteEnquiryPipedriveCopy(db), (err, siteId) => {
       logger.warn({ err, siteId }, "website enquiry pull failed");
-    })
-    : () => {};
+    },
+  );
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies, companyMemberships, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, websiteFeature, websiteProperties, websiteSite } from "@greatstone/db";
 import { pipelineService } from "../pipelines.js";
@@ -264,7 +264,7 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
   };
 }
 
-/** Poll connected sites every five minutes. The real bridge reader is supplied by GRE-2323. */
+/** Poll sites with a configured bridge read key every five minutes. */
 export function startWebsiteEnquiryScheduler(
   db: Db,
   reader: WebsiteEnquiryReader,
@@ -278,7 +278,7 @@ export function startWebsiteEnquiryScheduler(
     running = true;
     try {
       const sites = await db.select({ id: websiteSite.id, companyId: websiteSite.companyId })
-        .from(websiteSite).where(isNull(websiteSite.archivedAt));
+        .from(websiteSite).where(and(isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId)));
       for (const site of sites) {
         try {
           await service.importFromBridge(site.companyId, site.id, reader);
@@ -286,6 +286,8 @@ export function startWebsiteEnquiryScheduler(
           onError(error, site.id);
         }
       }
+    } catch (error) {
+      onError(error, "");
     } finally {
       running = false;
     }
