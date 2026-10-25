@@ -1467,8 +1467,11 @@ export interface ChatChannelServiceOptions {
   /** Optional verified ingress origin; never used for board or identity links. */
   webhookPublicBaseUrl?: string | null;
   runtime?: ChatSdkRuntime;
-  /** Testable scheduler hook; production defaults to the next event-loop turn. */
-  scheduleDeferredWork?: (task: () => void) => void;
+  /**
+   * Testable scheduler hook; production defaults to the next event-loop turn.
+   * The task's promise settles, without rejecting, once the deferred work ends.
+   */
+  scheduleDeferredWork?: (task: () => Promise<void>) => void;
   /** Test boundary after selecting due Slack status work and before claiming. */
   slackSessionSyncSelectionBarrier?: () => Promise<void>;
   /** Narrow fault-injection boundary for the one-time setup-secret audit. */
@@ -3432,7 +3435,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     if (shuttingDown) return;
     const schedule = options.scheduleDeferredWork ?? setImmediate;
     schedule(() => {
-      if (shuttingDown) return;
+      if (shuttingDown) return Promise.resolve();
       const pending = task().catch((error) => {
         logger.error(
           { error: redactError(error) },
@@ -3441,6 +3444,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       });
       backgroundMessageTasks.add(pending);
       void pending.finally(() => backgroundMessageTasks.delete(pending));
+      return pending;
     });
   }
 

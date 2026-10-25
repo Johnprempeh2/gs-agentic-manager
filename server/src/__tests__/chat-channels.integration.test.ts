@@ -7620,7 +7620,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
 
   it("reorders same-second GitHub callbacks by comment id before starting the task", async () => {
     const fixture = await seedCompany();
-    const deferred: Array<() => void> = [];
+    const deferred: Array<() => Promise<void>> = [];
     const { callbacks, endpoint, service, wakeup } =
       await configuredGitHubEndpoint(fixture, {
         deferWebhookProcessing: true,
@@ -7675,18 +7675,15 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toBe(1);
     expect(deferred).toHaveLength(1);
 
-    deferred.shift()?.();
-    await vi.waitFor(async () => {
-      const rows = await db
-        .select()
-        .from(chatConversations)
-        .where(eq(chatConversations.endpointId, endpoint.id));
-      expect(rows).toHaveLength(1);
-    });
-    const [conversation] = await db
+    // The drain first holds the burst for the reorder window, so await the
+    // drain itself instead of polling inside vi.waitFor's 1s default budget.
+    await deferred.shift()?.();
+    const conversations = await db
       .select()
       .from(chatConversations)
       .where(eq(chatConversations.endpointId, endpoint.id));
+    expect(conversations).toHaveLength(1);
+    const [conversation] = conversations;
     await vi.waitFor(async () => {
       const rows = await db
         .select({ body: issueComments.body })
