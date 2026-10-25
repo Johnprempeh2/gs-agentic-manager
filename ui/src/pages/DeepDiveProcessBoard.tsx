@@ -51,14 +51,27 @@ function VisibilitySelect({ value, label, onChange }: { value: DeepDiveVisibilit
   );
 }
 
-/** A cubic from the right edge of one card to the left edge of the other. */
+/**
+ * A cubic from the right edge of one card to the left edge of the other; when
+ * the target is not to the right, from the bottom (or top) edge to the other's
+ * top (or bottom), so the curve never runs off the canvas.
+ */
 function arrowPath(a: Point, b: Point): string {
-  const x1 = a.x + W;
-  const y1 = a.y + H / 2;
-  const x2 = b.x;
-  const y2 = b.y + H / 2;
-  const bend = Math.max(40, Math.abs(x2 - x1) / 2);
-  return `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`;
+  if (b.x >= a.x + W + 20) {
+    const x1 = a.x + W;
+    const y1 = a.y + H / 2;
+    const x2 = b.x;
+    const y2 = b.y + H / 2;
+    const bend = (x2 - x1) / 2;
+    return `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`;
+  }
+  const down = b.y >= a.y;
+  const x1 = a.x + W / 2;
+  const y1 = down ? a.y + H : a.y;
+  const x2 = b.x + W / 2;
+  const y2 = down ? b.y : b.y + H;
+  const bend = Math.max(30, Math.abs(y2 - y1) / 2) * (down ? 1 : -1);
+  return `M${x1} ${y1} C${x1} ${y1 + bend} ${x2} ${y2 - bend} ${x2} ${y2}`;
 }
 
 interface Drag {
