@@ -11,7 +11,9 @@ import {
 
 const MIGRATION_FILE = "0384_website_module_foundation.sql";
 const SITEMAP_MIGRATION_FILE = "0385_website_sitemap_options.sql";
-const WEBSITE_TABLES = ["website_site", "website_page", "website_entry", "website_release", "website_sitemap_option"];
+const FEATURE_MIGRATION_FILE = "0393_website_features.sql";
+const DATA_BRIDGE_MIGRATION_FILE = "0394_website_data_bridge.sql";
+const WEBSITE_TABLES = ["website_site", "website_page", "website_entry", "website_release", "website_sitemap_option", "website_feature"];
 const cleanups: Array<() => Promise<void>> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -72,6 +74,11 @@ describeEmbeddedPostgres("website module migration 0384 rollback", () => {
       INSERT INTO "website_sitemap_option" ("company_id", "site_id", "name", "tree")
       VALUES (${companyId}, ${siteId}, 'Option A', '[]'::jsonb)
     `;
+    // So does 0393.
+    await sql`
+      INSERT INTO "website_feature" ("company_id", "site_id", "key", "name")
+      VALUES (${companyId}, ${siteId}, 'shop', 'Shop')
+    `;
     return { pageDocId, entryDocId, otherDocId };
   }
 
@@ -105,7 +112,12 @@ describeEmbeddedPostgres("website module migration 0384 rollback", () => {
     expect(await sql`SELECT 1 FROM "drizzle"."__drizzle_migrations" WHERE "hash" = ${hash}`).toHaveLength(0);
 
     const state = await inspectMigrations(database.connectionString);
-    expect(state.status === "needsMigrations" ? state.pendingMigrations : []).toEqual([MIGRATION_FILE, SITEMAP_MIGRATION_FILE]);
+    expect(state.status === "needsMigrations" ? state.pendingMigrations : []).toEqual([
+      MIGRATION_FILE,
+      SITEMAP_MIGRATION_FILE,
+      FEATURE_MIGRATION_FILE,
+      DATA_BRIDGE_MIGRATION_FILE,
+    ]);
     await applyPendingMigrations(database.connectionString);
     expect(await tablesPresent(sql)).toEqual([...WEBSITE_TABLES].sort());
   }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);

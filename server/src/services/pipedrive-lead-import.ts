@@ -240,6 +240,12 @@ export function pipedriveLeadImportService(db: Db) {
       let complete = true;
       while (page) {
         for (const lead of page.items) {
+          // GSAM already owns these website leads. Importing the Pipedrive copy
+          // into its separate Leads pipeline would show the same enquiry twice.
+          if (typeof lead.origin_id === "string" && lead.origin_id.startsWith("gsam:website:")) {
+            counts.leads.skipped += 1;
+            continue;
+          }
           const externalId = str(lead.id);
           if (!externalId) {
             counts.leads.skipped += 1;

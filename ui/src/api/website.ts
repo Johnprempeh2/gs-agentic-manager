@@ -23,6 +23,7 @@ import {
   type WebsitePageComment,
   type WebsiteRelease,
   type WebsiteHomeSummary,
+  type WebsiteEnquiryLead,
   type WebsiteReleaseActionPlan,
   type WebsiteSite,
   type WebsiteTokenSecretOption,
@@ -85,6 +86,10 @@ const releasePath = (companyId: string, siteId: string, releaseId: string) =>
 /** Website module client (GRE-2105): connected sites and their pages. */
 export const websiteModuleApi = {
   sites: (companyId: string) => api.get<WebsiteSite[]>(sitesPath(companyId)),
+  enquiries: (companyId: string, siteId: string) =>
+    api.get<WebsiteEnquiryLead[]>(`${sitePath(companyId, siteId)}/enquiries`),
+  checkEnquiries: (companyId: string, siteId: string) =>
+    api.post<{ created: number; skipped: number }>(`${sitePath(companyId, siteId)}/enquiries/check`, {}),
   /** What the caller may do: for the company, or for one site when `siteId` is given. */
   access: (companyId: string, siteId?: string | null) =>
     api.get<WebsiteAccess>(

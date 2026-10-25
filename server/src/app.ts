@@ -74,6 +74,11 @@ import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "./routes/website-module.js";
+import { websiteFeaturesRoutes } from "./routes/website-features.js";
+import { websiteDataBridgeRoutes } from "./routes/website-data-bridge.js";
+import { websiteDataBridgeService } from "./services/website/data-bridge.js";
+import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
+import { websiteEnquiryPipedriveCopy } from "./services/website/enquiry-pipedrive.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
 import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
@@ -540,6 +545,8 @@ export async function createApp(
     databaseBackupService?: InstanceDatabaseBackupService;
     databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
     liveBackupHealth?: Omit<InspectLiveBackupHealthOptions, "now">;
+    /** Read-only website admin bridge reader. Connected by GRE-2323. */
+    websiteEnquiryReader?: WebsiteEnquiryReader;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     allowedHostnames: string[];
@@ -766,13 +773,17 @@ export async function createApp(
   api.use(clientVersionRoutes());
   api.use(statusCardRoutes(db));
   api.use(websiteRoutes(db));
+  const websiteEnquiryReader = opts.websiteEnquiryReader ?? websiteDataBridgeService(db).enquiryReader;
   api.use(
     websiteModuleRoutes(db, {
       gsamOrigins: gsamServedOrigins(opts.authPublicBaseUrl, opts.allowedHostnames),
       allowLocalhostEditor: process.env.NODE_ENV !== "production",
       heartbeat: connectionIntentHeartbeat,
+      enquiryReader: websiteEnquiryReader,
     }),
   );
+  api.use(websiteFeaturesRoutes(db));
+  api.use(websiteDataBridgeRoutes(db));
   api.use(intelligenceRoutes(db));
   api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
@@ -1401,6 +1412,11 @@ export async function createApp(
   importTransferSweepTimer.unref?.();
   // CRM sync (GRE-1100): polls due Pipedrive bindings once a minute. Read only.
   const stopCrmSyncScheduler = startCrmSyncScheduler(db);
+  const stopWebsiteEnquiryScheduler = startWebsiteEnquiryScheduler(
+    db, websiteEnquiryReader, websiteEnquiryPipedriveCopy(db), (err, siteId) => {
+      logger.warn({ err, siteId }, "website enquiry pull failed");
+    },
+  );
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
@@ -1508,6 +1524,7 @@ export async function createApp(
         importTransferSweepTimer = null;
       }
       stopCrmSyncScheduler();
+      stopWebsiteEnquiryScheduler();
       devWatcher?.close();
       viteHtmlRenderer?.dispose();
       void viteDevServer?.close().catch(() => undefined);
