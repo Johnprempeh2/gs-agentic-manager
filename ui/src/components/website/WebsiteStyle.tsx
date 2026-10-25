@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquarePlus, Palette, RefreshCw } from "lucide-react";
+import { ChevronRight, MessageSquarePlus, Palette, RefreshCw } from "lucide-react";
 import type {
   WebsiteProperty,
   WebsiteSite,
@@ -124,11 +124,32 @@ function AskButton({ onAsk, label }: { onAsk: () => void; label: string }) {
   );
 }
 
+/** A value that copies on click. A long one ends in an ellipsis; the whole value shows on hover and copies. */
 function CopyValue({ text, label }: { text: string; label: string }) {
   return (
-    <CopyText text={text} ariaLabel={`Copy ${label}`} title="Copy" className="max-w-full truncate rounded px-1 font-mono text-xs text-muted-foreground hover:bg-accent">
+    <CopyText
+      text={text}
+      ariaLabel={`Copy ${label}`}
+      title={`Copy ${text}`}
+      containerClassName="min-w-0 max-w-full"
+      className="max-w-full truncate rounded px-1 font-mono text-xs text-muted-foreground hover:bg-accent"
+    >
       {text}
     </CopyText>
+  );
+}
+
+/** A folded list: what the site defines but the page does not use, or a framework brings with it. */
+function Folded({ label, testId, children }: { label: string; testId: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-2" data-testid={testId}>
+      <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChevronRight className={cn("transition-transform motion-reduce:transition-none", open && "rotate-90")} aria-hidden />
+        {label}
+      </Button>
+      {open ? children : null}
+    </div>
   );
 }
 
@@ -149,13 +170,16 @@ function ColourCard({ colour, canvas, onAsk }: { colour: WebsiteStyleColour; can
           ) : null}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-1">
-          <CopyValue text={colour.cssVar} label={`${colour.name} variable`} />
           <CopyValue text={colour.hex} label={`${colour.name} hex`} />
           {colour.alpha < 1 ? <span className="text-xs text-muted-foreground">{Math.round(colour.alpha * 100)}%</span> : null}
         </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1">
+          {[colour.cssVar, ...colour.aliases].map((name) => (
+            <CopyValue key={name} text={name} label={`${name} variable`} />
+          ))}
+        </div>
         <p className="truncate text-xs text-muted-foreground" title={colour.usedIn.join(", ")}>
-          {colour.usedFor.length ? `Used for ${colour.usedFor.join(", ")}` : "Not used by a rule"}
-          {colour.usedIn.length ? ` · ${colour.usedIn.join(", ")}` : ""}
+          {colour.usedIn.length ? colour.usedIn.join(", ") : "Not used on the page"}
         </p>
         <AskButton label={colour.name} onAsk={onAsk} />
       </div>
@@ -163,27 +187,24 @@ function ColourCard({ colour, canvas, onAsk }: { colour: WebsiteStyleColour; can
   );
 }
 
-function ContrastRow({ pair, colours, ratingTestId }: { pair: WebsiteStyleContrast; colours: Map<string, WebsiteStyleColour>; ratingTestId?: string }) {
-  const text = colours.get(pair.text);
-  const background = colours.get(pair.background);
-  if (!text || !background) return null;
+function ContrastRow({ pair }: { pair: WebsiteStyleContrast }) {
   return (
     <li className="flex min-w-0 items-center gap-3 rounded-lg border bg-card p-2" data-testid="website-style-contrast-pair">
       <span
         className="flex h-10 w-14 shrink-0 items-center justify-center rounded-md border text-base font-semibold"
-        style={{ background: background.value, color: text.value }}
+        style={{ background: pair.background, color: pair.text }}
         aria-hidden
       >
         Aa
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm">
-          {text.name} <span className="text-muted-foreground">on</span> {background.name}
+          {pair.textName} <span className="text-muted-foreground">on</span> {pair.backgroundName}
         </p>
-        <p className="truncate font-mono text-xs text-muted-foreground">{pair.text} · {pair.background}</p>
+        <p className="truncate font-mono text-xs text-muted-foreground" title={pair.usedIn.join(", ")}>{pair.usedIn.join(", ")}</p>
       </div>
       <span className="shrink-0 text-sm tabular-nums">{pair.ratio.toFixed(1)}:1</span>
-      <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-xs font-medium", RATING_CLASS[pair.rating])} data-testid={ratingTestId}>
+      <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-xs font-medium", RATING_CLASS[pair.rating])}>
         {pair.rating}
       </span>
     </li>
@@ -219,12 +240,18 @@ const BLOCK_SAMPLE: Record<WebsiteStyleComponent["kind"], string> = {
   pill: "New",
 };
 
+/** A base class (`.btn`, `.badge`) sets shape and type but no fill or border; its variants add those. */
+function hasNoFill(block: WebsiteStyleComponent): boolean {
+  if (block.kind !== "button" && block.kind !== "pill") return false;
+  return !["background", "background-color", "border", "border-color"].some((prop) => block.declarations[prop] && !/^(none|transparent|0)$/.test(block.declarations[prop]));
+}
+
 function BlockCard({ block, canvas, onAsk }: { block: WebsiteStyleComponent; canvas: CSSProperties; onAsk: () => void }) {
   const [open, setOpen] = useState(false);
   const declarations = Object.entries(block.declarations);
   return (
     <li className="min-w-0 overflow-hidden rounded-lg border bg-card" data-testid="website-style-block">
-      <div className="flex min-h-24 items-center justify-center overflow-hidden border-b p-4" style={canvas}>
+      <div className="relative flex min-h-24 items-center justify-center overflow-hidden border-b p-4" style={canvas}>
         {block.kind === "card" ? (
           <div className="w-full max-w-56" style={blockStyle(block.declarations)}>
             <p className="font-semibold">{BLOCK_SAMPLE.card}</p>
@@ -235,6 +262,9 @@ function BlockCard({ block, canvas, onAsk }: { block: WebsiteStyleComponent; can
         ) : (
           <span className="inline-flex items-center" style={blockStyle(block.declarations)}>{BLOCK_SAMPLE[block.kind]}</span>
         )}
+        {hasNoFill(block) ? (
+          <span className="absolute bottom-1 left-1 rounded bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground">No fill (base class)</span>
+        ) : null}
       </div>
       <div className="space-y-1 p-3">
         <p className="truncate text-sm font-medium">{block.label}</p>
@@ -259,6 +289,23 @@ function BlockCard({ block, canvas, onAsk }: { block: WebsiteStyleComponent; can
         ) : null}
       </div>
     </li>
+  );
+}
+
+function TokenList({ tokens, onAsk }: { tokens: WebsiteStyleToken[]; onAsk?: (token: WebsiteStyleToken) => void }) {
+  return (
+    <ul className="divide-y rounded-lg border bg-card">
+      {tokens.map((token) => (
+        <li key={token.name} className="flex min-w-0 items-center gap-3 px-3 py-2" data-testid="website-style-token">
+          <TokenVisual token={token} />
+          <div className="min-w-0 flex-1">
+            <CopyValue text={token.name} label={`${token.name} name`} />
+            <div><CopyValue text={token.value} label={`${token.name} value`} /></div>
+          </div>
+          {onAsk && token.name.startsWith("--") ? <AskButton label={token.name} onAsk={() => onAsk(token)} /> : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -315,18 +362,29 @@ export function WebsiteStyleView({
   useSiteFonts(style.fontStylesheets);
   const [allContrast, setAllContrast] = useState(false);
   const canvas = siteCanvas(style);
-  const coloursByVar = useMemo(() => new Map(style.colours.map((colour) => [colour.cssVar, colour])), [style.colours]);
+  const usedColours = style.colours.filter((colour) => !colour.unused);
+  const unusedColours = style.colours.filter((colour) => colour.unused);
   const roles = (Object.keys(ROLE_LABELS) as WebsiteStyleColourRole[])
-    .map((role) => ({ role, colours: style.colours.filter((colour) => colour.role === role) }))
+    .map((role) => ({ role, colours: usedColours.filter((colour) => colour.role === role) }))
     .filter((group) => group.colours.length > 0);
-  // Problems first: the lowest ratios lead.
-  const contrast = [...style.contrast].sort((a, b) => a.ratio - b.ratio);
+  // In the read's order: the pairs that cover most of the page (body text) first.
+  const contrast = style.contrast;
   const failing = contrast.filter((pair) => pair.rating === "Fail" || pair.rating === "AA large").length;
   const shownContrast = allContrast ? contrast : contrast.slice(0, CONTRAST_LIMIT);
+  const ownTokens = style.tokens.filter((token) => !token.framework);
+  const frameworkTokens = style.tokens.filter((token) => token.framework);
   const tokenGroups = (Object.keys(TOKEN_LABELS) as WebsiteStyleTokenKind[])
-    .map((kind) => ({ kind, tokens: style.tokens.filter((token) => token.kind === kind) }))
+    .map((kind) => ({ kind, tokens: ownTokens.filter((token) => token.kind === kind && !token.name.startsWith("@keyframes")) }))
     .filter((group) => group.tokens.length > 0);
-  const motion = style.tokens.filter((token) => token.kind === "motion");
+  const motion = ownTokens.filter((token) => token.name.startsWith("@keyframes"));
+  const pageBlocks = style.components.filter((block) => block.inPage);
+  const moreBlocks = style.components.filter((block) => !block.inPage);
+  const askColour = (colour: WebsiteStyleColour) =>
+    onAsk(styleTaskDefaults(siteName, { label: `${colour.name} colour`, name: colour.cssVar, token: colour.token, value: colour.value, usedIn: colour.usedIn }));
+  const askBlock = (block: WebsiteStyleComponent) =>
+    onAsk(styleTaskDefaults(siteName, { label: block.label, name: block.selector, token: null, value: block.className ? `class="${block.className}"` : block.selector }));
+  const swatchGrid = cn("grid grid-cols-2 gap-3", !compact && "lg:grid-cols-3 xl:grid-cols-4");
+  const blockGrid = grid("sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4");
   const empty = style.colours.length === 0 && style.fonts.length === 0 && style.components.length === 0;
 
   return (
@@ -341,7 +399,7 @@ export function WebsiteStyleView({
             {" · "}
             {style.stylesheets.length === 1 ? "1 stylesheet" : `${style.stylesheets.length} stylesheets`}
             {" · "}
-            {style.releaseTokenCount === 1 ? "1 theme token" : `${style.releaseTokenCount} theme tokens`}
+            {style.releaseTokenCount === 0 ? "No release theme overrides" : style.releaseTokenCount === 1 ? "1 release theme override" : `${style.releaseTokenCount} release theme overrides`}
             {" · "}
             read {relativeTime(style.readAt)}
           </p>
@@ -371,24 +429,28 @@ export function WebsiteStyleView({
         </div>
       ) : null}
 
-      {roles.length ? (
-        <Section id="colours" title="Colours" hint="The site's palette, by what each colour is used for.">
+      {style.colours.length ? (
+        <Section id="colours" title="Colours" hint="The colours the page uses, by what its rules use them for. Variables with the same value show as one colour.">
           {roles.map(({ role, colours }) => (
             <div key={role} className="space-y-2">
               <h3 className="text-sm font-medium text-muted-foreground">{ROLE_LABELS[role]}</h3>
               {/* Swatches are small: two to a row even on a phone and in the drawer, so the palette reads at a glance. */}
-              <ul className={cn("grid grid-cols-2 gap-3", !compact && "lg:grid-cols-3 xl:grid-cols-4")}>
+              <ul className={swatchGrid}>
                 {colours.map((colour) => (
-                  <ColourCard
-                    key={colour.cssVar}
-                    colour={colour}
-                    canvas={canvas}
-                    onAsk={() => onAsk(styleTaskDefaults(siteName, { label: `${colour.name} colour`, name: colour.cssVar, token: colour.token, value: colour.value, usedIn: colour.usedIn }))}
-                  />
+                  <ColourCard key={colour.cssVar} colour={colour} canvas={canvas} onAsk={() => askColour(colour)} />
                 ))}
               </ul>
             </div>
           ))}
+          {unusedColours.length ? (
+            <Folded label={`Defined but unused (${unusedColours.length})`} testId="website-style-unused-colours">
+              <ul className={swatchGrid}>
+                {unusedColours.map((colour) => (
+                  <ColourCard key={colour.cssVar} colour={colour} canvas={canvas} onAsk={() => askColour(colour)} />
+                ))}
+              </ul>
+            </Folded>
+          ) : null}
         </Section>
       ) : null}
 
@@ -396,11 +458,11 @@ export function WebsiteStyleView({
         <Section
           id="contrast"
           title="Text on background"
-          hint={`WCAG contrast. Body text needs AA (4.5:1); AA large is for headings only. ${failing ? `${failing} of ${contrast.length} pairs are below AA.` : "Every pair passes AA."}`}
+          hint={`Each text colour on the background it sits on, the most of the page first. Body text needs AA (4.5:1); AA large is for headings only. ${failing ? `${failing} of ${contrast.length} pairs are below AA.` : "Every pair passes AA."}`}
         >
           <ul className={cn("grid grid-cols-1 gap-2", !compact && "lg:grid-cols-2")}>
             {shownContrast.map((pair) => (
-              <ContrastRow key={`${pair.text} ${pair.background}`} pair={pair} colours={coloursByVar} />
+              <ContrastRow key={`${pair.text} ${pair.background}`} pair={pair} />
             ))}
           </ul>
           {contrast.length > CONTRAST_LIMIT ? (
@@ -458,43 +520,42 @@ export function WebsiteStyleView({
       ) : null}
 
       {style.components.length ? (
-        <Section id="blocks" title="Building blocks" hint="Buttons, links, cards and pills as the stylesheet draws them, with the class to use.">
-          <ul className={grid("sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
-            {style.components.map((block) => (
-              <BlockCard
-                key={block.selector}
-                block={block}
-                canvas={canvas}
-                onAsk={() => onAsk(styleTaskDefaults(siteName, { label: block.label, name: block.selector, token: null, value: block.className ? `class="${block.className}"` : block.selector }))}
-              />
-            ))}
-          </ul>
+        <Section id="blocks" title="Building blocks" hint="The buttons, links, cards and pills the page uses, as the stylesheet draws them, with the class to use.">
+          {pageBlocks.length ? (
+            <ul className={blockGrid}>
+              {pageBlocks.map((block) => (
+                <BlockCard key={block.selector} block={block} canvas={canvas} onAsk={() => askBlock(block)} />
+              ))}
+            </ul>
+          ) : null}
+          {moreBlocks.length ? (
+            <Folded label={`More variants the stylesheet defines (${moreBlocks.length})`} testId="website-style-more-blocks">
+              <ul className={blockGrid}>
+                {moreBlocks.map((block) => (
+                  <BlockCard key={block.selector} block={block} canvas={canvas} onAsk={() => askBlock(block)} />
+                ))}
+              </ul>
+            </Folded>
+          ) : null}
         </Section>
       ) : null}
 
-      {tokenGroups.length ? (
+      {tokenGroups.length || frameworkTokens.length ? (
         <Section id="tokens" title="Radius, spacing and other tokens">
           <div className={cn("grid grid-cols-1 gap-4", !compact && "lg:grid-cols-2")}>
             {tokenGroups.map(({ kind, tokens }) => (
               <div key={kind} className="min-w-0 space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground">{TOKEN_LABELS[kind]}</h3>
-                <ul className="divide-y rounded-lg border bg-card">
-                  {tokens.map((token) => (
-                    <li key={token.name} className="flex min-w-0 items-center gap-3 px-3 py-2" data-testid="website-style-token">
-                      <TokenVisual token={token} />
-                      <div className="min-w-0 flex-1">
-                        <CopyValue text={token.name} label={`${token.name} name`} />
-                        <div><CopyValue text={token.value} label={`${token.name} value`} /></div>
-                      </div>
-                      {token.name.startsWith("--") ? (
-                        <AskButton label={token.name} onAsk={() => onAsk(styleTaskDefaults(siteName, { label: token.name, name: token.name, token: token.token, value: token.value }))} />
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                <TokenList tokens={tokens} onAsk={(token) => onAsk(styleTaskDefaults(siteName, { label: token.name, name: token.name, token: token.token, value: token.value }))} />
               </div>
             ))}
           </div>
+          {frameworkTokens.length ? (
+            <Folded label={`From frameworks or not used on the page (${frameworkTokens.length})`} testId="website-style-framework-tokens">
+              {/* Breakpoints, library sizes and keyframes: listed for reference, no Ask an agent. */}
+              <TokenList tokens={frameworkTokens} />
+            </Folded>
+          ) : null}
         </Section>
       ) : null}
 
@@ -518,7 +579,7 @@ export function WebsiteStyleView({
           ) : null}
           {motion.length ? (
             <p className="text-sm text-muted-foreground">
-              Motion in use: {motion.map((token) => token.name.replace(/^@keyframes /, "")).join(", ")}.
+              Motion the page runs: {motion.map((token) => token.name.replace(/^@keyframes /, "")).join(", ")}.
             </p>
           ) : null}
         </Section>

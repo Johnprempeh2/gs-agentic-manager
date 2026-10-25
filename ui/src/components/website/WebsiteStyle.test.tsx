@@ -17,23 +17,30 @@ const style: WebsiteSiteStyle = {
   releaseTokenCount: 1,
   problem: null,
   colours: [
-    { cssVar: "--gs-bg", token: null, name: "Bg", value: "#0b0b0c", hex: "#0b0b0c", alpha: 1, role: "background", usedFor: ["background"], usedIn: ["body"], source: "stylesheet" },
-    { cssVar: "--gs-text", token: null, name: "Text", value: "#f5f5f0", hex: "#f5f5f0", alpha: 1, role: "text", usedFor: ["text"], usedIn: ["body"], source: "stylesheet" },
-    { cssVar: "--gs-muted", token: null, name: "Muted", value: "#3a3a3a", hex: "#3a3a3a", alpha: 1, role: "text", usedFor: ["text"], usedIn: ["small"], source: "stylesheet" },
-    { cssVar: "--gs-accent", token: "gs.accent", name: "Accent", value: "#c8ff00", hex: "#c8ff00", alpha: 1, role: "accent", usedFor: ["background"], usedIn: [".btn--primary"], source: "release" },
+    { cssVar: "--gs-bg", aliases: [], token: null, name: "Bg", value: "#0b0b0c", hex: "#0b0b0c", alpha: 1, role: "background", usedFor: ["background"], usedIn: ["body"], unused: false, source: "stylesheet" },
+    { cssVar: "--gs-text", aliases: ["--gs-ink"], token: null, name: "Text", value: "#f5f5f0", hex: "#f5f5f0", alpha: 1, role: "text", usedFor: ["text"], usedIn: ["body"], unused: false, source: "stylesheet" },
+    { cssVar: "--gs-muted", aliases: [], token: null, name: "Muted", value: "#3a3a3a", hex: "#3a3a3a", alpha: 1, role: "text", usedFor: ["text"], usedIn: ["small"], unused: false, source: "stylesheet" },
+    { cssVar: "--gs-accent", aliases: [], token: "gs.accent", name: "Accent", value: "#c8ff00", hex: "#c8ff00", alpha: 1, role: "accent", usedFor: ["background"], usedIn: [".btn--primary"], unused: false, source: "release" },
+    { cssVar: "--teal", aliases: [], token: null, name: "Teal", value: "#20c997", hex: "#20c997", alpha: 1, role: "other", usedFor: [], usedIn: [], unused: true, source: "stylesheet" },
   ],
   contrast: [
-    { text: "--gs-text", background: "--gs-bg", ratio: 18.1, rating: "AAA" },
-    { text: "--gs-muted", background: "--gs-bg", ratio: 1.6, rating: "Fail" },
+    { text: "#f5f5f0", textName: "Text", background: "#0b0b0c", backgroundName: "Bg", usedIn: ["body", "a"], ratio: 18.1, rating: "AAA" },
+    { text: "#3a3a3a", textName: "Muted", background: "#0b0b0c", backgroundName: "Bg", usedIn: ["small"], ratio: 1.6, rating: "Fail" },
   ],
   fonts: [{ family: "Montserrat", stack: "\"Montserrat\", sans-serif", weights: [400, 700], usedIn: ["body"], loadedFrom: "google" }],
   textStyles: [
     { selector: "h1", label: "Heading 1", fontFamily: "Montserrat", fontSize: "4rem", fontWeight: "700", lineHeight: "1.05", letterSpacing: null, textTransform: null, color: null },
   ],
   components: [
-    { kind: "button", selector: ".btn--primary", className: "btn btn--primary", label: "Btn primary", declarations: { background: "#c8ff00", color: "#0b0b0c", "border-radius": "999px" } },
+    { kind: "button", selector: ".btn", className: "btn", label: "Btn", declarations: { padding: "12px 20px", "border-radius": "999px" }, inPage: true },
+    { kind: "button", selector: ".btn--primary", className: "btn btn--primary", label: "Btn primary", declarations: { background: "#c8ff00", color: "#0b0b0c", "border-radius": "999px" }, inPage: true },
+    { kind: "button", selector: ".btn-danger", className: "btn btn-danger", label: "Btn danger", declarations: { background: "#e74c3c" }, inPage: false },
   ],
-  tokens: [{ name: "--gs-radius", token: null, value: "14px", kind: "radius", source: "stylesheet" }],
+  tokens: [
+    { name: "--gs-radius", token: null, value: "14px", kind: "radius", source: "stylesheet", framework: false },
+    { name: "--breakpoint-md", token: null, value: "768px", kind: "other", source: "stylesheet", framework: true },
+    { name: "@keyframes spinner-grow", token: null, value: "animation", kind: "motion", source: "stylesheet", framework: true },
+  ],
   surfaces: [{ selector: "body", label: "Page", background: "#0b0b0c" }],
 };
 
@@ -53,25 +60,60 @@ afterEach(() => {
 });
 
 describe("WebsiteStyleView", () => {
-  it("shows the palette by role, the contrast ratings with failures first, fonts, blocks and tokens", () => {
+  it("shows the palette by role, the contrast pairs as the read orders them, fonts, blocks and tokens", () => {
     act(() => root.render(<WebsiteStyleView style={style} siteName="Greatstone" onAsk={vi.fn()} />));
     const text = container.textContent ?? "";
     expect(text).toContain("Backgrounds");
     expect(text).toContain("Accents");
     expect(container.querySelectorAll("[data-testid='website-style-colour']")).toHaveLength(4);
     expect(text).toContain("Theme"); // the release token badge on Accent
+    // One swatch per colour, with its other variables beside it.
+    expect(container.querySelectorAll("[data-testid='website-style-colour']")[1]?.textContent).toContain("--gs-ink");
+    expect(text).toContain("1 release theme override");
 
+    // Body text first, as the read orders it (most of the page first), not worst first.
     const ratings = [...container.querySelectorAll("[data-testid='website-style-contrast-pair']")].map((row) => row.textContent);
-    expect(ratings[0]).toContain("Fail");
-    expect(ratings[1]).toContain("AAA");
+    expect(ratings[0]).toContain("Text on Bg");
+    expect(ratings[0]).toContain("body, a");
+    expect(ratings[0]).toContain("AAA");
+    expect(ratings[1]).toContain("Fail");
     expect(text).toContain("1 of 2 pairs are below AA.");
 
     expect(container.querySelector("[data-testid='website-style-font']")?.textContent).toContain("Weights 400, 700");
     expect(container.querySelector("[data-testid='website-style-type-scale']")?.textContent).toContain("4rem · weight 700 · line 1.05");
-    expect(container.querySelector("[data-testid='website-style-block']")?.textContent).toContain("class=\"btn btn--primary\"");
+    const blocks = container.querySelectorAll("[data-testid='website-style-block']");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.textContent).toContain("No fill (base class)");
+    expect(blocks[1]?.textContent).toContain("class=\"btn btn--primary\"");
+    expect(blocks[1]?.textContent).not.toContain("No fill");
+    expect(container.querySelectorAll("[data-testid='website-style-token']")).toHaveLength(1);
     expect(container.querySelector("[data-testid='website-style-token']")?.textContent).toContain("--gs-radius");
+    expect(text).not.toContain("Motion the page runs");
     // The site's Google Fonts load while the tab is open.
     expect(document.head.querySelector("link[data-website-style-font]")?.getAttribute("href")).toContain("Montserrat");
+  });
+
+  it("folds unused colours, unused block variants and framework tokens until asked", () => {
+    act(() => root.render(<WebsiteStyleView style={style} siteName="Greatstone" onAsk={vi.fn()} />));
+    const open = (testId: string, label: string) => {
+      const button = container.querySelector<HTMLButtonElement>(`[data-testid='${testId}'] button`);
+      expect(button?.textContent).toBe(label);
+      expect(button?.getAttribute("aria-expanded")).toBe("false");
+      act(() => button!.click());
+      expect(button?.getAttribute("aria-expanded")).toBe("true");
+      return container.querySelector(`[data-testid='${testId}']`)?.textContent ?? "";
+    };
+    expect(container.textContent).not.toContain("#20c997");
+    expect(open("website-style-unused-colours", "Defined but unused (1)")).toContain("Not used on the page");
+    expect(open("website-style-more-blocks", "More variants the stylesheet defines (1)")).toContain("Btn danger");
+    const framework = open("website-style-framework-tokens", "From frameworks or not used on the page (2)");
+    expect(framework).toContain("--breakpoint-md");
+    expect(framework).not.toContain("Ask an agent");
+  });
+
+  it("says when the release theme sets nothing", () => {
+    act(() => root.render(<WebsiteStyleView style={{ ...style, releaseTokenCount: 0 }} siteName="Greatstone" onAsk={vi.fn()} />));
+    expect(container.textContent).toContain("No release theme overrides");
   });
 
   it("Ask an agent opens a task with the token attached", () => {
