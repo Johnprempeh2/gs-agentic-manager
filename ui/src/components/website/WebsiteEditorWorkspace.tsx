@@ -654,14 +654,14 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             <IconButton
               label="Comments"
               icon={MessagesSquare}
-              labelled
+              labelled="2xl"
               badge={openComments}
               pressed={drawer === "comments"}
               onClick={() => toggleDrawer("comments")}
             />
-            <IconButton label="History" icon={History} labelled pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
-            <IconButton label="Media" icon={ImageIcon} labelled pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
-            <IconButton label="Motion" icon={Waves} labelled pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
+            <IconButton label="History" icon={History} labelled="2xl" pressed={drawer === "history"} onClick={() => toggleDrawer("history")} />
+            <IconButton label="Media" icon={ImageIcon} labelled="2xl" pressed={drawer === "media"} onClick={() => toggleDrawer("media")} />
+            <IconButton label="Motion" icon={Waves} labelled="2xl" pressed={drawer === "motion"} onClick={() => toggleDrawer("motion")} />
           </div>
           <Button
             type="button"
@@ -903,8 +903,8 @@ function IconButton({
   onClick: () => void;
   disabled?: boolean;
   pressed?: boolean;
-  /** Show the label beside the icon where the bar has room (xl and up). */
-  labelled?: boolean;
+  /** Show the label beside the icon where the bar has room: xl and up, or only 2xl for the less used ones. */
+  labelled?: boolean | "2xl";
   /** A count beside the icon, e.g. open comments. Hidden at 0. */
   badge?: number;
 }) {
@@ -919,13 +919,17 @@ function IconButton({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className={cn(labelled && "w-9 xl:w-auto", badge ? "relative" : null, pressed && PRESSED)}
+      className={cn(
+        labelled === "2xl" ? "w-9 2xl:w-auto" : labelled && "w-9 xl:w-auto",
+        badge ? "relative" : null,
+        pressed && PRESSED,
+      )}
     >
       <Icon />
-      {labelled ? <span className="hidden xl:inline">{name}</span> : null}
+      {labelled ? <span className={labelled === "2xl" ? "hidden 2xl:inline" : "hidden xl:inline"}>{name}</span> : null}
       {badge ? (
         <span
-          className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground xl:static xl:ml-0.5"
+          className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground 2xl:static 2xl:ml-0.5"
           data-testid="website-comments-count"
         >
           {badge}
