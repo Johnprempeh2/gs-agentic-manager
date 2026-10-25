@@ -25,7 +25,7 @@ const api = vi.hoisted(() => ({
   submitPage: vi.fn(),
   images: vi.fn(),
 }));
-const issues = vi.hoisted(() => ({ listComments: vi.fn(), addComment: vi.fn(), update: vi.fn() }));
+const issues = vi.hoisted(() => ({ listComments: vi.fn(), addComment: vi.fn(), update: vi.fn(), uploadAttachment: vi.fn() }));
 vi.mock("../../api/images", () => ({ imagesApi: { list: api.images } }));
 vi.mock("../../api/issues", () => ({ issuesApi: issues }));
 vi.mock("../MarkdownBody", () => ({ MarkdownBody: ({ children }: { children: string }) => <div>{children}</div> }));
@@ -519,6 +519,98 @@ describe("WebsiteFullScreenEditor", () => {
       expect(document.body.querySelector('[data-testid="website-comment-thread"]')).toBeNull();
       expect(document.body.textContent).toContain("No open comments");
       expect(document.body.querySelector('[data-testid="website-comments-count"]')).toBeNull();
+    });
+
+    describe("pins, block toolbar and screenshot (GRE-2361)", () => {
+      const COMMENT_MESSAGES = { editorMessages: ["comment-pins", "pin-clicked", "ask-agent", "capture"] };
+      const PNG = "data:image/png;base64,iVBORw0KGgo=";
+      const comments = [
+        { number: 1, issueId: "issue-1", identifier: "GRE-1", title: "t", status: "todo", request: "Shorter heading", blockId: "h1", blockType: "Hero", blockLabel: "Hero banner", pageRevisionId: "rev-2", width: "laptop", assigneeAgentId: "lintel", createdAt: "2026-10-23T09:30:00.000Z", updatedAt: "2026-10-23T09:30:00.000Z" },
+        { number: 2, issueId: "issue-2", identifier: "GRE-2", title: "t", status: "todo", request: "Warmer colours", blockId: null, blockType: null, blockLabel: null, pageRevisionId: "rev-2", width: null, assigneeAgentId: "lintel", createdAt: "2026-10-23T09:40:00.000Z", updatedAt: "2026-10-23T09:40:00.000Z" },
+      ];
+
+      it("sends a pin for each block comment after load-draft; a whole-page comment has none", async () => {
+        api.pageComments.mockResolvedValue(comments);
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        const types = editor.posted.mock.calls.map((call) => (call[0] as { type: string }).type);
+        expect(types.indexOf("comment-pins")).toBeGreaterThan(types.indexOf("load-draft"));
+        expect(editor.sent("comment-pins").map((message) => message.payload)).toEqual([{ pins: [{ blockId: "h1", number: 1 }] }]);
+      });
+
+      it("an older engine gets no pins", async () => {
+        api.pageComments.mockResolvedValue(comments);
+        await render();
+        const editor = await connect();
+        expect(editor.sent("comment-pins")).toHaveLength(0);
+      });
+
+      it("a click on a pin opens that comment's thread in the Comments drawer", async () => {
+        api.pageComments.mockResolvedValue(comments);
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        await editor.reply("pin-clicked", { blockId: "h1", number: 1 });
+        expect(drawer()!.textContent).toContain("Comments");
+        const thread = document.body.querySelector<HTMLElement>('[data-testid="website-comment-thread"]')!;
+        expect(thread.querySelector('[data-testid="website-comment-request"]')!.textContent).toBe("Shorter heading");
+      });
+
+      it("Ask an agent in the frame's block toolbar opens the comment box for that block", async () => {
+        api.requestChange.mockResolvedValue(created);
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        await editor.reply("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero banner" });
+        expect(panel()!.textContent).toContain("Selected block");
+        expect(panel()!.textContent).toContain("Hero banner on Home");
+      });
+
+      it("a task with a screenshot: the editor's PNG is attached to the task", async () => {
+        api.requestChange.mockResolvedValue(created);
+        issues.uploadAttachment.mockResolvedValue({ id: "att-1" });
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        await editor.reply("editor-state", { selection: { blockId: "h1", blockType: "Hero", label: "Hero banner" }, canUndo: false, canRedo: false });
+        await askAndCreate("Use the new tagline.");
+        const [capture] = editor.sentMessages("capture");
+        expect(capture!.payload).toEqual({ blockId: "h1" });
+        expect(api.requestChange).not.toHaveBeenCalled();
+        await editor.reply("capture-result", { requestId: capture!.id, ok: true, png: PNG, width: 1440 });
+
+        const [, , , input] = api.requestChange.mock.calls[0]!;
+        expect(input).toMatchObject({ blockId: "h1", screenshot: true });
+        expect(issues.uploadAttachment).toHaveBeenCalledTimes(1);
+        const [companyId, issueId, file] = issues.uploadAttachment.mock.calls[0]!;
+        expect([companyId, issueId]).toEqual(["co-1", "issue-7"]);
+        expect((file as File).name).toBe("website-h1.png");
+        expect((file as File).type).toBe("image/png");
+        expect(panel()!.querySelector('[data-testid="website-change-screenshot"]')!.textContent).toContain("A screenshot of the block is attached");
+      });
+
+      it("the editor refuses the capture: the task has no screenshot", async () => {
+        api.requestChange.mockResolvedValue(created);
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        await askAndCreate("The page feels too long.");
+        const [capture] = editor.sentMessages("capture");
+        expect(capture!.payload).toEqual({ blockId: null });
+        await editor.reply("capture-result", { requestId: capture!.id, ok: false, message: "Could not draw it." });
+        expect(api.requestChange.mock.calls[0]![3]).not.toHaveProperty("screenshot");
+        expect(issues.uploadAttachment).not.toHaveBeenCalled();
+      });
+
+      it("the upload fails: the task gets a comment that no screenshot is attached, and the panel says so", async () => {
+        api.requestChange.mockResolvedValue(created);
+        issues.uploadAttachment.mockRejectedValue(new Error("Too large"));
+        issues.addComment.mockResolvedValue({ id: "c9" });
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        await askAndCreate("The page feels too long.");
+        const [capture] = editor.sentMessages("capture");
+        await editor.reply("capture-result", { requestId: capture!.id, ok: true, png: PNG, width: 1440 });
+        expect(issues.addComment).toHaveBeenCalledWith("issue-7", expect.stringContaining("No screenshot is attached to this task."));
+        expect(panel()!.dataset.step).toBe("created");
+        expect(panel()!.querySelector('[data-testid="website-change-screenshot"]')!.textContent).toContain("did not upload");
+      });
     });
   });
 

@@ -65,17 +65,20 @@ export function WebsiteCommentsPanel({
   page,
   onAsk,
   onPreviewChange,
+  openIssueId = null,
 }: {
   companyId: string;
   siteId: string;
   page: WebsitePage;
+  /** The thread to open on, e.g. from a pin clicked on the page (GRE-2361). */
+  openIssueId?: string | null;
   /** Opens Ask an agent for the selected block, or the whole page. */
   onAsk: () => void;
   /** Shows the page's latest draft in the editor's preview. */
   onPreviewChange: () => void;
 }) {
   const comments = useWebsitePageComments(companyId, siteId, page.id, true);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(openIssueId);
   const open = comments.data?.find((comment) => comment.issueId === openId) ?? null;
 
   if (open) {

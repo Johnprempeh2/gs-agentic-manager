@@ -32,9 +32,11 @@ import {
   websiteFrameSrc,
   type WebsiteEditMode,
   type WebsiteEditorCommand,
+  type WebsiteFrameAskAgent,
   type WebsiteFrameEditorState,
   type WebsiteFrameInsertMediaResult,
   type WebsiteFrameMediaRequested,
+  type WebsiteFramePinClicked,
   type WebsiteFrameSetMotionResult,
   type WebsiteMotionChoice,
   type WebsiteMotionIntensity,
@@ -92,7 +94,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScaledFrame } from "../AttachmentPreviewPanel";
 import { EmptyState } from "../EmptyState";
 import { ErrorState, errorStateMessage } from "../ErrorState";
-import { WebsiteChangeRequestPanel, type WebsiteChangeTarget } from "./WebsiteChangeRequest";
+import { WebsiteChangeRequestPanel, websiteScreenshotFile, type WebsiteChangeTarget } from "./WebsiteChangeRequest";
 import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComments";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
@@ -326,7 +328,10 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   });
   const pages = pagesQuery.data ?? [];
   const page = pages.find((entry) => entry.id === searchParams.get("page")) ?? pages[0] ?? null;
-  const openComments = useWebsitePageComments(companyId, site.id, page?.id ?? null).data?.length ?? 0;
+  const comments = useWebsitePageComments(companyId, site.id, page?.id ?? null).data;
+  const openComments = comments?.length ?? 0;
+  /** A pin clicked in the frame (GRE-2361): the thread the Comments drawer opens on. */
+  const [commentFocus, setCommentFocus] = useState<{ n: number; issueId: string } | null>(null);
   const [mode, setMode] = useState<Mode>("edit");
   /** GRE-2394: Edit copy on every open; a GS Studio hand-off needs Motion, so it opens in Layout. */
   const [editMode, setEditMode] = useState<WebsiteEditMode>(() => (searchParams.get("motion") ? "layout" : "copy"));
@@ -473,6 +478,34 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     if (request.label) setFocusBlockName(request.label);
     setMediaRequest((current) => ({ n: (current?.n ?? 0) + 1, field: request.field, kind: request.kind }));
     setDrawer("media");
+  };
+
+  // GRE-2361: a numbered pin on each block with an open comment; whole-page comments stay in the list.
+  const pinsKey = JSON.stringify((comments ?? []).flatMap((comment) => (comment.blockId ? [[comment.blockId, comment.number]] : [])));
+  useEffect(() => {
+    const pins = (JSON.parse(pinsKey) as [string, number][]).map(([blockId, number]) => ({ blockId, number }));
+    sessionRef.current?.setCommentPins(pins);
+  }, [pinsKey, draftLoads, frameSessionKey]);
+
+  const onPinClicked = (pin: WebsiteFramePinClicked) => {
+    const comment = comments?.find((entry) => entry.blockId === pin.blockId && entry.number === pin.number);
+    if (!comment) return;
+    setCommentFocus((current) => ({ n: (current?.n ?? 0) + 1, issueId: comment.issueId }));
+    setDrawer("comments");
+  };
+
+  // Ask an agent from the frame's block toolbar: the comment box for that block.
+  const onAskAgent = (request: WebsiteFrameAskAgent) => {
+    const target: WebsiteChangeTarget = { kind: "block", blockId: request.blockId, blockType: request.blockType, label: request.label };
+    setAsk((current) => ({ n: (current?.n ?? 0) + 1, target, picked: false }));
+    setDrawer("change");
+  };
+
+  // The screenshot for a new comment: a PNG of the block or the page, or null on an older engine or no answer in 5 s.
+  const captureFor = (target: WebsiteChangeTarget) => async () => {
+    const result = await sessionRef.current?.capture(target.kind === "block" ? target.blockId : null);
+    if (!result?.ok) return null;
+    return { file: websiteScreenshotFile(result.png, target.kind === "block" ? target.blockId : "page"), width: result.width };
   };
 
   const run = (command: WebsiteEditorCommand, on?: boolean) => sessionRef.current?.command(command, on) ?? false;
@@ -861,6 +894,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               onEditorState={onEditorState}
               onEditorKey={() => escape()}
               onMediaRequested={onMediaRequested}
+              onPinClicked={onPinClicked}
+              onAskAgent={onAskAgent}
               onDirty={setDirty}
               onDraftLoaded={() => {
                 setDraftLoads((count) => count + 1);
@@ -959,6 +994,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 target={ask.target}
                 width={device}
                 dirty={dirty}
+                capture={captureFor(ask.target)}
                 onCancel={() => {
                   if (ask.picked) sessionRef.current?.highlight(null);
                   setAsk(null);
@@ -969,6 +1005,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             ) : null}
             {drawer === "comments" ? (
               <WebsiteCommentsPanel
+                key={commentFocus?.n ?? 0}
+                openIssueId={commentFocus?.issueId ?? null}
                 companyId={companyId}
                 siteId={site.id}
                 page={page}
@@ -1504,6 +1542,8 @@ function EditorFrame({
   onEditorState,
   onEditorKey,
   onMediaRequested,
+  onPinClicked,
+  onAskAgent,
   onDirty,
   onDraftLoaded,
   onOriginChanged,
@@ -1527,6 +1567,8 @@ function EditorFrame({
   onEditorState: (state: WebsiteFrameEditorState) => void;
   onEditorKey: () => void;
   onMediaRequested: (request: WebsiteFrameMediaRequested) => void;
+  onPinClicked: (pin: WebsiteFramePinClicked) => void;
+  onAskAgent: (request: WebsiteFrameAskAgent) => void;
   onDirty: (dirty: boolean) => void;
   onDraftLoaded: () => void;
   onOriginChanged: () => void;
@@ -1537,8 +1579,8 @@ function EditorFrame({
   const problem = editorOpenProblem(site, window.location.origin, import.meta.env.DEV);
   const notLive = mode === "preview" && source === "live" && !page.publishedRevisionId;
   // The session lives across renders; it calls the newest handlers.
-  const handlers = useRef({ onConnection, onSaveState, onFrameError, onBlockPicked, onEditorState, onEditorKey, onMediaRequested, onDirty, onDraftLoaded, onOriginChanged });
-  handlers.current = { onConnection, onSaveState, onFrameError, onBlockPicked, onEditorState, onEditorKey, onMediaRequested, onDirty, onDraftLoaded, onOriginChanged };
+  const handlers = useRef({ onConnection, onSaveState, onFrameError, onBlockPicked, onEditorState, onEditorKey, onMediaRequested, onPinClicked, onAskAgent, onDirty, onDraftLoaded, onOriginChanged });
+  handlers.current = { onConnection, onSaveState, onFrameError, onBlockPicked, onEditorState, onEditorKey, onMediaRequested, onPinClicked, onAskAgent, onDirty, onDraftLoaded, onOriginChanged };
 
   useEffect(() => {
     const listener = (event: MessageEvent) => sessionRef.current?.handleMessage(event as MessageEvent & { source: Window | null });
@@ -1603,6 +1645,8 @@ function EditorFrame({
       onEditorState: (state) => handlers.current.onEditorState(state),
       onEditorKey: () => handlers.current.onEditorKey(),
       onMediaRequested: (request) => handlers.current.onMediaRequested(request),
+      onPinClicked: (pin) => handlers.current.onPinClicked(pin),
+      onAskAgent: (request) => handlers.current.onAskAgent(request),
       onDrop: (reason) => console.warn(`[website editor] dropped a frame message: ${reason}`),
     });
     sessionRef.current = session;

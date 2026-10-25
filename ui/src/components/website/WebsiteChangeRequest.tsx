@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PenLine } from "lucide-react";
 import type { CreateWebsiteChangeRequest, WebsiteChangeRequestResult, WebsiteCommentWidth, WebsitePage } from "@greatstone/shared";
+import { issuesApi } from "../../api/issues";
 import { websiteModuleApi } from "../../api/website";
 import { queryKeys } from "../../lib/queryKeys";
 import { Link } from "@/lib/router";
@@ -18,6 +19,10 @@ import { errorStateMessage } from "../ErrorState";
 // Ask an agent (GRE-2350) is the same box from the full-screen editor's top
 // bar: the selected block, or with nothing selected the whole page. The task
 // is a comment on the page; the Comments drawer lists the open ones.
+//
+// GRE-2361: on Create task GSAM asks the site's editor for a PNG of the block
+// or the page and attaches it to the task. An older engine, or no answer in
+// 5 s, makes the task without one, and the task says so.
 
 /** What the comment is about: a block (picked in preview or selected in the editor) or the whole page. */
 export type WebsiteChangeTarget =
@@ -37,6 +42,20 @@ const WIDTH_NAMES: Record<WebsiteCommentWidth, string> = { laptop: "Laptop", tab
 
 type Step = "describe" | "confirm" | "created";
 
+/** A screenshot the editor captured, ready to attach. */
+export interface WebsiteScreenshot {
+  file: File;
+  width: number;
+}
+
+/** The frame's checked PNG data URL as a file to attach, e.g. `website-hero-1.png`. */
+export function websiteScreenshotFile(dataUrl: string, name: string): File {
+  const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new File([bytes], `website-${name}.png`, { type: "image/png" });
+}
+
 /** A v4 UUID. `randomUUID` needs a secure context; a phone on plain http has only `getRandomValues`. */
 function newRequestId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -54,6 +73,7 @@ export function WebsiteChangeRequestPanel({
   target,
   width,
   dirty = false,
+  capture,
   onCancel,
   onEditBlock,
 }: {
@@ -65,6 +85,8 @@ export function WebsiteChangeRequestPanel({
   width: WebsiteCommentWidth;
   /** The editor has edits that are not saved: the task names the saved draft. */
   dirty?: boolean;
+  /** Asks the site's editor for a screenshot; null when it cannot give one. */
+  capture?: () => Promise<WebsiteScreenshot | null>;
   /** Clears the pick. Nothing is created. */
   onCancel: () => void;
   /** Opens the block in the editor for a words or image change (preview picks only). */
@@ -76,6 +98,8 @@ export function WebsiteChangeRequestPanel({
   // One id per pick: a repeated confirm returns the same task, never a second one.
   const [requestId] = useState(newRequestId);
   const [created, setCreated] = useState<WebsiteChangeRequestResult | null>(null);
+  /** What happened to the screenshot: none taken, attached, or taken but not uploaded. */
+  const [shot, setShot] = useState<"none" | "attached" | "failed">("none");
   const block = target.kind === "block" ? target : null;
   const blockName = block ? block.label.trim() || block.blockType : "The whole page";
   const pageRevisionId = block?.pageRevisionId ?? page.latestRevisionId;
@@ -87,8 +111,9 @@ export function WebsiteChangeRequestPanel({
   }, []);
 
   const submit = useMutation({
-    mutationFn: () =>
-      websiteModuleApi.requestChange(companyId, siteId, page.id, {
+    mutationFn: async () => {
+      const screenshot = capture ? await capture().catch(() => null) : null;
+      const result = await websiteModuleApi.requestChange(companyId, siteId, page.id, {
         requestId,
         pageRevisionId: pageRevisionId!,
         ...(block
@@ -102,7 +127,24 @@ export function WebsiteChangeRequestPanel({
           : {}),
         width,
         request: request.trim(),
-      }),
+        ...(screenshot ? { screenshot: true } : {}),
+      });
+      if (!screenshot) {
+        setShot("none");
+        return result;
+      }
+      try {
+        await issuesApi.uploadAttachment(companyId, result.issueId, screenshot.file);
+        setShot("attached");
+      } catch (error) {
+        setShot("failed");
+        // The task says a screenshot is attached: correct it on the task, so the agent is not left looking.
+        await issuesApi
+          .addComment(result.issueId, `The screenshot did not upload (${errorStateMessage(error)}). No screenshot is attached to this task.`)
+          .catch(() => undefined);
+      }
+      return result;
+    },
     onSuccess: (result) => {
       setCreated(result);
       setStep("created");
@@ -215,6 +257,15 @@ export function WebsiteChangeRequestPanel({
               ? "is with the website agent. Its replies show under Comments."
               : "is created. No website agent leads this site's project yet, so assign it on the task."}
           </p>
+          {shot === "attached" ? (
+            <p className="text-xs text-muted-foreground" data-testid="website-change-screenshot">
+              A screenshot of {block ? "the block" : "the page"} is attached to the task.
+            </p>
+          ) : shot === "failed" ? (
+            <p className="text-xs text-status-warning-foreground" data-testid="website-change-screenshot">
+              The screenshot did not upload, so the task has no screenshot. The task says so.
+            </p>
+          ) : null}
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>Done</Button>
         </div>
       ) : null}
