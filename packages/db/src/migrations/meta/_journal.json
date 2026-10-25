@@ -2759,6 +2759,13 @@
       "when": 1792889653512,
       "tag": "0395_deep_dive_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 396,
+      "version": "7",
+      "when": 1792889654512,
+      "tag": "0396_deep_dive_item_files",
+      "breakpoints": true
     }
   ]
 }

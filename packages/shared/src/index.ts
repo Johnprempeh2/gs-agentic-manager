@@ -499,6 +499,8 @@ export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
 export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
+export * from "./types/deep-dive-files.js";
+export * from "./validators/deep-dive-files.js";
 export * from "./client-journey.js";
 export * from "./deliverable-versions.js";
 export * from "./draft-diff.js";
@@ -3231,6 +3233,7 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export * from "./deep-dive-findings.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";

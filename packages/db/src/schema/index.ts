@@ -96,6 +96,7 @@ export {
   pipelineCaseDocuments,
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
+export { deepDiveItemFiles } from "./deep_dive_item_files.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
 export { clientAcceptanceLinks } from "./client_acceptance_links.js";
 export {
@@ -277,3 +278,4 @@ export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";
 export { billingAccounts, billingInvoices } from "./billing_accounts.js";
 export { agentDailyDigests } from "./agent_daily_digests.js";
+export { deepDiveFindings, deepDiveFindingEvidence } from "./deep_dive_findings.js";
