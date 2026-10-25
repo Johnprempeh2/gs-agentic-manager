@@ -93,6 +93,8 @@ describe("website style read", () => {
     const primary = style.components.find((c) => c.selector === ".btn--primary");
     expect(primary).toMatchObject({ kind: "button", className: "btn btn--primary" });
     expect(primary?.declarations.background).toBe("#c8ff00");
+    // The base class's padding and radius come with the modifier.
+    expect(primary?.declarations).toMatchObject({ padding: "12px 20px", "border-radius": "999px" });
     expect(style.components.map((c) => c.kind)).toEqual(expect.arrayContaining(["link", "card", "pill"]));
     expect(style.components.some((c) => c.selector.includes(" "))).toBe(false);
 
@@ -113,6 +115,7 @@ describe("website style read", () => {
     });
     expect(style.fonts.map((f) => f.family)).toEqual(["Inter"]);
     expect(style.components.map((c) => c.selector)).toEqual([".card", ".badge-pill"]);
+    expect(style.components[1].className).toBe("badge-pill");
   });
 
   it("still shows the release tokens when the site has no stylesheet", () => {

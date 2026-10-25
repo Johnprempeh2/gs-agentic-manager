@@ -525,10 +525,13 @@ export function buildSiteStyle(input: {
     const kind = isLink ? "link" : kindOf(simple!);
     if (!kind || seen.has(selector) || components.filter((c) => c.kind === kind).length >= 8) continue;
     seen.add(selector);
-    const decls = merged.get(selector)!;
-    if (decls.size === 0) continue;
-    const base = simple?.split("--")[0];
-    const className = isLink ? "" : base && base !== simple && merged.has(`.${base}`) ? `${base} ${simple}` : simple!;
+    const own = merged.get(selector)!;
+    if (own.size === 0) continue;
+    // A modifier (`.btn--primary`, `.btn-primary`) is drawn on top of its base class, as a page uses it.
+    const base = simple ? /^([a-z0-9]+)(?:--|-)/i.exec(simple)?.[1] : undefined;
+    const withBase = !isLink && base && base !== simple && merged.has(`.${base}`) && kindOf(base) === kind;
+    const decls = withBase ? new Map([...merged.get(`.${base}`)!, ...own]) : own;
+    const className = isLink ? "" : withBase ? `${base} ${simple}` : simple!;
     components.push({
       kind,
       selector,
@@ -536,7 +539,7 @@ export function buildSiteStyle(input: {
       label: isLink ? "Text link" : nameFromVariable(`--${simple!.replace(/--/g, "-")}`),
       declarations: Object.fromEntries([...decls].map(([p, v]) => [p, resolve(v)])),
     });
-    const radius = decls.get("border-radius");
+    const radius = own.get("border-radius");
     if (radius && !radius.includes("var(")) tokens.push({ name: `${selector} border-radius`, token: null, value: radius, kind: "radius", source: "stylesheet" });
   }
 
@@ -558,7 +561,8 @@ export function buildSiteStyle(input: {
   }
 
   const roleOrder: WebsiteStyleColourRole[] = ["background", "text", "accent", "border", "status", "other"];
-  colours.sort((a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role));
+  // By role; within a role the colours rules use come first.
+  colours.sort((a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || Number(b.usedIn.length > 0) - Number(a.usedIn.length > 0));
 
   return {
     siteId: input.siteId,
