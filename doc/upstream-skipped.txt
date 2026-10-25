@@ -9,6 +9,11 @@
 650581b2f nested checkout restore points depend on the excluded stack; migration 0374 also clashes with ours (GRE-2034)
 5ef783d97 idle-worktree expiry depends on the excluded restore-point stack (GRE-2034)
 d69631b01 reopening after restore-point expiry depends on the excluded retention stack (GRE-2034)
+e5c9e60c5 #17419 default task-directory reuse conflicts with our isolated per-task worktrees (GRE-2483)
+785d54636 #17410 clone cleanup depends on the excluded restore-point and expiry stack (GRE-2483)
+fe85fd7ac #17464 closed workspace expiry depends on the excluded restore-point stack (GRE-2483)
+a7006a950 #17472 task-directory reclaim requires restore points excluded by GRE-2034 (GRE-2483)
+ac15d883f #17535 remote-tracking preservation depends on the excluded nested-worktree expiry path (GRE-2483)
 1d23cb696 #14394 their CI Rust cache paths; our CI is fork-owned
 3166e93a7 #14461 lockfile refresh; we regenerate our own lockfile at sync
 d1f3e7bb0 #14741 upstream README and roadmap; ours is rebranded
