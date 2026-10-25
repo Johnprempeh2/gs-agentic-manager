@@ -161,6 +161,57 @@ describeDb("website enquiries", () => {
     expect(await db.select().from(crmSyncRecordLinks)).toHaveLength(1);
   });
 
+  it("imports all enquiries without a Pipedrive binding and copies each once after one is added", async () => {
+    const companyId = await company();
+    const siteId = randomUUID();
+    const items = [enquiry("without-binding-1"), enquiry("without-binding-2", "sam@second.test")];
+    const reader: WebsiteEnquiryReader = { listEnquiries: async () => ({ items }) };
+    const leads: Array<{ id: string; origin_id: string }> = [];
+    const fakeClient = {
+      listLeadsPage: async () => ({ items: leads, nextStart: null }),
+      listArchivedLeadsPage: async () => ({ items: [], nextStart: null }),
+      listPersonsPage: async () => ({ items: [{ id: 42, email: items.map((item) => ({ value: item.email })) }], nextStart: null }),
+      createLead: async ({ originId }: { originId: string }) => {
+        const lead = { id: `pd-lead-${leads.length + 1}`, origin_id: originId };
+        leads.push(lead);
+        return lead;
+      },
+    } as unknown as PipedriveClient;
+    const copy = websiteEnquiryPipedriveCopy(db, { clientForConnection: async () => fakeClient });
+    const service = websiteEnquiryService(db, copy);
+
+    expect(await service.importFromBridge(companyId, siteId, reader)).toEqual({ created: 2, skipped: 0 });
+    expect(await service.list(companyId, siteId)).toHaveLength(2);
+    expect(leads).toHaveLength(0);
+
+    const [pipeline] = await db.select().from(pipelines).where(eq(pipelines.companyId, companyId));
+    await pipedriveConnection(companyId, pipeline!.id);
+    expect(await service.importFromBridge(companyId, siteId, reader)).toEqual({ created: 0, skipped: 2 });
+    expect(await service.importFromBridge(companyId, siteId, reader)).toEqual({ created: 0, skipped: 2 });
+    expect(leads).toHaveLength(2);
+    expect(await db.select().from(crmSyncRecordLinks)).toHaveLength(2);
+  });
+
+  it("continues importing after a Pipedrive copy error and retries skipped enquiries", async () => {
+    const companyId = await company();
+    const siteId = randomUUID();
+    const reader: WebsiteEnquiryReader = { listEnquiries: async () => ({
+      items: [enquiry("copy-error-1"), enquiry("copy-error-2", "sam@second.test")],
+    }) };
+    const copied = new Set<string>();
+    let fail = true;
+    const service = websiteEnquiryService(db, async ({ enquiry: item }) => {
+      if (fail) throw new Error("Pipedrive unavailable");
+      copied.add(item.id);
+    });
+
+    expect(await service.importFromBridge(companyId, siteId, reader)).toEqual({ created: 2, skipped: 0 });
+    expect(await service.list(companyId, siteId)).toHaveLength(2);
+    fail = false;
+    expect(await service.importFromBridge(companyId, siteId, reader)).toEqual({ created: 0, skipped: 2 });
+    expect([...copied].sort()).toEqual(["copy-error-1", "copy-error-2"]);
+  });
+
   it("recovers a Pipedrive lead created before its local link was saved", async () => {
     const companyId = await company();
     const siteId = randomUUID();

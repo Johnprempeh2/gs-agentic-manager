@@ -4,6 +4,7 @@ import { companies, companyMemberships, organisations, pipelineCaseIssueLinks, p
 import { pipelineService } from "../pipelines.js";
 import { logActivity } from "../activity-log.js";
 import { issueService } from "../issues.js";
+import { logger } from "../../middleware/logger.js";
 
 /** The read-only shape supplied by the website admin bridge. */
 export interface WebsiteEnquiry {
@@ -239,9 +240,15 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
         const batch = await reader.listEnquiries(siteId, cursor);
         for (const item of batch.items) {
           const result = await importOne(companyId, siteId, item);
-          if (copyToPipedrive) await copyToPipedrive({ companyId, siteId, caseId: result.caseId, enquiry: item });
           if (result.created) created += 1;
           else skipped += 1;
+          if (copyToPipedrive) {
+            try {
+              await copyToPipedrive({ companyId, siteId, caseId: result.caseId, enquiry: item });
+            } catch (err) {
+              logger.warn({ err, companyId, siteId, caseId: result.caseId, enquiryId: item.id }, "website enquiry Pipedrive copy failed; will retry on next pull");
+            }
+          }
         }
         if (!batch.nextCursor) return { created, skipped };
         if (seen.has(batch.nextCursor)) throw new Error("Website enquiry bridge repeated a page cursor");
