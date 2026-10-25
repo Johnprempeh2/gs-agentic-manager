@@ -30,6 +30,7 @@ import {
   companyMemberships,
   companySkills,
   deepDiveFindings,
+  deepDiveSessions,
   documents,
   routineRuns,
   routineTriggers,
@@ -776,6 +777,8 @@ export function companyService(db: Db) {
         await tx.delete(routineRevisions).where(eq(routineRevisions.companyId, id));
         await tx.delete(routines).where(eq(routines.companyId, id));
         await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
+        // Session questions point at GIF documents and findings without a cascade (GRE-2368).
+        await tx.delete(deepDiveSessions).where(eq(deepDiveSessions.companyId, id));
         // Findings point at GIF documents and evidence without a cascade (GRE-2367).
         await tx.delete(deepDiveFindings).where(eq(deepDiveFindings.companyId, id));
         await tx.delete(documents).where(eq(documents.companyId, id));

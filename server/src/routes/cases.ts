@@ -33,6 +33,7 @@ import {
   cases,
   companies,
   deepDiveFindings,
+  deepDiveSessionQuestions,
   deepDiveItemFiles,
   documents,
   documentRevisions,
@@ -1304,6 +1305,15 @@ export function caseRoutes(db: Db, storage: StorageService) {
         .limit(1)
         .then((rows) => rows[0] ?? null);
       if (finding) throw conflict("Findings sit in this GIF cell, so its document is kept", { key });
+      // Session questions were asked in this GIF cell (GRE-2368): keep the cell.
+      const asked = await tx
+        .select({ id: deepDiveSessionQuestions.id })
+        .from(deepDiveSessionQuestions)
+        .innerJoin(caseDocuments, eq(caseDocuments.id, deepDiveSessionQuestions.gifDocumentId))
+        .where(eq(caseDocuments.documentId, link.document.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (asked) throw conflict("Session questions sit in this GIF cell, so its document is kept", { key });
       await tx.delete(caseDocuments).where(eq(caseDocuments.documentId, link.document.id));
       await tx.delete(documents).where(eq(documents.id, link.document.id));
     });

@@ -373,6 +373,11 @@ import {
   listDeepDiveFindingsQuerySchema,
   proposeDeepDiveFindingSchema,
   setDeepDiveFindingVisibilitySchema,
+  addDeepDiveSessionQuestionSchema,
+  answerToDeepDiveFindingSchema,
+  planDeepDiveSessionSchema,
+  updateDeepDiveSessionQuestionSchema,
+  updateDeepDiveSessionSchema,
   linkDeepDiveFileSchema,
   patchDeepDiveFileSchema,
 } from "@greatstone/shared";
@@ -16819,4 +16824,96 @@ registerCurrentRoute({
   tags: ["deep-dive"],
   summary: "Unlink a file from one Deep Dive item; the file and its other links stay",
   responses: deepDiveFileResponses,
+});
+
+// Deep Dive sessions (GRE-2368). Planned -> Live -> Closed; each question comes
+// back with what is already known about its GIF cell.
+const sessionResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const sessionWriteResponses = { ...sessionResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/sessions",
+  tags: ["deep-dive"],
+  summary: "List the company's Deep Dive sessions with question and answer counts",
+  responses: sessionResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/sessions",
+  tags: ["deep-dive"],
+  summary: "Plan a session (Planned, Internal), optionally with questions in GIF cells of the company's streams",
+  body: planDeepDiveSessionSchema,
+  responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/sessions/{sessionId}",
+  tags: ["deep-dive"],
+  summary: "Get a session with its questions, each with what is already known about its GIF cell",
+  responses: sessionResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/sessions/{sessionId}",
+  tags: ["deep-dive"],
+  summary: "Change a session's title or date until it closes, or set it Internal/Shared (only a person may share)",
+  body: updateDeepDiveSessionSchema,
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/sessions/{sessionId}/start",
+  tags: ["deep-dive"],
+  summary: "Start a planned session that has questions (Planned -> Live)",
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/sessions/{sessionId}/close",
+  tags: ["deep-dive"],
+  summary: "Close a live session (Live -> Closed); a closed session is kept as it was run",
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/sessions/{sessionId}/questions",
+  tags: ["deep-dive"],
+  summary: "Add a question in one GIF cell to a planned or live session; the prompt defaults to the GIF question",
+  body: addDeepDiveSessionQuestionSchema,
+  responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/session-questions/{questionId}",
+  tags: ["deep-dive"],
+  summary: "Change a question's prompt while planned, or record its answer while live",
+  body: updateDeepDiveSessionQuestionSchema,
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/session-questions/{questionId}",
+  tags: ["deep-dive"],
+  summary: "Remove a question while its session is planned",
+  responses: sessionWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/session-questions/{questionId}/finding",
+  tags: ["deep-dive"],
+  summary:
+    "Turn an answer into a proposed finding in the question's stream and GIF cell (once per answer); " +
+    "the statement defaults to the answer",
+  body: answerToDeepDiveFindingSchema,
+  responses: { ...sessionWriteResponses, 201: r.ok() },
 });
