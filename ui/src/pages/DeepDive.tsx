@@ -542,6 +542,12 @@ export function DeepDive() {
             <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">
               Findings
             </Link>
+            <Link to="/deep-dive/organisation" className="text-xs font-medium underline-offset-4 hover:underline">
+              Organisation
+            </Link>
+            <Link to="/deep-dive/processes" className="text-xs font-medium underline-offset-4 hover:underline">
+              Processes
+            </Link>
             <Link to="/deep-dive/files" className="text-xs font-medium underline-offset-4 hover:underline">
               Evidence and files
             </Link>

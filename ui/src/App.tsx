@@ -56,6 +56,8 @@ const DeepDiveFiles = lazyPage(() => import("./pages/DeepDiveFiles"), "DeepDiveF
 const DeepDiveFindings = lazyPage(() => import("./pages/DeepDiveFindings"), "DeepDiveFindings");
 const DeepDiveSessions = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessions");
 const DeepDiveSessionDetail = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessionDetail");
+const DeepDiveOrganisation = lazyPage(() => import("./pages/DeepDiveOrganisation"), "DeepDiveOrganisation");
+const DeepDiveProcessBoard = lazyPage(() => import("./pages/DeepDiveProcessBoard"), "DeepDiveProcessBoard");
 const DashboardLive = lazyPage(() => import("./pages/DashboardLive"), "DashboardLive");
 const Companies = lazyPage(() => import("./pages/Companies"), "Companies");
 const AgentDetail = lazyPage(() => import("./pages/AgentDetail"), "AgentDetail");
@@ -371,6 +373,14 @@ function boardRoutes() {
       <Route
         path="deep-dive/sessions/:sessionId"
         element={<DeepDiveExperimentalGate><DeepDiveSessionDetail /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/organisation"
+        element={<DeepDiveExperimentalGate><DeepDiveOrganisation /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/processes"
+        element={<DeepDiveExperimentalGate><DeepDiveProcessBoard /></DeepDiveExperimentalGate>}
       />
       <Route
         path="status"
@@ -899,6 +909,8 @@ export function App() {
           <Route path="deep-dive/findings" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/sessions" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/sessions/:sessionId" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/organisation" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/processes" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
