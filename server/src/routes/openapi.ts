@@ -373,6 +373,8 @@ import {
   listDeepDiveFindingsQuerySchema,
   proposeDeepDiveFindingSchema,
   setDeepDiveFindingVisibilitySchema,
+  linkDeepDiveFileSchema,
+  patchDeepDiveFileSchema,
 } from "@greatstone/shared";
 import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
@@ -16777,4 +16779,44 @@ registerCurrentRoute({
   summary: "Set a finding Internal or Shared (people only); any other change is refused with 409, a finding is never edited",
   body: setDeepDiveFindingVisibilitySchema,
   responses: { ...findingResponses, 409: r.conflict },
+});
+
+// Deep Dive evidence and files (GRE-2395). One client file can be linked to
+// many Deep Dive items; each link is Internal unless a person shares it.
+const deepDiveFileResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/files",
+  tags: ["deep-dive"],
+  summary: "Evidence and files screen: each client file with where it came from, and held vs missing per Deep Dive item",
+  responses: deepDiveFileResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{id}/deep-dive-files",
+  tags: ["deep-dive"],
+  summary:
+    "Link one file or document request of the item's client to a Deep Dive item; Internal by default, " +
+    "only a person may link it Shared (409 when already linked)",
+  body: linkDeepDiveFileSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/cases/{id}/deep-dive-files/{linkId}",
+  tags: ["deep-dive"],
+  summary: "Set a file link Internal or Shared (only a person may share)",
+  body: patchDeepDiveFileSchema,
+  responses: { ...deepDiveFileResponses, 400: r.badRequest },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{id}/deep-dive-files/{linkId}",
+  tags: ["deep-dive"],
+  summary: "Unlink a file from one Deep Dive item; the file and its other links stay",
+  responses: deepDiveFileResponses,
 });
