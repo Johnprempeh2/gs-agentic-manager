@@ -196,7 +196,7 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
       pipelineId,
       caseKey,
       stageKey: "new",
-      title: `${enquiry.name.trim()} — website enquiry`,
+      title: `${enquiry.name.trim()}: website enquiry`,
       summary: enquiry.message?.trim() || null,
       organisationId,
       fields: {

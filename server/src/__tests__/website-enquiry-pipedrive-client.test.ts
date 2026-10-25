@@ -14,7 +14,7 @@ describe("Pipedrive website lead client", () => {
     };
     const client = createPipedriveClient({ token: "test-token", authKind: "api_key", fetch });
     const person = await client.createPerson({ name: "Jo Example", email: "jo@example.test" });
-    const lead = await client.createLead({ title: "Jo Example — website enquiry", personId: person.id, originId: "gsam:website:abc" });
+    const lead = await client.createLead({ title: "Jo Example: website enquiry", personId: person.id, originId: "gsam:website:abc" });
     expect(lead.id).toBe("lead-42");
     expect(requests).toMatchObject([
       { method: "POST", body: { name: "Jo Example", emails: [{ value: "jo@example.test", primary: true }] } },

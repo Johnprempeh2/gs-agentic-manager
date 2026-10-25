@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { WebsiteDataBridgeKey, WebsiteSite } from "@greatstone/shared";
 import { websiteDataBridgeApi } from "../../api/website-data-bridge";
 import { queryKeys } from "../../lib/queryKeys";
+import { useCopyAction } from "../../lib/use-copy-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -26,6 +27,7 @@ export function WebsiteDataBridgeRow({ companyId, site, canManage }: { companyId
   const [environment, setEnvironment] = useState<"stg" | "live">("stg");
   const [url, setUrl] = useState("");
   const [made, setMade] = useState<WebsiteDataBridgeKey | null>(null);
+  const copyEntry = useCopyAction();
   const create = useMutation({
     mutationFn: () => websiteDataBridgeApi.createKey(companyId, site.id, { environment, url: url.trim() ? url.trim() : undefined }),
     onSuccess: (key) => {
@@ -60,7 +62,9 @@ export function WebsiteDataBridgeRow({ companyId, site, canManage }: { companyId
           <p>Add this entry to the site's <span className="font-mono">GSAM_BRIDGE_KEYS</span> list and redeploy the site. It is a public key, so it is safe to copy. A live site key goes on John's release task.</p>
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px]" data-testid="website-data-bridge-entry">{JSON.stringify(made.keysEntry)}</pre>
           <div className="flex gap-2">
-            <Button type="button" size="xs" variant="ghost" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(made.keysEntry))}>Copy</Button>
+            <Button type="button" size="xs" variant="ghost" onClick={() => void copyEntry.copy(JSON.stringify(made.keysEntry))}>
+              {copyEntry.copied ? "Copied" : copyEntry.failed ? "Could not copy" : "Copy"}
+            </Button>
             <Button type="button" size="xs" variant="ghost" onClick={() => setMade(null)}>Done</Button>
           </div>
         </div>
