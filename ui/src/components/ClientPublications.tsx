@@ -408,9 +408,9 @@ export function ClientPublications({ caseId, companyId }: { caseId: string; comp
   return (
     <div className="divide-y divide-border">
       {data.gates.length > 0 ? (
-        <p className="py-3 text-xs text-muted-foreground">
-          Before anything is published: {data.gates.map((gate) => CLIENT_PUBLICATION_GATE_MESSAGES[gate].replace(/ before anything is published to them$/, "")).join("; ")}.
-        </p>
+        <ul className="space-y-1 py-3 text-xs text-muted-foreground">
+          {data.gates.map((gate) => <li key={gate}>{CLIENT_PUBLICATION_GATE_MESSAGES[gate]}.</li>)}
+        </ul>
       ) : null}
       {!data.receiptSenderConfigured ? (
         <p className="py-3 text-xs text-muted-foreground">
