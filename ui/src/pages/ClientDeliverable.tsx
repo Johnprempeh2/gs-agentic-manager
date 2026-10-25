@@ -91,7 +91,7 @@ export function ClientDeliverablePage() {
           <h1 className="text-lg font-semibold">Thank you, it is accepted</h1>
           <p className="text-sm text-muted-foreground">
             {data.acceptedName ? `${data.acceptedName} accepted` : "You accepted"} {data.title} for {data.clientName} on {day(data.acceptedAt)}.
-            A receipt is on its way to your email.
+            You will get a receipt by email.
           </p>
           <ReadLink view={data} />
         </div>

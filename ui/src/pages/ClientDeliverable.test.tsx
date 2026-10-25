@@ -103,7 +103,7 @@ describe("ClientDeliverablePage", () => {
 
     expect(api.accept).toHaveBeenCalledWith("gsa_deliver_abc", { name: "Ada Mensah", role: null, email: "ada@omni.com", agree: true });
     expect(container.querySelector("[data-testid='client-deliverable-done']")!.textContent).toContain("Ada Mensah accepted North Star summary");
-    expect(container.textContent).toContain("A receipt is on its way");
+    expect(container.textContent).toContain("You will get a receipt by email");
   });
 
   it("says plainly when the link no longer works", async () => {
