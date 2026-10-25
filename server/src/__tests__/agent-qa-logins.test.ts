@@ -225,4 +225,14 @@ describeEmbeddedPostgres("agentQaLoginService (GRE-2387)", () => {
     expect(revoked.body.qaLogin.status).toBe("revoked");
     expect((await request(ownerApp).get(`/api/agents/${agentId}/qa-login`).expect(200)).body.qaLogin).toBeNull();
   });
+
+  it("routes: an owner of another company gets 404, the same as a missing agent", async () => {
+    const { agentId } = await seed(ctx.db);
+    const other = await seedCompanyWithBoardAccess(ctx.db, "Other");
+    const otherApp = routeApp(ctx.db, other.actor, agentQaLoginRoutes);
+    await request(otherApp).get(`/api/agents/${agentId}/qa-login`).expect(404);
+    await request(otherApp).post(`/api/agents/${agentId}/qa-login`).send({ role: "viewer" }).expect(404);
+    await request(otherApp).delete(`/api/agents/${agentId}/qa-login`).expect(404);
+    await request(otherApp).get(`/api/agents/${randomUUID()}/qa-login`).expect(404);
+  });
 });

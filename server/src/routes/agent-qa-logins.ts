@@ -25,6 +25,7 @@ export function agentQaLoginRoutes(db: Db, opts: { authPublicBaseUrl?: string } 
   const router = Router();
   const qaLogins = agentQaLoginService(db);
 
+  /** 404 for a missing or cross-company agent (no existence oracle), then the membership checks. */
   async function loadAgent(req: Request) {
     const agent = await db
       .select({ id: agents.id, companyId: agents.companyId })
@@ -32,6 +33,7 @@ export function agentQaLoginRoutes(db: Db, opts: { authPublicBaseUrl?: string } 
       .where(eq(agents.id, req.params.id as string))
       .then((rows) => rows[0] ?? null);
     if (!agent || !hasCompanyAccess(req, agent.companyId)) throw notFound("Agent not found");
+    assertCompanyAccess(req, agent.companyId);
     return agent;
   }
 
@@ -47,7 +49,6 @@ export function agentQaLoginRoutes(db: Db, opts: { authPublicBaseUrl?: string } 
 
   router.get("/agents/:id/qa-login", async (req, res) => {
     const agent = await loadAgent(req);
-    assertCompanyAccess(req, agent.companyId);
     assertBoard(req);
     res.json({ qaLogin: await qaLogins.getActive(agent.companyId, agent.id) });
   });
