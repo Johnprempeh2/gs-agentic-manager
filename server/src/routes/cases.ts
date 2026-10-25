@@ -32,6 +32,7 @@ import {
   caseLabels,
   cases,
   companies,
+  deepDiveItemFiles,
   documents,
   documentRevisions,
   issues,
@@ -46,6 +47,9 @@ import {
   isUuidLike,
   DEEP_DIVE_CASE_TYPES,
   deepDiveDepthError,
+  linkDeepDiveFileSchema,
+  patchDeepDiveFileSchema,
+  type LinkDeepDiveFile,
 } from "@greatstone/shared";
 import { formatAttachmentSize, MAX_ATTACHMENT_BYTES, normalizeContentType } from "../attachment-types.js";
 import { badRequest, conflict, forbidden, notFound, unprocessable } from "../errors.js";
@@ -53,6 +57,7 @@ import { validate } from "../middleware/validate.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertEntitled, requireEntitlement } from "../services/entitlements.js";
 import { documentAnnotationService, logActivity } from "../services/index.js";
+import { deepDiveFilesService, type DeepDiveFileActor } from "../services/deep-dive-files.js";
 import type { StorageService } from "../storage/types.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
 
@@ -1543,6 +1548,15 @@ export function caseRoutes(db: Db, storage: StorageService) {
         .set({ ...buildCasePatchUpdateValues(body, caseRow, now), ...sharing })
         .where(eq(cases.id, caseRow.id))
         .returning();
+      // GRE-2395: links point at the old client's files, so they go with the
+      // old client. The files themselves stay on that client.
+      const unlinkedFiles = sharing.clientCaseId !== undefined && sharing.clientCaseId !== caseRow.clientCaseId
+        ? await tx
+          .delete(deepDiveItemFiles)
+          .where(and(eq(deepDiveItemFiles.companyId, caseRow.companyId), eq(deepDiveItemFiles.caseId, caseRow.id)))
+          .returning({ id: deepDiveItemFiles.id })
+          .then((rows) => rows.length)
+        : 0;
 
       if (nextLabelIds) {
         await lockCaseLabels(tx, { companyId: caseRow.companyId, caseId: caseRow.id });
@@ -1607,12 +1621,101 @@ export function caseRoutes(db: Db, storage: StorageService) {
             : {}),
           ...(sharing.clientCaseId !== undefined ? { clientCaseId: sharing.clientCaseId } : {}),
           ...(sharing.clientEditableFields !== undefined ? { clientEditableFields: sharing.clientEditableFields } : {}),
+          ...(unlinkedFiles > 0 ? { unlinkedFiles } : {}),
         },
       });
       await autoLinkRunIssue(tx, { companyId: caseRow.companyId, caseId: caseRow.id, actor, role: "work" });
       return row!;
     });
     res.json(await loadCaseDetail(db, updated));
+  });
+
+  // Deep Dive evidence and files (GRE-2395): one client file, many items.
+  const deepDiveFilesSvc = deepDiveFilesService(db);
+
+  function deepDiveFileActor(actor: CaseActor): DeepDiveFileActor {
+    return actor.actorType === "user" ? { type: "user", userId: actor.actorId } : { type: "agent", agentId: actor.agentId };
+  }
+
+  /** Only a person shares a link, like every Deep Dive item (GRE-2366). */
+  function assertMayShareLink(actor: CaseActor, visibility: string | undefined) {
+    if (visibility === "shared" && actor.actorType !== "user") {
+      throw forbidden("Only a person can share a Deep Dive file");
+    }
+  }
+
+  async function logDeepDiveFileActivity(
+    caseRow: typeof cases.$inferSelect,
+    actor: CaseActor,
+    action: string,
+    details: Record<string, unknown>,
+  ) {
+    await logActivity(db, {
+      companyId: caseRow.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action,
+      entityType: "case",
+      entityId: caseRow.id,
+      details,
+    });
+  }
+
+  router.get("/companies/:companyId/deep-dive/files", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    await assertCasesEnabled(db);
+    await assertDeepDiveCaseTypesEntitled(db, [DEEP_DIVE_CASE_TYPES.record]);
+    res.json(await deepDiveFilesSvc.screen(companyId));
+  });
+
+  router.post("/cases/:id/deep-dive-files", validate(linkDeepDiveFileSchema), async (req, res) => {
+    await assertCasesEnabled(db);
+    const caseRow = await assertCaseAccess(db, req, req.params.id as string);
+    const actor = getActorInfo(req);
+    const body = req.body as LinkDeepDiveFile;
+    assertMayShareLink(actor, body.visibility);
+    const link = await deepDiveFilesSvc.link(caseRow, body, deepDiveFileActor(actor));
+    await logDeepDiveFileActivity(caseRow, actor, "case.deep_dive_file_linked", {
+      linkId: link.id,
+      evidenceId: link.evidenceId,
+      documentRequestId: link.documentRequestId,
+      visibility: link.visibility,
+    });
+    res.status(201).json(link);
+  });
+
+  router.patch("/cases/:id/deep-dive-files/:linkId", validate(patchDeepDiveFileSchema), async (req, res) => {
+    await assertCasesEnabled(db);
+    const caseRow = await assertCaseAccess(db, req, req.params.id as string);
+    const actor = getActorInfo(req);
+    const linkId = z.string().guid().safeParse(req.params.linkId);
+    if (!linkId.success) throw notFound("File link not found");
+    const { visibility } = req.body as z.infer<typeof patchDeepDiveFileSchema>;
+    assertMayShareLink(actor, visibility);
+    const link = await deepDiveFilesSvc.setVisibility(caseRow, linkId.data, visibility);
+    await logDeepDiveFileActivity(caseRow, actor, "case.deep_dive_file_visibility_changed", {
+      linkId: link.id,
+      visibility: link.visibility,
+    });
+    res.json(link);
+  });
+
+  router.delete("/cases/:id/deep-dive-files/:linkId", async (req, res) => {
+    await assertCasesEnabled(db);
+    const caseRow = await assertCaseAccess(db, req, req.params.id as string);
+    const actor = getActorInfo(req);
+    const linkId = z.string().guid().safeParse(req.params.linkId);
+    if (!linkId.success) throw notFound("File link not found");
+    const link = await deepDiveFilesSvc.unlink(caseRow, linkId.data);
+    await logDeepDiveFileActivity(caseRow, actor, "case.deep_dive_file_unlinked", {
+      linkId: link.id,
+      evidenceId: link.evidenceId,
+      documentRequestId: link.documentRequestId,
+    });
+    res.json({ deleted: true, link });
   });
 
   return router;
