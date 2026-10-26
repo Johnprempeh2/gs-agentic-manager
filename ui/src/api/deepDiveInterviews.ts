@@ -1,10 +1,14 @@
 import type {
   CreateDeepDiveInterviewRound,
+  DecideDeepDiveInterviewProposal,
+  DeepDiveInterviewProposal,
+  DeepDiveInterviewReleaseView,
   DeepDiveInterviewProgress,
   DeepDiveInterviewRoundView,
   DraftDeepDiveInterviewSet,
   InviteDeepDiveInterviewPeople,
   OpenDeepDiveInterviewRound,
+  ReleaseDeepDiveInterviewSynthesis,
   SendDeepDiveInterviewInvites,
   UpdateDeepDiveInterviewRound,
   UpdateDeepDiveInterviewSet,
@@ -17,6 +21,8 @@ import { api } from "./client";
 export const deepDiveInterviewsQueryKeys = {
   round: (companyId: string) => ["deep-dive-interview-round", companyId] as const,
   progress: (companyId: string) => ["deep-dive-interview-round", companyId, "progress"] as const,
+  proposals: (roundId: string) => ["deep-dive-interview-round", "proposals", roundId] as const,
+  release: (roundId: string) => ["deep-dive-interview-round", "release", roundId] as const,
 };
 
 /** What an invite or a send answers: counts, and the progress read from the website after it. */
@@ -49,4 +55,14 @@ export const deepDiveInterviewsApi = {
     api.post<DeepDiveInterviewInviteResult>(`/deep-dive/interview-rounds/${roundId}/invites`, input),
   send: (roundId: string, input: SendDeepDiveInterviewInvites) =>
     api.post<{ emailed: number; skipped: number; progress: DeepDiveInterviewProgress }>(`/deep-dive/interview-rounds/${roundId}/invites/send`, input),
+  // Synthesis review (GRE-2756) and release (GRE-2667). Only a person decides, releases or withdraws.
+  proposals: (roundId: string) =>
+    api.get<{ roundId: string; proposals: DeepDiveInterviewProposal[] }>(`/deep-dive/interview-rounds/${roundId}/synthesis/proposals`),
+  decide: (proposalId: string, input: DecideDeepDiveInterviewProposal) =>
+    api.post<DeepDiveInterviewProposal>(`/deep-dive/interview-proposals/${proposalId}/decision`, input),
+  release: (roundId: string) => api.get<DeepDiveInterviewReleaseView>(`/deep-dive/interview-rounds/${roundId}/synthesis/release`),
+  releaseSynthesis: (roundId: string, input: ReleaseDeepDiveInterviewSynthesis) =>
+    api.post<DeepDiveInterviewReleaseView>(`/deep-dive/interview-rounds/${roundId}/synthesis/release`, input),
+  withdrawSynthesis: (roundId: string) =>
+    api.post<DeepDiveInterviewReleaseView>(`/deep-dive/interview-rounds/${roundId}/synthesis/withdraw`, {}),
 };
