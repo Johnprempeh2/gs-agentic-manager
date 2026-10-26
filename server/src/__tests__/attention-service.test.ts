@@ -889,10 +889,19 @@ describeEmbeddedPostgres("attention service", () => {
       effectiveResolverPolicy: "human_only",
       payload: { version: 1, questions: [] },
     });
+    await db.insert(issueThreadInteractions).values({
+      id: randomUUID(), companyId, issueId,
+      kind: "request_confirmation", status: "pending",
+      title: "Shared board decision", addresseeUserId: "board-user",
+      resolverUserIds: ["board-user", "other-user"],
+      requestedResolverPolicy: "human_only", effectiveResolverPolicy: "human_only",
+      payload: { version: 1, prompt: "Approve?" },
+    });
     await agentService(db).pause(reviewerId);
 
     const feed = await attentionService(db).list(companyId, { userId: "board-user" });
     const otherUserFeed = await attentionService(db).list(companyId, { userId: "other-user" });
+    const outsiderFeed = await attentionService(db).list(companyId, { userId: "outsider" });
     const audienceByTitle = new Map(feed.items
       .filter((item) => item.sourceKind === "issue_thread_interaction")
       .map((item) => [item.subject.title, item.resolverAudience]));
@@ -923,6 +932,9 @@ describeEmbeddedPostgres("attention service", () => {
       effectiveResolverPolicy: "human_only",
     });
     expect(otherUserFeed.items.some((item) => item.subject.title === "User-addressed question")).toBe(false);
+    expect(feed.items.some((item) => item.subject.title === "Shared board decision")).toBe(true);
+    expect(otherUserFeed.items.some((item) => item.subject.title === "Shared board decision")).toBe(true);
+    expect(outsiderFeed.items.some((item) => item.subject.title === "Shared board decision")).toBe(false);
     // Non-interaction rows carry no resolver policy at all.
     expect(feed.items.find((item) => item.sourceKind !== "issue_thread_interaction")?.resolverAudience)
       .toBeNull();

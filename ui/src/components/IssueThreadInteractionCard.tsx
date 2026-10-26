@@ -1781,12 +1781,14 @@ function ToolActionResolution({
 function RequestToolActionCard({
   interaction,
   state,
+  resolvedByLabel,
   onAcceptInteraction,
   onRejectInteraction,
   externalReferences,
 }: {
   interaction: RequestConfirmationInteraction;
   state: ToolActionCardState;
+  resolvedByLabel: string | null;
   onAcceptInteraction?: IssueThreadInteractionCardProps["onAcceptInteraction"];
   onRejectInteraction?: (interaction: RequestConfirmationInteraction, reason?: string) => Promise<void> | void;
   externalReferences?: MarkdownExternalReferenceMap;
@@ -1850,6 +1852,12 @@ function RequestToolActionCard({
               </DropdownMenu>
             ) : null}
           </div>
+        </div>
+      ) : null}
+      {!isPending && resolvedByLabel ? (
+        <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+          Answered by <span className="font-medium text-foreground">{resolvedByLabel}</span>
+          {interaction.resolvedAt ? ` at ${formatDateTime(interaction.resolvedAt)}` : ""}
         </div>
       ) : null}
       <InteractionActionError message={actionError} />
@@ -3835,6 +3843,7 @@ export function IssueThreadInteractionCard({
         <RequestToolActionCard
           interaction={interaction}
           state={toolActionState}
+          resolvedByLabel={resolvedByLabel}
           onAcceptInteraction={onAcceptInteraction}
           onRejectInteraction={onRejectInteraction}
           externalReferences={externalReferences}
@@ -4097,9 +4106,9 @@ export function IssueThreadInteractionCard({
             className="mt-4 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-border/60 pt-3 text-xs text-muted-foreground"
             data-testid="interaction-resolved-footer"
           >
-            Resolved by <span className="font-medium text-foreground">{resolvedByLabel}</span>
+            Answered by <span className="font-medium text-foreground">{resolvedByLabel}</span>
             {resolvedByAgent ? <ResolvedByAgentChip /> : null}
-            {interaction.resolvedAt ? ` on ${formatShortDate(interaction.resolvedAt)}` : ""}
+            {interaction.resolvedAt ? ` at ${formatDateTime(interaction.resolvedAt)}` : ""}
           </div>
         ) : null}
       </div>

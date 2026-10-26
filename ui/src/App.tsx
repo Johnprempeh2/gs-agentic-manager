@@ -57,6 +57,7 @@ const DeepDiveFiles = lazyPage(() => import("./pages/DeepDiveFiles"), "DeepDiveF
 const DeepDiveFindings = lazyPage(() => import("./pages/DeepDiveFindings"), "DeepDiveFindings");
 const DeepDiveSessions = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessions");
 const DeepDiveSessionDetail = lazyPage(() => import("./pages/DeepDiveSessions"), "DeepDiveSessionDetail");
+const DeepDiveInterviews = lazyPage(() => import("./pages/DeepDiveInterviews"), "DeepDiveInterviews");
 const DeepDiveOrganisation = lazyPage(() => import("./pages/DeepDiveOrganisation"), "DeepDiveOrganisation");
 const DeepDiveProcessBoard = lazyPage(() => import("./pages/DeepDiveProcessBoard"), "DeepDiveProcessBoard");
 const DeepDiveOpportunities = lazyPage(() => import("./pages/DeepDiveOpportunities"), "DeepDiveOpportunities");
@@ -369,6 +370,10 @@ function boardRoutes() {
       <Route
         path="deep-dive/findings"
         element={<DeepDiveExperimentalGate><DeepDiveFindings /></DeepDiveExperimentalGate>}
+      />
+      <Route
+        path="deep-dive/interviews"
+        element={<DeepDiveExperimentalGate><DeepDiveInterviews /></DeepDiveExperimentalGate>}
       />
       <Route
         path="deep-dive/sessions"
@@ -924,6 +929,7 @@ export function App() {
           <Route path="deep-dive" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/files" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/findings" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive/interviews" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/sessions" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/sessions/:sessionId" element={<UnprefixedBoardRedirect />} />
           <Route path="deep-dive/organisation" element={<UnprefixedBoardRedirect />} />

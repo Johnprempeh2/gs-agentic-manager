@@ -381,9 +381,11 @@ export function IssueChatThread({
   }
 
   const sendComposerComment = useCallback<IssueChatThreadProps["onAdd"]>(
-    (body, reopen, reassignment, attachmentIds, clientRequestId) => {
+    (body, reopen, reassignment, attachmentIds, clientRequestId, interrupt) => {
       pendingSubmitScrollRef.current = true;
-      return onAdd(body, reopen, reassignment, attachmentIds, clientRequestId);
+      return interrupt
+        ? onAdd(body, reopen, reassignment, attachmentIds, clientRequestId, true)
+        : onAdd(body, reopen, reassignment, attachmentIds, clientRequestId);
     },
     [onAdd],
   );

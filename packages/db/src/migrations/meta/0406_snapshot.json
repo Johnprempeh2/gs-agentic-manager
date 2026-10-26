@@ -1,5 +1,5 @@
 {
-  "id": "6c314378-9eb0-430b-8765-4cfffcec8fec",
+  "id": "7597cfbe-90ee-4796-b5cc-407d5276445d",
   "prevId": "e9c3e04b-5418-4bfd-a651-10ba9425e841",
   "version": "7",
   "dialect": "postgresql",
@@ -40406,6 +40406,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "resolver_user_ids": {
+          "name": "resolver_user_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "text",
@@ -47496,12 +47503,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "website_organisation_id": {
-          "name": "website_organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp with time zone",
@@ -47638,28 +47639,6 @@
           ],
           "isUnique": true,
           "where": "\"organisations\".\"external_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "organisations_company_website_organisation_uq": {
-          "name": "organisations_company_website_organisation_uq",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "website_organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"organisations\".\"website_organisation_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

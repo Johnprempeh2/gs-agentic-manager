@@ -1155,6 +1155,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     promote,
     setNextTitle,
     setRunFlag,
+    getRunFlag: (runId: string) => flags.list().find((flag) => flag.runId === runId) ?? null,
     onConfirmationAccepted,
     tick,
     restoreHold,

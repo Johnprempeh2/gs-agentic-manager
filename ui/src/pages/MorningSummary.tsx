@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { MorningSummary as MorningSummaryData, MorningSummaryTask } from "@greatstone/shared";
-import { Activity, AlertTriangle, Briefcase, CalendarClock, Check, CircleCheck, ClipboardList, Handshake, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import type { MorningSummary as MorningSummaryData, MorningSummaryHandoff, MorningSummaryTask } from "@greatstone/shared";
+import { Activity, AlertTriangle, Bookmark, Briefcase, CalendarClock, Check, CircleCheck, ClipboardList, Handshake, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -12,7 +12,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PauseNotifications } from "../components/PauseNotifications";
 import { queryKeys } from "../lib/queryKeys";
 import { Link, useSearchParams } from "@/lib/router";
-import { cn, formatCalendarDay } from "@/lib/utils";
+import { cn, formatCalendarDay, relativeTime } from "@/lib/utils";
 import { morningSummarySpeech, morningSummaryText } from "@/lib/morning-summary-text";
 import { needsYouAsks, type NeedsYouAsk } from "@/lib/needs-you-rows";
 import { ListenButton } from "../components/ListenButton";
@@ -31,6 +31,58 @@ export function greeting(now: Date) {
 /** "Late, due 14 Oct" for a line due before today; nothing for one due today. */
 export function lateLabel(dueDate: string | null | undefined, today: string) {
   return dueDate && dueDate < today ? `Late, due ${formatCalendarDay(dueDate)}` : null;
+}
+
+/**
+ * Where you left off (GRE-2668): your live handoff, the one Claude Code,
+ * ChatGPT and GSAM share. Shown only when you have one. It is private, so it
+ * stays out of "Copy as an update".
+ */
+function HandoffSection({ handoff, since }: { handoff: MorningSummaryHandoff; since: string }) {
+  return (
+    <section className="space-y-2 rounded-lg border border-border bg-card p-4" data-tour="morning-where-you-left-off">
+      <div className="flex items-center gap-2">
+        <Bookmark className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <h2 className="text-base font-semibold">Where you left off</h2>
+        {handoff.changesSince > 0 ? (
+          <span className="ml-auto text-xs text-muted-foreground">{handoff.changesSince} {handoff.changesSince === 1 ? "change" : "changes"} {since}</span>
+        ) : null}
+      </div>
+      {handoff.focus ? (
+        <p className="text-sm">
+          <span className="font-medium">Focus: </span>
+          {handoff.focus.text}
+        </p>
+      ) : null}
+      {handoff.threads.length > 0 ? (
+        <ul className="divide-y divide-border">
+          {handoff.threads.map((thread) => (
+            <li key={thread.key} className="space-y-0.5 py-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate">{thread.title || thread.refs.join(", ")}</span>
+                {thread.refs[0] ? (
+                  <Link to={`/issues/${thread.refs[0]}`} className="shrink-0 text-xs text-muted-foreground hover:underline">{thread.refs.join(", ")}</Link>
+                ) : null}
+              </div>
+              {thread.state || thread.next ? (
+                <p className="text-xs text-muted-foreground">
+                  {[thread.state, thread.next ? `next: ${thread.next}` : ""].filter(Boolean).join(" · ")}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {handoff.threadCount > handoff.threads.length ? (
+        <p className="text-xs text-muted-foreground">and {handoff.threadCount - handoff.threads.length} more threads</p>
+      ) : null}
+      {handoff.lastTool ? (
+        <p className="text-xs text-muted-foreground">
+          Last: {handoff.lastTool.by}, {relativeTime(handoff.lastTool.at)}: {handoff.lastTool.doing}
+        </p>
+      ) : null}
+    </section>
+  );
 }
 
 /** Client deals won or lost in the window. Shown only when there were some. */
@@ -238,6 +290,8 @@ export function MorningSummary() {
       </header>
 
       <PauseNotifications companyId={selectedCompanyId} compact />
+
+      {data.handoff ? <HandoffSection handoff={data.handoff} since={since} /> : null}
 
       <Section
         icon={UserCheck}

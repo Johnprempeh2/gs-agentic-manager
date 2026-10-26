@@ -18,7 +18,7 @@ import { issuesApi } from "../api/issues";
 import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { describeAttentionResolverAudience, type InteractionAudienceDescription } from "../lib/interaction-audience";
-import { interactionResolutionErrorMessage } from "../lib/interaction-resolution-error";
+import { interactionResolutionErrorCode, interactionResolutionErrorMessage } from "../lib/interaction-resolution-error";
 import {
   attentionDetailImages,
   attentionDetailLine,
@@ -504,6 +504,9 @@ function CompactDecisionActions({
     },
     onError: (error, action) => {
       if (error instanceof ReauthCancelledError) return;
+      if (interactionResolutionErrorCode(error) === "interaction_already_resolved") {
+        queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
+      }
       // A policy denial is permanent, so it keeps the server's reason and names
       // the real responder instead of asking for a retry that will fail again.
       pushToast({

@@ -6,6 +6,9 @@ The change list is GRE-649 section 5.3, approved by John on 4 Oct 2026.
 
 **Synthetic data only** (Kestrel Works fixtures) until gate G4.
 
+John's shared memory across Claude Code, Codex and GSAM (bank `greatstone-john`, GRE-2668) is in
+[GS-SHARED-MEMORY.md](GS-SHARED-MEMORY.md).
+
 ## Layout
 
 | Item | Value |

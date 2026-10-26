@@ -1209,7 +1209,7 @@ describe("IssueThreadInteractionCard tool-action card", () => {
     });
 
     const footer = host.querySelector('[data-testid="interaction-resolved-footer"]');
-    expect(footer?.textContent).toContain("Resolved by");
+    expect(footer?.textContent).toContain("Answered by");
     expect(
       host.querySelector('[data-testid="interaction-resolved-by-agent-chip"]'),
     ).not.toBeNull();
@@ -1605,7 +1605,7 @@ describe("IssueThreadInteractionCard resolver audience", () => {
 
     expect(host.querySelector('[data-testid="interaction-audience"]')).toBeNull();
     const footer = host.querySelector('[data-testid="interaction-resolved-footer"]');
-    expect(footer?.textContent).toContain("Resolved by");
+    expect(footer?.textContent).toContain("Answered by");
     expect(footer?.textContent).toContain("CodexCoder");
     expect(
       footer?.querySelector('[data-testid="interaction-resolved-by-agent-chip"]'),

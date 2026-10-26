@@ -24,6 +24,15 @@ GS Agentic Manager V1 must provide a full control-plane loop for autonomous agen
    An effective task or ancestor pause replaces the message composer with an
    amber Resume takeover. New board messages, including updates with comments,
    are rejected until the hold is released. Drafts survive pause and resume.
+   While an active run owns a task, a board user may post a correction with
+   "Interrupt with this". The comment is saved before delivery. A supported
+   live session receives it through steering. Claude ACP accepts it as a new
+   prompt at the next provider turn boundary and acknowledges that prompt
+   before the run continues. If live delivery fails, the run stops and resumes
+   with the correction at the start of the next task context. An explicit
+   finish-before-update critical section, an active Git write/rebase, or a
+   migration in the local run process tree delays the stop for at most two
+   minutes. The comment response does not wait for that delay.
 
 Success means one operator can run a small AI-native company end-to-end with clear visibility and control.
 
@@ -726,8 +735,12 @@ become `human_only`, and both are marked `legacy_inherited_restriction`. Resolve
 outcomes and resolver attribution are immutable.
 
 An explicit named agent or user addressee and a company-configured cap may narrow
-the effective audience. Only the exact named addressee may resolve an addressed
-interaction; a human does not override a user addressee. A cap never widens the
+the effective audience. A decision card may name `resolverUserIds`, a set of active
+company members who can answer it. A decision addressed to an owner or admin,
+or an unaddressed `human_only` decision, defaults to the company's active owner
+and admin users when no set is supplied. For these cards the first answer wins;
+the winner and time remain in the interaction audit. Other addressed interactions
+remain limited to their exact addressee. A cap never widens the
 requested audience. Tool-action confirmations and
 other hard-governed action cards remain `human_only` (or move to the formal approval
 system) regardless of a requested open audience.

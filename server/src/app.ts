@@ -104,6 +104,7 @@ import { deliverableRoutes } from "./routes/deliverables.js";
 import { caseRoutes } from "./routes/cases.js";
 import { deepDiveFindingsRoutes } from "./routes/deep-dive-findings.js";
 import { deepDiveSessionsRoutes } from "./routes/deep-dive-sessions.js";
+import { deepDiveInterviewsRoutes } from "./routes/deep-dive-interviews.js";
 import { deepDiveBoardsRoutes } from "./routes/deep-dive-boards.js";
 import { deepDiveOpportunitiesRoutes } from "./routes/deep-dive-opportunities.js";
 import { deepDiveTraceabilityRoutes } from "./routes/deep-dive-traceability.js";
@@ -896,6 +897,7 @@ export async function createApp(
   api.use(caseRoutes(db, opts.storageService));
   api.use(deepDiveFindingsRoutes(db));
   api.use(deepDiveSessionsRoutes(db));
+  api.use(deepDiveInterviewsRoutes(db));
   api.use(deepDiveBoardsRoutes(db));
   api.use(deepDiveOpportunitiesRoutes(db));
   api.use(deepDiveTraceabilityRoutes(db));

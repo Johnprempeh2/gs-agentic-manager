@@ -4,7 +4,7 @@ import { z } from "zod";
 // over a signed, read-only call to `<site>/api/admin/v1/*`.
 
 export const WEBSITE_DATA_RESOURCES = [
-  "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries",
+  "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries", "billing-lines",
 ] as const;
 export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
 
@@ -13,9 +13,22 @@ export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
  * `imports/:id` pages its rows with `?cursor=&limit=`. The FX rate and the payment report have routes of their own.
  */
 export const WEBSITE_COMMERCE_RESOURCES = [
-  "offerings", "categories", "vendors", "pricing-rules", "customer-tiers", "imports",
+  "offerings", "categories", "vendors", "pricing-rules", "customer-tiers", "imports", "billing-lines",
 ] as const;
 export type WebsiteCommerceResource = (typeof WEBSITE_COMMERCE_RESOURCES)[number];
+
+/** A billing line returned by the website's admin bridge (minor units are decimal strings). */
+export interface WebsiteBillingLine {
+  id: string;
+  customer_id: string;
+  description: string;
+  qty: number;
+  unit_price_minor: string;
+  currency: string;
+  billing_period: "monthly" | "quarterly" | "annual" | "multi_year";
+  next_bill_on: string | null;
+  status: "active" | "paused" | "ended";
+}
 
 export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
   /** GET → `WebsiteDataBridgeStatus` (website:view). Checks the site's health route, cached for 60 s. */
@@ -189,7 +202,7 @@ export const websiteDataListQuerySchema = z.object({
 }).strict();
 export type WebsiteDataListQuery = z.infer<typeof websiteDataListQuerySchema>;
 
-/** Commerce lists have no customer filter. */
+/** Catalogue commerce lists have no customer filter; billing-lines uses websiteDataListQuerySchema. */
 export const websiteCommerceListQuerySchema = websiteDataListQuerySchema.omit({ customer: true });
 export type WebsiteCommerceListQuery = z.infer<typeof websiteCommerceListQuerySchema>;
 

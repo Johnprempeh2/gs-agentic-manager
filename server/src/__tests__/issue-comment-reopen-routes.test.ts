@@ -1,5 +1,8 @@
 import express from "express";
 import request from "supertest";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../errors.js";
 
@@ -40,6 +43,9 @@ const mockAgentService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
+const mockGetRunFlag = vi.hoisted(() => vi.fn(() => null));
+const mockSteerNativeSession = vi.hoisted(() => vi.fn(async () => ({ turnId: "turn-1" })));
+const mockDeliverBoundaryCorrection = vi.hoisted(() => vi.fn(async () => undefined));
 const mockTxInsertValues = vi.hoisted(() => vi.fn(async () => undefined));
 const mockTxInsert = vi.hoisted(() =>
   vi.fn(() => ({ values: mockTxInsertValues })),
@@ -68,6 +74,7 @@ const mockDbSelect = vi.hoisted(() =>
 );
 const mockDb = vi.hoisted(() => ({
   select: mockDbSelect,
+  update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => []) })) })),
   transaction: vi.fn(async (fn: (tx: typeof mockTx) => Promise<unknown>) =>
     fn(mockTx),
   ),
@@ -148,6 +155,19 @@ vi.mock("../services/feedback.js", () => ({
 
 vi.mock("../services/heartbeat.js", () => ({
   heartbeatService: () => mockHeartbeatService,
+}));
+
+vi.mock("../services/live-release.js", () => ({
+  LIVE_RELEASE_KEY_PREFIX: "live-release:",
+  liveReleaseService: () => ({ getRunFlag: mockGetRunFlag, onConfirmationAccepted: vi.fn() }),
+}));
+
+vi.mock("../services/native-runtime/native-session-executor.js", () => ({
+  deliverNativeSessionCorrectionAtBoundary: mockDeliverBoundaryCorrection,
+  NativeSessionBoundaryUnsupportedError: class NativeSessionBoundaryUnsupportedError extends Error {},
+  getNativeSessionSteeringState: vi.fn(async () => ({ disposition: "available" })),
+  NativeSessionSteeringError: class NativeSessionSteeringError extends Error {},
+  steerNativeSession: mockSteerNativeSession,
 }));
 
 vi.mock("../services/instance-settings.js", () => ({
@@ -351,6 +371,12 @@ describe.sequential("issue comment reopen routes", () => {
     mockAgentService.list.mockReset();
     mockAgentService.resolveByReference.mockReset();
     mockLogActivity.mockReset();
+    mockGetRunFlag.mockReset();
+    mockGetRunFlag.mockReturnValue(null);
+    mockSteerNativeSession.mockReset();
+    mockSteerNativeSession.mockResolvedValue({ turnId: "turn-1" });
+    mockDeliverBoundaryCorrection.mockReset();
+    mockDeliverBoundaryCorrection.mockResolvedValue(undefined);
     mockFeedbackService.listIssueVotesForUser.mockReset();
     mockFeedbackService.saveIssueVote.mockReset();
     mockInstanceSettingsService.get.mockReset();
@@ -2806,7 +2832,7 @@ describe.sequential("issue comment reopen routes", () => {
     );
   });
 
-  it("interrupts an active run before a combined comment update", async () => {
+  it("requires a correction before changing the assignee", async () => {
     const issue = {
       ...makeIssue("todo"),
       executionRunId: "run-1",
@@ -2839,37 +2865,178 @@ describe.sequential("issue comment reopen routes", () => {
         assigneeAgentId: "33333333-3333-4333-8333-333333333333",
       });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Post the correction before changing the assignee");
     expect(mockHeartbeatService.getRun).toHaveBeenCalledWith("run-1");
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    expect(mockIssueService.addComment).not.toHaveBeenCalled();
+  });
+
+  it("delivers a saved correction to an active native session", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Use the corrected scope", interrupt: true });
+
+    expect(res.status).toBe(201);
+    expect(mockIssueService.addComment).toHaveBeenCalled();
+    await vi.waitFor(() => expect(mockDeliverBoundaryCorrection).toHaveBeenCalledWith(expect.objectContaining({
+      runId: "run-1", correlationId: "comment-1",
+    })));
+    expect(mockSteerNativeSession).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    expect(mockIssueService.addComment.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeliverBoundaryCorrection.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("saves a correction before restarting when live delivery fails", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+    mockDeliverBoundaryCorrection.mockRejectedValue(new Error("provider rejected correction"));
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "cancelled",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Use the corrected scope", interrupt: true });
+
+    expect(res.status).toBe(201);
     expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
-      "run-1",
-      "Interrupted by board comment",
-      expect.objectContaining({
-        errorCode: "operator_interrupted",
-        resultJson: expect.objectContaining({
-          operatorInterrupted: true,
-          interruptionSource: "issue_comment_interrupt",
-          interruptedIssueId: "11111111-1111-4111-8111-111111111111",
-        }),
-        eventMessage: "run interrupted by board comment",
-        eventPayload: expect.objectContaining({
-          issueId: "11111111-1111-4111-8111-111111111111",
-          source: "issue_comment_interrupt",
-        }),
-      }),
+      "run-1", "Interrupted by board correction", expect.objectContaining({ errorCode: "operator_interrupted" }),
     );
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        action: "heartbeat.cancelled",
-        details: expect.objectContaining({
-          source: "issue_comment_interrupt",
-          issueId: "11111111-1111-4111-8111-111111111111",
-          cancellationKind: "operator_interrupted",
-          operatorInterrupted: true,
-        }),
-      }),
+    expect(mockIssueService.addComment.mock.invocationCallOrder[0]).toBeLessThan(
+      mockHeartbeatService.cancelRun.mock.invocationCallOrder[0]!,
     );
+    await vi.waitFor(() => expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      issue.assigneeAgentId,
+      expect.objectContaining({ contextSnapshot: expect.objectContaining({ correctionCommentId: "comment-1" }) }),
+    ));
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts and wakes with the correction after ACP boundary delivery times out", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+    mockDeliverBoundaryCorrection.mockRejectedValue(new Error("ACP correction turn boundary timed out"));
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId, status: "cancelled",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Stop the old plan", interrupt: true });
+
+    expect(res.status).toBe(201);
+    await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1", "Interrupted by board correction", expect.anything(),
+    ));
+    await vi.waitFor(() => expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      issue.assigneeAgentId,
+      expect.objectContaining({ contextSnapshot: expect.objectContaining({ correctionCommentId: "comment-1" }) }),
+    ));
+  });
+
+  it("waits for a Git write started during ACP delivery before fallback cancellation", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+    mockDeliverBoundaryCorrection.mockImplementation(async () => {
+      mockGetRunFlag.mockReturnValue(true);
+      throw new Error("ACP correction turn boundary timed out");
+    });
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId, status: "cancelled",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Stop after the write", interrupt: true });
+    expect(res.status).toBe(201);
+    await vi.waitFor(() => expect(mockDeliverBoundaryCorrection).toHaveBeenCalled());
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    mockGetRunFlag.mockReturnValue(null);
+    await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1", "Interrupted by board correction", expect.anything(),
+    ), { timeout: 2_500 });
+  });
+
+  it("returns the saved comment while a protected run waits, then cancels it", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "legacy", contextSnapshot: { issueId: issue.id },
+    });
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "cancelled",
+    });
+    mockGetRunFlag.mockReturnValue(true);
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Wait for my correction", interrupt: true });
+
+    expect(res.status).toBe(201);
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    mockGetRunFlag.mockReturnValue(null);
+    await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1", "Interrupted by board correction", expect.anything(),
+    ), { timeout: 2_500 });
+  });
+
+  it("keeps a running Git write safe before applying a correction", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "issue-correction-git-"));
+    const gitDir = join(cwd, ".git");
+    const lock = join(gitDir, "index.lock");
+    try {
+      await mkdir(gitDir);
+      await writeFile(lock, "");
+      const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockHeartbeatService.getRun.mockResolvedValue({
+        id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+        status: "running", runtimeMode: "legacy",
+        contextSnapshot: { issueId: issue.id, executionWorkspaceCwd: cwd },
+      });
+      mockHeartbeatService.cancelRun.mockResolvedValue({
+        id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+        status: "cancelled",
+      });
+
+      const res = await request(await installActor(createApp()))
+        .post(`/api/issues/${issue.id}/comments`)
+        .send({ body: "Correct after commit", interrupt: true })
+        .timeout({ response: 3_000, deadline: 4_000 });
+      expect(res.status).toBe(201);
+      expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+      await rm(lock);
+      await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+        "run-1", "Interrupted by board correction", expect.anything(),
+      ), { timeout: 2_500 });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   it("cancels an active run when an issue is marked cancelled", async () => {

@@ -36,6 +36,7 @@ export const scopeKindLabel: Record<MemoryScopeKind, string> = {
   restricted_project: "Restricted project",
   client: "Client",
   agent: "Agent",
+  person: "Person",
 };
 
 /** "Approved" is a workflow state; say so wherever the word sits beside facts (GRE-911). */

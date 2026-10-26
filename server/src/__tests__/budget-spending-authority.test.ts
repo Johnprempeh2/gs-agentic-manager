@@ -244,6 +244,25 @@ describeEmbeddedPostgres("spending authority (GRE-1363)", () => {
     expect(await companyBudget(companyId)).toBe(4000);
   });
 
+  it("lets either named budget approver answer a money card, and preserves the first answer", async () => {
+    const { companyId } = await createCompany();
+    await setAuthority(companyId, 5000, ["client-1", "approver-1"]);
+    const [first, second] = await db.insert(approvals).values(["First", "Second"].map((title) => ({
+      companyId,
+      type: "budget_override_required",
+      status: "pending" as const,
+      payload: { title },
+    }))).returning();
+
+    expect((await as("client", companyId).post(`/api/approvals/${first!.id}/approve`).send({})).status).toBe(200);
+    expect((await as("approver", companyId).post(`/api/approvals/${second!.id}/approve`).send({})).status).toBe(200);
+    const late = await as("approver", companyId).post(`/api/approvals/${first!.id}/reject`).send({});
+    expect(late.status).toBe(422);
+    const rows = await db.select().from(approvals).where(eq(approvals.companyId, companyId));
+    expect(rows.find((row) => row.id === first!.id)).toMatchObject({ status: "approved", decidedByUserId: "client-1", decidedAt: expect.any(Date) });
+    expect(rows.find((row) => row.id === second!.id)).toMatchObject({ status: "approved", decidedByUserId: "approver-1", decidedAt: expect.any(Date) });
+  });
+
   it("AT-2.3: a raise dated tomorrow keeps the old cap today and applies tomorrow without a restart", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-11T12:00:00.000Z"));
