@@ -14,6 +14,7 @@ import {
   gsInterviewInviteAnswerSchema,
   gsInterviewPersonSchema,
   gsInterviewRoundItemSchema,
+  gsInterviewSendAnswerSchema,
   type DeepDiveInterviewInviteStatus,
   type DeepDiveInterviewSendKind,
   type GsInterviewInviteAnswer,
@@ -21,6 +22,8 @@ import {
   type GsInterviewPerson,
   type GsInterviewRoundItem,
   type GsInterviewRoundPayload,
+  type GsInterviewSendAnswer,
+  type GsInterviewSendBody,
 } from "@greatstone/shared";
 import { z } from "zod";
 import { WebsiteBridgeError, type WebsiteBridgeActor } from "./data-bridge-client.js";
@@ -39,7 +42,7 @@ export interface InterviewBridge {
   /** `POST rounds/{roundId}/invites` with `send: true`. */
   invite(scope: InterviewBridgeScope, people: GsInterviewInvitePerson[], actor: WebsiteBridgeActor): Promise<GsInterviewInviteAnswer>;
   /** `POST rounds/{roundId}/invites/send`: email the join link again, or a reminder. */
-  send(scope: InterviewBridgeScope, input: { kind: DeepDiveInterviewSendKind; userIds: string[] }, actor: WebsiteBridgeActor): Promise<{ emailed: number }>;
+  send(scope: InterviewBridgeScope, input: GsInterviewSendBody, actor: WebsiteBridgeActor): Promise<GsInterviewSendAnswer>;
   /** `GET rounds/{roundId}/people`: status and progress only. */
   people(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewPerson[]>;
 }
@@ -59,7 +62,6 @@ export function interviewIdempotencyKey(scope: InterviewBridgeScope, what: strin
 
 const roundAnswerSchema = z.object({ round: z.unknown() });
 const peopleAnswerSchema = z.object({ items: z.array(z.unknown()) });
-const sendAnswerSchema = z.object({ emailed: z.number().int().min(0) });
 
 /** The website's admin bridge, on the company's one website site. */
 export function websiteInterviewBridge(db: Db): InterviewBridge {
@@ -89,7 +91,7 @@ export function websiteInterviewBridge(db: Db): InterviewBridge {
     async send(scope, input, actor) {
       // A new key each time: sending a reminder twice on purpose sends it twice.
       const answer = await (await client(scope, "write")).interviewWrite(`${base(scope)}/invites/send`, input, actor);
-      return parsed(sendAnswerSchema, answer, "send");
+      return parsed(gsInterviewSendAnswerSchema, answer, "send");
     },
     async people(scope, actor) {
       const answer = await (await client(scope, "read")).interviewRead(`${base(scope)}/people`, {}, actor);
@@ -111,8 +113,9 @@ interface FakePerson extends GsInterviewPerson {
 interface FakeRound {
   organisationId: string;
   payload: GsInterviewRoundPayload;
+  /** By employee id. An invitation held by email has `userId: null` until the person joins. */
   people: Map<string, FakePerson>;
-  emails: { userId: string; kind: "invite" | DeepDiveInterviewSendKind }[];
+  emails: { employeeId: string; kind: "invite" | DeepDiveInterviewSendKind }[];
 }
 
 const FAKE_PATH: DeepDiveInterviewInviteStatus[] = ["completed", "started", "completed", "invited", "abandoned", "completed", "declined"];
@@ -127,7 +130,7 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
   const now = options.now ?? Date.now;
   const progressAfterMs = options.progressAfterMs ?? null;
   const rounds = new Map<string, FakeRound>();
-  /** Website accounts by email, across rounds, as on the site. */
+  /** Website accounts (members of the organisation) by user id, as on the site. */
   const users = new Map<string, { userId: string; email: string; name: string }>();
 
   function roundOf(scope: InterviewBridgeScope) {
@@ -165,25 +168,28 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
       const round = roundOf(scope);
       if (round.payload.status !== "open") throw new WebsiteBridgeError("conflict", 409, "conflict");
       const domains = round.payload.enrol.allowedEmailDomains;
-      const invited: GsInterviewInviteAnswer["invited"] = [];
-      let emailed = 0;
+      // Checked first, so a bad item writes nothing.
       for (const person of people) {
-        let user = person.userId ? [...users.values()].find((u) => u.userId === person.userId) : users.get(person.email!);
-        if (person.userId && !user) throw new WebsiteBridgeError("bad_request", 400, "unknown user");
+        if (!!person.userId === !!person.email) throw new WebsiteBridgeError("bad_request", 400, "bad_request");
+        if (person.userId && !users.has(person.userId)) throw new WebsiteBridgeError("bad_request", 400, "not a member of this organisation");
         if (person.email && person.portalRole !== "client_admin" && !domains.includes(person.email.split("@")[1] ?? "")) {
           throw new WebsiteBridgeError("bad_request", 400, "email domain not allowed");
         }
-        if (!user) {
-          user = { userId: `usr_${randomBytes(8).toString("hex")}`, email: person.email!, name: person.name };
-          users.set(user.email, user);
-        }
-        const existing = round.people.get(user.userId);
-        const hash = createHash("sha256").update(user.email).digest()[0]!;
-        round.people.set(user.userId, {
-          userId: user.userId,
-          employeeId: existing?.employeeId ?? `emp_${randomBytes(6).toString("hex")}`,
-          email: user.email,
-          name: person.name || user.name,
+      }
+      const invited: GsInterviewInviteAnswer["invited"] = [];
+      let emailed = 0;
+      for (const person of people) {
+        const account = person.userId ? users.get(person.userId)! : null;
+        const email = account?.email ?? person.email!;
+        // The same email on the round is updated, never duplicated; naming the account links an email invitation.
+        const existing = [...round.people.values()].find((p) => (account && p.userId === account.userId) || p.email === email);
+        const hash = createHash("sha256").update(email).digest()[0]!;
+        const employeeId = existing?.employeeId ?? `emp_${randomBytes(6).toString("hex")}`;
+        round.people.set(employeeId, {
+          userId: account?.userId ?? existing?.userId ?? null,
+          employeeId,
+          email,
+          name: account?.name ?? person.name,
           roleTitle: person.roleTitle,
           unitId: person.unitId,
           status: existing?.status ?? "invited",
@@ -194,20 +200,33 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
           becomes: FAKE_PATH[hash % FAKE_PATH.length]!,
         });
         if (!existing) {
-          round.emails.push({ userId: user.userId, kind: "invite" });
+          round.emails.push({ employeeId, kind: "invite" });
           emailed += 1;
         }
-        invited.push({ userId: user.userId, employeeId: round.people.get(user.userId)!.employeeId, outcome: existing ? "updated" : "created" });
+        invited.push({ userId: round.people.get(employeeId)!.userId, organisationId: scope.organisationId, employeeId, outcome: existing ? "updated" : "created" });
       }
       return { invited, emailed };
     },
     async send(scope, input) {
       const round = roundOf(scope);
-      for (const userId of input.userIds) {
-        if (!round.people.has(userId)) throw new WebsiteBridgeError("not_found", 404, "not_found");
+      if (round.payload.status !== "open") throw new WebsiteBridgeError("bad_request", 400, "bad_request");
+      const named = [
+        ...input.userIds.map((userId) => [...round.people.values()].find((p) => p.userId === userId)),
+        ...input.employeeIds.map((employeeId) => round.people.get(employeeId)),
+      ];
+      if (named.length === 0 || named.length > 200 || named.some((p) => !p)) throw new WebsiteBridgeError("bad_request", 400, "bad_request");
+      const due = input.kind === "resend" ? ["invited"] : ["invited", "started"];
+      let emailed = 0;
+      let skipped = 0;
+      for (const person of new Set(named as FakePerson[])) {
+        if (!due.includes(statusOf(person).status)) {
+          skipped += 1;
+          continue;
+        }
+        round.emails.push({ employeeId: person.employeeId, kind: input.kind });
+        emailed += 1;
       }
-      for (const userId of input.userIds) round.emails.push({ userId, kind: input.kind });
-      return { emailed: input.userIds.length };
+      return { emailed, skipped };
     },
     async people(scope) {
       const round = roundOf(scope);
@@ -223,13 +242,20 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
     /** Test and sandbox seams. */
     fake: {
       round: (roundId: string) => rounds.get(roundId) ?? null,
-      setStatus(roundId: string, userId: string, status: DeepDiveInterviewInviteStatus) {
-        const person = rounds.get(roundId)?.people.get(userId);
+      setStatus(roundId: string, employeeId: string, status: DeepDiveInterviewInviteStatus) {
+        const person = rounds.get(roundId)?.people.get(employeeId);
         if (person) person.status = status;
       },
       /** An existing website account, as if they had signed up before. */
       addUser(user: { userId: string; email: string; name: string }) {
-        users.set(user.email, user);
+        users.set(user.userId, user);
+      },
+      /** The person opens the join link and makes their account: the invitation becomes theirs by user id. */
+      join(roundId: string, employeeId: string, userId: string) {
+        const person = rounds.get(roundId)?.people.get(employeeId);
+        if (!person) return;
+        person.userId = userId;
+        users.set(userId, { userId, email: person.email, name: person.name });
       },
     },
   };

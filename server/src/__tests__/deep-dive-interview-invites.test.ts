@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   activityLog,
   agents,
@@ -191,7 +191,9 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     expect(opened.body).toMatchObject({ status: "open", allowedEmailDomains: ["northwind.example"], seatTotal: 40, total: 0 });
     const onSite = bridge.fake.round(roundId)!;
     expect(onSite.organisationId).toBe(ORG);
-    expect(onSite.payload).toMatchObject({ schema: "gs-interview-round-v1", mode: "team", status: "open", seatTotal: 40, clientName: "DII Co" });
+    expect(onSite.payload).toMatchObject({ schema: "gs-interview-round-v1", mode: "team", status: "open", seatTotal: 40 });
+    // The website names the round after its own organisation; a client name is refused there.
+    expect(onSite.payload).not.toHaveProperty("clientName");
     // Teams, not the whole company; each team's approved questions go with it.
     expect(onSite.payload.units.map((unit) => unit.name)).toEqual(["Finance", "Depot"]);
     expect(Object.keys(onSite.payload.contextPack.units as object).sort()).toEqual([board.finance.id, board.depot.id].sort());
@@ -223,23 +225,27 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     for (const row of rows) {
       expect(Object.keys(row).sort()).toEqual([
         "companyId", "createdAt", "createdByAgentId", "createdByUserId", "id", "lastRemindedAt", "lastSentAt",
-        "remindedCount", "roundId", "sentCount", "setId", "updatedAt", "websiteOrganisationId", "websiteUserId",
+        "remindedCount", "roundId", "sentCount", "setId", "updatedAt", "websiteEmployeeId", "websiteOrganisationId", "websiteUserId",
       ]);
       expect(row.websiteOrganisationId).toBe(ORG);
-      expect(row.websiteUserId).toMatch(/^usr_[A-Za-z0-9]+$/);
+      expect(row.websiteEmployeeId).toMatch(/^emp_[A-Za-z0-9]+$/);
     }
+    // Invited by email: the website holds the invitation, so there is no user id until the person joins.
+    expect(rows.map((row) => row.websiteUserId).sort()).toEqual([null, null, "usr_existing01"].sort());
     const stored = JSON.stringify(rows).toLowerCase();
     for (const personal of ["ama", "yaw", "efua", "darko", "mensah", "northwind.example", "@", "driver"]) {
       expect(stored).not.toContain(personal);
     }
     expect(rows.find((row) => row.websiteUserId === "usr_existing01")!.setId).toBe(setIds[0]);
     // Past the API too: an email or a name is not a website user id.
-    for (const websiteUserId of ["ama@northwind.example", "Ama Mensah"]) {
-      await expect(db.insert(deepDiveInterviewInvites).values({ companyId: company.id, roundId, websiteOrganisationId: ORG, websiteUserId }))
+    for (const notAnId of ["ama@northwind.example", "Ama Mensah"]) {
+      await expect(db.insert(deepDiveInterviewInvites).values({ companyId: company.id, roundId, websiteOrganisationId: ORG, websiteEmployeeId: "emp_x", websiteUserId: notAnId }))
+        .rejects.toMatchObject({ cause: { code: "23514" } });
+      await expect(db.insert(deepDiveInterviewInvites).values({ companyId: company.id, roundId, websiteOrganisationId: ORG, websiteEmployeeId: notAnId }))
         .rejects.toMatchObject({ cause: { code: "23514" } });
     }
     // And an invite cannot point at another organisation than its round's.
-    await expect(db.insert(deepDiveInterviewInvites).values({ companyId: company.id, roundId, websiteOrganisationId: "org_other", websiteUserId: "usr_x" }))
+    await expect(db.insert(deepDiveInterviewInvites).values({ companyId: company.id, roundId, websiteOrganisationId: "org_other", websiteEmployeeId: "emp_x" }))
       .rejects.toMatchObject({ cause: { code: "23503" } });
 
     const progress = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
@@ -287,7 +293,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
         ],
       })
       .expect(200);
-    const ids = new Map((sent.body.progress as DeepDiveInterviewProgress).people.map((p) => [p.name, p.websiteUserId]));
+    const ids = new Map((sent.body.progress as DeepDiveInterviewProgress).people.map((p) => [p.name, p.websiteEmployeeId]));
     bridge.fake.setStatus(roundId, ids.get("Ama Mensah")!, "completed");
     bridge.fake.setStatus(roundId, ids.get("Esi Asante")!, "started");
     bridge.fake.setStatus(roundId, ids.get("Kofi Boateng")!, "declined");
@@ -309,17 +315,17 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     // An agent reads progress but does not email anyone.
     const agent = await seedAgentActor(company.id);
     await request(app(agent)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200);
-    await request(app(agent)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`).send({ kind: "remind", websiteUserIds: [ids.get("Esi Asante")] }).expect(403);
+    await request(app(agent)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`).send({ kind: "remind", websiteEmployeeIds: [ids.get("Esi Asante")] }).expect(403);
     await request(app(agent)).post(`/api/deep-dive/interview-rounds/${roundId}/invites`).send({ people: [{ name: "X", email: "x@northwind.example", unitId: board.depot.id }] }).expect(403);
 
     const resent = await request(app(person))
       .post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
-      .send({ kind: "resend", websiteUserIds: [ids.get("Yaw Darko")] })
+      .send({ kind: "resend", websiteEmployeeIds: [ids.get("Yaw Darko")] })
       .expect(200);
-    expect(resent.body.emailed).toBe(1);
+    expect(resent.body).toMatchObject({ emailed: 1, skipped: 0 });
     await request(app(person))
       .post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
-      .send({ kind: "remind", websiteUserIds: [ids.get("Esi Asante")] })
+      .send({ kind: "remind", websiteEmployeeIds: [ids.get("Esi Asante")] })
       .expect(200);
     const after = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
     expect(after.people.find((p) => p.name === "Yaw Darko")).toMatchObject({ sentCount: 2, remindedCount: 0 });
@@ -327,14 +333,51 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     expect(after.people.find((p) => p.name === "Esi Asante")!.lastRemindedAt).not.toBeNull();
     expect(bridge.fake.round(roundId)!.emails.map((e) => e.kind)).toEqual(["invite", "invite", "invite", "invite", "resend", "remind"]);
 
+    // Nobody who completed gets a reminder: the website skips them.
+    const skipped = await request(app(person))
+      .post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
+      .send({ kind: "remind", websiteEmployeeIds: [ids.get("Ama Mensah")] })
+      .expect(200);
+    expect(skipped.body).toMatchObject({ emailed: 0, skipped: 1 });
+
     // Only people this round invited.
     await request(app(person))
       .post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
-      .send({ kind: "resend", websiteUserIds: ["usr_someone_else"] })
+      .send({ kind: "resend", websiteEmployeeIds: ["emp_someone_else"] })
       .expect(422);
   });
 
-  it("per person: sends each invited person's own questions under their website employee id", async () => {
+  it("links an email invitation to the person's user id once they join, then sends by user id", async () => {
+    bridge = createFakeInterviewBridge();
+    const company = await seedCompany("DIJ");
+    const { roundId, board } = await seedRound(company.id, "per_team", 2);
+    await open(roundId).expect(200);
+    const sent = await request(app(person))
+      .post(`/api/deep-dive/interview-rounds/${roundId}/invites`)
+      .send({ people: [{ name: "Yaw Darko", email: "yaw@northwind.example", unitId: board.depot.id }] })
+      .expect(200);
+    const [yaw] = (sent.body.progress as DeepDiveInterviewProgress).people;
+    expect(yaw).toMatchObject({ websiteUserId: null, name: "Yaw Darko" });
+    const send = vi.spyOn(bridge, "send");
+
+    // Held by email: sent by employee id.
+    await request(app(person)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
+      .send({ kind: "resend", websiteEmployeeIds: [yaw!.websiteEmployeeId] }).expect(200);
+    expect(send.mock.calls[0]![1]).toEqual({ kind: "resend", userIds: [], employeeIds: [yaw!.websiteEmployeeId] });
+
+    // Yaw opens the link and makes an account: the next read stores the user id.
+    bridge.fake.join(roundId, yaw!.websiteEmployeeId, "usr_yaw01");
+    const read = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
+    expect(read.people[0]).toMatchObject({ websiteEmployeeId: yaw!.websiteEmployeeId, websiteUserId: "usr_yaw01" });
+    const [row] = await db.select().from(deepDiveInterviewInvites).where(eq(deepDiveInterviewInvites.roundId, roundId));
+    expect(row).toMatchObject({ websiteEmployeeId: yaw!.websiteEmployeeId, websiteUserId: "usr_yaw01" });
+
+    await request(app(person)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
+      .send({ kind: "resend", websiteEmployeeIds: [yaw!.websiteEmployeeId] }).expect(200);
+    expect(send.mock.calls[1]![1]).toEqual({ kind: "resend", userIds: ["usr_yaw01"], employeeIds: [] });
+  });
+
+  it("per person: sends each invited person's own questions under their user id, or their email until they join", async () => {
     bridge = createFakeInterviewBridge();
     const company = await seedCompany("DIQ");
     const { roundId, board } = await seedRound(company.id, "per_person", 2);
@@ -351,10 +394,19 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
       .send({ people: [{ boardPersonId: board.ama.id, email: "ama@northwind.example" }] })
       .expect(200);
     const onSite = bridge.fake.round(roundId)!;
-    const [ama] = [...onSite.people.values()];
     const pack = onSite.payload.contextPack.people as Record<string, string>;
-    expect(Object.keys(pack)).toEqual([ama!.employeeId]);
-    expect(pack[ama!.employeeId]).toContain("your role");
+    // Ama has no website account yet, so the website takes the lower-case email as the key.
+    expect(Object.keys(pack)).toEqual(["ama@northwind.example"]);
+    expect(pack["ama@northwind.example"]).toContain("your role");
+
+    // Once she joins, inviting again sends her questions under her user id.
+    const [ama] = [...onSite.people.values()];
+    bridge.fake.join(roundId, ama!.employeeId, "usr_ama01");
+    await request(app(person))
+      .post(`/api/deep-dive/interview-rounds/${roundId}/invites`)
+      .send({ people: [{ boardPersonId: board.ama.id, email: "ama@northwind.example" }] })
+      .expect(200);
+    expect(Object.keys(bridge.fake.round(roundId)!.payload.contextPack.people as object)).toEqual(["usr_ama01"]);
   });
 
   it("changes nothing in GSAM when the website refuses, and keeps one company's round out of another's reach", async () => {
@@ -377,6 +429,6 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(403);
     await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/open`).send(openBody).expect(403);
     await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/invites`).send({ people: [{ name: "X", email: "x@northwind.example" }] }).expect(403);
-    await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`).send({ kind: "resend", websiteUserIds: ["usr_x"] }).expect(403);
+    await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`).send({ kind: "resend", websiteEmployeeIds: ["emp_x"] }).expect(403);
   });
 });

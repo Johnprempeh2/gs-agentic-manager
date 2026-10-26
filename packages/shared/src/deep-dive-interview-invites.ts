@@ -7,8 +7,10 @@ import type { DeepDiveInterviewRoundStatus } from "./deep-dive-interviews.js";
  * A round opens on the website only when a person has approved every question
  * set. Each invite asks the website (gs-interview-v1) to create the person's
  * account and membership, or names an existing website user. GSAM keeps only
- * the website user id and organisation id per invite, plus which question set
- * the person gets; names, emails and status are read live from the website.
+ * the website employee, user and organisation ids per invite, plus which
+ * question set the person gets; names, emails and status are read live from
+ * the website. The user id is null while the website holds an invitation by
+ * email, until the person makes their account.
  */
 
 /** A person's place in the round, as the website reports it. */
@@ -85,10 +87,11 @@ export const inviteDeepDiveInterviewPeopleSchema = z
   .strict();
 export type InviteDeepDiveInterviewPeople = z.infer<typeof inviteDeepDiveInterviewPeopleSchema>;
 
+/** Names people on the round by the website employee id every invite has, with or without an account yet. */
 export const sendDeepDiveInterviewInvitesSchema = z
   .object({
     kind: z.enum(DEEP_DIVE_INTERVIEW_SEND_KINDS),
-    websiteUserIds: z.array(websiteUserIdSchema).min(1).max(DEEP_DIVE_INTERVIEW_MAX_INVITES_PER_CALL),
+    websiteEmployeeIds: z.array(websiteUserIdSchema).min(1).max(DEEP_DIVE_INTERVIEW_MAX_INVITES_PER_CALL),
   })
   .strict();
 export type SendDeepDiveInterviewInvites = z.infer<typeof sendDeepDiveInterviewInvitesSchema>;
@@ -97,7 +100,9 @@ export type DeepDiveInterviewStatusCounts = Record<DeepDiveInterviewInviteStatus
 
 /** One person on the round. Name and email come live from the website and are never stored in GSAM. */
 export interface DeepDiveInterviewProgressPerson {
-  websiteUserId: string;
+  websiteEmployeeId: string;
+  /** Null until the person makes their website account. */
+  websiteUserId: string | null;
   name: string;
   email: string;
   roleTitle: string;
@@ -149,11 +154,13 @@ export function emptyDeepDiveInterviewStatusCounts(): DeepDiveInterviewStatusCou
 
 export const GS_INTERVIEW_ROUND_SCHEMA = "gs-interview-round-v1";
 
-/** `POST rounds/{roundId}`: the round as GSAM sends it. `retentionDays` and `readoutAt` (GRE-2653) are optional. */
+/**
+ * `POST rounds/{roundId}`: the round as GSAM sends it. `retentionDays` and `readoutAt` (GRE-2653) are optional.
+ * There is no client name: the website reads the organisation's own name.
+ */
 export const gsInterviewRoundPayloadSchema = z
   .object({
     schema: z.literal(GS_INTERVIEW_ROUND_SCHEMA),
-    clientName: z.string(),
     sponsor: z.string().nullable(),
     mode: z.enum(["team", "person"]),
     voice: z.boolean().optional(),
@@ -200,7 +207,10 @@ export const gsInterviewRoundItemSchema = z.object({
 });
 export type GsInterviewRoundItem = z.infer<typeof gsInterviewRoundItemSchema>;
 
-/** `POST rounds/{roundId}/invites`: one person. Either an email (the site makes the account) or an existing userId. */
+/**
+ * `POST rounds/{roundId}/invites`: one person. An existing website account by `userId`, or an email and name
+ * for someone with no account yet (the site holds the invitation by email until they make one).
+ */
 export interface GsInterviewInvitePerson {
   email?: string;
   userId?: string;
@@ -213,9 +223,9 @@ export interface GsInterviewInvitePerson {
 export const gsInterviewInviteAnswerSchema = z.object({
   invited: z.array(
     z.object({
-      userId: websiteUserIdSchema,
-      employeeId: z.string(),
-      email: z.string().optional(),
+      userId: websiteUserIdSchema.nullable(),
+      organisationId: z.string().optional(),
+      employeeId: websiteUserIdSchema,
       outcome: z.enum(["created", "updated"]),
     }),
   ),
@@ -223,10 +233,23 @@ export const gsInterviewInviteAnswerSchema = z.object({
 });
 export type GsInterviewInviteAnswer = z.infer<typeof gsInterviewInviteAnswerSchema>;
 
+/** `POST rounds/{roundId}/invites/send`: `userIds` for people with an account, `employeeIds` for invitations held by email. */
+export type GsInterviewSendBody = {
+  kind: DeepDiveInterviewSendKind;
+  userIds: string[];
+  employeeIds: string[];
+};
+
+export const gsInterviewSendAnswerSchema = z.object({
+  emailed: z.number().int().min(0),
+  skipped: z.number().int().min(0).default(0),
+});
+export type GsInterviewSendAnswer = z.infer<typeof gsInterviewSendAnswerSchema>;
+
 /** `GET rounds/{roundId}/people`: status and progress only, no interview content. */
 export const gsInterviewPersonSchema = z.object({
-  userId: websiteUserIdSchema,
-  employeeId: z.string(),
+  userId: websiteUserIdSchema.nullable().optional().transform((v) => v ?? null),
+  employeeId: websiteUserIdSchema,
   email: z.string().default(""),
   name: z.string().default(""),
   roleTitle: z.string().nullable().optional().transform((v) => v ?? ""),

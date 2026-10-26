@@ -59,7 +59,7 @@ const counts = (partial: Partial<DeepDiveInterviewProgress["counts"]>) => ({ inv
 
 function progress(): DeepDiveInterviewProgress {
   const person = (over: Partial<DeepDiveInterviewProgress["people"][number]>) => ({
-    websiteUserId: "usr_1", name: "", email: "", roleTitle: "", unitId: "unit-finance", teamName: "Finance", setId: "set-1",
+    websiteEmployeeId: "emp_1", websiteUserId: null, name: "", email: "", roleTitle: "", unitId: "unit-finance", teamName: "Finance", setId: "set-1",
     status: "invited" as const, startedAt: null, endedAt: null, completionScore: null, invitedAt: "2026-10-25T12:00:00.000Z",
     sentCount: 1, lastSentAt: "2026-10-25T12:00:00.000Z", remindedCount: 0, lastRemindedAt: null, ...over,
   });
@@ -77,9 +77,9 @@ function progress(): DeepDiveInterviewProgress {
       { unitId: "unit-depot", name: "Depot", total: 1, counts: counts({ invited: 1 }) },
     ],
     people: [
-      person({ websiteUserId: "usr_a", name: "Person A", email: "a@client.example", status: "completed" }),
-      person({ websiteUserId: "usr_b", name: "Person B", email: "b@client.example", status: "started" }),
-      person({ websiteUserId: "usr_c", name: "Person C", email: "c@client.example", unitId: "unit-depot", teamName: "Depot" }),
+      person({ websiteEmployeeId: "emp_a", websiteUserId: "usr_a", name: "Person A", email: "a@client.example", status: "completed" }),
+      person({ websiteEmployeeId: "emp_b", name: "Person B", email: "b@client.example", status: "started" }),
+      person({ websiteEmployeeId: "emp_c", name: "Person C", email: "c@client.example", unitId: "unit-depot", teamName: "Depot" }),
     ],
   };
 }
@@ -176,7 +176,7 @@ describe("Parallel Interview invites and progress", () => {
       ],
     });
     mockApi.invite.mockResolvedValue({ invited: 1, created: 1, emailed: 1, progress: progress() });
-    mockApi.send.mockResolvedValue({ emailed: 1, progress: progress() });
+    mockApi.send.mockResolvedValue({ emailed: 1, skipped: 0, progress: progress() });
     render(round("open", [set("set-1", "unit-finance", "Finance", "approved"), set("set-2", "unit-depot", "Depot", "approved")]));
     await waitFor(() => expect(container.textContent).toContain("Nobody is on the round yet"));
 
@@ -209,7 +209,7 @@ describe("Parallel Interview invites and progress", () => {
     expect(button(container, "Remind")).toBeTruthy();
     expect(button(container, "Resend")).toBeTruthy();
     button(container, "Remind")!.click();
-    await waitFor(() => expect(mockApi.send).toHaveBeenCalledWith("round-1", { kind: "remind", websiteUserIds: ["usr_b"] }));
+    await waitFor(() => expect(mockApi.send).toHaveBeenCalledWith("round-1", { kind: "remind", websiteEmployeeIds: ["emp_b"] }));
   });
 
   it("says when the website cannot be read and offers to try again", async () => {

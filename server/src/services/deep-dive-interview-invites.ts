@@ -1,7 +1,6 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
-  companies,
   deepDiveInterviewInvites,
   deepDiveInterviewRounds,
   deepDiveInterviewSets,
@@ -32,13 +31,15 @@ import type { InterviewBridge, InterviewBridgeScope } from "./website/interview-
 
 // Parallel Interview invites and live progress (GRE-2665), slice 2 of GRE-2611.
 // A person opens the round on the website once every question set is approved,
-// then invites people: each invite asks the website to make the account and
-// membership, or names an existing website user. GSAM keeps only the website
-// user id and organisation id per invite (and which set they get); names,
-// emails and status are read live through gs-interview-v1 and never stored.
+// then invites people: each invite names an existing website user, or asks the
+// website to hold an invitation by email until the person makes their account.
+// GSAM keeps only the website employee, user and organisation ids per invite
+// (and which set they get); names, emails and status are read live through
+// gs-interview-v1 and never stored.
 
 type RoundRow = typeof deepDiveInterviewRounds.$inferSelect;
 type SetRow = typeof deepDiveInterviewSets.$inferSelect;
+type InviteRow = typeof deepDiveInterviewInvites.$inferSelect;
 
 const MODE_ON_SITE = { per_team: "team", per_person: "person" } as const;
 const NO_TEAM = "No team";
@@ -112,11 +113,10 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
   /**
    * The round as the website stores it. Teams are the board's units (not the
    * whole company). The context pack carries each team's approved questions
-   * (per team) or each invited person's (per person, keyed by the website's
-   * employee id).
+   * (per team) or each invited person's (per person, keyed by the website user
+   * id). There is no client name: the website uses the organisation's own.
    */
   async function payloadOf(round: RoundRow, sets: SetRow[], people: Record<string, string>): Promise<GsInterviewRoundPayload> {
-    const [company] = await db.select({ name: companies.name }).from(companies).where(eq(companies.id, round.companyId));
     const units = (await unitsOf(round.companyId)).filter((unit) => unit.unitType !== "company");
     const sent = new Set(units.map((unit) => unit.id));
     const unitPack: Record<string, string> = {};
@@ -125,7 +125,6 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     }
     return {
       schema: GS_INTERVIEW_ROUND_SCHEMA,
-      clientName: company?.name ?? "",
       sponsor: null,
       mode: MODE_ON_SITE[round.mode],
       targetMinutes: round.targetMinutes,
@@ -148,17 +147,33 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     };
   }
 
-  /** Per person: each invited person's own set, keyed by the website's employee id. */
+  /**
+   * Per person: each invited person's own set, keyed by the website user id, or
+   * by their lower-case email (read live, never stored) until they have an account.
+   */
   async function personPack(round: RoundRow, sets: SetRow[], actor: WebsiteBridgeActor) {
     const [people, invites] = await Promise.all([bridge.people(scopeOf(round), actor), invitesOf(round)]);
     const setById = new Map(sets.map((set) => [set.id, set]));
-    const setByUser = new Map(invites.map((invite) => [invite.websiteUserId, invite.setId ? setById.get(invite.setId) : undefined]));
+    const setByEmployee = new Map(invites.map((invite) => [invite.websiteEmployeeId, invite.setId ? setById.get(invite.setId) : undefined]));
     const pack: Record<string, string> = {};
     for (const person of people) {
-      const set = setByUser.get(person.userId);
-      if (set) pack[person.employeeId] = renderDeepDiveInterviewSet(set);
+      const set = setByEmployee.get(person.employeeId);
+      const key = person.userId ?? person.email.toLowerCase();
+      if (set && key) pack[key] = renderDeepDiveInterviewSet(set);
     }
     return pack;
+  }
+
+  /** An invitation held by email becomes the person's user id once they make their account. */
+  async function linkJoined(round: RoundRow, onSite: { employeeId: string; userId: string | null }[], invites: InviteRow[]) {
+    const joined = new Map(onSite.flatMap((p) => (p.userId ? [[p.employeeId, p.userId] as const] : [])));
+    for (const invite of invites) {
+      const userId = joined.get(invite.websiteEmployeeId);
+      if (invite.websiteUserId !== null || !userId) continue;
+      await db.update(deepDiveInterviewInvites).set({ websiteUserId: userId, updatedAt: new Date() })
+        .where(and(eq(deepDiveInterviewInvites.id, invite.id), isNull(deepDiveInterviewInvites.websiteUserId)));
+      invite.websiteUserId = userId;
+    }
   }
 
   async function progress(companyId: string, actor: WebsiteBridgeActor): Promise<DeepDiveInterviewProgress> {
@@ -178,13 +193,15 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     if (!round || round.status === "setup") return base;
 
     const [onSite, invites, units] = await Promise.all([bridge.people(scopeOf(round), actor), invitesOf(round), unitsOf(companyId)]);
-    const inviteByUser = new Map(invites.map((invite) => [invite.websiteUserId, invite]));
+    await linkJoined(round, onSite, invites);
+    const inviteByEmployee = new Map(invites.map((invite) => [invite.websiteEmployeeId, invite]));
     const unitName = new Map(units.map((unit) => [unit.id, unit.name]));
     const unitOrder = new Map(units.map((unit, index) => [unit.id, index]));
 
     const people: DeepDiveInterviewProgressPerson[] = onSite.map((person) => {
-      const invite = inviteByUser.get(person.userId);
+      const invite = inviteByEmployee.get(person.employeeId);
       return {
+        websiteEmployeeId: person.employeeId,
         websiteUserId: person.userId,
         name: person.name,
         email: person.email,
@@ -290,18 +307,27 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     if (answer.invited.length !== outgoing.length) {
       throw new WebsiteBridgeError("bad_response", 200, `invited ${answer.invited.length} of ${outgoing.length}`);
     }
-    // Only website ids are kept. A person already on the round keeps their row and counts.
+    if (answer.invited.some((row) => row.organisationId !== undefined && row.organisationId !== round.websiteOrganisationId)) {
+      throw new WebsiteBridgeError("bad_response", 200, "invites answered for another organisation");
+    }
+    // Only website ids are kept. A person already on the round keeps their row and counts;
+    // the user id is null until someone invited by email makes their account.
     await db.insert(deepDiveInterviewInvites).values(answer.invited.map((row, index) => ({
       companyId: round.companyId,
       roundId: round.id,
       websiteOrganisationId: round.websiteOrganisationId,
+      websiteEmployeeId: row.employeeId,
       websiteUserId: row.userId,
       setId: outgoing[index]!.set.id,
       createdByAgentId: null,
       createdByUserId: actor.type === "user" ? actor.userId : null,
     }))).onConflictDoUpdate({
-      target: [deepDiveInterviewInvites.roundId, deepDiveInterviewInvites.websiteUserId],
-      set: { setId: sql`excluded.set_id`, updatedAt: new Date() },
+      target: [deepDiveInterviewInvites.roundId, deepDiveInterviewInvites.websiteEmployeeId],
+      set: {
+        setId: sql`excluded.set_id`,
+        websiteUserId: sql`coalesce(excluded.website_user_id, ${deepDiveInterviewInvites.websiteUserId})`,
+        updatedAt: new Date(),
+      },
     });
 
     if (round.mode === "per_person") {
@@ -321,19 +347,24 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     onlyPeople(actor, "sends invites and reminders");
     const round = await loadRound(roundId);
     if (round.status !== "open") throw conflict(`The round is ${DEEP_DIVE_INTERVIEW_LABELS[round.status]}, so nothing can be sent`);
-    const userIds = [...new Set(input.websiteUserIds)];
+    const employeeIds = [...new Set(input.websiteEmployeeIds)];
     const known = await db
-      .select({ websiteUserId: deepDiveInterviewInvites.websiteUserId })
+      .select({ id: deepDiveInterviewInvites.id, websiteEmployeeId: deepDiveInterviewInvites.websiteEmployeeId, websiteUserId: deepDiveInterviewInvites.websiteUserId })
       .from(deepDiveInterviewInvites)
-      .where(and(eq(deepDiveInterviewInvites.roundId, round.id), inArray(deepDiveInterviewInvites.websiteUserId, userIds)));
-    if (known.length !== userIds.length) throw unprocessable("Send only to people this round invited");
-    const answer = await bridge.send(scopeOf(round), { kind: input.kind, userIds }, bridgeActor);
+      .where(and(eq(deepDiveInterviewInvites.roundId, round.id), inArray(deepDiveInterviewInvites.websiteEmployeeId, employeeIds)));
+    if (known.length !== employeeIds.length) throw unprocessable("Send only to people this round invited");
+    // By user id once the person has an account; by employee id while the invitation is held by email.
+    const answer = await bridge.send(scopeOf(round), {
+      kind: input.kind,
+      userIds: known.flatMap((row) => (row.websiteUserId ? [row.websiteUserId] : [])),
+      employeeIds: known.flatMap((row) => (row.websiteUserId ? [] : [row.websiteEmployeeId])),
+    }, bridgeActor);
     const at = new Date();
     await db.update(deepDiveInterviewInvites).set(input.kind === "resend"
       ? { sentCount: sql`${deepDiveInterviewInvites.sentCount} + 1`, lastSentAt: at, updatedAt: at }
       : { remindedCount: sql`${deepDiveInterviewInvites.remindedCount} + 1`, lastRemindedAt: at, updatedAt: at })
-      .where(and(eq(deepDiveInterviewInvites.roundId, round.id), inArray(deepDiveInterviewInvites.websiteUserId, userIds)));
-    return { emailed: answer.emailed, progress: await progress(round.companyId, bridgeActor) };
+      .where(inArray(deepDiveInterviewInvites.id, known.map((row) => row.id)));
+    return { emailed: answer.emailed, skipped: answer.skipped, progress: await progress(round.companyId, bridgeActor) };
   }
 
   return { progress, open, invite, send };

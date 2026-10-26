@@ -213,8 +213,9 @@ export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: In
       const input = req.body as SendDeepDiveInterviewInvites;
       const result = await invites.send(req.params.roundId as string, input, interviewActor(req), bridgeActor(req));
       await log(req, companyId, `deep_dive_interview.invites_${input.kind === "resend" ? "resent" : "reminded"}`, req.params.roundId as string, {
-        people: input.websiteUserIds.length,
+        people: input.websiteEmployeeIds.length,
         emailed: result.emailed,
+        skipped: result.skipped,
       });
       res.json(result);
     },

@@ -111,13 +111,15 @@ export const deepDiveInterviewSets = pgTable(
   }),
 );
 
-// Invites (GRE-2665, migration 0408). One row per website user invited to a
-// round. It holds only website ids (the user and the organisation) and the
-// question set the person gets: never a name or an email. Those, and the
-// person's status, are read live from the website through gs-interview-v1.
-// The id checks refuse anything but letters, numbers, - and _, so an email
-// cannot be stored by mistake, and the composite key ties the invite to its
-// round's company and organisation.
+// Invites (GRE-2665, migration 0408). One row per person invited to a round,
+// keyed by the website's employee id. It holds only website ids (the employee,
+// the user and the organisation) and the question set the person gets: never a
+// name or an email. The user id is null while the website holds the invitation
+// by email, until the person makes their account. Names, emails and status are
+// read live from the website through gs-interview-v1. The id checks refuse
+// anything but letters, numbers, - and _, so an email cannot be stored by
+// mistake, and the composite key ties the invite to its round's company and
+// organisation.
 export const deepDiveInterviewInvites = pgTable(
   "deep_dive_interview_invites",
   {
@@ -125,7 +127,8 @@ export const deepDiveInterviewInvites = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     roundId: uuid("round_id").notNull(),
     websiteOrganisationId: text("website_organisation_id").notNull(),
-    websiteUserId: text("website_user_id").notNull(),
+    websiteEmployeeId: text("website_employee_id").notNull(),
+    websiteUserId: text("website_user_id"),
     setId: uuid("set_id").references(() => deepDiveInterviewSets.id, { onDelete: "set null" }),
     sentCount: integer("sent_count").notNull().default(1),
     lastSentAt: timestamp("last_sent_at", { withTimezone: true }).notNull().defaultNow(),
@@ -142,9 +145,14 @@ export const deepDiveInterviewInvites = pgTable(
       columns: [table.roundId, table.companyId, table.websiteOrganisationId],
       foreignColumns: [deepDiveInterviewRounds.id, deepDiveInterviewRounds.companyId, deepDiveInterviewRounds.websiteOrganisationId],
     }).onDelete("cascade"),
+    roundEmployeeUq: uniqueIndex("deep_dive_interview_invites_round_employee_uq").on(table.roundId, table.websiteEmployeeId),
     roundUserUq: uniqueIndex("deep_dive_interview_invites_round_user_uq").on(table.roundId, table.websiteUserId),
     companyIdx: index("deep_dive_interview_invites_company_idx").on(table.companyId),
-    userCheck: check("deep_dive_interview_invites_user_check", sql`${table.websiteUserId} ~ '^[A-Za-z0-9_-]{1,128}$'`),
+    employeeCheck: check("deep_dive_interview_invites_employee_check", sql`${table.websiteEmployeeId} ~ '^[A-Za-z0-9_-]{1,128}$'`),
+    userCheck: check(
+      "deep_dive_interview_invites_user_check",
+      sql`${table.websiteUserId} is null or ${table.websiteUserId} ~ '^[A-Za-z0-9_-]{1,128}$'`,
+    ),
     countsCheck: check(
       "deep_dive_interview_invites_counts_check",
       sql`${table.sentCount} >= 1 and ${table.remindedCount} >= 0`,

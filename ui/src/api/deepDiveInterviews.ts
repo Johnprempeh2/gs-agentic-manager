@@ -48,5 +48,5 @@ export const deepDiveInterviewsApi = {
   invite: (roundId: string, input: InviteDeepDiveInterviewPeople) =>
     api.post<DeepDiveInterviewInviteResult>(`/deep-dive/interview-rounds/${roundId}/invites`, input),
   send: (roundId: string, input: SendDeepDiveInterviewInvites) =>
-    api.post<{ emailed: number; progress: DeepDiveInterviewProgress }>(`/deep-dive/interview-rounds/${roundId}/invites/send`, input),
+    api.post<{ emailed: number; skipped: number; progress: DeepDiveInterviewProgress }>(`/deep-dive/interview-rounds/${roundId}/invites/send`, input),
 };

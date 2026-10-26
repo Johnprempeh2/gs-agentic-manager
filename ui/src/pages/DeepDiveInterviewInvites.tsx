@@ -359,7 +359,7 @@ function countsText(counts: DeepDiveInterviewStatusCounts) {
 function PersonRow({ person, roundId, companyId }: { person: DeepDiveInterviewProgressPerson; roundId: string; companyId: string }) {
   const kind = person.invitedAt ? deepDiveInterviewSendKindFor(person.status) : null;
   const send = useProgressWrite(companyId, async () =>
-    (await deepDiveInterviewsApi.send(roundId, { kind: kind!, websiteUserIds: [person.websiteUserId] })).progress,
+    (await deepDiveInterviewsApi.send(roundId, { kind: kind!, websiteEmployeeIds: [person.websiteEmployeeId] })).progress,
   );
   const last = [
     person.lastSentAt ? `Sent ${formatDateTime(person.lastSentAt)}${person.sentCount > 1 ? ` (${person.sentCount} times)` : ""}` : null,
@@ -433,7 +433,7 @@ function Progress({ progress, roundId, companyId, onRefresh, refreshing }: {
                 <StatusBar counts={team.counts} total={team.total} />
                 <ul className="divide-y divide-border">
                   {people.map((person) => (
-                    <PersonRow key={person.websiteUserId} person={person} roundId={roundId} companyId={companyId} />
+                    <PersonRow key={person.websiteEmployeeId} person={person} roundId={roundId} companyId={companyId} />
                   ))}
                 </ul>
               </Card>

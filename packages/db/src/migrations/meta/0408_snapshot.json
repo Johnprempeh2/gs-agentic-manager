@@ -1,5 +1,5 @@
 {
-  "id": "65216679-cd96-41e9-9cb1-abaed32018e5",
+  "id": "b7003a43-0419-4ba8-bf72-81c99c220b99",
   "prevId": "b2db3e4e-4f22-40a1-bf57-14e023383751",
   "version": "7",
   "dialect": "postgresql",
@@ -23096,11 +23096,17 @@
           "primaryKey": false,
           "notNull": true
         },
+        "website_employee_id": {
+          "name": "website_employee_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "website_user_id": {
           "name": "website_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "set_id": {
           "name": "set_id",
@@ -23163,6 +23169,27 @@
         }
       },
       "indexes": {
+        "deep_dive_interview_invites_round_employee_uq": {
+          "name": "deep_dive_interview_invites_round_employee_uq",
+          "columns": [
+            {
+              "expression": "round_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "website_employee_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "deep_dive_interview_invites_round_user_uq": {
           "name": "deep_dive_interview_invites_round_user_uq",
           "columns": [
@@ -23262,9 +23289,13 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "deep_dive_interview_invites_employee_check": {
+          "name": "deep_dive_interview_invites_employee_check",
+          "value": "\"deep_dive_interview_invites\".\"website_employee_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
+        },
         "deep_dive_interview_invites_user_check": {
           "name": "deep_dive_interview_invites_user_check",
-          "value": "\"deep_dive_interview_invites\".\"website_user_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
+          "value": "\"deep_dive_interview_invites\".\"website_user_id\" is null or \"deep_dive_interview_invites\".\"website_user_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
         },
         "deep_dive_interview_invites_counts_check": {
           "name": "deep_dive_interview_invites_counts_check",

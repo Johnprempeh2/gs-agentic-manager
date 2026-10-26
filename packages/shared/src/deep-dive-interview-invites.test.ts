@@ -2,15 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   deepDiveInterviewInviteeSchema,
   deepDiveInterviewSendKindFor,
+  gsInterviewInviteAnswerSchema,
+  gsInterviewPersonSchema,
   gsInterviewRoundItemSchema,
   gsInterviewRoundPayloadSchema,
+  gsInterviewSendAnswerSchema,
   openDeepDiveInterviewRoundSchema,
   websiteUserIdSchema,
 } from "./deep-dive-interview-invites.js";
 
 const round = {
   schema: "gs-interview-round-v1",
-  clientName: "Northwind Freight",
   sponsor: null,
   mode: "team",
   targetMinutes: 20,
@@ -42,6 +44,35 @@ describe("gs-interview-v1 round (GRE-2653 retention fields)", () => {
       id: "r1", status: "closed", joinUrl: "https://example.test/#join/abc", retentionDays: 90,
       readoutAt: "2026-11-13T09:00:00Z", closedAt: "2026-11-13T17:00:00Z", deletionDate: "2027-02-11",
     })).toMatchObject({ retentionDays: 90, deletionDate: "2027-02-11" });
+  });
+});
+
+describe("gs-interview-v1 people (GRE-2612: invitations held by email)", () => {
+  it("refuses a client name on the round: the website uses the organisation's own", () => {
+    expect(gsInterviewRoundPayloadSchema.safeParse({ ...round, clientName: "Northwind Freight" }).success).toBe(false);
+  });
+
+  it("reads an invite answer with no user id until the person makes their account, and never an email", () => {
+    const answer = gsInterviewInviteAnswerSchema.parse({
+      invited: [
+        { userId: null, organisationId: "org_1", employeeId: "emp_1", outcome: "created" },
+        { userId: "usr_1", organisationId: "org_1", employeeId: "emp_2", outcome: "updated" },
+      ],
+      emailed: 1,
+    });
+    expect(answer.invited.map((row) => row.userId)).toEqual([null, "usr_1"]);
+    expect(gsInterviewInviteAnswerSchema.safeParse({ invited: [{ userId: null, employeeId: "a@b.example", outcome: "created" }], emailed: 0 }).success).toBe(false);
+  });
+
+  it("reads a person with a null or missing user id", () => {
+    const base = { employeeId: "emp_1", email: "a@northwind.example", name: "A", status: "invited" };
+    expect(gsInterviewPersonSchema.parse({ ...base, userId: null }).userId).toBeNull();
+    expect(gsInterviewPersonSchema.parse(base).userId).toBeNull();
+    expect(gsInterviewPersonSchema.parse({ ...base, userId: "usr_1" }).userId).toBe("usr_1");
+  });
+
+  it("reads the send answer as emailed and skipped", () => {
+    expect(gsInterviewSendAnswerSchema.parse({ emailed: 2, skipped: 1 })).toEqual({ emailed: 2, skipped: 1 });
   });
 });
 
