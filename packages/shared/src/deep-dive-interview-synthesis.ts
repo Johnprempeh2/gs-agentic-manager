@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEEP_DIVE_GIF, type DeepDiveGifKey } from "./deep-dive.js";
 import { websiteUserIdSchema } from "./deep-dive-interview-invites.js";
 
 /**
@@ -625,9 +626,55 @@ export interface DeepDiveInterviewProposal {
   decidedByUserId: string | null;
   decidedAt: string | null;
   createdAt: string;
+  /** The Deep Dive record an accepted theme or person became; null for a quote (see its theme). */
+  record: DeepDiveProposalRecord | null;
 }
 
+// ---------------------------------------------------------------------------
+// Accepting: each item becomes its Deep Dive record (GRE-2756)
+// ---------------------------------------------------------------------------
+
+export const DEEP_DIVE_PROPOSAL_RECORD_TYPES = ["finding", "person", "process"] as const;
+export type DeepDiveProposalRecordType = (typeof DEEP_DIVE_PROPOSAL_RECORD_TYPES)[number];
+
+export interface DeepDiveProposalRecord {
+  type: DeepDiveProposalRecordType;
+  /** Null when someone removed the record later; the decision stays. */
+  id: string | null;
+}
+
+/**
+ * What accepting makes. A pain or a finding: a proposed finding in the stream
+ * and GIF cell the person picks. A process: a process candidate on the
+ * process board. A person: a person and role on the organisation board, named
+ * live from the website. A quote: qualitative evidence for its theme's record.
+ * Everything made is Internal.
+ */
+export function deepDiveProposalBecomes(kind: DeepDiveProposalKind): DeepDiveProposalRecordType | "evidence" {
+  if (kind === "pain" || kind === "finding") return "finding";
+  if (kind === "process") return "process";
+  if (kind === "person") return "person";
+  return "evidence";
+}
+
+export const DEEP_DIVE_PROPOSAL_BECOMES_LABELS: Record<DeepDiveProposalRecordType | "evidence", string> = {
+  finding: "a proposed finding",
+  process: "a process candidate",
+  person: "a person on the organisation board",
+  evidence: "qualitative evidence for its theme",
+};
+
+/** The GIF cell an accepted pain or finding goes in unless the person picks another: what exists today. */
+export const DEEP_DIVE_PROPOSAL_DEFAULT_GIF: DeepDiveGifKey = "current-state";
+
+const gifKeys = DEEP_DIVE_GIF.map((gif) => gif.key) as [DeepDiveGifKey, ...DeepDiveGifKey[]];
+
 export const decideDeepDiveInterviewProposalSchema = z
-  .object({ decision: z.enum(["accepted", "rejected"]) })
+  .object({
+    decision: z.enum(["accepted", "rejected"]),
+    /** Accepting a pain or a finding: the Investigation Stream and GIF cell of the finding it becomes. */
+    streamCaseId: z.string().guid().optional(),
+    gifKey: z.enum(gifKeys).optional(),
+  })
   .strict();
 export type DecideDeepDiveInterviewProposal = z.infer<typeof decideDeepDiveInterviewProposalSchema>;

@@ -6,7 +6,7 @@ function proposal(over: Partial<DeepDiveInterviewProposal>): DeepDiveInterviewPr
   return {
     id: "p", roundId: "r", kind: "pain", themeKey: null, parentId: null, label: "", statement: "s", unitId: null, voices: 2,
     firstHandVoices: 1, websiteInsightId: null, websiteEmployeeId: null, anonymous: true, sources: [], status: "proposed",
-    visibility: "internal", rulesVersion: "v", decidedByUserId: null, decidedAt: null, createdAt: "2026-10-26T00:00:00Z", ...over,
+    visibility: "internal", rulesVersion: "v", decidedByUserId: null, decidedAt: null, createdAt: "2026-10-26T00:00:00Z", record: null, ...over,
   };
 }
 
