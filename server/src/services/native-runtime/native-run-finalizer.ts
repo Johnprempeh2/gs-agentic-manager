@@ -28,6 +28,8 @@ import {
   type NativeGovernanceGate,
 } from "./status-arbiter.js";
 import { recordNativeWorkAssessment } from "./work-assessments.js";
+import { eligibleIssueMonitorWait } from "../issue-monitors.js";
+import { readNativeMonitorDelivery, readNativePreservedMonitorWait } from "./native-monitor-delivery.js";
 import {
   commitNativeStatusDecision,
   NativeStatusRaceError,
@@ -52,6 +54,7 @@ import {
 import { logger } from "../../middleware/logger.js";
 import {
   CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
+  readAcceptedMonitorContinuationSummary,
   resolveHeartbeatRunResponse,
 } from "../heartbeat-run-summary.js";
 import { resolveChatRunPresentationAuthorizationReason } from "../chat-run-publications.js";
@@ -863,6 +866,26 @@ export async function repairCommittedNativeChatResponse(
       const envelope = record(accepted?.resultJson);
       const result = record(envelope.result);
       const terminal = record(envelope.terminal);
+      const monitorResult = { nativeResult: result, finalizationPhase: "committed", finalizationReasonCode: decision?.reasonCode };
+      if (accepted && decision && readAcceptedMonitorContinuationSummary(monitorResult) &&
+          run.status === "succeeded" && terminal.runTerminalState === "succeeded" &&
+          terminal.turnTerminalState === "completed" && terminal.reportedWorkDisposition === "yielded" &&
+          record(run.contextSnapshot).skipIssueComment !== true &&
+          await acceptedResponseDigestMatches(tx, run, accepted)) {
+        const authorizationReason = await resolveChatRunPresentationAuthorizationReason(tx, input);
+        const resolved = resolveHeartbeatRunResponse({ resultJson: monitorResult });
+        if (!resolved.text) return false;
+        const comment = await issueService(db).addComment(input.issueId, resolved.text,
+          { agentId: run.agentId, runId: run.id }, { authorizationReason }, tx);
+        await tx.update(heartbeatRuns).set({
+          resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({
+            presentationDecision: { ...resolved.decision, commentId: comment.id,
+              reasonCodes: [...resolved.decision.reasonCodes, "committed_monitor_response_recovered"] },
+          })}::jsonb`, updatedAt: new Date(),
+        }).where(eq(heartbeatRuns.id, run.id));
+        agentId = run.agentId;
+        return true;
+      }
       if (
         !accepted ||
         !decision ||
@@ -1084,7 +1107,7 @@ export async function finalizeNativeRun(input: {
 
   await input.db
     .update(nativeRunFinalizations)
-    .set({ phase: "ready_for_assessment", updatedAt: new Date() })
+    .set({ phase: "ready_for_assessment", assessmentId: null, decisionId: null, updatedAt: new Date() })
     .where(
       and(
         eq(nativeRunFinalizations.runId, input.runId),
@@ -1189,11 +1212,24 @@ export async function finalizeNativeRun(input: {
       companyId: run.companyId, issueId: authoritativeIssue.id, agentId: run.agentId,
       contextSnapshot: reviewContext, allowResolvedByRunId: run.id,
     }) : null;
+    const monitorWaitAt = eligibleIssueMonitorWait(authoritativeIssue, run.agentId);
+    const monitorDelivery = terminalState === "succeeded" && assessment.reportedDisposition === "yielded" &&
+      assessment.continuation?.kind === "monitor"
+      ? await readNativeMonitorDelivery(input.db, { companyId: run.companyId, issueId: authoritativeIssue.id, runId: run.id }) : null;
+    const preservedMonitorWait = terminalState === "succeeded" && input.workspaceFinalizeStatus === "succeeded" &&
+      assessment.reportedDisposition === "yielded" && assessment.continuation?.kind === "monitor"
+      ? await readNativePreservedMonitorWait(input.db, {
+        companyId: run.companyId, issueId: authoritativeIssue.id, runId: run.id, agentId: run.agentId,
+      }, authoritativeIssue) : null;
+    if (preservedMonitorWait && preservedMonitorWait.resultId !== resultRow.id) throw new NativeStatusRaceError();
     const proposedDecision = resolveNativeFinalizerStatus({
       ...(reviewContext ? { nativeReviewOutcome: nativeReview
         ? nativeReview.interaction.status === "pending" ? "pending" as const : "resolved" as const
         : "stale" as const } : {}),
       assessment,
+      monitorWaitAuthorized: authoritativeIssue.workMode === "standard" && authoritativeIssue.executionRunId === run.id && monitorWaitAt !== null,
+      monitorWaitDispatched: monitorDelivery !== null,
+      monitorWaitPreserved: preservedMonitorWait !== null,
       terminalState: terminalState as "succeeded" | "failed" | "cancelled",
       workspaceFinalizeStatus: input.workspaceFinalizeStatus,
       governanceGate,
@@ -1234,6 +1270,9 @@ export async function finalizeNativeRun(input: {
       priorDecisionId: authoritativeIssue.lastStatusDecisionId,
       policyVersion: NATIVE_STATUS_ARBITER_POLICY_VERSION,
       assessment,
+      monitorDelivery,
+      monitorWaitAt: assessment.continuation?.kind === "monitor" ? monitorWaitAt : null,
+      preservedMonitorWait,
       supersedesAssessmentId,
     });
     await input.db
@@ -1260,6 +1299,10 @@ export async function finalizeNativeRun(input: {
         priorStatusVersion: Number(authoritativeIssue.statusVersion),
         priorDecisionId: authoritativeIssue.lastStatusDecisionId,
         decision,
+        requireMonitorWait: decision.reasonCode === "scheduled_monitor_waiting" && monitorWaitAt
+          ? { agentId: run.agentId, nextCheckAt: monitorWaitAt } : undefined,
+        requireMonitorDelivery: decision.reasonCode === "scheduled_monitor_dispatched" ? monitorDelivery ?? undefined : undefined,
+        requirePreservedMonitorWait: decision.reasonCode === "scheduled_monitor_preserved" ? preservedMonitorWait ?? undefined : undefined,
         requireBoardResponseWaitSource:
           decision.reasonCode === "board_response_waiting"
             ? boardResponseWait?.source
@@ -1311,7 +1354,7 @@ export async function finalizeNativeRun(input: {
                     : terminalState === "cancelled"
                       ? "cancelled"
                       : "failed",
-                finishedAt: now,
+                finishedAt: run.finishedAt ?? (run.status === "running" ? now : null),
               }
             : {}),
           nativePhase: finalizationPhase,

@@ -460,3 +460,9 @@ cleanup authority; it does not prove that remote inference has stopped. Recovery
 revokes the previous boot identity with a conditional update. Its own claim also
 expires so another sweep can finish cleanup after a restart. Historical rows keep
 null ownership fields and follow the previous recovery path.
+
+A native monitor wait's validated delivery or preserved-monitor proof is part
+of the immutable work-assessment input. Restoring a missing receipt, source
+completion timestamp or schedule therefore creates a new assessment identity
+even if the monitor deadline is unchanged. Earlier assessments, decisions and
+accepted results remain intact; unchanged replay reuses the same identity.

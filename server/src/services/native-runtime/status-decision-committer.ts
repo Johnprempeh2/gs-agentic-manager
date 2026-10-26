@@ -24,6 +24,8 @@ import {
   type NativeStatusEffect,
 } from "./status-arbiter.js";
 import { nativeSha256 } from "./canonical.js";
+import { eligibleIssueMonitorWait } from "../issue-monitors.js";
+import { readNativeMonitorDelivery, readNativePreservedMonitorWait, type NativeMonitorDelivery, type NativePreservedMonitorWait } from "./native-monitor-delivery.js";
 import {
   readNativeBoardResponseWaitSource,
   readNativeBoardResponseWaitOrigin,
@@ -1537,6 +1539,9 @@ export async function commitNativeStatusDecision(input: {
   requireExternalChatResponseWaitAuthorization?: { agentId: string };
   requireBoardResponseWaitSource?: NativeBoardResponseWaitSource;
   requireBoardResponseWaitOrigin?: NativeBoardResponseWaitOrigin;
+  requireMonitorWait?: { agentId: string; nextCheckAt: string };
+  requireMonitorDelivery?: NativeMonitorDelivery;
+  requirePreservedMonitorWait?: NativePreservedMonitorWait;
   reviewResponsePresentation?: {
     agentId: string;
     resultId: string;
@@ -1615,6 +1620,39 @@ export async function commitNativeStatusDecision(input: {
       issue.lastStatusDecisionId !== input.priorDecisionId
     ) {
       throw new NativeStatusRaceError();
+    }
+    if (reasonCode === "scheduled_monitor_waiting") {
+      const expected = input.requireMonitorWait;
+      if (!expected || issue.workMode !== "standard" || issue.executionRunId !== input.runId ||
+          input.decision.statusAction !== "preserve" || input.decision.effects.length !== 1 ||
+          input.decision.effects[0]?.kind !== "release_checkout" ||
+          eligibleIssueMonitorWait(issue, expected.agentId) !== expected.nextCheckAt) throw new NativeStatusRaceError();
+    }
+    if (reasonCode === "scheduled_monitor_dispatched") {
+      const expected = input.requireMonitorDelivery;
+      const actual = expected ? await readNativeMonitorDelivery(tx as unknown as Db, {
+        companyId: input.companyId, issueId: input.issueId, runId: input.runId,
+      }) : null;
+      if (!expected || !actual || actual.wakeId !== expected.wakeId || actual.successorRunId !== expected.successorRunId ||
+          input.decision.statusAction !== "preserve" || input.decision.toStatus !== issue.status ||
+          input.decision.effects.length !== 0) throw new NativeStatusRaceError();
+    }
+    if (reasonCode === "scheduled_monitor_preserved") {
+      const expected = input.requirePreservedMonitorWait;
+      const actual = expected ? await readNativePreservedMonitorWait(tx as unknown as Db, {
+        companyId: input.companyId, issueId: input.issueId, runId: input.runId, agentId: expected.agentId,
+      }, issue) : null;
+      const pendingStage = (issue.executionState as Record<string, unknown> | null)?.status === "pending";
+      const [pendingInteraction] = await tx.select({ id: issueThreadInteractions.id }).from(issueThreadInteractions)
+        .where(and(eq(issueThreadInteractions.companyId, input.companyId), eq(issueThreadInteractions.issueId, input.issueId),
+          eq(issueThreadInteractions.status, "pending"))).limit(1);
+      const [pendingApproval] = await tx.select({ id: issueApprovals.approvalId }).from(issueApprovals)
+        .innerJoin(approvals, eq(issueApprovals.approvalId, approvals.id))
+        .where(and(eq(issueApprovals.companyId, input.companyId), eq(issueApprovals.issueId, input.issueId),
+          eq(approvals.companyId, input.companyId), inArray(approvals.status, ["pending", "revision_requested"]))).limit(1);
+      if (!expected || !actual || actual.nextCheckAt !== expected.nextCheckAt || actual.resultId !== expected.resultId ||
+          pendingStage || pendingInteraction || pendingApproval || input.decision.statusAction !== "preserve" ||
+          input.decision.toStatus !== issue.status || input.decision.effects.length !== 0) throw new NativeStatusRaceError();
     }
     if (input.requireExternalChatResponseWaitAuthorization) {
       let authorization;

@@ -11678,6 +11678,16 @@ export function heartbeatService(
     monitorScheduledBy: string | null;
   }
 
+  // A native run that owns this task must finish before its one-shot monitor
+  // can admit a successor. The scheduler will see the saved timer on a later tick.
+  function noActiveNativeMonitorRun() {
+    return sql`not exists (select 1 from ${heartbeatRuns} monitor_run
+      where monitor_run.company_id = ${issues.companyId}
+        and monitor_run.native_issue_id = ${issues.id}
+        and monitor_run.runtime_mode = 'native'
+        and monitor_run.status in ('queued', 'running', 'scheduled_retry'))`;
+  }
+
   function parseMonitorDate(value: string | null | undefined) {
     if (!value) return null;
     const date = new Date(value);
@@ -12406,6 +12416,7 @@ export function heartbeatService(
         .where(
           and(
             eq(issues.id, issueId),
+            noActiveNativeMonitorRun(),
             sql`${issues.monitorNextCheckAt} is not null`,
             isNull(issues.assigneeUserId),
             sql`${issues.assigneeAgentId} is not null`,
@@ -12447,6 +12458,7 @@ export function heartbeatService(
       .where(
         and(
           eq(companies.status, "active"),
+          noActiveNativeMonitorRun(),
           sql`${issues.monitorNextCheckAt} is not null`,
           lte(issues.monitorNextCheckAt, now),
           isNull(issues.assigneeUserId),
@@ -12475,6 +12487,7 @@ export function heartbeatService(
           .where(
             and(
               eq(issues.id, due.id),
+              noActiveNativeMonitorRun(),
               sql`${issues.monitorNextCheckAt} is not null`,
               lte(issues.monitorNextCheckAt, now),
               isNull(issues.assigneeUserId),

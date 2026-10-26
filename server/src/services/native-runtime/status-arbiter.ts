@@ -1,6 +1,6 @@
 import type { NativeEvidenceAssessment } from "./evidence-classifier.js";
 
-export const NATIVE_STATUS_ARBITER_POLICY_VERSION = "phase6-v6";
+export const NATIVE_STATUS_ARBITER_POLICY_VERSION = "phase6-v7-monitor";
 
 export type NativeAuthoritativeIssueStatus =
   | "backlog"
@@ -98,6 +98,9 @@ export function arbitrateNativeStatus(input: {
   governanceGate?: NativeGovernanceGate | null;
   completionClaimPolicyAccepted?: boolean;
   allowIncompleteContinuation?: boolean;
+  monitorWaitAuthorized?: boolean;
+  monitorWaitDispatched?: boolean;
+  monitorWaitPreserved?: boolean;
   /**
    * True when the issue already has a durable unresolved dependency edge.
    * A "current_track" result cannot remain in_progress in that state because
@@ -248,7 +251,7 @@ export function arbitrateNativeStatus(input: {
   }
   if (
     input.hasUnresolvedIssueBlockers === true &&
-    ["done", "blocked"].includes(input.assessment.reportedDisposition)
+    (["done", "blocked"].includes(input.assessment.reportedDisposition) || input.assessment.continuation?.kind === "monitor")
   ) {
     const owner = input.assessment.blocker?.boardOwned
       ? ("board" as const)
@@ -432,6 +435,31 @@ export function arbitrateNativeStatus(input: {
       reasonCode: "board_response_wait_superseded",
       unblockDescriptor: null,
       effects: [],
+    };
+  }
+  if (input.assessment.reportedDisposition === "yielded" && input.assessment.continuation?.kind === "monitor") {
+    if (input.monitorWaitDispatched) return {
+      policyVersion: NATIVE_STATUS_ARBITER_POLICY_VERSION,
+      statusAction: "preserve", toStatus: input.priorIssueStatus,
+      reasonCode: "scheduled_monitor_dispatched", unblockDescriptor: null, effects: [],
+    };
+    if (input.monitorWaitPreserved) return {
+      policyVersion: NATIVE_STATUS_ARBITER_POLICY_VERSION,
+      statusAction: "preserve", toStatus: input.priorIssueStatus,
+      reasonCode: "scheduled_monitor_preserved", unblockDescriptor: null, effects: [],
+    };
+    if (input.monitorWaitAuthorized) return {
+      policyVersion: NATIVE_STATUS_ARBITER_POLICY_VERSION,
+      statusAction: "preserve", toStatus: input.priorIssueStatus,
+      reasonCode: "scheduled_monitor_waiting", unblockDescriptor: null,
+      effects: [{ kind: "release_checkout" }],
+    };
+    return {
+      policyVersion: NATIVE_STATUS_ARBITER_POLICY_VERSION,
+      statusAction: "preserve", toStatus: input.priorIssueStatus,
+      reasonCode: "monitor_wait_authority_lost", unblockDescriptor: null,
+      effects: [{ kind: "record_finalization_error", cause: "monitor_wait_authority_lost",
+        nextAction: "Restore a valid task monitor or resolve the task directly.", agentId: input.agentId }],
     };
   }
   if (

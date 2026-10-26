@@ -44,6 +44,25 @@ function arbitrate(
 }
 
 describe("native status authority", () => {
+  it("uses the saved monitor without starting an immediate continuation", () => {
+    const monitor = assessment({
+      reportedDisposition: "yielded",
+      continuation: { kind: "monitor", summary: "Check later", idempotencyKey: "later" },
+      objectiveSatisfied: false, allCriteriaSatisfied: false, hasBlockingRemainingWork: true,
+    });
+    expect(arbitrate({ assessment: monitor, monitorWaitAuthorized: true })).toMatchObject({
+      reasonCode: "scheduled_monitor_waiting", statusAction: "preserve", effects: [{ kind: "release_checkout" }],
+    });
+    expect(arbitrate({ assessment: monitor, monitorWaitPreserved: true })).toMatchObject({
+      reasonCode: "scheduled_monitor_preserved", statusAction: "preserve", effects: [],
+    });
+    expect(arbitrate({ assessment: monitor, monitorWaitDispatched: true })).toMatchObject({
+      reasonCode: "scheduled_monitor_dispatched", statusAction: "preserve", effects: [],
+    });
+    expect(arbitrate({ assessment: monitor })).toMatchObject({
+      reasonCode: "monitor_wait_authority_lost", effects: [expect.objectContaining({ kind: "record_finalization_error" })],
+    });
+  });
   it("a reviewer finishes its decision without completing rejected or still-reviewed work", () => {
     for (const priorIssueStatus of ["in_progress", "in_review"] as const) {
       const decision = arbitrate({ priorIssueStatus, nativeReviewOutcome: "resolved" });
@@ -99,7 +118,7 @@ describe("native status authority", () => {
       toStatus: "in_review",
       effects: [expect.objectContaining({ kind: "create_interaction" })],
     });
-    for (const kind of ["same_agent", "retry", "monitor"] as const) {
+    for (const kind of ["same_agent", "retry"] as const) {
       expect(
         arbitrate({
           assessment: {
@@ -477,7 +496,7 @@ describe("native status authority", () => {
       expect.objectContaining({
         statusAction: "blocked",
         toStatus: "blocked",
-        policyVersion: "phase6-v6",
+        policyVersion: "phase6-v7-monitor",
         reasonCode: "current_track_blocker_waiting",
         unblockDescriptor: {
           owner: "board",

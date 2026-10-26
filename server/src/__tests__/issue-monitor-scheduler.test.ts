@@ -311,6 +311,20 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
     expect(activity).toContain("issue.monitor_triggered");
   });
 
+  it("keeps a due monitor armed while its native source run is active", async () => {
+    const { companyId, issueId, agentId, nextCheckAt } = await seedFixture();
+    const [run] = await db.insert(heartbeatRuns).values({
+      companyId, agentId, nativeIssueId: issueId, runtimeMode: "native", status: "running",
+      contextSnapshot: { issueId },
+    }).returning();
+    const heartbeat = heartbeatService(db);
+    const tickAt = new Date(nextCheckAt.getTime() + 60_000);
+    expect((await heartbeat.tickTimers(tickAt)).enqueued).toBe(0);
+    expect((await db.select().from(issues).where(eq(issues.id, issueId)))[0]?.monitorNextCheckAt).toEqual(nextCheckAt);
+    await db.update(heartbeatRuns).set({ status: "succeeded", finishedAt: tickAt }).where(eq(heartbeatRuns.id, run!.id));
+    expect((await heartbeat.tickTimers(tickAt)).enqueued).toBe(1);
+  });
+
   it.each(["unknown", "exhausted"] as const)("does not replay a quota monitor with %s execution evidence", async (kind) => {
     const sourceRunId = randomUUID();
     const { companyId, issueId, agentId } = await seedFixture({

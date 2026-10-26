@@ -2,6 +2,8 @@ import { publicChatTaskUrl } from "../chat-task-url.js";
 import type { createAssignedMcpTools } from "./assigned-mcp-tools.js";
 import { assertAssignableAgent } from "../agent-assignability.js";
 import { authorizationService } from "../authorization.js";
+import { assertCanManageIssueMonitor, prepareIssueMonitorUpdate, setTaskMonitorSchema, summarizeIssueMonitor } from "../issue-monitors.js";
+import { normalizeIssueExecutionPolicy } from "../issue-execution-policy.js";
 import { handoffPlanContext } from "./handoff-plan-context.js";
 import { callCreateSkillTool } from "../skill-tools.js";
 import { callProjectTool } from "../project-tools.js";
@@ -80,7 +82,7 @@ import {
 
 const IMPLEMENTED_OPERATIONS = new Set([
   "search_api", "call_api", "hire_agent",
-  "get_task_context", "get_task_history", "search_tasks", "report_progress",
+  "get_task_context", "get_task_history", "search_tasks", "report_progress", "set_task_monitor",
   "request_human_input",
   "create_skill", "create_task", "reassign_task", "set_dependencies", "create_project", "list_project_repositories", "list_projects", "register_deliverable",
   "list_documents", "read_document", "list_document_revisions", "write_document",
@@ -512,6 +514,7 @@ export class PaperclipRunnerToolAuthority {
       case "create_task": return this.#createTask(input,
         (await captureRunIdentity(this.db, this.binding)).context?.id ?? null);
       case "reassign_task": return this.#reassignTask(input);
+      case "set_task_monitor": return this.#setTaskMonitor(input);
       case "set_dependencies": return this.#setDependencies(input);
       case "register_deliverable": return this.#registerDeliverable(input);
       default: throw new Error("paperclip_runner_tool_not_bound");
@@ -1123,6 +1126,49 @@ export class PaperclipRunnerToolAuthority {
     return result;
   }
 
+  async #setTaskMonitor(value: Record<string, unknown>): Promise<unknown> {
+    const input = setTaskMonitorSchema.parse(value);
+    if (input.taskId && input.taskId !== this.binding.issueId) {
+      throw forbidden("A native run can set the monitor only on its current task");
+    }
+    let publication: Awaited<ReturnType<typeof persistActivity>>["publication"] | null = null;
+    const result = await this.#withMutationReceipt("set_task_monitor", input.idempotencyKey, input, async (tx, context) => {
+      if (context.issue.workMode !== "standard" || context.issue.assigneeUserId ||
+          !["in_progress", "in_review"].includes(context.issue.status)) {
+        throw forbidden("Monitors require an active standard task assigned to this agent");
+      }
+      const actor = {
+        type: "agent", agentId: this.binding.agentId, companyId: this.binding.companyId,
+        runId: this.binding.runId, source: "agent_jwt",
+      } as const;
+      const access = authorizationService(tx);
+      const mutation = await access.decide({ actor, action: "issue:mutate", resource: {
+        type: "issue", companyId: this.binding.companyId, issueId: context.issue.id,
+        status: context.issue.status, assigneeAgentId: context.issue.assigneeAgentId,
+        assigneeUserId: context.issue.assigneeUserId,
+      } });
+      if (!mutation.allowed) throw forbidden(mutation.explanation);
+      await assertCanManageIssueMonitor(access, { actor }, this.binding.companyId, context.issue.assigneeAgentId, true);
+      const patch = prepareIssueMonitorUpdate(context.issue, input.monitor, actor);
+      const [updated] = await tx.update(issues).set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(issues.id, this.binding.issueId), eq(issues.companyId, this.binding.companyId))).returning();
+      if (!updated) throw new Error("paperclip_runner_tool_binding_not_authorized");
+      const monitor = summarizeIssueMonitor(updated, normalizeIssueExecutionPolicy(updated.executionPolicy));
+      const activity = await persistActivity(tx, {
+        companyId: this.binding.companyId, actorType: "agent", actorId: this.binding.agentId,
+        agentId: this.binding.agentId, runId: this.binding.runId,
+        action: input.monitor ? "issue.monitor_scheduled" : "issue.monitor_cleared",
+        entityType: "issue", entityId: updated.id,
+        details: { identifier: updated.identifier, nextCheckAt: monitor.nextCheckAt,
+          notes: monitor.notes, scheduledBy: monitor.scheduledBy },
+      });
+      publication = activity.publication;
+      return { taskId: updated.id, status: updated.status, monitor, replayed: false };
+    });
+    if (publication) publishActivity(publication);
+    return result;
+  }
+
   async #setDependencies(input: Record<string, unknown>): Promise<unknown> {
     const idempotencyKey = requiredString(input.idempotencyKey);
     if (!Array.isArray(input.blockedByTaskIds)) {
@@ -1707,6 +1753,9 @@ function redactedTask(task: typeof issues.$inferSelect) {
     workMode: task.workMode,
     assigneeAgentId: task.assigneeAgentId,
     executionRunId: task.executionRunId,
+    ...(task.monitorNextCheckAt || task.monitorLastTriggeredAt ? {
+      monitor: summarizeIssueMonitor(task, normalizeIssueExecutionPolicy(task.executionPolicy)),
+    } : {}),
     parentId: task.parentId,
     projectId: task.projectId,
     goalId: task.goalId,

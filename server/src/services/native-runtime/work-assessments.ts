@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { workAssessments } from "@greatstone/db";
 import type { NativeEvidenceAssessment } from "./evidence-classifier.js";
 import { nativeSha256 } from "./canonical.js";
+import type { NativeMonitorDelivery, NativePreservedMonitorWait } from "./native-monitor-delivery.js";
 
 export async function recordNativeWorkAssessment(input: {
   db: Db;
@@ -19,9 +20,17 @@ export async function recordNativeWorkAssessment(input: {
   priorDecisionId: string | null;
   policyVersion: string;
   assessment: NativeEvidenceAssessment;
+  monitorDelivery?: NativeMonitorDelivery | null;
+  monitorWaitAt?: string | null;
+  preservedMonitorWait?: NativePreservedMonitorWait | null;
   supersedesAssessmentId?: string | null;
 }) {
-  const assessmentJson = input.assessment as unknown as Record<string, unknown>;
+  const assessmentJson = {
+    ...input.assessment,
+    ...(input.monitorDelivery ? { monitorDelivery: input.monitorDelivery } : {}),
+    ...(input.monitorWaitAt ? { monitorWaitAt: input.monitorWaitAt } : {}),
+    ...(input.preservedMonitorWait ? { preservedMonitorWait: input.preservedMonitorWait } : {}),
+  } as unknown as Record<string, unknown>;
   const inputDigest = nativeSha256({
     contractId: input.contractId,
     contractCanonicalSha256: input.contractCanonicalSha256,

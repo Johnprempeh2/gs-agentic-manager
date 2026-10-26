@@ -1475,3 +1475,21 @@ Contracts reference the existing brief and answers instead of copying them again
 Resumed sessions keep the existing message-delta path; fresh sessions receive the
 full covered history. Stable wording and bounded references avoid adding another
 full brief on each comment, but provider cache hits must be measured separately.
+
+### Native task monitor waits
+
+A standard native run can call `set_task_monitor` for its current task. The
+server saves the one-shot schedule, audit entry and semantic tool receipt in
+one transaction. A yielded `paperclip_finish` result with `continuation.kind`
+`monitor` is accepted only while that schedule still belongs to the agent.
+The status decision releases checkout without queuing an immediate provider
+turn; the issue monitor scheduler owns the next wake.
+
+If a controller outage leaves a successful accepted result after execution and
+checkout have been released, finalization can still preserve the monitor wait.
+It checks the accepted result, completed source run, saved monitor receipt,
+current task owner and schedule, empty execution slots, and governance again
+under the task lock. The `scheduled_monitor_preserved` decision keeps the task
+status and the existing monitor timer. A dispatched timer is historical
+proof of its admitted successor, and cannot be used to start another run.
+The accepted explanation remains available to live and recovered task replies.

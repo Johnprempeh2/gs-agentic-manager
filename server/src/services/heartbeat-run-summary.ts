@@ -120,7 +120,7 @@ const NARRATION_OPENERS =
 export const LEGACY_WITHHELD_RUN_COMMENT =
   "Run completed. Agent did not post a summary comment this run (transcript withheld; see run log).";
 
-export const RUN_PRESENTATION_RESOLVER_VERSION = "1";
+export const RUN_PRESENTATION_RESOLVER_VERSION = "2";
 export const CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON =
   "allow_chat_run_presentation";
 
@@ -272,6 +272,20 @@ function hasYieldedSemanticResult(resultJson: Record<string, unknown>) {
       candidate.schema === "paperclip.run_result.v1" &&
       candidate.reportedWorkDisposition === "yielded",
   );
+}
+
+export function readAcceptedMonitorContinuationSummary(value: Record<string, unknown> | null | undefined): string | null {
+  const result = record(value);
+  if (result.finalizationPhase !== "committed" ||
+      !["scheduled_monitor_waiting", "scheduled_monitor_dispatched", "scheduled_monitor_preserved"].includes(String(result.finalizationReasonCode))) return null;
+  for (const candidate of semanticResultCandidates(result)) {
+    const continuation = record(candidate.continuation);
+    if (candidate.schema === "paperclip.run_result.v1" && candidate.reportedWorkDisposition === "yielded" &&
+        continuation.kind === "monitor" && readCommentText(continuation.idempotencyKey)) {
+      return readCommentText(candidate.summary);
+    }
+  }
+  return null;
 }
 
 function readAcceptedExternalChatResponseWakeSummary(
@@ -464,6 +478,10 @@ export function resolveHeartbeatRunResponse(input: {
 
   if (input.preferFinalResponseOverExistingComment === true) {
     if (hasYieldedSemanticResult(resultJson)) {
+      const monitorSummary = readAcceptedMonitorContinuationSummary(resultJson);
+      if (monitorSummary) return { text: monitorSummary, decision: decision("semantic_result_summary", {
+        commentAction: "create", reasonCodes: ["accepted_monitor_continuation_summary"],
+      }) };
       const responseWakeSummary =
         input.externalChatResponseWakeSummaryAuthorized === true
           ? readAcceptedExternalChatResponseWakeSummary(
@@ -525,6 +543,11 @@ export function resolveHeartbeatRunResponse(input: {
       }),
     };
   }
+
+  const monitorSummary = readAcceptedMonitorContinuationSummary(resultJson);
+  if (monitorSummary) return { text: monitorSummary, decision: decision("semantic_result_summary", {
+    commentAction: "create", reasonCodes: ["accepted_monitor_continuation_summary"],
+  }) };
 
   // A governed wait is not a completed assistant turn. Provider adapters may
   // still emit terminal-looking prose while the control plane is yielding for
