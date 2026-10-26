@@ -3,15 +3,24 @@ import type { Db } from "@greatstone/db";
 import {
   createDeepDiveInterviewRoundSchema,
   draftDeepDiveInterviewSetSchema,
+  inviteDeepDiveInterviewPeopleSchema,
+  openDeepDiveInterviewRoundSchema,
+  sendDeepDiveInterviewInvitesSchema,
   updateDeepDiveInterviewRoundSchema,
   updateDeepDiveInterviewSetSchema,
   type CreateDeepDiveInterviewRound,
   type DraftDeepDiveInterviewSet,
+  type InviteDeepDiveInterviewPeople,
+  type OpenDeepDiveInterviewRound,
+  type SendDeepDiveInterviewInvites,
   type UpdateDeepDiveInterviewRound,
   type UpdateDeepDiveInterviewSet,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
+import { deepDiveInterviewInvitesService } from "../services/deep-dive-interview-invites.js";
 import { deepDiveInterviewsService, type DeepDiveInterviewActor } from "../services/deep-dive-interviews.js";
+import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
+import { interviewBridgeFromEnv, type InterviewBridge } from "../services/website/interview-bridge.js";
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -20,15 +29,24 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 // Parallel Interview rounds (GRE-2611): the Deep Dive's first step. Anyone with
 // access to the company may set up the round and draft or edit question sets;
 // only a person approves a set. Every write answers with the whole round view.
+// Invites (GRE-2665): only a person opens the round on the website and sends
+// invites or reminders; anyone with access reads the live progress. Activity
+// rows carry counts only, never a name or an email.
 
 function interviewActor(req: Request): DeepDiveInterviewActor {
   const actor = getActorInfo(req);
   return actor.actorType === "user" ? { type: "user", userId: actor.actorId } : { type: "agent", agentId: actor.agentId };
 }
 
-export function deepDiveInterviewsRoutes(db: Db) {
+function bridgeActor(req: Request): WebsiteBridgeActor {
+  const actor = getActorInfo(req);
+  return { type: actor.actorType === "user" ? "user" : "agent", id: actor.actorId, runId: actor.runId };
+}
+
+export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: InterviewBridge } = {}) {
   const router = Router();
   const interviews = deepDiveInterviewsService(db);
+  const invites = deepDiveInterviewInvitesService(db, options.interviewBridge ?? interviewBridgeFromEnv(db));
   const settings = instanceSettingsService(db);
 
   async function assertEnabled() {
@@ -151,6 +169,56 @@ export function deepDiveInterviewsRoutes(db: Db) {
     await log(req, companyId, "deep_dive_interview.set_removed", view.round!.id, { setId: req.params.setId });
     res.json(view);
   });
+
+  router.get("/companies/:companyId/deep-dive/interview-round/progress", async (req, res) => {
+    const companyId = await companyInScope(req);
+    res.json(await invites.progress(companyId, bridgeActor(req)));
+  });
+
+  router.post(
+    "/deep-dive/interview-rounds/:roundId/open",
+    validate(openDeepDiveInterviewRoundSchema),
+    async (req, res) => {
+      const companyId = await roundInScope(req);
+      const input = req.body as OpenDeepDiveInterviewRound;
+      const progress = await invites.open(req.params.roundId as string, input, interviewActor(req), bridgeActor(req));
+      await log(req, companyId, "deep_dive_interview.round_opened", req.params.roundId as string, {
+        allowedEmailDomains: input.allowedEmailDomains.length,
+        seatTotal: input.seatTotal,
+      });
+      res.json(progress);
+    },
+  );
+
+  router.post(
+    "/deep-dive/interview-rounds/:roundId/invites",
+    validate(inviteDeepDiveInterviewPeopleSchema),
+    async (req, res) => {
+      const companyId = await roundInScope(req);
+      const result = await invites.invite(req.params.roundId as string, req.body as InviteDeepDiveInterviewPeople, interviewActor(req), bridgeActor(req));
+      await log(req, companyId, "deep_dive_interview.people_invited", req.params.roundId as string, {
+        invited: result.invited,
+        created: result.created,
+        emailed: result.emailed,
+      });
+      res.json(result);
+    },
+  );
+
+  router.post(
+    "/deep-dive/interview-rounds/:roundId/invites/send",
+    validate(sendDeepDiveInterviewInvitesSchema),
+    async (req, res) => {
+      const companyId = await roundInScope(req);
+      const input = req.body as SendDeepDiveInterviewInvites;
+      const result = await invites.send(req.params.roundId as string, input, interviewActor(req), bridgeActor(req));
+      await log(req, companyId, `deep_dive_interview.invites_${input.kind === "resend" ? "resent" : "reminded"}`, req.params.roundId as string, {
+        people: input.websiteUserIds.length,
+        emailed: result.emailed,
+      });
+      res.json(result);
+    },
+  );
 
   return router;
 }
