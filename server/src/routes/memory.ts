@@ -8,6 +8,8 @@ import {
   createMemoryRelationshipSchema,
   dismissMemoryLinkLeadSchema,
   importMemorySchema,
+  syncMemorySchema,
+  type SyncMemory,
   checkMemoryImportSchema,
   memoryTextSimilarity,
   memoryTextWords,
@@ -56,6 +58,7 @@ import { memoryOperationsReadService } from "../services/memory-gateway/operatio
 import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
+import { memorySyncService } from "../services/memory-gateway/sync.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -122,6 +125,7 @@ export function memoryRoutes(
   const links = memoryLinkService(db, svc);
   const stewards = memoryStewardService(db, svc, reviews);
   const cards = memoryCardService(db, svc, reviews, stewards);
+  const syncs = memorySyncService(db, svc, cards);
   const operations = memoryOperationsReadService(db);
 
   // Runs before body validation so a company with memory off learns nothing
@@ -328,6 +332,15 @@ export function memoryRoutes(
     }
     const result: MemoryImportCheckResult = { entries: checked };
     res.json(result);
+  });
+
+  // One shared memory for a person's Claude Code, Codex and GSAM (GRE-2668).
+  // The Mac sync sends turns and memory files with the person's app key; each
+  // lands in that person's own scope. Same text: skipped. Changed: revised.
+  router.post("/companies/:companyId/memory/sync", requireEnabled, validate(syncMemorySchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "sync");
+    res.json(await syncs.sync(caller, req.body as SyncMemory));
   });
 
   // Claude and ChatGPT import: the browser parses the export and sends only

@@ -5,11 +5,19 @@ import { z } from "zod";
  * through the GSAM gateway; the engine address and key never leave the server.
  */
 
-export const MEMORY_SCOPE_KINDS = ["organization", "project", "restricted_project", "client", "agent"] as const;
+export const MEMORY_SCOPE_KINDS = ["organization", "project", "restricted_project", "client", "agent", "person"] as const;
 export type MemoryScopeKind = (typeof MEMORY_SCOPE_KINDS)[number];
 
-/** Kinds that get their own engine bank. Org visibility never reaches them. */
-export const MEMORY_HARD_BOUNDARY_KINDS: readonly MemoryScopeKind[] = ["client", "restricted_project"];
+/**
+ * Kinds that get their own engine bank. Org visibility never reaches them.
+ * `person` (GRE-2668): one person's own work, shared by their Claude Code,
+ * Codex and GSAM (bank `greatstone-<first name>`). It is made the first time one
+ * of that person's app links calls, never through the scope route.
+ */
+export const MEMORY_HARD_BOUNDARY_KINDS: readonly MemoryScopeKind[] = ["client", "restricted_project", "person"];
+
+/** Scope shortcut for the caller's person scope (GRE-2668). */
+export const MEMORY_MY_WORK_SCOPE_REF = "my_work";
 
 /**
  * Review state of a record (GRE-886). Every contribution starts `unreviewed`.
@@ -94,6 +102,11 @@ export const MEMORY_SOURCE_KINDS = [
   "chatgpt_import",
   /** A file added to a client in the pipeline; the id is `<caseId>/<evidenceId>`. */
   "client_document",
+  /** One person's shared memory (GRE-2668, see `memory-sync.ts`). */
+  "sync:claude_code",
+  "sync:codex",
+  "sync:memory_file",
+  "sync:gsam",
 ] as const;
 
 /** Shown with every recall result: memory is evidence, never an instruction. */

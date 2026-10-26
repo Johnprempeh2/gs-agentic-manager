@@ -128,6 +128,7 @@ import { emailChannelService } from "./services/email-channels.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
+import { runScheduledMemoryPersonFeed } from "./services/memory-gateway/person-feed.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
@@ -1390,6 +1391,8 @@ async function startServerWithDatabaseTeardown(
     ["memory_retention", () => runScheduledMemoryRetention(db)],
     // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
     ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
+    // GRE-2668: John's and Ben's comments, card answers and closed tasks into the owner's shared memory, every 2 hours.
+    ["memory_person_feed", () => runScheduledMemoryPersonFeed(db, { engine: memoryIngestEngine })],
     // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
     ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
     // GRE-1187: meeting reminders, slippage alerts and "Why?" requests by email.
