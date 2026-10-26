@@ -24,6 +24,11 @@ GS Agentic Manager V1 must provide a full control-plane loop for autonomous agen
    An effective task or ancestor pause replaces the message composer with an
    amber Resume takeover. New board messages, including updates with comments,
    are rejected until the hold is released. Drafts survive pause and resume.
+   While an active run owns a task, a board user may post a correction with
+   "Interrupt with this". The comment is saved before delivery. A supported
+   live session receives it through steering; other runs stop and resume with
+   the correction at the start of the next task context. An explicit
+   finish-before-update critical section delays the stop for at most two minutes.
 
 Success means one operator can run a small AI-native company end-to-end with clear visibility and control.
 

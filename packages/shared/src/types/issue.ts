@@ -1170,6 +1170,7 @@ export interface IssueCommentMetadataSection {
 
 export interface IssueCommentMetadata {
   version: 1;
+  correction?: { targetRunId: string | null };
   /** Inbound channel attribution; never an authorization input. */
   sourceChannel?: "imessage-photon";
   sourceRunId?: string | null;

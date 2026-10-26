@@ -7,6 +7,15 @@ import {
 } from "../services/heartbeat.js";
 
 describe("buildPaperclipTaskMarkdown", () => {
+  it("puts an interrupted board correction before the prior task plan", () => {
+    const prompt = buildPaperclipTaskMarkdown({
+      issue: { id: "issue", identifier: "GRE-1", title: "Earlier task", description: "Earlier scope" },
+      correctionCommentId: "correction-1",
+      wakeComments: [{ id: "correction-1", body: "Use the corrected scope" }],
+    })!;
+    expect(prompt.indexOf("Correction from the board")).toBeLessThan(prompt.indexOf("Earlier scope"));
+    expect(prompt).toContain("Use the corrected scope");
+  });
   it.each(["standard", "planning", "ask"])("selects directives only from explicit %s mode, even when a plan is requested", (workMode) => {
     for (const prose of [
       { title: "Prepare rollout steps", description: "Describe the steps." },

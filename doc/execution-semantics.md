@@ -19,6 +19,15 @@ GS Agentic Manager separates four concepts that are easy to blur together:
 
 The system works best when those are kept separate.
 
+Board corrections on an active task are ordinary attributed comments with a
+`correction` metadata marker. The comment is durable before GS Agentic Manager
+tries live steering or a stop and successor wake. The target run and board
+actor are recorded in activity. A run flagged "finish before update" keeps its
+critical section for up to two minutes before the fallback stop proceeds.
+Adapters without acknowledged live steering use the successor wake. The run
+state shows "Correction waiting" during the handoff and "Restarting with
+correction" on a queued successor.
+
 ## 2. Assignee Semantics
 
 An issue has at most one assignee.

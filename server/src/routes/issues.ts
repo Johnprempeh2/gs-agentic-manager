@@ -393,6 +393,7 @@ import {
   MISSING_APPROVAL_EVIDENCE_MESSAGE,
 } from "../services/approval-evidence.js";
 import { LIVE_RELEASE_KEY_PREFIX, liveReleaseService } from "../services/live-release.js";
+import { waitForCorrectionSafePoint } from "../services/correction-safe-point.js";
 import { assertReleaseReauth, releaseReauth } from "../services/release-reauth.js";
 import {
   AGENT_DONE_WITHOUT_RESULT_CODE,
@@ -7834,6 +7835,14 @@ export function issueRoutes(
     };
   }
 
+  async function markCorrectionWaiting(runId: string, commentId: string, companyId: string) {
+    await db.update(heartbeatRuns).set({
+      resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'waiting', 'correctionCommentId', ${commentId})`,
+      updatedAt: new Date(),
+    }).where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.status, "running")));
+  }
+
+
   /**
    * Refuse an agent creating a child issue assigned to the agent that created
    * a still-open ancestor in the same chain. That shape is a delegation cycle
@@ -14582,37 +14591,8 @@ export function issueRoutes(
           return;
         }
 
-        const runToInterrupt = await resolveActiveIssueRun(existing);
-        if (runToInterrupt) {
-          const cancelled = await heartbeat.cancelRun(
-            runToInterrupt.id,
-            "Interrupted by board comment",
-            operatorInterruptCancelOptions({ issueId: existing.id, actor }),
-          );
-          if (cancelled) {
-            interruptedRunId = cancelled.id;
-            await logActivity(db, {
-              companyId: cancelled.companyId,
-              actorType: actor.actorType,
-              actorId: actor.actorId,
-              agentId: actor.agentId,
-              runId: actor.runId,
-              agentApiKeyId: actor.agentApiKeyId,
-              action: "heartbeat.cancelled",
-              entityType: "heartbeat_run",
-              entityId: cancelled.id,
-              issueId: existing.id,
-              details: {
-                agentId: cancelled.agentId,
-                source: "issue_comment_interrupt",
-                issueId: existing.id,
-                cancellationKind: "operator_interrupted",
-                operatorInterrupted: true,
-              },
-            });
-          }
-        }
       }
+      const correctionTargetRun = interruptRequested ? await resolveActiveIssueRun(existing) : null;
 
       const runToCancelForCancelledStatus =
         shouldCancelActiveRunForCancelledStatus
@@ -15985,11 +15965,65 @@ export function issueRoutes(
             clientRequestId: actor.actorType === "user" ? commentClientRequestId : undefined,
             mirrorToSlack: actor.actorType === "user",
             sourceTrust: await sourceTrustForActorWrite(issue, actor),
+            ...(interruptRequested ? { metadata: { version: 1 as const, correction: { targetRunId: correctionTargetRun?.id ?? null }, sections: [{ title: "Correction", rows: [{ type: "key_value" as const, label: "Kind", value: "correction" }] }] } } : {}),
           },
         );
+        if (interruptRequested) {
+          if (correctionTargetRun) await markCorrectionWaiting(correctionTargetRun.id, comment.id, issue.companyId);
+          await logActivity(db, {
+            companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.correction_requested", entityType: "issue", entityId: issue.id,
+            issueId: issue.id, details: { commentId: comment.id, targetRunId: correctionTargetRun?.id ?? null },
+          });
+          const correctionSafePoint = correctionTargetRun
+            ? await waitForCorrectionSafePoint({
+                isProtected: () => Boolean(liveReleaseService(db).getRunFlag(correctionTargetRun.id)),
+              })
+            : "safe";
+          if (correctionSafePoint === "safe" && correctionTargetRun && issue.assigneeAgentId === correctionTargetRun.agentId && correctionTargetRun.runtimeMode === "native") {
+            try {
+              await steerNativeSession({
+                runId: correctionTargetRun.id,
+                message: `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`,
+                correlationId: comment.id,
+              });
+              goalCommentSteered = true;
+            } catch (err) {
+              logger.info({ err, runId: correctionTargetRun.id, commentId: comment.id }, "correction steering unavailable; restarting run");
+            }
+          }
+          if (correctionTargetRun && goalCommentSteered) {
+            await db.update(heartbeatRuns).set({
+              resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'delivered')`,
+            }).where(and(eq(heartbeatRuns.id, correctionTargetRun.id), eq(heartbeatRuns.companyId, issue.companyId)));
+            await logActivity(db, {
+              companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+              agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+              action: "issue.correction_delivered", entityType: "heartbeat_run", entityId: correctionTargetRun.id,
+              issueId: issue.id, details: { commentId: comment.id, targetRunId: correctionTargetRun.id },
+            });
+          }
+          if (correctionTargetRun && !goalCommentSteered) {
+            const cancelled = await heartbeat.cancelRun(
+              correctionTargetRun.id, "Interrupted by board comment",
+              operatorInterruptCancelOptions({ issueId: issue.id, actor }),
+            );
+            interruptedRunId = cancelled?.id ?? correctionTargetRun.id;
+            if (cancelled) await logActivity(db, {
+              companyId: cancelled.companyId, actorType: actor.actorType, actorId: actor.actorId,
+              agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+              action: "heartbeat.cancelled", entityType: "heartbeat_run", entityId: cancelled.id,
+              issueId: issue.id,
+              details: { agentId: cancelled.agentId, source: "issue_comment_interrupt", issueId: issue.id,
+                cancellationKind: "operator_interrupted", operatorInterrupted: true, commentId: comment.id },
+            });
+          }
+        }
         await issueReferencesSvc.syncComment(comment.id);
         await externalObjectsSvc.syncCommentSafely(comment.id);
         if (
+          !goalCommentSteered &&
           issue.assigneeAgentId &&
           !issue.externalConversationState &&
           !(
@@ -16217,6 +16251,10 @@ export function issueRoutes(
             typeof wakeup.payload.issueId === "string"
               ? wakeup.payload.issueId
               : issue.id;
+          if (interruptRequested && comment && wakeIssueId === issue.id) {
+            wakeup.payload = { ...(wakeup.payload ?? {}), correctionCommentId: comment.id };
+            wakeup.contextSnapshot = { ...(wakeup.contextSnapshot ?? {}), correctionCommentId: comment.id };
+          }
           // Provider turns use the task identifier as their session key. Board
           // messages must resume that same session instead of creating a UUID-keyed fork.
           if (wakeIssueId === issue.id && issue.externalConversationState && issue.identifier) {
@@ -19543,6 +19581,10 @@ export function issueRoutes(
       const reopenRequested = req.body.reopen === true;
       const resumeRequested = req.body.resume === true;
       const interruptRequested = req.body.interrupt === true;
+      if (interruptRequested && req.actor.type !== "board") {
+        res.status(403).json({ error: "Only board users can interrupt active runs from issue comments" });
+        return;
+      }
       const isClosed = isClosedIssueStatus(issue.status);
       const isBlocked = issue.status === "blocked";
       const crossIssueCommentOnlyGrant =
@@ -19760,47 +19802,6 @@ export function issueRoutes(
         });
       }
 
-      if (interruptRequested) {
-        if (req.actor.type !== "board") {
-          res.status(403).json({
-            error:
-              "Only board users can interrupt active runs from issue comments",
-          });
-          return;
-        }
-
-        const runToInterrupt = await resolveActiveIssueRun(currentIssue);
-        if (runToInterrupt) {
-          const cancelled = await heartbeat.cancelRun(
-            runToInterrupt.id,
-            "Interrupted by board comment",
-            operatorInterruptCancelOptions({ issueId: currentIssue.id, actor }),
-          );
-          if (cancelled) {
-            interruptedRunId = cancelled.id;
-            await logActivity(db, {
-              companyId: cancelled.companyId,
-              actorType: actor.actorType,
-              actorId: actor.actorId,
-              agentId: actor.agentId,
-              runId: actor.runId,
-              agentApiKeyId: actor.agentApiKeyId,
-              action: "heartbeat.cancelled",
-              entityType: "heartbeat_run",
-              entityId: cancelled.id,
-              issueId: currentIssue.id,
-              details: {
-                agentId: cancelled.agentId,
-                source: "issue_comment_interrupt",
-                issueId: currentIssue.id,
-                cancellationKind: "operator_interrupted",
-                operatorInterrupted: true,
-              },
-            });
-          }
-        }
-      }
-
       const currentExecutionState = parseIssueExecutionState(
         currentIssue.executionState,
       );
@@ -19826,6 +19827,16 @@ export function issueRoutes(
           reviewActorUserIdAliases,
         ) &&
         isApprovalReviewComment(req.body.body);
+
+      const correctionTargetRun = interruptRequested
+        ? await resolveActiveIssueRun(currentIssue)
+        : null;
+      const commentMetadata: IssueComment["metadata"] = interruptRequested
+        ? {
+            ...(req.body.metadata ?? { version: 1, sections: [{ title: "Correction", rows: [{ type: "key_value", label: "Kind", value: "correction" }] }] }),
+            correction: { targetRunId: correctionTargetRun?.id ?? null },
+          }
+        : req.body.metadata ?? null;
 
       // Persist the comment and the auto-approval state transition atomically when both apply.
       // Without a single transaction, a 422 (or any error) thrown by the status update after the
@@ -19876,7 +19887,7 @@ export function issueRoutes(
             req.body.authorType ??
             (actor.actorType === "agent" ? "agent" : "user"),
           presentation: commentPresentation,
-          metadata: req.body.metadata ?? null,
+          metadata: commentMetadata,
           attachmentIds: req.body.attachmentIds,
           clientRequestId: actor.actorType === "user" ? req.body.clientRequestId : undefined,
           mirrorToSlack: actor.actorType === "user",
@@ -19989,7 +20000,7 @@ export function issueRoutes(
             req.body.authorType ??
             (actor.actorType === "agent" ? "agent" : "user"),
           presentation: commentPresentation,
-          metadata: req.body.metadata ?? null,
+          metadata: commentMetadata,
           attachmentIds: req.body.attachmentIds,
           clientRequestId: actor.actorType === "user" ? req.body.clientRequestId : undefined,
           mirrorToSlack: actor.actorType === "user",
@@ -20014,6 +20025,67 @@ export function issueRoutes(
           : await add();
       }
 
+      if (interruptRequested) {
+        if (correctionTargetRun) await markCorrectionWaiting(correctionTargetRun.id, comment.id, currentIssue.companyId);
+        await logActivity(db, {
+          companyId: currentIssue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+          agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+          action: "issue.correction_requested", entityType: "issue", entityId: currentIssue.id,
+          issueId: currentIssue.id,
+          details: { commentId: comment.id, targetRunId: correctionTargetRun?.id ?? null },
+        });
+        const correctionSafePoint = correctionTargetRun
+          ? await waitForCorrectionSafePoint({
+              isProtected: () => Boolean(liveReleaseService(db).getRunFlag(correctionTargetRun.id)),
+            })
+          : "safe";
+        if (correctionSafePoint === "safe" && correctionTargetRun?.runtimeMode === "native") {
+          try {
+            await steerNativeSession({
+              runId: correctionTargetRun.id,
+              message: `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`,
+              correlationId: comment.id,
+            });
+            goalCommentSteered = true;
+          } catch (err) {
+            logger.info({ err, runId: correctionTargetRun.id, commentId: comment.id }, "correction steering unavailable; restarting run");
+          }
+        }
+        if (correctionTargetRun && goalCommentSteered) {
+          await db.update(heartbeatRuns).set({
+            resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'delivered')`,
+          }).where(and(eq(heartbeatRuns.id, correctionTargetRun.id), eq(heartbeatRuns.companyId, currentIssue.companyId)));
+          await logActivity(db, {
+            companyId: currentIssue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.correction_delivered", entityType: "heartbeat_run", entityId: correctionTargetRun.id,
+            issueId: currentIssue.id, details: { commentId: comment.id, targetRunId: correctionTargetRun.id },
+          });
+        }
+        if (correctionTargetRun && !goalCommentSteered) {
+          const cancelled = await heartbeat.cancelRun(
+            correctionTargetRun.id, "Interrupted by board correction",
+            operatorInterruptCancelOptions({ issueId: currentIssue.id, actor }),
+          );
+          interruptedRunId = cancelled?.id ?? correctionTargetRun.id;
+          if (cancelled) await logActivity(db, {
+            companyId: cancelled.companyId, actorType: actor.actorType, actorId: actor.actorId,
+            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+            action: "heartbeat.cancelled", entityType: "heartbeat_run", entityId: cancelled.id,
+            issueId: currentIssue.id,
+            details: { agentId: cancelled.agentId, source: "issue_comment_interrupt", issueId: currentIssue.id,
+              cancellationKind: "operator_interrupted", operatorInterrupted: true, commentId: comment.id },
+          });
+          await logActivity(db, {
+            companyId: currentIssue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.correction_restart_requested", entityType: "heartbeat_run",
+            entityId: correctionTargetRun.id, issueId: currentIssue.id,
+            details: { commentId: comment.id, targetRunId: correctionTargetRun.id },
+          });
+        }
+      }
+
       await issueReferencesSvc.syncComment(comment.id);
       await externalObjectsSvc.syncCommentSafely(comment.id);
       // Phone pushes for @mentioned people and the other side of a direct message.
@@ -20021,6 +20093,7 @@ export function issueRoutes(
         void teamChats.notifyPeople(currentIssue, comment, { type: actor.actorType, id: actor.actorId });
       }
       if (
+        !goalCommentSteered &&
         currentIssue.assigneeAgentId &&
         // Slack-linked messages need the normal attributed wake boundary so
         // the accepted requester and return-thread receipt travel with the run.
@@ -20343,6 +20416,7 @@ export function issueRoutes(
                 commentId: comment.id,
                 reopenedFrom: reopenFromStatus,
                 mutation: "comment",
+                ...(interruptRequested ? { correctionCommentId: comment.id } : {}),
                 ...(resumeRequested === true
                   ? { resumeIntent: true, followUpRequested: true }
                   : {}),
@@ -20355,6 +20429,7 @@ export function issueRoutes(
                 taskId: currentIssue.id,
                 commentId: comment.id,
                 wakeCommentId: comment.id,
+                ...(interruptRequested ? { correctionCommentId: comment.id } : {}),
                 source: "issue.comment.reopen",
                 wakeReason: "issue_reopened_via_comment",
                 reopenedFrom: reopenFromStatus,
@@ -20373,6 +20448,7 @@ export function issueRoutes(
                 issueId: currentIssue.id,
                 commentId: comment.id,
                 mutation: "comment",
+                ...(interruptRequested ? { correctionCommentId: comment.id } : {}),
                 ...(resumeRequested === true
                   ? { resumeIntent: true, followUpRequested: true }
                   : {}),
@@ -20392,6 +20468,7 @@ export function issueRoutes(
                 taskId: currentIssue.id,
                 commentId: comment.id,
                 wakeCommentId: comment.id,
+                ...(interruptRequested ? { correctionCommentId: comment.id } : {}),
                 source: "issue.comment",
                 wakeReason: "issue_commented",
                 ...(resumeRequested === true

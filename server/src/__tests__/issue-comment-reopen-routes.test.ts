@@ -40,6 +40,7 @@ const mockAgentService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
+const mockSteerNativeSession = vi.hoisted(() => vi.fn(async () => ({ turnId: "turn-1" })));
 const mockTxInsertValues = vi.hoisted(() => vi.fn(async () => undefined));
 const mockTxInsert = vi.hoisted(() =>
   vi.fn(() => ({ values: mockTxInsertValues })),
@@ -68,6 +69,7 @@ const mockDbSelect = vi.hoisted(() =>
 );
 const mockDb = vi.hoisted(() => ({
   select: mockDbSelect,
+  update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => []) })) })),
   transaction: vi.fn(async (fn: (tx: typeof mockTx) => Promise<unknown>) =>
     fn(mockTx),
   ),
@@ -148,6 +150,17 @@ vi.mock("../services/feedback.js", () => ({
 
 vi.mock("../services/heartbeat.js", () => ({
   heartbeatService: () => mockHeartbeatService,
+}));
+
+vi.mock("../services/live-release.js", () => ({
+  LIVE_RELEASE_KEY_PREFIX: "live-release:",
+  liveReleaseService: () => ({ getRunFlag: () => null, onConfirmationAccepted: vi.fn() }),
+}));
+
+vi.mock("../services/native-runtime/native-session-executor.js", () => ({
+  getNativeSessionSteeringState: vi.fn(async () => ({ disposition: "available" })),
+  NativeSessionSteeringError: class NativeSessionSteeringError extends Error {},
+  steerNativeSession: mockSteerNativeSession,
 }));
 
 vi.mock("../services/instance-settings.js", () => ({
@@ -351,6 +364,8 @@ describe.sequential("issue comment reopen routes", () => {
     mockAgentService.list.mockReset();
     mockAgentService.resolveByReference.mockReset();
     mockLogActivity.mockReset();
+    mockSteerNativeSession.mockReset();
+    mockSteerNativeSession.mockResolvedValue({ turnId: "turn-1" });
     mockFeedbackService.listIssueVotesForUser.mockReset();
     mockFeedbackService.saveIssueVote.mockReset();
     mockInstanceSettingsService.get.mockReset();
@@ -2870,6 +2885,59 @@ describe.sequential("issue comment reopen routes", () => {
         }),
       }),
     );
+  });
+
+  it("delivers a saved correction to an active native session", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Use the corrected scope", interrupt: true });
+
+    expect(res.status).toBe(201);
+    expect(mockIssueService.addComment).toHaveBeenCalled();
+    expect(mockSteerNativeSession).toHaveBeenCalledWith(expect.objectContaining({
+      runId: "run-1", correlationId: "comment-1",
+    }));
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    expect(mockIssueService.addComment.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSteerNativeSession.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("saves a correction before restarting when live delivery fails", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+    mockSteerNativeSession.mockRejectedValue(new Error("steering unavailable"));
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "cancelled",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Use the corrected scope", interrupt: true });
+
+    expect(res.status).toBe(201);
+    expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1", "Interrupted by board correction", expect.objectContaining({ errorCode: "operator_interrupted" }),
+    );
+    expect(mockIssueService.addComment.mock.invocationCallOrder[0]).toBeLessThan(
+      mockHeartbeatService.cancelRun.mock.invocationCallOrder[0]!,
+    );
+    await vi.waitFor(() => expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      issue.assigneeAgentId,
+      expect.objectContaining({ contextSnapshot: expect.objectContaining({ correctionCommentId: "comment-1" }) }),
+    ));
   });
 
   it("cancels an active run when an issue is marked cancelled", async () => {

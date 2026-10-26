@@ -1137,6 +1137,7 @@ export const issueCommentMetadataSectionSchema = z
 export const issueCommentMetadataSchema = z
   .object({
     version: z.literal(1),
+    correction: z.object({ targetRunId: z.string().guid().nullable() }).strict().optional(),
     sourceChannel: z.literal("imessage-photon").optional(),
     sourceRunId: z.string().guid().nullable().optional(),
     authorizationReason: z

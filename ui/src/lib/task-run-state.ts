@@ -23,6 +23,7 @@ export interface RunningTaskRunState {
   lastOutputAt: string | null;
   /** Milliseconds since `lastOutputAt`; null when unknown. */
   silentMs: number | null;
+  correctionState?: LiveRunForIssue["correctionState"];
 }
 
 export type QueuedReason =
@@ -47,6 +48,7 @@ export interface QueuedTaskRunState {
   position: number;
   /** How many runs wait on this agent in total. */
   queueLength: number;
+  correctionState?: LiveRunForIssue["correctionState"];
 }
 
 /** A run with no output for this long reads as stuck. */
@@ -68,7 +70,7 @@ export interface TaskRunStateContext {
 
 type RunInput = Pick<
   LiveRunForIssue,
-  "id" | "status" | "agentId" | "agentName" | "issueId" | "createdAt" | "startedAt" | "lastEventAt" | "currentStatusMessage"
+  "id" | "status" | "agentId" | "agentName" | "issueId" | "createdAt" | "startedAt" | "lastEventAt" | "currentStatusMessage" | "correctionState"
 >;
 
 function toMs(value: string | Date | null | undefined): number | null {
@@ -104,6 +106,7 @@ function runningState(run: RunInput, now: number): RunningTaskRunState {
     startedAt: run.startedAt ?? null,
     lastOutputAt,
     silentMs,
+    correctionState: run.correctionState,
   };
 }
 
@@ -187,6 +190,7 @@ export function deriveTaskRunStates(
         reason: queuedReason(run, runningForAgent, context),
         position: index + 1,
         queueLength: queue.length,
+        correctionState: run.correctionState,
       });
     });
   }
@@ -253,6 +257,9 @@ export function describeTaskRunState(
   options: { now: number; issueLabel?: (issueId: string) => string | null | undefined },
 ): TaskRunStateCopy {
   if (state.kind !== "queued") {
+    if (state.correctionState === "waiting") {
+      return { label: "Correction waiting", detail: "The agent will stop at the next safe point", blockingIssueId: null, summary: `${state.agentName} is waiting to apply a correction.` };
+    }
     const startedMs = toMs(state.startedAt);
     const elapsed = startedMs === null ? null : formatRunDuration(options.now - startedMs);
     const lastOutput = state.silentMs === null ? null : `last output ${formatRunDuration(state.silentMs)} ago`;
@@ -275,6 +282,9 @@ export function describeTaskRunState(
   }
 
   const position = state.queueLength > 1 ? `${ordinal(state.position)} of ${state.queueLength} waiting` : null;
+  if (state.correctionState === "restarting") {
+    return { label: "Restarting with correction", detail: position, blockingIssueId: null, summary: `${state.agentName} is restarting with a correction.` };
+  }
   let label = "Queued";
   let why: string;
   let blockingIssueId: string | null = null;

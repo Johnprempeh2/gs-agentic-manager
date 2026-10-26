@@ -381,7 +381,7 @@ export const IssueChatComposer = forwardRef<
     await submitComment();
   }
 
-  async function submitComment() {
+  async function submitComment(interrupt = false) {
     if (composerPause) return;
     const trimmed = body.trim();
     if (
@@ -458,10 +458,11 @@ export const IssueChatComposer = forwardRef<
       }
       // assistant-ui thread.append is fire-and-forget. Await the actual Board
       // mutation; it already owns optimistic echo and durable error handling.
-      const sendPromise = onSend(
-        submittedBody, reopen, reassignment,
-        attachmentIds.length ? attachmentIds : undefined, attemptId,
-      );
+      const sendPromise = interrupt
+        ? onSend(submittedBody, reopen, reassignment,
+            attachmentIds.length ? attachmentIds : undefined, attemptId, true)
+        : onSend(submittedBody, reopen, reassignment,
+            attachmentIds.length ? attachmentIds : undefined, attemptId);
       queueViewportRestore(viewportSnapshot);
       await sendPromise;
       // Settle the captured task even if the user navigated away. The exact
@@ -1143,13 +1144,17 @@ export const IssueChatComposer = forwardRef<
             )}
           </Button>
         ) : (
-          <Button
-            size="sm"
-            disabled={!canSubmit}
-            onClick={() => void handleSubmit()}
-          >
-            {submitting ? "Posting..." : "Send"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {hasActiveRun ? (
+              <Button size="sm" variant="outline" disabled={!canSubmit}
+                onClick={() => void submitComment(true)}>
+                Interrupt with this
+              </Button>
+            ) : null}
+            <Button size="sm" disabled={!canSubmit} onClick={() => void handleSubmit()}>
+              {submitting ? "Posting..." : "Send"}
+            </Button>
+          </div>
         )}
       </div>
 
