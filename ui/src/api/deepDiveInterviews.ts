@@ -1,7 +1,11 @@
 import type {
   CreateDeepDiveInterviewRound,
+  DeepDiveInterviewProgress,
   DeepDiveInterviewRoundView,
   DraftDeepDiveInterviewSet,
+  InviteDeepDiveInterviewPeople,
+  OpenDeepDiveInterviewRound,
+  SendDeepDiveInterviewInvites,
   UpdateDeepDiveInterviewRound,
   UpdateDeepDiveInterviewSet,
 } from "@greatstone/shared";
@@ -12,7 +16,16 @@ import { api } from "./client";
 
 export const deepDiveInterviewsQueryKeys = {
   round: (companyId: string) => ["deep-dive-interview-round", companyId] as const,
+  progress: (companyId: string) => ["deep-dive-interview-round", companyId, "progress"] as const,
 };
+
+/** What an invite or a send answers: counts, and the progress read from the website after it. */
+export interface DeepDiveInterviewInviteResult {
+  invited: number;
+  created: number;
+  emailed: number;
+  progress: DeepDiveInterviewProgress;
+}
 
 export const deepDiveInterviewsApi = {
   get: (companyId: string) => api.get<DeepDiveInterviewRoundView>(`/companies/${companyId}/deep-dive/interview-round`),
@@ -27,4 +40,13 @@ export const deepDiveInterviewsApi = {
   redraftSet: (setId: string) => api.post<DeepDiveInterviewRoundView>(`/deep-dive/interview-sets/${setId}/redraft`, {}),
   approveSet: (setId: string) => api.post<DeepDiveInterviewRoundView>(`/deep-dive/interview-sets/${setId}/approve`, {}),
   removeSet: (setId: string) => api.delete<DeepDiveInterviewRoundView>(`/deep-dive/interview-sets/${setId}`),
+  // Invites and live progress (GRE-2665). Names, emails and status come live from the website.
+  progress: (companyId: string) =>
+    api.get<DeepDiveInterviewProgress>(`/companies/${companyId}/deep-dive/interview-round/progress`),
+  open: (roundId: string, input: OpenDeepDiveInterviewRound) =>
+    api.post<DeepDiveInterviewProgress>(`/deep-dive/interview-rounds/${roundId}/open`, input),
+  invite: (roundId: string, input: InviteDeepDiveInterviewPeople) =>
+    api.post<DeepDiveInterviewInviteResult>(`/deep-dive/interview-rounds/${roundId}/invites`, input),
+  send: (roundId: string, input: SendDeepDiveInterviewInvites) =>
+    api.post<{ emailed: number; progress: DeepDiveInterviewProgress }>(`/deep-dive/interview-rounds/${roundId}/invites/send`, input),
 };
