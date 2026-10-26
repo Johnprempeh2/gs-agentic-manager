@@ -2832,7 +2832,7 @@ describe.sequential("issue comment reopen routes", () => {
     );
   });
 
-  it("uses the reassignment stop for a combined correction and assignee update", async () => {
+  it("requires a correction before changing the assignee", async () => {
     const issue = {
       ...makeIssue("todo"),
       executionRunId: "run-1",
@@ -2865,27 +2865,11 @@ describe.sequential("issue comment reopen routes", () => {
         assigneeAgentId: "33333333-3333-4333-8333-333333333333",
       });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Post the correction before changing the assignee");
     expect(mockHeartbeatService.getRun).toHaveBeenCalledWith("run-1");
-    expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
-      "run-1",
-      "Withdrawn before its provider started because the issue was reassigned",
-      expect.objectContaining({
-        errorCode: "issue_reassigned",
-        resultJson: expect.objectContaining({
-          reassignmentStopConfirmed: true,
-        }),
-      }),
-    );
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        action: "issue.correction_requested",
-        details: expect.objectContaining({
-          targetRunId: "run-1",
-        }),
-      }),
-    );
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    expect(mockIssueService.addComment).not.toHaveBeenCalled();
   });
 
   it("delivers a saved correction to an active native session", async () => {
