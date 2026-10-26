@@ -24,6 +24,7 @@ import { formatAssigneeUserLabel } from "../lib/assignees";
 import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
 import { createIssueDetailPath, rememberIssueDetailLocationState, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
 import { prefetchIssueDetailForNavigation } from "../lib/issueDetailCache";
+import { usePreloadIssueDetailPageAfterPaint } from "../lib/issue-detail-page";
 import {
   buildSubIssueProgressSummary,
   shouldRenderSubIssueProgressSummary,
@@ -1786,6 +1787,8 @@ export function IssuesList({
     onLoadMoreIssues,
     viewState.viewMode,
   ]);
+
+  usePreloadIssueDetailPageAfterPaint(!isLoading && issues.length > 0);
 
   const canLoadMoreIssues = viewState.viewMode === "list"
     && !isLoading

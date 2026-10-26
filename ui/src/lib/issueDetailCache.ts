@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Issue, IssueComment } from "@greatstone/shared";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
+import { preloadIssueDetailPage } from "@/lib/issue-detail-page";
 import { getNextIssueCommentPageParam, ISSUE_COMMENT_PAGE_SIZE } from "@/lib/optimistic-issue-comments";
 
 const ISSUE_DETAIL_QUERY_PREFIX = ["issues", "detail"] as const;
@@ -210,6 +211,7 @@ export function prefetchIssueDetailForNavigation(
     issue?: Issue | null;
   },
 ) {
+  preloadIssueDetailPage();
   return Promise.all([
     prefetchIssueDetail(queryClient, issueRef, options),
     prefetchIssueComments(queryClient, issueRef),

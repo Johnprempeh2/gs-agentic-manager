@@ -37,6 +37,7 @@ import { loadLastInboxTab } from "./lib/inbox";
 import { sharedTaskDefaults } from "./lib/share-target";
 import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import { lazyPage } from "./lib/lazy-page";
+import { isIssueDetailPath, loadedIssueDetailPage, loadIssueDetailPage, preloadIssueDetailPage } from "./lib/issue-detail-page";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -170,7 +171,9 @@ const NewAgent = lazyPage(() => import("./pages/NewAgent"), "NewAgent");
 const JoinRequestQueue = lazyPage(() => import("./pages/JoinRequestQueue"), "JoinRequestQueue");
 
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
-const IssueDetail = lazyPage(() => import("./pages/IssueDetail"), "IssueDetail");
+const IssueDetail = lazyPage(loadIssueDetailPage, "IssueDetail", loadedIssueDetailPage);
+// A cold task URL needs this page before anything shows; start it with the app.
+if (typeof window !== "undefined" && isIssueDetailPath(window.location.pathname)) preloadIssueDetailPage();
 const TaskTree = lazyPage(() => import("./pages/TaskTree"), "TaskTree");
 const ProjectTree = lazyPage(() => import("./pages/ProjectTree"), "ProjectTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
