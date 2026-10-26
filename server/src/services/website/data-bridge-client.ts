@@ -159,6 +159,8 @@ const MAX_RETRY_AFTER_MS = 5_000;
 const errorBody = z.object({ error: z.object({ code: z.string() }), current: z.record(z.string(), z.unknown()).optional() });
 export const bridgeHealthSchema = z.object({
   ok: z.literal(true), kid: z.string(), capability: z.string(), serverTime: z.string(), schema: z.literal(BRIDGE_SCHEME),
+  /** The GSAM and website contract the site speaks (GRE-2633); a site from before it leaves it out. */
+  siteContract: z.number().int().positive().optional().catch(undefined),
 });
 export const bridgeReleaseHealthSchema = bridgeHealthSchema.extend({ siteContract: z.number().int().nonnegative() });
 export const bridgeActivityEventsSchema = z.object({

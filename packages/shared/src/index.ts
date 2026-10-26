@@ -519,6 +519,7 @@ export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
 export * from "./website-features.js";
 export * from "./website-frame.js";
+export * from "./site-contract.js";
 export * from "./types/website-data-bridge.js";
 export * from "./types/intelligence.js";
 export * from "./validators/intelligence.js";
