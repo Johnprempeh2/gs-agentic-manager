@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, caseDocuments, cases, chatEndpoints,
   clientDeliverablePublications, companies, deepDiveBuilds, deepDiveCommercials, deepDiveFindings, deepDiveHandoffs,
-  deepDiveInterviewRounds, deepDiveInterviewSets,
+  deepDiveInterviewProposals, deepDiveInterviewRounds, deepDiveInterviewSets,
   deepDiveKpis, deepDiveOfferings, deepDiveOpportunities, deepDiveOrgUnits, deepDivePeople, deepDivePersonTasks,
   deepDiveProcesses, deepDiveRoadmapItems, deepDiveSessionQuestions, deepDiveSessions, documents, pipelineCases,
   pipelineStages,
@@ -350,7 +350,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const unitId = id(), personId = id(), personTaskId = id(), offeringId = id(), processId = id(), nextProcessId = id(), handoffId = id();
     const opportunityId = id(), buildId = id(), kpiId = id(), commercialId = id(), roadmapItemId = id();
     const clientCaseId = id(), publicationId = id();
-    const interviewRoundId = id(), interviewSetId = id();
+    const interviewRoundId = id(), interviewSetId = id(), interviewProposalId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -508,6 +508,11 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     await ctx.db.insert(deepDiveInterviewSets).values({
       ...A, id: interviewSetId, roundId: interviewRoundId, unitId,
     });
+    // GRE-2666: one proposed synthesis item for company A's round.
+    await ctx.db.insert(deepDiveInterviewProposals).values({
+      ...A, id: interviewProposalId, roundId: interviewRoundId, websiteOrganisationId: "org_company_a",
+      kind: "pain", statement: "Company A proposal", rulesVersion: "sweep",
+    });
     // Clients > Deliverables publishing: a client case on company A's pipeline.
     const [stage] = await ctx.db.insert(pipelineStages).values({
       pipelineId, key: "a-stage", name: "Company A stage", kind: "working", position: 0,
@@ -558,6 +563,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/deep-dive/kpis/:kpiId": kpiId, "/api/deep-dive/commercials/:commercialId": commercialId,
       "/api/deep-dive/roadmap/:roadmapItemId": roadmapItemId,
       "/api/deep-dive/interview-rounds/:roundId": interviewRoundId, "/api/deep-dive/interview-sets/:setId": interviewSetId,
+      "/api/deep-dive/interview-proposals/:proposalId": interviewProposalId,
       "/api/client-publications/:id": publicationId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
