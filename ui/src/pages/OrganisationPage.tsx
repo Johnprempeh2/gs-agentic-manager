@@ -12,6 +12,7 @@ import {
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
+import { OrganisationWebsiteLink } from "@/components/OrganisationWebsiteLink";
 import {
   ActivityPanel,
   BillingPanel,
@@ -288,6 +289,8 @@ function OverviewDetails({
           </div>
         ) : null}
       </section>
+
+      <OrganisationWebsiteLink companyId={companyId} organisation={organisation} />
 
       <WebsitePeople companyId={companyId} websiteOrganisationId={websiteOrganisationId} />
 

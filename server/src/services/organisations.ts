@@ -127,6 +127,7 @@ function toOrganisation(row: OrganisationRow): Organisation {
     crmFields: row.crmFields ?? [],
     source: row.source as OrganisationSource,
     externalId: row.externalId,
+    websiteOrganisationId: row.websiteOrganisationId,
     archivedAt: iso(row.archivedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -490,6 +491,48 @@ export function organisationService(db: Db) {
         .where(and(eq(organisations.companyId, companyId), eq(organisations.id, id)))
         .returning();
       return row ? toOrganisation(row) : null;
+    },
+
+    /**
+     * Links the organisation to a website organisation, or clears the link with null (GRE-2682). The route has
+     * already checked that the id is on the website. One website organisation links to one organisation per company.
+     */
+    async setWebsiteLink(
+      companyId: string,
+      id: string,
+      websiteOrganisationId: string | null,
+    ): Promise<{ organisation: Organisation; previous: string | null } | null> {
+      const current = await getRow(companyId, id);
+      if (!current) return null;
+      if (websiteOrganisationId !== null) {
+        const [holder] = await db
+          .select({ id: organisations.id, name: organisations.name })
+          .from(organisations)
+          .where(and(eq(organisations.companyId, companyId), eq(organisations.websiteOrganisationId, websiteOrganisationId)))
+          .limit(1);
+        if (holder && holder.id !== id) {
+          throw conflict(`This website organisation is already linked to ${holder.name}`, {
+            code: "website_organisation_already_linked",
+            organisationId: holder.id,
+          });
+        }
+      }
+      try {
+        const [row] = await db
+          .update(organisations)
+          .set({ websiteOrganisationId, updatedAt: new Date() })
+          .where(and(eq(organisations.companyId, companyId), eq(organisations.id, id)))
+          .returning();
+        return row ? { organisation: toOrganisation(row), previous: current.websiteOrganisationId } : null;
+      } catch (error) {
+        // Two people linking the same id at once: the unique index decides.
+        if (isUniqueViolation(error)) {
+          throw conflict("This website organisation is already linked to another organisation", {
+            code: "website_organisation_already_linked",
+          });
+        }
+        throw error;
+      }
     },
 
     /** Archive hides the organisation from the list. Its contacts stay, so restore brings them back. */
