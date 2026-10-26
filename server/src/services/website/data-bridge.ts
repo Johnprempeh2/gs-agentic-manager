@@ -19,6 +19,7 @@ import type {
   WebsiteDataResource,
   WebsitePaymentReportQuery,
 } from "@greatstone/shared";
+import { SITE_CONTRACT_OUT_OF_DATE_MESSAGE, isSiteContractCurrent, siteContractDetail } from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 import { secretService } from "../secrets.js";
 import type { WebsiteEnquiry, WebsiteEnquiryReader } from "./enquiries.js";
@@ -172,8 +173,12 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     let value: WebsiteDataBridgeStatus;
     try {
       const health = await (await client(site)).health(STATUS_ACTOR);
-      value = { state: "connected", keyId: site.dataBridgeReadKeyId, url, checkedAt, message: null,
-        clockSkewSeconds: Math.round((Date.parse(health.serverTime) - now()) / 1000) };
+      const clockSkewSeconds = Math.round((Date.parse(health.serverTime) - now()) / 1000);
+      // GRE-2633: a site on an older GSAM and website contract says so, instead of failing later on a read.
+      value = isSiteContractCurrent(health)
+        ? { state: "connected", keyId: site.dataBridgeReadKeyId, url, checkedAt, message: null, clockSkewSeconds }
+        : { state: "failing", keyId: site.dataBridgeReadKeyId, url, checkedAt, clockSkewSeconds,
+          message: `${SITE_CONTRACT_OUT_OF_DATE_MESSAGE} ${siteContractDetail(health)}` };
     } catch (error) {
       if (!(error instanceof WebsiteBridgeError)) throw error;
       value = { state: "failing", keyId: site.dataBridgeReadKeyId, url, checkedAt, message: error.message, clockSkewSeconds: null };

@@ -38,6 +38,7 @@ import {
   principalPermissionGrants,
 } from "@greatstone/db";
 import type { DeepDiveSyncPayload, WebsiteDataBridgeKey } from "@greatstone/shared";
+import { contractErrors } from "./helpers/site-contract.js";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
@@ -83,6 +84,9 @@ describeEmbeddedPostgres("website Deep Dive sync (GRE-2439)", () => {
     const payload = JSON.parse(body) as DeepDiveSyncPayload;
     pushed.push({ url: url.toString(), method: init.method!, verified, body: payload });
     if (!verified) return new Response(JSON.stringify({ error: { code: "bad_signature" } }), { status: 401 });
+    // Every push GSAM makes must pass the shared contract the website checks too (GRE-2633).
+    const contractProblem = contractErrors("deepDiveSync", payload);
+    if (contractProblem) throw new Error(`the push breaks the GSAM and website contract: ${contractProblem}`);
     return Response.json({ ok: true, tenantId: payload.tenantId });
   }) as unknown as typeof fetch;
   const options: WebsiteDataBridgeOptions = {
