@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   activityLog,
   agents,
+  assets,
   companies,
   companyMemberships,
   companySecrets,
@@ -18,6 +19,7 @@ import {
   documents,
   heartbeatRuns,
   instanceSettings,
+  issueAttachments,
   issueCreateIdempotencyKeys,
   issues,
   principalPermissionGrants,
@@ -31,7 +33,9 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
 import { instanceSettingsService } from "../services/index.js";
-import { WEBSITE_CHANGE_REQUEST_ORIGIN_KIND } from "../services/website/change-request.js";
+import { WEBSITE_CHANGE_REQUEST_ORIGIN_KIND, sniffWebsiteChangeImage } from "../services/website/change-request.js";
+import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
+import { createStorageService } from "../storage/service.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -50,6 +54,7 @@ describeEmbeddedPostgres("website click to change", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   const keyFolder = mkdtempSync(path.join(os.tmpdir(), "paperclip-website-change-key-"));
+  const storage = createStorageService(createLocalDiskStorageProvider(path.join(keyFolder, "files")));
   const previousKeyFile = process.env.GSAM_SECRETS_MASTER_KEY_FILE;
   const wakeup = vi.fn(async () => undefined);
 
@@ -62,6 +67,7 @@ describeEmbeddedPostgres("website click to change", () => {
   afterEach(async () => {
     wakeup.mockClear();
     await db.delete(activityLog);
+    await db.delete(issueAttachments);
     await db.delete(issueCreateIdempotencyKeys);
     await db.delete(issues);
     await db.delete(websitePage);
@@ -73,6 +79,7 @@ describeEmbeddedPostgres("website click to change", () => {
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
     await db.delete(heartbeatRuns);
+    await db.delete(assets);
     await db.delete(agents);
     await db.delete(companySecretVersions);
     await db.delete(companySecrets);
@@ -96,7 +103,7 @@ describeEmbeddedPostgres("website click to change", () => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"], heartbeat: { wakeup } }));
+    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"], heartbeat: { wakeup }, storage }));
     instance.use(errorHandler);
     return instance;
   }
@@ -377,5 +384,132 @@ describeEmbeddedPostgres("website click to change", () => {
     expect((await http.get(url(a.company.id, a.site.id, a.page.id)).expect(200)).body).toEqual([]);
     await http.get(url(a.company.id, b.site.id, b.page.id)).expect(404);
     await http.get(url(a.company.id, a.site.id, b.page.id)).expect(404);
+  });
+
+  // GRE-2527: images, media, links and effects on the request.
+  const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4d10000000049454e44ae426082", "hex");
+  const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+
+  async function seedAsset(companyId: string) {
+    const [asset] = await db
+      .insert(assets)
+      .values({ companyId, provider: "local_disk", objectKey: `assets/${randomUUID()}.png`, contentType: "image/png", byteSize: PNG.length, sha256: "0".repeat(64) })
+      .returning();
+    return asset!;
+  }
+
+  it("the task lists every attachment with its note, in order", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const asset = await seedAsset(a.company.id);
+    const target = url(a.company.id, a.site.id, a.page.id);
+    await request(app())
+      .post(target)
+      .send(
+        body(a.page, {
+          attachments: [
+            { kind: "upload", name: "mood.png", note: "This colour" },
+            { kind: "media", source: "website", assetId: asset.id, label: "Team photo" },
+            { kind: "media", source: "studio", assetId: asset.id, label: "Sunset", note: "Crop like this" },
+            { kind: "link", url: "https://example.com/inspo", note: "The header spacing" },
+            { kind: "effect", effectId: "aurora", label: "Aurora", note: "Slower" },
+          ],
+        }),
+      )
+      .expect(201);
+    const [task] = await changeTasks(a.company.id);
+    const text = task!.description!;
+    expect(text).toContain("**What they attached**");
+    expect(text).toContain("1. Image they uploaded, attached to this task as `mood.png`. Their note: `This colour`");
+    expect(text).toContain(`2. Image from Website media \`Team photo\`: asset \`${asset.id}\`, at \`/api/assets/${asset.id}/content\`.`);
+    expect(text).toContain("3. Image from Image Studio `Sunset`");
+    expect(text).toContain("Their note: `Crop like this`");
+    expect(text).toContain("4. Reference site: `https://example.com/inspo`. Look at it for the idea; do not copy its words, images or code. Their note: `The header spacing`");
+    expect(text).toContain("5. Effect from the effects library: `aurora` (Aurora). Their note: `Slower`");
+  });
+
+  it("attachments alone make a task; the Comments list says so", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    await http
+      .post(target)
+      .send({ requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId, request: "", attachments: [{ kind: "link", url: "https://example.com" }] })
+      .expect(201);
+    const [task] = await changeTasks(a.company.id);
+    expect(task!.description).toContain("They wrote no words: what they attached says what to change.");
+    const [listed] = (await http.get(target).expect(200)).body as WebsitePageComment[];
+    expect(listed!.request).toBe("Images and references");
+  });
+
+  it("refuses another company's asset, a non-web link, a two-line note and too many attachments", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const theirs = await seedAsset(b.company.id);
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const res = await http
+      .post(target)
+      .send(body(a.page, { attachments: [{ kind: "media", source: "website", assetId: theirs.id, label: "x" }] }))
+      .expect(422);
+    expect(res.body.code).toBe("website_change_attachment_unknown");
+    await http.post(target).send(body(a.page, { attachments: [{ kind: "link", url: "javascript:alert(1)" }] })).expect(400);
+    await http.post(target).send(body(a.page, { attachments: [{ kind: "link", url: "https://a.test", note: "one\ntwo" }] })).expect(400);
+    await http.post(target).send(body(a.page, { attachments: [{ kind: "link", url: "https://a.test", note: "x".repeat(141) }] })).expect(400);
+    const eleven = Array.from({ length: 11 }, () => ({ kind: "link", url: "https://a.test" }));
+    await http.post(target).send(body(a.page, { attachments: eleven })).expect(400);
+    expect(await changeTasks(a.company.id)).toHaveLength(0);
+  });
+
+  it("stores an uploaded image on the task; refuses SVG, a renamed file, a big file and a task from another page", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const created = (await http.post(target).send(body(a.page, { attachments: [{ kind: "upload", name: "mood.png" }] })).expect(201)).body as WebsiteChangeRequestResult;
+    const images = `${target}/${created.issueId}/images`;
+
+    const stored = await http.post(images).attach("file", PNG, { filename: "mood.png", contentType: "image/png" }).expect(201);
+    expect(stored.body).toMatchObject({ issueId: created.issueId, contentType: "image/png", byteSize: PNG.length, originalFilename: "mood.png" });
+    const rows = await db.select().from(issueAttachments).where(eq(issueAttachments.issueId, created.issueId));
+    expect(rows).toHaveLength(1);
+    const [storedAsset] = await db.select().from(assets).where(eq(assets.id, rows[0]!.assetId));
+    expect(storedAsset!.contentType).toBe("image/png");
+
+    // The bytes decide, not the name or the browser's type.
+    const svg = await http.post(images).attach("file", SVG, { filename: "logo.svg", contentType: "image/svg+xml" }).expect(422);
+    expect(svg.body.code).toBe("website_change_image_type");
+    await http.post(images).attach("file", SVG, { filename: "photo.png", contentType: "image/png" }).expect(422);
+    const big = Buffer.concat([PNG, Buffer.alloc(8 * 1024 * 1024)]);
+    const tooBig = await http.post(images).attach("file", big, { filename: "big.png", contentType: "image/png" }).expect(422);
+    expect(tooBig.body.code).toBe("website_change_image_too_large");
+    await http.post(images).field("note", "no file").expect(422);
+
+    // A task that is not a change request on this page.
+    const [other] = await db.insert(issues).values({ companyId: a.company.id, title: "Other work" }).returning();
+    await http.post(`${target}/${other!.id}/images`).attach("file", PNG, { filename: "a.png", contentType: "image/png" }).expect(404);
+    expect(await db.select().from(issueAttachments).where(eq(issueAttachments.issueId, created.issueId))).toHaveLength(1);
+  });
+
+  it("image upload is company-scoped and needs website:edit", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const created = (await request(app()).post(target).send(body(a.page)).expect(201)).body as WebsiteChangeRequestResult;
+    // Company B's site path with company A's task.
+    await request(app())
+      .post(`${url(b.company.id, b.site.id, b.page.id)}/${created.issueId}/images`)
+      .attach("file", PNG, { filename: "a.png", contentType: "image/png" })
+      .expect(404);
+    const { actor } = await seedAgent(a.company.id, ["website:view"]);
+    await request(app(actor)).post(`${target}/${created.issueId}/images`).attach("file", PNG, { filename: "a.png", contentType: "image/png" }).expect(403);
+    expect(await db.select().from(issueAttachments)).toHaveLength(0);
+  });
+
+  it("knows image types by their bytes", () => {
+    expect(sniffWebsiteChangeImage(PNG)).toBe("image/png");
+    expect(sniffWebsiteChangeImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");
+    expect(sniffWebsiteChangeImage(Buffer.from("GIF89a....."))).toBe("image/gif");
+    expect(sniffWebsiteChangeImage(Buffer.from("RIFF\0\0\0\0WEBPVP8 "))).toBe("image/webp");
+    expect(sniffWebsiteChangeImage(SVG)).toBeNull();
+    expect(sniffWebsiteChangeImage(Buffer.from("RIFF\0\0\0\0WAVE"))).toBeNull();
   });
 });

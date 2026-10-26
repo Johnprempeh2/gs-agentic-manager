@@ -279,6 +279,16 @@ export interface WebsiteChangeRequestResult {
   projectId: string | null;
 }
 
+/** An image stored on a change request task (GRE-2527). */
+export interface WebsiteChangeImage {
+  attachmentId: string;
+  issueId: string;
+  contentType: string;
+  byteSize: number;
+  originalFilename: string | null;
+  contentPath: string;
+}
+
 /**
  * An open comment on a page (GRE-2350): a change request task that is not done
  * or cancelled. `number` is its place among the page's open comments, oldest
@@ -348,6 +358,11 @@ export const WEBSITE_MODULE_API_ROUTES = {
    * POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId.
    */
   pageChangeRequests: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests",
+  /**
+   * POST multipart `file` → 201 `WebsiteChangeImage` (website:edit). GRE-2527: an image the person
+   * attached to that page's change request task. PNG, JPEG, WebP or GIF by its bytes, no SVG, at most 8 MB.
+   */
+  pageChangeRequestImages: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests/:issueId/images",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
   media: "/companies/:companyId/website/sites/:siteId/media",
   /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */

@@ -16388,6 +16388,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/change-requests/{issueId}/images`,
+  tags: ["website"],
+  summary: "Ask an agent: attach an image (multipart `file`) to that page's change request task. PNG, JPEG, WebP or GIF by its bytes, no SVG, at most 8 MB; 404 when the task is not a change request on this page (website:edit)",
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
   method: "get",
   path: `${siteParams}/pages/{pageId}/change-requests`,
   tags: ["website"],
