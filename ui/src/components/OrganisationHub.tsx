@@ -524,7 +524,7 @@ export function CommercePanel({ companyId, websiteOrganisationId }: { companyId:
 // ------------------------------------------------------------------- Billing
 
 const BILLING_PERIOD_LABEL: Record<string, string> = { monthly: "Monthly", quarterly: "Quarterly", annual: "Annual", multi_year: "Multi-year" };
-const BILLING_COLUMNS = "sm:grid-cols-[minmax(0,1fr)_3rem_7rem_6rem_7rem_5rem]";
+const BILLING_COLUMNS = "org-billing-grid";
 
 function BillingCell({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
