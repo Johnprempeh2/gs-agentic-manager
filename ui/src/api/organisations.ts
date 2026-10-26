@@ -15,6 +15,7 @@ import type {
   OrganisationListItem,
   OrganisationPerson,
   OrganisationStatus,
+  SetOrganisationWebsiteLink,
   UpdateOrganisation,
   UpdateOrganisationContact,
 } from "@greatstone/shared";
@@ -53,6 +54,9 @@ export const organisationsApi = {
   create: (companyId: string, body: CreateOrganisation) => api.post<Organisation>(base(companyId), body),
   update: (companyId: string, organisationId: string, body: UpdateOrganisation) =>
     api.patch<Organisation>(`${base(companyId)}/${encodeURIComponent(organisationId)}`, body),
+  /** Links the organisation to a website organisation picked from the site's customers, or clears it with null (GRE-2682). */
+  setWebsiteLink: (companyId: string, organisationId: string, body: SetOrganisationWebsiteLink) =>
+    api.put<Organisation>(`${base(companyId)}/${encodeURIComponent(organisationId)}/website-link`, body),
   archive: (companyId: string, organisationId: string) =>
     api.post<Organisation>(`${base(companyId)}/${encodeURIComponent(organisationId)}/archive`, {}),
   createContact: (companyId: string, organisationId: string, body: CreateOrganisationContact) =>

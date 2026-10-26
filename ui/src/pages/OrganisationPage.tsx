@@ -14,6 +14,7 @@ import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
+import { OrganisationWebsiteLink } from "@/components/OrganisationWebsiteLink";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -164,6 +165,8 @@ export function OrganisationPage() {
           </div>
         ) : null}
       </section>
+
+      <OrganisationWebsiteLink companyId={companyId} organisation={organisation} />
 
       <OrganisationCommerce companyId={companyId} organisation={organisation} />
 

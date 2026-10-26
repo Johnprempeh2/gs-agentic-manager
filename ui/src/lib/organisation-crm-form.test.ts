@@ -15,6 +15,7 @@ const base = {
   notes: null,
   source: "manual",
   externalId: null,
+  websiteOrganisationId: null,
   archivedAt: null,
   createdAt: "2026-10-13T00:00:00Z",
   updatedAt: "2026-10-13T00:00:00Z",

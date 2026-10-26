@@ -25,6 +25,7 @@ const kente: OrganisationListItem = {
   ...emptyOrganisationCrmFields,
   source: "notion",
   externalId: null,
+  websiteOrganisationId: null,
   archivedAt: null,
   createdAt: "2026-10-01T09:00:00.000Z",
   updatedAt: "2026-10-15T09:00:00.000Z",
