@@ -421,7 +421,7 @@ describeEmbeddedPostgres("website click to change", () => {
     expect(text).toContain("**What they attached**");
     expect(text).toContain("1. Image they uploaded, attached to this task as `mood.png`. Their note: `This colour`");
     expect(text).toContain(`2. Image from Website media \`Team photo\`: asset \`${asset.id}\`, at \`/api/assets/${asset.id}/content\`.`);
-    expect(text).toContain("3. Image from Image Studio `Sunset`");
+    expect(text).toContain("3. Image from GS Studio `Sunset`");
     expect(text).toContain("Their note: `Crop like this`");
     expect(text).toContain("4. Reference site: `https://example.com/inspo`. Look at it for the idea; do not copy its words, images or code. Their note: `The header spacing`");
     expect(text).toContain("5. Effect from the effects library: `aurora` (Aurora). Their note: `Slower`");

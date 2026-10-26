@@ -65,7 +65,7 @@ function markupLines(markup: CreateWebsiteChangeRequest["markup"], blockId: stri
   ];
 }
 
-const ATTACHMENT_SOURCES = { website: "Website media", studio: "Image Studio" } as const;
+const ATTACHMENT_SOURCES = { website: "Website media", studio: "GS Studio" } as const;
 
 /** The task's lines listing what the person attached, in the order they added it. */
 function attachmentLines(attachments: WebsiteChangeAttachment[] | undefined): string[] {
