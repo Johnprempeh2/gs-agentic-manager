@@ -1,4 +1,5 @@
 import { reassignTaskAction } from "./reassign-task.js";
+import { setTaskMonitorAction } from "./set-task-monitor.js";
 import { createSkillAction } from "./create-skill.js";
 import { createProjectAction } from "./create-project.js";
 import { listProjectRepositoriesAction } from "./list-project-repositories.js";
@@ -49,6 +50,7 @@ import { writeDocumentAction } from "./write-document.js";
 import { deepFreezeProtocolAction } from "./freeze.js";
 
 export const GSAM_PROTOCOL_ACTIONS = deepFreezeProtocolAction([
+  setTaskMonitorAction,
   createSkillAction,
   createProjectAction,
   listProjectRepositoriesAction,

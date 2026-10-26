@@ -16,6 +16,7 @@ import type { PrpSemanticToolEnvelope } from "../protocol/replay-contract.js";
 export type CapabilitySemanticToolExposure = "always" | "optional";
 
 export type CapabilitySemanticOperationId =
+  | "set_task_monitor"
   | "search_api"
   | "call_api"
   | "get_task_context"

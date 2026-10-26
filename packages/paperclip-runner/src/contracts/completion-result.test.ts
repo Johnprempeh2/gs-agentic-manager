@@ -85,7 +85,7 @@ describe("provider-neutral completion result schema", () => {
     expect(block.inputSchema).toEqual(PRP_BLOCK_RESULT_PROVIDER_INPUT_SCHEMA);
   });
 
-  it("allows only a response-wake continuation when completion explicitly yields", () => {
+  it("allows response and monitor waits when completion explicitly yields", () => {
     const yielded = {
       ...structuredClone(baseResult),
       reportedWorkDisposition: "yielded",
@@ -101,6 +101,7 @@ describe("provider-neutral completion result schema", () => {
       },
     };
     expect(validate(yielded)).toBe(true);
+    expect(validate({ ...yielded, continuation: { ...yielded.continuation, kind: "monitor" } })).toBe(true);
     expect(validate({ ...yielded, continuation: undefined })).toBe(false);
     expect(validate({
       ...yielded,

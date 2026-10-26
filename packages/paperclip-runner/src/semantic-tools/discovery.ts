@@ -20,6 +20,7 @@ export interface CapabilityDiscoveryResult {
 const MAX_DISCOVERY_RESULTS = 10;
 
 const NAMESPACE: Readonly<Record<CapabilitySemanticOperationId, string>> = Object.freeze({
+  set_task_monitor: "continuation",
   search_api: "api_fallback",
   call_api: "api_fallback",
   get_task_context: "active_task", get_task_history: "active_task",

@@ -1,4 +1,5 @@
 export type PaperclipSemanticActionId =
+  | "set_task_monitor"
   | "search_api"
   | "call_api"
   | "get_task_context"

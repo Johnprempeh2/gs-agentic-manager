@@ -139,14 +139,14 @@ const artifactsSchema = {
   },
 } as const;
 
-const responseWakeContinuationSchema = {
+const waitContinuationSchema = {
   type: "object",
   description:
-    "Required when reportedWorkDisposition is yielded. Wait for the next response without scheduling work; include kind, summary, and a stable idempotencyKey.",
+    "Required when reportedWorkDisposition is yielded. Use response_wake for a response wait, or monitor only after a monitor is persisted on the current task.",
   additionalProperties: false,
   required: ["kind", "summary", "idempotencyKey"],
   properties: {
-    kind: { type: "string", const: "response_wake" },
+    kind: { type: "string", enum: ["response_wake", "monitor"] },
     summary: {
       type: "string",
       minLength: 1,
@@ -187,7 +187,7 @@ export const PRP_COMPLETION_RESULT_OUTPUT_SCHEMA = {
   properties: {
     ...commonResultProperties,
     reportedWorkDisposition: { enum: ["done", "needs_review", "yielded"] },
-    continuation: responseWakeContinuationSchema,
+    continuation: waitContinuationSchema,
   },
   allOf: [
     {
@@ -355,7 +355,7 @@ export const PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA = {
     reportedWorkDisposition: { enum: ["done", "needs_review", "yielded", "completed"] },
     verification: providerVerificationCompatibilitySchema,
     attentionRequests: providerAttentionCompatibilitySchema,
-    continuation: responseWakeContinuationSchema,
+    continuation: waitContinuationSchema,
   },
   // Keep the provider-facing root a concrete object. Codex code-mode renders a
   // root allOf containing only an if/then constraint as `args: unknown`, hiding
