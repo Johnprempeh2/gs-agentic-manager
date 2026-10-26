@@ -11,12 +11,17 @@ import { asc, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { websiteSite } from "@greatstone/db";
 import {
+  gsInterviewDetailSchema,
+  gsInterviewInsightSchema,
   gsInterviewInviteAnswerSchema,
   gsInterviewPersonSchema,
   gsInterviewRoundItemSchema,
   gsInterviewSendAnswerSchema,
+  gsInterviewSummarySchema,
+  gsInterviewWithdrawalSchema,
   type DeepDiveInterviewInviteStatus,
   type DeepDiveInterviewSendKind,
+  type GsInterviewDetail,
   type GsInterviewInviteAnswer,
   type GsInterviewInvitePerson,
   type GsInterviewPerson,
@@ -24,6 +29,8 @@ import {
   type GsInterviewRoundPayload,
   type GsInterviewSendAnswer,
   type GsInterviewSendBody,
+  type GsInterviewSummary,
+  type GsInterviewWithdrawal,
 } from "@greatstone/shared";
 import { z } from "zod";
 import { WebsiteBridgeError, type WebsiteBridgeActor } from "./data-bridge-client.js";
@@ -45,6 +52,12 @@ export interface InterviewBridge {
   send(scope: InterviewBridgeScope, input: GsInterviewSendBody, actor: WebsiteBridgeActor): Promise<GsInterviewSendAnswer>;
   /** `GET rounds/{roundId}/people`: status and progress only. */
   people(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewPerson[]>;
+  /** `GET rounds/{roundId}/interviews`: the interviews that may enter synthesis (GRE-2666). */
+  interviews(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewSummary[]>;
+  /** `GET rounds/{roundId}/interviews/{interviewId}`: consent and insights. The raw turns are dropped while parsing. */
+  interview(scope: InterviewBridgeScope, interviewId: string, actor: WebsiteBridgeActor): Promise<GsInterviewDetail>;
+  /** `GET rounds/{roundId}/withdrawals`: every hard delete, oldest first, all pages. */
+  withdrawals(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewWithdrawal[]>;
 }
 
 function parsed<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
@@ -62,6 +75,16 @@ export function interviewIdempotencyKey(scope: InterviewBridgeScope, what: strin
 
 const roundAnswerSchema = z.object({ round: z.unknown() });
 const peopleAnswerSchema = z.object({ items: z.array(z.unknown()) });
+const interviewAnswerSchema = z.object({ item: z.unknown() });
+const withdrawalsAnswerSchema = z.object({ items: z.array(z.unknown()), nextCursor: z.union([z.string(), z.number()]).nullable().optional() });
+/** A round has a few hundred people at most; this many pages means the site is looping. */
+const MAX_WITHDRAWAL_PAGES = 50;
+
+/** Insights one by one, so one the site sends in a form GSAM does not know names itself in the error. */
+function detailOf(value: unknown, what: string): GsInterviewDetail {
+  const detail = parsed(gsInterviewDetailSchema, value, what);
+  return { ...detail, insights: detail.insights.map((insight, index) => parsed(gsInterviewInsightSchema, insight, `${what}.insights.${index}`)) };
+}
 
 /** The website's admin bridge, on the company's one website site. */
 export function websiteInterviewBridge(db: Db): InterviewBridge {
@@ -97,6 +120,26 @@ export function websiteInterviewBridge(db: Db): InterviewBridge {
       const answer = await (await client(scope, "read")).interviewRead(`${base(scope)}/people`, {}, actor);
       return parsed(peopleAnswerSchema, answer, "people").items.map((item, index) => parsed(gsInterviewPersonSchema, item, `people.${index}`));
     },
+    async interviews(scope, actor) {
+      const answer = await (await client(scope, "read")).interviewRead(`${base(scope)}/interviews`, {}, actor);
+      return parsed(peopleAnswerSchema, answer, "interviews").items.map((item, index) => parsed(gsInterviewSummarySchema, item, `interviews.${index}`));
+    },
+    async interview(scope, interviewId, actor) {
+      const answer = await (await client(scope, "read")).interviewRead(`${base(scope)}/interviews/${encodeURIComponent(interviewId)}`, {}, actor);
+      return detailOf(parsed(interviewAnswerSchema, answer, "interview").item, "interview");
+    },
+    async withdrawals(scope, actor) {
+      const bridge = await client(scope, "read");
+      const out: GsInterviewWithdrawal[] = [];
+      let after: string | undefined;
+      for (let page = 0; page < MAX_WITHDRAWAL_PAGES; page += 1) {
+        const answer = parsed(withdrawalsAnswerSchema, await bridge.interviewRead(`${base(scope)}/withdrawals`, { after, limit: "500" }, actor), "withdrawals");
+        out.push(...answer.items.map((item, index) => parsed(gsInterviewWithdrawalSchema, item, `withdrawals.${index}`)));
+        if (answer.nextCursor === null || answer.nextCursor === undefined || answer.items.length === 0) return out;
+        after = String(answer.nextCursor);
+      }
+      throw new WebsiteBridgeError("bad_response", 200, `withdrawals: more than ${MAX_WITHDRAWAL_PAGES} pages`);
+    },
   };
 }
 
@@ -116,6 +159,9 @@ interface FakeRound {
   /** By employee id. An invitation held by email has `userId: null` until the person joins. */
   people: Map<string, FakePerson>;
   emails: { employeeId: string; kind: "invite" | DeepDiveInterviewSendKind }[];
+  /** Ended interviews, with consent, insights and the raw turns the website keeps. */
+  interviews: Map<string, GsInterviewDetail & { turns: { seq: number; role: string; content: string }[] }>;
+  withdrawals: GsInterviewWithdrawal[];
 }
 
 const FAKE_PATH: DeepDiveInterviewInviteStatus[] = ["completed", "started", "completed", "invited", "abandoned", "completed", "declined"];
@@ -160,7 +206,14 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
       if (payload.status === "open" && (payload.seatTotal <= 0 || payload.enrol.allowedEmailDomains.length === 0)) {
         throw new WebsiteBridgeError("bad_request", 400, "bad_request");
       }
-      rounds.set(scope.roundId, { organisationId: scope.organisationId, payload, people: existing?.people ?? new Map(), emails: existing?.emails ?? [] });
+      rounds.set(scope.roundId, {
+        organisationId: scope.organisationId,
+        payload,
+        people: existing?.people ?? new Map(),
+        emails: existing?.emails ?? [],
+        interviews: existing?.interviews ?? new Map(),
+        withdrawals: existing?.withdrawals ?? [],
+      });
       return { id: scope.roundId, status: payload.status, joinUrl: `https://example.test/#join/${scope.roundId.slice(0, 8)}`,
         retentionDays: payload.retentionDays ?? 90, readoutAt: payload.readoutAt ?? null, closedAt: null, deletionDate: null };
     },
@@ -235,6 +288,18 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
         return out;
       });
     },
+    async interviews(scope) {
+      return [...roundOf(scope).interviews.values()].map((detail) => ({ ...detail.interview }));
+    },
+    async interview(scope, interviewId) {
+      const detail = roundOf(scope).interviews.get(interviewId);
+      if (!detail) throw new WebsiteBridgeError("not_found", 404, "not_found");
+      // As the site answers: turns included. Parsing drops them, as for the real bridge.
+      return detailOf(structuredClone(detail), "interview");
+    },
+    async withdrawals(scope) {
+      return [...roundOf(scope).withdrawals];
+    },
   };
 
   return {
@@ -249,6 +314,19 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
       /** An existing website account, as if they had signed up before. */
       addUser(user: { userId: string; email: string; name: string }) {
         users.set(user.userId, user);
+      },
+      /** An ended interview, as the website stores it. */
+      addInterview(roundId: string, detail: GsInterviewDetail & { turns?: { seq: number; role: string; content: string }[] }) {
+        rounds.get(roundId)?.interviews.set(detail.interview.interviewId, { ...detail, turns: detail.turns ?? [] });
+      },
+      /** A hard delete on the website: one interview, or every interview of the person when `interviewId` is null. */
+      withdraw(roundId: string, input: { userId: string | null; interviewId: string | null }) {
+        const round = rounds.get(roundId);
+        if (!round) return;
+        for (const [id, detail] of round.interviews) {
+          if (input.interviewId ? id === input.interviewId : detail.interview.userId === input.userId) round.interviews.delete(id);
+        }
+        round.withdrawals.push({ cursor: String(round.withdrawals.length + 1), userId: input.userId, interviewId: input.interviewId, at: new Date(now()).toISOString() });
       },
       /** The person opens the join link and makes their account: the invitation becomes theirs by user id. */
       join(roundId: string, employeeId: string, userId: string) {

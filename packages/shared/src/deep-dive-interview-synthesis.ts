@@ -390,6 +390,8 @@ export interface DeepDiveSynthesisPerson {
   websiteUserId: string | null;
   roleTitle: string;
   unitId: string | null;
+  /** Without attribution consent the person is not proposed for the board. */
+  attribution: boolean;
 }
 
 export interface DeepDiveSynthesisEvidence {
@@ -472,6 +474,7 @@ export function buildDeepDiveSynthesisEvidence(roundId: string, interviews: GsIn
       websiteUserId: detail.interview.userId,
       roleTitle: detail.interview.roleTitle,
       unitId: unitOf(detail),
+      attribution: detail.consent.attribution,
     })),
   };
 }
