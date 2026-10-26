@@ -387,8 +387,8 @@ export function InterviewsPanel({ companyId, websiteOrganisationId }: { companyI
         ) : (
           <ul className="divide-y divide-border rounded-md border border-border" data-testid="organisation-interview-sets">
             {current.sets.map((set) => (
-              <li key={set.id} className="flex flex-col gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
-                <div className="min-w-0 flex-1">
+              <li key={set.id} className="flex flex-col items-start gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
+                <div className="w-full min-w-0 sm:w-auto sm:flex-1">
                   <p className="break-words font-medium">{set.target.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {[set.target.detail, `${set.questions.length} questions`, set.approvedAt ? `approved ${formatDate(set.approvedAt)}` : null]
