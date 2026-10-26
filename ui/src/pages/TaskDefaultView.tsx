@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { IssueTree } from "@greatstone/shared";
 import { Navigate, useLocation, useParams } from "@/lib/router";
@@ -20,7 +20,20 @@ export function treeIsWorthOpening(tree: IssueTree): boolean {
  * Any query or hash (`?view=task`, a comment or document anchor, a run link)
  * means "the task page", so the tree's way back can never bounce.
  */
-export function TaskDefaultView({ task }: { task: ReactNode }) {
+export function TaskDefaultView({
+  task,
+  loadTask,
+  taskLoaded,
+}: {
+  task: ReactNode;
+  /**
+   * Loads the task page's code. Until `taskLoaded` says it is in, this view
+   * keeps its own skeleton, so the page never suspends after the tree answer
+   * (a suspend there shows the route fallback and React holds the page 300 ms).
+   */
+  loadTask?: () => Promise<unknown>;
+  taskLoaded?: () => boolean;
+}) {
   const { issueId = "" } = useParams<{ issueId: string }>();
   const location = useLocation();
   // Once a task page is showing, it stays: adding a sub-task, or the page
@@ -36,11 +49,29 @@ export function TaskDefaultView({ task }: { task: ReactNode }) {
     retry: false,
   });
 
+  const [taskLoadFailed, setTaskLoadFailed] = useState(false);
+  const [, setTaskArrived] = useState(false);
+  const waitingForTask = Boolean(loadTask && taskLoaded && !taskLoaded() && !taskLoadFailed);
+  useEffect(() => {
+    if (!waitingForTask || !loadTask) return;
+    let live = true;
+    loadTask().then(
+      () => live && setTaskArrived(true),
+      // The route's own loader reports the failure (and reloads a stale bundle).
+      () => live && setTaskLoadFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [waitingForTask, loadTask]);
+
   if (plainLink && treeQuery.isLoading) return <PageSkeleton variant="detail" />;
   if (plainLink && treeQuery.data && treeIsWorthOpening(treeQuery.data)) {
     // Replace, so Back from the tree returns to wherever the link was.
     return <Navigate to={`/issues/${issueId}/tree`} replace state={location.state} />;
   }
+
+  if (waitingForTask) return <PageSkeleton variant="detail" />;
 
   shownAsTask.current.add(issueId);
   const root = treeQuery.data?.nodes[0];

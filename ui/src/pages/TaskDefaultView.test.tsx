@@ -53,7 +53,10 @@ async function flush() {
   for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function open(entries: string[]) {
+async function open(
+  entries: string[],
+  taskCode?: { loadTask: () => Promise<unknown>; taskLoaded: () => boolean },
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   flushSync(() => {
     root.render(
@@ -61,7 +64,7 @@ async function open(entries: string[]) {
         <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
           <Routes>
             <Route path="/desk" element={<p data-page="desk" />} />
-            <Route path="/issues/:issueId" element={<TaskDefaultView task={<p data-page="task" />} />} />
+            <Route path="/issues/:issueId" element={<TaskDefaultView task={<p data-page="task" />} {...taskCode} />} />
             <Route path="/issues/:issueId/tree" element={<p data-page="tree" />} />
           </Routes>
           <Probe />
@@ -132,6 +135,39 @@ describe("TaskDefaultView", () => {
     await open(["/issues/GRE-1#comment-abc"]);
     expect(page()).toBe("task");
     expect(getTreeMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps its skeleton until the task page code is in, so the page never suspends", async () => {
+    getTreeMock.mockResolvedValue(treeOf(node("1", null)));
+    let loaded = false;
+    let finishLoad!: () => void;
+    const loadTask = vi.fn(() => new Promise<void>((resolve) => {
+      finishLoad = () => {
+        loaded = true;
+        resolve();
+      };
+    }));
+    await open(["/issues/GRE-1"], { loadTask, taskLoaded: () => loaded });
+    expect(page()).toBeUndefined();
+    expect(loadTask).toHaveBeenCalledTimes(1);
+
+    finishLoad();
+    await flush();
+    expect(page()).toBe("task");
+  });
+
+  it("shows the task page when its code is already in, without loading it again", async () => {
+    getTreeMock.mockResolvedValue(treeOf(node("1", null)));
+    const loadTask = vi.fn(() => Promise.resolve());
+    await open(["/issues/GRE-1"], { loadTask, taskLoaded: () => true });
+    expect(page()).toBe("task");
+    expect(loadTask).not.toHaveBeenCalled();
+  });
+
+  it("hands over to the task page when its code fails to load", async () => {
+    getTreeMock.mockResolvedValue(treeOf(node("1", null)));
+    await open(["/issues/GRE-1"], { loadTask: () => Promise.reject(new Error("chunk")), taskLoaded: () => false });
+    expect(page()).toBe("task");
   });
 
   it("falls back to the task page when the tree does not load", async () => {

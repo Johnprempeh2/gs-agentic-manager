@@ -37,6 +37,7 @@ import { loadLastInboxTab } from "./lib/inbox";
 import { sharedTaskDefaults } from "./lib/share-target";
 import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import { lazyPage } from "./lib/lazy-page";
+import { isIssueDetailPageLoaded, isIssueDetailPath, loadedIssueDetailPage, loadIssueDetailPage, preloadIssueDetailPage } from "./lib/issue-detail-page";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -170,7 +171,9 @@ const NewAgent = lazyPage(() => import("./pages/NewAgent"), "NewAgent");
 const JoinRequestQueue = lazyPage(() => import("./pages/JoinRequestQueue"), "JoinRequestQueue");
 
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
-const IssueDetail = lazyPage(() => import("./pages/IssueDetail"), "IssueDetail");
+const IssueDetail = lazyPage(loadIssueDetailPage, "IssueDetail", loadedIssueDetailPage);
+// A cold task URL needs this page before anything shows; start it with the app.
+if (typeof window !== "undefined" && isIssueDetailPath(window.location.pathname)) preloadIssueDetailPage();
 const TaskTree = lazyPage(() => import("./pages/TaskTree"), "TaskTree");
 const ProjectTree = lazyPage(() => import("./pages/ProjectTree"), "ProjectTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
@@ -345,7 +348,7 @@ function boardRoutes() {
       <Route path="chats/:agentRef" element={<AgentChat />} />
       <Route path="messages/:chatId" element={<TeamChat />} />
       <Route path="issues/new" element={<NewTaskRoute />} />
-      <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} />} />
+      <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} loadTask={loadIssueDetailPage} taskLoaded={isIssueDetailPageLoaded} />} />
       <Route path="issues/:issueId/tree" element={<TaskTree />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
