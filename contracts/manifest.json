@@ -64,14 +64,16 @@
       "fixture": "site-contract/fixtures/document-request-answer.json"
     },
     "interviews": {
-      "what": "None yet: GSAM and the website exchange no interview messages today. Add the schema here before the first one is built."
+      "what": "The signed admin bridge contract for interview rounds, invites, reads, synthesis and agreement acceptance.",
+      "doc": "gs-interview-v1/README.md"
     }
   },
   "files": {
-    "README.md": "41692bf5b7e1440d69a46bc35a8bafdb90827519ea8b7f8135480f82a0edb1c2",
+    "README.md": "064aea9cc7ccf4e64aace87d1f3ff3b3818b3112241cd66fc9d3597193a4b509",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
-    "gs-bridge-v1/README.md": "46d58921325543222afa304eeaa4e6e78538c13011185427200685694b8f612d",
+    "gs-bridge-v1/README.md": "4f47590ac2a22cf93ed37619bf27664c8cdb3cdc10eae9b6ad5762a4c27a625a",
     "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
+    "gs-interview-v1/README.md": "caaaae40633578e29f722179b27ae5491b8d43922ff610c93b96dcdf45f0e302",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
     "site-contract/fixtures/bridge-health.json": "f63e3e7429bd4a0e1821f8ef7287122a62ebb1e975d496bcd6166ed705997878",
     "site-contract/fixtures/contract-file.json": "1630f8e3b026dbdc394cc14b97f9da162bda5fcde93e19adbf8137b1657b62f2",
@@ -89,5 +91,5 @@
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "d87ab8ec623e7ee61489e1ba59e0cf590ceda177593cf3746c99a1aa806981b8"
+  "contentHash": "8bf687266e94475317cb81f85bf809b0186ad9add2a3d65efb556617c772b05d"
 }

@@ -13,7 +13,7 @@ fixtures and the version numbers of every message and endpoint between the two:
 | `GET /_contract.json` (static, unsigned) | `site-contract/schemas/contract-file.schema.json` | `siteContract`, `contractsCommit` |
 | Deep Dive push and its answer | `site-contract/schemas/deep-dive-sync*.schema.json` | `gs-deep-dive-sync-v1` |
 | Document request call back | `site-contract/schemas/document-request-answer.schema.json` | |
-| Interviews | none yet | |
+| Interviews | `gs-interview-v1/README.md` | `gs-interview-v1` |
 
 `manifest.json` has the contract `version`, the `minSiteVersion` GSAM works with, and a sha256 of every file.
 
