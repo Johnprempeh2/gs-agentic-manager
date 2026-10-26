@@ -4,6 +4,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   writeFile,
@@ -279,6 +280,7 @@ export class OpenCodeServerDriver implements HarnessDriver {
     );
     await mkdir(root, { recursive: true, mode: 0o700 });
     await writeFile(join(root, "workspace"), `${cwd}\n`, { mode: 0o600 });
+    await removeLegacyIsolatedHomes(root);
     const trace = await createProviderTraceFileSink({
       path: this.#options.environment?.GSAM_PROVIDER_TRACE_PATH,
       provider: "opencode",
@@ -1850,7 +1852,9 @@ async function startRuntime(input: {
   // HOME contains a read-only skill snapshot, whose destination must be fresh.
   // Keep OpenCode's XDG data stable for provider-session recovery while giving
   // every launch (including retries and recovery) a new isolated HOME.
-  const isolatedHome = await mkdtemp(join(input.root, "home-"));
+  const homesRoot = join(input.root, OPENCODE_ISOLATED_HOMES_DIRECTORY);
+  await mkdir(homesRoot, { recursive: true, mode: 0o700 });
+  const isolatedHome = await mkdtemp(join(homesRoot, "home-"));
   await chmod(isolatedHome, 0o700);
   try {
     await materializeNativeRuntimeSkills(
@@ -2490,8 +2494,9 @@ function sanitizedEnvironmentKeys(): string[] {
   ];
 }
 
-function sessionRoot(
-  runtimeDirectory: string,
+export const OPENCODE_ISOLATED_HOMES_DIRECTORY = "homes";
+
+export function opencodeRuntimeSessionDirectoryName(
   normalizedSessionId: string,
 ): string {
   const safe = normalizedSessionId
@@ -2499,7 +2504,20 @@ function sessionRoot(
     .slice(0, 120);
   if (!safe || safe === "." || safe === "..")
     throw new Error("Invalid normalized OpenCode session id");
-  return join(resolve(runtimeDirectory), safe);
+  return safe;
+}
+
+function sessionRoot(runtimeDirectory: string, normalizedSessionId: string): string {
+  return join(resolve(runtimeDirectory), opencodeRuntimeSessionDirectoryName(normalizedSessionId));
+}
+
+async function removeLegacyIsolatedHomes(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name.startsWith("home-")) {
+      await rm(join(root, entry.name), { recursive: true, force: true });
+    }
+  }
 }
 
 function validateWorkspace(value: string): string {
