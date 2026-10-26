@@ -1054,6 +1054,22 @@ describe("openapi routes", () => {
 });
 
 
+describe("agent project access OpenAPI contract", () => {
+  it("marks additive access as board-only and validates project ids", () => {
+    const { spec } = loadSpecRoutes();
+    const path = spec.paths["/api/agents/{id}/project-access"];
+    for (const operation of [path.get, path.post]) {
+      expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+      expect(operation.responses["200"].content["application/json"].schema.required).toEqual(["projectIds", "canManage"]);
+    }
+    expect(path.post.requestBody.content["application/json"].schema).toMatchObject({
+      additionalProperties: false,
+      required: ["projectIds"],
+    });
+    expect(path.post.responses["409"]).toBeDefined();
+  });
+});
+
 describe("heartbeat run ID OpenAPI contract", () => {
   it("publishes the runtime UUID constraint and 400 response on all agent-router run endpoints", async () => {
     const response = await request(createApp()).get("/api/openapi.json");

@@ -60,6 +60,7 @@ import { InlineBanner } from "../components/InlineBanner";
 import { BuiltInBundlePanel } from "../components/BuiltInBundlePanel";
 import { ConfigureBuiltInAgentModal } from "../components/ConfigureBuiltInAgentModal";
 import { TrustPresetSection } from "../components/TrustPresetSection";
+import { AgentProjectAccessSettings } from "../components/AgentProjectAccessSettings";
 import { FileTree, buildFileTree } from "../components/FileTree";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { SourceResolvedFoldCallout } from "../components/SourceResolvedFoldCallout";
@@ -2237,6 +2238,14 @@ export function ConfigurationTab({
           })
         }
       /> : null}
+
+      {content === "permissions" && lowTrustSelected && companyId ? (
+        <AgentProjectAccessSettings
+          agentId={agent.id}
+          companyId={companyId}
+          projects={(boundaryProjects ?? []).map(project => ({ id: project.id, name: project.name }))}
+        />
+      ) : null}
 
       {content === "permissions" ? <div>
         <h3 className="text-sm font-medium mb-3">Permissions</h3>

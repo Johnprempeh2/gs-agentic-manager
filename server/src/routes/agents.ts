@@ -44,6 +44,7 @@ import {
   upsertAgentInstructionsFileSchema,
   updateAgentInstructionsBundleSchema,
   updateAgentPermissionsSchema,
+  addAgentProjectAccessSchema,
   updateAgentInstructionsPathSchema,
   wakeAgentSchema,
   updateAgentSchema,
@@ -88,6 +89,7 @@ import {
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { setAgentPipelineAccess } from "../services/agent-pipeline-access.js";
 import { setAgentWebsiteAccess } from "../services/agent-website-access.js";
+import { addAgentProjectAccess, readAgentProjectAccess } from "../services/agent-project-access.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
@@ -5131,6 +5133,21 @@ export function agentRoutes(
     }
 
     res.status(201).json(redactAgentRowForResponse(agent));
+  });
+
+  router.get("/agents/:id/project-access", async (req, res) => {
+    assertBoard(req);
+    const agent = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Agent not found");
+    if (!agent) return;
+    res.json(await readAgentProjectAccess(db, req.actor, agent.companyId, agent.id));
+  });
+
+  router.post("/agents/:id/project-access", validate(addAgentProjectAccessSchema), async (req, res) => {
+    assertBoard(req);
+    const agent = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Agent not found");
+    if (!agent) return;
+    await assertBoardCanManageAgentsForCompany(req, agent.companyId);
+    res.json(await addAgentProjectAccess(db, req.actor, agent.companyId, agent.id, req.body.projectIds));
   });
 
   router.patch("/agents/:id/permissions", validate(updateAgentPermissionsSchema), async (req, res) => {

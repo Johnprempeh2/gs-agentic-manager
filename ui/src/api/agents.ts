@@ -42,6 +42,11 @@ export interface AgentKey {
   revokedAt: Date | null;
 }
 
+export interface AgentProjectAccess {
+  projectIds: string[];
+  canManage: boolean;
+}
+
 export interface AdapterModel {
   id: string;
   label: string;
@@ -155,6 +160,10 @@ export const agentsApi = {
     api.patch<Agent>(agentPath(id, companyId), data),
   updatePermissions: (id: string, data: AgentPermissionUpdate, companyId?: string) =>
     api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
+  projectAccess: (id: string, companyId?: string) =>
+    api.get<AgentProjectAccess>(agentPath(id, companyId, "/project-access")),
+  addProjectAccess: (id: string, projectIds: string[], companyId?: string) =>
+    api.post<AgentProjectAccess>(agentPath(id, companyId, "/project-access"), { projectIds }),
   instructionsBundle: (id: string, companyId?: string) =>
     api.get<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle")),
   updateInstructionsBundle: (
