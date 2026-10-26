@@ -31,7 +31,9 @@ const LABELS = {
   "s2-issue-cold-median-unthrottled": "issue detail cold open median",
   "s2-issue-warm-median-unthrottled": "issue detail warm open median",
   "s2-board-cold-median-unthrottled": "board cold open median",
+  "s2-issue-warm-page-code-requests-unthrottled": "issue detail warm open page-code requests",
 };
+const COUNTS = new Set(["s2-issue-warm-page-code-requests-unthrottled"]);
 
 export function s2Budgets(config) {
   return { ...config, budgets: config.budgets.filter((budget) => budget.group === "ci" && budget.input === "s2") };
@@ -40,8 +42,9 @@ export function s2Budgets(config) {
 export function summarize({ ok, results }) {
   const rows = results.map((r) => {
     const label = LABELS[r.id] ?? r.id;
-    const value = typeof r.value === "number" ? `${r.value} ms` : "n/a";
-    return `  ${r.status === "pass" ? "ok  " : "OVER"} ${label}: ${value} (limit ${r.limit} ms${r.status === "pass" ? "" : `; ${r.reason}`})`;
+    const unit = COUNTS.has(r.id) ? "" : " ms";
+    const value = typeof r.value === "number" ? `${r.value}${unit}` : "n/a";
+    return `  ${r.status === "pass" ? "ok  " : "OVER"} ${label}: ${value} (limit ${r.limit}${unit}${r.status === "pass" ? "" : `; ${r.reason}`})`;
   });
   const failed = results.filter((r) => r.status !== "pass").map((r) => LABELS[r.id] ?? r.id);
   const verdict = ok

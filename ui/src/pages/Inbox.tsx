@@ -55,6 +55,7 @@ import {
   withIssueDetailHeaderSeed,
 } from "../lib/issueDetailBreadcrumb";
 import { prefetchIssueDetailForNavigation } from "../lib/issueDetailCache";
+import { usePreloadIssueDetailPageAfterPaint } from "../lib/issue-detail-page";
 import {
   hasBlockingShortcutDialog,
   isKeyboardShortcutTextInputTarget,
@@ -1055,6 +1056,8 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(sharedTouchedIssues, touchedIssuesRaw, touchedIssuesUpdatedAt);
+
+  usePreloadIssueDetailPageAfterPaint(!isMineIssuesLoading && !isTouchedIssuesLoading);
 
   const { data: heartbeatRuns, isLoading: isRunsLoading } = useQuery({
     queryKey: [...queryKeys.heartbeats(selectedCompanyId!), "limit", INBOX_HEARTBEAT_RUN_LIMIT],
