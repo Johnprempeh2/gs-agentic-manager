@@ -57,6 +57,8 @@ function setup(overrides: Partial<WebsiteFrameHostOptions<typeof frameWindow>> =
         blocks: [{ type: "Hero", label: "Hero" }],
         // A current editor host (GRE-2357); tests of an older one leave it out.
         editorContract: 1,
+        // A site on the current GSAM and website contract (GRE-2633).
+        siteContract: 1,
         ...payload,
       },
     });
@@ -492,6 +494,17 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(onEditorState).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1000);
     expect(below.sentOf("hello")).toHaveLength(1);
+  });
+
+  it("refuses a site on an older GSAM and website contract, in the editor and the preview (GRE-2633)", async () => {
+    const none = await ready({}, { siteContract: undefined });
+    expect(none.session.state).toEqual({ phase: "site-out-of-date", siteContract: null });
+    expect(none.loadDraft).not.toHaveBeenCalled();
+    expect(none.sentOf("load-draft")).toHaveLength(0);
+    const preview = await ready({ mode: "preview" }, { siteContract: undefined });
+    expect(preview.session.state).toEqual({ phase: "site-out-of-date", siteContract: null });
+    const ahead = await ready({}, { siteContract: 2 });
+    expect(ahead.session.state.phase).toBe("ready");
   });
 
   it("a silent editor host is out of date after 10 s; preview keeps no-answer (GRE-2357)", () => {

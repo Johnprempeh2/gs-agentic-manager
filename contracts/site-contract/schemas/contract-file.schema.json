@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/contract-file",
+  "title": "GET /_contract.json: a static file the site serves with the contract it speaks. The release gate reads it when /_release is not JSON. Not signed; no secrets, no client data.",
+  "type": "object",
+  "required": ["siteContract", "contractsCommit"],
+  "additionalProperties": false,
+  "properties": {
+    "siteContract": { "type": "integer", "minimum": 1 },
+    "contractsCommit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }
+  }
+}

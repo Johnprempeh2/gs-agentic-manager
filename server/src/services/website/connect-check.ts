@@ -4,17 +4,18 @@
 // of that site's addresses, and the site's `/_release` reports an engine GSAM
 // can publish to. The engine version it reports is stored on the site.
 
+import { SITE_CONTRACT_OUT_OF_DATE_MESSAGE, isSiteContractCurrent, siteContractDetail, siteContractOf } from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 import { WEBSITE_RELEASE_SCHEMA } from "./publish.js";
 
 /** The oldest site engine GSAM publishes to (`engine.version` in `/_release`). */
 export const WEBSITE_MIN_ENGINE_VERSION = "0.1.0";
 
-export type WebsiteConnectProblem = "netlify_not_found" | "token" | "token_scope" | "domain" | "no_release_route" | "engine_old";
+export type WebsiteConnectProblem = "netlify_not_found" | "token" | "token_scope" | "domain" | "no_release_route" | "engine_old" | "site_contract_old";
 
 export type WebsiteConnectResult =
   | { ok: true; engineVersion: string }
-  | { ok: false; problem: WebsiteConnectProblem; engineVersion?: string | null };
+  | { ok: false; problem: WebsiteConnectProblem; engineVersion?: string | null; siteContract?: number | null };
 
 export interface WebsiteConnectInput {
   netlifySiteId: string;
@@ -35,6 +36,8 @@ export const WEBSITE_CONNECT_MESSAGES: Record<WebsiteConnectProblem, string> = {
   domain: "That address does not reach this Netlify site. Check the live address.",
   no_release_route: "This site is not set up for GSAM yet. Ask your website team to set it up, then connect again.",
   engine_old: "This site needs an update before it can connect. Ask your website team to update it.",
+  // GRE-2633: the site's `/_release` reports an older GSAM and website contract, or none.
+  site_contract_old: SITE_CONTRACT_OUT_OF_DATE_MESSAGE,
 };
 
 /** The `connect.err.*` refusal as the API returns it: the copy, its key, and the details line when the copy has one. */
@@ -44,7 +47,9 @@ export function websiteConnectRefusal(result: Extract<WebsiteConnectResult, { ok
       ? "Details: no answer at /_release."
       : result.problem === "engine_old"
         ? `Details: site version ${result.engineVersion ?? "unknown"}. GSAM needs ${WEBSITE_MIN_ENGINE_VERSION} or later.`
-        : null;
+        : result.problem === "site_contract_old"
+          ? `Details: ${siteContractDetail({ siteContract: result.siteContract })}`
+          : null;
   return new HttpError(422, WEBSITE_CONNECT_MESSAGES[result.problem], {
     code: `website_connect_${result.problem}`,
     messageKey: `connect.err.${result.problem}`,
@@ -155,5 +160,8 @@ export async function checkWebsiteConnection(
   const schemas = Array.isArray(release?.supportedReleaseSchemas) ? release.supportedReleaseSchemas : null;
   const readsOurSchema = schemas === null || schemas.includes(WEBSITE_RELEASE_SCHEMA);
   if (!engineVersionAtLeast(engineVersion) || !readsOurSchema) return { ok: false, problem: "engine_old", engineVersion };
+  if (!isSiteContractCurrent(release)) {
+    return { ok: false, problem: "site_contract_old", engineVersion, siteContract: siteContractOf(release) };
+  }
   return { ok: true, engineVersion };
 }

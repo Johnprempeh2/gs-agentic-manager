@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/bridge-error",
+  "title": "Any gs-bridge error answer, both ways: the code only",
+  "type": "object",
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": ["bad_key", "expired", "bad_signature", "replay", "capability_denied", "ip_denied", "not_found", "bad_request", "unavailable",
+            "conflict", "denied", "idempotency_mismatch", "over_refundable"]
+        }
+      }
+    }
+  }
+}

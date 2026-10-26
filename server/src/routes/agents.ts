@@ -66,6 +66,7 @@ import {
 } from "@greatstone/adapter-utils/server-utils";
 import { trackAgentCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
+import { registerAgentProjectAccessRoutes } from "./agent-project-access.js";
 import { inheritNativeRunnerAdapterConfig } from "../services/native-runtime/native-agent-runtime-inheritance.js";
 import { agentInstructionsBundleMode } from "../services/agent-instructions.js";
 import {
@@ -5132,6 +5133,8 @@ export function agentRoutes(
 
     res.status(201).json(redactAgentRowForResponse(agent));
   });
+
+  registerAgentProjectAccessRoutes(router, db);
 
   router.patch("/agents/:id/permissions", validate(updateAgentPermissionsSchema), async (req, res) => {
     const id = req.params.id as string;

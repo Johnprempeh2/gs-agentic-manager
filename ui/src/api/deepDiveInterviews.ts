@@ -21,7 +21,7 @@ import { api } from "./client";
 export const deepDiveInterviewsQueryKeys = {
   round: (companyId: string) => ["deep-dive-interview-round", companyId] as const,
   progress: (companyId: string) => ["deep-dive-interview-round", companyId, "progress"] as const,
-  proposals: (roundId: string) => ["deep-dive-interview-round", "proposals", roundId] as const,
+  proposals: (roundId: string) => ["deep-dive-interview-proposals", roundId] as const,
   release: (roundId: string) => ["deep-dive-interview-round", "release", roundId] as const,
 };
 

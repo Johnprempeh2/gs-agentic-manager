@@ -1,6 +1,8 @@
 import {
+  SITE_CONTRACT_OUT_OF_DATE_MESSAGE,
   checkWebsiteEditorOrigin,
   isWebsiteFrameAssetUrl,
+  siteContractDetail,
   type WebsiteFrameInsertMediaResult,
   type WebsiteFrameMediaEntry,
   type WebsiteFrameSetMotionResult,
@@ -144,6 +146,8 @@ export function frameConnectionMessage(connection: WebsiteFrameConnection, edito
       return `This site's editor speaks protocol ${connection.supported.join(", ") || "none"}; GSAM speaks 1. Update the site engine or GSAM.`;
     case "refused-site":
       return "This address serves a different site.";
+    case "site-out-of-date":
+      return `${SITE_CONTRACT_OUT_OF_DATE_MESSAGE} ${siteContractDetail(connection)}`;
     default:
       return null;
   }

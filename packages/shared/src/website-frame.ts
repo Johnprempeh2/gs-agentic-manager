@@ -338,6 +338,12 @@ export const websiteFrameHelloAckSchema = z.object({
    */
   editorContract: protocolNumber.optional().catch(undefined),
   /**
+   * Added for GRE-2633: the GSAM and website contract the site speaks
+   * (`SITE_CONTRACT_VERSION`). Left out or below the minimum, GSAM shows
+   * "Out of date: update the website" instead of the frame.
+   */
+  siteContract: protocolNumber.optional().catch(undefined),
+  /**
    * Added at editor contract 2 (GRE-2394): the page the hello named has content
    * on the live site (`blocks` at the top level). `import-live` puts it in the
    * draft. Null or left out: the live site has nothing GSAM can import.

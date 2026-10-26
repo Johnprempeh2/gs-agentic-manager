@@ -60,6 +60,7 @@ import { InlineBanner } from "../components/InlineBanner";
 import { BuiltInBundlePanel } from "../components/BuiltInBundlePanel";
 import { ConfigureBuiltInAgentModal } from "../components/ConfigureBuiltInAgentModal";
 import { TrustPresetSection } from "../components/TrustPresetSection";
+import { AgentProjectAccessSettings } from "../components/AgentProjectAccessSettings";
 import { FileTree, buildFileTree } from "../components/FileTree";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { SourceResolvedFoldCallout } from "../components/SourceResolvedFoldCallout";
@@ -2236,6 +2237,12 @@ export function ConfigurationTab({
             ...buildPermissionsForTrustPreset(nextPermissions, nextPermissions.trustPreset === "low_trust_review" ? "low_trust_review" : "standard"),
           })
         }
+      /> : null}
+
+      {content === "permissions" && companyId && lowTrustSelected ? <AgentProjectAccessSettings
+        agentId={agent.id}
+        companyId={companyId}
+        projects={(boundaryProjects ?? []).map((project) => ({ id: project.id, name: project.name }))}
       /> : null}
 
       {content === "permissions" ? <div>

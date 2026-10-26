@@ -7,7 +7,7 @@ const input = { netlifySiteId: "netlify-site", domain: "www.check.test", token: 
 describe("website connect check (GRE-2137)", () => {
   it("reads the engine version from the shape the site engine serves at /_release", async () => {
     const { fetchImpl } = fakeNetlifyConnect({
-      release: { status: 200, body: { siteId: "x", number: 1, source: "baked", engine: { version: "0.1.0", commit: "0".repeat(40) }, supportedReleaseSchemas: [1], refused: null } },
+      release: { status: 200, body: { siteId: "x", number: 1, source: "baked", engine: { version: "0.1.0", commit: "0".repeat(40) }, supportedReleaseSchemas: [1], siteContract: 1, refused: null } },
     });
     await expect(checkWebsiteConnection(input, { fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.1.0" });
   });
@@ -20,6 +20,15 @@ describe("website connect check (GRE-2137)", () => {
   it("an engine that does not read GSAM's release schema is connect.err.engine_old", async () => {
     const { fetchImpl } = fakeNetlifyConnect({ release: { status: 200, body: { engine: { version: "0.5.0" }, supportedReleaseSchemas: [2] } } });
     await expect(checkWebsiteConnection(input, { fetchImpl })).resolves.toEqual({ ok: false, problem: "engine_old", engineVersion: "0.5.0" });
+  });
+
+  it("a site that reports no GSAM and website contract, or an older one, is connect.err.site_contract_old (GRE-2633)", async () => {
+    const none = fakeNetlifyConnect({ release: { status: 200, body: { engine: { version: "0.5.0" }, supportedReleaseSchemas: [1] } } });
+    await expect(checkWebsiteConnection(input, { fetchImpl: none.fetchImpl })).resolves.toEqual({
+      ok: false, problem: "site_contract_old", engineVersion: "0.5.0", siteContract: null,
+    });
+    const ahead = fakeNetlifyConnect({ release: { status: 200, body: { engine: { version: "0.5.0" }, supportedReleaseSchemas: [1], siteContract: 2 } } });
+    await expect(checkWebsiteConnection(input, { fetchImpl: ahead.fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.5.0" });
   });
 
   it("matches the live address to the Netlify site's addresses", () => {

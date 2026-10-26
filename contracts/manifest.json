@@ -1,0 +1,95 @@
+{
+  "_comment": "The one contract between GSAM and the website (GRE-2633). Canonical in gs-agentic-manager; the website vendors this folder with contracts/check.mjs --vendor. Never edit a copy by hand. Test data only.",
+  "name": "gs-site-contract",
+  "version": 1,
+  "minSiteVersion": 1,
+  "surfaces": {
+    "bridgeHealth": {
+      "what": "GET /api/admin/v1/health, signed gs-bridge-v1 read. Reports siteContract.",
+      "schemes": [
+        "gs-bridge-v1",
+        "gs-bridge-v2"
+      ],
+      "schema": "site-contract/schemas/bridge-health.schema.json",
+      "fixture": "site-contract/fixtures/bridge-health.json"
+    },
+    "bridgeError": {
+      "what": "Every gs-bridge error answer, both ways.",
+      "schema": "site-contract/schemas/bridge-error.schema.json",
+      "fixture": "site-contract/fixtures/bridge-error.json"
+    },
+    "bridgeSigning": {
+      "what": "How a bridge call is signed: the canonical string and test vectors.",
+      "doc": "gs-bridge-v1/README.md",
+      "vectors": "gs-bridge-v1/vectors.json"
+    },
+    "editorHelloAck": {
+      "what": "The editor frame's hello-ack payload. Reports siteContract.",
+      "frameProtocols": [
+        1
+      ],
+      "editorContract": 1,
+      "editorCopyContract": 2,
+      "schema": "site-contract/schemas/editor-hello-ack.schema.json",
+      "fixture": "site-contract/fixtures/editor-hello-ack.json"
+    },
+    "release": {
+      "what": "GET /_release, and the release file GSAM writes. Reports siteContract.",
+      "releaseSchemas": [
+        1
+      ],
+      "minEngineVersion": "0.1.0",
+      "schema": "site-contract/schemas/release-answer.schema.json",
+      "fixture": "site-contract/fixtures/release-answer.json"
+    },
+    "contractFile": {
+      "what": "GET /_contract.json, a static file the site serves. The release gate reads it when /_release is not JSON. Reports siteContract and the GSAM commit the contract was vendored from.",
+      "schema": "site-contract/schemas/contract-file.schema.json",
+      "fixture": "site-contract/fixtures/contract-file.json"
+    },
+    "deepDiveSync": {
+      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant.",
+      "syncSchema": "gs-deep-dive-sync-v1",
+      "schema": "site-contract/schemas/deep-dive-sync.schema.json",
+      "fixture": "site-contract/fixtures/deep-dive-sync.json"
+    },
+    "deepDiveSyncAck": {
+      "what": "The site's answer to a Deep Dive push.",
+      "schema": "site-contract/schemas/deep-dive-sync-ack.schema.json",
+      "fixture": "site-contract/fixtures/deep-dive-sync-ack.json"
+    },
+    "documentRequestAnswer": {
+      "what": "POST <gsam>/api/website-bridge/v1/tenants/:tenantId/document-requests/:requestId/answer, the site's signed call back.",
+      "schema": "site-contract/schemas/document-request-answer.schema.json",
+      "fixture": "site-contract/fixtures/document-request-answer.json"
+    },
+    "interviews": {
+      "what": "GSAM runs a Parallel Interview round on the website.",
+      "doc": "gs-interview-v1/README.md"
+    }
+  },
+  "files": {
+    "README.md": "064aea9cc7ccf4e64aace87d1f3ff3b3818b3112241cd66fc9d3597193a4b509",
+    "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
+    "gs-bridge-v1/README.md": "46d58921325543222afa304eeaa4e6e78538c13011185427200685694b8f612d",
+    "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
+    "gs-interview-v1/README.md": "b0e51343c5e223cccc999745daaa59a425c783d1bf0a47b7ecf387d93abedea2",
+    "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
+    "site-contract/fixtures/bridge-health.json": "f63e3e7429bd4a0e1821f8ef7287122a62ebb1e975d496bcd6166ed705997878",
+    "site-contract/fixtures/contract-file.json": "1630f8e3b026dbdc394cc14b97f9da162bda5fcde93e19adbf8137b1657b62f2",
+    "site-contract/fixtures/deep-dive-sync-ack.json": "733b1cf20a3f1dc12d293085e13d6da6b6df674ecaa949d10c8f95fcf5a7c254",
+    "site-contract/fixtures/deep-dive-sync.json": "eff09ada56454332c4aa54dbf22f23c035e076c185ee98374a414b4dfb6e4c17",
+    "site-contract/fixtures/document-request-answer.json": "7ea0101d728462ec2a4d8792b5180a41826d7ac4b2a67100115a107ac3b24269",
+    "site-contract/fixtures/editor-hello-ack.json": "41882c0173b9e43fcee824f084386a8b840f421af6ce1d64dbabcee9d8962e23",
+    "site-contract/fixtures/release-answer.json": "f6dc3cdc4555d22f37fd9dc4e4268253bd9ae648cabfca6fec437bea7c600d65",
+    "site-contract/schemas/bridge-error.schema.json": "82423e96de61b7d123d0a8480486781c2d2d1d5a89813691b32ddfbd6954cc26",
+    "site-contract/schemas/bridge-health.schema.json": "9e86eeea6422b5a7758c57c20fdc60f3d1284c7398338ccb436785a9f1d0b546",
+    "site-contract/schemas/contract-file.schema.json": "5ab97032c17bf348ebddaa4100657d1245ad74c3f52a19e157c9aeda79050070",
+    "site-contract/schemas/deep-dive-sync-ack.schema.json": "55392e3ff4023ebcbe7724ace741325244a903131c699bbfd1af1d2b7eb50915",
+    "site-contract/schemas/deep-dive-sync.schema.json": "16676cddb8a6b981802b818608772adee405b18695509e8720aadd96d7a29f76",
+    "site-contract/schemas/document-request-answer.schema.json": "12e6ceec3a8aa7b78815adfebf39930aece5b4e537173df350bf144318f0c798",
+    "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
+    "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
+  },
+  "contentHash": "bfe97888271dc46fa77b4ae905bfade5e74a0d5af98087ac42d8aa6372075339"
+}

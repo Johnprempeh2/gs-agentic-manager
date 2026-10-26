@@ -233,6 +233,20 @@ release_gate_check() {
   return 1
 }
 
+# site_contract_check <commit>
+# The GSAM and website contract gate (GRE-2633). Passes when every site
+# connected on live GSAM speaks at least the minSiteVersion in <commit>'s
+# contracts/manifest.json (scripts/greatstone-site-contract-gate.mjs). A commit
+# with no contract has nothing to check. Prints the verdict.
+site_contract_check() {
+  local manifest
+  if ! manifest="$(git -C "$RELEASE_REPO" show "$1:contracts/manifest.json" 2>/dev/null)"; then
+    say "this release has no GSAM and website contract; nothing to check."
+    return 0
+  fi
+  printf '%s' "$manifest" | node "$GS_SCRIPT_DIR/greatstone-site-contract-gate.mjs" "$LIVE_URL" "$LIVE_BOARD_KEY_FILE"
+}
+
 # Makes the annotated <live-tag> on <commit> with the message of <rc-tag>: its
 # title and changelog (GRE-120). The one place a live-* tag is made, for a
 # release from the app and a release by hand alike.

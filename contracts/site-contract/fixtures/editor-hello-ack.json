@@ -1,0 +1,13 @@
+{
+  "protocol": 1,
+  "nonce": "AAECAwQFBgcICQoLDA0ODw",
+  "siteId": "site-test-1",
+  "engine": { "version": "0.4.0", "commit": "0123456789abcdef0123456789abcdef01234567" },
+  "supportedReleaseSchemas": [1],
+  "blocks": [{ "type": "Hero", "label": "Hero" }, { "type": "Text", "label": "Text" }],
+  "siteContract": 1,
+  "editorContract": 2,
+  "editorCommands": ["undo", "redo", "save", "layout", "import-live"],
+  "editorMessages": [],
+  "liveContent": null
+}

@@ -5,6 +5,7 @@ import type {
   AgentDesiredSkillEntry,
   AgentSkillAssignmentMode,
   AgentPermissions,
+  AgentProjectAccess,
   AgentDetail,
   AgentInstructionsBundle,
   AgentInstructionsFileDetail,
@@ -155,6 +156,10 @@ export const agentsApi = {
     api.patch<Agent>(agentPath(id, companyId), data),
   updatePermissions: (id: string, data: AgentPermissionUpdate, companyId?: string) =>
     api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
+  getProjectAccess: (id: string, companyId?: string) =>
+    api.get<AgentProjectAccess>(agentPath(id, companyId, "/project-access")),
+  addProjectAccess: (id: string, projectIds: string[], companyId?: string) =>
+    api.post<AgentProjectAccess>(agentPath(id, companyId, "/project-access"), { projectIds }),
   instructionsBundle: (id: string, companyId?: string) =>
     api.get<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle")),
   updateInstructionsBundle: (
