@@ -10,6 +10,7 @@ import {
   cases,
   companies,
   createDb,
+  deepDiveFindings,
   deepDiveInterviewProposals,
   deepDiveInterviewRounds,
   deepDiveOrgUnits,
@@ -56,6 +57,7 @@ describeEmbeddedPostgres("Parallel Interview release to the client (GRE-2667)", 
 
   afterEach(async () => {
     await db.delete(deepDiveInterviewRounds);
+    await db.delete(deepDiveFindings);
     await db.delete(deepDiveOrgUnits);
     await db.delete(activityLog);
     await db.delete(caseDocuments);
@@ -169,11 +171,14 @@ describeEmbeddedPostgres("Parallel Interview release to the client (GRE-2667)", 
       }],
     }).expect(201);
     const rows = await db.select().from(deepDiveInterviewProposals).where(eq(deepDiveInterviewProposals.roundId, roundId));
+    streamCaseId = stream!.id;
     return { company, roundId, agent, rows };
   }
 
+  /** The stream an accepted theme's finding goes in (GRE-2756). */
+  let streamCaseId = "";
   const decide = (id: string, decision: "accepted" | "rejected") =>
-    request(app(person)).post(`/api/deep-dive/interview-proposals/${id}/decision`).send({ decision }).expect(200);
+    request(app(person)).post(`/api/deep-dive/interview-proposals/${id}/decision`).send({ decision, streamCaseId }).expect(200);
 
   it("sends nothing to the website before a person releases, and refuses a synthesis that is not reviewed", async () => {
     bridge = createFakeInterviewBridge();
