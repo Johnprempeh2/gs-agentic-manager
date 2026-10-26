@@ -121,6 +121,11 @@ export const organisationContacts = pgTable(
     organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     role: text("role"),
+    // The person's account on the client website (GRE-2658). Client users live
+    // in the website's database, so a linked contact points there and keeps no
+    // copy of their email. `email` is only for a CRM entry (an import or a
+    // prospect added by hand) that has no website account yet.
+    websiteUserId: text("website_user_id"),
     email: text("email"),
     phone: text("phone"),
     isKeyContact: boolean("is_key_contact").notNull().default(false),
@@ -139,5 +144,12 @@ export const organisationContacts = pgTable(
       .on(table.companyId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
     sourceCheck: check("organisation_contacts_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')`),
+    websiteUserIdx: index("organisation_contacts_company_website_user_idx")
+      .on(table.companyId, table.websiteUserId)
+      .where(sql`${table.websiteUserId} is not null`),
+    linkedNoEmailCheck: check(
+      "organisation_contacts_linked_no_email_check",
+      sql`${table.websiteUserId} is null or ${table.email} is null`,
+    ),
   }),
 );

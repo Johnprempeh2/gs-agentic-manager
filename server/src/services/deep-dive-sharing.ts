@@ -3,7 +3,16 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import {
   cases,
+  deepDiveBuilds,
+  deepDiveCommercials,
+  deepDiveFindingEvidence,
+  deepDiveFindings,
   deepDiveItemFiles,
+  deepDiveKpis,
+  deepDiveOpportunities,
+  deepDiveOpportunityFindings,
+  deepDiveRoadmapItems,
+  deepDiveRoadmapKpis,
   pipelineCaseDocumentRequests,
   pipelineCaseEvidence,
   pipelineCases,
@@ -14,7 +23,8 @@ import { notFound } from "../errors.js";
 // Deep Dive sharing (GRE-2366). Every Deep Dive item is Internal unless a
 // person sets Shared. The only way client-facing code reads items is
 // listSharedDeepDiveItemsForClient (and their files,
-// listSharedDeepDiveFilesForClient), and the only way it writes them is
+// listSharedDeepDiveFilesForClient; findings, opportunities and KPIs,
+// listSharedDeepDiveRecordsForClient), and the only way it writes them is
 // withDeepDiveClientWrite: inside it the cases_guard_writes trigger (migration
 // 0394) lets the client change only the unlocked fields of its own Shared items.
 
@@ -131,6 +141,106 @@ export async function listSharedDeepDiveFilesForClient(
       heldAt: heldAt ? heldAt.toISOString() : null,
     };
   });
+}
+
+/**
+ * Shared findings, opportunities and KPIs of one client (GRE-2632). A finding
+ * is the client's when its stream is. Opportunities and KPIs belong to the
+ * company, not to a client, so their client is read from their links, and an
+ * unclear one is never sent:
+ * - an opportunity is the client's when it has linked findings and every one
+ *   is on that client's streams;
+ * - a KPI is the client's when it reaches at least one opportunity through
+ *   roadmap → commercial → build, and every opportunity it reaches is the
+ *   client's. A broken link in the chain reaches nothing.
+ * Visibility of a record decides only whether it is sent, never whose it is.
+ */
+export async function listSharedDeepDiveRecordsForClient(db: Db, scope: DeepDiveClientScope) {
+  const [findingRows, evidenceRows, opportunityLinks, kpiLinks] = await Promise.all([
+    db
+      .select({ finding: deepDiveFindings, streamClientCaseId: cases.clientCaseId })
+      .from(deepDiveFindings)
+      .innerJoin(cases, and(eq(cases.id, deepDiveFindings.streamCaseId), eq(cases.companyId, deepDiveFindings.companyId)))
+      .where(eq(deepDiveFindings.companyId, scope.companyId))
+      .orderBy(asc(deepDiveFindings.createdAt), asc(deepDiveFindings.id)),
+    db
+      .select({ findingId: deepDiveFindingEvidence.findingId, count: sql<number>`count(*)::int` })
+      .from(deepDiveFindingEvidence)
+      .where(eq(deepDiveFindingEvidence.companyId, scope.companyId))
+      .groupBy(deepDiveFindingEvidence.findingId),
+    db
+      .select({ opportunityId: deepDiveOpportunityFindings.opportunityId, findingId: deepDiveOpportunityFindings.findingId })
+      .from(deepDiveOpportunityFindings)
+      .where(eq(deepDiveOpportunityFindings.companyId, scope.companyId)),
+    db
+      .select({ kpiId: deepDiveRoadmapKpis.kpiId, opportunityId: deepDiveBuilds.opportunityId })
+      .from(deepDiveRoadmapKpis)
+      .innerJoin(deepDiveRoadmapItems, and(
+        eq(deepDiveRoadmapItems.id, deepDiveRoadmapKpis.roadmapItemId),
+        eq(deepDiveRoadmapItems.companyId, scope.companyId),
+      ))
+      .leftJoin(deepDiveCommercials, and(
+        eq(deepDiveCommercials.id, deepDiveRoadmapItems.commercialId),
+        eq(deepDiveCommercials.companyId, scope.companyId),
+      ))
+      .leftJoin(deepDiveBuilds, and(eq(deepDiveBuilds.id, deepDiveCommercials.buildId), eq(deepDiveBuilds.companyId, scope.companyId)))
+      .where(eq(deepDiveRoadmapKpis.companyId, scope.companyId)),
+  ]);
+
+  const findingClient = new Map(findingRows.map((row) => [row.finding.id, row.streamClientCaseId]));
+  const evidenceCount = new Map(evidenceRows.map((row) => [row.findingId, row.count]));
+  /** The ids whose every link points at this client, and that have at least one link. */
+  const ownedBy = (links: { owner: string; target: string | null }[], isMine: (target: string) => boolean) => {
+    const verdict = new Map<string, boolean>();
+    for (const { owner, target } of links) {
+      if (target === null) continue;
+      verdict.set(owner, (verdict.get(owner) ?? true) && isMine(target));
+    }
+    return new Set([...verdict].filter(([, mine]) => mine).map(([id]) => id));
+  };
+  const myOpportunityIds = ownedBy(
+    opportunityLinks.map((l) => ({ owner: l.opportunityId, target: l.findingId })),
+    (findingId) => findingClient.get(findingId) === scope.clientCaseId,
+  );
+  const myKpiIds = ownedBy(
+    kpiLinks.map((l) => ({ owner: l.kpiId, target: l.opportunityId })),
+    (opportunityId) => myOpportunityIds.has(opportunityId),
+  );
+
+  const [opportunities, kpis] = await Promise.all([
+    myOpportunityIds.size === 0 ? [] : db
+      .select()
+      .from(deepDiveOpportunities)
+      .where(and(
+        eq(deepDiveOpportunities.companyId, scope.companyId),
+        eq(deepDiveOpportunities.visibility, "shared"),
+        inArray(deepDiveOpportunities.id, [...myOpportunityIds]),
+      ))
+      .orderBy(asc(deepDiveOpportunities.createdAt), asc(deepDiveOpportunities.id)),
+    myKpiIds.size === 0 ? [] : db
+      .select()
+      .from(deepDiveKpis)
+      .where(and(
+        eq(deepDiveKpis.companyId, scope.companyId),
+        eq(deepDiveKpis.visibility, "shared"),
+        inArray(deepDiveKpis.id, [...myKpiIds]),
+      ))
+      .orderBy(asc(deepDiveKpis.createdAt), asc(deepDiveKpis.id)),
+  ]);
+
+  return {
+    findings: findingRows
+      .filter((row) => row.streamClientCaseId === scope.clientCaseId && row.finding.visibility === "shared")
+      .map(({ finding }) => ({ ...finding, evidenceCount: evidenceCount.get(finding.id) ?? 0 })),
+    opportunities: opportunities.map((row) => ({
+      ...row,
+      findingIds: opportunityLinks.filter((l) => l.opportunityId === row.id).map((l) => l.findingId),
+    })),
+    kpis: kpis.map((row) => ({
+      ...row,
+      opportunityIds: [...new Set(kpiLinks.filter((l) => l.kpiId === row.id && l.opportunityId).map((l) => l.opportunityId!))],
+    })),
+  };
 }
 
 /**

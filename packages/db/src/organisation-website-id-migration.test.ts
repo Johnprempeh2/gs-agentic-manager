@@ -10,7 +10,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./test-embedded-postgres.js";
 
-const MIGRATION_FILE = "0405_organisation_website_id.sql";
+const MIGRATION_FILE = "0406_organisation_website_id.sql";
 const migrationSql = fs.readFileSync(path.join(import.meta.dirname, "migrations", MIGRATION_FILE), "utf8");
 const cleanups: Array<() => Promise<void>> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -41,7 +41,7 @@ describe("organisation website id migration (GRE-2682)", () => {
 
 describeEmbeddedPostgres("organisation website id executable migration (GRE-2682)", () => {
   it("applies on an empty database and on one with organisations, keeps every row, and rolls back", async () => {
-    // Every migration, 0405 included, on an empty database.
+    // Every migration, 0406 included, on an empty database.
     const database = await startEmbeddedPostgresTestDatabase("paperclip-organisation-website-id-");
     cleanups.push(database.cleanup);
     const sql = postgres(database.connectionString, { max: 1, onnotice: () => {} });
@@ -52,7 +52,7 @@ describeEmbeddedPostgres("organisation website id executable migration (GRE-2682
         await sql`INSERT INTO companies (id, name, issue_prefix) VALUES (${id!}, ${`Company ${prefix}`}, ${prefix!})`;
       }
 
-      // Back to before 0405, then rows written by the previous app.
+      // Back to before 0406, then rows written by the previous app.
       for (const statement of rollbackStatements()) await sql.unsafe(statement);
       await sql`DELETE FROM "drizzle"."__drizzle_migrations" WHERE "hash" = ${createHash("sha256").update(migrationSql).digest("hex")}`;
       expect(await inspectMigrations(database.connectionString)).toMatchObject({
