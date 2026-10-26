@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, CalendarClock, FileText, Mail, Pencil, Phone, StickyNote } from "lucide-react";
-import type { CrmFile, CrmTimelineEntry, OrganisationDetail, OrganisationHistory } from "@greatstone/shared";
+import type { CrmFile, CrmTimelineEntry, OrganisationHistory } from "@greatstone/shared";
 import { casesApi } from "@/api/cases";
 import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOverview";
 import { deepDiveSessionsApi, deepDiveSessionsQueryKeys } from "@/api/deepDiveSessions";
@@ -16,12 +16,18 @@ import { ClientPublications, EngagementTimelineView } from "@/components/ClientP
 import { ErrorState } from "@/components/ErrorState";
 import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { PipelineCaseEvidence } from "@/components/PipelineCaseFiles";
-import { SharedWithClientBadge } from "@/components/SharedWithClientBadge";
+import { ClientVisibilityBadge } from "@/components/SharedWithClientBadge";
 import { Badge } from "@/components/ui/badge";
 import { useCommerceSite } from "@/hooks/useCommerceSite";
 import { CLIENT_CASE_TYPE, readClientRecord } from "@/lib/client-case";
 import { formatBytes } from "@/lib/issue-output";
-import { clientShared, hubDocumentRequests, type ClientShared } from "@/lib/organisation-hub";
+import {
+  WEBSITE_LINK_TASK,
+  clientShared,
+  hubDocumentRequests,
+  websiteClientUsers,
+  type ClientShared,
+} from "@/lib/organisation-hub";
 import { formatPipelineItemEvent } from "@/lib/pipeline-item-detail";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
@@ -32,7 +38,9 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** The tasks that will fill the placeholder tabs. */
 const INTERVIEWS_TASK = "GRE-2611";
-const BILLING_TASK = "GRE-2629";
+const BILLING_TASK = "GRE-2630";
+/** The task that pulls the website's client activity into GSAM (PR #985), and the site side. */
+const WEBSITE_ACTIVITY_TASK = "GRE-2635";
 
 export function HubSection({ title, action, children, label }: { title: string; action?: ReactNode; children: ReactNode; label?: string }) {
   return (
@@ -52,6 +60,30 @@ function SourceLink({ to, children }: { to: string; children: ReactNode }) {
 
 function Placeholder({ children }: { children: ReactNode }) {
   return <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">{children}</div>;
+}
+
+function TaskLink({ task }: { task: string }) {
+  return <Link to={`/issues/${task}`} className="font-medium text-foreground hover:underline">{task}</Link>;
+}
+
+/**
+ * The hub's banner when the client has no website organisation id (GRE-2609).
+ * The website sections then stay empty: GSAM never matches a client by name or email.
+ */
+export function WebsiteLinkNotice() {
+  return (
+    <div role="status" className="rounded-lg border border-border bg-muted/40 p-3 text-sm" data-testid="organisation-not-linked">
+      <p className="font-medium">Not linked to a website organisation</p>
+      <p className="mt-0.5 text-muted-foreground">
+        Client users, Commerce and website activity are read from the website by its organisation id, never by name or email.
+        Linking is added in <TaskLink task={WEBSITE_LINK_TASK} />.
+      </p>
+    </div>
+  );
+}
+
+function NotLinked({ what }: { what: string }) {
+  return <Placeholder>{what} show here once this client is linked to its website organisation.</Placeholder>;
 }
 
 export function NoEngagement() {
@@ -209,6 +241,49 @@ export function EngagementSummary({
   );
 }
 
+// -------------------------------------------------------------------- People
+
+/**
+ * The client's users, read from the website by the organisation id (GRE-2609).
+ * Read only: names and emails stay on the website; GSAM keeps no copy.
+ */
+export function WebsitePeople({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string | null }) {
+  const { commerce } = useCommerceSite(companyId);
+  const siteId = commerce?.site.id ?? null;
+  const customer = useQuery({
+    queryKey: queryKeys.website.data(companyId, siteId ?? "", "customers", "get", websiteOrganisationId ?? ""),
+    queryFn: () => websiteDataBridgeApi.get(companyId, siteId!, "customers", websiteOrganisationId!),
+    enabled: Boolean(siteId && websiteOrganisationId),
+  });
+  const users = websiteClientUsers(customer.data?.item);
+  return (
+    <HubSection title="Client users" label="Client users">
+      <p className="text-xs text-muted-foreground">From the client's website account. Read only; change them on the website.</p>
+      {!websiteOrganisationId ? <NotLinked what="The client's website users" /> : null}
+      {websiteOrganisationId && !siteId ? (
+        <Placeholder>Client users are read through Greatstone's website bridge, which is not available for this company.</Placeholder>
+      ) : null}
+      {websiteOrganisationId && siteId && customer.isLoading ? <p className="text-sm text-muted-foreground">Loading the client's users…</p> : null}
+      {customer.error ? <ErrorState error={customer.error} compact /> : null}
+      {customer.data && users.length === 0 ? <p className="text-sm text-muted-foreground">No users on the client's website account yet.</p> : null}
+      {users.length ? (
+        <ul className="divide-y divide-border rounded-lg border border-border" data-testid="organisation-website-users">
+          {users.map((user) => (
+            <li key={user.id} className="flex flex-col gap-0.5 px-3 py-2 text-sm sm:flex-row sm:items-baseline sm:gap-3">
+              <span className="min-w-0 font-medium sm:w-1/3 sm:truncate">
+                {user.name ?? user.email ?? "Unnamed user"}
+                {user.role ? <span className="ml-1 font-normal text-muted-foreground">({user.role})</span> : null}
+              </span>
+              <span className="min-w-0 flex-1 break-all text-muted-foreground">{user.email}</span>
+              <span className="shrink-0 font-mono text-xs text-muted-foreground" title="Website user id">{user.id}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </HubSection>
+  );
+}
+
 // ------------------------------------------------------ Executive Discovery
 
 const DISCOVERY_KINDS = new Set<CrmTimelineEntry["kind"]>(["note", "call", "activity", "email"]);
@@ -259,7 +334,7 @@ export function InterviewsPanel() {
     <HubSection title="Interviews">
       <Placeholder>
         The Parallel Interview module is being built in{" "}
-        <Link to={`/issues/${INTERVIEWS_TASK}`} className="font-medium text-foreground hover:underline">{INTERVIEWS_TASK}</Link>.
+        <TaskLink task={INTERVIEWS_TASK} />.
         This client's interview rounds, who finished, and the released synthesis will show here when it ships.
       </Placeholder>
     </HubSection>
@@ -390,7 +465,12 @@ export function DocumentsPanel({
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {shared.documentRequestIds.has(request.id) ? <SharedWithClientBadge title="Asked on the client's website hub" /> : null}
+                    <ClientVisibilityBadge
+                      shared={shared.documentRequestIds.has(request.id)}
+                      sharedTitle="Asked on the client's website hub"
+                      notSharedLabel="Not on website"
+                      notSharedTitle="Not asked on the client's website hub"
+                    />
                     <Badge variant={state === "missing" ? "secondary" : "outline"}>{REQUEST_STATE_LABEL[state]}</Badge>
                   </div>
                 </li>
@@ -424,7 +504,7 @@ export function DeliverablesPanel({ caseId, companyId }: { caseId: string | null
     <HubSection title="Deliverables" action={<SourceLink to="/deliverables">All deliverables</SourceLink>}>
       <p className="text-xs text-muted-foreground">Draft, sent for approval, approved, published and accepted, with each receipt. Published and accepted ones are shared with the client.</p>
       <div className="rounded-lg border border-border px-4">
-        <ClientPublications caseId={caseId} companyId={companyId} />
+        <ClientPublications caseId={caseId} companyId={companyId} showSetupNotices={false} />
       </div>
     </HubSection>
   );
@@ -432,12 +512,13 @@ export function DeliverablesPanel({ caseId, companyId }: { caseId: string | null
 
 // ------------------------------------------------------------------ Commerce
 
-export function CommercePanel({ companyId, organisation }: { companyId: string; organisation: OrganisationDetail }) {
+export function CommercePanel({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string | null }) {
   const { commerce } = useCommerceSite(companyId);
   if (!commerce) {
     return <Placeholder>Commerce reads Greatstone's website with the Shop feature on. It is not available for this company.</Placeholder>;
   }
-  return <OrganisationCommerce companyId={companyId} organisation={organisation} />;
+  if (!websiteOrganisationId) return <NotLinked what="Quotes, orders, invoices and licences" />;
+  return <OrganisationCommerce companyId={companyId} websiteOrganisationId={websiteOrganisationId} />;
 }
 
 // ------------------------------------------------------------------- Billing
@@ -446,9 +527,8 @@ export function BillingPanel() {
   return (
     <HubSection title="Recurring billing">
       <Placeholder>
-        Recurring billing lines are not recorded yet. Where they will live is being decided in{" "}
-        <Link to={`/issues/${BILLING_TASK}`} className="font-medium text-foreground hover:underline">{BILLING_TASK}</Link>.
-        One-off quotes, orders, invoices and licences are on the Commerce tab.
+        Recurring billing lines live in the website's Commerce database and will be read through the website bridge.
+        That read is being built in <TaskLink task={BILLING_TASK} />. One-off quotes, orders, invoices and licences are on the Commerce tab.
       </Placeholder>
     </HubSection>
   );
@@ -466,10 +546,12 @@ export function ActivityPanel({
   detail,
   stages,
   history,
+  websiteOrganisationId,
 }: {
   detail: PipelineCaseDetail | null;
   stages: PipelineStage[];
   history: OrganisationHistory | undefined;
+  websiteOrganisationId: string | null;
 }) {
   const caseId = detail?.case.id ?? "";
   const events = useQuery({
@@ -497,6 +579,14 @@ export function ActivityPanel({
           ) : null}
         </HubSection>
       ) : null}
+      <HubSection title="On the website" label="Website activity">
+        {websiteOrganisationId ? (
+          <Placeholder>
+            What the client does on the website (sign-ins, uploads, acceptances) will show here, read by its website organisation id.
+            It arrives with <TaskLink task={WEBSITE_ACTIVITY_TASK} />.
+          </Placeholder>
+        ) : <NotLinked what="The client's actions on the website" />}
+      </HubSection>
       {timeline.length ? (
         <HubSection title="Activities and notes">
           <ul className="divide-y divide-border rounded-md border border-border">
@@ -504,7 +594,7 @@ export function ActivityPanel({
           </ul>
         </HubSection>
       ) : null}
-      {!detail && !timeline.length ? <Placeholder>No activity for this organisation yet.</Placeholder> : null}
+      {!detail && !timeline.length ? <p className="text-sm text-muted-foreground">No activity in GSAM for this organisation yet.</p> : null}
     </div>
   );
 }
@@ -535,7 +625,8 @@ export function ClientViewPanel({ companyId, caseId }: { companyId: string; case
           ) : (
             <div className="grid gap-3 sm:grid-cols-2" data-testid="organisation-website-view">
               <ViewList title="Deep Dive items" rows={data.items.map((item) => ({ id: item.id, text: item.title }))} />
-              <ViewList title="Files" rows={data.files.map((file) => ({ id: file.id, text: file.title, meta: file.status === "missing" ? "Missing" : null }))} />
+              {/* Only files that exist; a missing one is still a request, listed under Document requests. */}
+              <ViewList title="Files" rows={data.files.filter((file) => file.status !== "missing").map((file) => ({ id: file.id, text: file.title }))} />
               <ViewList
                 title="Document requests"
                 rows={data.documentRequests.map((request) => ({ id: request.id, text: request.title, meta: request.status === "open" ? "Open" : "Received" }))}

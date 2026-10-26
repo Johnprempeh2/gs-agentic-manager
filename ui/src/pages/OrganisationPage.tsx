@@ -1,10 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, History, Mail, Pencil, Phone, Sparkles, Star } from "lucide-react";
+import { Building2, History, Pencil, Sparkles } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
   type CrmRecordField,
-  type OrganisationContact,
   type OrganisationDetail,
   type OrganisationHistory,
   type OrganisationHistoryCase,
@@ -24,6 +23,8 @@ import {
   DocumentsPanel,
   EngagementSummary,
   InterviewsPanel,
+  WebsiteLinkNotice,
+  WebsitePeople,
   useClientShared,
   useEngagementCase,
 } from "@/components/OrganisationHub";
@@ -39,7 +40,13 @@ import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { organisationAskContext } from "@/lib/ask-everest";
 import { openAskEverest } from "@/lib/ask-everest-events";
-import { ORGANISATION_HUB_TABS, engagementCaseId, organisationHubTab, type OrganisationHubTab } from "@/lib/organisation-hub";
+import {
+  ORGANISATION_HUB_TABS,
+  engagementCaseId,
+  organisationHubTab,
+  websiteOrganisationIdOf,
+  type OrganisationHubTab,
+} from "@/lib/organisation-hub";
 import { Link, useParams, useSearchParams } from "@/lib/router";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { ORGANISATION_STATUS_BADGE, OrganisationDialogContent } from "./Organisations";
@@ -116,6 +123,8 @@ export function OrganisationPage() {
   const organisation = detail.data;
   const contacts = organisation.contacts.filter((contact) => !contact.archivedAt);
   const clientCaseId = engagement.isClient ? caseId : null;
+  // Every website read about this client is keyed by this id (GRE-2609); null means not linked.
+  const websiteOrganisationId = websiteOrganisationIdOf(organisation);
   // Until the engagement is known, a tab cannot tell "no engagement" from "not loaded yet".
   const engagementLoading = history.isLoading || (Boolean(caseId) && engagement.query.isLoading);
   const needsEngagement = !["overview", "interviews", "billing", "commerce"].includes(tab);
@@ -173,6 +182,8 @@ export function OrganisationPage() {
         </label>
       ) : null}
 
+      {websiteOrganisationId ? null : <WebsiteLinkNotice />}
+
       <div>
         <Tabs value={tab} onValueChange={(value) => openTab(value as OrganisationHubTab)} className="mb-4">
           <PageTabBar items={ORGANISATION_HUB_TABS} value={tab} onValueChange={(value) => openTab(value as OrganisationHubTab)} align="start" ariaLabel="Client section" />
@@ -186,7 +197,7 @@ export function OrganisationPage() {
               {engagement.detail ? (
                 <EngagementSummary companyId={companyId} caseIds={caseIds} detail={engagement.detail} stages={engagement.stages} isClient={engagement.isClient} />
               ) : null}
-              <OverviewDetails organisation={organisation} companyId={companyId} contacts={contacts} history={history} />
+              <OverviewDetails organisation={organisation} companyId={companyId} websiteOrganisationId={websiteOrganisationId} history={history} />
             </>
           ) : null}
           {!engagementLoading && tab === "discovery" ? <DiscoveryPanel detail={engagement.detail} stages={engagement.stages} history={history.data} /> : null}
@@ -196,9 +207,9 @@ export function OrganisationPage() {
             <DocumentsPanel caseId={clientCaseId} organisationId={organisation.id} history={history.data} shared={shared} />
           ) : null}
           {!engagementLoading && tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
-          {tab === "commerce" ? <CommercePanel companyId={companyId} organisation={organisation} /> : null}
+          {tab === "commerce" ? <CommercePanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
           {tab === "billing" ? <BillingPanel /> : null}
-          {!engagementLoading && tab === "activity" ? <ActivityPanel detail={engagement.detail} stages={engagement.stages} history={history.data} /> : null}
+          {!engagementLoading && tab === "activity" ? <ActivityPanel detail={engagement.detail} stages={engagement.stages} history={history.data} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "client-view" ? <ClientViewPanel companyId={companyId} caseId={clientCaseId} /> : null}
         </div>
       </div>
@@ -216,16 +227,20 @@ export function OrganisationPage() {
   );
 }
 
-/** Company info, contacts and the engagement history: the Overview tab below the engagement. */
+/**
+ * Company info, the client's website users and the engagement history: the
+ * Overview tab below the engagement. People come from the website, never the
+ * GSAM contact copy (GRE-2609).
+ */
 function OverviewDetails({
   organisation,
   companyId,
-  contacts,
+  websiteOrganisationId,
   history,
 }: {
   organisation: OrganisationDetail;
   companyId: string;
-  contacts: OrganisationContact[];
+  websiteOrganisationId: string | null;
   history: { data?: OrganisationHistory; isLoading: boolean; error: unknown };
 }) {
   const info: Array<[string, ReactNode]> = [
@@ -274,16 +289,7 @@ function OverviewDetails({
         ) : null}
       </section>
 
-      <section aria-label="Contacts" className="space-y-2">
-        <h2 className="text-sm font-semibold">Contacts</h2>
-        {contacts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No contacts yet. Use Edit to add one.</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {contacts.map((contact) => <ContactRow key={contact.id} contact={contact} />)}
-          </ul>
-        )}
-      </section>
+      <WebsitePeople companyId={companyId} websiteOrganisationId={websiteOrganisationId} />
 
       <section aria-label="Engagement history" className="space-y-2">
         <h2 className="text-sm font-semibold">Engagement history</h2>
@@ -328,45 +334,6 @@ export function CrmFieldList({ fields }: { fields: CrmRecordField[] }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-function ContactRow({ contact }: { contact: OrganisationContact }) {
-  return (
-    <li className="px-3 py-2 text-sm">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-        <div className="flex min-w-0 items-center gap-1.5 sm:w-1/3">
-          {contact.isKeyContact ? <Star className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Key contact" /> : null}
-          <span className="truncate font-medium">{contact.name}</span>
-          {contact.role ? <span className="truncate text-muted-foreground">({contact.role})</span> : null}
-        </div>
-        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-          {contact.email ? (
-            <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1 hover:text-foreground">
-              <Mail className="h-3.5 w-3.5 shrink-0" />
-              <span className="break-all">{contact.email}</span>
-            </a>
-          ) : null}
-          {contact.phone ? (
-            <a href={`tel:${contact.phone}`} className="flex items-center gap-1 hover:text-foreground">
-              <Phone className="h-3.5 w-3.5 shrink-0" />
-              {contact.phone}
-            </a>
-          ) : null}
-          {!contact.email && !contact.phone ? <span>No contact details</span> : null}
-        </div>
-      </div>
-      {contact.crmFields?.length ? (
-        <details className="mt-1">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            {importedFieldsHeading(contact.source)} ({contact.crmFields.length})
-          </summary>
-          <div className="mt-2">
-            <CrmFieldList fields={contact.crmFields} />
-          </div>
-        </details>
-      ) : null}
-    </li>
   );
 }
 

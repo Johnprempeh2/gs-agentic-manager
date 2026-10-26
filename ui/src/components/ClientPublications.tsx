@@ -17,7 +17,7 @@ import { useToastActions } from "../context/ToastContext";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDate } from "../lib/utils";
-import { SharedWithClientBadge } from "./SharedWithClientBadge";
+import { ClientVisibilityBadge } from "./SharedWithClientBadge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { NativeSelect } from "./ui/native-select";
@@ -163,7 +163,11 @@ function PublicationRow({
         <span className={cn("rounded-sm border px-1.5 py-0.5 text-xs", STATUS_TONE[publication.status])}>
           {CLIENT_PUBLICATION_STATUS_LABELS[publication.status]}
         </span>
-        {publication.status === "published" || publication.status === "accepted" ? <SharedWithClientBadge /> : null}
+        <ClientVisibilityBadge
+          shared={publication.status === "published" || publication.status === "accepted"}
+          notSharedLabel="Not shared yet"
+          notSharedTitle="The client sees it once it is published"
+        />
       </div>
 
       {stale ? (
@@ -366,7 +370,16 @@ function Approvers({ caseId, companyId, data, refresh }: { caseId: string; compa
   );
 }
 
-export function ClientPublications({ caseId, companyId }: { caseId: string; companyId: string | null }) {
+export function ClientPublications({
+  caseId,
+  companyId,
+  showSetupNotices = true,
+}: {
+  caseId: string;
+  companyId: string | null;
+  /** The receipt-sender setup line. The client hub hides it; the engagement page keeps it. */
+  showSetupNotices?: boolean;
+}) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [stageLinkId, setStageLinkId] = useState("");
@@ -414,7 +427,7 @@ export function ClientPublications({ caseId, companyId }: { caseId: string; comp
           {data.gates.map((gate) => <li key={gate}>{CLIENT_PUBLICATION_GATE_MESSAGES[gate]}.</li>)}
         </ul>
       ) : null}
-      {!data.receiptSenderConfigured ? (
+      {showSetupNotices && !data.receiptSenderConfigured ? (
         <p className="py-3 text-xs text-muted-foreground">
           Receipts cannot be sent yet: the company secret "client-receipts-resend" needs a Resend sending-only key.
         </p>

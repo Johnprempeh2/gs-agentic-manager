@@ -46,7 +46,13 @@ const mockPipelines = vi.hoisted(() => ({
   listCaseEvidenceCandidates: vi.fn(),
 }));
 const mockSites = vi.hoisted(() => ({ sites: vi.fn() }));
-const mockBridge = vi.hoisted(() => ({ previewDeepDiveSync: vi.fn(), list: vi.fn() }));
+const mockBridge = vi.hoisted(() => ({ previewDeepDiveSync: vi.fn(), list: vi.fn(), get: vi.fn() }));
+// Greatstone's Commerce site; null for every other company (the default here).
+const mockCommerce = vi.hoisted(() => ({ site: null as null | { site: { id: string }; feature: { id: string } } }));
+vi.mock("@/hooks/useCommerceSite", () => ({
+  useCommerceSite: () => ({ commerce: mockCommerce.site, isLoading: false }),
+  useCommerceCustomers: () => ({ data: [], isLoading: false, error: null }),
+}));
 vi.mock("@/api/pipelines", () => ({ pipelinesApi: mockPipelines }));
 vi.mock("@/api/website", () => ({ websiteModuleApi: mockSites }));
 vi.mock("@/api/website-data-bridge", () => ({ websiteDataBridgeApi: mockBridge }));
@@ -168,6 +174,7 @@ describe("Organisation company page", () => {
     mockPipelines.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
     mockPipelines.listCaseEvidenceCandidates.mockResolvedValue({ attachments: [], documents: [] });
     mockSites.sites.mockResolvedValue([]);
+    mockCommerce.site = null;
   });
 
   afterEach(() => {
@@ -212,7 +219,7 @@ describe("Organisation company page", () => {
     expect(container.querySelector('a[href="/organisations"]')?.textContent).toBe("Back to Organisations");
   });
 
-  it("shows company info, country owner, contacts and the engagement history", async () => {
+  it("shows company info, client users from the website and the engagement history", async () => {
     mockApi.get.mockResolvedValue(detail());
     mockApi.history.mockResolvedValue(history());
     await render();
@@ -223,10 +230,10 @@ describe("Organisation company page", () => {
     expect(info.textContent).toContain("CountryGhana");
     expect(info.textContent).toContain("Last contact7 Oct 2026");
 
-    const contacts = container.querySelector('section[aria-label="Contacts"]')!;
-    expect(contacts.textContent).toContain("Kofi Mensah");
-    expect(contacts.querySelector('a[href="mailto:kofi@acme.example"]')).not.toBeNull();
-    expect(contacts.querySelector('a[href="tel:+233 20 000 0000"]')).not.toBeNull();
+    // People come from the website, never the GSAM contact copy (GRE-2609).
+    expect(container.querySelector('section[aria-label="Contacts"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="Client users"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("kofi@acme.example");
 
     const engagement = container.querySelector('section[aria-label="Engagement history"]')!;
     expect(engagement.querySelector('a[href="/pipelines/pipe-1/items/case-1"]')?.textContent).toBe("Acme drill rig");
@@ -326,9 +333,7 @@ describe("Organisation company page", () => {
     expect(info.textContent).toContain("From Pipedrive");
     expect(info.textContent).toContain("LabelsDevTools, Partner");
     expect(info.textContent).toContain("Number of employees120");
-    const contacts = container.querySelector('section[aria-label="Contacts"]')!;
-    expect(contacts.querySelector("summary")?.textContent).toBe("From Pipedrive (1)");
-    expect(contacts.textContent).toContain("GitHub handlekofi-m");
+    expect(container.textContent).not.toContain("GitHub handle");
   });
 
   it("lists imported activities, notes and calls", async () => {
@@ -406,11 +411,10 @@ describe("Organisation company page", () => {
     expect(rows[1]!.textContent).toContain("Not copied into GSAM: Linked from googledrive");
   });
 
-  it("shows empty states when there are no contacts and no history", async () => {
+  it("shows empty states when there is no history", async () => {
     mockApi.get.mockResolvedValue(detail({ contacts: [] }));
     mockApi.history.mockResolvedValue(history({ lastContactAt: null, cases: [] }));
     await render();
-    expect(container.textContent).toContain("No contacts yet. Use Edit to add one.");
     expect(container.textContent).toContain("No pipeline items for this organisation yet.");
     expect(container.textContent).toContain("Last contactNo contact yet");
     expect(container.querySelector('section[aria-label="Activities and notes"]')).toBeNull();
@@ -448,7 +452,7 @@ describe("Organisation company page", () => {
       await render("/organisations/org-1?tab=interviews");
       expect(container.querySelector('a[href="/issues/GRE-2611"]')).not.toBeNull();
       await render("/organisations/org-1?tab=billing");
-      expect(container.querySelector('a[href="/issues/GRE-2629"]')).not.toBeNull();
+      expect(container.querySelector('a[href="/issues/GRE-2630"]')).not.toBeNull();
     });
 
     it("shows the open engagement when the organisation has several, and the one asked for", async () => {
@@ -500,8 +504,46 @@ describe("Organisation company page", () => {
       expect(rows[1]!.textContent).toContain("Answered on the website");
       expect(rows[1]!.textContent).toContain("by Kofi Mensah");
       expect(rows[1]!.querySelector('[data-testid="shared-with-client"]')).toBeNull();
+      // Not shared is said, never left to a missing badge.
+      expect(rows[1]!.querySelector('[data-testid="not-shared-with-client"]')?.textContent).toBe("Not on website");
       expect(rows[2]!.textContent).toContain("Deep Dive · asked 1 Oct 2026 · received 4 Oct 2026");
       expect(rows[2]!.querySelector('a[href="/api/files/e1"]')).not.toBeNull();
+    });
+
+    it("shows a client with no website organisation id as not linked, never matched by name", async () => {
+      mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      await render();
+      expect(container.querySelector('[data-testid="organisation-not-linked"]')?.textContent).toContain("Not linked to a website organisation");
+      expect(container.querySelector('a[href="/issues/GRE-2682"]')).not.toBeNull();
+      expect(container.querySelector('section[aria-label="Client users"]')?.textContent).toContain("once this client is linked");
+      await render("/organisations/org-1?tab=commerce");
+      expect(container.textContent).toContain("Quotes, orders, invoices and licences show here once this client is linked");
+      await render("/organisations/org-1?tab=activity");
+      expect(container.querySelector('section[aria-label="Website activity"]')?.textContent).toContain("once this client is linked");
+      // No website read guesses the client from its name or domain.
+      expect(mockBridge.list).not.toHaveBeenCalled();
+      expect(mockBridge.get).not.toHaveBeenCalled();
+    });
+
+    it("reads a linked client's users and records from the website by its organisation id", async () => {
+      mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
+      mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+      mockApi.history.mockResolvedValue(history());
+      mockBridge.get.mockResolvedValue({
+        item: { id: "cust-9", name: "Acme Mining Ltd", customer_users: [{ id: "wu-1", name: "Esi Boateng", email: "esi@acme.example", role: "owner" }] },
+      });
+      mockBridge.list.mockResolvedValue({ items: [], nextCursor: null });
+      await render();
+      expect(container.querySelector('[data-testid="organisation-not-linked"]')).toBeNull();
+      expect(mockBridge.get).toHaveBeenCalledWith("company-1", "site-1", "customers", "cust-9");
+      const users = container.querySelector('[data-testid="organisation-website-users"]')!;
+      expect(users.textContent).toContain("Esi Boateng");
+      expect(users.textContent).toContain("wu-1");
+      expect(container.textContent).not.toContain("kofi@acme.example");
+      await render("/organisations/org-1?tab=commerce");
+      expect(mockBridge.list).toHaveBeenCalledWith("company-1", "site-1", "orders", { customer: "cust-9", limit: 100 });
     });
 
     it("waits for the engagement before a tab says there is none", async () => {

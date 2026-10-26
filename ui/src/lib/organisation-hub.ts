@@ -41,6 +41,39 @@ export function engagementCaseId(
   return (newest.find((item) => !item.terminalKind) ?? newest[0])?.id ?? null;
 }
 
+/** The task that stores the website organisation id on GSAM organisations. */
+export const WEBSITE_LINK_TASK = "GRE-2682";
+
+/**
+ * The client's website organisation id (the website's `customers.id`): the one
+ * key for every website read about this client (GRE-2609). GSAM does not store
+ * it yet; GRE-2682 adds it as `websiteOrganisationId`. Until then every
+ * organisation reads as not linked. Never match a client by name or email.
+ */
+export function websiteOrganisationIdOf(organisation: object): string | null {
+  const value = (organisation as { websiteOrganisationId?: unknown }).websiteOrganisationId;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** A client user as the website returns it on the customer record (`customer_users`), read only. */
+export interface WebsiteClientUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+}
+
+export function websiteClientUsers(customer: Record<string, unknown> | null | undefined): WebsiteClientUser[] {
+  const rows = Array.isArray(customer?.customer_users) ? customer.customer_users : [];
+  const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const record = row as Record<string, unknown>;
+    const id = str(record.id);
+    return id ? [{ id, name: str(record.name), email: str(record.email), role: str(record.role) }] : [];
+  });
+}
+
 /** What the website client hub gets for this client (the Deep Dive sync preview), by id. */
 export interface ClientShared {
   documentRequestIds: Set<string>;
