@@ -10,6 +10,7 @@ fixtures and the version numbers of every message and endpoint between the two:
 | Bridge signing | `gs-bridge-v1/README.md`, `gs-bridge-v1/vectors.json` | `gs-bridge-v1`, `gs-bridge-v2` |
 | Editor frame `hello-ack` | `site-contract/schemas/editor-hello-ack.schema.json` | frame protocol 1, editor contract 1 and 2 |
 | `GET /_release` | `site-contract/schemas/release-answer.schema.json` | release schema 1, engine 0.1.0 or later |
+| `GET /_contract.json` (static, unsigned) | `site-contract/schemas/contract-file.schema.json` | `siteContract`, `contractsCommit` |
 | Deep Dive push and its answer | `site-contract/schemas/deep-dive-sync*.schema.json` | `gs-deep-dive-sync-v1` |
 | Document request call back | `site-contract/schemas/document-request-answer.schema.json` | |
 | Interviews | none yet | |
@@ -42,7 +43,8 @@ fixtures and the version numbers of every message and endpoint between the two:
 2. **Every connection.** GSAM reads `siteContract` from the bridge health, the editor `hello-ack` and
    `/_release`. When it is missing or below `minSiteVersion`, GSAM shows "Out of date: update the website."
    instead of failing silently.
-3. **Every release.** GSAM's release queue asks each connected site's `/_release` and refuses when a site
-   speaks less than the new GSAM's `minSiteVersion`. The website deploy guard runs
+3. **Every release.** GSAM's release queue asks each connected site's `/_release` (on its domain and its editor
+   host). When `/_release` is not JSON or has no `siteContract`, it reads the static `/_contract.json`. It
+   refuses when neither reports a `siteContract` at or above the new GSAM's `minSiteVersion`. The website deploy guard runs
    `node contracts/check.mjs --site-speaks <the site's version>` and refuses when it differs from the
    vendored `version`.

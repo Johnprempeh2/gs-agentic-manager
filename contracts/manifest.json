@@ -42,6 +42,11 @@
       "schema": "site-contract/schemas/release-answer.schema.json",
       "fixture": "site-contract/fixtures/release-answer.json"
     },
+    "contractFile": {
+      "what": "GET /_contract.json, a static file the site serves. The release gate reads it when /_release is not JSON. Reports siteContract and the GSAM commit the contract was vendored from.",
+      "schema": "site-contract/schemas/contract-file.schema.json",
+      "fixture": "site-contract/fixtures/contract-file.json"
+    },
     "deepDiveSync": {
       "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant.",
       "syncSchema": "gs-deep-dive-sync-v1",
@@ -63,12 +68,13 @@
     }
   },
   "files": {
-    "README.md": "738ce2198897cd0deb024abf99d6642574a45cf55a68de104fcbf6f38977dd23",
+    "README.md": "41692bf5b7e1440d69a46bc35a8bafdb90827519ea8b7f8135480f82a0edb1c2",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
     "gs-bridge-v1/README.md": "46d58921325543222afa304eeaa4e6e78538c13011185427200685694b8f612d",
     "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
     "site-contract/fixtures/bridge-health.json": "f63e3e7429bd4a0e1821f8ef7287122a62ebb1e975d496bcd6166ed705997878",
+    "site-contract/fixtures/contract-file.json": "1630f8e3b026dbdc394cc14b97f9da162bda5fcde93e19adbf8137b1657b62f2",
     "site-contract/fixtures/deep-dive-sync-ack.json": "733b1cf20a3f1dc12d293085e13d6da6b6df674ecaa949d10c8f95fcf5a7c254",
     "site-contract/fixtures/deep-dive-sync.json": "537733d4a5448d056dbaa93213ac713999a8873438b890a09a83a1e50b33a320",
     "site-contract/fixtures/document-request-answer.json": "7ea0101d728462ec2a4d8792b5180a41826d7ac4b2a67100115a107ac3b24269",
@@ -76,11 +82,12 @@
     "site-contract/fixtures/release-answer.json": "f6dc3cdc4555d22f37fd9dc4e4268253bd9ae648cabfca6fec437bea7c600d65",
     "site-contract/schemas/bridge-error.schema.json": "82423e96de61b7d123d0a8480486781c2d2d1d5a89813691b32ddfbd6954cc26",
     "site-contract/schemas/bridge-health.schema.json": "9e86eeea6422b5a7758c57c20fdc60f3d1284c7398338ccb436785a9f1d0b546",
+    "site-contract/schemas/contract-file.schema.json": "5ab97032c17bf348ebddaa4100657d1245ad74c3f52a19e157c9aeda79050070",
     "site-contract/schemas/deep-dive-sync-ack.schema.json": "55392e3ff4023ebcbe7724ace741325244a903131c699bbfd1af1d2b7eb50915",
     "site-contract/schemas/deep-dive-sync.schema.json": "7a02afc57eb477ef58109331e616d2171703bd2022878eb0bf70f2d14c582406",
     "site-contract/schemas/document-request-answer.schema.json": "12e6ceec3a8aa7b78815adfebf39930aece5b4e537173df350bf144318f0c798",
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "daab495b297d484c844999f1c0b779c04c8878e1c10c5a421927ba29c693db4b"
+  "contentHash": "d87ab8ec623e7ee61489e1ba59e0cf590ceda177593cf3746c99a1aa806981b8"
 }

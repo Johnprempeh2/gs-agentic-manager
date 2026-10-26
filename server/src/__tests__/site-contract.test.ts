@@ -52,7 +52,7 @@ describe("GSAM and website contract (GRE-2633)", () => {
   });
 
   it("each schema refuses a site answer with no siteContract", () => {
-    for (const surface of ["bridgeHealth", "editorHelloAck", "release"]) {
+    for (const surface of ["bridgeHealth", "editorHelloAck", "release", "contractFile"]) {
       const { siteContract: _dropped, ...old } = contractFixture(surface);
       expect(contractErrors(surface, old), surface).toMatch(/siteContract/);
     }
@@ -84,11 +84,14 @@ describe("GSAM and website contract (GRE-2633)", () => {
       connectedSites: (base: string, key: string, fetchImpl: typeof fetch) => Promise<unknown[]>;
     };
     const gate = () => import(new URL("../../../scripts/greatstone-site-contract-gate.mjs", import.meta.url).href) as Promise<Gate>;
-    const sites = (answers: Record<string, unknown>) =>
+    const HTML = "<!doctype html><html></html>";
+    // Each origin answers `/_release` with its value; `/_contract.json` is the
+    // app shell unless `files` names one.
+    const sites = (answers: Record<string, unknown>, files: Record<string, unknown> = {}) =>
       (async (input: string | URL) => {
         const url = new URL(String(input));
-        const answer = answers[url.origin];
-        if (answer === undefined) throw new TypeError("fetch failed");
+        const answer = url.pathname === "/_contract.json" ? (files[url.origin] ?? HTML) : answers[url.origin];
+        if (answers[url.origin] === undefined) throw new TypeError("fetch failed");
         return typeof answer === "string" ? new Response(answer, { status: 200 }) : Response.json(answer);
       }) as unknown as typeof fetch;
 
@@ -113,12 +116,39 @@ describe("GSAM and website contract (GRE-2633)", () => {
       expect(refused.ok).toBe(false);
       expect(refused.line).toContain("Out of date: update the website.");
       expect(refused.line).toContain("https://editor.site.test did not answer");
-      expect(refused.line).toContain("https://www.site.test reports no siteContract");
+      expect(refused.line).toContain("https://www.site.test reports no siteContract at /_release");
+    });
 
-      const html = await siteContractGate({ manifest, origins: ["https://www.site.test"], fetchImpl: sites({ "https://www.site.test": "<!doctype html>" }) });
-      expect(html.line).toContain("has no /_release");
-      expect((await siteContractGate({ manifest: { ...manifest, minSiteVersion: 2 }, origins: ["https://www.site.test"],
-        fetchImpl: sites({ "https://www.site.test": contractFixture("release") }) })).line).toContain("speaks v1");
+    it("reads /_contract.json when /_release is HTML, on the domain and the editor host", async () => {
+      const { siteContractGate } = await gate();
+      const origins = ["https://editor.site.test", "https://www.site.test"];
+      const shell = { "https://editor.site.test": HTML, "https://www.site.test": HTML };
+
+      const fallback = await siteContractGate({ manifest, origins, fetchImpl: sites(shell, {
+        "https://editor.site.test": contractFixture("contractFile"), "https://www.site.test": contractFixture("contractFile"),
+      }) });
+      expect(fallback).toMatchObject({ ok: true });
+      expect(fallback.line).toContain("https://editor.site.test v1, https://www.site.test v1");
+
+      const oneHost = await siteContractGate({ manifest, origins, fetchImpl: sites(shell, { "https://www.site.test": contractFixture("contractFile") }) });
+      expect(oneHost.ok).toBe(false);
+      expect(oneHost.line).toContain("https://editor.site.test has no /_release (not JSON), and has no /_contract.json (not JSON)");
+      expect(oneHost.line).not.toContain("https://www.site.test has");
+
+      const both = await siteContractGate({ manifest, origins: ["https://www.site.test"], fetchImpl: sites({ "https://www.site.test": HTML }) });
+      expect(both.ok).toBe(false);
+      expect(both.line).toContain("Out of date: update the website.");
+    });
+
+    it("refuses a site that speaks an older contract, on either file", async () => {
+      const { siteContractGate } = await gate();
+      const newer = { ...manifest, minSiteVersion: 2 };
+      const origins = ["https://www.site.test"];
+      const viaRelease = await siteContractGate({ manifest: newer, origins, fetchImpl: sites({ "https://www.site.test": contractFixture("release") }) });
+      expect(viaRelease).toMatchObject({ ok: false, line: expect.stringContaining("https://www.site.test speaks v1") });
+      const viaFile = await siteContractGate({ manifest: newer, origins,
+        fetchImpl: sites({ "https://www.site.test": HTML }, { "https://www.site.test": contractFixture("contractFile") }) });
+      expect(viaFile).toMatchObject({ ok: false, line: expect.stringContaining("https://www.site.test speaks v1") });
     });
 
     it("passes with no connected site, and lists sites across companies", async () => {

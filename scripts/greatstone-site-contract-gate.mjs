@@ -2,9 +2,10 @@
 // The release gate for the GSAM and website contract (GRE-2633). Before a
 // release, greatstone-release.sh pipes the candidate's contracts/manifest.json
 // in; this asks live GSAM for every connected site, reads each site's
-// `/_release` (its live address and its editor host), and refuses when one
-// speaks less than the candidate's `minSiteVersion`. Then the website deploys
-// first, and the release goes again.
+// `/_release` (its live address and its editor host), or `/_contract.json`
+// when `/_release` is not JSON, and refuses when one speaks less than the
+// candidate's `minSiteVersion`. Then the website deploys first, and the
+// release goes again.
 //
 //   git show <commit>:contracts/manifest.json | node greatstone-site-contract-gate.mjs <live-url> <board-key-file>
 //
@@ -33,22 +34,36 @@ export function siteOrigins(sites) {
   return [...origins].sort();
 }
 
-/** What one origin's `/_release` says: its `siteContract`, or null with the reason. */
-export async function reportedSiteContract(origin, fetchImpl = fetch) {
+/** What one origin's `path` says: its `siteContract`, or null with the reason. */
+async function readSiteContract(origin, path, fetchImpl) {
   let res;
   try {
-    res = await fetchImpl(`${origin}/_release`, {
+    res = await fetchImpl(`${origin}${path}`, {
       headers: { accept: "application/json", "user-agent": "GSAM-release-site-contract-gate" },
       signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
     });
   } catch {
     return { siteContract: null, reason: "did not answer" };
   }
-  if (!res.ok) return { siteContract: null, reason: `answered ${res.status} at /_release` };
+  if (!res.ok) return { siteContract: null, reason: `answered ${res.status} at ${path}` };
   const body = await res.json().catch(() => null);
-  if (!body || typeof body !== "object") return { siteContract: null, reason: "has no /_release (not JSON)" };
+  if (!body || typeof body !== "object") return { siteContract: null, reason: `has no ${path} (not JSON)` };
   const value = body.siteContract;
-  return Number.isInteger(value) && value > 0 ? { siteContract: value, reason: null } : { siteContract: null, reason: "reports no siteContract" };
+  return Number.isInteger(value) && value > 0 ? { siteContract: value, reason: null } : { siteContract: null, reason: `reports no siteContract at ${path}` };
+}
+
+/**
+ * The contract one origin speaks. `/_release` first; when it is not JSON or has
+ * no `siteContract` (a host that serves the app shell for every path), the
+ * static `/_contract.json`. A host that does not answer at all is not asked twice.
+ */
+export async function reportedSiteContract(origin, fetchImpl = fetch) {
+  const release = await readSiteContract(origin, "/_release", fetchImpl);
+  if (release.siteContract !== null) return release;
+  if (release.reason === "did not answer") return release;
+  const file = await readSiteContract(origin, "/_contract.json", fetchImpl);
+  if (file.siteContract !== null) return file;
+  return { siteContract: null, reason: `${release.reason}, and ${file.reason}` };
 }
 
 /** The verdict for one release: `{ ok, line }`. */
