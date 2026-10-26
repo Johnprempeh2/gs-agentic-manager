@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addNode,
   ancestorIds,
+  BOARD_CARD,
+  boardDefaultFolded,
   boardLayout,
   copyBranch,
   defaultFolded,
@@ -67,11 +69,38 @@ describe("sitemap model", () => {
     expect(placeInMenu(tree, "t", "header", 0).nodes.find((node) => node.id === "t")!.menuOrder).toBe(1);
   });
 
-  it("lays the board out left to right and keeps stored positions", () => {
-    const layout = boardLayout({ ...tree, nodes: tree.nodes.map((node) => (node.id === "t" ? { ...node, x: 900, y: 40 } : node)) });
-    expect(layout.get("home")!.x).toBe(0);
-    expect(layout.get("c")!.x).toBeGreaterThan(0);
-    expect(layout.get("t")).toEqual({ x: 900, y: 40 });
+  it("lays the board out top to bottom: Home, a row of sections, then each section's pages in a column (GRE-2542)", () => {
+    const stored = { ...tree, nodes: tree.nodes.map((node) => (node.id === "t" ? { ...node, x: 900, y: 40 } : node)) };
+    const { cards, topId, width } = boardLayout(stored);
+    const home = cards.get("home")!;
+    const c = cards.get("c")!;
+    const t = cards.get("t")!;
+    const d = cards.get("d")!;
+    expect(topId).toBe("home");
+    // Sections side by side under Home; Home centred over them.
+    expect(c.y).toBe(t.y);
+    expect(c.y).toBeGreaterThan(home.y + BOARD_CARD.height);
+    expect(t.x).toBeGreaterThan(c.x + BOARD_CARD.width);
+    expect(home.x + BOARD_CARD.width / 2).toBe(width / 2);
+    // A section's page sits under it, one step in; stored positions from the old board are ignored.
+    expect(d.y).toBeGreaterThan(c.y + BOARD_CARD.height);
+    expect(d.x).toBeGreaterThan(c.x);
+    expect(d.x).toBeLessThan(t.x);
+    expect(t.y).not.toBe(40);
+  });
+
+  it("folds a board section behind +N pages, and opens sections of more than 8 pages folded", () => {
+    const folded = boardLayout(tree, new Set(["c"]));
+    expect(folded.cards.has("d")).toBe(false);
+    expect(folded.more.get("c")!.count).toBe(1);
+    const big: Tree = {
+      ...tree,
+      nodes: [
+        ...tree.nodes,
+        ...Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, title: `Page ${i}`, path: `/tools/p${i}`, parentId: "t", order: i, menu: "none" as const, menuOrder: null })),
+      ],
+    };
+    expect([...boardDefaultFolded(big)]).toEqual(["t"]);
   });
 
   it("reads the vertical tree top to bottom with a rail for each ancestor that has more below (GRE-2509)", () => {

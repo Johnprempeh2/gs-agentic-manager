@@ -133,6 +133,10 @@ import {
   contributeMemorySchema,
   importMemorySchema,
   checkMemoryImportSchema,
+  syncMemorySchema,
+  readHandoffSchema,
+  updateHandoffSchema,
+  reconcileHandoffFileSchema,
   createMemoryConnectionSchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
@@ -381,6 +385,10 @@ import {
   addDeepDiveSessionQuestionSchema,
   answerToDeepDiveFindingSchema,
   planDeepDiveSessionSchema,
+  createDeepDiveInterviewRoundSchema,
+  updateDeepDiveInterviewRoundSchema,
+  draftDeepDiveInterviewSetSchema,
+  updateDeepDiveInterviewSetSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -451,6 +459,7 @@ import {
   updateWebsiteSitemapOptionSchema,
   createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
+  websiteCommerceRefundRequestSchema,
   setWebsiteBridgeSiteKeySchema,
   websiteDocumentRequestAnswerSchema,
   updateWebsiteFeatureSchema,
@@ -488,6 +497,7 @@ import {
   runCrmSyncBindingSchema,
   setAgentPipelineLevelSchema,
   setMemoryScopeStewardSchema,
+  setOrganisationWebsiteLinkSchema,
   startWebsiteGoogleConnectSchema,
   startWorkflowTemplateSchema,
   updateClientJourneyDeliverableSchema,
@@ -6285,6 +6295,46 @@ registry.registerPath({
     "Add up to 50 entries brought in from Claude or ChatGPT as unreviewed contributions with app provenance; repeats in the scope are skipped and entries with sensitive content are held back",
   request: { params: memoryCompanyParams, body: jsonBody(importMemorySchema) },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/sync",
+  tags: ["memory"],
+  summary:
+    "Mac sync of a person's Claude Code and Codex turns and memory files into that person's own scope; text already held is skipped, a changed file is revised",
+  request: { params: memoryCompanyParams, body: jsonBody(syncMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/handoff",
+  tags: ["memory"],
+  summary:
+    "Read the person's live handoff (focus, threads, waiting on, notes, last tool), with the changes since a time or since this tool last wrote it",
+  request: { params: memoryCompanyParams, query: readHandoffSchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/handoff",
+  tags: ["memory"],
+  summary:
+    "Update parts of the live handoff as a new version; agents may change only threads and the waiting list, and only from a live run",
+  request: { params: memoryCompanyParams, body: jsonBody(updateHandoffSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/handoff/file",
+  tags: ["memory"],
+  summary:
+    "Reconcile NOW.md from the Mac sync with the live handoff part by part (newest wins, clashes recorded) and return the text to write back",
+  request: { params: memoryCompanyParams, body: jsonBody(reconcileHandoffFileSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -15406,6 +15456,18 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/website-link",
+  tags: ["organisations"],
+  summary: "Link an organisation to its website organisation, or clear the link with null (Work cases, website view)",
+  body: setOrganisationWebsiteLinkSchema,
+  responses: {
+    200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+    409: r.conflict, 422: r.unprocessable,
+  },
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/organisations/{organisationId}/contacts",
   tags: ["organisations"],
@@ -16206,6 +16268,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/style`,
+  tags: ["website"],
+  summary: "The site's style at a glance (website:view): colours with roles and contrast ratings, fonts, the type scale, building blocks (buttons, links, cards, pills), radius, spacing and motion tokens and background surfaces, read from the site's deployed stylesheet with the release theme tokens on top",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/enquiries`,
   tags: ["website"],
   summary: "List website enquiries in GSAM, newest first (website:view; pipelines:cases for the enquiry pipeline)",
@@ -16605,7 +16675,7 @@ registerCurrentRoute({
   method: "post",
   path: `${siteParams}/data-bridge/key`,
   tags: ["website"],
-  summary: "Make a new Ed25519 read key for the site's admin bridge (website:publish, people only). The private key goes to the company's secrets; the answer is the public key to add to the site's GSAM_BRIDGE_KEYS",
+  summary: "Make a new Ed25519 key for the site's admin bridge (website:publish, people only): capability read (default), write (Deep Dive sync and commerce writes) or refund_request. The private key goes to the company's secrets; the answer is the public key to add to the site's GSAM_BRIDGE_KEYS",
   body: createWebsiteDataBridgeKeySchema,
   responses: { ...websiteModuleResponses, 201: r.ok() },
 });
@@ -16624,6 +16694,77 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Read one of the site's own records by id through the signed admin bridge (website:view)",
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
+});
+
+// ─── Website commerce reads (GRE-2354 2c(a)) ──────────────────────────────────
+
+const commerceReadResponses = { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } };
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/fx`,
+  tags: ["website"],
+  summary: "The site's USD to GBP display rate, its row version and its last 50 changes, read only through the signed admin bridge (website:view)",
+  responses: commerceReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/payments`,
+  tags: ["website"],
+  summary: "The payment report from the site's own orders: orders paid by Stripe, refunds and refund requests, and whether the site's Stripe key is test or live. Never a Stripe id or key; no Stripe call (website:view). Filters: from, to (YYYY-MM-DD)",
+  responses: commerceReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/{resource}`,
+  tags: ["website"],
+  summary: "List the site's commerce records, read only, through the signed admin bridge: offerings, categories, vendors, pricing-rules, customer-tiers or imports (website:view). Filters: updatedSince, cursor, limit",
+  responses: commerceReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/commerce/{resource}/{itemId}`,
+  tags: ["website"],
+  summary: "Read one commerce record by id through the signed admin bridge (website:view). An import job comes with a page of its rows (cursor, limit)",
+  responses: commerceReadResponses,
+});
+
+// ─── Website commerce writes and refund requests (GRE-2354 2c(b)) ─────────────
+
+const commerceWriteResponses = {
+  ...websiteModuleResponses, 201: r.ok(), 409: r.conflict, 413: r.payloadTooLarge, 422: r.unprocessable,
+  502: { description: "The website's data bridge refused the change or did not answer; the message says which" },
+};
+const commerceWriteSummary = (method: string) => `${method} one typed commerce change on the site through the signed admin bridge's write key `
+  + "(website:commerce). {path} is one of the site's write operations, e.g. offerings, offerings/{id}, offerings/{id}/variants/{variantId}, "
+  + "pricing-rules/{id}/targets, quotes/{id}, quotes/{id}/convert, invoices/{id}, imports. People only (403 for an agent or a board API key): "
+  + "…/{id}/publish, …/{id}/archive, PATCH fx, imports/{id}/apply, invoices/{id}/issue. The body is the site's to check. Optional "
+  + "Idempotency-Key header (22 base64url characters) makes a repeat write once. 409 capability_not_configured when the site has no write "
+  + "key, with no call to the site; 409 website_bridge_conflict with details.current on a stale expectedRowVersion";
+
+for (const method of ["post", "patch", "delete"] as const) {
+  registerCurrentRoute({
+    method,
+    path: `${siteParams}/commerce/{path}`,
+    tags: ["website"],
+    summary: commerceWriteSummary(method.toUpperCase()),
+    responses: commerceWriteResponses,
+  });
+}
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/commerce/refund-requests`,
+  tags: ["website"],
+  summary: "Ask for a refund on a website order (website:commerce; agents may). Records the request on the site with the refund_request key "
+    + "and opens a commerce_refund_request approval; a person with website:commerce decides it with POST /api/approvals/{id}/approve or "
+    + "/reject, which sends the decision to the site in their name. Moves no money: a person refunds in Stripe. 201 recorded; 202 the card "
+    + "is open but the site's answer was lost (deciding records it first, once); 409 capability_not_configured, over_refundable",
+  body: websiteCommerceRefundRequestSchema,
+  responses: { ...commerceWriteResponses, 202: { description: "The card is open; the site's answer was lost" } },
 });
 
 // ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────
@@ -17128,6 +17269,80 @@ registerCurrentRoute({
     "the statement defaults to the answer",
   body: answerToDeepDiveFindingSchema,
   responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+// Parallel Interview rounds (GRE-2611): one round per Deep Dive, a question set
+// per team or person drafted from what is known, and a person's approval.
+const interviewResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const interviewWriteResponses = { ...interviewResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/interview-round",
+  tags: ["deep-dive"],
+  summary: "Get the Parallel Interview round (or null) with its question sets, and the teams or people not yet given a set",
+  responses: interviewResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/interview-round",
+  tags: ["deep-dive"],
+  summary: "Set up the company's one interview round: per team or per person, target length and Everest's context pack",
+  body: createDeepDiveInterviewRoundSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/interview-rounds/{roundId}",
+  tags: ["deep-dive"],
+  summary: "Change the round's mode, length or context pack while it is in Setup (the mode only while it has no sets)",
+  body: updateDeepDiveInterviewRoundSchema,
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/sets",
+  tags: ["deep-dive"],
+  summary:
+    "Draft a question set for one team or person: Known cells are placed, Indicated validated, Unknown investigated",
+  body: draftDeepDiveInterviewSetSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/interview-sets/{setId}",
+  tags: ["deep-dive"],
+  summary: "Replace a set's questions while the round is in Setup; the set goes back to Draft",
+  body: updateDeepDiveInterviewSetSchema,
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-sets/{setId}/redraft",
+  tags: ["deep-dive"],
+  summary: "Draft a set again from what the Deep Dive knows now; the set goes back to Draft",
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-sets/{setId}/approve",
+  tags: ["deep-dive"],
+  summary: "Approve a set's questions (only a person may approve)",
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/interview-sets/{setId}",
+  tags: ["deep-dive"],
+  summary: "Remove a question set while the round is in Setup",
+  responses: interviewWriteResponses,
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it

@@ -5,7 +5,10 @@ import {
   type WebsiteFrameMediaEntry,
   type WebsiteFrameSetMotionResult,
   type WebsiteMotionChoice,
+  type WebsiteBackgroundSurface,
+  type WebsiteMotionColour,
   type WebsiteMotionIntensity,
+  type WebsiteMotionSpeed,
   type WebsiteMediaItem,
   type WebsitePageEditorLoad,
   type WebsiteRevision,
@@ -239,32 +242,95 @@ export function insertMediaMessage(result: WebsiteFrameInsertMediaResult, blockN
   }
 }
 
-// ---------------------------------------------------------------- set-motion (GRE-2219)
+// ---------------------------------------------------------------- set-motion (GRE-2219, GRE-2526)
 
-/** One choice in the Motion panel. `still` is a path on the editor origin; None has none. */
+/** The safe settings an effect takes, from the engine's `hello-ack`. */
+export interface MotionEffectSettings {
+  intensity: WebsiteMotionIntensity[];
+  speed: WebsiteMotionSpeed[];
+  colour: WebsiteMotionColour[];
+  defaults: { intensity: WebsiteMotionIntensity; speed: WebsiteMotionSpeed; colour: WebsiteMotionColour };
+}
+
+/** One choice in the Background panel. `still` and `preview` are paths on the editor origin; None has neither. */
 export interface MotionOption {
   id: string;
   label: string;
   still: string | null;
   /** The Animation Lab study the effect comes from, for example `016`. */
   study: string | null;
+  /** One line on what the effect looks like. Null on an engine from before GRE-2522. */
+  description?: string | null;
+  /** A live, animated page of the effect. Null on an engine from before GRE-2522. */
+  preview?: string | null;
+  /** Speed and colour choices. Null: the effect takes strength only. */
+  settings?: MotionEffectSettings | null;
+}
+
+/** What the block's Background holds: an effect with its settings, or a plain surface. */
+export interface BackgroundSelection {
+  effect: string;
+  intensity: WebsiteMotionIntensity;
+  speed?: WebsiteMotionSpeed;
+  colour?: WebsiteMotionColour;
+  /** A site surface id, or `none`. Only with effect `none`. */
+  surface: string;
 }
 
 export interface BlockMotionOptions {
+  blockType: string;
   options: MotionOption[];
+  /** The plain site surfaces the block can take. Empty on an engine from before GRE-2522. */
+  surfaces: WebsiteBackgroundSurface[];
   /** What the block holds in the page GSAM last loaded, or the block's default. */
   current: WebsiteMotionChoice;
+  /** The block's saved surface, `none` when it has none. */
+  currentSurface: string;
 }
 
 export const MOTION_INTENSITY_LABELS: Record<WebsiteMotionIntensity, string> = { off: "Off", subtle: "Subtle", full: "Full" };
+export const MOTION_SPEED_LABELS: Record<WebsiteMotionSpeed, string> = { still: "Still", slow: "Slow", normal: "Normal" };
+export const MOTION_COLOUR_LABELS: Record<WebsiteMotionColour, string> = { emerald: "Emerald", teal: "Teal" };
 
 const NONE_OPTION: MotionOption = { id: "none", label: "None", still: null, study: null };
 
 /**
+ * GRE-2522: the Two Doors home page is frozen. GSAM offers no Background on
+ * any Two Doors block, or on any block of a home page that holds Two Doors,
+ * without John's explicit yes. The engine refuses it too (`frozen_page`).
+ */
+export function isFrozenBackground(pageSlug: string | null | undefined, blockType: string | null | undefined, data: unknown): boolean {
+  if (isTwoDoorsType(blockType)) return true;
+  const slug = (pageSlug ?? "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+  if (slug !== "" && slug !== "home") return false;
+  return hasTwoDoorsBlock((data as { content?: unknown } | null)?.content);
+}
+
+function isTwoDoorsType(type: unknown): boolean {
+  return typeof type === "string" && type.startsWith("TwoDoors");
+}
+
+function hasTwoDoorsBlock(items: unknown, depth = 0): boolean {
+  if (!Array.isArray(items) || depth > 8) return false;
+  return items.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const { type, props } = item as { type?: unknown; props?: Record<string, unknown> };
+    if (isTwoDoorsType(type)) return true;
+    return Object.values(props ?? {}).some((value) => hasTwoDoorsBlock(value, depth + 1));
+  });
+}
+
+function savedSurface(props: Record<string, unknown>, surfaces: readonly WebsiteBackgroundSurface[]): string {
+  const section = props._section as { surface?: unknown } | undefined;
+  const surface = section && typeof section.surface === "string" ? section.surface : "none";
+  return surfaces.some((entry) => entry.id === surface) ? surface : "none";
+}
+
+/**
  * The effects the engine lets this block take, in the engine's order, with
- * their names and stills. Null when the block is not on the page or takes no
- * motion. An effect the engine lists for the block but does not describe is
- * left out: GSAM keeps no copy of the effect list.
+ * their names, stills and settings. Null when the block is not on the page or
+ * takes no motion. An effect the engine lists for the block but does not
+ * describe is left out: GSAM keeps no copy of the effect list.
  */
 export function blockMotionOptions(
   capabilities: WebsiteFrameMotionCapabilities,
@@ -278,15 +344,33 @@ export function blockMotionOptions(
   const options = allowed.effects.flatMap((id): MotionOption[] => {
     if (id === "none") return [NONE_OPTION];
     const effect = capabilities.effects.find((entry) => entry.id === id);
-    return effect ? [{ id, label: effect.label, still: effect.still, study: effect.study ?? null }] : [];
+    if (!effect) return [];
+    return [
+      {
+        id,
+        label: effect.label,
+        still: effect.still,
+        study: effect.study ?? null,
+        description: effect.description ?? null,
+        preview: effect.preview ?? null,
+        settings: effect.settings ?? null,
+      },
+    ];
   });
-  if (!options.some((option) => option.id !== "none")) return null;
+  const surfaces = (capabilities.surfaces ?? []).filter((entry) => entry.id !== "none");
+  if (!options.some((option) => option.id !== "none") && surfaces.length === 0) return null;
   const saved = block.props.motion as Partial<WebsiteMotionChoice> | undefined;
-  const current =
+  const current: WebsiteMotionChoice =
     saved && typeof saved.effect === "string" && options.some((option) => option.id === saved.effect) && saved.intensity && saved.intensity in MOTION_INTENSITY_LABELS
-      ? { effect: saved.effect, intensity: saved.intensity }
-      : allowed.default;
-  return { options, current };
+      ? {
+          effect: saved.effect,
+          intensity: saved.intensity,
+          ...(saved.speed && saved.speed in MOTION_SPEED_LABELS ? { speed: saved.speed } : {}),
+          ...(saved.colour && saved.colour in MOTION_COLOUR_LABELS ? { colour: saved.colour } : {}),
+        }
+      : { effect: allowed.default.effect, intensity: allowed.default.intensity };
+  const currentSurface = current.effect === "none" ? savedSurface(block.props, surfaces) : "none";
+  return { blockType: block.type, options, surfaces, current, currentSurface };
 }
 
 /** The option a GS Studio hand-off names: an effect id, or a Lab study number such as `016`. */
@@ -302,26 +386,91 @@ export function motionChoice(effect: string, intensity: WebsiteMotionIntensity):
 }
 
 /**
- * What the Motion panel says after `set-motion`, naming the block. Null means
+ * The `set-motion` body for a Background selection, inside the effect's safe
+ * ranges. Speed and colour go only when the effect lists them, and a surface
+ * only when the engine offers surfaces: an older engine gets what it knows.
+ */
+export function backgroundRequest(
+  selection: BackgroundSelection,
+  option: MotionOption | null,
+  surfacesOffered: boolean,
+): { motion: WebsiteMotionChoice; surface?: string } {
+  if (selection.effect === "none") {
+    return { motion: { effect: "none", intensity: "off" }, ...(surfacesOffered ? { surface: selection.surface || "none" } : {}) };
+  }
+  const settings = option?.settings ?? null;
+  const base = motionChoice(selection.effect, selection.intensity);
+  if (settings?.intensity.length && !settings.intensity.includes(base.intensity)) base.intensity = settings.defaults.intensity;
+  if (base.intensity === "off") base.intensity = "subtle";
+  const motion: WebsiteMotionChoice = { ...base };
+  if (settings?.speed.length) {
+    motion.speed = selection.speed && settings.speed.includes(selection.speed) ? selection.speed : settings.defaults.speed;
+  }
+  if (settings?.colour.length) {
+    motion.colour = selection.colour && settings.colour.includes(selection.colour) ? selection.colour : settings.defaults.colour;
+  }
+  return { motion };
+}
+
+/** The settings in words, for messages and agent requests: `Subtle, slow, emerald`. */
+export function backgroundSettingsText(motion: WebsiteMotionChoice): string {
+  const parts: string[] = [MOTION_INTENSITY_LABELS[motion.intensity]];
+  if (motion.speed) parts.push(MOTION_SPEED_LABELS[motion.speed].toLowerCase());
+  if (motion.colour) parts.push(MOTION_COLOUR_LABELS[motion.colour].toLowerCase());
+  return parts.join(", ");
+}
+
+/**
+ * The request an agent gets from Ask an agent in the Background panel: the
+ * block, the library effect id and its settings, in the same ids the engine
+ * and agents use, then room for what the person wants.
+ */
+export function backgroundAgentRequest(input: {
+  blockId: string;
+  blockName: string;
+  option: MotionOption | null;
+  surface: WebsiteBackgroundSurface | null;
+  motion: WebsiteMotionChoice;
+}): string {
+  const lines = [`Background for ${input.blockName} (block id \`${input.blockId}\`):`];
+  if (input.motion.effect !== "none" && input.option) {
+    lines.push(`- Effect: \`${input.option.id}\` (${input.option.label})`);
+    lines.push(`- Intensity: \`${input.motion.intensity}\``);
+    if (input.motion.speed) lines.push(`- Speed: \`${input.motion.speed}\``);
+    if (input.motion.colour) lines.push(`- Colour: \`${input.motion.colour}\``);
+  } else if (input.surface && input.surface.id !== "none") {
+    lines.push(`- Surface: \`${input.surface.id}\` (${input.surface.label})`);
+  } else {
+    lines.push("- No background (effect `none`)");
+  }
+  lines.push("- Keep the text-safety rule: quiet zone behind copy, body contrast at least 7:1, no lime behind copy, reduced motion respected.");
+  lines.push("", "What I want: ");
+  return lines.join("\n");
+}
+
+/**
+ * What the Background panel says after `set-motion`, naming the block. Null means
  * the frame did not answer: an older engine. The site's own `message` goes to the console.
  */
-export function setMotionMessage(result: WebsiteFrameSetMotionResult | null, blockName: string, effectLabel: string, intensity: WebsiteMotionIntensity): string {
-  if (!result) return "The site's editor did not answer, so nothing changed. Set the motion in the block's own fields.";
+export function setMotionMessage(result: WebsiteFrameSetMotionResult | null, blockName: string, effectLabel: string, intensity: WebsiteMotionIntensity, settingsText?: string): string {
+  if (!result) return "The site's editor did not answer, so nothing changed. Set the background in the block's own fields.";
   if (result.ok) {
     return effectLabel === "None"
-      ? `${blockName} has no motion now. Save the page in the editor to keep it.`
-      : `${effectLabel}, ${MOTION_INTENSITY_LABELS[intensity]}, is in ${blockName}. Save the page in the editor to keep it.`;
+      ? `${blockName} has no background now. Save the page in the editor to keep it.`
+      : `${effectLabel}, ${settingsText ?? MOTION_INTENSITY_LABELS[intensity]}, is in ${blockName}. Save the page in the editor to keep it.`;
   }
   switch (result.code) {
     case "block_not_found":
       return `${blockName} is no longer on this page, so nothing changed.`;
     case "block_has_no_motion":
-      return `${blockName} takes no motion, so nothing changed.`;
+      return `${blockName} takes no background, so nothing changed.`;
     case "effect_not_allowed":
-      return `${blockName} does not take ${effectLabel}, so nothing changed. Pick another effect.`;
+      return `${blockName} does not take ${effectLabel}, so nothing changed. Pick another background.`;
+    case "frozen_page":
+      return "The Two Doors home page is frozen, so nothing changed. Its background changes only with John's yes.";
     default:
       if (result.message) console.warn("set-motion refused:", result.message);
-      return `The site's editor did not set the motion in ${blockName}, so nothing changed.`;
+      return `The site's editor did not set the background in ${blockName}, so nothing changed.`;
   }
 }
 

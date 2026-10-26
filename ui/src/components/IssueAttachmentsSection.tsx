@@ -18,6 +18,7 @@ import {
   isMarkdownAttachment,
   isVideoAttachment,
 } from "@/lib/issue-attachments";
+import { AttachmentThumbnail } from "./AttachmentThumbnail";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -296,11 +297,10 @@ export function IssueAttachmentsSection({
               className="group relative aspect-square cursor-pointer scroll-mt-20 overflow-hidden rounded-lg border border-border bg-accent/10"
               onClick={() => onImageClick(attachment)}
             >
-              <img
+              <AttachmentThumbnail
                 src={attachmentThumbnailSrc(attachment.contentPath, 320)}
                 alt={attachment.originalFilename ?? "attachment"}
-                className="h-full w-full object-cover"
-                loading="lazy"
+                filename={attachment.originalFilename}
               />
               <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/30" />
               {onDelete && confirmDeleteId === attachment.id ? (

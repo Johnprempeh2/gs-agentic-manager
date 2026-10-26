@@ -4,9 +4,31 @@ import { z } from "zod";
 // over a signed, read-only call to `<site>/api/admin/v1/*`.
 
 export const WEBSITE_DATA_RESOURCES = [
-  "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries",
+  "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries", "billing-lines",
 ] as const;
 export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
+
+/**
+ * The site's commerce records (GRE-2354 2c(a)), read on the same read key: lists and items like the records above.
+ * `imports/:id` pages its rows with `?cursor=&limit=`. The FX rate and the payment report have routes of their own.
+ */
+export const WEBSITE_COMMERCE_RESOURCES = [
+  "offerings", "categories", "vendors", "pricing-rules", "customer-tiers", "imports", "billing-lines",
+] as const;
+export type WebsiteCommerceResource = (typeof WEBSITE_COMMERCE_RESOURCES)[number];
+
+/** A billing line returned by the website's admin bridge (minor units are decimal strings). */
+export interface WebsiteBillingLine {
+  id: string;
+  customer_id: string;
+  description: string;
+  qty: number;
+  unit_price_minor: string;
+  currency: string;
+  billing_period: "monthly" | "quarterly" | "annual" | "multi_year";
+  next_bill_on: string | null;
+  status: "active" | "paused" | "ended";
+}
 
 export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
   /** GET → `WebsiteDataBridgeStatus` (website:view). Checks the site's health route, cached for 60 s. */
@@ -20,7 +42,117 @@ export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
   list: "/companies/:companyId/website/sites/:siteId/data/:resource",
   /** GET → `{ item }` (website:view). */
   item: "/companies/:companyId/website/sites/:siteId/data/:resource/:itemId",
+  /** GET → `{ item }` (website:view): the USD to GBP display rate, its row version and its last 50 changes. */
+  commerceFx: "/companies/:companyId/website/sites/:siteId/commerce/fx",
+  /** GET → `{ report: WebsitePaymentReport }` (website:view). `?from=&to=` dates. From the site's database; no Stripe call. */
+  commercePayments: "/companies/:companyId/website/sites/:siteId/commerce/payments",
+  /**
+   * POST → 201 `{ approval, request }` (website:commerce; agents may). `WebsiteCommerceRefundRequestInput`. Records a
+   * refund request on the site with the refund_request key and opens a `commerce_refund_request` approval. Moves no
+   * money. 409 `capability_not_configured` when the site has no refund key.
+   */
+  commerceRefundRequests: "/companies/:companyId/website/sites/:siteId/commerce/refund-requests",
+  /**
+   * POST, PATCH or DELETE → the site's `{ item }` (website:commerce): one typed write, `*path` as in
+   * `websiteCommerceWriteOperation`. Registered after `commerceRefundRequests`.
+   */
+  commerceWrite: "/companies/:companyId/website/sites/:siteId/commerce/*path",
+  /** GET → `{ items, nextCursor }` (website:view). `?updatedSince=&cursor=&limit=` */
+  commerceList: "/companies/:companyId/website/sites/:siteId/commerce/:resource",
+  /** GET → `{ item }` (website:view). `imports/:id` adds `rows` and `nextCursor`, paged with `?cursor=&limit=`. */
+  commerceItem: "/companies/:companyId/website/sites/:siteId/commerce/:resource/:itemId",
 } as const;
+
+/**
+ * Commerce writes (GRE-2354 2c(b)): POST, PATCH or DELETE on `/companies/:companyId/website/sites/:siteId/commerce/<path>`,
+ * where `<path>` is one of the operations below (as on the site's `/api/admin/v1/<path>`). website:commerce. The body
+ * is the site's: it checks every field. An optional `Idempotency-Key` header (22 base64url characters) makes a
+ * repeated call write once. 409 `capability_not_configured` when the site has no write key, with no call to the site.
+ */
+export const WEBSITE_COMMERCE_CATALOGUE_RESOURCES = ["vendors", "categories", "offerings", "pricing-rules"] as const;
+export type WebsiteCommerceCatalogueResource = (typeof WEBSITE_COMMERCE_CATALOGUE_RESOURCES)[number];
+
+export type WebsiteCommerceWriteMethod = "POST" | "PATCH" | "DELETE";
+
+export interface WebsiteCommerceWriteOperation {
+  /** e.g. `offerings.create`, `offerings.variants.edit`, `invoices.issue`. */
+  name: string;
+  /** Only a person may call it: GSAM refuses an agent with 403 before any call to the site, and the site refuses again. */
+  peopleOnly: boolean;
+}
+
+const CATALOGUE_CHILDREN: Record<string, { sub: string; edit: boolean }[]> = {
+  offerings: [{ sub: "variants", edit: true }, { sub: "specs", edit: false }, { sub: "media", edit: false }],
+  "pricing-rules": [{ sub: "targets", edit: false }],
+};
+const ROW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The typed commerce write for a method and path parts (after `/commerce/`), or null: GSAM sends only these, the same
+ * table as the site's `writeRoute` (greatstone-website, lib/admin-bridge-write.mjs). Ids must be uuids.
+ */
+export function websiteCommerceWriteOperation(method: string, parts: readonly string[]): WebsiteCommerceWriteOperation | null {
+  const [res, id, sub, childId, extra] = parts;
+  if (extra !== undefined || !res) return null;
+  if (id !== undefined && !ROW_ID.test(id)) return null;
+  if (childId !== undefined && !ROW_ID.test(childId)) return null;
+  const op = (name: string, peopleOnly = false) => ({ name, peopleOnly });
+  if ((WEBSITE_COMMERCE_CATALOGUE_RESOURCES as readonly string[]).includes(res)) {
+    if (id === undefined) return method === "POST" ? op(`${res}.create`) : null;
+    if (sub === undefined) return method === "PATCH" ? op(`${res}.edit`) : method === "DELETE" ? op(`${res}.delete`) : null;
+    if ((sub === "publish" || sub === "archive") && childId === undefined) return method === "POST" ? op(`${res}.${sub}`, true) : null;
+    const child = CATALOGUE_CHILDREN[res]?.find((c) => c.sub === sub);
+    if (!child) return null;
+    if (childId === undefined) return method === "POST" ? op(`${res}.${sub}.create`) : null;
+    if (method === "PATCH" && child.edit) return op(`${res}.${sub}.edit`);
+    return method === "DELETE" ? op(`${res}.${sub}.delete`) : null;
+  }
+  if (sub !== undefined && childId !== undefined) return null;
+  if (res === "fx") return id === undefined && method === "PATCH" ? op("fx.edit", true) : null;
+  if (res === "imports") {
+    if (id === undefined) return method === "POST" ? op("imports.dry_run") : null;
+    return sub === "apply" && method === "POST" ? op("imports.apply", true) : null;
+  }
+  if (res === "quotes" && id !== undefined) {
+    if (sub === undefined) return method === "PATCH" ? op("quotes.edit") : null;
+    return sub === "convert" && method === "POST" ? op("quotes.convert") : null;
+  }
+  if (res === "invoices" && id !== undefined) {
+    if (sub === undefined) return method === "PATCH" ? op("invoices.edit") : null;
+    return sub === "issue" && method === "POST" ? op("invoices.issue", true) : null;
+  }
+  return null;
+}
+
+export const websiteCommerceRefundRequestSchema = z.object({
+  orderId: z.string().uuid(),
+  /** In the order's currency, minor units. */
+  amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  reason: z.string().trim().min(1).max(2000),
+}).strict();
+export type WebsiteCommerceRefundRequestInput = z.infer<typeof websiteCommerceRefundRequestSchema>;
+
+export const COMMERCE_REFUND_REQUEST_APPROVAL_TYPE = "commerce_refund_request";
+
+/** The card a person decides. The server builds it; callers cannot set it. */
+export interface CommerceRefundRequestApprovalPayload {
+  siteId: string;
+  siteName: string;
+  title: string;
+  summary: string;
+  orderId: string;
+  amountMinor: number;
+  /** From the site's request row, when it said. */
+  currency: string | null;
+  reason: string;
+  requestedBy: string;
+  /** The site's refund_requests id. Null only while GSAM has not heard back from the site. */
+  requestId: string | null;
+  /** The site's status of the request as GSAM last saw it: requested, approved, rejected, done, cancelled. */
+  requestStatus: string | null;
+  /** The caller's Idempotency-Key, when it sent one: the same key returns this card. */
+  clientKey?: string;
+}
 
 export type WebsiteDataBridgeState = "not_set_up" | "connected" | "failing";
 
@@ -33,19 +165,25 @@ export interface WebsiteDataBridgeStatus {
   message: string | null;
   /** The site's clock minus GSAM's, when the site answered. */
   clockSkewSeconds: number | null;
+  /** The write and refund_request key ids (GRE-2354 2c(b)); null means that capability is off. Never the keys. */
+  writeKeyId?: string | null;
+  refundKeyId?: string | null;
 }
 
 export const createWebsiteDataBridgeKeySchema = z.object({
   /** `stg` for the staging site, `live` for the live site: the two never share a key. */
   environment: z.enum(["stg", "live"]),
-  /** `read` (the default) for GSAM's reads; `write` for the Deep Dive sync (GRE-2439). Each has its own key. */
-  capability: z.enum(["read", "write"]).optional(),
+  /**
+   * `read` (the default) for GSAM's reads; `write` for the Deep Dive sync (GRE-2439) and the commerce writes;
+   * `refund_request` to record refund requests (GRE-2354 2c(b)). Each has its own key.
+   */
+  capability: z.enum(["read", "write", "refund_request"]).optional(),
   /** The bridge address, when it is not `https://<domain>`. Null goes back to the domain. */
   url: z.string().url().refine((u) => u.startsWith("https://"), "must be an https:// address").nullable().optional(),
 }).strict();
 export type CreateWebsiteDataBridgeKey = z.infer<typeof createWebsiteDataBridgeKeySchema>;
 
-export type WebsiteDataBridgeCapability = "read" | "write";
+export type WebsiteDataBridgeCapability = "read" | "write" | "refund_request";
 
 export interface WebsiteDataBridgeKey {
   keyId: string;
@@ -63,6 +201,29 @@ export const websiteDataListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 }).strict();
 export type WebsiteDataListQuery = z.infer<typeof websiteDataListQuerySchema>;
+
+/** Catalogue commerce lists have no customer filter; billing-lines uses websiteDataListQuerySchema. */
+export const websiteCommerceListQuerySchema = websiteDataListQuerySchema.omit({ customer: true });
+export type WebsiteCommerceListQuery = z.infer<typeof websiteCommerceListQuerySchema>;
+
+/** Only `imports/:id` takes a query: the page of its rows. */
+export const websiteCommerceItemQuerySchema = websiteDataListQuerySchema.pick({ cursor: true, limit: true });
+
+const reportDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a date, YYYY-MM-DD");
+export const websitePaymentReportQuerySchema = z.object({ from: reportDate.optional(), to: reportDate.optional() }).strict()
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: "from must not be after to", path: ["from"] });
+export type WebsitePaymentReportQuery = z.infer<typeof websitePaymentReportQuerySchema>;
+
+/**
+ * The payment report (GRE-2354 section 7), built from the site's own orders: never a Stripe id, never a key.
+ * `stripeMode` comes from the prefix of the site's Stripe key. Other fields are the site's to add.
+ */
+export interface WebsitePaymentReport {
+  from: string | null;
+  to: string | null;
+  stripeMode: "test" | "live" | "unset";
+  [field: string]: unknown;
+}
 
 // ---- Deep Dive sync (GRE-2439) ----
 // GSAM pushes one client's Shared Deep Dive items, Shared files, open document requests and published
@@ -132,6 +293,59 @@ export interface DeepDiveSyncDeliverable {
   acceptedAt: string | null;
 }
 
+// Findings, opportunities and KPIs (GRE-2632). Each has its own array, not an item `type`: their shapes are
+// fixed and typed, unlike an item's free `fields`. Only Shared records of this tenant are sent. A link to another
+// record (a stream, a finding, an opportunity) is sent only when that record is in the same payload, so an
+// Internal record's id never leaves GSAM. No authors, owners or internal notes.
+
+/** A Shared Deep Dive finding on one of this tenant's Investigation Streams. */
+export interface DeepDiveSyncFinding {
+  id: string;
+  /** The `deep_dive_stream` item it belongs to, only when that item is also Shared; otherwise null. */
+  streamItemId: string | null;
+  statement: string;
+  status: "proposed" | "validated" | "rejected" | "superseded";
+  /** How many pieces of evidence back it. */
+  evidenceCount: number;
+  /** The finding this one replaces, only when that finding is also Shared; otherwise null. */
+  supersedesId: string | null;
+  updatedAt: string;
+}
+
+/** A Shared opportunity whose linked findings are all on this tenant's streams. */
+export interface DeepDiveSyncOpportunity {
+  id: string;
+  /** The opportunity's short reference, for example `OP-3`; empty when none was given. */
+  ref: string;
+  title: string;
+  statement: string;
+  desiredOutcome: string;
+  status: "draft" | "refined" | "validated";
+  /** Its Shared findings in this payload. */
+  findingIds: string[];
+  /** The Shared `deep_dive_stream` items of those findings. */
+  streamItemIds: string[];
+  updatedAt: string;
+}
+
+/** A Shared KPI that moves only through this tenant's opportunities (roadmap → commercial → build → opportunity). */
+export interface DeepDiveSyncKpi {
+  id: string;
+  title: string;
+  /** How the number is calculated. */
+  definition: string;
+  scope: "company" | "division" | "department" | "team" | "individual";
+  unit: string;
+  direction: "up" | "down" | "steady";
+  baseline: number;
+  /** The period the baseline covers. */
+  baselinePeriod: string;
+  target: number;
+  /** Its Shared opportunities in this payload. */
+  opportunityIds: string[];
+  updatedAt: string;
+}
+
 export interface DeepDiveSyncPayload {
   schema: typeof DEEP_DIVE_SYNC_SCHEMA;
   tenantId: string;
@@ -141,12 +355,24 @@ export interface DeepDiveSyncPayload {
   files: DeepDiveSyncFile[];
   documentRequests: DeepDiveSyncDocumentRequest[];
   deliverables: DeepDiveSyncDeliverable[];
+  /** Added in GRE-2632; a site that does not know them can ignore them. */
+  findings: DeepDiveSyncFinding[];
+  opportunities: DeepDiveSyncOpportunity[];
+  kpis: DeepDiveSyncKpi[];
 }
 
 export interface DeepDiveSyncResult {
   tenantId: string;
   syncedAt: string;
-  counts: { items: number; files: number; documentRequests: number; deliverables: number };
+  counts: {
+    items: number;
+    files: number;
+    documentRequests: number;
+    deliverables: number;
+    findings: number;
+    opportunities: number;
+    kpis: number;
+  };
 }
 
 const bridgeKidSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{2,63}$/, "3 to 64 lower-case letters, digits or dashes");

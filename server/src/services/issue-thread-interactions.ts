@@ -17,6 +17,7 @@ import {
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  companyMemberships,
   companySecretProposals,
   companies,
   documents,
@@ -626,10 +627,12 @@ function isEquivalentCreateRequest(
   row: IssueThreadInteractionRow,
   input: CreateIssueThreadInteraction,
   actor: InteractionActor,
+  resolverUserIds: string[],
 ) {
   return (
     row.kind === input.kind &&
-    row.requestedResolverPolicy === input.resolverPolicy &&
+    row.requestedResolverPolicy === (resolverUserIds.length ? "human_only" : input.resolverPolicy) &&
+    isDeepStrictEqual(row.resolverUserIds ?? [], resolverUserIds) &&
     (row.addresseeAgentId ?? null) === (input.addresseeAgentId ?? null) &&
     (row.addresseeUserId ?? null) === (input.addresseeUserId ?? null) &&
     row.continuationPolicy === input.continuationPolicy &&
@@ -708,6 +711,7 @@ function hydrateInteraction(
     idempotencyKey: row.idempotencyKey ?? null,
     addresseeAgentId: row.addresseeAgentId ?? null,
     addresseeUserId: row.addresseeUserId ?? null,
+    resolverUserIds: row.resolverUserIds ?? [],
     status: row.status as IssueThreadInteraction["status"],
     continuationPolicy:
       row.continuationPolicy as IssueThreadInteraction["continuationPolicy"],
@@ -2294,7 +2298,8 @@ export function issueThreadInteractionService(
         throw issueThreadInteractionResolutionError(
           409,
           "interaction_already_resolved",
-          "Interaction has already been resolved",
+          "This card has already been answered. Refresh to see who answered and when.",
+          { resolvedByUserId: lockedCurrent.resolvedByUserId, resolvedAt: lockedCurrent.resolvedAt },
         );
       }
       await assertRequestConfirmationResolutionAllowedUnderLock(
@@ -2594,7 +2599,8 @@ export function issueThreadInteractionService(
         throw issueThreadInteractionResolutionError(
           409,
           "interaction_already_resolved",
-          "Interaction has already been resolved",
+          "This card has already been answered. Refresh to see who answered and when.",
+          { resolvedByUserId: lockedCurrent.resolvedByUserId, resolvedAt: lockedCurrent.resolvedAt },
         );
       }
       await assertRequestConfirmationResolutionAllowedUnderLock(
@@ -3670,6 +3676,36 @@ export function issueThreadInteractionService(
           "An issue-thread interaction cannot address both an agent and a user",
         );
       }
+      if (normalizedData.resolverUserIds && normalizedData.addresseeAgentId) {
+        throw unprocessable("A person resolver set cannot address an agent");
+      }
+      const decisionKinds = new Set([
+        "request_confirmation", "request_checkbox_confirmation", "request_item_verdicts",
+        "request_draft_review", "ask_user_questions", "suggest_tasks",
+      ]);
+      const memberRows = decisionKinds.has(normalizedData.kind)
+        ? await db.select({ userId: companyMemberships.principalId, role: companyMemberships.membershipRole }).from(companyMemberships)
+          .where(and(
+            eq(companyMemberships.companyId, issue.companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.status, "active"),
+          ))
+        : [];
+      const boardUserIds = memberRows.filter((row) => (row.role === "owner" || row.role === "admin") && row.userId !== "local-board")
+        .map((row) => row.userId).sort();
+      if (normalizedData.resolverUserIds?.some((id) => !memberRows.some((row) => row.userId === id))) {
+        throw unprocessable("resolverUserIds must name active company members");
+      }
+      // A board decision defaults to active owners and admins. A specifically
+      // addressed member outside that set remains a single-person ask.
+      const resolverUserIds = normalizedData.resolverUserIds ?? (
+        decisionKinds.has(normalizedData.kind)
+        && !normalizedData.addresseeAgentId
+        && (normalizedData.addresseeUserId
+          ? boardUserIds.includes(normalizedData.addresseeUserId)
+          : policy.effectiveResolverPolicy === "human_only")
+          ? boardUserIds : []
+      );
 
       if (normalizedData.addresseeAgentId) {
         if (normalizedData.addresseeAgentId === actor.agentId) {
@@ -3758,7 +3794,7 @@ export function issueThreadInteractionService(
           idempotencyKey: normalizedData.idempotencyKey,
         });
         if (existing) {
-          if (!isEquivalentCreateRequest(existing, normalizedData, actor)) {
+          if (!isEquivalentCreateRequest(existing, normalizedData, actor, resolverUserIds)) {
             throw conflict(
               "Interaction idempotency key already exists for a different request",
               {
@@ -3867,8 +3903,8 @@ export function issueThreadInteractionService(
               kind: data.kind,
               status: "pending",
               continuationPolicy: data.continuationPolicy,
-              requestedResolverPolicy: policy.requestedResolverPolicy,
-              effectiveResolverPolicy: policy.effectiveResolverPolicy,
+              requestedResolverPolicy: resolverUserIds.length ? "human_only" : policy.requestedResolverPolicy,
+              effectiveResolverPolicy: resolverUserIds.length ? "human_only" : policy.effectiveResolverPolicy,
               resolverPolicyProvenance: policy.resolverPolicyProvenance,
               effectiveResolverPolicySource:
                 policy.effectiveResolverPolicySource,
@@ -3882,6 +3918,7 @@ export function issueThreadInteractionService(
               createdByAgentId: actor.agentId ?? null,
               addresseeAgentId: normalizedData.addresseeAgentId ?? null,
               addresseeUserId: normalizedData.addresseeUserId ?? null,
+              resolverUserIds,
               createdByUserId: actor.userId ?? null,
               // The decision card reads it from the stored payload; the kind's
               // payload schema strips it on every other read.
@@ -3980,7 +4017,7 @@ export function issueThreadInteractionService(
           idempotencyKey: normalizedData.idempotencyKey,
         });
         if (!existing) throw error;
-        if (!isEquivalentCreateRequest(existing, normalizedData, actor)) {
+        if (!isEquivalentCreateRequest(existing, normalizedData, actor, resolverUserIds)) {
           throw conflict(
             "Interaction idempotency key already exists for a different request",
             {

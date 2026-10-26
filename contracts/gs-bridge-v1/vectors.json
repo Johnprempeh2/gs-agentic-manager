@@ -71,5 +71,84 @@
         "signature": "hVxEXVeT8cQJolawSMZ2GzQsgZ0DjJj1xZRQuP-dhBpuXYOlxyUSYMAO3dvVHKy7gMGgxogXvxfxcmmoQmb_Cw"
       }
     }
+  ],
+  "_commentV2": "gs-bridge-v2 (GRE-2354): write and refund_request keys. The same seed signs; kid and capability are per vector. The canonical string adds the idempotency key as a tenth line.",
+  "vectorsV2": [
+    {
+      "name": "write: PATCH with a body and an idempotency key",
+      "kid": "test-write-1",
+      "capability": "write",
+      "method": "PATCH",
+      "url": "https://staging.example.test/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001",
+      "time": 1793000010,
+      "nonce": "QEFCQ0RFRkdISUpLTE1OTw",
+      "idempotencyKey": "UFFSU1RVVldYWVpbXF1eXw",
+      "actor": "user:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP",
+      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "body": "{\"expectedRowVersion\":3,\"name\":\"Aspose.Words for .NET\"}",
+      "expected": {
+        "canonicalQuery": "",
+        "bodySha256": "9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c",
+        "canonical": "gs-bridge-v2\nPATCH\nstaging.example.test\n/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001\n1793000010\nQEFCQ0RFRkdISUpLTE1OTw\nuser:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP\n9ef9feeb-d13b-450d-b404-89a39e406161\n9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c\nUFFSU1RVVldYWVpbXF1eXw",
+        "signature": "9GhRu3rbDwyX7BIwf-ZGJL5TCSJf67_ZngjTjTUinY-GFayYs_AOKTlJtSrwiq0kddDPN56WlpMRTus4fUw5BA"
+      }
+    },
+    {
+      "name": "write: the retry keeps the idempotency key, with a new nonce and time",
+      "kid": "test-write-1",
+      "capability": "write",
+      "method": "PATCH",
+      "url": "https://staging.example.test/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001",
+      "time": 1793000013,
+      "nonce": "YGFiY2RlZmdoaWprbG1ubw",
+      "idempotencyKey": "UFFSU1RVVldYWVpbXF1eXw",
+      "actor": "user:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP",
+      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "body": "{\"expectedRowVersion\":3,\"name\":\"Aspose.Words for .NET\"}",
+      "expected": {
+        "canonicalQuery": "",
+        "bodySha256": "9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c",
+        "canonical": "gs-bridge-v2\nPATCH\nstaging.example.test\n/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001\n1793000013\nYGFiY2RlZmdoaWprbG1ubw\nuser:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP\n9ef9feeb-d13b-450d-b404-89a39e406161\n9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c\nUFFSU1RVVldYWVpbXF1eXw",
+        "signature": "1cc4V4w38mmzcNIfzKznCoBDKDaBSfn6gMVOmz-kFjhTVC0dOFc2cjmSYt2CuQgsmKiu33xyXtNrO2iCrmRCCQ"
+      }
+    },
+    {
+      "name": "write: POST with an empty body",
+      "kid": "test-write-1",
+      "capability": "write",
+      "method": "POST",
+      "url": "https://staging.example.test/api/admin/v1/quotes/c2000000-0000-4000-8000-000000000001/convert",
+      "time": 1793000020,
+      "nonce": "cHFyc3R1dnd4eXp7fH1-fw",
+      "idempotencyKey": "gIGCg4SFhoeIiYqLjI2Ojw",
+      "actor": "agent:d5651a41-e5e0-4512-8fb0-069815ff4278",
+      "run": null,
+      "body": "",
+      "expected": {
+        "canonicalQuery": "",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "gs-bridge-v2\nPOST\nstaging.example.test\n/api/admin/v1/quotes/c2000000-0000-4000-8000-000000000001/convert\n1793000020\ncHFyc3R1dnd4eXp7fH1-fw\nagent:d5651a41-e5e0-4512-8fb0-069815ff4278\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\ngIGCg4SFhoeIiYqLjI2Ojw",
+        "signature": "bgcjQqHHnR7jnwRU3PUfozT1W9xGlrFNRKXPXWnva42cM7tk7B_cLkLm_cukQnByA_UnLPHxlx8sW7skpLIFAA"
+      }
+    },
+    {
+      "name": "refund request",
+      "kid": "test-refund-1",
+      "capability": "refund_request",
+      "method": "POST",
+      "url": "https://staging.example.test/api/admin/v1/refund-requests",
+      "time": 1793000030,
+      "nonce": "kJGSk5SVlpeYmZqbnJ2enw",
+      "idempotencyKey": "oKGio6SlpqeoqaqrrK2urw",
+      "actor": "agent:d5651a41-e5e0-4512-8fb0-069815ff4278",
+      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "body": "{\"orderId\":\"c3000000-0000-4000-8000-000000000001\",\"amountMinor\":100,\"reason\":\"Charged twice\"}",
+      "expected": {
+        "canonicalQuery": "",
+        "bodySha256": "2d88a0681c10c4e9dae46d1f695c94d5f87d060eb26d1fe2b97da3eced59f56c",
+        "canonical": "gs-bridge-v2\nPOST\nstaging.example.test\n/api/admin/v1/refund-requests\n1793000030\nkJGSk5SVlpeYmZqbnJ2enw\nagent:d5651a41-e5e0-4512-8fb0-069815ff4278\n9ef9feeb-d13b-450d-b404-89a39e406161\n2d88a0681c10c4e9dae46d1f695c94d5f87d060eb26d1fe2b97da3eced59f56c\noKGio6SlpqeoqaqrrK2urw",
+        "signature": "wssyQuiUzMjGt7eDzeTGG9EaC5JIscinNTm9DcLkLLbqX6LBVkFyqL-RVAmioLwYd8cg9ypqXIVWAubFt9sZCA"
+      }
+    }
   ]
 }

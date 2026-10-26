@@ -223,11 +223,94 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect(seen.every((s) => s.verified)).toBe(true);
   });
 
+  it("reads commerce records, FX and the payment report on the read key, as the calling agent (GRE-2354 2c(a))", async () => {
+    const { base, companyId } = await seedSite();
+    const { actor, agentId } = await seedAgent(companyId, ["website:view"]);
+    const http = request(app(actor));
+    await http.get(`${base}/commerce/offerings`).expect(409);
+    await http.get(`${base}/commerce/payments`).expect(409);
+
+    const key = await makeKey(base);
+    // the site's own shape (greatstone-website bridgePayments); GSAM adds from and to under `report`
+    const siteReport = { stripeMode: "test", totals: [{ currency: "GBP", orders: 1, total_minor: "9000", refunded_minor: "500" }],
+      refundRequests: [{ status: "requested", requests: 1, amount_minor: "500" }], items: [], nextCursor: null };
+    const report = { from: "2026-10-01", to: "2026-10-31", ...siteReport };
+    answer = (url) => {
+      const path = url.pathname.replace("/api/admin/v1/", "");
+      if (path === "offerings") return Response.json({ items: [{ id: "of1", status: "draft", variants: [] }], nextCursor: null });
+      if (path === "vendors/v1") return Response.json({ item: { id: "v1", activation_instructions: "Sign in, then…" } });
+      if (path === "imports/j1") return Response.json({ item: { id: "j1", status: "validated" }, rows: [{ row_no: 1 }], nextCursor: "c2" });
+      if (path === "fx") return Response.json({ item: { usd_to_gbp_display_rate: "0.7900", row_version: 4, history: [] } });
+      if (path === "payments") return Response.json(siteReport);
+      return new Response(JSON.stringify({ error: { code: "not_found" } }), { status: 404 });
+    };
+    expect((await http.get(`${base}/commerce/offerings?limit=10`).expect(200)).body.items).toHaveLength(1);
+    expect(seen.at(-1)!.url).toBe("https://www.greatstone.test/api/admin/v1/offerings?limit=10");
+    expect(seen.at(-1)!.headers["x-gs-bridge-key"]).toBe(key.keyId);
+    expect(seen.at(-1)!.headers["x-gs-bridge-actor"]).toBe(`agent:${agentId}`);
+    expect((await http.get(`${base}/commerce/vendors/v1`).expect(200)).body.item.activation_instructions).toMatch(/Sign in/);
+    expect((await http.get(`${base}/commerce/imports/j1?cursor=c1&limit=50`).expect(200)).body).toMatchObject({ rows: [{ row_no: 1 }], nextCursor: "c2" });
+    expect(seen.at(-1)!.url).toBe("https://www.greatstone.test/api/admin/v1/imports/j1?cursor=c1&limit=50");
+    expect((await http.get(`${base}/commerce/fx`).expect(200)).body.item.row_version).toBe(4);
+    expect((await http.get(`${base}/commerce/payments?from=2026-10-01&to=2026-10-31`).expect(200)).body).toEqual({ report });
+    expect(seen.at(-1)!.url).toBe("https://www.greatstone.test/api/admin/v1/payments?from=2026-10-01&to=2026-10-31");
+    await http.get(`${base}/commerce/categories/missing`).expect(404);
+
+    // Bad filters stop in GSAM, before any call to the site.
+    const calls = seen.length;
+    await http.get(`${base}/commerce/orders`).expect(422);
+    await http.get(`${base}/commerce/offerings?customer=${randomUUID()}`).expect(422);
+    await http.get(`${base}/commerce/vendors/v1?cursor=x`).expect(422);
+    await http.get(`${base}/commerce/fx?x=1`).expect(422);
+    await http.get(`${base}/commerce/payments?from=2026-11-01&to=2026-10-01`).expect(422);
+    await http.get(`${base}/commerce/payments?from=yesterday`).expect(422);
+    // writes are 2c(b)'s, behind website:commerce, which this agent does not hold
+    await http.post(`${base}/commerce/offerings`).send({}).expect(403);
+    expect(seen).toHaveLength(calls);
+
+    // A report that carries a Stripe id never reaches the caller.
+    answer = () => Response.json({ ...siteReport, lastIntent: "pi_3PqRsTuVwXyZ12345678" });
+    const leaked = await http.get(`${base}/commerce/payments`).expect(502);
+    expect(leaked.body.details?.code ?? leaked.body.code).toBe("website_bridge_bad_response");
+    expect(JSON.stringify(leaked.body)).not.toMatch(/pi_3P/);
+    expect(seen.every((s) => s.verified)).toBe(true);
+  });
+
+  it("reads billing lines for one customer through either read path with website:view", async () => {
+    const { base, companyId } = await seedSite();
+    const customer = randomUUID();
+    const otherCustomer = randomUUID();
+    const line = { id: randomUUID(), customer_id: customer, description: "Monthly service", qty: 2,
+      unit_price_minor: "1250", currency: "GBP", billing_period: "monthly", next_bill_on: "2026-12-01", status: "active" };
+    await makeKey(base);
+    answer = (url) => Response.json({ items: url.searchParams.get("customer") === customer ? [line] : [], nextCursor: null });
+    const { actor } = await seedAgent(companyId, ["website:view"]);
+
+    for (const route of ["data", "commerce"]) {
+      const path = `${base}/${route}/billing-lines`;
+      expect((await request(app(actor)).get(`${path}?customer=${customer}`).expect(200)).body.items).toEqual([line]);
+      expect(seen.at(-1)?.url).toBe(`https://www.greatstone.test/api/admin/v1/billing-lines?customer=${customer}`);
+      expect((await request(app(actor)).get(`${path}?customer=${otherCustomer}`).expect(200)).body.items).toEqual([]);
+      const calls = seen.length;
+      await request(app(actor)).get(path).expect(422);
+      await request(app(actor)).get(`${path}?customer=bad`).expect(422);
+      expect(seen).toHaveLength(calls);
+      await request(app(actor)).post(path).send({}).expect(route === "data" ? 404 : 403);
+    }
+    const { actor: denied } = await seedAgent(companyId, []);
+    await request(app(denied)).get(`${base}/data/billing-lines?customer=${customer}`).expect(403);
+    await request(app(denied)).get(`${base}/commerce/billing-lines?customer=${customer}`).expect(403);
+    await request(app(actor)).get(`${base}/data/unknown-resource?customer=${customer}`).expect(422);
+    await request(app(actor)).get(`${base}/commerce/unknown-resource?customer=${customer}`).expect(422);
+  });
+
   it("refuses a caller without website:view, and a site in another company is not found", async () => {
     const { base, companyId } = await seedSite();
     const { actor } = await seedAgent(companyId, []);
     await request(app(actor)).get(`${base}/data-bridge/status`).expect(403);
     await request(app(actor)).get(`${base}/data/orders`).expect(403);
+    await request(app(actor)).get(`${base}/commerce/offerings`).expect(403);
+    await request(app(actor)).get(`${base}/commerce/payments`).expect(403);
     await request(app()).get(`/api/companies/${companyId}/website/sites/${randomUUID()}/data-bridge/status`).expect(404);
   });
 });

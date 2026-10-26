@@ -101,6 +101,8 @@ const STATUS_TONES: Record<string, string> = {
   delivered: "bg-status-success-soft text-status-success-foreground",
   active: "bg-status-success-soft text-status-success-foreground",
   converted: "bg-status-success-soft text-status-success-foreground",
+  paused: "bg-status-warning-soft text-status-warning-foreground",
+  ended: "bg-status-neutral-soft text-status-neutral-foreground",
   refunded: "bg-status-warning-soft text-status-warning-foreground",
   partially_refunded: "bg-status-warning-soft text-status-warning-foreground",
   expired: "bg-status-neutral-soft text-status-neutral-foreground",

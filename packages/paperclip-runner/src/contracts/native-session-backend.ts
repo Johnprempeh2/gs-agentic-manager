@@ -158,6 +158,12 @@ export interface NativeSession {
     message: NativeUserMessage;
     correlationId?: string;
   }): Promise<void>;
+  deliverAtTurnBoundary?(input: {
+    turnId: string;
+    message: NativeUserMessage;
+    correlationId: string;
+    signal?: AbortSignal;
+  }): Promise<void>;
   interrupt?(input: { turnId?: string; reason?: string }): Promise<void>;
   /** Commit cancellation synchronously; the returned promise owns cleanup only. */
   cancel?(input: {

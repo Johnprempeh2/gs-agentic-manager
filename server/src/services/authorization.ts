@@ -213,7 +213,9 @@ function pipelineRoleDefaultAllows(role: string | null | undefined, permissionKe
 
 // Website module (GRE-1914 ADR section 6): owners and admins hold all three,
 // operators view and edit, viewers view. Agents never get a role default.
+// website:commerce (GRE-2354 2c(b)): owners and admins only.
 function websiteRoleDefaultAllows(role: string | null | undefined, permissionKey: PermissionKey) {
+  if (permissionKey === "website:commerce") return role === "owner" || role === "admin";
   if (permissionKey !== "website:view" && permissionKey !== "website:edit" && permissionKey !== "website:publish") return false;
   if (role === "owner" || role === "admin") return true;
   if (role === "operator") return permissionKey !== "website:publish";

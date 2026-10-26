@@ -182,9 +182,7 @@ describe("ClientJourneyOverview", () => {
     });
     await settle();
     expect(container.querySelector("[data-testid='client-journey-overview-days']")?.textContent).toBe("Stuck for 10 days");
-    expect(container.querySelector("[data-testid='client-journey-overview-ball']")?.textContent).toContain(
-      "The ball is with the client.",
-    );
+    expect(container.querySelector("[data-testid='client-journey-overview-summary']")?.textContent).toMatch(/^With the client: /);
 
     const remind = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Draft a reminder")!;
     await act(async () => remind.click());
@@ -215,7 +213,7 @@ describe("ClientJourneyOverview", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(container.querySelector("[data-testid='client-journey-overview-summary']")?.textContent).toBe(
-      "2 things waiting on the client, 1 thing waiting on us.",
+      "With the client: 2 things · With us (Ama Owusu): 1 thing",
     );
     const deepDive = container.querySelector("[aria-label='Deep Dive']")!;
     expect(deepDive.textContent).toContain("Now");

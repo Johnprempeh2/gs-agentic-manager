@@ -1170,6 +1170,7 @@ export interface IssueCommentMetadataSection {
 
 export interface IssueCommentMetadata {
   version: 1;
+  correction?: { targetRunId: string | null };
   /** Inbound channel attribution; never an authorization input. */
   sourceChannel?: "imessage-photon";
   sourceRunId?: string | null;
@@ -1723,6 +1724,8 @@ export interface IssueThreadInteractionBase extends IssueThreadInteractionActorF
   sourceIdentityContextId?: string | null;
   addresseeAgentId?: string | null;
   addresseeUserId?: string | null;
+  /** Named people who may resolve this card; the first terminal answer wins. */
+  resolverUserIds?: string[];
   title?: string | null;
   summary?: string | null;
   status: IssueThreadInteractionStatus;
@@ -1850,4 +1853,6 @@ export interface IssueAttachment {
   contentPath: string;
   openPath?: string;
   downloadPath?: string;
+  /** Upload response only: problems the uploader should fix, e.g. a blank screenshot (GRE-2524). */
+  warnings?: string[];
 }

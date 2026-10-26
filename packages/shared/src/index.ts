@@ -513,6 +513,7 @@ export * from "./document-evidence.js";
 export * from "./types/website.js";
 export * from "./validators/website.js";
 export * from "./types/website-module.js";
+export * from "./types/website-style.js";
 export * from "./website-collections.js";
 export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
@@ -3240,6 +3241,7 @@ export * from "./deep-dive-boards.js";
 export * from "./deep-dive-opportunities.js";
 export * from "./deep-dive-traceability.js";
 export * from "./deep-dive-overview.js";
+export * from "./deep-dive-interviews.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";
@@ -3257,6 +3259,8 @@ export {
 } from "./agent-teams.js";
 export * from "./memory.js";
 export * from "./memory-import.js";
+export * from "./memory-sync.js";
+export * from "./memory-handoff.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
@@ -3270,7 +3274,7 @@ export * from "./entitlement-document.js";
 export * from "./password-policy.js";
 export * from "./partner-branding.js";
 export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
-export type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
+export type { MorningSummary, MorningSummaryDeal, MorningSummaryHandoff, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
 export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
 export {
   updateNotificationPreferencesSchema,
@@ -3293,3 +3297,12 @@ export type {
   AgentDailyDigestMove,
   AgentDailyDigestPayload,
 } from "./types/agent-daily-digest.js";
+export {
+  BLANK_CHECK_SAMPLE_SIZE,
+  BLANK_SCREENSHOT_MESSAGE,
+  BLANK_SCREENSHOT_RETAKE_HINT,
+  BLANK_SCREENSHOT_THRESHOLD,
+  dominantColourShare,
+  isScreenshotLikeFilename,
+  looksBlankScreenshot,
+} from "./screenshot-blank-check.js";

@@ -15,6 +15,10 @@ const CONTRACT = JSON.parse(readFileSync(new URL("../../../contracts/gs-bridge-v
   key: { kid: string; seedHex: string; publicKey: string };
   vectors: Array<{ name: string; method: string; url: string; time: number; nonce: string; actor: string; run: string | null; body: string;
     expected: { canonicalQuery: string; bodySha256: string; canonical: string; signature: string } }>;
+  /** gs-bridge-v2 (GRE-2354): writes and refund requests. Same seed; kid and capability per vector. */
+  vectorsV2: Array<{ name: string; kid: string; capability: string; method: string; url: string; time: number; nonce: string;
+    idempotencyKey: string; actor: string; run: string | null; body: string;
+    expected: { canonicalQuery: string; bodySha256: string; canonical: string; signature: string } }>;
 };
 const PRIVATE = createPrivateKey({
   key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(CONTRACT.key.seedHex, "hex")]),
@@ -43,6 +47,26 @@ describe("gs-bridge-v1 signing", () => {
     }
   });
 
+  it("signs gs-bridge-v2 with the idempotency key to match the shared vectors (GRE-2354 2c(b))", () => {
+    expect(CONTRACT.vectorsV2.length).toBeGreaterThanOrEqual(4);
+    for (const v of CONTRACT.vectorsV2) {
+      const url = new URL(v.url);
+      expect(bridgeCanonicalString({ method: v.method, host: url.host, path: url.pathname, query: v.expected.canonicalQuery,
+        time: v.time, nonce: v.nonce, actor: v.actor, run: v.run, bodySha256: v.expected.bodySha256, idempotencyKey: v.idempotencyKey }),
+      v.name).toBe(v.expected.canonical);
+      const headers = signBridgeRequest({ method: v.method, url, body: v.body, kid: v.kid, privateKey: PRIVATE,
+        actor: { ...parseActor(v.actor), runId: v.run }, nowSeconds: v.time, nonce: v.nonce, idempotencyKey: v.idempotencyKey });
+      expect(headers["x-gs-bridge-signature"], v.name).toBe(v.expected.signature);
+      expect(headers["x-gs-bridge-idempotency-key"], v.name).toBe(v.idempotencyKey);
+    }
+    // a read never carries the header, and a malformed key is refused before signing
+    const read = CONTRACT.vectors[0]!;
+    expect(signBridgeRequest({ method: read.method, url: new URL(read.url), kid: "k", privateKey: PRIVATE, actor: ACTOR, nowSeconds: 1 }))
+      .not.toHaveProperty("x-gs-bridge-idempotency-key");
+    expect(() => signBridgeRequest({ method: "POST", url: new URL(read.url), kid: "k", privateKey: PRIVATE, actor: ACTOR, nowSeconds: 1,
+      idempotencyKey: "short" })).toThrow(/22 base64url/);
+  });
+
   it("signs with a key the shared public key verifies", () => {
     const pub = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: CONTRACT.key.publicKey }, format: "jwk" });
     const v = CONTRACT.vectors[0]!;
@@ -57,11 +81,11 @@ describe("gs-bridge-v1 signing", () => {
   });
 });
 
-type Call = { url: string; headers: Record<string, string> };
+type Call = { url: string; method: string; body: unknown; headers: Record<string, string> };
 function fakeFetch(answers: Array<Response | Error>) {
   const calls: Call[] = [];
   const impl = (async (url: URL, init: RequestInit) => {
-    calls.push({ url: String(url), headers: init.headers as Record<string, string> });
+    calls.push({ url: String(url), method: String(init.method), body: init.body, headers: init.headers as Record<string, string> });
     const next = answers.shift();
     if (!next) throw new Error("no more answers");
     if (next instanceof Error) throw next;
@@ -130,6 +154,101 @@ describe("website bridge client", () => {
     const ok = client([json(200, { items: [{ id: "a" }], nextCursor: null })]);
     await expect(ok.c.list("orders", { limit: 2, customer: "c1" }, ACTOR)).resolves.toEqual({ items: [{ id: "a" }], nextCursor: null });
     expect(ok.calls[0]!.url).toBe("https://staging.example.test/api/admin/v1/orders?customer=c1&limit=2");
+  });
+
+  it("reads the commerce resources on the same signed GET (GRE-2354 2c(a))", async () => {
+    const { c, calls } = client([
+      json(200, { items: [], nextCursor: null }),
+      json(200, { item: { id: "j1" }, rows: [{ line: 1 }], nextCursor: "r2" }),
+      json(200, { item: { usdToGbpDisplayRate: "0.79", rowVersion: 3, history: [] } }),
+      // the site's own shape (greatstone-website bridgePayments): no envelope, no from/to
+      json(200, { stripeMode: "test", totals: [{ currency: "GBP", orders: 2, total_minor: "9000", refunded_minor: "0" }],
+        refundRequests: [], items: [], nextCursor: null }),
+    ]);
+    await c.list("pricing-rules", { updatedSince: "2026-10-01T00:00:00Z" }, ACTOR);
+    await expect(c.importJob("j1", { cursor: "r1", limit: 20 }, ACTOR)).resolves.toMatchObject({ rows: [{ line: 1 }], nextCursor: "r2" });
+    await c.fx(ACTOR);
+    await expect(c.payments({ from: "2026-10-01", to: "2026-10-31" }, ACTOR)).resolves.toEqual({ report: { from: "2026-10-01",
+      to: "2026-10-31", stripeMode: "test", totals: [{ currency: "GBP", orders: 2, total_minor: "9000", refunded_minor: "0" }],
+      refundRequests: [], items: [], nextCursor: null } });
+    expect(calls.map((x) => x.url)).toEqual([
+      "https://staging.example.test/api/admin/v1/pricing-rules?updatedSince=2026-10-01T00%3A00%3A00Z",
+      "https://staging.example.test/api/admin/v1/imports/j1?cursor=r1&limit=20",
+      "https://staging.example.test/api/admin/v1/fx",
+      "https://staging.example.test/api/admin/v1/payments?from=2026-10-01&to=2026-10-31",
+    ]);
+    expect(calls.every((x) => x.headers["x-gs-bridge-key"] === CONTRACT.key.kid)).toBe(true);
+  });
+
+  it("refuses a payment report that carries a Stripe id or key, or no Stripe mode", async () => {
+    for (const leak of ["pi_3PqRsTuVwXyZ1234", "sk_test_51AbCdEfGhIjKl", "ch_1AbCdEfGhIjKlMn"]) {
+      const { c } = client([json(200, { stripeMode: "test", items: [{ id: "o1", reference: leak }], nextCursor: null })]);
+      await expect(c.payments({}, ACTOR), leak).rejects.toMatchObject({ code: "bad_response", status: 502 });
+    }
+    const unset = client([json(200, { items: [], nextCursor: null })]);
+    await expect(unset.c.payments({}, ACTOR)).rejects.toMatchObject({ code: "bad_response" });
+    const boolean = client([json(200, { stripeMode: "unset", totals: [], refundRequests: [], nextCursor: null,
+      items: [{ id: "8c1d7c2e-4f0a-4a51-9f4e-0d9c2b7a1e33", paid_by_stripe: true, refund_requests: [{ status: "in_progress_with_stripe" }] }] })]);
+    await expect(boolean.c.payments({}, ACTOR)).resolves.toMatchObject({ report: { from: null, to: null, stripeMode: "unset" } });
+  });
+
+  describe("writes and refund requests (GRE-2354 2c(b))", () => {
+    const ROW = { item: { id: "c0ffee00-0000-4000-8000-000000000001", row_version: 4 } };
+
+    it("retries a write at most twice with the same idempotency key and a new nonce each time", async () => {
+      const { c, calls, sleeps } = client([new TypeError("fetch failed"), json(503, { error: { code: "unavailable" } }), json(200, ROW)]);
+      await expect(c.write("PATCH", "offerings/c0ffee00-0000-4000-8000-000000000001", { expectedRowVersion: 3, name: "X" }, ACTOR))
+        .resolves.toEqual(ROW);
+      expect(calls).toHaveLength(3);
+      const keys = new Set(calls.map((x) => x.headers["x-gs-bridge-idempotency-key"]));
+      expect(keys.size).toBe(1);
+      expect([...keys][0]).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(new Set(calls.map((x) => x.headers["x-gs-bridge-nonce"])).size).toBe(3);
+      expect(sleeps).toEqual([300, 1_000]);
+      expect(calls.every((x) => x.method === "PATCH" && x.body === JSON.stringify({ expectedRowVersion: 3, name: "X" }))).toBe(true);
+
+      const stuck = client([json(503, {}), json(504, {}), json(502, {}), json(200, ROW)]);
+      await expect(stuck.c.write("POST", "vendors", { slug: "a", name: "A" }, ACTOR)).rejects.toMatchObject({ code: "server_error" });
+      expect(stuck.calls).toHaveLength(3);
+    });
+
+    it("never retries a 4xx, and a conflict carries the site's current row", async () => {
+      for (const [status, siteCode, code, gsamStatus] of [
+        [409, "conflict", "conflict", 409], [409, "idempotency_mismatch", "idempotency_mismatch", 409],
+        [409, "over_refundable", "over_refundable", 409], [403, "denied", "denied", 403],
+        [403, "capability_denied", "forbidden", 502], [400, "bad_request", "bad_request", 400], [404, "not_found", "not_found", 404],
+      ] as const) {
+        const { c, calls } = client([json(status, { error: { code: siteCode }, current: { id: "r1", row_version: 9 } }), json(200, ROW)]);
+        const error = await c.write("PATCH", "vendors/r1", { expectedRowVersion: 1 }, ACTOR).catch((e: unknown) => e);
+        expect(error, siteCode).toMatchObject({ code, status: gsamStatus, retryable: false });
+        expect(calls, siteCode).toHaveLength(1);
+        if (status === 409) expect((error as WebsiteBridgeError).current).toEqual({ id: "r1", row_version: 9 });
+      }
+    });
+
+    it("a new logical call gets a new key; a caller's key is sent as given", async () => {
+      const { c, calls } = client([json(201, ROW), json(201, ROW), json(201, ROW)]);
+      await c.write("POST", "quotes/q1/convert", undefined, ACTOR);
+      await c.write("POST", "quotes/q1/convert", undefined, ACTOR);
+      await c.write("POST", "quotes/q1/convert", undefined, ACTOR, "UFFSU1RVVldYWVpbXF1eXw");
+      expect(calls[0]!.headers["x-gs-bridge-idempotency-key"]).not.toBe(calls[1]!.headers["x-gs-bridge-idempotency-key"]);
+      expect(calls[2]!.headers["x-gs-bridge-idempotency-key"]).toBe("UFFSU1RVVldYWVpbXF1eXw");
+      // an operation with no body signs the empty body, as the shared vector does
+      expect(calls[0]!.body).toBe("");
+      expect(calls[0]!.url).toBe("https://staging.example.test/api/admin/v1/quotes/q1/convert");
+    });
+
+    it("records a refund request and a decision, and checks their shape", async () => {
+      const request = { item: { id: "rr1", status: "requested", amount_minor: 100 } };
+      const { c, calls } = client([json(201, request), json(200, { item: { id: "rr1", status: "approved" } }), json(201, { item: {} })]);
+      await expect(c.requestRefund({ orderId: "o1", amountMinor: 100, reason: "Customer asked" }, ACTOR)).resolves.toEqual(request);
+      await c.decideRefund("rr1", { decision: "approved", approvalRef: "a1" }, { type: "user", id: "u1" });
+      expect(calls.map((x) => [x.method, x.url, x.body])).toEqual([
+        ["POST", "https://staging.example.test/api/admin/v1/refund-requests", JSON.stringify({ orderId: "o1", amountMinor: 100, reason: "Customer asked" })],
+        ["POST", "https://staging.example.test/api/admin/v1/refund-requests/rr1/decision", JSON.stringify({ decision: "approved", approvalRef: "a1" })],
+      ]);
+      await expect(c.requestRefund({ orderId: "o1", amountMinor: 1, reason: "r" }, ACTOR)).rejects.toMatchObject({ code: "bad_response" });
+    });
   });
 
   it("refuses a bridge address that is not https", () => {
