@@ -563,7 +563,7 @@ export function BillingPanel({ companyId, websiteOrganisationId }: { companyId: 
           <div className={cn("hidden gap-3 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground sm:grid", BILLING_COLUMNS)} aria-hidden="true">
             <span>Description</span>
             <span className="text-right">Qty</span>
-            <span className="text-right">Price</span>
+            <span className="text-right">Unit price</span>
             <span>Period</span>
             <span>Next bill</span>
             <span>Status</span>
@@ -577,9 +577,9 @@ export function BillingPanel({ companyId, websiteOrganisationId }: { companyId: 
               return (
                 <li key={id} className={cn("grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm sm:items-baseline", BILLING_COLUMNS)}>
                   <span className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">{text(line.description) ?? "No description"}</span>
-                  <BillingCell label="Qty" className="tabular-nums sm:text-right">{text(line.qty) ?? "–"}</BillingCell>
-                  <BillingCell label="Price" className="tabular-nums sm:text-right">{formatMinor(line.unit_price_minor, line.currency) ?? "–"}</BillingCell>
-                  <BillingCell label="Period">{period ? BILLING_PERIOD_LABEL[period] ?? statusLabel(period) : "–"}</BillingCell>
+                  <BillingCell label="Qty" className="tabular-nums sm:text-right">{text(line.qty) ?? "None"}</BillingCell>
+                  <BillingCell label="Unit price" className="tabular-nums sm:text-right">{formatMinor(line.unit_price_minor, line.currency) ?? "None"}</BillingCell>
+                  <BillingCell label="Period">{period ? BILLING_PERIOD_LABEL[period] ?? statusLabel(period) : "None"}</BillingCell>
                   <BillingCell label="Next bill">{nextBill ? formatDate(nextBill) : "None"}</BillingCell>
                   <span>
                     {status ? (
