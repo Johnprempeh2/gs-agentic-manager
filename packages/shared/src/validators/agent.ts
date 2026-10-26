@@ -335,3 +335,8 @@ export const updateAgentPermissionsSchema = z.object({
 });
 
 export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;
+
+/** Add projects to a low-trust boundary without replacing its other restrictions. */
+export const addAgentProjectAccessSchema = z.object({
+  projectIds: z.array(z.string().guid()).min(1).max(100),
+}).strict();

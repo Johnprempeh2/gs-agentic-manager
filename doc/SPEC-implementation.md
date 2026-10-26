@@ -594,6 +594,12 @@ access does not bypass that decision, and `agents:suggest-changes` alone cannot
 apply the lifecycle change. Pause, clear-error, terminate, approval, and
 key-management routes remain board-only.
 
+An authorised board operator may add same-company projects to a low-trust
+agent's project boundary. The save is additive under an agent row lock and
+preserves the remaining trust policy. Agents cannot grant themselves access,
+and saving access does not wake or retry a task. A task retry is a separate
+operator action subject to its normal execution gates.
+
 ### 9.3.1 Shared default-open issue writes
 
 For standard-trust agents, issue comments, issue field/status updates, child
