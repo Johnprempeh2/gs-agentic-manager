@@ -11,7 +11,7 @@
 export const SITE_CONTRACT_NAME = "gs-site-contract" as const;
 
 /** The contract this GSAM speaks. A change that adds to the contract raises it. */
-export const SITE_CONTRACT_VERSION = 1;
+export const SITE_CONTRACT_VERSION = 2;
 
 /**
  * The oldest site contract this GSAM works with. A change that breaks an older

@@ -83,6 +83,63 @@
           "acceptedAt": { "$ref": "#/definitions/nullableTime" }
         }
       }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "streamItemId", "statement", "status", "evidenceCount", "supersedesId", "updatedAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "streamItemId": { "$ref": "#/definitions/nullableString" },
+          "statement": { "type": "string" },
+          "status": { "enum": ["proposed", "validated", "rejected", "superseded"] },
+          "evidenceCount": { "type": "integer", "minimum": 0 },
+          "supersedesId": { "$ref": "#/definitions/nullableString" },
+          "updatedAt": { "$ref": "#/definitions/time" }
+        }
+      }
+    },
+    "opportunities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "ref", "title", "statement", "desiredOutcome", "status", "findingIds", "streamItemIds", "updatedAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "ref": { "type": "string" },
+          "title": { "type": "string" },
+          "statement": { "type": "string" },
+          "desiredOutcome": { "type": "string" },
+          "status": { "enum": ["draft", "refined", "validated"] },
+          "findingIds": { "type": "array", "items": { "$ref": "#/definitions/id" } },
+          "streamItemIds": { "type": "array", "items": { "$ref": "#/definitions/id" } },
+          "updatedAt": { "$ref": "#/definitions/time" }
+        }
+      }
+    },
+    "kpis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "definition", "scope", "unit", "direction", "baseline", "baselinePeriod", "target", "opportunityIds", "updatedAt"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "title": { "type": "string" },
+          "definition": { "type": "string" },
+          "scope": { "enum": ["company", "division", "department", "team", "individual"] },
+          "unit": { "type": "string" },
+          "direction": { "enum": ["up", "down", "steady"] },
+          "baseline": { "type": "number" },
+          "baselinePeriod": { "type": "string" },
+          "target": { "type": "number" },
+          "opportunityIds": { "type": "array", "items": { "$ref": "#/definitions/id" } },
+          "updatedAt": { "$ref": "#/definitions/time" }
+        }
+      }
     }
   }
 }

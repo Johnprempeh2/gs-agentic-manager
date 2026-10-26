@@ -11,7 +11,7 @@ fixtures and the version numbers of every message and endpoint between the two:
 | Editor frame `hello-ack` | `site-contract/schemas/editor-hello-ack.schema.json` | frame protocol 1, editor contract 1 and 2 |
 | `GET /_release` | `site-contract/schemas/release-answer.schema.json` | release schema 1, engine 0.1.0 or later |
 | `GET /_contract.json` (static, unsigned) | `site-contract/schemas/contract-file.schema.json` | `siteContract`, `contractsCommit` |
-| Deep Dive push and its answer | `site-contract/schemas/deep-dive-sync*.schema.json` | `gs-deep-dive-sync-v1` |
+| Deep Dive push and its answer | `site-contract/schemas/deep-dive-sync*.schema.json` | `gs-deep-dive-sync-v1`; contract v2 accepts optional findings, opportunities and KPIs |
 | Document request call back | `site-contract/schemas/document-request-answer.schema.json` | |
 | Interviews | none yet | |
 
