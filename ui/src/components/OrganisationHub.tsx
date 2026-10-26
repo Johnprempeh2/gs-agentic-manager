@@ -1,8 +1,15 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, CalendarClock, FileText, Mail, Pencil, Phone, StickyNote } from "lucide-react";
-import type { CrmFile, CrmTimelineEntry, OrganisationHistory } from "@greatstone/shared";
+import {
+  DEEP_DIVE_INTERVIEW_LABELS,
+  deepDiveInterviewReadiness,
+  type CrmFile,
+  type CrmTimelineEntry,
+  type OrganisationHistory,
+} from "@greatstone/shared";
 import { casesApi } from "@/api/cases";
+import { deepDiveInterviewsApi, deepDiveInterviewsQueryKeys } from "@/api/deepDiveInterviews";
 import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOverview";
 import { deepDiveSessionsApi, deepDiveSessionsQueryKeys } from "@/api/deepDiveSessions";
 import { instanceSettingsApi } from "@/api/instanceSettings";
@@ -17,13 +24,13 @@ import { ErrorState } from "@/components/ErrorState";
 import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { PipelineCaseEvidence } from "@/components/PipelineCaseFiles";
 import { ClientVisibilityBadge } from "@/components/SharedWithClientBadge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { useCommerceSite } from "@/hooks/useCommerceSite";
 import { CLIENT_CASE_TYPE, readClientRecord } from "@/lib/client-case";
 import { formatMinor, statusLabel, statusTone, text } from "@/lib/commerce";
 import { formatBytes } from "@/lib/issue-output";
 import {
-  WEBSITE_LINK_TASK,
   clientShared,
   hubDocumentRequests,
   websiteClientUsers,
@@ -37,8 +44,9 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 // The per-client hub's tabs (GRE-2614). Each one reads the record that owns
 // the data and links to it; "Shared with client" marks what the client sees.
 
-/** The tasks that will fill the placeholder tabs. */
-const INTERVIEWS_TASK = "GRE-2611";
+/** The tasks that will fill the rest of the Interviews tab: invites and progress, then synthesis. */
+const INTERVIEW_PROGRESS_TASK = "GRE-2665";
+const INTERVIEW_SYNTHESIS_TASK = "GRE-2666";
 /** The task that pulls the website's client activity into GSAM (PR 985), and the site side. */
 const WEBSITE_ACTIVITY_TASK = "GRE-2635";
 
@@ -76,7 +84,7 @@ export function WebsiteLinkNotice() {
       <p className="font-medium">Not linked to a website organisation</p>
       <p className="mt-0.5 text-muted-foreground">
         Client users, Commerce and website activity are read from the website by its organisation id, never by name or email.
-        Linking is added in <TaskLink task={WEBSITE_LINK_TASK} />.
+        Link it under Website organisation on the Overview tab.
       </p>
     </div>
   );
@@ -329,15 +337,78 @@ export function DiscoveryPanel({
 
 // ---------------------------------------------------------------- Interviews
 
-export function InterviewsPanel() {
+const INTERVIEW_ROUND_TONE = { setup: "pending", open: "running", closed: "archived" } as const;
+const INTERVIEW_SET_TONE = { draft: "pending", approved: "succeeded" } as const;
+
+/** The company's Parallel Interview round, when it is keyed by this client's website organisation id. */
+export function InterviewsPanel({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string | null }) {
+  const enabled = useDeepDiveEnabled();
+  const round = useQuery({
+    queryKey: deepDiveInterviewsQueryKeys.round(companyId),
+    queryFn: () => deepDiveInterviewsApi.get(companyId),
+    enabled: enabled && Boolean(websiteOrganisationId),
+  });
+  const open = <SourceLink to="/deep-dive/interviews">Open Parallel Interview</SourceLink>;
+  if (!websiteOrganisationId) return <HubSection title="Interviews"><NotLinked what="Interview rounds" /></HubSection>;
+  if (!enabled) return <HubSection title="Interviews"><Placeholder>Deep Dive is off on this instance.</Placeholder></HubSection>;
+  if (round.isLoading) return <p className="text-sm text-muted-foreground">Loading the interview round…</p>;
+  if (round.error) return <ErrorState error={round.error} compact />;
+  const current = round.data?.round ?? null;
+  if (!current || current.websiteOrganisationId !== websiteOrganisationId) {
+    return (
+      <HubSection title="Interviews" action={open}>
+        <Placeholder>
+          {current ? "The interview round is for another website organisation, not this client." : "No interview round for this client yet."}{" "}
+          Set one up on <Link to="/deep-dive/interviews" className="font-medium text-foreground hover:underline">Parallel Interview</Link>.
+        </Placeholder>
+      </HubSection>
+    );
+  }
+  const readiness = deepDiveInterviewReadiness(current);
   return (
-    <HubSection title="Interviews">
-      <Placeholder>
-        The Parallel Interview module is being built in{" "}
-        <TaskLink task={INTERVIEWS_TASK} />.
-        This client's interview rounds, who finished, and the released synthesis will show here when it ships.
-      </Placeholder>
-    </HubSection>
+    <div className="space-y-6">
+      <HubSection title="Interview round" action={open}>
+        <div className="space-y-1 rounded-lg border border-border p-4 text-sm" data-testid="organisation-interview-round">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">{DEEP_DIVE_INTERVIEW_LABELS[current.mode]}, about {current.targetMinutes} minutes</p>
+            <StatusBadge status={INTERVIEW_ROUND_TONE[current.status]} label={DEEP_DIVE_INTERVIEW_LABELS[current.status]} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {readiness.total === 0
+              ? "No question sets yet."
+              : `${readiness.approved} of ${readiness.total} question sets approved.`}{" "}
+            Set up {formatDate(current.createdAt)}.
+          </p>
+        </div>
+      </HubSection>
+      <HubSection title={current.mode === "per_team" ? "Teams invited" : "People invited"} label="Interview question sets">
+        {current.sets.length === 0 ? (
+          <Placeholder>No one has a question set yet.</Placeholder>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border border-border" data-testid="organisation-interview-sets">
+            {current.sets.map((set) => (
+              <li key={set.id} className="flex flex-col gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-medium">{set.target.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {[set.target.detail, `${set.questions.length} questions`, set.approvedAt ? `approved ${formatDate(set.approvedAt)}` : null]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <StatusBadge status={INTERVIEW_SET_TONE[set.status]} label={DEEP_DIVE_INTERVIEW_LABELS[set.status]} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </HubSection>
+      <HubSection title="Who finished and the outputs" label="Interview progress">
+        <Placeholder>
+          Who started and finished arrives with <TaskLink task={INTERVIEW_PROGRESS_TASK} />; the synthesis into the Deep Dive with{" "}
+          <TaskLink task={INTERVIEW_SYNTHESIS_TASK} />.
+        </Placeholder>
+      </HubSection>
+    </div>
   );
 }
 
