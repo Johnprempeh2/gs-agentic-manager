@@ -75,6 +75,11 @@ export interface Organisation {
   crmFields?: CrmRecordField[];
   source: OrganisationSource;
   externalId: string | null;
+  /**
+   * The website organisation (website customers.id) a person linked this organisation to (GRE-2682); null when it
+   * is not linked. Never matched by name, domain or email.
+   */
+  websiteOrganisationId: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;

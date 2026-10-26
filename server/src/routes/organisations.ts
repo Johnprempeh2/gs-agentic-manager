@@ -11,6 +11,7 @@ import {
   importNotionSchema,
   importPipedriveExportSchema,
   listOrganisationsQuerySchema,
+  setOrganisationWebsiteLinkSchema,
   updateOrganisationContactSchema,
   updateOrganisationSchema,
 } from "@greatstone/shared";
@@ -28,7 +29,7 @@ import {
   resolvePipedriveBaseUrl,
   type PipedriveFetch,
 } from "../services/crm-sync-pipedrive.js";
-import { requireEntitlement } from "../services/entitlements.js";
+import { assertEntitled, requireEntitlement } from "../services/entitlements.js";
 import { crmProductService } from "../services/crm-products.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
 import { notionImportService } from "../services/organisation-import-notion.js";
@@ -38,6 +39,9 @@ import {
   pipedriveExportImportService,
 } from "../services/organisation-import-pipedrive-export.js";
 import { organisationService } from "../services/organisations.js";
+import { websiteDataBridgeService } from "../services/website/data-bridge.js";
+import { WebsiteBridgeError, type WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
+import { websiteModuleService, type SiteRow } from "../services/website/module.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyBoardRole } from "./authz.js";
 
 type ConnectionRow = typeof toolConnections.$inferSelect;
@@ -48,6 +52,8 @@ export interface OrganisationRouteDeps {
   resolveCredential?: (connection: ConnectionRow) => Promise<string>;
   /** Where imported CRM files are copied. Without it, files keep their details only. */
   storage?: StorageService;
+  /** Reads one website customer through the bridge; tests pass a stub. Throws WebsiteBridgeError not_found when missing. */
+  getWebsiteCustomer?: (site: SiteRow, id: string, actor: WebsiteBridgeActor) => Promise<unknown>;
 }
 
 /** Companies with an import running in this process, so two clicks do not race. */
@@ -81,6 +87,9 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const notionImporter = notionImportService(db);
   const history = organisationHistoryService(db);
   const products = crmProductService(db);
+  const websiteSites = websiteModuleService(db);
+  const getWebsiteCustomer = deps.getWebsiteCustomer
+    ?? ((site: SiteRow, id: string, actor: WebsiteBridgeActor) => websiteDataBridgeService(db).get(site, "customers", id, actor));
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
@@ -487,6 +496,66 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
           : {}),
       });
       res.json(organisation);
+    },
+  );
+
+  /**
+   * Links the organisation to a website organisation (website customers.id), or clears the link with null
+   * (GRE-2682). Only a person or agent with CRM write rights, and to link, website view on the site the id was
+   * picked from. The id must be on that site; nothing is ever matched by name, domain or email.
+   */
+  router.put(
+    `${ORGANISATION_ROUTE_PREFIX}/:organisationId/website-link`,
+    validate(setOrganisationWebsiteLinkSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertCrmWriter(req, companyId);
+      const organisationId = parseId(req.params.organisationId, "Organisation");
+      if (!(await svc.getDetail(companyId, organisationId))) throw notFound("Organisation not found");
+      const { websiteOrganisationId, siteId } = req.body as { websiteOrganisationId: string | null; siteId?: string };
+      if (websiteOrganisationId !== null) {
+        await assertEntitled(db, "enableWebsiteView");
+        const decision = await access.decide({
+          actor: req.actor,
+          action: "website:view",
+          resource: { type: "company", companyId },
+          scope: { siteId },
+        });
+        if (!decision.allowed) {
+          throw new HttpError(403, "You may not read this website's customers", {
+            code: "website_permission_missing",
+            permission: "website:view",
+          });
+        }
+        const site = await websiteSites.getSite(companyId, siteId!);
+        if (!site) throw unprocessable("No such website in this company", { code: "website_site_unknown" });
+        const info = getActorInfo(req);
+        const actor: WebsiteBridgeActor = info.actorType === "agent"
+          ? { type: "agent", id: info.agentId ?? info.actorId, runId: info.runId ?? null }
+          : { type: "user", id: info.actorId };
+        try {
+          await getWebsiteCustomer(site, websiteOrganisationId, actor);
+        } catch (error) {
+          if (error instanceof WebsiteBridgeError && error.code === "not_found") {
+            throw unprocessable("The website has no organisation with this id", { code: "website_organisation_unknown" });
+          }
+          throw error;
+        }
+      }
+      const result = await svc.setWebsiteLink(companyId, organisationId, websiteOrganisationId);
+      if (!result) throw notFound("Organisation not found");
+      if (result.previous !== websiteOrganisationId) {
+        await audit(
+          req,
+          companyId,
+          websiteOrganisationId === null ? "organisation.website_unlinked" : "organisation.website_linked",
+          organisationId,
+          websiteOrganisationId === null
+            ? { previousWebsiteOrganisationId: result.previous }
+            : { websiteOrganisationId, previousWebsiteOrganisationId: result.previous, siteId },
+        );
+      }
+      res.json(result.organisation);
     },
   );
 
