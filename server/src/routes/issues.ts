@@ -393,7 +393,7 @@ import {
   MISSING_APPROVAL_EVIDENCE_MESSAGE,
 } from "../services/approval-evidence.js";
 import { LIVE_RELEASE_KEY_PREFIX, liveReleaseService } from "../services/live-release.js";
-import { waitForCorrectionSafePoint } from "../services/correction-safe-point.js";
+import { isGitWriteInProgress, isMigrationInProgress, waitForCorrectionSafePoint } from "../services/correction-safe-point.js";
 import { assertReleaseReauth, releaseReauth } from "../services/release-reauth.js";
 import {
   AGENT_DONE_WITHOUT_RESULT_CODE,
@@ -7840,6 +7840,80 @@ export function issueRoutes(
       resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'waiting', 'correctionCommentId', ${commentId})`,
       updatedAt: new Date(),
     }).where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.status, "running")));
+  }
+
+  async function deliverCorrection(input: {
+    issue: { id: string; companyId: string; assigneeAgentId: string | null; executionWorkspaceId?: string | null };
+    comment: { id: string; body: string };
+    run: NonNullable<Awaited<ReturnType<typeof resolveActiveIssueRun>>>;
+    actor: ReturnType<typeof getActorInfo>;
+  }) {
+    const { issue, comment, run, actor } = input;
+    const workspace = issue.executionWorkspaceId ? await db.select({ cwd: executionWorkspaces.cwd })
+      .from(executionWorkspaces)
+      .where(and(eq(executionWorkspaces.id, issue.executionWorkspaceId), eq(executionWorkspaces.companyId, issue.companyId)))
+      .limit(1) : [];
+    const workspaceCwd = typeof run.contextSnapshot?.executionWorkspaceCwd === "string"
+      ? run.contextSnapshot.executionWorkspaceCwd : workspace[0]?.cwd ?? null;
+    const safePoint = await waitForCorrectionSafePoint({
+      isProtected: async () => Boolean(liveReleaseService(db).getRunFlag(run.id))
+        || Boolean(workspaceCwd && await isGitWriteInProgress(workspaceCwd))
+        || await isMigrationInProgress(run.processPid),
+    });
+    if (safePoint === "timed_out") await logActivity(db, {
+      companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+      agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.correction_safe_point_timeout", entityType: "heartbeat_run", entityId: run.id,
+      issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
+    });
+    let delivered = false;
+    if (safePoint === "safe" && issue.assigneeAgentId === run.agentId && run.runtimeMode === "native") {
+      try {
+        await steerNativeSession({
+          runId: run.id,
+          message: `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`,
+          correlationId: comment.id,
+        });
+        delivered = true;
+      } catch (err) {
+        logger.info({ err, runId: run.id, commentId: comment.id }, "correction steering unavailable; restarting run");
+      }
+    }
+    if (delivered) {
+      await db.update(heartbeatRuns).set({
+        resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'delivered')`,
+      }).where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.companyId, issue.companyId)));
+      await logActivity(db, {
+        companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+        agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.correction_delivered", entityType: "heartbeat_run", entityId: run.id,
+        issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
+      });
+      return;
+    }
+    const cancelled = await heartbeat.cancelRun(run.id, "Interrupted by board correction",
+      operatorInterruptCancelOptions({ issueId: issue.id, actor }));
+    if (cancelled) await logActivity(db, {
+      companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+      agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+      action: "heartbeat.cancelled", entityType: "heartbeat_run", entityId: cancelled.id,
+      issueId: issue.id, details: { agentId: cancelled.agentId, source: "issue_comment_interrupt", issueId: issue.id,
+        cancellationKind: "operator_interrupted", operatorInterrupted: true, commentId: comment.id },
+    });
+    await logActivity(db, {
+      companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
+      agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.correction_restart_requested", entityType: "heartbeat_run", entityId: run.id,
+      issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
+    });
+    if (issue.assigneeAgentId === run.agentId) await heartbeat.wakeup(run.agentId, {
+      source: "automation", triggerDetail: "system", reason: "issue_commented",
+      payload: { issueId: issue.id, commentId: comment.id, correctionCommentId: comment.id, interruptedRunId: run.id },
+      requestedByActorType: actor.actorType, requestedByActorId: actor.actorId,
+      contextSnapshot: { issueId: issue.id, taskId: issue.id, commentId: comment.id,
+        wakeCommentId: comment.id, correctionCommentId: comment.id, interruptedRunId: run.id,
+        wakeReason: "issue_commented", source: "issue.comment.correction" },
+    });
   }
 
 
@@ -15969,60 +16043,21 @@ export function issueRoutes(
           },
         );
         if (interruptRequested) {
-          if (correctionTargetRun) await markCorrectionWaiting(correctionTargetRun.id, comment.id, issue.companyId);
+          if (correctionTargetRun && issue.assigneeAgentId === correctionTargetRun.agentId)
+            await markCorrectionWaiting(correctionTargetRun.id, comment.id, issue.companyId);
           await logActivity(db, {
             companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
             agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
             action: "issue.correction_requested", entityType: "issue", entityId: issue.id,
             issueId: issue.id, details: { commentId: comment.id, targetRunId: correctionTargetRun?.id ?? null },
           });
-          const correctionSafePoint = correctionTargetRun
-            ? await waitForCorrectionSafePoint({
-                isProtected: () => Boolean(liveReleaseService(db).getRunFlag(correctionTargetRun.id)),
-              })
-            : "safe";
-          if (correctionSafePoint === "safe" && correctionTargetRun && issue.assigneeAgentId === correctionTargetRun.agentId && correctionTargetRun.runtimeMode === "native") {
-            try {
-              await steerNativeSession({
-                runId: correctionTargetRun.id,
-                message: `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`,
-                correlationId: comment.id,
-              });
-              goalCommentSteered = true;
-            } catch (err) {
-              logger.info({ err, runId: correctionTargetRun.id, commentId: comment.id }, "correction steering unavailable; restarting run");
-            }
-          }
-          if (correctionTargetRun && goalCommentSteered) {
-            await db.update(heartbeatRuns).set({
-              resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'delivered')`,
-            }).where(and(eq(heartbeatRuns.id, correctionTargetRun.id), eq(heartbeatRuns.companyId, issue.companyId)));
-            await logActivity(db, {
-              companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
-              agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
-              action: "issue.correction_delivered", entityType: "heartbeat_run", entityId: correctionTargetRun.id,
-              issueId: issue.id, details: { commentId: comment.id, targetRunId: correctionTargetRun.id },
-            });
-          }
-          if (correctionTargetRun && !goalCommentSteered) {
-            const cancelled = await heartbeat.cancelRun(
-              correctionTargetRun.id, "Interrupted by board comment",
-              operatorInterruptCancelOptions({ issueId: issue.id, actor }),
-            );
-            interruptedRunId = cancelled?.id ?? correctionTargetRun.id;
-            if (cancelled) await logActivity(db, {
-              companyId: cancelled.companyId, actorType: actor.actorType, actorId: actor.actorId,
-              agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
-              action: "heartbeat.cancelled", entityType: "heartbeat_run", entityId: cancelled.id,
-              issueId: issue.id,
-              details: { agentId: cancelled.agentId, source: "issue_comment_interrupt", issueId: issue.id,
-                cancellationKind: "operator_interrupted", operatorInterrupted: true, commentId: comment.id },
-            });
-          }
+          if (correctionTargetRun && issue.assigneeAgentId === correctionTargetRun.agentId) void deliverCorrection({ issue, comment, run: correctionTargetRun, actor })
+            .catch((err) => logger.error({ err, runId: correctionTargetRun.id, commentId: comment!.id }, "correction delivery failed"));
         }
         await issueReferencesSvc.syncComment(comment.id);
         await externalObjectsSvc.syncCommentSafely(comment.id);
         if (
+          !(interruptRequested && correctionTargetRun) &&
           !goalCommentSteered &&
           issue.assigneeAgentId &&
           !issue.externalConversationState &&
@@ -16423,6 +16458,7 @@ export function issueRoutes(
           if (
             assigneeId &&
             !assigneeChanged &&
+            !(interruptRequested && correctionTargetRun) &&
             !goalCommentSteered &&
             shouldWakeAssigneeForComment
           ) {
@@ -20034,56 +20070,8 @@ export function issueRoutes(
           issueId: currentIssue.id,
           details: { commentId: comment.id, targetRunId: correctionTargetRun?.id ?? null },
         });
-        const correctionSafePoint = correctionTargetRun
-          ? await waitForCorrectionSafePoint({
-              isProtected: () => Boolean(liveReleaseService(db).getRunFlag(correctionTargetRun.id)),
-            })
-          : "safe";
-        if (correctionSafePoint === "safe" && correctionTargetRun?.runtimeMode === "native") {
-          try {
-            await steerNativeSession({
-              runId: correctionTargetRun.id,
-              message: `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`,
-              correlationId: comment.id,
-            });
-            goalCommentSteered = true;
-          } catch (err) {
-            logger.info({ err, runId: correctionTargetRun.id, commentId: comment.id }, "correction steering unavailable; restarting run");
-          }
-        }
-        if (correctionTargetRun && goalCommentSteered) {
-          await db.update(heartbeatRuns).set({
-            resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('correctionState', 'delivered')`,
-          }).where(and(eq(heartbeatRuns.id, correctionTargetRun.id), eq(heartbeatRuns.companyId, currentIssue.companyId)));
-          await logActivity(db, {
-            companyId: currentIssue.companyId, actorType: actor.actorType, actorId: actor.actorId,
-            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
-            action: "issue.correction_delivered", entityType: "heartbeat_run", entityId: correctionTargetRun.id,
-            issueId: currentIssue.id, details: { commentId: comment.id, targetRunId: correctionTargetRun.id },
-          });
-        }
-        if (correctionTargetRun && !goalCommentSteered) {
-          const cancelled = await heartbeat.cancelRun(
-            correctionTargetRun.id, "Interrupted by board correction",
-            operatorInterruptCancelOptions({ issueId: currentIssue.id, actor }),
-          );
-          interruptedRunId = cancelled?.id ?? correctionTargetRun.id;
-          if (cancelled) await logActivity(db, {
-            companyId: cancelled.companyId, actorType: actor.actorType, actorId: actor.actorId,
-            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
-            action: "heartbeat.cancelled", entityType: "heartbeat_run", entityId: cancelled.id,
-            issueId: currentIssue.id,
-            details: { agentId: cancelled.agentId, source: "issue_comment_interrupt", issueId: currentIssue.id,
-              cancellationKind: "operator_interrupted", operatorInterrupted: true, commentId: comment.id },
-          });
-          await logActivity(db, {
-            companyId: currentIssue.companyId, actorType: actor.actorType, actorId: actor.actorId,
-            agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
-            action: "issue.correction_restart_requested", entityType: "heartbeat_run",
-            entityId: correctionTargetRun.id, issueId: currentIssue.id,
-            details: { commentId: comment.id, targetRunId: correctionTargetRun.id },
-          });
-        }
+        if (correctionTargetRun) void deliverCorrection({ issue: currentIssue, comment, run: correctionTargetRun, actor })
+          .catch((err) => logger.error({ err, runId: correctionTargetRun.id, commentId: comment.id }, "correction delivery failed"));
       }
 
       await issueReferencesSvc.syncComment(comment.id);
@@ -20093,6 +20081,7 @@ export function issueRoutes(
         void teamChats.notifyPeople(currentIssue, comment, { type: actor.actorType, id: actor.actorId });
       }
       if (
+        !(interruptRequested && correctionTargetRun) &&
         !goalCommentSteered &&
         currentIssue.assigneeAgentId &&
         // Slack-linked messages need the normal attributed wake boundary so
@@ -20405,7 +20394,7 @@ export function issueRoutes(
           reopened,
           currentStatus: wakeIssueSnapshot.status,
         });
-        if (assigneeId && !goalCommentSteered && shouldWakeAssigneeForComment) {
+        if (assigneeId && !(interruptRequested && correctionTargetRun) && !goalCommentSteered && shouldWakeAssigneeForComment) {
           if (reopened) {
             addWakeup(assigneeId, {
               source: "automation",
