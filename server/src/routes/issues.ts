@@ -14997,6 +14997,15 @@ export function issueRoutes(
       const assigneeWillChange =
         nextAssigneeAgentId !== existing.assigneeAgentId ||
         nextAssigneeUserId !== existing.assigneeUserId;
+      // A correction keeps the same agent and waits for a safe point. A
+      // simultaneous reassignment would take the immediate ownership-stop
+      // path instead, bypassing that wait.
+      if (interruptRequested && assigneeWillChange) {
+        res.status(400).json({
+          error: "Post the correction before changing the assignee",
+        });
+        return;
+      }
       const isAgentReturningIssueToCreator =
         req.actor.type === "agent" &&
         !!req.actor.agentId &&
