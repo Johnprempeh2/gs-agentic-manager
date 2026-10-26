@@ -49,11 +49,16 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   router.use("/companies/:companyId/website/sites/:siteId/data-bridge", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/data", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/commerce", requireEntitlement(db, "enableWebsiteView"));
+  router.use("/companies/:companyId/website/activity/:organisationId", requireEntitlement(db, "enableWebsiteView"));
 
   router.get("/companies/:companyId/website/activity/:organisationId", async (req, res) => {
     const companyId = req.params.companyId as string;
     const organisationId = req.params.organisationId as string;
     assertCompanyAccess(req, companyId);
+    const decision = await access.decide({ actor: req.actor, action: "website:view", resource: { type: "company", companyId } });
+    if (!decision.allowed && decision.reason !== "deny_scope") {
+      throw new HttpError(403, WEBSITE_MESSAGES["perm.view_none"], { code: "website_permission_missing", permission: "website:view" });
+    }
     if (!UUID_RE.test(organisationId)) {
       res.status(404).json({ error: "Not found" });
       return;
@@ -73,7 +78,13 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
         cursor = { occurredAt, siteId: parts[1], sequence: BigInt(parts[2]) };
       } catch { throw unprocessable("Invalid activity cursor"); }
     }
-    res.json(await activity.list(companyId, organisationId, cursor));
+    const companySites = await sites.listSites(companyId);
+    const visibleSiteIds: string[] = [];
+    for (const site of companySites) {
+      const siteDecision = await access.decide({ actor: req.actor, action: "website:view", resource: { type: "company", companyId }, scope: { siteId: site.id } });
+      if (siteDecision.allowed) visibleSiteIds.push(site.id);
+    }
+    res.json(await activity.list(companyId, organisationId, cursor, visibleSiteIds));
   });
 
   async function siteFor(req: Request, res: Response,

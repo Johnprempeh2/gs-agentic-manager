@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
+import express from "express";
+import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { companies, createDb, websiteActivityCursors, websiteActivityEvents, websiteSite } from "@greatstone/db";
+import { agents, companies, companyMemberships, createDb, principalPermissionGrants, websiteActivityCursors, websiteActivityEvents, websiteSite } from "@greatstone/db";
 import type { WebsiteActivityBatch, WebsiteActivityEvent } from "@greatstone/shared";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { websiteActivityService } from "../services/website/activity.js";
+import { websiteDataBridgeRoutes } from "../routes/website-data-bridge.js";
+import { errorHandler } from "../middleware/error-handler.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 
 const embedded = await getEmbeddedPostgresTestSupport();
 const describeDb = embedded.supported ? describe.sequential : describe.skip;
@@ -95,5 +100,32 @@ describeDb("website activity pull", () => {
     const second = await service.list(row.companyId, organisationId, { occurredAt: new Date(at), siteId, sequence: BigInt(sequence) });
     expect(second.items.map((item) => item.sequence)).toEqual(["1"]);
     expect(second.nextCursor).toBeNull();
+  });
+
+  it("requires website:view and returns events only from sites in the caller's scope", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const first = await site();
+    const [second] = await db.insert(websiteSite).values({ companyId: first.companyId, name: "Other", domain: "other.test", netlifySiteId: randomUUID() }).returning();
+    const [agent] = await db.insert(agents).values({ companyId: first.companyId, name: "Viewer", role: "engineer", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {} }).returning();
+    await db.insert(companyMemberships).values({ companyId: first.companyId, principalType: "agent", principalId: agent!.id, status: "active", membershipRole: "member" });
+    const actor = { type: "agent" as const, agentId: agent!.id, companyId: first.companyId, source: "agent_key" as const };
+    const app = express();
+    app.use((req, _res, next) => { req.actor = actor; next(); });
+    app.use("/api", websiteDataBridgeRoutes(db));
+    app.use(errorHandler);
+    const path = `/api/companies/${first.companyId}/website/activity/${organisationId}`;
+    const firstEvent = event(1);
+    const secondEvent = event(2);
+    await db.insert(websiteActivityEvents).values([
+      { companyId: first.companyId, siteId: first.id, sequence: 1n, id: firstEvent.id, organisationId, kind: firstEvent.kind, subjectId: firstEvent.subjectId, label: firstEvent.label, occurredAt: new Date(firstEvent.occurredAt) },
+      { companyId: first.companyId, siteId: second!.id, sequence: 2n, id: secondEvent.id, organisationId, kind: secondEvent.kind, subjectId: secondEvent.subjectId, label: secondEvent.label, occurredAt: new Date(secondEvent.occurredAt) },
+    ]);
+    await request(app).get(path).expect(403);
+    await db.insert(principalPermissionGrants).values({ companyId: first.companyId, principalType: "agent", principalId: agent!.id, permissionKey: "website:view", scope: { siteIds: [first.id] } });
+    const allowed = await request(app).get(path).expect(200);
+    expect(allowed.body.items.map((item: { siteId: string }) => item.siteId)).toEqual([first.id]);
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: false });
+    const disabled = await request(app).get(path).expect(403);
+    expect(disabled.body.details?.code ?? disabled.body.code).toBe("not_entitled");
   });
 });

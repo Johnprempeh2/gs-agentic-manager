@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { websiteActivityCursors, websiteActivityEvents, websiteSite } from "@greatstone/db";
 import { websiteActivityBatchSchema, type WebsiteActivityBatch } from "@greatstone/shared";
@@ -51,9 +51,11 @@ export function websiteActivityService(db: Db, reader: WebsiteActivityReader) {
 
   return {
     pullSite,
-    async list(companyId: string, organisationId: string, cursor?: { occurredAt: Date; siteId: string; sequence: bigint }) {
+    async list(companyId: string, organisationId: string, cursor?: { occurredAt: Date; siteId: string; sequence: bigint }, siteIds?: string[]) {
+      if (siteIds?.length === 0) return { items: [], nextCursor: null };
       const rows = await db.select().from(websiteActivityEvents).where(and(
         eq(websiteActivityEvents.companyId, companyId), eq(websiteActivityEvents.organisationId, organisationId),
+        ...(siteIds ? [inArray(websiteActivityEvents.siteId, siteIds)] : []),
         ...(cursor ? [or(
           lt(websiteActivityEvents.occurredAt, cursor.occurredAt),
           and(eq(websiteActivityEvents.occurredAt, cursor.occurredAt), lt(websiteActivityEvents.siteId, cursor.siteId)),
