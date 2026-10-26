@@ -39,7 +39,7 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 /** The tasks that will fill the placeholder tabs. */
 const INTERVIEWS_TASK = "GRE-2611";
 const BILLING_TASK = "GRE-2630";
-/** The task that pulls the website's client activity into GSAM (PR #985), and the site side. */
+/** The task that pulls the website's client activity into GSAM (PR 985), and the site side. */
 const WEBSITE_ACTIVITY_TASK = "GRE-2635";
 
 export function HubSection({ title, action, children, label }: { title: string; action?: ReactNode; children: ReactNode; label?: string }) {
