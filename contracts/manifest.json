@@ -48,7 +48,7 @@
       "fixture": "site-contract/fixtures/contract-file.json"
     },
     "deepDiveSync": {
-      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant.",
+      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant, including Shared findings, opportunities and KPIs when present.",
       "syncSchema": "gs-deep-dive-sync-v1",
       "schema": "site-contract/schemas/deep-dive-sync.schema.json",
       "fixture": "site-contract/fixtures/deep-dive-sync.json"
@@ -78,7 +78,7 @@
     "site-contract/fixtures/bridge-health.json": "f63e3e7429bd4a0e1821f8ef7287122a62ebb1e975d496bcd6166ed705997878",
     "site-contract/fixtures/contract-file.json": "1630f8e3b026dbdc394cc14b97f9da162bda5fcde93e19adbf8137b1657b62f2",
     "site-contract/fixtures/deep-dive-sync-ack.json": "733b1cf20a3f1dc12d293085e13d6da6b6df674ecaa949d10c8f95fcf5a7c254",
-    "site-contract/fixtures/deep-dive-sync.json": "537733d4a5448d056dbaa93213ac713999a8873438b890a09a83a1e50b33a320",
+    "site-contract/fixtures/deep-dive-sync.json": "eff09ada56454332c4aa54dbf22f23c035e076c185ee98374a414b4dfb6e4c17",
     "site-contract/fixtures/document-request-answer.json": "7ea0101d728462ec2a4d8792b5180a41826d7ac4b2a67100115a107ac3b24269",
     "site-contract/fixtures/editor-hello-ack.json": "41882c0173b9e43fcee824f084386a8b840f421af6ce1d64dbabcee9d8962e23",
     "site-contract/fixtures/release-answer.json": "f6dc3cdc4555d22f37fd9dc4e4268253bd9ae648cabfca6fec437bea7c600d65",
@@ -86,10 +86,10 @@
     "site-contract/schemas/bridge-health.schema.json": "9e86eeea6422b5a7758c57c20fdc60f3d1284c7398338ccb436785a9f1d0b546",
     "site-contract/schemas/contract-file.schema.json": "5ab97032c17bf348ebddaa4100657d1245ad74c3f52a19e157c9aeda79050070",
     "site-contract/schemas/deep-dive-sync-ack.schema.json": "55392e3ff4023ebcbe7724ace741325244a903131c699bbfd1af1d2b7eb50915",
-    "site-contract/schemas/deep-dive-sync.schema.json": "7a02afc57eb477ef58109331e616d2171703bd2022878eb0bf70f2d14c582406",
+    "site-contract/schemas/deep-dive-sync.schema.json": "7683e1f6f665457cc826dcc649810470ab868b6a7d311ea81b3dea3d4594bebd",
     "site-contract/schemas/document-request-answer.schema.json": "12e6ceec3a8aa7b78815adfebf39930aece5b4e537173df350bf144318f0c798",
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "8bf687266e94475317cb81f85bf809b0186ad9add2a3d65efb556617c772b05d"
+  "contentHash": "ca43fc2153e3c4913214499958c46e8baf429d7d605ef29616e2d4013dae7225"
 }
