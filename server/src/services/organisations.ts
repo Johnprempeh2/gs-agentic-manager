@@ -146,6 +146,7 @@ function toContact(row: ContactRow): OrganisationContact {
     organisationId: row.organisationId,
     name: row.name,
     role: row.role,
+    websiteUserId: row.websiteUserId,
     email: row.email,
     phone: row.phone,
     isKeyContact: row.isKeyContact,

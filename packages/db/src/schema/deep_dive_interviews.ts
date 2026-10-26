@@ -4,7 +4,7 @@ import { agents } from "./agents.js";
 import { companies } from "./companies.js";
 import { deepDiveOrgUnits, deepDivePeople } from "./deep_dive_boards.js";
 
-// Parallel Interview rounds (GRE-2611, migration 0405). One round per
+// Parallel Interview rounds (GRE-2611, migration 0406). One round per
 // company's Deep Dive, run per team or per person, with Everest's context
 // pack. Each team or person on the organisation board gets one question set,
 // drafted from what the Deep Dive already knows and approved by a person

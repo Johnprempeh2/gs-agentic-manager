@@ -48,6 +48,7 @@
     "check:node-version": "node scripts/check-node-version-policy.mjs",
     "check:no-git-push": "node scripts/check-no-git-push.mjs",
     "check:module-boundaries": "node scripts/check-module-boundaries.mjs",
+    "check:contact-identity": "node scripts/check-contact-identity.mjs",
     "test:check-no-git-push": "node --test scripts/check-no-git-push.test.mjs",
     "test:check-named-colors": "node --test scripts/check-named-colors.test.mjs",
     "test:check-locale-format": "node --test scripts/check-locale-format.test.mjs",
