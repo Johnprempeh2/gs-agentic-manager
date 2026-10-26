@@ -109,5 +109,8 @@
 - [ ] I have updated relevant documentation to reflect my changes
 - [ ] I have considered and documented any risks above
 - [ ] All GS Agentic Manager CI gates are green
-- [ ] Greptile is 5/5 with no open P2s, recommendations, or follow-ups
-- [ ] I will address all Greptile and reviewer comments before requesting merge
+- [ ] Greptile review is 5/5 on the current head, with no open P2 or higher findings, recommendations or follow-ups
+- [ ] Greptile is unavailable; Flint's independent review of the current head is recorded on this PR with its SHA, findings and resolution of every actionable item, and Keystone has recorded unavailability and checked the review
+- [ ] I will address all reviewer comments before requesting merge
+
+<!-- Select exactly one review route above before merge. A new commit requires a fresh review. Big changes still require Flint verification and the release path. -->
