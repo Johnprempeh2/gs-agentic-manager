@@ -81,6 +81,8 @@ function summary(overrides: Partial<WebsiteHomeSummary> = {}): WebsiteHomeSummar
     ],
     liveFraming: "allowed",
     devFraming: "allowed",
+    train: { issue: null, tag: null, state: "none", card: null, nextRunAt: "2026-10-26T06:00:00.000Z" },
+    launch: { targetDate: null, agreement: "proposed", daysLeft: null, cardIssue: null, gates: [] },
     ...overrides,
   };
 }
@@ -293,5 +295,47 @@ describe("WebsiteHomeTab", () => {
     motionMock.reduced = true;
     await render();
     expect(byTestId("website-home-haze")?.getAttribute("data-motion")).toBe("still");
+  });
+
+  it("shows the empty train and launch states before the first train and date", async () => {
+    await render();
+    await vi.waitFor(() => expect(byTestId("website-home-train")?.textContent).toContain("No train yet"));
+    expect(byTestId("website-home-train-next")?.textContent).toContain("Next train");
+    expect(byTestId("website-home-launch")?.textContent).toContain("No launch date yet");
+  });
+
+  it("shows this week's train with its tag, card and approver, and the launch countdown with its gates", async () => {
+    moduleApiMock.home.mockResolvedValue(summary({
+      train: {
+        issue: { id: "i-1", identifier: "GRE-2700", title: "Weekly website release train", status: "in_progress" },
+        tag: "web-rc-2026-10-26",
+        state: "approved",
+        card: { id: "c-1", status: "accepted", resolvedByName: "Ben", resolvedAt: "2026-10-26T15:00:00.000Z" },
+        nextRunAt: "2026-11-02T06:00:00.000Z",
+      },
+      launch: {
+        targetDate: "2026-11-03",
+        agreement: "proposed",
+        daysLeft: 9,
+        cardIssue: { id: "i-2641", identifier: "GRE-2641", title: "Weekly release", status: "in_progress" },
+        gates: [
+          { label: "Sign-in", identifier: "GRE-1991", issue: { id: "i-1991", identifier: "GRE-1991", title: "Sign-in", status: "blocked" } },
+          { label: "Domain and DNS", identifier: "GRE-2663", issue: null },
+        ],
+      },
+    }));
+    await render();
+    await vi.waitFor(() => expect(byTestId("website-home-train-state")?.textContent).toBe("Approved"));
+    const train = byTestId("website-home-train")!;
+    expect(train.textContent).toContain("web-rc-2026-10-26");
+    expect(train.querySelector('a[href="/issues/GRE-2700"]')).not.toBeNull();
+    expect(byTestId("website-home-train-card")?.textContent).toContain("Release card approved by Ben");
+    expect(byTestId("website-home-launch-days")?.textContent).toBe("9 days left");
+    expect(byTestId("website-home-launch-agreement")?.textContent).toBe("Proposed");
+    const launch = byTestId("website-home-launch")!;
+    expect(launch.textContent).toContain("Tue 3 Nov 2026");
+    expect(launch.querySelector('a[href="/issues/GRE-1991"]')).not.toBeNull();
+    expect(launch.textContent).toContain("Blocked");
+    expect(launch.textContent).toContain("GRE-2663 not found");
   });
 });
