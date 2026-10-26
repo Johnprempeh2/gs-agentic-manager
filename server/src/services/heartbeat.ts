@@ -100,6 +100,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
+import { readOwnerFocus } from "./memory-gateway/handoff.js";
 import { companyMemoryEnabled } from "./memory-gateway/service.js";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
@@ -8522,6 +8523,8 @@ export async function buildPaperclipWakePayload(input: {
           updatedAt: safeContinuationSummary.updatedAt.toISOString(),
         }
       : null,
+    // GRE-2668: the owner's current focus from their live handoff, as context.
+    ownerFocus: externalChatProvider ? null : await readOwnerFocus(input.db, input.companyId),
     commentIds,
     latestCommentId: commentIds[commentIds.length - 1] ?? null,
     comments,

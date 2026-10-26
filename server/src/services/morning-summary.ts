@@ -5,6 +5,7 @@ import type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NeedsMe, N
 import { logger } from "../middleware/logger.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
+import { personHandoffSummary } from "./memory-gateway/handoff.js";
 import { needsMeService } from "./needs-me.js";
 import { isHeld, localClock, notificationPreferencesService } from "./notification-preferences.js";
 import type { DecisionPushMessage } from "./push-notifications.js";
@@ -271,6 +272,8 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       outcome: row.terminalKind === "done" ? "won" : "lost",
     }));
     const needs = needsYouItems(mine);
+    // Where the person left off across Claude Code, ChatGPT and GSAM (GRE-2668).
+    const handoff = await personHandoffSummary(db, companyId, userId, since);
     return {
       companyId,
       generatedAt: now.toISOString(),
@@ -292,6 +295,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
         })),
       },
       ...(window === "day" ? { dueTomorrow: { count: tomorrowCount[0]?.count ?? 0, items: tomorrowRows } } : {}),
+      ...(handoff ? { handoff } : {}),
     };
   }
 
