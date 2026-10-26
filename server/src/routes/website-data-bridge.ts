@@ -9,6 +9,7 @@ import {
   websiteCommerceItemQuerySchema,
   websiteCommerceListQuerySchema,
   websiteDataListQuerySchema,
+  websiteActivityEventsQuerySchema,
   websiteCommerceRefundRequestSchema,
   websiteCommerceWriteOperation,
   websitePaymentReportQuerySchema,
@@ -90,6 +91,27 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     res.json(await bridge.status(site));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.health, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await bridge.releaseHealth(site, actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.activityEvents, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const query = queryOf(websiteActivityEventsQuerySchema, req);
+    res.json(await bridge.activityEvents(site, query.cursor, query.limit, actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.schemaProbe, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await bridge.schemaProbe(site, actorOf(req)));
   });
 
   router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.key, validate(createWebsiteDataBridgeKeySchema), async (req, res) => {

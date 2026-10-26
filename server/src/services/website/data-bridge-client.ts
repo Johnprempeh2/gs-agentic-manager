@@ -160,6 +160,17 @@ const errorBody = z.object({ error: z.object({ code: z.string() }), current: z.r
 export const bridgeHealthSchema = z.object({
   ok: z.literal(true), kid: z.string(), capability: z.string(), serverTime: z.string(), schema: z.literal(BRIDGE_SCHEME),
 });
+export const bridgeReleaseHealthSchema = bridgeHealthSchema.extend({ siteContract: z.number().int().nonnegative() });
+export const bridgeActivityEventsSchema = z.object({
+  items: z.array(z.object({
+    sequence: z.string().max(19).regex(/^(0|[1-9]\d*)$/), id: z.string(), organisationId: z.string(),
+    kind: z.string(), subjectId: z.string().nullable(), label: z.string(), occurredAt: z.string(),
+  })).max(100),
+  nextCursor: z.string().max(19).regex(/^(0|[1-9]\d*)$/),
+});
+export const bridgeSchemaProbeSchema = z.object({
+  tables: z.object({ billing_lines: z.boolean(), client_activity_outbox: z.boolean() }).strict(),
+}).strict();
 export const bridgeListSchema = z.object({ items: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable() });
 export const bridgeItemSchema = z.object({ item: z.record(z.string(), z.unknown()) });
 /** `imports/:id`: the job, and a page of its rows. */
@@ -277,6 +288,10 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
 
   return {
     health: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeHealthSchema),
+    releaseHealth: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeReleaseHealthSchema),
+    activityEvents: (cursor: string, limit: number, actor: WebsiteBridgeActor) =>
+      get("/api/admin/v1/activity-events", { cursor, limit: String(limit) }, actor, bridgeActivityEventsSchema),
+    schemaProbe: (actor: WebsiteBridgeActor) => get("/api/admin/v1/schema", {}, actor, bridgeSchemaProbeSchema),
     list: (resource: WebsiteDataResource | WebsiteCommerceResource,
       filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/${resource}`, { customer: filters.customer, updatedSince: filters.updatedSince, cursor: filters.cursor,

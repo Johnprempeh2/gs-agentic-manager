@@ -70,6 +70,8 @@ export const lanes = {
       `${server}budget-top-ups.test.ts`,
       // GRE-1896: a task whose last blocker closes goes to todo and its owner gets one wake with the closing comment.
       `${server}blocker-done-returns-dependent-to-todo.test.ts`,
+      // GRE-2813: the weekly website release path stays readable through a scoped staging site and read key.
+      `${server}website-data-bridge-routes.test.ts`,
     ],
   },
   grading: {

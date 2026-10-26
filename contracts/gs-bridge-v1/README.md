@@ -45,6 +45,14 @@ To build the canonical query, decode the query as `URLSearchParams` does. Sort t
 - A list returns `{ items, nextCursor }`. The cursor is opaque, and `null` ends the read. A get returns `{ item }`.
 - An error returns `{ error: { code } }` only. The codes are `bad_key`, `expired`, `bad_signature` and `replay` (401), `capability_denied` and `ip_denied` (403), `not_found` (404), `bad_request` (400) and `unavailable` (503).
 
+## Fixed release checks (GRE-2813)
+
+All three calls are signed `GET` requests with the site's `read` key. GSAM checks company, site and `website:view` before signing. Callers cannot choose an upstream path or URL.
+
+- `GET /api/admin/v1/health` returns `{ ok: true, kid, capability: "read", serverTime, schema: "gs-bridge-v1", siteContract: 1 }`. GSAM returns the fresh body for a release check; its older status summary can remain cached.
+- `GET /api/admin/v1/activity-events?cursor=<decimal>&limit=<1..100>` returns `{ items, nextCursor }`. The decimal cursor starts at `0`; `nextCursor` is the last returned sequence, or the input cursor if the page is empty. Each item has `sequence`, `id`, `organisationId`, `kind`, `subjectId`, `label` and `occurredAt`. No other item fields pass through the GSAM proxy.
+- `GET /api/admin/v1/schema` returns exactly `{ "tables": { "billing_lines": true|false, "client_activity_outbox": true|false } }`. It checks those two fixed table names and returns no rows. An absent table is `false`; an unavailable database is `503`, never `false`. The website implementation belongs to GRE-2816.
+
 ## Deep Dive sync (GRE-2439)
 
 The public site never queries GSAM. GSAM pushes one client's Deep Dive snapshot, and the site calls back when a

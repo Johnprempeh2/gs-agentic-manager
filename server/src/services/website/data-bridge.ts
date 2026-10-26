@@ -187,6 +187,18 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     return (await client(site)).list(resource, filters, actor);
   }
 
+  async function releaseHealth(site: BridgeSite, actor: WebsiteBridgeActor) {
+    return (await client(site)).releaseHealth(actor);
+  }
+
+  async function activityEvents(site: BridgeSite, cursor: string, limit: number, actor: WebsiteBridgeActor) {
+    return (await client(site)).activityEvents(cursor, limit, actor);
+  }
+
+  async function schemaProbe(site: BridgeSite, actor: WebsiteBridgeActor) {
+    return (await client(site)).schemaProbe(actor);
+  }
+
   async function get(site: BridgeSite, resource: WebsiteDataResource, id: string, actor: WebsiteBridgeActor) {
     return (await client(site)).get(resource, id, actor);
   }
@@ -237,6 +249,6 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
-  return { client, commerceClient, createKey, status, list, get, commerce, enquiryReader };
+  return { client, commerceClient, createKey, status, releaseHealth, activityEvents, schemaProbe, list, get, commerce, enquiryReader };
 }
 export type WebsiteDataBridgeService = ReturnType<typeof websiteDataBridgeService>;
