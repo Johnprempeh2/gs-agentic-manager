@@ -146,7 +146,15 @@ async function seed(request: Page["request"]): Promise<Seed> {
       const boardTitle = `Board ${status} card ${index} ${Date.now()}`;
       const response = await request.post(`/api/companies/${company.id}/issues`, {
         // in_progress needs an assignee; the local-trusted board user avoids waking any agent.
-        data: { title: boardTitle, description: `Seeded board card for ${status}.`, priority: "medium", status, ...(status === "in_progress" ? { assigneeUserId: "local-board" } : {}) },
+        // blocked needs a reason, just like a board-created blocked card.
+        data: {
+          title: boardTitle,
+          description: `Seeded board card for ${status}.`,
+          priority: "medium",
+          status,
+          ...(status === "in_progress" ? { assigneeUserId: "local-board" } : {}),
+          ...(status === "blocked" ? { unblockDescriptor: { owner: "board", action: "Seeded perf card" } } : {}),
+        },
       });
       expect(response.ok(), await response.text()).toBe(true);
       if (index === BOARD_ISSUES_PER_STATUS) boardMarkerTitles.push(boardTitle);
