@@ -17,5 +17,19 @@
   "deliverables": [
     { "id": "del-1", "title": "Test deliverable", "version": 1, "status": "published", "publishedAt": "2026-10-25T09:00:00.000Z",
       "acceptedAt": null }
+  ],
+  "findings": [
+    { "id": "finding-1", "streamItemId": "item-1", "statement": "A shared finding", "status": "validated",
+      "evidenceCount": 1, "supersedesId": null, "updatedAt": "2026-10-25T11:00:00.000Z" }
+  ],
+  "opportunities": [
+    { "id": "opportunity-1", "ref": "OP-1", "title": "Test opportunity", "statement": "A shared opportunity",
+      "desiredOutcome": "A better result", "status": "refined", "findingIds": ["finding-1"], "streamItemIds": ["item-1"],
+      "updatedAt": "2026-10-25T11:00:00.000Z" }
+  ],
+  "kpis": [
+    { "id": "kpi-1", "title": "Test KPI", "definition": "A counted result", "scope": "company", "unit": "count",
+      "direction": "up", "baseline": 1, "baselinePeriod": "2026-Q3", "target": 2,
+      "opportunityIds": ["opportunity-1"], "updatedAt": "2026-10-25T11:00:00.000Z" }
   ]
 }

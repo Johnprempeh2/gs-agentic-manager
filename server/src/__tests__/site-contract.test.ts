@@ -51,6 +51,19 @@ describe("GSAM and website contract (GRE-2633)", () => {
     }
   });
 
+  it("tracks the interview contract and all Deep Dive Shared record arrays", () => {
+    expect(manifest.surfaces.interviews?.doc).toBe("gs-interview-v1/README.md");
+    expect(manifest.files).toHaveProperty("gs-interview-v1/README.md");
+
+    const snapshot = contractFixture("deepDiveSync");
+    for (const field of ["findings", "opportunities", "kpis"] as const) {
+      expect(snapshot[field]).toHaveLength(1);
+      const { [field]: _omitted, ...incomplete } = snapshot;
+      expect(contractErrors("deepDiveSync", incomplete), field).toMatch(new RegExp(field));
+    }
+    expect(contractErrors("deepDiveSync", snapshot)).toBeNull();
+  });
+
   it("each schema refuses a site answer with no siteContract", () => {
     for (const surface of ["bridgeHealth", "editorHelloAck", "release", "contractFile"]) {
       const { siteContract: _dropped, ...old } = contractFixture(surface);
