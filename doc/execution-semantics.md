@@ -1242,6 +1242,13 @@ controller must recover it through the authenticated ownership checks. This
 preserves active work and queued messages without treating a server restart as
 user cancellation.
 
+Registered startups share a 30-second shutdown deadline to finish run admission
+and publish their exact session for detachment. The old controller still checks
+the saved run binding. It cannot checkpoint, publish events or settle the run
+after the restart fence. A startup that misses the deadline stays pending for
+reconciliation; it does not hold up detachment of other sessions. A pending
+Stop keeps cancellation with its current owner and prevents a new prompt.
+
 Before either shutdown path exits, idle warm sessions close through their
 normal suspend-and-checkpoint path. Remote sessions therefore leave verified
 backup authority for the next controller even though their last run is already
