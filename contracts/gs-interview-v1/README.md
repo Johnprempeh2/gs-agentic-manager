@@ -1,7 +1,7 @@
 # gs-interview-v1: GSAM runs a Parallel Interview round on the website
 
-GRE-2612 (website side), GRE-2611 (GSAM side). This folder is at the same path in `greatstone-website` and
-`gs-agentic-manager`: change it in both pull requests or neither.
+GRE-2612 (website side), GRE-2611 (GSAM side). This is the canonical copy in `gs-agentic-manager`;
+the website vendors it with `contracts/check.mjs --vendor`.
 
 GSAM calls outward; the website never calls GSAM. Every call is a signed admin-bridge call
 (`contracts/gs-bridge-v1/`): `GET` with a **read** key (`gs-bridge-v1`), `POST` with a **write** key
