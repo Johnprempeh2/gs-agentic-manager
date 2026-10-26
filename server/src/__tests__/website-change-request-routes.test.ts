@@ -489,6 +489,17 @@ describeEmbeddedPostgres("website click to change", () => {
     expect(await db.select().from(issueAttachments).where(eq(issueAttachments.issueId, created.issueId))).toHaveLength(1);
   });
 
+  it("a task takes at most 13 files through the image route", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const created = (await http.post(target).send(body(a.page)).expect(201)).body as WebsiteChangeRequestResult;
+    const images = `${target}/${created.issueId}/images`;
+    for (let n = 0; n < 13; n += 1) await http.post(images).attach("file", PNG, { filename: `${n}.png`, contentType: "image/png" }).expect(201);
+    const over = await http.post(images).attach("file", PNG, { filename: "14.png", contentType: "image/png" }).expect(422);
+    expect(over.body.code).toBe("website_change_image_limit");
+  });
+
   it("image upload is company-scoped and needs website:edit", async () => {
     const a = await seedWorld("Alpha", "alpha.test");
     const b = await seedWorld("Bravo", "bravo.test");

@@ -30,6 +30,7 @@ import {
   updateWebsiteSiteSchema,
   websiteReleaseActionSchema,
   WEBSITE_CHANGE_IMAGE_MAX_BYTES,
+  WEBSITE_CHANGE_MAX_ATTACHMENTS,
   type PermissionKey,
   type WebsiteAccess,
   type WebsiteChangeImage,
@@ -706,6 +707,11 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     }
     if (!options.storage) {
       res.status(503).json({ error: "Image upload is not set up on this server." });
+      return;
+    }
+    // The request takes at most 10 attachments, plus the screenshot and the drawing's two files.
+    if ((await issues.listAttachments(issue.id)).length >= WEBSITE_CHANGE_MAX_ATTACHMENTS + 3) {
+      res.status(422).json({ error: "This task already has all the images one request takes.", code: "website_change_image_limit" });
       return;
     }
     try {
