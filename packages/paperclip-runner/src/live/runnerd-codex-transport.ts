@@ -55,6 +55,7 @@ import {
   type RunnerProcessConnection,
   type RunnerProcessLaunchSpec,
   type DurablePrpControlPlaneOptions,
+  SemanticToolNotDispatchedError,
 } from "../control-plane/durable-prp-control-plane.js";
 import {
   resolveQualifiedAcpxProfile,
@@ -781,6 +782,11 @@ async function awaitRunnerSuspensionBarrier(input: {
   return false;
 }
 
+function runnerProcessReconnectGraceMs(options: CapabilityRunnerdCodexTransportOptions): number | undefined {
+  if (options.runnerProcessReconnectGraceMs === null) return undefined;
+  return options.runnerProcessReconnectGraceMs ?? options.runnerReconnectGraceMs;
+}
+
 function runnerCloseDeadlines(
   startedAtMs: number,
   graceMs: number,
@@ -1240,6 +1246,8 @@ export interface CapabilityRunnerdCodexTransportOptions {
   }) => Promise<Record<string, unknown>>;
   /** Active-connection recovery budget. Omitted for the existing local mode. */
   runnerReconnectGraceMs?: number;
+  /** Null keeps the runner alive through controller outages until its connection lease expires. */
+  runnerProcessReconnectGraceMs?: number | null;
   /**
    * A verified local runner that outlived its controller. Adoption registers
    * the durable authority and waits for this exact process to reconnect; it
@@ -3300,6 +3308,9 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       },
     ],
   });
+  #handlerInstalled = false;
+  readonly #handlerReady: Promise<void>;
+  #resolveHandlerReady!: () => void;
   #core: DurablePrpControlPlane | null = null;
   #handle: RunnerProcessHandle | null = null;
   #adoptedRunnerMonitor: NodeJS.Timeout | null = null;
@@ -3344,6 +3355,8 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   #failure: Error | null = null;
   readonly #failureSignal: Promise<never>;
   #rejectFailureSignal!: (error: Error) => void;
+  readonly #closedSignal: Promise<void>;
+  #resolveClosedSignal!: () => void;
   #runnerRecoveryInProgress = false;
   #startupComplete = false;
   #startupFailureCode = "native_runner_process_exited";
@@ -3368,6 +3381,8 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     this.#failureSignal = new Promise<never>((_resolve, reject) => {
       this.#rejectFailureSignal = reject;
     });
+    this.#handlerReady = new Promise<void>(resolve => { this.#resolveHandlerReady = resolve; });
+    this.#closedSignal = new Promise<void>(resolve => { this.#resolveClosedSignal = resolve; });
     // Failure is also observed by request/notification paths. Register an
     // internal handler so a process exit after the owner has closed the
     // session cannot become an unhandled process-level rejection.
@@ -3675,6 +3690,8 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
 
   setServerRequestHandler(handler: CodexServerRequestHandler): void {
     this.#handler = handler;
+    this.#handlerInstalled = true;
+    this.#resolveHandlerReady();
   }
 
   async #awaitWarmRunAttachmentReady(): Promise<void> {
@@ -4084,6 +4101,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     if (this.#closed) return;
     this.#controllerDetachedForRestart = true;
     this.#closed = true;
+    this.#resolveClosedSignal();
     this.#turnStartAdmission?.resolve(false);
     if (this.#pump !== null) clearInterval(this.#pump);
     this.#pump = null;
@@ -4112,6 +4130,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
 
   async #closeOnce(): Promise<void> {
     this.#closed = true;
+    this.#resolveClosedSignal();
     this.#turnStartAdmission?.resolve(false);
     const adoptedRunner = this.options.adoptExistingRunner;
     // `settled` is a durable-state assertion, not merely the absence of a
@@ -4663,7 +4682,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       maxOutboxBytes: RUNNERD_MAX_OUTBOX_BYTES,
       p0ReserveBytes: RUNNERD_P0_RESERVE_BYTES,
       maxRuntimeMs: 0,
-      reconnectGraceMs: this.options.runnerReconnectGraceMs,
+      reconnectGraceMs: runnerProcessReconnectGraceMs(this.options),
       lifecyclePolicy: this.options.lifecyclePolicy,
       runnerBinaryPath,
       runnerVersion: runnerArtifact.version,
@@ -5293,7 +5312,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
           maxOutboxBytes: RUNNERD_MAX_OUTBOX_BYTES,
           p0ReserveBytes: RUNNERD_P0_RESERVE_BYTES,
           maxRuntimeMs: 0,
-          reconnectGraceMs: this.options.runnerReconnectGraceMs,
+          reconnectGraceMs: runnerProcessReconnectGraceMs(this.options),
           lifecyclePolicy: this.options.lifecyclePolicy,
           runnerBinaryPath,
           runnerVersion: runnerArtifact.version,
@@ -5432,7 +5451,17 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     const accepted =
       admission === null
         ? true
-        : await Promise.race([admission.settled, this.#failureSignal]);
+        : await Promise.race([admission.settled, this.#failureSignal]).catch(() => {
+            throw new SemanticToolNotDispatchedError();
+          });
+    if (!accepted) throw new SemanticToolNotDispatchedError();
+    if (!this.#handlerInstalled) {
+      await Promise.race([
+        this.#handlerReady,
+        this.#failureSignal,
+        this.#closedSignal.then(() => { throw new SemanticToolNotDispatchedError(); }),
+      ]).catch(() => { throw new SemanticToolNotDispatchedError(); });
+    }
     this.#throwIfFailed();
     if (
       !accepted ||
