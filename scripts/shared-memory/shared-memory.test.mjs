@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { claudeTurns, codexTurns, isTrivialTurn } from "./extract.mjs";
-import { run, tailnetUrlProblem } from "./gs-memory-sync.mjs";
+import { run, syncHandoff, tailnetUrlProblem } from "./gs-memory-sync.mjs";
 import { isNeverStoreFile, redact } from "./redact.mjs";
 
 // Fake secrets are built at run time so no secret-shaped literal sits in the repo.
@@ -184,8 +184,12 @@ describe("the Mac sync run", () => {
     );
     const env = { GS_MEMORY_SYNC_HOME: dirs.home, T_CLAUDE: "claude-token", T_CODEX: "codex-token" };
     // A fake GSAM: remembers source id → content like the server does, and can cap.
-    const server = { calls: [], live: new Map(), cap: Infinity, used: 0 };
+    const server = { calls: [], live: new Map(), cap: Infinity, used: 0, handoffCalls: [], handoff: { revision: 0, markdown: "" } };
     const send = async (_config, token, route, body) => {
+      if (route.startsWith("/handoff")) {
+        server.handoffCalls.push({ token, route, body });
+        return { ...server.handoff, conflicts: [] };
+      }
       server.calls.push({ token, route, body });
       const entries = body.entries.map((entry) => {
         if (server.live.get(entry.sourceId) === entry.content) return { sourceId: entry.sourceId, outcome: "unchanged", recordId: "r" };
@@ -213,7 +217,7 @@ describe("the Mac sync run", () => {
       const session = path.join(dirs.claude, "proj", "s1.jsonl");
       fs.writeFileSync(session, `${claudeTurn(1, "2026-10-25T10:00:00Z")}\n${claudeTurn(2, "2026-10-25T10:05:00Z")}\n`);
       fs.utimesSync(session, new Date(now - 3_600_000), new Date(now - 3_600_000));
-      fs.writeFileSync(path.join(dirs.memory, "NOW.md"), "---\ndescription: handoff\n---\nIndago first. token: abcdefghijk");
+      fs.writeFileSync(path.join(dirs.memory, "project_indago.md"), "---\ndescription: Indago\n---\nIndago first. token: abcdefghijk");
       fs.writeFileSync(path.join(dirs.memory, "pilot01.create-output.txt"), "admin password");
       const codexDir = path.join(dirs.codex, "2026", "10", "26");
       fs.mkdirSync(codexDir, { recursive: true });
@@ -255,11 +259,82 @@ describe("the Mac sync run", () => {
       assert.doesNotMatch(JSON.stringify(server.calls), /Question 1:/);
 
       // A changed memory file is sent again under the same source id.
-      fs.writeFileSync(path.join(dirs.memory, "NOW.md"), "Indago interview on 9 Nov.");
+      fs.writeFileSync(path.join(dirs.memory, "project_indago.md"), "Indago interview on 9 Nov.");
       server.calls.length = 0;
       const changed = await run({ env, now: now + 86_400_000 + 60_000, send, log: () => {} });
       assert.equal(changed.revised, 1);
-      assert.equal(server.calls[0].body.entries[0].sourceId, "memory:NOW.md");
+      assert.equal(server.calls[0].body.entries[0].sourceId, "memory:project_indago.md");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("mirrors the handoff to NOW.md, keeps NOW.md as the fallback while GSAM is down, and sends offline edits back", async () => {
+    const { dirs, env, server, send, cleanup } = sandbox();
+    const nowFile = path.join(dirs.memory, "NOW.md");
+    const down = async () => {
+      throw new Error("fetch failed: connect ECONNREFUSED");
+    };
+    try {
+      // GSAM has a handoff and there is no NOW.md yet: the run writes it.
+      server.handoff = { revision: 2, markdown: "# NOW: where we left off\n\n## Focus\n<!-- by ChatGPT · 2026-10-26T09:00:00.000Z -->\nShared memory first.\n" };
+      const first = await run({ env, send, log: () => {} });
+      assert.equal(first.handoff.written, true);
+      assert.equal(fs.readFileSync(nowFile, "utf8"), server.handoff.markdown);
+      // NOW.md is the handoff's mirror, never a memory-file entry.
+      assert.ok(!server.calls.some((call) => JSON.stringify(call.body).includes("Shared memory first")));
+
+      // GSAM (or the PC) is down. Claude edits NOW.md by hand; the run leaves it alone.
+      const edited = server.handoff.markdown.replace("Shared memory first.", "Indago call first. key sk-ant-api03-" + mixed(40));
+      fs.writeFileSync(nowFile, edited);
+      const offline = await run({ env, send: down, log: () => {} });
+      assert.equal(offline.handoff.offline, true);
+      assert.equal(fs.readFileSync(nowFile, "utf8"), edited, "the fallback file keeps the offline edit");
+
+      // GSAM is back: the edit goes back with the revision this Mac last wrote, redacted, and GSAM's answer is written.
+      server.handoff = { revision: 3, markdown: "# NOW: where we left off\n\n## Focus\n<!-- by NOW.md edit · 2026-10-26T10:00:00.000Z -->\nIndago call first. key [redacted]\n" };
+      server.handoffCalls.length = 0;
+      const back = await run({ env, send, log: () => {} });
+      assert.equal(server.handoffCalls.length, 1);
+      const call = server.handoffCalls[0];
+      assert.equal(call.route, "/handoff/file");
+      assert.equal(call.body.baseRevision, 2);
+      assert.match(call.body.text, /Indago call first/);
+      assert.ok(!call.body.text.includes("sk-ant-api03"), "secrets never leave the Mac");
+      assert.ok(call.body.fileChangedAt);
+      assert.equal(back.handoff.sentBack, true);
+      assert.equal(fs.readFileSync(nowFile, "utf8"), server.handoff.markdown);
+
+      // Nothing changed here, GSAM moved on (an update from Codex): the run reads it and rewrites NOW.md.
+      server.handoff = { revision: 4, markdown: `${server.handoff.markdown}\n## Live threads\n- GRE-2668 Shared memory | state: in review\n` };
+      server.handoffCalls.length = 0;
+      await run({ env, send, log: () => {} });
+      assert.deepEqual(server.handoffCalls.map((entry) => entry.route), ["/handoff"]);
+      assert.match(fs.readFileSync(nowFile, "utf8"), /GRE-2668 Shared memory/);
+      const state = JSON.parse(fs.readFileSync(path.join(dirs.home, "state.json"), "utf8"));
+      assert.equal(state.handoff.revision, 4);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("does not overwrite NOW.md that a tool changed while the sync was out", async () => {
+    const { dirs, cleanup } = sandbox();
+    const nowFile = path.join(dirs.memory, "NOW.md");
+    try {
+      fs.writeFileSync(nowFile, "# NOW\n\nold\n");
+      const state = { handoff: { revision: 1, hash: "x" } };
+      const config = { memoryDir: dirs.memory };
+      const send = async () => {
+        // A tool writes while the call is out.
+        fs.writeFileSync(nowFile, "# NOW\n\nbrand new edit\n");
+        fs.utimesSync(nowFile, new Date(Date.now() + 5_000), new Date(Date.now() + 5_000));
+        return { revision: 2, markdown: "# NOW from GSAM\n", conflicts: [] };
+      };
+      const result = await syncHandoff({ config, token: "t", state, send });
+      assert.equal(result.written, false);
+      assert.equal(fs.readFileSync(nowFile, "utf8"), "# NOW\n\nbrand new edit\n");
+      assert.equal(state.handoff.revision, 2);
     } finally {
       cleanup();
     }

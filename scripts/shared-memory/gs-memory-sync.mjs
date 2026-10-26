@@ -8,6 +8,13 @@
 //   node gs-memory-sync.mjs status            what was sent, today's count, last error
 //   node gs-memory-sync.mjs check             config, tokens (present or not), GSAM reachable, bank name
 //   node gs-memory-sync.mjs recall "<query>" [--as claude|codex]   ask the shared memory
+//   node gs-memory-sync.mjs handoff           the live handoff (from GSAM, or NOW.md when GSAM is down)
+//
+// The live handoff (John, 26 Oct): each run also mirrors the handoff in GSAM
+// to NOW.md in the memory folder and sends NOW.md edits back. GSAM is the
+// source of truth when it can be reached; NOW.md is the fallback when it
+// cannot, and the next run reconciles (GSAM merges per section, newest wins,
+// and records any clash).
 //
 // Idempotent and resumable: state is saved after every accepted batch, and the
 // server skips any entry whose text it already has. Tokens are read from the
@@ -212,12 +219,15 @@ export function sessionEntries(file, source, state, { now = Date.now(), backfill
   return { entries, advance: { file, size: info.size, mtimeMs: info.mtimeMs, turns: completeCount }, found: [...found] };
 }
 
+/** NOW.md is the handoff's mirror: it reaches GSAM as the handoff record, not as a memory file. */
+export const HANDOFF_FILE = "NOW.md";
+
 export function memoryFileEntries(dir, state) {
   const entries = [];
   const found = new Set();
   for (const file of listFiles(dir, (full) => /\.(md|txt)$/i.test(full), 2).sort()) {
     const rel = path.relative(dir, file);
-    if (isNeverStoreFile(rel)) continue;
+    if (isNeverStoreFile(rel) || rel === HANDOFF_FILE) continue;
     const info = fs.statSync(file);
     if (info.size > 200_000) continue;
     const raw = fs.readFileSync(file, "utf8");
@@ -257,6 +267,80 @@ async function post(config, token, route, body) {
   return text ? JSON.parse(text) : null;
 }
 
+function writeTextAtomic(file, text) {
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, text, { mode: 0o600 });
+  fs.renameSync(temp, file);
+}
+
+/**
+ * Mirrors the handoff both ways. NOW.md changed since the last run: it is
+ * sent back (redacted) with the revision this Mac last wrote, and GSAM merges
+ * it per section. Otherwise GSAM's current handoff is read. Either way the
+ * answer is written to NOW.md, unless the file changed while the call was out
+ * (a tool is editing it; the next run sends that edit). GSAM unreachable:
+ * NOW.md is left as it is, for both tools to use, and the edit waits.
+ */
+export async function syncHandoff({ config, token, state, send, dryRun = false, log = () => {} }) {
+  const file = path.join(config.memoryDir, HANDOFF_FILE);
+  state.handoff ??= { revision: 0, hash: null };
+  let text = null;
+  let mtimeMs = null;
+  try {
+    text = fs.readFileSync(file, "utf8");
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    text = null;
+  }
+  const localChanged = text !== null && text.trim() !== "" && sha256(text) !== state.handoff.hash;
+  if (dryRun) return { localChanged, offline: false, written: false, conflicts: 0 };
+  if (!token) return { localChanged, offline: true, written: false, conflicts: 0, error: "no token" };
+  let remote;
+  let redacted = [];
+  try {
+    if (localChanged) {
+      const clean = redact(text);
+      redacted = clean.found;
+      remote = await send(config, token, "/handoff/file", {
+        text: clean.text,
+        fileChangedAt: new Date(mtimeMs).toISOString(),
+        baseRevision: state.handoff.revision,
+      });
+    } else {
+      remote = await send(config, token, "/handoff");
+    }
+  } catch (error) {
+    state.handoff.pendingSince ??= localChanged ? new Date(mtimeMs).toISOString() : null;
+    state.handoff.lastError = String(error.message ?? error).slice(0, 300);
+    // A 4xx is GSAM refusing the file (say, a value that looks like a secret); anything else is GSAM or the PC down.
+    const refused = /answered 4\d\d/.test(state.handoff.lastError);
+    log(`handoff: ${refused ? "GSAM did not take NOW.md" : "GSAM not reachable"}, NOW.md stays as it is (${state.handoff.lastError})`);
+    return { localChanged, offline: !refused, refused, written: false, conflicts: 0, error: state.handoff.lastError };
+  }
+  const conflicts = remote?.conflicts?.length ?? 0;
+  if (conflicts > 0) log(`handoff: ${conflicts} section(s) changed on both sides; the newer edit was kept and the other is recorded in GSAM`);
+  // Nothing in GSAM yet and nothing here: leave the folder alone.
+  if (!remote || (remote.revision === 0 && text === null)) {
+    state.handoff = { revision: remote?.revision ?? 0, hash: text === null ? null : sha256(text), syncedAt: new Date().toISOString() };
+    return { localChanged, offline: false, written: false, conflicts, redacted };
+  }
+  let stillSame = true;
+  try {
+    stillSame = text === null ? !fs.existsSync(file) : fs.statSync(file).mtimeMs === mtimeMs;
+  } catch {
+    stillSame = text === null;
+  }
+  if (!stillSame) {
+    log("handoff: NOW.md changed during the sync; it is sent on the next run");
+    state.handoff.revision = remote.revision;
+    return { localChanged, offline: false, written: false, conflicts, redacted };
+  }
+  const written = remote.markdown !== text;
+  if (written) writeTextAtomic(file, remote.markdown);
+  state.handoff = { revision: remote.revision, hash: sha256(remote.markdown), syncedAt: new Date().toISOString() };
+  return { localChanged, offline: false, written, conflicts, redacted, revision: remote.revision };
+}
+
 export async function run({ dryRun = false, env = process.env, now = Date.now(), send = post, log = console.log } = {}) {
   const config = loadConfig(env);
   const dir = configDir(env);
@@ -283,6 +367,12 @@ export async function run({ dryRun = false, env = process.env, now = Date.now(),
   try {
     const tokens = { claude_code: readToken(config.tokens.claude_code, env), codex: readToken(config.tokens.codex, env) };
     let budget = Math.max(0, Math.min(config.maxEntriesPerRun, config.dailyCap - state.daily[today]));
+
+    // The handoff first: it is the one thing the other tool needs next session.
+    const handoff = await syncHandoff({ config, token: tokens.claude_code ?? tokens.codex, state, send, dryRun, log });
+    summary.handoff = { offline: handoff.offline, sentBack: handoff.localChanged && !handoff.offline && !handoff.refused, written: handoff.written, conflicts: handoff.conflicts };
+    countRedactions(handoff.redacted ?? []);
+    save();
 
     // Newest first, so a backlog never delays today's work.
     const sources = [
@@ -408,6 +498,17 @@ async function main(argv) {
       console.log(`- ${record.title ?? "(untitled)"}\n  source: ${record.sourceKind ?? "?"} ${record.sourceId ?? ""}; when: ${record.effectiveFrom ?? record.createdAt}; status: ${record.status}\n  ${String(hit.excerpt).replace(/\s+/g, " ").slice(0, 400)}`);
     }
     if (!result.available) console.log(result.message);
+  } else if (command === "handoff") {
+    const token = readToken(config.tokens.claude_code) ?? readToken(config.tokens.codex);
+    try {
+      if (!token) throw new Error("no token in the Keychain");
+      const remote = await post(config, token, `/handoff?since=${encodeURIComponent(new Date(Date.now() - 86_400_000).toISOString())}`);
+      console.log(remote.markdown);
+      for (const change of remote.changesSince?.changes ?? []) console.log(`- ${change.at.slice(0, 16)} ${change.summary} (by ${change.by.label})`);
+    } catch (error) {
+      console.log(`GSAM not reachable (${String(error.message).slice(0, 200)}); NOW.md, the fallback:\n`);
+      console.log(fs.readFileSync(path.join(config.memoryDir, HANDOFF_FILE), "utf8"));
+    }
   } else {
     throw new Error(`unknown command ${command}`);
   }
