@@ -8211,6 +8211,7 @@ describe("runnerd provider runtime wiring", () => {
     expect(state.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({
         externallySandboxed: true,
+        runnerProcessReconnectGraceMs: null,
         environment: expect.objectContaining({
           GSAM_RUNNER_EXTERNAL_SANDBOX: "1",
         }),

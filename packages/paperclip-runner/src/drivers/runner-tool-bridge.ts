@@ -33,7 +33,8 @@ export interface RunnerToolBridgeOptions {
   /** Runner-owned operations that are callable but never model-visible. */
   privateTools?: readonly Readonly<Record<string, unknown>>[];
   handler(call: RunnerToolCall): Promise<unknown>;
-  timeoutMs?: number;
+  /** Null lets a durable runtime's lease and bridge close bound the call. */
+  timeoutMs?: number | null;
   privateToolTimeoutMs?: number;
   maxBodyBytes?: number;
   /** Internal test seam; production bounds headers and body reads to 30 seconds. */
@@ -121,7 +122,7 @@ export async function startRunnerToolBridge(
     calls,
     controllers,
     handler: options.handler,
-    timeoutMs: positiveBoundedInteger(
+    timeoutMs: options.timeoutMs === null ? null : positiveBoundedInteger(
       options.timeoutMs,
       DEFAULT_TIMEOUT_MS,
       1,
@@ -190,7 +191,7 @@ async function handleRequest(
     calls: Map<string, AdmittedCall>;
     controllers: Map<string, AbortController>;
     handler: RunnerToolBridgeOptions["handler"];
-    timeoutMs: number;
+    timeoutMs: number | null;
     privateToolTimeoutMs: number;
     privateToolNames: ReadonlySet<string>;
     maxBodyBytes: number;
@@ -537,24 +538,24 @@ function closeServer(server: Server): Promise<void> {
 function withCancellationAndTimeout<T>(
   promise: Promise<T>,
   controller: AbortController,
-  timeoutMs: number,
+  timeoutMs: number | null,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       controller.signal.removeEventListener("abort", onAbort);
       callback();
     };
     const onAbort = () =>
       finish(() => reject(new Error("GS Agentic Manager tool call cancelled")));
-    const timer = setTimeout(() => {
+    const timer = timeoutMs === null ? undefined : setTimeout(() => {
       finish(() => reject(new Error("GS Agentic Manager tool call timed out")));
       controller.abort();
     }, timeoutMs);
-    timer.unref();
+    timer?.unref();
     controller.signal.addEventListener("abort", onAbort, { once: true });
     promise.then(
       (value) => finish(() => resolve(value)),

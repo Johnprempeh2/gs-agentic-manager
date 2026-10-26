@@ -16,6 +16,7 @@ describe("ACPX launch environment", () => {
       GSAM_RUNNER_BOOTSTRAP_TICKET: "transport-secret",
       GSAM_NATIVE_MCP_TOKEN: "bridge-secret",
       UNRELATED_SECRET: "not-visible",
+      MCP_TOOL_TIMEOUT: "3600000",
     };
 
     const codex = createSanitizedAcpxSpawnInput(source, "codex");
@@ -30,6 +31,7 @@ describe("ACPX launch environment", () => {
       LC_ALL: "C.UTF-8",
       HTTPS_PROXY: "https://proxy.example",
       ANTHROPIC_API_KEY: "anthropic-secret",
+      MCP_TOOL_TIMEOUT: "3600000",
     });
     expect(createSanitizedAcpxSpawnInput(source, "pi").env).toEqual({
       PATH: "/bin",

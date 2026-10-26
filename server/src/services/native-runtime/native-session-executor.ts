@@ -12450,6 +12450,7 @@ async function createRunnerdBackendWithinSessionClaim(
           : undefined,
         runnerProcessLauncher: remoteProcessLauncher,
         runnerReconnectGraceMs: remoteTarget ? 120_000 : undefined,
+        runnerProcessReconnectGraceMs: remoteTarget ? null : undefined,
         adoptExistingRunner: adoptedProcess,
         environment: effectiveRunnerEnvironment,
         onDiagnostic: (message) => {
