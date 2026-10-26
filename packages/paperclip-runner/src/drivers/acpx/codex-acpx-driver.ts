@@ -759,6 +759,14 @@ class CodexAcpxSession implements HarnessSession {
     payload: Record<string, unknown>;
   } | null = null;
   #runtimeRequestSequence = 0;
+  readonly #boundaryCorrections = new Map<string, {
+    message: string;
+    promise: Promise<void>;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }>();
+  readonly #deliveredBoundaryIds = new Set<string>();
+  #boundaryTurnSequence = 0;
 
   constructor(input: {
     host: CodexAcpxHost;
@@ -900,6 +908,28 @@ class CodexAcpxSession implements HarnessSession {
       );
     }
     await this.#host.interruptActiveTurn(input.reason ?? "interrupted");
+  }
+
+  deliverAtTurnBoundary(input: {
+    turnId: string;
+    message: NativeUserMessage;
+    correlationId: string;
+  }): Promise<void> {
+    this.#assertOpen();
+    if (this.#agent !== "claude")
+      throw new HarnessCapabilityUnavailableError("turn-boundary delivery", "only Claude ACP supports turn-boundary corrections");
+    if (this.#deliveredBoundaryIds.has(input.correlationId)) return Promise.resolve();
+    if (this.#activeTurnId !== input.turnId || this.#pendingTerminal)
+      throw new HarnessStaleTurnError(input.turnId);
+    const existing = this.#boundaryCorrections.get(input.correlationId);
+    if (existing) return existing.promise;
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    this.#boundaryCorrections.set(input.correlationId, {
+      message: input.message.text, promise, resolve, reject,
+    });
+    return promise;
   }
 
   pendingRuntimeRequests(): HarnessRuntimeRequest[] {
@@ -1228,6 +1258,7 @@ class CodexAcpxSession implements HarnessSession {
   }
 
   async #finishClose(reason: string): Promise<void> {
+    this.#rejectBoundaryCorrections(new Error("ACP session closed before correction delivery"));
     const closingTurnId = this.#activeTurnId;
     const pump = this.#activePump;
     this.#cancelPendingRuntimeRequests(reason);
@@ -1362,6 +1393,34 @@ class CodexAcpxSession implements HarnessSession {
       this.#cancelPendingRuntimeRequests("provider turn settled", turnId);
       if (this.#terminalTurns.has(turnId)) return;
       if (result.status === "completed") {
+        if (this.#boundaryCorrections.size > 0 && !this.#closingStarted &&
+            !this.#pendingSemanticTransfer && !this.#semanticResult) {
+          const corrections = [...this.#boundaryCorrections.entries()];
+          try {
+            const continuation = this.#host.startTurn({
+              text: corrections.map(([, { message }]) => message).join("\n\n"),
+              requestId: `${safeId(this.#input.runId, "run")}:${turnId}:correction:${++this.#boundaryTurnSequence}`,
+              onElicitation: (request, context) =>
+                this.#handleElicitation(turnId, request, context),
+            });
+            await continuation.promptStarted;
+            if (this.#closingStarted) throw new Error("ACP session closed before correction delivery");
+            for (const [correlationId, correction] of corrections) {
+              this.#boundaryCorrections.delete(correlationId);
+              this.#deliveredBoundaryIds.add(correlationId);
+              correction.resolve();
+            }
+            this.#assistantText = "";
+            await this.#pumpTurn(turnId, continuation);
+            return;
+          } catch (error) {
+            for (const [correlationId, correction] of corrections) {
+              this.#boundaryCorrections.delete(correlationId);
+              correction.reject(error instanceof Error ? error : new Error(String(error)));
+            }
+            throw error;
+          }
+        }
         const completedSemanticFingerprint =
           this.#pendingSemanticTransfer?.turnId === turnId
             ? this.#pendingSemanticTransfer.fingerprint
@@ -1488,6 +1547,7 @@ class CodexAcpxSession implements HarnessSession {
     payload: Record<string, unknown>,
   ): void {
     if (this.#terminalTurns.has(turnId)) return;
+    this.#rejectBoundaryCorrections(new Error("ACP turn settled before correction delivery"));
     const pendingTerminal = this.#pendingTerminal;
     if (
       pendingTerminal !== null &&
@@ -1528,6 +1588,11 @@ class CodexAcpxSession implements HarnessSession {
       this.#pendingSemanticTransfer = null;
     }
     if (this.#activeTurnId === turnId) this.#activeTurnId = null;
+  }
+
+  #rejectBoundaryCorrections(error: Error): void {
+    for (const correction of this.#boundaryCorrections.values()) correction.reject(error);
+    this.#boundaryCorrections.clear();
   }
 
   #mapRuntimeEvent(

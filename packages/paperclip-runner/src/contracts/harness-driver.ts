@@ -516,6 +516,12 @@ export interface HarnessSession {
     message: NativeUserMessage;
     correlationId?: string;
   }): Promise<void>;
+  /** Accept a correction only after the active provider turn settles. */
+  deliverAtTurnBoundary?(input: {
+    turnId: string;
+    message: NativeUserMessage;
+    correlationId: string;
+  }): Promise<void>;
   interrupt?(input: {
     turnId?: string;
     reason?: string;

@@ -409,7 +409,9 @@ import {
   type CrossIssueInfluenceKind,
 } from "../services/cross-issue-influence-limit.js";
 import {
+  deliverNativeSessionCorrectionAtBoundary,
   getNativeSessionSteeringState,
+  NativeSessionBoundaryUnsupportedError,
   NativeSessionSteeringError,
   steerNativeSession,
 } from "../services/native-runtime/native-session-executor.js";
@@ -7872,14 +7874,17 @@ export function issueRoutes(
     let delivered = false;
     if (safePoint === "safe" && run.runtimeMode === "native") {
       try {
-        await steerNativeSession({
-          runId: run.id,
-          message: `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`,
-          correlationId: comment.id,
-        });
+        const message = `Correction from the board on this task. Reconsider your current work at the next turn boundary:\n\n${comment.body}`;
+        try {
+          await deliverNativeSessionCorrectionAtBoundary({ runId: run.id, message, correlationId: comment.id });
+        } catch (boundaryError) {
+          if (!(boundaryError instanceof NativeSessionBoundaryUnsupportedError))
+            throw boundaryError;
+          await steerNativeSession({ runId: run.id, message, correlationId: comment.id });
+        }
         delivered = true;
       } catch (err) {
-        logger.info({ err, runId: run.id, commentId: comment.id }, "correction steering unavailable; restarting run");
+        logger.info({ err, runId: run.id, commentId: comment.id }, "correction live delivery unavailable; restarting run");
       }
     }
     if (delivered) {

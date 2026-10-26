@@ -6447,6 +6447,32 @@ export async function steerNativeSession(input: {
   }
 }
 
+/** Claude ACP accepts a correction as a new provider prompt after its current turn. */
+export class NativeSessionBoundaryUnsupportedError extends Error {}
+
+export async function deliverNativeSessionCorrectionAtBoundary(input: {
+  runId: string;
+  message: string;
+  correlationId: string;
+}): Promise<void> {
+  const active = activeNativeSessions.get(input.runId);
+  if (!active?.session.deliverAtTurnBoundary)
+    throw new NativeSessionBoundaryUnsupportedError("turn-boundary delivery is unavailable");
+  const snapshot = await active.session.snapshot();
+  if (!snapshot.activeTurnId) throw new Error("the ACP turn has settled");
+  try {
+    await active.session.deliverAtTurnBoundary({
+      turnId: snapshot.activeTurnId,
+      message: { role: "user", text: input.message },
+      correlationId: input.correlationId,
+    });
+  } catch (error) {
+    if (error instanceof Error && /only Claude ACP|turn-boundary delivery is unavailable/.test(error.message))
+      throw new NativeSessionBoundaryUnsupportedError(error.message);
+    throw error;
+  }
+}
+
 export function cancelNativeSession(
   runId: string,
   reason: string,

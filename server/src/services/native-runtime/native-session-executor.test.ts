@@ -304,6 +304,7 @@ import {
   sha256DirectoryTree,
   stageRemoteRunnerDirectory,
   steerNativeSession,
+  deliverNativeSessionCorrectionAtBoundary,
   syncRemoteRunnerDirectoryOut,
   verifyNativeHarnessBackup,
   shouldRestoreNativeHarnessBackupIntoSandbox,
@@ -5653,14 +5654,16 @@ describe("native session same-turn steering", () => {
   const capabilities = vi.fn();
   const snapshot = vi.fn();
   const steer = vi.fn();
+  const deliverAtTurnBoundary = vi.fn();
 
   beforeEach(() => {
     state.release = null;
     capabilities.mockReset().mockResolvedValue({ steering: true });
     snapshot.mockReset().mockResolvedValue({ activeTurnId: "provider-turn-1" });
     steer.mockReset().mockResolvedValue(undefined);
+    deliverAtTurnBoundary.mockReset().mockResolvedValue(undefined);
     state.execute.mockReset().mockImplementation(async (options) => {
-      options.onSession?.({ capabilities, snapshot, steer, cancel: vi.fn() });
+      options.onSession?.({ capabilities, snapshot, steer, deliverAtTurnBoundary, cancel: vi.fn() });
       await new Promise<void>((resolve) => {
         state.release = resolve;
       });
@@ -5711,6 +5714,22 @@ describe("native session same-turn steering", () => {
       correlationId: "queued-comment-1",
     });
 
+    state.release?.();
+    await running;
+  });
+
+  it("passes a correction and comment ID to the active session boundary", async () => {
+    const { running } = await startActiveSession();
+    await deliverNativeSessionCorrectionAtBoundary({
+      runId: execution.binding.runId,
+      message: "Use the corrected requirement",
+      correlationId: "comment-correction",
+    });
+    expect(deliverAtTurnBoundary).toHaveBeenCalledWith({
+      turnId: "provider-turn-1",
+      message: { role: "user", text: "Use the corrected requirement" },
+      correlationId: "comment-correction",
+    });
     state.release?.();
     await running;
   });

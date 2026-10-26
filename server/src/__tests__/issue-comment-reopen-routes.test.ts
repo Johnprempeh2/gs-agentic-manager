@@ -45,6 +45,7 @@ const mockAgentService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const mockGetRunFlag = vi.hoisted(() => vi.fn(() => null));
 const mockSteerNativeSession = vi.hoisted(() => vi.fn(async () => ({ turnId: "turn-1" })));
+const mockDeliverBoundaryCorrection = vi.hoisted(() => vi.fn(async () => undefined));
 const mockTxInsertValues = vi.hoisted(() => vi.fn(async () => undefined));
 const mockTxInsert = vi.hoisted(() =>
   vi.fn(() => ({ values: mockTxInsertValues })),
@@ -162,6 +163,8 @@ vi.mock("../services/live-release.js", () => ({
 }));
 
 vi.mock("../services/native-runtime/native-session-executor.js", () => ({
+  deliverNativeSessionCorrectionAtBoundary: mockDeliverBoundaryCorrection,
+  NativeSessionBoundaryUnsupportedError: class NativeSessionBoundaryUnsupportedError extends Error {},
   getNativeSessionSteeringState: vi.fn(async () => ({ disposition: "available" })),
   NativeSessionSteeringError: class NativeSessionSteeringError extends Error {},
   steerNativeSession: mockSteerNativeSession,
@@ -372,6 +375,8 @@ describe.sequential("issue comment reopen routes", () => {
     mockGetRunFlag.mockReturnValue(null);
     mockSteerNativeSession.mockReset();
     mockSteerNativeSession.mockResolvedValue({ turnId: "turn-1" });
+    mockDeliverBoundaryCorrection.mockReset();
+    mockDeliverBoundaryCorrection.mockResolvedValue(undefined);
     mockFeedbackService.listIssueVotesForUser.mockReset();
     mockFeedbackService.saveIssueVote.mockReset();
     mockInstanceSettingsService.get.mockReset();
@@ -2897,12 +2902,13 @@ describe.sequential("issue comment reopen routes", () => {
 
     expect(res.status).toBe(201);
     expect(mockIssueService.addComment).toHaveBeenCalled();
-    expect(mockSteerNativeSession).toHaveBeenCalledWith(expect.objectContaining({
+    await vi.waitFor(() => expect(mockDeliverBoundaryCorrection).toHaveBeenCalledWith(expect.objectContaining({
       runId: "run-1", correlationId: "comment-1",
-    }));
+    })));
+    expect(mockSteerNativeSession).not.toHaveBeenCalled();
     expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
     expect(mockIssueService.addComment.mock.invocationCallOrder[0]).toBeLessThan(
-      mockSteerNativeSession.mock.invocationCallOrder[0]!,
+      mockDeliverBoundaryCorrection.mock.invocationCallOrder[0]!,
     );
   });
 
@@ -2913,7 +2919,7 @@ describe.sequential("issue comment reopen routes", () => {
       id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
       status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
     });
-    mockSteerNativeSession.mockRejectedValue(new Error("steering unavailable"));
+    mockDeliverBoundaryCorrection.mockRejectedValue(new Error("provider rejected correction"));
     mockHeartbeatService.cancelRun.mockResolvedValue({
       id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
       status: "cancelled",
@@ -2934,6 +2940,7 @@ describe.sequential("issue comment reopen routes", () => {
       issue.assigneeAgentId,
       expect.objectContaining({ contextSnapshot: expect.objectContaining({ correctionCommentId: "comment-1" }) }),
     ));
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(1);
   });
 
   it("returns the saved comment while a protected run waits, then cancels it", async () => {

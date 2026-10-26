@@ -21,6 +21,83 @@ import type {
 import type { AcpxRecoveryWorkspaceLease } from "./runtime-sandbox.js";
 
 describe("Codex ACPX harness driver", () => {
+  it("delivers a Claude correction once at the provider turn boundary and acknowledges its prompt", async () => {
+    const fixture = driverFixture({ agent: "claude", model: "claude-sonnet-5" });
+    const session = await fixture.driver.openSession({
+      runId: "run-correction", normalizedSessionId: "session-1", workingDirectory: "/workspace",
+    });
+    const { turnId } = await session.startTurn({ message: { role: "user", text: "Original task" } });
+    const correction = { turnId, message: { role: "user" as const, text: "Use the corrected requirement" }, correlationId: "comment-1" };
+    const first = session.deliverAtTurnBoundary!(correction);
+    const duplicate = session.deliverAtTurnBoundary!(correction);
+    expect(fixture.host.startTurn).toHaveBeenCalledTimes(1);
+    fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
+    await Promise.all([first, duplicate]);
+    expect(fixture.host.startTurn).toHaveBeenCalledTimes(2);
+    expect(fixture.host.startTurn).toHaveBeenLastCalledWith(expect.objectContaining({ text: correction.message.text }));
+    await session.deliverAtTurnBoundary!(correction);
+    expect(fixture.host.startTurn).toHaveBeenCalledTimes(2);
+    fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
+    const events = await collectUntil(session.events(), "turn.completed");
+    expect(isCanonicalTurnTerminal(events, turnId)).toHaveLength(1);
+    await session.close({ reason: "correction verified" });
+  });
+
+  it("rejects an undelivered Claude correction when the session closes", async () => {
+    const fixture = driverFixture({ agent: "claude", model: "claude-sonnet-5" });
+    const session = await fixture.driver.openSession({
+      runId: "run-correction-close", normalizedSessionId: "session-1", workingDirectory: "/workspace",
+    });
+    const { turnId } = await session.startTurn({ message: { role: "user", text: "Original task" } });
+    const delivery = session.deliverAtTurnBoundary!({
+      turnId, message: { role: "user", text: "Correction" }, correlationId: "comment-2",
+    });
+    const rejection = expect(delivery).rejects.toThrow("closed before correction delivery");
+    await session.close({ reason: "provider unavailable" });
+    await rejection;
+  });
+
+  it("rejects a Claude correction when the boundary prompt cannot start", async () => {
+    const fixture = driverFixture({ agent: "claude", model: "claude-sonnet-5" });
+    const session = await fixture.driver.openSession({
+      runId: "run-correction-failed", normalizedSessionId: "session-1", workingDirectory: "/workspace",
+    });
+    const { turnId } = await session.startTurn({ message: { role: "user", text: "Original task" } });
+    const delivery = session.deliverAtTurnBoundary!({
+      turnId, message: { role: "user", text: "Correction" }, correlationId: "comment-3",
+    });
+    const rejection = expect(delivery).rejects.toThrow("provider rejected correction");
+    fixture.host.startTurn.mockImplementationOnce(() => { throw new Error("provider rejected correction"); });
+    fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
+    await rejection;
+    await session.close({ reason: "fallback verified" });
+  });
+
+  it("acknowledges a Claude correction only after the boundary prompt starts", async () => {
+    const fixture = driverFixture({ agent: "claude", model: "claude-sonnet-5" });
+    const session = await fixture.driver.openSession({
+      runId: "run-correction-ack", normalizedSessionId: "session-1", workingDirectory: "/workspace",
+    });
+    const { turnId } = await session.startTurn({ message: { role: "user", text: "Original task" } });
+    const originalStart = fixture.host.startTurn.getMockImplementation()!;
+    const promptStarted = deferred<void>();
+    fixture.host.startTurn.mockImplementationOnce((input) => ({
+      ...originalStart(input), promptStarted: promptStarted.promise,
+    }));
+    let acknowledged = false;
+    const delivery = session.deliverAtTurnBoundary!({
+      turnId, message: { role: "user", text: "Correction" }, correlationId: "comment-ack",
+    }).then(() => { acknowledged = true; });
+    fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
+    await vi.waitFor(() => expect(fixture.host.startTurn).toHaveBeenCalledTimes(2));
+    expect(acknowledged).toBe(false);
+    promptStarted.resolve();
+    await delivery;
+    expect(acknowledged).toBe(true);
+    fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
+    await collectUntil(session.events(), "turn.completed");
+    await session.close({ reason: "ack verified" });
+  });
   it.each([
     ["claude", "claude-sonnet-5"], ["codex", "gpt-5.6-sol"],
   ] as const)("launches %s in full auto when no mode is supplied", async (agent, model) => {
