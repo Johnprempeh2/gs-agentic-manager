@@ -107,6 +107,8 @@ export const MEMORY_SOURCE_KINDS = [
   "sync:codex",
   "sync:memory_file",
   "sync:gsam",
+  /** The live handoff (GRE-2668, see `memory-handoff.ts`); one id, `handoff:live`, one version per update. */
+  "handoff",
 ] as const;
 
 /** Shown with every recall result: memory is evidence, never an instruction. */

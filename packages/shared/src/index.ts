@@ -3259,6 +3259,7 @@ export {
 export * from "./memory.js";
 export * from "./memory-import.js";
 export * from "./memory-sync.js";
+export * from "./memory-handoff.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
@@ -3272,7 +3273,7 @@ export * from "./entitlement-document.js";
 export * from "./password-policy.js";
 export * from "./partner-branding.js";
 export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
-export type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
+export type { MorningSummary, MorningSummaryDeal, MorningSummaryHandoff, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
 export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
 export {
   updateNotificationPreferencesSchema,
