@@ -4928,7 +4928,7 @@ describe("native startup restart detachment", () => {
       const detached = detachNativeSessionsForRestart([restarting.binding.runId]).catch(error => error);
       if (exceedDeadline) {
         await vi.advanceTimersByTimeAsync(30_000);
-        expect(await detached).toMatchObject({ message: "native_restart_startup_not_ready" });
+        expect(await detached).toMatchObject({ pendingRunIds: [restarting.binding.runId] });
         vi.useRealTimers();
       } else {
         release();
