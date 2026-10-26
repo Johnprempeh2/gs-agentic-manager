@@ -1381,13 +1381,13 @@ class CodexAcpxSession implements HarnessSession {
       .catch(() => undefined);
   }
 
-  async #pumpTurn(turnId: string, turn: AcpxRuntimeTurn): Promise<void> {
+  async #pumpTurn(turnId: string, turn: AcpxRuntimeTurn, segment = 0): Promise<void> {
     try {
       let index = 0;
       const normalizeToolEvent =
         createAcpxToolEventNormalizer<AcpRuntimeEvent>();
       for await (const event of turn.events) {
-        this.#mapRuntimeEvent(normalizeToolEvent(event), turnId, ++index);
+        this.#mapRuntimeEvent(normalizeToolEvent(event), turnId, ++index, segment);
       }
       const result = await turn.result;
       this.#cancelPendingRuntimeRequests("provider turn settled", turnId);
@@ -1411,7 +1411,7 @@ class CodexAcpxSession implements HarnessSession {
               correction.resolve();
             }
             this.#assistantText = "";
-            await this.#pumpTurn(turnId, continuation);
+            await this.#pumpTurn(turnId, continuation, segment + 1);
             return;
           } catch (error) {
             for (const [correlationId, correction] of corrections) {
@@ -1432,7 +1432,7 @@ class CodexAcpxSession implements HarnessSession {
           this.#emit(
             "item.completed",
             { kind: "agentMessage", channel: "final", text: finalText },
-            { turnId, itemId: `${turnId}:assistant-message` },
+            { turnId, itemId: `${turnId}:assistant-message${segment ? `:correction:${segment}` : ""}` },
           );
         }
         this.#publishTerminal(
@@ -1599,8 +1599,10 @@ class CodexAcpxSession implements HarnessSession {
     event: AcpRuntimeEvent,
     turnId: string,
     index: number,
+    segment = 0,
   ): void {
-    const fallbackItemId = `${turnId}:acp:${index}`;
+    const itemSuffix = segment ? `:correction:${segment}` : "";
+    const fallbackItemId = `${turnId}:acp${itemSuffix}:${index}`;
     if (event.type === "text_delta") {
       const output = boundedText(event.text, 64 * 1024);
       const isReasoning =
@@ -1621,8 +1623,8 @@ class CodexAcpxSession implements HarnessSession {
         {
           turnId,
           itemId: isReasoning
-            ? `${turnId}:reasoning`
-            : `${turnId}:assistant-message`,
+            ? `${turnId}:reasoning${itemSuffix}`
+            : `${turnId}:assistant-message${itemSuffix}`,
         },
       );
     }

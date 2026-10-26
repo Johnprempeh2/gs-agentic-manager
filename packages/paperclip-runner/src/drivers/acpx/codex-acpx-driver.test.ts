@@ -40,6 +40,8 @@ describe("Codex ACPX harness driver", () => {
     fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
     const events = await collectUntil(session.events(), "turn.completed");
     expect(isCanonicalTurnTerminal(events, turnId)).toHaveLength(1);
+    expect(new Set(events.filter((event) => event.eventType === "item.delta" &&
+      (event.payload as { kind?: string }).kind === "agentMessage").map((event) => event.itemId)).size).toBe(2);
     await session.close({ reason: "correction verified" });
   });
 
