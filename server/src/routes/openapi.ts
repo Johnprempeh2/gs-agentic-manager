@@ -389,6 +389,9 @@ import {
   updateDeepDiveInterviewRoundSchema,
   draftDeepDiveInterviewSetSchema,
   updateDeepDiveInterviewSetSchema,
+  openDeepDiveInterviewRoundSchema,
+  inviteDeepDiveInterviewPeopleSchema,
+  sendDeepDiveInterviewInvitesSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -17343,6 +17346,44 @@ registerCurrentRoute({
   tags: ["deep-dive"],
   summary: "Remove a question set while the round is in Setup",
   responses: interviewWriteResponses,
+});
+
+// Parallel Interview invites (GRE-2665): open the round on the website, invite
+// people (only website ids are stored), send again or remind, and read the live
+// status per team and per person. Only a person opens and sends.
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/interview-round/progress",
+  tags: ["deep-dive"],
+  summary: "Read the round's live status per team and per person from the website (names and emails are not stored)",
+  responses: { ...interviewResponses, 409: r.conflict, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/open",
+  tags: ["deep-dive"],
+  summary: "Open the round on the website (only a person; refused until every question set is approved)",
+  body: openDeepDiveInterviewRoundSchema,
+  responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/invites",
+  tags: ["deep-dive"],
+  summary: "Invite people from the board or by hand; the website makes the account or uses an existing website user",
+  body: inviteDeepDiveInterviewPeopleSchema,
+  responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/invites/send",
+  tags: ["deep-dive"],
+  summary: "Email the join link again (resend) or a reminder (remind) to people this round invited",
+  body: sendDeepDiveInterviewInvitesSchema,
+  responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it
