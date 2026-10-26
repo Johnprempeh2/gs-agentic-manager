@@ -66,6 +66,7 @@ import {
   NativeProviderTerminalFailure,
   NativeSessionCleanupQuarantinedError,
   NativeSessionProtocolIntegrityError,
+  HarnessCapabilityUnavailableError,
   completeRetainedNativeSessionCleanup,
   completeTerminatedLocalNativeSessionCleanup,
   acpxRuntimeSessionDirectoryName,
@@ -6454,22 +6455,28 @@ export async function deliverNativeSessionCorrectionAtBoundary(input: {
   runId: string;
   message: string;
   correlationId: string;
+  timeoutMs?: number;
 }): Promise<void> {
   const active = activeNativeSessions.get(input.runId);
   if (!active?.session.deliverAtTurnBoundary)
     throw new NativeSessionBoundaryUnsupportedError("turn-boundary delivery is unavailable");
   const snapshot = await active.session.snapshot();
   if (!snapshot.activeTurnId) throw new Error("the ACP turn has settled");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error("ACP correction turn boundary timed out")), input.timeoutMs ?? 120_000);
   try {
     await active.session.deliverAtTurnBoundary({
       turnId: snapshot.activeTurnId,
       message: { role: "user", text: input.message },
       correlationId: input.correlationId,
+      signal: controller.signal,
     });
   } catch (error) {
-    if (error instanceof Error && /only Claude ACP|turn-boundary delivery is unavailable/.test(error.message))
+    if (error instanceof HarnessCapabilityUnavailableError)
       throw new NativeSessionBoundaryUnsupportedError(error.message);
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

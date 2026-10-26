@@ -521,6 +521,7 @@ export interface HarnessSession {
     turnId: string;
     message: NativeUserMessage;
     correlationId: string;
+    signal?: AbortSignal;
   }): Promise<void>;
   interrupt?(input: {
     turnId?: string;

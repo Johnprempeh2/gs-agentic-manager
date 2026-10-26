@@ -696,6 +696,7 @@ class HarnessNativeSession implements NativeSession {
     turnId: string;
     message: { role: "user"; text: string };
     correlationId: string;
+    signal?: AbortSignal;
   }) {
     this.#assertProtocolIntegrity();
     if (!this.#session.deliverAtTurnBoundary)

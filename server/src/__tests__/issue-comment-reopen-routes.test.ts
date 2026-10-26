@@ -2927,6 +2927,59 @@ describe.sequential("issue comment reopen routes", () => {
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(1);
   });
 
+  it("restarts and wakes with the correction after ACP boundary delivery times out", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+    mockDeliverBoundaryCorrection.mockRejectedValue(new Error("ACP correction turn boundary timed out"));
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId, status: "cancelled",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Stop the old plan", interrupt: true });
+
+    expect(res.status).toBe(201);
+    await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1", "Interrupted by board correction", expect.anything(),
+    ));
+    await vi.waitFor(() => expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      issue.assigneeAgentId,
+      expect.objectContaining({ contextSnapshot: expect.objectContaining({ correctionCommentId: "comment-1" }) }),
+    ));
+  });
+
+  it("waits for a Git write started during ACP delivery before fallback cancellation", async () => {
+    const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+      status: "running", runtimeMode: "native", contextSnapshot: { issueId: issue.id },
+    });
+    mockDeliverBoundaryCorrection.mockImplementation(async () => {
+      mockGetRunFlag.mockReturnValue(true);
+      throw new Error("ACP correction turn boundary timed out");
+    });
+    mockHeartbeatService.cancelRun.mockResolvedValue({
+      id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId, status: "cancelled",
+    });
+
+    const res = await request(await installActor(createApp()))
+      .post(`/api/issues/${issue.id}/comments`)
+      .send({ body: "Stop after the write", interrupt: true });
+    expect(res.status).toBe(201);
+    await vi.waitFor(() => expect(mockDeliverBoundaryCorrection).toHaveBeenCalled());
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    mockGetRunFlag.mockReturnValue(null);
+    await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+      "run-1", "Interrupted by board correction", expect.anything(),
+    ), { timeout: 2_500 });
+  });
+
   it("returns the saved comment while a protected run waits, then cancels it", async () => {
     const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
     mockIssueService.getById.mockResolvedValue(issue);

@@ -59,6 +59,26 @@ describe("Codex ACPX harness driver", () => {
     await rejection;
   });
 
+  it("withdraws a timed-out correction before the old turn ends", async () => {
+    const fixture = driverFixture({ agent: "claude", model: "claude-sonnet-5" });
+    const session = await fixture.driver.openSession({
+      runId: "run-correction-timeout", normalizedSessionId: "session-1", workingDirectory: "/workspace",
+    });
+    const { turnId } = await session.startTurn({ message: { role: "user", text: "Original task" } });
+    const controller = new AbortController();
+    const delivery = session.deliverAtTurnBoundary!({
+      turnId, message: { role: "user", text: "Correction" }, correlationId: "comment-timeout",
+      signal: controller.signal,
+    });
+    const rejection = expect(delivery).rejects.toThrow("turn boundary timed out");
+    controller.abort(new Error("turn boundary timed out"));
+    await rejection;
+    fixture.finishTurn({ status: "completed", stopReason: "end_turn" });
+    await collectUntil(session.events(), "turn.completed");
+    expect(fixture.host.startTurn).toHaveBeenCalledTimes(1);
+    await session.close({ reason: "restart verified" });
+  });
+
   it("rejects a Claude correction when the boundary prompt cannot start", async () => {
     const fixture = driverFixture({ agent: "claude", model: "claude-sonnet-5" });
     const session = await fixture.driver.openSession({

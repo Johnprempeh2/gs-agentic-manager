@@ -914,10 +914,12 @@ class CodexAcpxSession implements HarnessSession {
     turnId: string;
     message: NativeUserMessage;
     correlationId: string;
+    signal?: AbortSignal;
   }): Promise<void> {
     this.#assertOpen();
     if (this.#agent !== "claude")
       throw new HarnessCapabilityUnavailableError("turn-boundary delivery", "only Claude ACP supports turn-boundary corrections");
+    if (input.signal?.aborted) return Promise.reject(input.signal.reason);
     if (this.#deliveredBoundaryIds.has(input.correlationId)) return Promise.resolve();
     if (this.#activeTurnId !== input.turnId || this.#pendingTerminal)
       throw new HarnessStaleTurnError(input.turnId);
@@ -926,9 +928,16 @@ class CodexAcpxSession implements HarnessSession {
     let resolve!: () => void;
     let reject!: (error: Error) => void;
     const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    const onAbort = () => {
+      this.#boundaryCorrections.delete(input.correlationId);
+      reject(input.signal?.reason instanceof Error ? input.signal.reason : new Error("ACP correction delivery aborted"));
+    };
     this.#boundaryCorrections.set(input.correlationId, {
-      message: input.message.text, promise, resolve, reject,
+      message: input.message.text, promise,
+      resolve: () => { input.signal?.removeEventListener("abort", onAbort); resolve(); },
+      reject: (error) => { input.signal?.removeEventListener("abort", onAbort); reject(error); },
     });
+    input.signal?.addEventListener("abort", onAbort, { once: true });
     return promise;
   }
 

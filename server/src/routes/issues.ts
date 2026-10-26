@@ -7857,17 +7857,17 @@ export function issueRoutes(
       .limit(1) : [];
     const workspaceCwd = typeof run.contextSnapshot?.executionWorkspaceCwd === "string"
       ? run.contextSnapshot.executionWorkspaceCwd : workspace[0]?.cwd ?? null;
-    const safePoint = await waitForCorrectionSafePoint({
-      isProtected: async () => Boolean(liveReleaseService(db).getRunFlag(run.id))
+    const isProtected = async () => Boolean(liveReleaseService(db).getRunFlag(run.id))
         || Boolean(workspaceCwd && await isGitWriteInProgress(workspaceCwd))
-        || await isMigrationInProgress(run.processPid),
-    });
-    if (safePoint === "timed_out") await logActivity(db, {
+        || await isMigrationInProgress(run.processPid);
+    let safePoint = await waitForCorrectionSafePoint({ isProtected });
+    const auditSafePointTimeout = async () => logActivity(db, {
       companyId: issue.companyId, actorType: actor.actorType, actorId: actor.actorId,
       agentId: actor.agentId, runId: actor.runId, agentApiKeyId: actor.agentApiKeyId,
       action: "issue.correction_safe_point_timeout", entityType: "heartbeat_run", entityId: run.id,
       issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
     });
+    if (safePoint === "timed_out") await auditSafePointTimeout();
     const latestIssue = await svc.getById(issue.id);
     if (latestIssue?.companyId !== issue.companyId || latestIssue.assigneeAgentId !== run.agentId)
       return;
@@ -7898,6 +7898,11 @@ export function issueRoutes(
         issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
       });
       return;
+    }
+    // The provider may have started a protected operation while boundary delivery waited.
+    if (safePoint === "safe") {
+      safePoint = await waitForCorrectionSafePoint({ isProtected });
+      if (safePoint === "timed_out") await auditSafePointTimeout();
     }
     const cancelled = await heartbeat.cancelRun(run.id, "Interrupted by board correction",
       operatorInterruptCancelOptions({ issueId: issue.id, actor }));

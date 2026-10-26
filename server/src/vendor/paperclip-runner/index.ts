@@ -80,6 +80,7 @@ export const CAPABILITY_SEMANTIC_TOOL_CATALOG =
   runner.CAPABILITY_SEMANTIC_TOOL_CATALOG;
 export const HarnessRuntimeRequestResolutionError =
   runner.HarnessRuntimeRequestResolutionError;
+export const HarnessCapabilityUnavailableError = runner.HarnessCapabilityUnavailableError;
 export const NATIVE_RUNTIME_ASSET_SCHEMA = runner.NATIVE_RUNTIME_ASSET_SCHEMA;
 export const GSAM_EXECUTION_PROMPT = runner.GSAM_EXECUTION_PROMPT;
 export const GSAM_EXECUTION_PROMPT_REVISION =

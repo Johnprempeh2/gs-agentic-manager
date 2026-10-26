@@ -5729,7 +5729,23 @@ describe("native session same-turn steering", () => {
       turnId: "provider-turn-1",
       message: { role: "user", text: "Use the corrected requirement" },
       correlationId: "comment-correction",
+      signal: expect.any(AbortSignal),
     });
+    state.release?.();
+    await running;
+  });
+
+  it("withdraws an ACP correction when its turn boundary deadline passes", async () => {
+    const { running } = await startActiveSession();
+    deliverAtTurnBoundary.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise<void>((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    await expect(deliverNativeSessionCorrectionAtBoundary({
+      runId: execution.binding.runId,
+      message: "Use the corrected requirement",
+      correlationId: "comment-timeout",
+      timeoutMs: 10,
+    })).rejects.toThrow("turn boundary timed out");
     state.release?.();
     await running;
   });
