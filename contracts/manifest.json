@@ -66,7 +66,7 @@
     "README.md": "738ce2198897cd0deb024abf99d6642574a45cf55a68de104fcbf6f38977dd23",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
     "gs-bridge-v1/README.md": "46d58921325543222afa304eeaa4e6e78538c13011185427200685694b8f612d",
-    "gs-bridge-v1/vectors.json": "a391a3042518b0ded43268664c1c17b037e6a5b0f2e8918079ee7c6aa0a0c149",
+    "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
     "site-contract/fixtures/bridge-health.json": "f63e3e7429bd4a0e1821f8ef7287122a62ebb1e975d496bcd6166ed705997878",
     "site-contract/fixtures/deep-dive-sync-ack.json": "733b1cf20a3f1dc12d293085e13d6da6b6df674ecaa949d10c8f95fcf5a7c254",
@@ -82,5 +82,5 @@
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "37fc28fbca6197e75ec992f98b5fe401f7f653beff07821ca2dad8cf729810b9"
+  "contentHash": "daab495b297d484c844999f1c0b779c04c8878e1c10c5a421927ba29c693db4b"
 }
