@@ -291,6 +291,7 @@ export function useThreadHandlers({
       reassignment?: CommentReassignment,
       attachmentIds?: string[],
       clientRequestId?: string,
+      interrupt?: boolean,
     ) => {
       if (reassignment) {
         await addCommentAndReassign.mutateAsync({
@@ -299,10 +300,11 @@ export function useThreadHandlers({
           reassignment,
           attachmentIds,
           clientRequestId,
+          interrupt,
         });
         return;
       }
-      await addComment.mutateAsync({ body, reopen, attachmentIds, clientRequestId });
+      await addComment.mutateAsync({ body, reopen, attachmentIds, clientRequestId, interrupt });
     },
     [addComment, addCommentAndReassign],
   );
