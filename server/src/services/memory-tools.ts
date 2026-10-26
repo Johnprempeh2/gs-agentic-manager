@@ -4,13 +4,16 @@ import {
   MEMORY_MY_WORK_SCOPE_REF,
   memoryLinkSchema,
   memoryRelatedToSchema,
+  readHandoffSchema,
   recallMemorySchema,
   retireMemoryRecordSchema,
   reviseMemoryRecordSchema,
+  updateHandoffSchema,
   type MemoryRelationshipType,
 } from "@greatstone/shared";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import type { MemoryCardService } from "./memory-gateway/card-writes.js";
+import type { MemoryHandoffService } from "./memory-gateway/handoff.js";
 import type { MemoryCaller, MemoryGatewayService } from "./memory-gateway/service.js";
 import type { MemoryReviewService } from "./memory-gateway/review.js";
 
@@ -18,6 +21,9 @@ import type { MemoryReviewService } from "./memory-gateway/review.js";
 // run's identity; arguments can name scopes, content and records, never a
 // caller. `memory_link` and `relatedTo` (memory linking, 6 Oct 2026) state a
 // relationship with the agent as author and the run as source.
+
+// The live handoff (GRE-2668): `handoff_read` and `handoff_update`, the same
+// two tools for Claude Code, Codex and GSAM agents. See memory-gateway/handoff.ts.
 
 // Shared memory M2 (GRE-1081, deck v7 slide 22) adds revise, confirm, dispute,
 // retire and history. Every write but contribute and link sends the version
@@ -35,6 +41,8 @@ export const MEMORY_TOOL_NAMES = [
   "memory_confirm",
   "memory_dispute",
   "memory_retire",
+  "handoff_read",
+  "handoff_update",
 ] as const;
 
 /** Tools only a GSAM agent may be offered: confirm is a reviewer's step, never an outside app's. */
@@ -153,6 +161,29 @@ export function memoryToolDefinitions(options: { externalApp?: boolean } = {}) {
       inputSchema: toolInputSchema(versionedToolSchema),
       annotations: CHANGE,
     },
+    {
+      name: "handoff_read",
+      description:
+        "Read the live handoff: where we left off across Claude Code, ChatGPT (Codex) and GSAM. It has the person's focus, " +
+        "the live threads (task ids, state, next step), what waits on them, notes and the last tool with its time and what it " +
+        "was doing; each part says who wrote it (\"by ChatGPT\"). Read it when a session starts. `since` (`my_last_update` or " +
+        "an ISO time) adds every change after it: \"what changed since I left\". Apps read their own person's handoff; GSAM agents " +
+        "read the company owner's, or the bank named in `person` (`greatstone-john`). If this tool fails, read NOW.md in the " +
+        "shared memory folder instead.",
+      inputSchema: toolInputSchema(readHandoffSchema),
+      annotations: READ,
+    },
+    {
+      name: "handoff_update",
+      description:
+        "Update the live handoff, part by part: only what you send changes, so two tools never overwrite each other. `doing` " +
+        "(required) says what you are doing now and becomes \"Last tool\". `threads` adds or updates threads by task id " +
+        "(`ref`, with `title`, `state`, `next`); `closeThreads` removes finished ones; `waiting` replaces the list of what waits " +
+        "on the person; `focus` and `notes` replace those parts (the person and their apps only, not GSAM agents). Update it " +
+        "when you finish or switch work. If this tool fails, edit the section in NOW.md and set its \"by\" line to your tool and the time.",
+      inputSchema: toolInputSchema(updateHandoffSchema),
+      annotations: WRITE,
+    },
   ];
   return options.externalApp ? tools.filter((tool) => !REVIEWER_TOOL_NAMES.has(tool.name)) : tools;
 }
@@ -186,6 +217,7 @@ export async function callMemoryTool(input: {
   gateway: MemoryGatewayService;
   reviews: MemoryReviewService;
   cards: MemoryCardService;
+  handoff?: MemoryHandoffService;
 }) {
   const { caller, gateway, reviews, cards } = input;
   /** A link an agent states names its run as the source. */
@@ -280,6 +312,14 @@ export async function callMemoryTool(input: {
     case "memory_retire": {
       const { recordId, ...args } = parseArguments(versionedToolSchema, input.arguments);
       return { record: await cards.retire(caller, recordId, args) };
+    }
+    case "handoff_read": {
+      if (!input.handoff) throw notFound("Unknown memory tool");
+      return input.handoff.read(caller, parseArguments(readHandoffSchema, input.arguments));
+    }
+    case "handoff_update": {
+      if (!input.handoff) throw notFound("Unknown memory tool");
+      return input.handoff.update(caller, parseArguments(updateHandoffSchema, input.arguments));
     }
     default:
       throw notFound("Unknown memory tool");

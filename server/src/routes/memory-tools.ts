@@ -10,6 +10,7 @@ import {
 } from "../middleware/memory-only-key-guard.js";
 import type { MemoryEngine } from "../services/memory-gateway/engine.js";
 import { memoryCardService } from "../services/memory-gateway/card-writes.js";
+import { memoryHandoffService } from "../services/memory-gateway/handoff.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { isExternalApp, MEMORY_DISABLED_MESSAGE, memoryGatewayService } from "../services/memory-gateway/service.js";
 import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
@@ -27,7 +28,8 @@ import {
 
 /**
  * Agent memory tools over MCP (GRE-672): recall, contribute, get and link,
- * and since GRE-1081 history, revise, confirm, dispute and retire. Only an authenticated, task-bound agent run or a memory_only key
+ * since GRE-1081 history, revise, confirm, dispute and retire, and since
+ * GRE-2668 handoff_read and handoff_update. Only an authenticated, task-bound agent run or a memory_only key
  * (GRE-958) may call them, and that identity is the caller. While the company
  * setting is off the endpoint answers 404 to everything.
  */
@@ -44,6 +46,7 @@ export function memoryToolRoutes(
   const gateway = memoryGatewayService(db, options);
   const reviews = memoryReviewService(db, gateway);
   const cards = memoryCardService(db, gateway, reviews, memoryStewardService(db, gateway, reviews));
+  const handoff = memoryHandoffService(db, gateway);
 
   /**
    * The caller is the authenticated run, or the agent behind a memory_only key
@@ -104,6 +107,7 @@ export function memoryToolRoutes(
         gateway,
         reviews,
         cards,
+        handoff,
         caller: {
           companyId,
           actorType: "agent",

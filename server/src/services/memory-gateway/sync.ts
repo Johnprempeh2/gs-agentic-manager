@@ -129,7 +129,7 @@ export function memorySyncService(
     for (const entry of input.entries) {
       const sourceKind = memorySyncSourceKind(entry.source);
       const contentHash = memorySyncContentHash(entry.title, entry.content);
-      let latest = await latestFor(caller.companyId, scopeId, sourceKind, entry.sourceId);
+      let latest: typeof memoryRecords.$inferSelect | null = await latestFor(caller.companyId, scopeId, sourceKind, entry.sourceId);
       if (latest?.status === "deleted") {
         if (await deletedByPerson(caller.companyId, latest.id)) {
           push(entry.sourceId, "deleted_before", null);

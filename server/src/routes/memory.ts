@@ -10,6 +10,11 @@ import {
   importMemorySchema,
   syncMemorySchema,
   type SyncMemory,
+  readHandoffSchema,
+  reconcileHandoffFileSchema,
+  updateHandoffSchema,
+  type ReconcileHandoffFile,
+  type UpdateHandoff,
   checkMemoryImportSchema,
   memoryTextSimilarity,
   memoryTextWords,
@@ -59,6 +64,7 @@ import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { memorySyncService } from "../services/memory-gateway/sync.js";
+import { memoryHandoffService } from "../services/memory-gateway/handoff.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -126,6 +132,7 @@ export function memoryRoutes(
   const stewards = memoryStewardService(db, svc, reviews);
   const cards = memoryCardService(db, svc, reviews, stewards);
   const syncs = memorySyncService(db, svc, cards);
+  const handoffs = memoryHandoffService(db, svc);
   const operations = memoryOperationsReadService(db);
 
   // Runs before body validation so a company with memory off learns nothing
@@ -341,6 +348,31 @@ export function memoryRoutes(
     const companyId = req.params.companyId as string;
     const caller = await callerFor(req, companyId, "sync");
     res.json(await syncs.sync(caller, req.body as SyncMemory));
+  });
+
+  // The live handoff (GRE-2668): the same read and update as the
+  // `handoff_read` / `handoff_update` tools, and NOW.md back from the Mac sync.
+  router.get("/companies/:companyId/memory/handoff", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const parsed = readHandoffSchema.safeParse({
+      since: typeof req.query.since === "string" ? req.query.since : undefined,
+      person: typeof req.query.person === "string" ? req.query.person : undefined,
+    });
+    if (!parsed.success) throw parsed.error;
+    const caller = await callerFor(req, companyId, "handoff_read");
+    res.json(await handoffs.read(caller, parsed.data));
+  });
+
+  router.post("/companies/:companyId/memory/handoff", requireEnabled, validate(updateHandoffSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "handoff_update");
+    res.json(await handoffs.update(caller, req.body as UpdateHandoff));
+  });
+
+  router.post("/companies/:companyId/memory/handoff/file", requireEnabled, validate(reconcileHandoffFileSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "handoff_file");
+    res.json(await handoffs.reconcileFile(caller, req.body as ReconcileHandoffFile));
   });
 
   // Claude and ChatGPT import: the browser parses the export and sends only
