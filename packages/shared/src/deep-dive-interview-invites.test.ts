@@ -38,8 +38,12 @@ describe("gs-interview-v1 round (GRE-2653 retention fields)", () => {
 
   it("reads a round view with or without retentionDays, readoutAt, closedAt and deletionDate", () => {
     expect(gsInterviewRoundItemSchema.parse({ id: "r1", status: "open" })).toEqual({
-      id: "r1", status: "open", joinUrl: null, retentionDays: null, readoutAt: null, closedAt: null, deletionDate: null,
+      id: "r1", status: "open", joinUrl: null, retentionDays: null, readoutAt: null, closedAt: null, deletionDate: null, released: null,
     });
+    // GRE-2667: what the client sees now; nulls from the site mean nothing is released.
+    expect(gsInterviewRoundItemSchema.parse({ id: "r1", status: "open", released: { synthesisId: null, releasedAt: null } }).released).toBeNull();
+    expect(gsInterviewRoundItemSchema.parse({ id: "r1", status: "open", released: { synthesisId: "s1", releasedAt: "2026-11-13T09:00:00Z" } }).released)
+      .toEqual({ synthesisId: "s1", releasedAt: "2026-11-13T09:00:00Z" });
     expect(gsInterviewRoundItemSchema.parse({
       id: "r1", status: "closed", joinUrl: "https://example.test/#join/abc", retentionDays: 90,
       readoutAt: "2026-11-13T09:00:00Z", closedAt: "2026-11-13T17:00:00Z", deletionDate: "2027-02-11",

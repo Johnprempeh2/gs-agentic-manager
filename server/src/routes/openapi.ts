@@ -394,6 +394,7 @@ import {
   sendDeepDiveInterviewInvitesSchema,
   submitDeepDiveSynthesisSchema,
   decideDeepDiveInterviewProposalSchema,
+  releaseDeepDiveInterviewSynthesisSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -17438,6 +17439,36 @@ registerCurrentRoute({
   summary: "Accept or reject a synthesis proposal (only a person)",
   body: decideDeepDiveInterviewProposalSchema,
   responses: interviewWriteResponses,
+});
+
+// Parallel Interview release (GRE-2667): only a person releases the reviewed
+// synthesis to the client's website, keyed by the organisation id, or
+// withdraws it. Agents get 403 on both.
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/release",
+  tags: ["deep-dive"],
+  summary: "Read what the client sees now (read live from the website) and whether the synthesis is reviewed enough to release",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/release",
+  tags: ["deep-dive"],
+  summary:
+    "Release the reviewed synthesis to the client (only a person): the accepted themes and quotes are pushed to the " +
+    "website under the round's organisation id and the client sees them at once",
+  body: releaseDeepDiveInterviewSynthesisSchema,
+  responses: { ...interviewWriteResponses, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/withdraw",
+  tags: ["deep-dive"],
+  summary: "Withdraw the released synthesis (only a person): the client stops seeing it at once",
+  responses: { ...interviewWriteResponses, ...bridgeDown },
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it
