@@ -133,6 +133,10 @@ import {
   contributeMemorySchema,
   importMemorySchema,
   checkMemoryImportSchema,
+  syncMemorySchema,
+  readHandoffSchema,
+  updateHandoffSchema,
+  reconcileHandoffFileSchema,
   createMemoryConnectionSchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
@@ -6286,6 +6290,46 @@ registry.registerPath({
     "Add up to 50 entries brought in from Claude or ChatGPT as unreviewed contributions with app provenance; repeats in the scope are skipped and entries with sensitive content are held back",
   request: { params: memoryCompanyParams, body: jsonBody(importMemorySchema) },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/sync",
+  tags: ["memory"],
+  summary:
+    "Mac sync of a person's Claude Code and Codex turns and memory files into that person's own scope; text already held is skipped, a changed file is revised",
+  request: { params: memoryCompanyParams, body: jsonBody(syncMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/handoff",
+  tags: ["memory"],
+  summary:
+    "Read the person's live handoff (focus, threads, waiting on, notes, last tool), with the changes since a time or since this tool last wrote it",
+  request: { params: memoryCompanyParams, query: readHandoffSchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/handoff",
+  tags: ["memory"],
+  summary:
+    "Update parts of the live handoff as a new version; agents may change only threads and the waiting list, and only from a live run",
+  request: { params: memoryCompanyParams, body: jsonBody(updateHandoffSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/handoff/file",
+  tags: ["memory"],
+  summary:
+    "Reconcile NOW.md from the Mac sync with the live handoff part by part (newest wins, clashes recorded) and return the text to write back",
+  request: { params: memoryCompanyParams, body: jsonBody(reconcileHandoffFileSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

@@ -301,7 +301,7 @@ export async function routeStewardFinding(
 ): Promise<StewardOwner> {
   const term = isJohnOnlyTopic(entry);
   if (term) return { kind: "john", reason: `"${term}" needs John (pricing, policy, legal or client commitment)` };
-  if (entry.scopeKind === "client" || entry.scopeKind === "restricted_project") {
+  if (entry.scopeKind === "client" || entry.scopeKind === "restricted_project" || entry.scopeKind === "person") {
     return { kind: "john", reason: `${entry.scopeKind} scope needs John` };
   }
   const owner = await resolveOwner(entry);

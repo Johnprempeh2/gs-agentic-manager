@@ -51,6 +51,33 @@ async function render(path = "/morning") {
 }
 
 describe("MorningSummary", () => {
+  it("shows where you left off from the shared handoff (GRE-2668)", async () => {
+    server.summary = {
+      companyId: "company-1",
+      generatedAt: "",
+      since: "",
+      needsYou: { count: 0, items: [] },
+      dueToday: { count: 0, items: [] },
+      finished: { count: 0, items: [] },
+      stuck: { count: 0, items: [] },
+      handoff: {
+        focus: { text: "Indago kick-off on 9 Nov.", by: "ChatGPT", at: "2026-10-26T09:00:00.000Z" },
+        threadCount: 1,
+        threads: [{ key: "GRE-2668", refs: ["GRE-2668"], title: "Shared memory", state: "in review", next: "Flint", by: "ChatGPT" }],
+        waiting: null,
+        lastTool: { by: "ChatGPT", at: "2026-10-26T09:00:00.000Z", doing: "wrapping up" },
+        changesSince: 2,
+      },
+    };
+    await render("/morning");
+    expect(container.textContent).toContain("Where you left off");
+    expect(container.textContent).toContain("Focus: Indago kick-off on 9 Nov.");
+    expect(container.textContent).toContain("in review · next: Flint");
+    expect(container.textContent).toContain("2 changes since yesterday");
+    expect(container.textContent).toContain("Last: ChatGPT");
+    expect(container.querySelector('a[href="/issues/GRE-2668"]')).not.toBeNull();
+  });
+
   it("shows today so far when opened from the evening wrap-up", async () => {
     server.summary = {
       companyId: "company-1",

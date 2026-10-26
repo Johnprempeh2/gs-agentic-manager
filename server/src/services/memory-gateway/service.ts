@@ -2,6 +2,7 @@ import { and, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  authUsers,
   companyMemberships,
   heartbeatRuns,
   memoryConflicts,
@@ -19,6 +20,7 @@ import {
   MEMORY_EVIDENCE_NOTE,
   MEMORY_FLAG_NOTE,
   MEMORY_HARD_BOUNDARY_KINDS,
+  MEMORY_MY_WORK_SCOPE_REF,
   MEMORY_REVIEW_EXPIRED_DAYS,
   MEMORY_UNAVAILABLE_MESSAGE,
   type ContributeMemory,
@@ -114,7 +116,26 @@ export function bankForCompany(companyId: string) {
   return `gs-${companyId}-main`;
 }
 
-function scopeTag(kind: MemoryScopeKind, ids: { scopeId: string; projectId?: string | null; agentId?: string | null }) {
+const PERSON_SCOPE_TAG_PREFIX = "scope:person:";
+
+/** The user a person scope belongs to (GRE-2668), or null for any other scope. */
+export function personScopeOwner(scope: Pick<ScopeRow, "kind" | "tag">): string | null {
+  return scope.kind === "person" && scope.tag.startsWith(PERSON_SCOPE_TAG_PREFIX)
+    ? scope.tag.slice(PERSON_SCOPE_TAG_PREFIX.length)
+    : null;
+}
+
+/** `greatstone-john` for John Prempeh. Lowercase ASCII only; null when the name has none. */
+export function personBankSlug(name: string) {
+  const first = name.trim().split(/\s+/)[0] ?? "";
+  const slug = first.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 32);
+  return slug.length > 0 ? slug : null;
+}
+
+function scopeTag(
+  kind: MemoryScopeKind,
+  ids: { scopeId: string; projectId?: string | null; agentId?: string | null; userId?: string | null },
+) {
   switch (kind) {
     case "organization":
       return "scope:org";
@@ -125,6 +146,8 @@ function scopeTag(kind: MemoryScopeKind, ids: { scopeId: string; projectId?: str
       return `scope:client:${ids.scopeId}`;
     case "agent":
       return `scope:agent:${ids.agentId}`;
+    case "person":
+      return `${PERSON_SCOPE_TAG_PREFIX}${ids.userId}`;
   }
 }
 
@@ -435,11 +458,15 @@ export function memoryGatewayService(
           if (!person || scope.companyId !== caller.companyId) return false;
           if (ownsAgentScope(scope)) return true;
           if (scope.kind === "organization") return person.canRead(scope);
+          // GRE-2668: a person's own apps share that person's own work.
+          if (personScopeOwner(scope) === personCaller!.userId) return true;
           return grantCovers(grants, "memory:read", scope) && person.canRead(scope);
         },
         canContribute(scope: ScopeRow) {
           if (!person || scope.companyId !== caller.companyId) return false;
           if (ownsAgentScope(scope)) return true;
+          // Only a link allowed to propose at all (the connect button's "can contribute").
+          if (personScopeOwner(scope) === personCaller!.userId) return grants.has("memory:contribute");
           return grantCovers(grants, "memory:contribute", scope) && person.canContribute(scope);
         },
       };
@@ -456,11 +483,17 @@ export function memoryGatewayService(
         if (isAdmin || ownsAgentScope(scope)) return true;
         // Every member of the company reads organization memory by default.
         if (scope.kind === "organization") return true;
+        if (caller.userId !== null && personScopeOwner(scope) === caller.userId) return true;
+        // GRE-2668: every GSAM agent may read a person's shared work when it
+        // names the scope (`greatstone-john`); it is not in an agent's default
+        // recall, and an agent never writes to it.
+        if (caller.actorType === "agent" && scope.kind === "person") return true;
         return grantCovers(grants, "memory:read", scope);
       },
       canContribute(scope: ScopeRow) {
         if (scope.companyId !== caller.companyId) return false;
         if (isAdmin || ownsAgentScope(scope)) return true;
+        if (caller.userId !== null && personScopeOwner(scope) === caller.userId) return true;
         return grantCovers(grants, "memory:contribute", scope);
       },
     };
@@ -498,6 +531,51 @@ export function memoryGatewayService(
         });
       }
     }
+    // GRE-2668: a person's app links share one person scope, made the first
+    // time one of them calls. The person reads it in GSAM once it exists.
+    if (isExternalApp(caller)) {
+      const personUserId = (await externalAppPerson(caller))?.userId ?? null;
+      if (personUserId) await ensurePersonScope(caller.companyId, personUserId);
+    }
+  }
+
+  /**
+   * One person's own work (GRE-2668): bank `greatstone-<first name>`, or with
+   * the start of the user id added when another scope already has that bank.
+   * Agents read it only through a `memory:read` grant that names it.
+   */
+  async function ensurePersonScope(companyId: string, userId: string): Promise<ScopeRow> {
+    const tag = scopeTag("person", { scopeId: "", userId });
+    const existing = await db
+      .select()
+      .from(memoryScopes)
+      .where(and(eq(memoryScopes.companyId, companyId), eq(memoryScopes.tag, tag)))
+      .then((rows) => rows[0] ?? null);
+    if (existing) return existing;
+    const user = await db
+      .select({ name: authUsers.name })
+      .from(authUsers)
+      .where(eq(authUsers.id, userId))
+      .then((rows) => rows[0] ?? null);
+    const slug = personBankSlug(user?.name ?? "") ?? "person";
+    const suffix = userId.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
+    const taken = await db
+      .select({ id: memoryScopes.id })
+      .from(memoryScopes)
+      .where(eq(memoryScopes.bankId, `greatstone-${slug}`))
+      .then((rows) => rows.length > 0);
+    await insertScopeIfMissing({
+      companyId,
+      kind: "person",
+      name: `${user?.name?.trim() || "Person"}'s work`,
+      bankId: taken ? `greatstone-${slug}-${suffix}` : `greatstone-${slug}`,
+      tag,
+    });
+    return db
+      .select()
+      .from(memoryScopes)
+      .where(and(eq(memoryScopes.companyId, companyId), eq(memoryScopes.tag, tag)))
+      .then((rows) => rows[0]!);
   }
 
   async function listCompanyScopes(companyId: string) {
@@ -512,11 +590,31 @@ export function memoryGatewayService(
     return scopes.map(toScope);
   }
 
+  /**
+   * `my_work`: the caller's own person scope. A bank name (`greatstone-john`):
+   * that person scope, if the caller may read it. Null otherwise, which the
+   * tools answer as "scope not found".
+   */
+  async function resolvePersonScopeRef(caller: MemoryCaller, ref: string): Promise<string | null> {
+    await assertEnabled(caller.companyId);
+    await ensureDefaultScopes(caller);
+    const access = await accessFor(caller);
+    const match = (await listCompanyScopes(caller.companyId)).find(
+      (scope) =>
+        scope.kind === "person" &&
+        (ref === MEMORY_MY_WORK_SCOPE_REF ? personScopeOwner(scope) === access.person : scope.bankId === ref),
+    );
+    return match && access.canRead(match) ? match.id : null;
+  }
+
   async function createScope(caller: MemoryCaller, input: CreateMemoryScope): Promise<MemoryScope> {
     await assertEnabled(caller.companyId);
     if (caller.actorType !== "user" || !caller.isBoardAdmin) {
       await logOperation(caller, "scope_create", "denied", { detail: { kind: input.kind } });
       throw forbidden("Only a company owner or admin can create memory scopes");
+    }
+    if (input.kind === "person") {
+      throw badRequest("A person scope is made on first use by that person or their app; it cannot be created here");
     }
     const needsProject = input.kind === "project" || input.kind === "restricted_project";
     if (needsProject !== Boolean(input.projectId)) {
@@ -851,8 +949,14 @@ export function memoryGatewayService(
       scopes = input.scopeIds.map((id) => byId.get(id)!);
     } else {
       // Without explicit scopes, recall never crosses a client or
-      // restricted-project boundary, even for an admin.
-      scopes = companyScopes.filter((scope) => !isHardBoundary(scope.kind) && access.canRead(scope));
+      // restricted-project boundary, even for an admin. A person scope is
+      // searched for its own person (and their apps) and for a caller whose
+      // grant names it (GRE-2668); agents and admins name it to search it.
+      scopes = companyScopes.filter((scope) => {
+        if (!access.canRead(scope)) return false;
+        if (scope.kind !== "person") return !isHardBoundary(scope.kind);
+        return personScopeOwner(scope) === access.person || grantCovers(access.grants, "memory:read", scope);
+      });
     }
     const scopeIds = scopes.map((scope) => scope.id);
 
@@ -996,6 +1100,8 @@ export function memoryGatewayService(
     recordRejectedContribute,
     listScopes,
     createScope,
+    ensurePersonScope,
+    resolvePersonScopeRef,
     contribute,
     getRecord,
     recall,

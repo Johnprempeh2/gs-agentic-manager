@@ -92,6 +92,21 @@ export interface MorningSummary {
   dealNextSteps?: { count: number; items: MorningSummaryTask[] };
   /** Open tasks due tomorrow by the person's own date. Sent only for "Today so far" (the evening wrap-up). */
   dueTomorrow?: { count: number; items: MorningSummaryTask[] };
+  /**
+   * Where the person left off (GRE-2668): their live handoff, shared by
+   * Claude Code, ChatGPT and GSAM. Sent only when they have one.
+   */
+  handoff?: MorningSummaryHandoff;
+}
+
+export interface MorningSummaryHandoff {
+  focus: { text: string; by: string; at: string } | null;
+  threadCount: number;
+  threads: Array<{ key: string; refs: string[]; title: string; state: string; next: string; by: string }>;
+  waiting: string | null;
+  lastTool: { by: string; at: string; doing: string } | null;
+  /** Parts of the handoff changed since `since`, by any tool. */
+  changesSince: number;
 }
 
 /** One notification that reached the person's phones (the recent notifications list). */

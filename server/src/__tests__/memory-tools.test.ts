@@ -132,6 +132,8 @@ describeEmbeddedPostgres("agent memory tools (MCP)", () => {
       "memory_confirm",
       "memory_dispute",
       "memory_retire",
+      "handoff_read",
+      "handoff_update",
     ]);
   });
 
