@@ -3875,3 +3875,10 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
     animation: none;
   }
 }
+
+/* Client hub billing lines: six columns from sm up; phone keeps the stacked two-column grid. */
+@media (width >= 40rem) {
+  .org-billing-grid {
+    grid-template-columns: minmax(0, 1fr) calc(var(--spacing) * 12) calc(var(--spacing) * 28) calc(var(--spacing) * 24) calc(var(--spacing) * 28) calc(var(--spacing) * 20);
+  }
+}

@@ -20,6 +20,7 @@ import { ClientVisibilityBadge } from "@/components/SharedWithClientBadge";
 import { Badge } from "@/components/ui/badge";
 import { useCommerceSite } from "@/hooks/useCommerceSite";
 import { CLIENT_CASE_TYPE, readClientRecord } from "@/lib/client-case";
+import { formatMinor, statusLabel, statusTone, text } from "@/lib/commerce";
 import { formatBytes } from "@/lib/issue-output";
 import {
   WEBSITE_LINK_TASK,
@@ -31,14 +32,13 @@ import {
 import { formatPipelineItemEvent } from "@/lib/pipeline-item-detail";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 
 // The per-client hub's tabs (GRE-2614). Each one reads the record that owns
 // the data and links to it; "Shared with client" marks what the client sees.
 
 /** The tasks that will fill the placeholder tabs. */
 const INTERVIEWS_TASK = "GRE-2611";
-const BILLING_TASK = "GRE-2630";
 /** The task that pulls the website's client activity into GSAM (PR 985), and the site side. */
 const WEBSITE_ACTIVITY_TASK = "GRE-2635";
 
@@ -523,13 +523,75 @@ export function CommercePanel({ companyId, websiteOrganisationId }: { companyId:
 
 // ------------------------------------------------------------------- Billing
 
-export function BillingPanel() {
+const BILLING_PERIOD_LABEL: Record<string, string> = { monthly: "Monthly", quarterly: "Quarterly", annual: "Annual", multi_year: "Multi-year" };
+const BILLING_COLUMNS = "org-billing-grid";
+
+function BillingCell({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <span className={cn("text-muted-foreground sm:text-foreground", className)}>
+      <span className="sm:sr-only">{label}: </span>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The client's recurring billing lines (GRE-2725), read from the website by its organisation id through the
+ * bridge. Read only: change them in the website's Commerce admin.
+ */
+export function BillingPanel({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string | null }) {
+  const { commerce } = useCommerceSite(companyId);
+  const siteId = commerce?.site.id ?? null;
+  const lines = useQuery({
+    queryKey: queryKeys.website.data(companyId, siteId ?? "", "billing-lines", "list", websiteOrganisationId ?? ""),
+    queryFn: () => websiteDataBridgeApi.list(companyId, siteId!, "billing-lines", { customer: websiteOrganisationId!, limit: 100 }),
+    enabled: Boolean(siteId && websiteOrganisationId),
+  });
+  const rows = lines.data?.items ?? [];
   return (
     <HubSection title="Recurring billing">
-      <Placeholder>
-        Recurring billing lines live in the website's Commerce database and will be read through the website bridge.
-        That read is being built in <TaskLink task={BILLING_TASK} />. One-off quotes, orders, invoices and licences are on the Commerce tab.
-      </Placeholder>
+      <p className="text-xs text-muted-foreground">
+        From the website's Commerce database. Read only; change them on the website. One-off quotes, orders, invoices and licences are on the Commerce tab.
+      </p>
+      {!commerce ? <Placeholder>Recurring billing reads Greatstone's website with the Shop feature on. It is not available for this company.</Placeholder> : null}
+      {commerce && !websiteOrganisationId ? <NotLinked what="Recurring billing lines" /> : null}
+      {lines.isLoading ? <p className="text-sm text-muted-foreground">Loading the billing lines…</p> : null}
+      {lines.error ? <ErrorState error={lines.error} title="Could not reach the website" compact /> : null}
+      {lines.data && rows.length === 0 ? <p className="text-sm text-muted-foreground">This client has no recurring billing lines on the website.</p> : null}
+      {rows.length ? (
+        <div className="rounded-lg border border-border" data-testid="organisation-billing-lines">
+          <div className={cn("hidden gap-3 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground sm:grid", BILLING_COLUMNS)} aria-hidden="true">
+            <span>Description</span>
+            <span className="text-right">Qty</span>
+            <span className="text-right">Unit price</span>
+            <span>Period</span>
+            <span>Next bill</span>
+            <span>Status</span>
+          </div>
+          <ul className="divide-y divide-border">
+            {rows.map((line) => {
+              const id = text(line.id) ?? "";
+              const period = text(line.billing_period);
+              const nextBill = text(line.next_bill_on);
+              const status = text(line.status);
+              return (
+                <li key={id} className={cn("grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm sm:items-baseline", BILLING_COLUMNS)}>
+                  <span className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">{text(line.description) ?? "No description"}</span>
+                  <BillingCell label="Qty" className="tabular-nums sm:text-right">{text(line.qty) ?? "None"}</BillingCell>
+                  <BillingCell label="Unit price" className="tabular-nums sm:text-right">{formatMinor(line.unit_price_minor, line.currency) ?? "None"}</BillingCell>
+                  <BillingCell label="Period">{period ? BILLING_PERIOD_LABEL[period] ?? statusLabel(period) : "None"}</BillingCell>
+                  <BillingCell label="Next bill">{nextBill ? formatDate(nextBill) : "None"}</BillingCell>
+                  <span>
+                    {status ? (
+                      <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", statusTone(status))}>{statusLabel(status)}</span>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
     </HubSection>
   );
 }
