@@ -109,7 +109,7 @@ function OpenRound({ round, companyId }: { round: DeepDiveInterviewRound; compan
             <Input
               autoComplete="off"
               spellCheck={false}
-              placeholder="northwind.example"
+              placeholder="example.com"
               disabled={!readiness.ready}
               aria-invalid={formError ? true : undefined}
               value={domains}
@@ -242,7 +242,7 @@ function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; com
         <div className="flex flex-wrap items-end gap-2">
           {unpicked.length > 0 ? (
             <>
-              <label className="min-w-0 flex-1 space-y-1 text-xs text-muted-foreground">
+              <label className="min-w-0 basis-full space-y-1 text-xs text-muted-foreground sm:basis-0 sm:flex-1">
                 <span>From the organisation board</span>
                 <NativeSelect value={pick || unpicked[0]!.id} onChange={(event) => setPick(event.target.value)}>
                   {unpicked.map((p) => (
@@ -370,7 +370,7 @@ function PersonRow({ person, roundId, companyId }: { person: DeepDiveInterviewPr
     <li className="flex flex-wrap items-start justify-between gap-2 py-2">
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm font-medium">{person.name || "Name not on the website"}</p>
-        <p className="break-all text-xs text-muted-foreground">
+        <p className="break-words text-xs text-muted-foreground">
           {[person.roleTitle, person.email].filter(Boolean).join(" · ")}
         </p>
         {last.length > 0 ? <p className="text-xs text-muted-foreground">{last.join(". ")}.</p> : null}
