@@ -103,8 +103,8 @@ function OpenRound({ round, companyId }: { round: DeepDiveInterviewRound; compan
               : `${readiness.approved} of ${readiness.total} question sets approved. The round opens only when a person has approved every set.`}
           </p>
         )}
-        <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
-          <label className="space-y-1 text-xs text-muted-foreground">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label className="min-w-0 space-y-1 text-xs text-muted-foreground sm:flex-1">
             <span>Email domains that may join</span>
             <Input
               autoComplete="off"
@@ -117,7 +117,7 @@ function OpenRound({ round, companyId }: { round: DeepDiveInterviewRound; compan
             />
             <span className="block">The client's work domains, separated by commas.</span>
           </label>
-          <label className="space-y-1 text-xs text-muted-foreground">
+          <label className="space-y-1 text-xs text-muted-foreground sm:w-40 sm:shrink-0">
             <span>Seats</span>
             <Input
               type="number"
@@ -273,19 +273,19 @@ function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; com
         {rows.length > 0 ? (
           <ul className="space-y-3">
             {rows.map((row, index) => (
-              <li key={row.key} className="grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[1fr_1fr_10rem_auto] sm:items-end">
+              <li key={row.key} className="flex flex-col gap-2 rounded-md border border-border p-2 sm:flex-row sm:items-end">
                 {row.boardPersonId ? (
-                  <div className="min-w-0 text-sm">
+                  <div className="min-w-0 text-sm sm:flex-1">
                     <p className="break-words font-medium">{row.name}</p>
                     <p className="text-xs text-muted-foreground">{row.roleTitle || "From the board"}</p>
                   </div>
                 ) : (
-                  <label className="space-y-1 text-xs text-muted-foreground">
+                  <label className="min-w-0 space-y-1 text-xs text-muted-foreground sm:flex-1">
                     <span>Name</span>
                     <Input value={row.name} onChange={(event) => update(row.key, { name: event.target.value })} />
                   </label>
                 )}
-                <label className="space-y-1 text-xs text-muted-foreground">
+                <label className="min-w-0 space-y-1 text-xs text-muted-foreground sm:flex-1">
                   <span>Email or website user id</span>
                   <Input
                     autoComplete="off"
@@ -296,7 +296,7 @@ function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; com
                   />
                 </label>
                 {perTeam ? (
-                  <label className="space-y-1 text-xs text-muted-foreground">
+                  <label className="space-y-1 text-xs text-muted-foreground sm:w-40 sm:shrink-0">
                     <span>Team</span>
                     <NativeSelect value={row.unitId} onChange={(event) => update(row.key, { unitId: event.target.value })}>
                       <option value="">Choose a team</option>
@@ -306,7 +306,7 @@ function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; com
                     </NativeSelect>
                   </label>
                 ) : (
-                  <span />
+                  <span className="hidden sm:block sm:w-40 sm:shrink-0" />
                 )}
                 <Button
                   type="button"
