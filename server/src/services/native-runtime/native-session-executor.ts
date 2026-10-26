@@ -70,6 +70,8 @@ import {
   completeRetainedNativeSessionCleanup,
   completeTerminatedLocalNativeSessionCleanup,
   acpxRuntimeSessionDirectoryName,
+  OPENCODE_ISOLATED_HOMES_DIRECTORY,
+  opencodeRuntimeSessionDirectoryName,
   createNativeSessionBackend,
   createRunnerdCodexTransport,
   executeNativeSession,
@@ -5248,7 +5250,10 @@ export function resolveNativeHarnessPersistenceProfile(
         ? {
             name: "opencode",
             location: "filesystem",
-            excludeEntries: [],
+            excludeEntries: [
+              `${opencodeRuntimeSessionDirectoryName(nativeSessionKey(execution))}/${OPENCODE_ISOLATED_HOMES_DIRECTORY}`,
+              `${opencodeRuntimeSessionDirectoryName(nativeSessionKey(execution))}/config/opencode/node_modules`,
+            ],
           }
         : execution.provider.kind === "acpx"
           ? {
@@ -5259,13 +5264,17 @@ export function resolveNativeHarnessPersistenceProfile(
               // they may point outside the runtime tree and are neither safe
               // nor necessary to restore. Credentials and launch-time config
               // are also re-materialized in the replacement sandbox.
-              excludeEntries:
-                execution.provider.agent === "codex"
+              excludeEntries: [
+                ...["home/.npm", "data/pnpm/store"].map((entry) =>
+                  `acpx/${acpxRuntimeSessionDirectoryName(nativeSessionKey(execution))}/${entry}`,
+                ),
+                ...(execution.provider.agent === "codex"
                   ? CODEX_HOME_NON_PERSISTENT_ENTRIES.map(
                       (entry) =>
                         `acpx/${acpxRuntimeSessionDirectoryName(nativeSessionKey(execution))}/codex-home/${entry}`,
                     )
-                  : [],
+                  : []),
+              ],
             }
           : null;
   return {

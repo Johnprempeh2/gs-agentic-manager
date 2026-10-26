@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSingleFlight, createTrackedSingleFlight } from "./single-flight.js";
-import { beginIdleTrackedWork, idleWorkSnapshot } from "../services/task-admission.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -122,12 +121,12 @@ describe("createSingleFlight", () => {
 
   it("tracks one periodic pass through scheduler shutdown and idle sleep", async () => {
     vi.useFakeTimers();
-    const before = idleWorkSnapshot().active;
     const operation = deferred(), cleanup = deferred();
     const tracked: Promise<void>[] = [];
+    let active = 0;
     const trackWork = vi.fn((work: Promise<void>) => {
-      const finish = beginIdleTrackedWork();
-      tracked.push(work.finally(finish));
+      active += 1;
+      tracked.push(work.finally(() => { active -= 1; }));
     });
     const onSkipped = vi.fn();
     const tick = createTrackedSingleFlight({ trackWork, onSkipped });
@@ -143,15 +142,15 @@ describe("createSingleFlight", () => {
       const shutdown = Promise.all(tracked).then(() => { shutdownComplete = true; });
       await Promise.resolve();
       expect(shutdownComplete).toBe(false);
-      expect(idleWorkSnapshot().active).toBe(before + 1);
+      expect(active).toBe(1);
       operation.resolve();
       await Promise.resolve();
       expect(shutdownComplete).toBe(false);
-      expect(idleWorkSnapshot().active).toBe(before + 1);
+      expect(active).toBe(1);
       cleanup.resolve();
       await shutdown;
       expect(shutdownComplete).toBe(true);
-      expect(idleWorkSnapshot().active).toBe(before);
+      expect(active).toBe(0);
     } finally {
       clearInterval(timer);
       operation.resolve();
