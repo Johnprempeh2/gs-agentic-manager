@@ -75,6 +75,7 @@ function detail(overrides: Partial<OrganisationDetail> = {}): OrganisationDetail
     notes: null,
     source: "manual",
     externalId: null,
+    websiteOrganisationId: null,
     archivedAt: null,
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
@@ -451,8 +452,62 @@ describe("Organisation company page", () => {
       mockApi.history.mockResolvedValue(history());
       await render("/organisations/org-1?tab=interviews");
       expect(container.querySelector('a[href="/issues/GRE-2611"]')).not.toBeNull();
-      await render("/organisations/org-1?tab=billing");
-      expect(container.querySelector('a[href="/issues/GRE-2630"]')).not.toBeNull();
+    });
+
+    describe("Billing tab (GRE-2725)", () => {
+      beforeEach(() => {
+        mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
+        mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+        mockApi.history.mockResolvedValue(history());
+      });
+
+      it("lists the client's billing lines, read by its website organisation id", async () => {
+        mockBridge.list.mockResolvedValue({
+          items: [
+            { id: "bl-1", customer_id: "cust-9", description: "Platform licence", qty: 3, unit_price_minor: "12000", currency: "GBP", billing_period: "monthly", next_bill_on: "2026-11-01", status: "active" },
+            { id: "bl-2", customer_id: "cust-9", description: "Support retainer", qty: 1, unit_price_minor: "250000", currency: "GBP", billing_period: "multi_year", next_bill_on: null, status: "ended" },
+          ],
+          nextCursor: null,
+        });
+        await render("/organisations/org-1?tab=billing");
+        expect(mockBridge.list).toHaveBeenCalledWith("company-1", "site-1", "billing-lines", { customer: "cust-9", limit: 100 });
+        const rows = [...container.querySelectorAll('[data-testid="organisation-billing-lines"] li')];
+        expect(rows).toHaveLength(2);
+        expect(rows[0]!.textContent).toContain("Platform licence");
+        expect(rows[0]!.textContent).toContain("Qty: 3");
+        expect(rows[0]!.textContent).toContain("£120.00");
+        expect(rows[0]!.textContent).toContain("Monthly");
+        expect(rows[0]!.textContent).toContain("1 Nov 2026");
+        expect(rows[0]!.textContent).toContain("Active");
+        expect(rows[1]!.textContent).toContain("£2,500.00");
+        expect(rows[1]!.textContent).toContain("Multi-year");
+        expect(rows[1]!.textContent).toContain("Next bill: None");
+        expect(rows[1]!.textContent).toContain("Ended");
+        // Read only: no buttons or edit links on the lines.
+        expect(container.querySelector('[data-testid="organisation-billing-lines"] button, [data-testid="organisation-billing-lines"] a')).toBeNull();
+      });
+
+      it("says so when the client has no billing lines", async () => {
+        mockBridge.list.mockResolvedValue({ items: [], nextCursor: null });
+        await render("/organisations/org-1?tab=billing");
+        expect(container.textContent).toContain("This client has no recurring billing lines on the website.");
+        expect(container.querySelector('[data-testid="organisation-billing-lines"]')).toBeNull();
+      });
+
+      it("says the website could not be reached when the bridge read fails", async () => {
+        mockBridge.list.mockRejectedValue(new Error("GSAM could not reach the website's data bridge. Check the bridge address and that the site is up."));
+        await render("/organisations/org-1?tab=billing");
+        const alert = container.querySelector('[role="alert"]')!;
+        expect(alert.textContent).toContain("Could not reach the website");
+        expect(alert.textContent).toContain("could not reach the website's data bridge");
+      });
+
+      it("does not read billing for a client with no website organisation id", async () => {
+        mockApi.get.mockResolvedValue(detail());
+        await render("/organisations/org-1?tab=billing");
+        expect(container.textContent).toContain("Recurring billing lines show here once this client is linked");
+        expect(mockBridge.list).not.toHaveBeenCalled();
+      });
     });
 
     it("shows the open engagement when the organisation has several, and the one asked for", async () => {

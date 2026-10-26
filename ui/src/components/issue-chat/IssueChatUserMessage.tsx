@@ -58,6 +58,8 @@ export function IssueChatUserMessage({
   const followUpRequested = custom.followUpRequested === true;
   const sentFromIMessage = isIssueCommentMetadata(custom.commentMetadata) &&
     custom.commentMetadata.sourceChannel === "imessage-photon";
+  const correction = isIssueCommentMetadata(custom.commentMetadata) &&
+    Boolean(custom.commentMetadata.correction);
   const queueReason =
     typeof custom.queueReason === "string" ? custom.queueReason : null;
   const queueBadgeLabel =
@@ -121,6 +123,7 @@ export function IssueChatUserMessage({
           {resolvedAuthorName}
         </span>
         <SourceTrustBadge sourceTrust={sourceTrust} artifactLabel="comment" />
+        {correction ? <Badge variant="outline">Correction</Badge> : null}
         {followUpRequested ? (
           <Badge
             variant="outline"

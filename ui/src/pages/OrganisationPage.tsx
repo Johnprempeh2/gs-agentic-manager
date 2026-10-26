@@ -12,6 +12,7 @@ import {
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
+import { OrganisationWebsiteLink } from "@/components/OrganisationWebsiteLink";
 import {
   ActivityPanel,
   BillingPanel,
@@ -208,7 +209,7 @@ export function OrganisationPage() {
           ) : null}
           {!engagementLoading && tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
           {tab === "commerce" ? <CommercePanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
-          {tab === "billing" ? <BillingPanel /> : null}
+          {tab === "billing" ? <BillingPanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "activity" ? <ActivityPanel detail={engagement.detail} stages={engagement.stages} history={history.data} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "client-view" ? <ClientViewPanel companyId={companyId} caseId={clientCaseId} /> : null}
         </div>
@@ -288,6 +289,8 @@ function OverviewDetails({
           </div>
         ) : null}
       </section>
+
+      <OrganisationWebsiteLink companyId={companyId} organisation={organisation} />
 
       <WebsitePeople companyId={companyId} websiteOrganisationId={websiteOrganisationId} />
 

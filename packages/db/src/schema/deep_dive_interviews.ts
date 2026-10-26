@@ -26,7 +26,7 @@ export const deepDiveInterviewRounds = pgTable(
     contextPack: jsonb("context_pack").$type<Record<string, string>>().notNull().default({}),
     // setup -> open -> closed.
     status: text("status").$type<"setup" | "open" | "closed">().notNull().default("setup"),
-    // Set when the round opens on the website (GRE-2665, migration 0408): who may
+    // Set when the round opens on the website (GRE-2665, migration 0409): who may
     // join with the round's link, and how many may take part.
     allowedEmailDomains: jsonb("allowed_email_domains").$type<string[]>().notNull().default([]),
     seatTotal: integer("seat_total"),
@@ -111,7 +111,7 @@ export const deepDiveInterviewSets = pgTable(
   }),
 );
 
-// Invites (GRE-2665, migration 0408). One row per person invited to a round,
+// Invites (GRE-2665, migration 0409). One row per person invited to a round,
 // keyed by the website's employee id. It holds only website ids (the employee,
 // the user and the organisation) and the question set the person gets: never a
 // name or an email. The user id is null while the website holds the invitation

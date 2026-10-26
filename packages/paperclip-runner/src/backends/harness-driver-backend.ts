@@ -692,6 +692,18 @@ class HarnessNativeSession implements NativeSession {
     return this.#withProtocolIntegrity(() => this.#session.steer!(input));
   }
 
+  deliverAtTurnBoundary(input: {
+    turnId: string;
+    message: { role: "user"; text: string };
+    correlationId: string;
+    signal?: AbortSignal;
+  }) {
+    this.#assertProtocolIntegrity();
+    if (!this.#session.deliverAtTurnBoundary)
+      throw new Error("turn-boundary delivery is unavailable");
+    return this.#withProtocolIntegrity(() => this.#session.deliverAtTurnBoundary!(input));
+  }
+
   interrupt(input: { turnId?: string; reason?: string }) {
     if (this.#session.interrupt === undefined)
       throw new Error("interruption is unavailable");

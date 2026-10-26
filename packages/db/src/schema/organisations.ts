@@ -74,6 +74,9 @@ export const organisations = pgTable(
     crmFields: jsonb("crm_fields").$type<CrmRecordField[]>().notNull().default([]),
     source: text("source").notNull().default("manual"),
     externalId: text("external_id"),
+    // The website organisation (website customers.id, GRE-2682). Set only by a person who picks it from the
+    // website's customers; never matched by name, domain or email.
+    websiteOrganisationId: text("website_organisation_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
@@ -88,6 +91,9 @@ export const organisations = pgTable(
     externalUq: uniqueIndex("organisations_company_source_external_uq")
       .on(table.companyId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
+    websiteOrganisationUq: uniqueIndex("organisations_company_website_organisation_uq")
+      .on(table.companyId, table.websiteOrganisationId)
+      .where(sql`${table.websiteOrganisationId} is not null`),
     statusCheck: check("organisations_status_check", sql`${table.status} in ('target', 'prospect', 'client', 'former')`),
     sourceCheck: check("organisations_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')`),
     sizeBandCheck: check(

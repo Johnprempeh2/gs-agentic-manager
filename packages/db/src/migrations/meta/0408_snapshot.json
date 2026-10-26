@@ -1,5 +1,5 @@
 {
-  "id": "b7003a43-0419-4ba8-bf72-81c99c220b99",
+  "id": "1e94f187-54ed-4ab4-bd4c-5fd3474d7946",
   "prevId": "b2db3e4e-4f22-40a1-bf57-14e023383751",
   "version": "7",
   "dialect": "postgresql",
@@ -23067,243 +23067,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.deep_dive_interview_invites": {
-      "name": "deep_dive_interview_invites",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "round_id": {
-          "name": "round_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "website_organisation_id": {
-          "name": "website_organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "website_employee_id": {
-          "name": "website_employee_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "website_user_id": {
-          "name": "website_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_id": {
-          "name": "set_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_count": {
-          "name": "sent_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "last_sent_at": {
-          "name": "last_sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "reminded_count": {
-          "name": "reminded_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_reminded_at": {
-          "name": "last_reminded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_agent_id": {
-          "name": "created_by_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "deep_dive_interview_invites_round_employee_uq": {
-          "name": "deep_dive_interview_invites_round_employee_uq",
-          "columns": [
-            {
-              "expression": "round_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "website_employee_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "deep_dive_interview_invites_round_user_uq": {
-          "name": "deep_dive_interview_invites_round_user_uq",
-          "columns": [
-            {
-              "expression": "round_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "website_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "deep_dive_interview_invites_company_idx": {
-          "name": "deep_dive_interview_invites_company_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "deep_dive_interview_invites_company_id_companies_id_fk": {
-          "name": "deep_dive_interview_invites_company_id_companies_id_fk",
-          "tableFrom": "deep_dive_interview_invites",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "deep_dive_interview_invites_set_id_deep_dive_interview_sets_id_fk": {
-          "name": "deep_dive_interview_invites_set_id_deep_dive_interview_sets_id_fk",
-          "tableFrom": "deep_dive_interview_invites",
-          "tableTo": "deep_dive_interview_sets",
-          "columnsFrom": [
-            "set_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "deep_dive_interview_invites_created_by_agent_id_agents_id_fk": {
-          "name": "deep_dive_interview_invites_created_by_agent_id_agents_id_fk",
-          "tableFrom": "deep_dive_interview_invites",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "created_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "deep_dive_interview_invites_round_scope_fk": {
-          "name": "deep_dive_interview_invites_round_scope_fk",
-          "tableFrom": "deep_dive_interview_invites",
-          "tableTo": "deep_dive_interview_rounds",
-          "columnsFrom": [
-            "round_id",
-            "company_id",
-            "website_organisation_id"
-          ],
-          "columnsTo": [
-            "id",
-            "company_id",
-            "website_organisation_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "deep_dive_interview_invites_employee_check": {
-          "name": "deep_dive_interview_invites_employee_check",
-          "value": "\"deep_dive_interview_invites\".\"website_employee_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
-        },
-        "deep_dive_interview_invites_user_check": {
-          "name": "deep_dive_interview_invites_user_check",
-          "value": "\"deep_dive_interview_invites\".\"website_user_id\" is null or \"deep_dive_interview_invites\".\"website_user_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
-        },
-        "deep_dive_interview_invites_counts_check": {
-          "name": "deep_dive_interview_invites_counts_check",
-          "value": "\"deep_dive_interview_invites\".\"sent_count\" >= 1 and \"deep_dive_interview_invites\".\"reminded_count\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.deep_dive_interview_rounds": {
       "name": "deep_dive_interview_rounds",
       "schema": "",
@@ -23354,25 +23117,6 @@
           "notNull": true,
           "default": "'setup'"
         },
-        "allowed_email_domains": {
-          "name": "allowed_email_domains",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "seat_total": {
-          "name": "seat_total",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "opened_at": {
-          "name": "opened_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by_agent_id": {
           "name": "created_by_agent_id",
           "type": "uuid",
@@ -23406,33 +23150,6 @@
           "columns": [
             {
               "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "deep_dive_interview_rounds_scope_uq": {
-          "name": "deep_dive_interview_rounds_scope_uq",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "website_organisation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -23491,14 +23208,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "deep_dive_interview_rounds_seat_check": {
-          "name": "deep_dive_interview_rounds_seat_check",
-          "value": "\"deep_dive_interview_rounds\".\"seat_total\" is null or \"deep_dive_interview_rounds\".\"seat_total\" > 0"
-        },
-        "deep_dive_interview_rounds_domains_check": {
-          "name": "deep_dive_interview_rounds_domains_check",
-          "value": "jsonb_typeof(\"deep_dive_interview_rounds\".\"allowed_email_domains\") = 'array'"
-        },
         "deep_dive_interview_rounds_website_organisation_check": {
           "name": "deep_dive_interview_rounds_website_organisation_check",
           "value": "\"deep_dive_interview_rounds\".\"website_organisation_id\" ~ '^[A-Za-z0-9_-]{1,128}$'"
@@ -48261,6 +47970,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "website_organisation_id": {
+          "name": "website_organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -48366,6 +48081,28 @@
           ],
           "isUnique": true,
           "where": "\"organisations\".\"external_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organisations_company_website_organisation_uq": {
+          "name": "organisations_company_website_organisation_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "website_organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"organisations\".\"website_organisation_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

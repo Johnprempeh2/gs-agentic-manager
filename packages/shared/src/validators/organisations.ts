@@ -156,6 +156,27 @@ export const updateOrganisationSchema = z
   .refine(oneAccountOwner, oneAccountOwnerMessage);
 export type UpdateOrganisation = z.input<typeof updateOrganisationSchema>;
 
+/**
+ * PUT .../organisations/:organisationId/website-link (GRE-2682): a person links the organisation to a website
+ * organisation (website customers.id) picked from the site's customers, or clears the link with null. Linking names
+ * the site the id was picked from, so the server can check the id is there.
+ */
+export const setOrganisationWebsiteLinkSchema = z
+  .object({
+    websiteOrganisationId: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9-]{1,80}$/, "Not a website organisation id")
+      .nullable(),
+    siteId: z.string().uuid().optional(),
+  })
+  .strict()
+  .refine((value) => value.websiteOrganisationId === null || value.siteId !== undefined, {
+    message: "Say which website the organisation is on",
+    path: ["siteId"],
+  });
+export type SetOrganisationWebsiteLink = z.input<typeof setOrganisationWebsiteLinkSchema>;
+
 export const listOrganisationsQuerySchema = z
   .object({
     q: z.string().trim().max(200).optional(),
