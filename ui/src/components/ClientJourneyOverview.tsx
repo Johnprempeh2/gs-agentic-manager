@@ -265,52 +265,46 @@ export function ClientJourneyOverview({
     contactName: firstContact?.name ?? null,
     to: firstContact?.email ? [firstContact.email] : [],
   };
-  const summary =
-    overview.waitingOnClient + overview.waitingOnUs === 0
-      ? "Nothing is waiting."
-      : [
-        overview.waitingOnClient > 0 ? `${plural(overview.waitingOnClient, "thing")} waiting on the client` : null,
-        overview.waitingOnUs > 0 ? `${plural(overview.waitingOnUs, "thing")} waiting on us` : null,
-      ].filter(Boolean).join(", ") + ".";
+  // One line: who holds what, the side with the next move first (Mikey, GRE-2614).
+  const withUs = `With us${ownerName ? ` (${ownerName})` : ""}`;
+  const parts = [
+    overview.waitingOnClient > 0 ? { on: "client", text: `With the client: ${plural(overview.waitingOnClient, "thing")}` } : null,
+    overview.waitingOnUs > 0 ? { on: "us", text: `${withUs}: ${plural(overview.waitingOnUs, "thing")}` } : null,
+  ].filter((part): part is { on: WaitingOn; text: string } => part !== null);
+  if (ball === "us") parts.reverse();
+  const summary = parts.length ? parts.map((part) => part.text).join(" · ") : "Nothing is waiting.";
 
   return (
     <div className="space-y-3" data-testid="client-journey-overview">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-medium text-foreground" data-testid="client-journey-overview-summary">{summary}</p>
         {companyId ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            onClick={() =>
-              setDraft({ title: "Status email", seed: statusEmail(overview, { ...emailContext, nextAction }) })
-            }
-          >
-            <Mail className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            Draft a status email
-          </Button>
-        ) : null}
-      </div>
-      {ball ? (
-        <p className="text-sm text-foreground" data-testid="client-journey-overview-ball">
-          {ball === "client"
-            ? "The ball is with the client."
-            : `The ball is with us${ownerName ? ` (${ownerName})` : ""}.`}
-          {companyId && ball === "client" ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0">
+            {ball === "client" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setDraft({ title: "Reminder to the client", seed: reminderEmail(overview, emailContext) })}
+              >
+                <BellRing className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                Draft a reminder
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
-              variant="ghost"
-              className="ml-2"
-              onClick={() => setDraft({ title: "Reminder to the client", seed: reminderEmail(overview, emailContext) })}
+              variant="outline"
+              onClick={() =>
+                setDraft({ title: "Status email", seed: statusEmail(overview, { ...emailContext, nextAction }) })
+              }
             >
-              <BellRing className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-              Draft a reminder
+              <Mail className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              Draft a status email
             </Button>
-          ) : null}
-        </p>
-      ) : null}
+          </div>
+        ) : null}
+      </div>
       <ol className="divide-y divide-border rounded-md border border-border">
         <li className="px-3 py-2" aria-label="Agreements">
           <p className="text-sm font-medium text-foreground">Agreements</p>

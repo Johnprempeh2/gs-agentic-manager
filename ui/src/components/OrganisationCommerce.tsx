@@ -1,7 +1,7 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { ErrorState } from "@/components/ErrorState";
-import { useCommerceCustomers, useCommerceSite } from "@/hooks/useCommerceSite";
+import { useCommerceSite } from "@/hooks/useCommerceSite";
 import {
   COMMERCE_COPY,
   COMMERCE_RESOURCES,
@@ -10,33 +10,36 @@ import {
   recordTotal,
   statusLabel,
   text,
-  websiteCustomerFor,
-  type CommerceOrganisationRef,
 } from "@/lib/commerce";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
 
 /**
  * The organisation's records in Commerce (GRE-2383): a link to each quote, order, invoice and licence of the
- * website customer with this organisation's domain or name. Links only; nothing is copied into the CRM.
+ * website customer whose id is the organisation's website organisation id (GRE-2609). Never matched by name or
+ * domain. Links only; nothing is copied into the CRM.
  */
-export function OrganisationCommerce({ companyId, organisation }: { companyId: string; organisation: CommerceOrganisationRef }) {
+export function OrganisationCommerce({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string }) {
   const { commerce } = useCommerceSite(companyId);
   const siteId = commerce?.site.id ?? null;
-  const customers = useCommerceCustomers(companyId, siteId);
-  const customer = customers.data ? websiteCustomerFor(organisation, customers.data) : null;
-  const customerId = text(customer?.id);
+  const customerId = websiteOrganisationId;
+  const customerQuery = useQuery({
+    queryKey: queryKeys.website.data(companyId, siteId ?? "", "customers", "get", customerId),
+    queryFn: () => websiteDataBridgeApi.get(companyId, siteId!, "customers", customerId),
+    enabled: Boolean(siteId),
+  });
+  const customer = customerQuery.data?.item ?? null;
   const records = useQueries({
     queries: COMMERCE_RESOURCES.map((resource) => ({
-      queryKey: queryKeys.website.data(companyId, siteId ?? "", resource, "list", customerId ?? ""),
-      queryFn: () => websiteDataBridgeApi.list(companyId, siteId!, resource, { customer: customerId!, limit: 100 }),
-      enabled: Boolean(siteId && customerId),
+      queryKey: queryKeys.website.data(companyId, siteId ?? "", resource, "list", customerId),
+      queryFn: () => websiteDataBridgeApi.list(companyId, siteId!, resource, { customer: customerId, limit: 100 }),
+      enabled: Boolean(siteId),
     })),
   });
   if (!commerce) return null;
 
-  const failed = customers.error ?? records.find((query) => query.error)?.error;
-  const loading = customers.isLoading || records.some((query) => query.isLoading);
+  const failed = customerQuery.error ?? records.find((query) => query.error)?.error;
+  const loading = customerQuery.isLoading || records.some((query) => query.isLoading);
   const groups = COMMERCE_RESOURCES.map((resource, index) => ({
     resource,
     items: newestFirst(records[index]?.data?.items ?? []),
@@ -47,11 +50,8 @@ export function OrganisationCommerce({ companyId, organisation }: { companyId: s
       <h2 className="text-sm font-semibold">Commerce</h2>
       {failed ? <ErrorState error={failed} compact /> : null}
       {!failed && loading ? <p className="text-sm text-muted-foreground">Loading website records…</p> : null}
-      {!failed && !loading && !customer ? (
-        <p className="text-sm text-muted-foreground">No website customer has this organisation's domain or name.</p>
-      ) : null}
-      {!failed && !loading && customer && groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{text(customer.name) ?? "This customer"} has no quotes, orders, invoices or licences on the website yet.</p>
+      {!failed && !loading && groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{text(customer?.name) ?? "This client"} has no quotes, orders, invoices or licences on the website yet.</p>
       ) : null}
       {groups.length ? (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -59,7 +59,7 @@ export function OrganisationCommerce({ companyId, organisation }: { companyId: s
             <div key={resource} className="min-w-0 rounded-lg border border-border">
               <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                 <h3 className="text-xs font-medium text-muted-foreground">{COMMERCE_COPY[resource].label} ({items.length})</h3>
-                <Link to={`/commerce/${resource}?customer=${encodeURIComponent(customerId!)}`} className="text-xs font-medium hover:underline">
+                <Link to={`/commerce/${resource}?customer=${encodeURIComponent(customerId)}`} className="text-xs font-medium hover:underline">
                   Open in Commerce
                 </Link>
               </div>

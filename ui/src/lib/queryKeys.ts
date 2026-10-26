@@ -714,6 +714,9 @@ export const queryKeys = {
     style: (companyId: string, siteId: string) => ["website", companyId, "style", siteId] as const,
     /** The website admin bridge's status (GRE-2323). */
     dataBridge: (companyId: string, siteId: string) => ["website", companyId, "data-bridge", siteId] as const,
+    /** What a Deep Dive sync would send the website for one client (GRE-2439). */
+    deepDiveSyncPreview: (companyId: string, siteId: string, clientCaseId: string) =>
+      ["website", companyId, "deep-dive-sync-preview", siteId, clientCaseId] as const,
     /** Records read through the bridge (Commerce, GRE-2383). */
     data: (companyId: string, siteId: string, resource: string, ...rest: string[]) =>
       ["website", companyId, "data", siteId, resource, ...rest] as const,
