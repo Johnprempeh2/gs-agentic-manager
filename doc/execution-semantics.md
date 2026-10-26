@@ -1264,6 +1264,11 @@ after the restart fence. A startup that misses the deadline stays pending for
 reconciliation; it does not hold up detachment of other sessions. A pending
 Stop keeps cancellation with its current owner and prevents a new prompt.
 
+For remote OpenCode and ACPX runs, the controller saves the provider pack
+manifest only after verifying the remote pack. On reattach it can use that
+run-bound manifest even if a newer release removed the old local pack path.
+It still verifies the remote bytes before the provider starts.
+
 Before either shutdown path exits, idle warm sessions close through their
 normal suspend-and-checkpoint path. Remote sessions therefore leave verified
 backup authority for the next controller even though their last run is already

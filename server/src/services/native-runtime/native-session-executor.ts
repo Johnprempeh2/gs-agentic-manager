@@ -14,6 +14,7 @@ import { nativeCompletionFeedback } from "./native-completion-feedback.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent } from "../acknowledged-native-stop.js";
 import { stoppedCodexTurnIsTextOnly } from "./stopped-codex-turn.js";
 import { prepareVerifiedRemoteProviderPack } from "./remote-provider-pack.js";
+import { remoteProviderPackAuthority } from "./remote-provider-pack-authority.js";
 import { readNativeLocalProcessStop, PROCESS_START_REQUESTED } from "../native-local-process-stop.js";
 import { remoteLeaseCleanupScope } from "../remote-execution-termination.js";
 import { resolveConnectorAssignments, isConnectorSkill } from "../connector-runtime.js";
@@ -10697,21 +10698,31 @@ async function createRunnerdBackendWithinSessionClaim(
       input.execution.provider.kind === "acpx");
   const configuredProviderPackRoot =
     input.runnerRemoteProviderPackPath?.trim() || null;
-  let expectedProviderPackManifest: RemoteProviderPackManifest | null = null;
-  if (requiresRemoteProviderPack) {
-    if (
-      !configuredProviderPackRoot ||
-      !existsSync(configuredProviderPackRoot) ||
-      !lstatSync(configuredProviderPackRoot).isDirectory()
-    ) {
-      throw new Error(
-        "runner_remote_provider_artifact_incompatible: configure GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH with the build-owned provider pack",
-      );
-    }
-    expectedProviderPackManifest = readRemoteProviderPackManifest(
-      configuredProviderPackRoot,
-    );
-  }
+  const providerPackAuthority = requiresRemoteProviderPack
+    ? remoteProviderPackAuthority<RemoteProviderPackManifest>({
+        stateDirectory: root,
+        binding: {
+          companyId: input.execution.binding.companyId,
+          agentId: input.execution.binding.agentId,
+          runId: input.execution.binding.runId,
+          workspaceId: input.execution.binding.executionWorkspaceId,
+          sessionId: nativeSessionKey(input.execution),
+          runnerInstanceId: effectiveRunnerInstanceId,
+          environmentLeaseId: effectiveEnvironmentLeaseId,
+          remoteCwd: remoteTarget!.remoteCwd,
+          providerDigest: nativeSha256(input.execution.provider),
+        },
+        reattach: input.restartRecovery?.kind === "reattach_remote_runner",
+        current: () => {
+          if (!configuredProviderPackRoot || !existsSync(configuredProviderPackRoot) ||
+              !lstatSync(configuredProviderPackRoot).isDirectory()) {
+            throw new Error("runner_remote_provider_artifact_incompatible: configure GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH with the build-owned provider pack");
+          }
+          return readRemoteProviderPackManifest(configuredProviderPackRoot);
+        },
+      })
+    : null;
+  const expectedProviderPackManifest = providerPackAuthority?.manifest ?? null;
   const stagedRemoteProviderPackRoot = remoteRuntimeRoot
     ? posix.join(remoteRuntimeRoot, "provider-pack")
     : null;
@@ -11017,6 +11028,7 @@ async function createRunnerdBackendWithinSessionClaim(
       await verifyRemoteRunner(requiredMode);
       if (requiresRemoteProviderPack && stagedRemoteProviderPackRoot) {
         await verifyRemoteProviderPack(stagedRemoteProviderPackRoot);
+        providerPackAuthority?.recordVerified();
         activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
       }
       remotePrepared = true;
@@ -11343,6 +11355,7 @@ async function createRunnerdBackendWithinSessionClaim(
         },
       });
       activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
+      providerPackAuthority?.recordVerified();
       if (packSource === "staged") {
         await input.onLog?.(
           "stderr",
