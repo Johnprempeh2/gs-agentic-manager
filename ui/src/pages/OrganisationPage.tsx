@@ -208,7 +208,7 @@ export function OrganisationPage() {
           ) : null}
           {!engagementLoading && tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
           {tab === "commerce" ? <CommercePanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
-          {tab === "billing" ? <BillingPanel /> : null}
+          {tab === "billing" ? <BillingPanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "activity" ? <ActivityPanel detail={engagement.detail} stages={engagement.stages} history={history.data} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "client-view" ? <ClientViewPanel companyId={companyId} caseId={clientCaseId} /> : null}
         </div>
