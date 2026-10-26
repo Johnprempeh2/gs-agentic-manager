@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { afterEach, describe, expect, it } from "vitest";
 import { applyPendingMigrations, inspectMigrations } from "./client.js";
 import {
+  EMBEDDED_POSTGRES_TEST_TIMEOUT_MS,
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./test-embedded-postgres.js";
@@ -84,5 +85,5 @@ describeEmbeddedPostgres("organisation website id executable migration (GRE-2682
     } finally {
       await sql.end();
     }
-  });
+  }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
 });

@@ -489,6 +489,7 @@ import {
   runCrmSyncBindingSchema,
   setAgentPipelineLevelSchema,
   setMemoryScopeStewardSchema,
+  setOrganisationWebsiteLinkSchema,
   startWebsiteGoogleConnectSchema,
   startWorkflowTemplateSchema,
   updateClientJourneyDeliverableSchema,
@@ -15404,6 +15405,18 @@ registerCurrentRoute({
   tags: ["organisations"],
   summary: "Archive an organisation (Work cases)",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/website-link",
+  tags: ["organisations"],
+  summary: "Link an organisation to its website organisation, or clear the link with null (Work cases, website view)",
+  body: setOrganisationWebsiteLinkSchema,
+  responses: {
+    200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+    409: r.conflict, 422: r.unprocessable,
+  },
 });
 
 registerCurrentRoute({
