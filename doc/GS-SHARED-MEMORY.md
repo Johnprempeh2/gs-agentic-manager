@@ -129,6 +129,10 @@ John, 26 Oct: "Hindsight is where the 'where we left off' notes live."
     - the request came through Tailscale Funnel, which tailscaled marks with the `Tailscale-Funnel-Request` header;
     - the address is not loopback or Tailscale (100.64.0.0/10, fd7a:115c:a1e0::/48).
   - The guard is `memoryKeyNetworkRefusal` in `server/src/middleware/memory-only-key-guard.ts`, with tests.
+  - **The Funnel header is the real boundary** (Flint, GRE-2694). `tailscale serve` and Funnel both proxy to the
+    app over loopback, so behind them the address always reads `127.0.0.1`, and the address check only catches a
+    caller that reaches the port directly. tailscaled sets `Tailscale-Funnel-Request` itself, so a client cannot
+    forge it. Do not weaken the header check on the grounds that the address check covers it.
   - Today Funnel exposes only `/api/chat-webhooks` on `https://gsam.<tailnet>.ts.net` (port 443). The guard also
     covers a later mistake.
   - The Mac script refuses any URL that is not `*.ts.net`, `100.x` or localhost, and refuses the bare 443
