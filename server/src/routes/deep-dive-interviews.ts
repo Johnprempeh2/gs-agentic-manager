@@ -6,6 +6,7 @@ import {
   draftDeepDiveInterviewSetSchema,
   inviteDeepDiveInterviewPeopleSchema,
   openDeepDiveInterviewRoundSchema,
+  releaseDeepDiveInterviewSynthesisSchema,
   sendDeepDiveInterviewInvitesSchema,
   submitDeepDiveSynthesisSchema,
   updateDeepDiveInterviewRoundSchema,
@@ -15,6 +16,7 @@ import {
   type DraftDeepDiveInterviewSet,
   type InviteDeepDiveInterviewPeople,
   type OpenDeepDiveInterviewRound,
+  type ReleaseDeepDiveInterviewSynthesis,
   type SendDeepDiveInterviewInvites,
   type SubmitDeepDiveSynthesis,
   type UpdateDeepDiveInterviewRound,
@@ -22,6 +24,7 @@ import {
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { deepDiveInterviewInvitesService } from "../services/deep-dive-interview-invites.js";
+import { deepDiveInterviewReleaseService } from "../services/deep-dive-interview-release.js";
 import { deepDiveInterviewSynthesisService } from "../services/deep-dive-interview-synthesis.js";
 import { deepDiveInterviewsService, type DeepDiveInterviewActor } from "../services/deep-dive-interviews.js";
 import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
@@ -40,6 +43,9 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 // Synthesis (GRE-2666): an agent (or a person) reads the rule-checked evidence
 // and submits statements; the tool writes only Proposed, Internal rows. Only a
 // person accepts or rejects a proposal.
+// Release (GRE-2667): only a person releases the reviewed synthesis to the
+// client's website or withdraws it; anyone with access reads what the client
+// sees now.
 
 function interviewActor(req: Request): DeepDiveInterviewActor {
   const actor = getActorInfo(req);
@@ -57,6 +63,7 @@ export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: In
   const interviewBridge = options.interviewBridge ?? interviewBridgeFromEnv(db);
   const invites = deepDiveInterviewInvitesService(db, interviewBridge);
   const synthesis = deepDiveInterviewSynthesisService(db, interviewBridge);
+  const release = deepDiveInterviewReleaseService(db, interviewBridge, synthesis);
   const settings = instanceSettingsService(db);
 
   async function assertEnabled() {
@@ -279,6 +286,36 @@ export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: In
       res.json(proposal);
     },
   );
+
+  router.get("/deep-dive/interview-rounds/:roundId/synthesis/release", async (req, res) => {
+    await roundInScope(req);
+    res.json(await release.get(req.params.roundId as string, bridgeActor(req)));
+  });
+
+  router.post(
+    "/deep-dive/interview-rounds/:roundId/synthesis/release",
+    validate(releaseDeepDiveInterviewSynthesisSchema),
+    async (req, res) => {
+      const companyId = await roundInScope(req);
+      const result = await release.release(req.params.roundId as string, req.body as ReleaseDeepDiveInterviewSynthesis, interviewActor(req), bridgeActor(req));
+      await log(req, companyId, "deep_dive_interview.synthesis_released", req.params.roundId as string, {
+        synthesisId: result.synthesisId,
+        websiteOrganisationId: result.view.websiteOrganisationId,
+        themes: result.themes,
+        quotes: result.quotes,
+      });
+      res.json(result.view);
+    },
+  );
+
+  router.post("/deep-dive/interview-rounds/:roundId/synthesis/withdraw", async (req, res) => {
+    const companyId = await roundInScope(req);
+    const view = await release.withdraw(req.params.roundId as string, interviewActor(req), bridgeActor(req));
+    await log(req, companyId, "deep_dive_interview.synthesis_withdrawn", req.params.roundId as string, {
+      websiteOrganisationId: view.websiteOrganisationId,
+    });
+    res.json(view);
+  });
 
   return router;
 }

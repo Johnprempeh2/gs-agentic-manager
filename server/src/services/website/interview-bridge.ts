@@ -24,6 +24,7 @@ import {
   type GsInterviewDetail,
   type GsInterviewInviteAnswer,
   type GsInterviewInvitePerson,
+  type GsInterviewReleasedSynthesis,
   type GsInterviewPerson,
   type GsInterviewRoundItem,
   type GsInterviewRoundPayload,
@@ -58,6 +59,12 @@ export interface InterviewBridge {
   interview(scope: InterviewBridgeScope, interviewId: string, actor: WebsiteBridgeActor): Promise<GsInterviewDetail>;
   /** `GET rounds/{roundId}/withdrawals`: every hard delete, oldest first, all pages. */
   withdrawals(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewWithdrawal[]>;
+  /** `GET rounds/{roundId}`: the round as the website has it, with what the client sees now (GRE-2667). */
+  round(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewRoundItem>;
+  /** `POST rounds/{roundId}/synthesis/released`: the client sees it at once. Only after a person releases it. */
+  releaseSynthesis(scope: InterviewBridgeScope, synthesis: GsInterviewReleasedSynthesis, actor: WebsiteBridgeActor): Promise<{ synthesisId: string; round: GsInterviewRoundItem }>;
+  /** `POST rounds/{roundId}/synthesis/withdraw`: the client stops seeing it at once. */
+  withdrawSynthesis(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewRoundItem>;
 }
 
 function parsed<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
@@ -74,6 +81,7 @@ export function interviewIdempotencyKey(scope: InterviewBridgeScope, what: strin
 }
 
 const roundAnswerSchema = z.object({ round: z.unknown() });
+const releaseAnswerSchema = z.object({ synthesisId: z.string(), round: z.unknown() });
 const peopleAnswerSchema = z.object({ items: z.array(z.unknown()) });
 const interviewAnswerSchema = z.object({ item: z.unknown() });
 const withdrawalsAnswerSchema = z.object({ items: z.array(z.unknown()), nextCursor: z.union([z.string(), z.number()]).nullable().optional() });
@@ -140,6 +148,22 @@ export function websiteInterviewBridge(db: Db): InterviewBridge {
       }
       throw new WebsiteBridgeError("bad_response", 200, `withdrawals: more than ${MAX_WITHDRAWAL_PAGES} pages`);
     },
+    async round(scope, actor) {
+      const answer = await (await client(scope, "read")).interviewRead(base(scope), {}, actor);
+      return parsed(gsInterviewRoundItemSchema, parsed(interviewAnswerSchema, answer, "round").item, "round");
+    },
+    async releaseSynthesis(scope, synthesis, actor) {
+      // Keyed by the body: a retry of this release writes once; a new release has a new synthesisId.
+      const body = synthesis as unknown as Record<string, unknown>;
+      const answer = parsed(releaseAnswerSchema, await (await client(scope, "write")).interviewWrite(`${base(scope)}/synthesis/released`, body, actor,
+        interviewIdempotencyKey(scope, "synthesis-released", body)), "release");
+      return { synthesisId: answer.synthesisId, round: parsed(gsInterviewRoundItemSchema, answer.round, "release.round") };
+    },
+    async withdrawSynthesis(scope, actor) {
+      // A new key each time: a withdraw after a second release must not replay the first.
+      const answer = await (await client(scope, "write")).interviewWrite(`${base(scope)}/synthesis/withdraw`, {}, actor);
+      return parsed(gsInterviewRoundItemSchema, parsed(roundAnswerSchema, answer, "withdraw").round, "withdraw");
+    },
   };
 }
 
@@ -162,6 +186,10 @@ interface FakeRound {
   /** Ended interviews, with consent, insights and the raw turns the website keeps. */
   interviews: Map<string, GsInterviewDetail & { turns: { seq: number; role: string; content: string }[] }>;
   withdrawals: GsInterviewWithdrawal[];
+  /** What the client sees: the released synthesis, or null. */
+  released: (GsInterviewReleasedSynthesis & { releasedAt: string }) | null;
+  /** Every synthesis push and withdraw, in order, as the site received it. */
+  synthesisLog: ({ kind: "released"; organisationId: string; body: GsInterviewReleasedSynthesis } | { kind: "withdrawn"; organisationId: string })[];
 }
 
 const FAKE_PATH: DeepDiveInterviewInviteStatus[] = ["completed", "started", "completed", "invited", "abandoned", "completed", "declined"];
@@ -186,6 +214,12 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
     return round;
   }
 
+  function itemOf(roundId: string, round: FakeRound): GsInterviewRoundItem {
+    return { id: roundId, status: round.payload.status, joinUrl: `https://example.test/#join/${roundId.slice(0, 8)}`,
+      retentionDays: round.payload.retentionDays ?? 90, readoutAt: round.payload.readoutAt ?? null, closedAt: null, deletionDate: null,
+      released: round.released ? { synthesisId: round.released.synthesisId, releasedAt: round.released.releasedAt } : null };
+  }
+
   function statusOf(person: FakePerson): FakePerson {
     if (progressAfterMs === null || person.status !== "invited" || now() - person.invitedAt < progressAfterMs) return person;
     const started = new Date(person.invitedAt + progressAfterMs).toISOString();
@@ -206,16 +240,18 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
       if (payload.status === "open" && (payload.seatTotal <= 0 || payload.enrol.allowedEmailDomains.length === 0)) {
         throw new WebsiteBridgeError("bad_request", 400, "bad_request");
       }
-      rounds.set(scope.roundId, {
+      const round: FakeRound = {
         organisationId: scope.organisationId,
         payload,
         people: existing?.people ?? new Map(),
         emails: existing?.emails ?? [],
         interviews: existing?.interviews ?? new Map(),
         withdrawals: existing?.withdrawals ?? [],
-      });
-      return { id: scope.roundId, status: payload.status, joinUrl: `https://example.test/#join/${scope.roundId.slice(0, 8)}`,
-        retentionDays: payload.retentionDays ?? 90, readoutAt: payload.readoutAt ?? null, closedAt: null, deletionDate: null };
+        released: existing?.released ?? null,
+        synthesisLog: existing?.synthesisLog ?? [],
+      };
+      rounds.set(scope.roundId, round);
+      return itemOf(scope.roundId, round);
     },
     async invite(scope, people) {
       const round = roundOf(scope);
@@ -299,6 +335,35 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
     },
     async withdrawals(scope) {
       return [...roundOf(scope).withdrawals];
+    },
+    async round(scope) {
+      return itemOf(scope.roundId, roundOf(scope));
+    },
+    async releaseSynthesis(scope, synthesis) {
+      const round = roundOf(scope);
+      if (round.synthesisLog.some((entry) => entry.kind === "released" && entry.body.synthesisId === synthesis.synthesisId)) {
+        throw new WebsiteBridgeError("conflict", 409, "conflict");
+      }
+      // The site re-verifies each quote against the stored insights before it releases anything.
+      const insights = new Map([...round.interviews.values()].flatMap((d) => d.insights.map((i) => [i.id, i] as const)));
+      for (const theme of synthesis.themes) {
+        if (theme.evidence_quotes.length === 0) throw new WebsiteBridgeError("bad_request", 400, `theme ${theme.theme_id} has no evidence`);
+        for (const q of theme.evidence_quotes) {
+          const insight = insights.get(q.insight_id);
+          if (!insight || !insight.quoteEligible || !insight.evidenceQuote.toLowerCase().includes(q.quote.toLowerCase().replace(/[.!?]+$/, ""))) {
+            throw new WebsiteBridgeError("bad_request", 400, `quote from ${q.insight_id} is not verbatim in an eligible insight`);
+          }
+        }
+      }
+      round.synthesisLog.push({ kind: "released", organisationId: scope.organisationId, body: structuredClone(synthesis) });
+      round.released = { ...structuredClone(synthesis), releasedAt: new Date(now()).toISOString() };
+      return { synthesisId: synthesis.synthesisId, round: itemOf(scope.roundId, round) };
+    },
+    async withdrawSynthesis(scope) {
+      const round = roundOf(scope);
+      round.synthesisLog.push({ kind: "withdrawn", organisationId: scope.organisationId });
+      round.released = null;
+      return itemOf(scope.roundId, round);
     },
   };
 
