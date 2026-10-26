@@ -392,6 +392,8 @@ import {
   openDeepDiveInterviewRoundSchema,
   inviteDeepDiveInterviewPeopleSchema,
   sendDeepDiveInterviewInvitesSchema,
+  submitDeepDiveSynthesisSchema,
+  decideDeepDiveInterviewProposalSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -17384,6 +17386,58 @@ registerCurrentRoute({
   summary: "Email the join link again (resend) or a reminder (remind) to people this round invited",
   body: sendDeepDiveInterviewInvitesSchema,
   responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+// Parallel Interview synthesis (GRE-2666): the tool a GSAM agent calls. It reads
+// the round's interviews through gs-interview-v1, applies the rules in code
+// (two voices, quote gate, label merge, roll-up by team) and writes only
+// Proposed, Internal items. Only a person accepts or rejects one.
+const bridgeDown = { 502: { description: "The website did not answer or answered in a form GSAM does not understand" } };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/evidence",
+  tags: ["deep-dive"],
+  summary:
+    "Read the round's interviews with every synthesis rule applied: merged themes with voices and promotion, " +
+    "allowed quotes, roll-up by team and people for the board (no raw answers)",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/proposals",
+  tags: ["deep-dive"],
+  summary: "List the round's synthesis proposals and what a person decided",
+  responses: { ...interviewResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/proposals",
+  tags: ["deep-dive"],
+  summary:
+    "Submit the agent's statements for promoted themes, with quotes; checked against fresh evidence, " +
+    "all or nothing, and written as Proposed and Internal",
+  body: submitDeepDiveSynthesisSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok(), ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/withdrawals",
+  tags: ["deep-dive"],
+  summary: "Apply the website's withdrawals: remove the withdrawn people's quotes and undecided proposals",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-proposals/{proposalId}/decision",
+  tags: ["deep-dive"],
+  summary: "Accept or reject a synthesis proposal (only a person)",
+  body: decideDeepDiveInterviewProposalSchema,
+  responses: interviewWriteResponses,
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it

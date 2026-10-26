@@ -286,7 +286,7 @@ export { billingAccounts, billingInvoices } from "./billing_accounts.js";
 export { agentDailyDigests } from "./agent_daily_digests.js";
 export { deepDiveFindings, deepDiveFindingEvidence } from "./deep_dive_findings.js";
 export { deepDiveSessions, deepDiveSessionQuestions } from "./deep_dive_sessions.js";
-export { deepDiveInterviewInvites, deepDiveInterviewRounds, deepDiveInterviewSets } from "./deep_dive_interviews.js";
+export { deepDiveInterviewInvites, deepDiveInterviewProposals, deepDiveInterviewRounds, deepDiveInterviewSets } from "./deep_dive_interviews.js";
 export {
   deepDiveOrgUnits,
   deepDivePeople,
