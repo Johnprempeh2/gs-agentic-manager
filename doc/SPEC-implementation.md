@@ -726,8 +726,12 @@ become `human_only`, and both are marked `legacy_inherited_restriction`. Resolve
 outcomes and resolver attribution are immutable.
 
 An explicit named agent or user addressee and a company-configured cap may narrow
-the effective audience. Only the exact named addressee may resolve an addressed
-interaction; a human does not override a user addressee. A cap never widens the
+the effective audience. A decision card may name `resolverUserIds`, a set of active
+company members who can answer it. A decision addressed to an owner or admin,
+or an unaddressed `human_only` decision, defaults to the company's active owner
+and admin users when no set is supplied. For these cards the first answer wins;
+the winner and time remain in the interaction audit. Other addressed interactions
+remain limited to their exact addressee. A cap never widens the
 requested audience. Tool-action confirmations and
 other hard-governed action cards remain `human_only` (or move to the formal approval
 system) regardless of a requested open audience.

@@ -276,6 +276,34 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect(seen.every((s) => s.verified)).toBe(true);
   });
 
+  it("reads billing lines for one customer through either read path with website:view", async () => {
+    const { base, companyId } = await seedSite();
+    const customer = randomUUID();
+    const otherCustomer = randomUUID();
+    const line = { id: randomUUID(), customer_id: customer, description: "Monthly service", qty: 2,
+      unit_price_minor: "1250", currency: "GBP", billing_period: "monthly", next_bill_on: "2026-12-01", status: "active" };
+    await makeKey(base);
+    answer = (url) => Response.json({ items: url.searchParams.get("customer") === customer ? [line] : [], nextCursor: null });
+    const { actor } = await seedAgent(companyId, ["website:view"]);
+
+    for (const route of ["data", "commerce"]) {
+      const path = `${base}/${route}/billing-lines`;
+      expect((await request(app(actor)).get(`${path}?customer=${customer}`).expect(200)).body.items).toEqual([line]);
+      expect(seen.at(-1)?.url).toBe(`https://www.greatstone.test/api/admin/v1/billing-lines?customer=${customer}`);
+      expect((await request(app(actor)).get(`${path}?customer=${otherCustomer}`).expect(200)).body.items).toEqual([]);
+      const calls = seen.length;
+      await request(app(actor)).get(path).expect(422);
+      await request(app(actor)).get(`${path}?customer=bad`).expect(422);
+      expect(seen).toHaveLength(calls);
+      await request(app(actor)).post(path).send({}).expect(route === "data" ? 404 : 403);
+    }
+    const { actor: denied } = await seedAgent(companyId, []);
+    await request(app(denied)).get(`${base}/data/billing-lines?customer=${customer}`).expect(403);
+    await request(app(denied)).get(`${base}/commerce/billing-lines?customer=${customer}`).expect(403);
+    await request(app(actor)).get(`${base}/data/unknown-resource?customer=${customer}`).expect(422);
+    await request(app(actor)).get(`${base}/commerce/unknown-resource?customer=${customer}`).expect(422);
+  });
+
   it("refuses a caller without website:view, and a site in another company is not found", async () => {
     const { base, companyId } = await seedSite();
     const { actor } = await seedAgent(companyId, []);

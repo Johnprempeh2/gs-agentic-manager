@@ -41,7 +41,7 @@ import type { DeepDiveFindingActor } from "./deep-dive-findings.js";
 // Parallel Interview rounds (GRE-2611), slice 1: the round's setup, a question
 // set per team or person drafted from what the Deep Dive already knows, and a
 // person's approval of each set. Place the Known, validate the Indicated,
-// investigate only the Unknown. The guard triggers in migration 0406 enforce
+// investigate only the Unknown. The guard triggers in migration 0407 enforce
 // the same rules for any writer; these checks answer first with a plain
 // message. Invites, progress and results come in the next slices.
 

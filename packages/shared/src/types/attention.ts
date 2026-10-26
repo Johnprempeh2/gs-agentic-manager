@@ -261,6 +261,7 @@ export interface AttentionResolverAudience {
   addresseeAgentId: string | null;
   /** User the card is addressed to, when it names one. */
   addresseeUserId?: string | null;
+  resolverUserIds?: string[];
   /** Display name of the agent addressee, resolved server-side. */
   addresseeName: string | null;
   /** Agent that created the card, excluded when the policy is `not_creator`. */

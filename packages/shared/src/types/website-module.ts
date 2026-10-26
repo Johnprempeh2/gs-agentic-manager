@@ -424,6 +424,49 @@ export interface WebsiteHomeActivity {
   createdAt: string;
 }
 
+/** A GSAM issue as the Home links to it. */
+export interface WebsiteHomeIssueLink {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+}
+
+/** Where this week's website release train is (GRE-2641). `none`: no train this week. */
+export type WebsiteTrainState = "none" | "cut" | "checking" | "waiting_for_approval" | "approved" | "rejected" | "live";
+
+/** The weekly website release train (GRE-2641, 25 Oct 2026). */
+export interface WebsiteHomeTrain {
+  /** The newest issue the "Weekly website release train" routine made; null before the first run. */
+  issue: WebsiteHomeIssueLink | null;
+  /** The `web-rc-YYYY-MM-DD` tag named on that issue, once cut. */
+  tag: string | null;
+  state: WebsiteTrainState;
+  /** The `weekly-release` card on that issue. */
+  card: {
+    id: string;
+    status: string;
+    /** The person who accepted or rejected it. */
+    resolvedByName: string | null;
+    resolvedAt: string | null;
+  } | null;
+  /** When the routine makes the next train. */
+  nextRunAt: string | null;
+}
+
+/** The launch date of the new site and the gates in front of it (GRE-2641). */
+export interface WebsiteHomeLaunch {
+  /** `YYYY-MM-DD`; null when no date is set. */
+  targetDate: string | null;
+  /** `agreed` once John or Ben accepts the launch card. */
+  agreement: "proposed" | "agreed";
+  /** Whole days from today (London) to the target; negative once passed. */
+  daysLeft: number | null;
+  /** The issue that holds the launch card. */
+  cardIssue: WebsiteHomeIssueLink | null;
+  gates: { label: string; identifier: string; issue: WebsiteHomeIssueLink | null }[];
+}
+
 /** The Website Home at a glance (24 Oct 2026): one read instead of five lists. */
 export interface WebsiteHomeSummary {
   /** Non-archived pages by status. */
@@ -447,4 +490,6 @@ export interface WebsiteHomeSummary {
   liveFraming: "allowed" | "refused" | "unknown";
   /** The same check of the In development address; `unknown` when there is none. */
   devFraming: "allowed" | "refused" | "unknown";
+  train: WebsiteHomeTrain;
+  launch: WebsiteHomeLaunch;
 }

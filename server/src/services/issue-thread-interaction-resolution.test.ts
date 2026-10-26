@@ -63,6 +63,22 @@ describe("issue-thread interaction resolver audience", () => {
     })).toMatchObject({ allowed: false, code: "interaction_addressee_mismatch" });
   });
 
+  it("allows either named person and excludes everyone else", () => {
+    const card = interaction({
+      addresseeUserId: "john",
+      resolverUserIds: ["john", "ben"],
+      effectiveResolverPolicy: "human_only",
+    });
+    for (const userId of ["john", "ben"]) {
+      expect(evaluateIssueThreadInteractionResolverAudience({
+        actor: { type: "user", userId }, interaction: card,
+      })).toMatchObject({ allowed: true });
+    }
+    expect(evaluateIssueThreadInteractionResolverAudience({
+      actor: { type: "user", userId: "eve" }, interaction: card,
+    })).toMatchObject({ allowed: false, code: "interaction_addressee_mismatch" });
+  });
+
   it("requires run attribution for agents", () => {
     const decision = evaluateIssueThreadInteractionResolverAudience({
       actor: { type: "agent", agentId: "agent-1", runId: null },

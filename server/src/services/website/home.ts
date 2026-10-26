@@ -19,6 +19,7 @@ import {
   websitePreviewAddresses,
 } from "@greatstone/shared";
 import { websitePublishApprovals } from "./publish-approval.js";
+import { websiteReleaseTrain } from "./release-train.js";
 import type { SiteRow } from "./module.js";
 
 const ACTIVITY_LIMIT = 8;
@@ -85,6 +86,7 @@ export function websiteHomeService(db: Db) {
     names.set("local-board", "Board");
     return names;
   }
+  const releaseTrain = websiteReleaseTrain(db, userNames);
 
   function releaseView(row: ReleaseRow | undefined, names: Map<string, string>): WebsiteHomeRelease | null {
     if (!row) return null;
@@ -239,6 +241,8 @@ export function websiteHomeService(db: Db) {
       // The addresses the Preview tab and the Home hero actually show.
       liveFraming: await framingOf(addresses.live, gsamOrigins),
       devFraming: await framingOf(addresses.dev, gsamOrigins),
+      train: await releaseTrain.train(companyId),
+      launch: await releaseTrain.launch(companyId),
     };
   }
 
