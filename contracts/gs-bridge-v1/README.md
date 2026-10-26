@@ -84,7 +84,7 @@ same snapshot, so a PUT twice is the same as once.
 - Only Shared items are sent. A Shared item whose parent is Internal is sent with `parentId: null`.
 - Only files and document requests linked Shared to a Shared item are sent.
 - Only deliverables that are published or accepted are sent; metadata only, no file content in this step.
-- The three additive arrays contain Shared records only. Links name records in this same payload. KPI readings are not in v1; the site shows baseline and target only. Older snapshots may omit these arrays.
+- The three additive arrays are always present, empty when there are no Shared records. Links name records in this same payload. KPI readings are not in v1; the site shows baseline and target only.
 - The site answers `{ "ok": true, "tenantId": "<uuid>" }`, or an error as below.
 
 ### Call back: the site to GSAM

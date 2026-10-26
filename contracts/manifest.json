@@ -48,7 +48,7 @@
       "fixture": "site-contract/fixtures/contract-file.json"
     },
     "deepDiveSync": {
-      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant, including Shared findings, opportunities and KPIs when present.",
+      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant, including Shared findings, opportunities and KPI arrays.",
       "syncSchema": "gs-deep-dive-sync-v1",
       "schema": "site-contract/schemas/deep-dive-sync.schema.json",
       "fixture": "site-contract/fixtures/deep-dive-sync.json"
@@ -71,7 +71,7 @@
   "files": {
     "README.md": "064aea9cc7ccf4e64aace87d1f3ff3b3818b3112241cd66fc9d3597193a4b509",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
-    "gs-bridge-v1/README.md": "4f47590ac2a22cf93ed37619bf27664c8cdb3cdc10eae9b6ad5762a4c27a625a",
+    "gs-bridge-v1/README.md": "d742f4830a2011d5628a946cf3615d5083fccca9d9a3a8c9db58fb63d1cfb4e1",
     "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
     "gs-interview-v1/README.md": "caaaae40633578e29f722179b27ae5491b8d43922ff610c93b96dcdf45f0e302",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
@@ -86,10 +86,10 @@
     "site-contract/schemas/bridge-health.schema.json": "9e86eeea6422b5a7758c57c20fdc60f3d1284c7398338ccb436785a9f1d0b546",
     "site-contract/schemas/contract-file.schema.json": "5ab97032c17bf348ebddaa4100657d1245ad74c3f52a19e157c9aeda79050070",
     "site-contract/schemas/deep-dive-sync-ack.schema.json": "55392e3ff4023ebcbe7724ace741325244a903131c699bbfd1af1d2b7eb50915",
-    "site-contract/schemas/deep-dive-sync.schema.json": "7683e1f6f665457cc826dcc649810470ab868b6a7d311ea81b3dea3d4594bebd",
+    "site-contract/schemas/deep-dive-sync.schema.json": "16676cddb8a6b981802b818608772adee405b18695509e8720aadd96d7a29f76",
     "site-contract/schemas/document-request-answer.schema.json": "12e6ceec3a8aa7b78815adfebf39930aece5b4e537173df350bf144318f0c798",
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "ca43fc2153e3c4913214499958c46e8baf429d7d605ef29616e2d4013dae7225"
+  "contentHash": "95f9e39496e5175b938bc7fba65bd248a87f585830914109d7e024a322330792"
 }
