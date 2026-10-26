@@ -5,6 +5,7 @@ import {
   activityLog,
   agents,
   companies,
+  companyMemberships,
   createDb,
   documentRevisions,
   documents,
@@ -64,6 +65,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
     await db.delete(goals);
     await db.delete(agents);
     await db.delete(instanceSettings);
+    await db.delete(companyMemberships);
     await db.delete(companies);
   });
 
@@ -1916,6 +1918,42 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
       .from(issueThreadInteractions)
       .where(eq(issueThreadInteractions.issueId, issueId));
     expect(rows).toHaveLength(0);
+  });
+
+  it("records one winner when two named people answer together", async () => {
+    const { companyId, issueId } = await seedConfirmationIssue("Shared board answer");
+    await db.insert(companyMemberships).values(["john", "ben"].map((userId) => ({
+      companyId, principalType: "user", principalId: userId,
+      status: "active", membershipRole: userId === "john" ? "owner" : "admin",
+    })));
+    const openCard = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation",
+      payload: { version: 1, prompt: "Open question?" },
+    }, { userId: "local-board" });
+    expect(openCard.resolverUserIds).toEqual([]);
+    const moneyCard = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation", resolverPolicy: "human_only",
+      payload: { version: 1, prompt: "Approve this spending request?" },
+    }, { userId: "local-board" });
+    expect(moneyCard.resolverUserIds).toEqual(expect.arrayContaining(["john", "ben"]));
+    const card = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "request_confirmation",
+      resolverPolicy: "human_only",
+      addresseeUserId: "john",
+      payload: { version: 1, prompt: "Approve?" },
+    }, { userId: "local-board" });
+    expect(card.resolverUserIds).toEqual(expect.arrayContaining(["john", "ben"]));
+    const answers = await Promise.allSettled(["john", "ben"].map((userId) =>
+      interactionsSvc.acceptInteraction({ id: issueId, companyId }, card.id, {}, { userId }),
+    ));
+    expect(answers.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(answers.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const loser = answers.find((result) => result.status === "rejected");
+    expect(loser && loser.status === "rejected" ? String(loser.reason) : "").toContain("already been answered");
+    const [stored] = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, card.id));
+    expect(stored.status).toBe("accepted");
+    expect(["john", "ben"]).toContain(stored.resolvedByUserId);
+    expect(stored.resolvedAt).toBeTruthy();
   });
 
   it("accepts request_confirmation interactions without creating child issues", async () => {

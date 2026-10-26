@@ -795,6 +795,7 @@ export function interactionResolverAudience(
   row: {
     addresseeAgentId: string | null;
     addresseeUserId?: string | null;
+    resolverUserIds?: string[] | null;
     createdByAgentId: string | null;
     requestedResolverPolicy: string;
     effectiveResolverPolicy: string;
@@ -815,6 +816,7 @@ export function interactionResolverAudience(
     resolverPolicyProvenance: provenance,
     addresseeAgentId: row.addresseeAgentId,
     addresseeUserId: row.addresseeUserId ?? null,
+    resolverUserIds: row.resolverUserIds ?? [],
     addresseeName: row.addresseeAgentId ? agentName(row.addresseeAgentId) : null,
     createdByAgentId: row.createdByAgentId,
     createdByAgentName: row.createdByAgentId ? agentName(row.createdByAgentId) : null,
@@ -1439,6 +1441,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           payload: issueThreadInteractions.payload,
           addresseeAgentId: issueThreadInteractions.addresseeAgentId,
           addresseeUserId: issueThreadInteractions.addresseeUserId,
+          resolverUserIds: issueThreadInteractions.resolverUserIds,
           createdByAgentId: issueThreadInteractions.createdByAgentId,
           requestedResolverPolicy: issueThreadInteractions.requestedResolverPolicy,
           effectiveResolverPolicy: issueThreadInteractions.effectiveResolverPolicy,
@@ -1478,7 +1481,10 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         row.kind !== "ask_agent" &&
         (row.addresseeAgentId === null ||
           !evaluateAgentInvokability(companyAgentMap.get(row.addresseeAgentId), companyAgentRows).invokable)
-        && (row.addresseeUserId === null || row.addresseeUserId === options.userId
+        && (row.resolverUserIds.length
+          ? Boolean(options.userId && row.resolverUserIds.includes(options.userId))
+            || Boolean(options.userIdAliases?.some((id) => row.resolverUserIds.includes(id)))
+          : row.addresseeUserId === null || row.addresseeUserId === options.userId
           || Boolean(options.userIdAliases?.includes(row.addresseeUserId)))
       );
       const visibleInteractionRows = collapsePendingConfirmationsToNewest(boardInteractionRows);

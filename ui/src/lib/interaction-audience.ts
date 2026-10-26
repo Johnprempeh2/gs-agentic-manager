@@ -126,6 +126,7 @@ export interface InteractionAudienceFacts {
   resolverPolicyProvenance: IssueThreadInteractionResolverPolicyProvenance;
   hasAddressee: boolean;
   isUserAddressee?: boolean;
+  hasResolverUsers?: boolean;
 }
 
 /**
@@ -155,6 +156,7 @@ export function describeInteractionAudience({
       resolverPolicyProvenance: interaction.resolverPolicyProvenance,
       hasAddressee: Boolean(interaction.addresseeAgentId || interaction.addresseeUserId),
       isUserAddressee: Boolean(interaction.addresseeUserId),
+      hasResolverUsers: Boolean(interaction.resolverUserIds?.length),
     },
     creatorLabel,
     addresseeLabel,
@@ -177,8 +179,8 @@ export function describeResolverAudience({
 }): InteractionAudienceDescription {
   const policy = facts.effectiveResolverPolicy;
   const requestedPolicy = facts.requestedResolverPolicy;
-  const hasAddressee = facts.hasAddressee;
-  const isUserAddressee = facts.isUserAddressee === true;
+  const hasAddressee = facts.hasAddressee || facts.hasResolverUsers === true;
+  const isUserAddressee = facts.isUserAddressee === true || facts.hasResolverUsers === true;
   // `formatAssigneeUserLabel` returns the display-cased "You" for the signed-in
   // reader, which is right for a badge and wrong mid-sentence ("Only You can
   // respond."). Every use below is inside a sentence.
@@ -188,7 +190,9 @@ export function describeResolverAudience({
   );
   const creator = midSentence(creatorLabel?.trim() || "the agent that created it");
 
-  const summary = isUserAddressee
+  const summary = facts.hasResolverUsers
+    ? "Only the named board members can respond. The first answer counts."
+    : isUserAddressee
     ? `Only ${addressee} can respond.`
     : policy === "human_only"
     ? `${hasAddressee ? `Assigned to ${addressee}. ` : ""}Only a person on the board can respond. Agents cannot resolve this card.`
@@ -200,7 +204,9 @@ export function describeResolverAudience({
 
   // Same fact, fewer words: a collapsed row has to answer "is this mine to
   // decide?" in one glance, next to the buttons that act on the answer.
-  const shortSummary = isUserAddressee
+  const shortSummary = facts.hasResolverUsers
+    ? "Named board members · first answer counts"
+    : isUserAddressee
     ? `Only ${addressee} can respond`
     : policy === "human_only"
     ? hasAddressee
@@ -276,6 +282,7 @@ export function describeAttentionResolverAudience(
       resolverPolicyProvenance: audience.resolverPolicyProvenance,
       hasAddressee: Boolean(audience.addresseeAgentId || audience.addresseeUserId),
       isUserAddressee: Boolean(audience.addresseeUserId),
+      hasResolverUsers: Boolean(audience.resolverUserIds?.length),
     },
     creatorLabel: audience.createdByAgentName,
     addresseeLabel: audience.addresseeName,

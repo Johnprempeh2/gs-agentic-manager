@@ -5,6 +5,7 @@ import { useMutation, type InfiniteData } from "@tanstack/react-query";
 import { issuesApi } from "../../api/issues";
 import { CommentSubmissionUnknownError } from "../../lib/comment-submit-result";
 import { commentSubmitErrorText } from "../../lib/comment-submit-error";
+import { interactionResolutionErrorCode } from "../../lib/interaction-resolution-error";
 import { approvalsApi } from "../../api/approvals";
 import { queryKeys } from "../../lib/queryKeys";
 import {
@@ -121,6 +122,11 @@ export function useThreadMutations({
   sourceBreadcrumb,
   undoInboxArchive,
 }: UseThreadMutationsInput) {
+  const refreshIfAlreadyAnswered = (error: unknown) => {
+    if (interactionResolutionErrorCode(error) !== "interaction_already_resolved") return;
+    invalidateIssueDetail();
+    invalidateIssueCollections();
+  };
   const approvalDecision = useMutation({
     mutationFn: async ({
       approvalId,
@@ -396,6 +402,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       if (err instanceof ReauthCancelledError) return;
+      refreshIfAlreadyAnswered(err);
       pushToast({
         title: "Could not accept",
         body:
@@ -427,6 +434,7 @@ export function useThreadMutations({
       });
     },
     onError: (err) => {
+      refreshIfAlreadyAnswered(err);
       pushToast({
         title: "Could not reject",
         body:
@@ -455,6 +463,7 @@ export function useThreadMutations({
       });
     },
     onError: (err) => {
+      refreshIfAlreadyAnswered(err);
       pushToast({
         title: "Your answers were not sent",
         body: err instanceof Error ? err.message : "Could not send your answers",
@@ -493,6 +502,7 @@ export function useThreadMutations({
       });
     },
     onError: (err) => {
+      refreshIfAlreadyAnswered(err);
       pushToast({
         title: "Could not apply your choices",
         body:
