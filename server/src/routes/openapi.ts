@@ -16604,6 +16604,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/companies/{companyId}/website/activity/{organisationId}",
+  tags: ["website"],
+  summary: "List stored website activity for one client organisation in event time order. Optional cursor pages the local stream without calling the website",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/data-bridge/status`,
   tags: ["website"],
   summary: "Whether GSAM can read the site's own records through the signed admin bridge: not_set_up, connected or failing, with the read key's id (website:view). Checked at most once a minute",
