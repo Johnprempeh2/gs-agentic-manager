@@ -17,6 +17,8 @@ export const loadIssueDetailPage = () =>
 /** The page module once a load has finished, so the route can render without suspending. */
 export const loadedIssueDetailPage = () => loadedModule;
 
+export const isIssueDetailPageLoaded = () => loadedModule !== undefined;
+
 export function preloadIssueDetailPage(): void {
   // Unit tests hover links all the time; they must not pull the whole page in.
   if (import.meta.env.MODE === "test") return;

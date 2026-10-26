@@ -37,7 +37,7 @@ import { loadLastInboxTab } from "./lib/inbox";
 import { sharedTaskDefaults } from "./lib/share-target";
 import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import { lazyPage } from "./lib/lazy-page";
-import { isIssueDetailPath, loadedIssueDetailPage, loadIssueDetailPage, preloadIssueDetailPage } from "./lib/issue-detail-page";
+import { isIssueDetailPageLoaded, isIssueDetailPath, loadedIssueDetailPage, loadIssueDetailPage, preloadIssueDetailPage } from "./lib/issue-detail-page";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -348,7 +348,7 @@ function boardRoutes() {
       <Route path="chats/:agentRef" element={<AgentChat />} />
       <Route path="messages/:chatId" element={<TeamChat />} />
       <Route path="issues/new" element={<NewTaskRoute />} />
-      <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} />} />
+      <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} loadTask={loadIssueDetailPage} taskLoaded={isIssueDetailPageLoaded} />} />
       <Route path="issues/:issueId/tree" element={<TaskTree />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />

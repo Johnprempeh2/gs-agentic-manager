@@ -199,8 +199,9 @@ export function prefetchIssueComments(queryClient: QueryClient, issueRef: string
 }
 
 /**
- * Prefetch everything the issue-detail first paint needs — the detail snapshot
- * and the first comments page — for instant warm navigation from a list row.
+ * Prefetch everything the issue-detail first paint needs — the page code, the
+ * tree check, the detail snapshot and the first comments page — for instant
+ * warm navigation from a list row.
  * Seeds the full list-row snapshot when provided so the header + description
  * paint immediately with no loading state.
  */
@@ -215,5 +216,12 @@ export function prefetchIssueDetailForNavigation(
   return Promise.all([
     prefetchIssueDetail(queryClient, issueRef, options),
     prefetchIssueComments(queryClient, issueRef),
+    // A plain task link first asks the tree whether to open there (TaskDefaultView).
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.issueTree(issueRef),
+      queryFn: () => issuesApi.getTree(issueRef),
+      staleTime: 30_000,
+      retry: false,
+    }),
   ]);
 }
