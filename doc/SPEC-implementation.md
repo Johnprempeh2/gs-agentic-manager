@@ -1221,6 +1221,8 @@ The current app also exposes V1-supporting surfaces for:
 
 Queue and triage mutations accept board non-viewers and active standard-scope agents, apply responsible-user intersection for run JWTs, and reject low-trust, `task_bridge`, and `skill_test` contexts. Missing, cross-company, and unauthorized attention sources share the same not-found response.
 
+Low-trust project access can be extended by a board operator who may manage agents. `GET` and `POST /api/agents/:id/project-access` read and add allowed projects. The add operation locks the agent, accepts only projects in the agent's company that the operator may read, preserves every existing trust restriction, and logs each new addition. Saving access does not start or retry a task. The agent permissions screen shows the current projects and offers the add action. A task whose latest failed run has the fork's low-trust boundary denial code links to that screen. It offers a separate retry after the agent's current project boundary includes the task project.
+
 The attention feed returns server-computed `shelf`, `retentionDays`, `keep`, `archivedAt`, and `retentionVersion` fields. Archived rows are excluded by default and selected with `archived=true`. Bulk archive proposals bind the exact source identities, per-item reasons, activity timestamps, and expected retention versions into the signed decisions-v1 target snapshots; acceptance re-authorizes both proposer and decider and commits all rows or none.
 
 ## 11. Heartbeat and Adapter Contract
