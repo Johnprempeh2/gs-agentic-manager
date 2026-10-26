@@ -7866,8 +7866,11 @@ export function issueRoutes(
       action: "issue.correction_safe_point_timeout", entityType: "heartbeat_run", entityId: run.id,
       issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
     });
+    const latestIssue = await svc.getById(issue.id);
+    if (latestIssue?.companyId !== issue.companyId || latestIssue.assigneeAgentId !== run.agentId)
+      return;
     let delivered = false;
-    if (safePoint === "safe" && issue.assigneeAgentId === run.agentId && run.runtimeMode === "native") {
+    if (safePoint === "safe" && run.runtimeMode === "native") {
       try {
         await steerNativeSession({
           runId: run.id,
@@ -7906,7 +7909,7 @@ export function issueRoutes(
       action: "issue.correction_restart_requested", entityType: "heartbeat_run", entityId: run.id,
       issueId: issue.id, details: { commentId: comment.id, targetRunId: run.id },
     });
-    if (issue.assigneeAgentId === run.agentId) await heartbeat.wakeup(run.agentId, {
+    await heartbeat.wakeup(run.agentId, {
       source: "automation", triggerDetail: "system", reason: "issue_commented",
       payload: { issueId: issue.id, commentId: comment.id, correctionCommentId: comment.id, interruptedRunId: run.id },
       requestedByActorType: actor.actorType, requestedByActorId: actor.actorId,
