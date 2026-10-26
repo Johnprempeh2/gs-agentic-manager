@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Flag, TrainFront } from "lucide-react";
 import type { WebsiteHomeIssueLink, WebsiteHomeLaunch, WebsiteHomeTrain, WebsiteTrainState } from "@greatstone/shared";
 import { Link } from "@/lib/router";
-import { cn } from "@/lib/utils";
+import { cn, formatCalendarDay, formatClockTime, formatWeekdayShortDate } from "@/lib/utils";
 import { IssueStatusBadge } from "../StatusBadge";
 import { When, taskHref } from "./WebsiteHub";
 
@@ -21,10 +21,7 @@ export const TRAIN_STATE_COPY: Record<WebsiteTrainState, { label: string; tone: 
 
 /** "Tue 3 Nov 2026" from `YYYY-MM-DD`, on the calendar day itself. */
 export function launchDateLabel(day: string): string {
-  const [y, m, d] = day.split("-").map(Number);
-  const date = new Date(Date.UTC(y!, m! - 1, d!));
-  const part = (options: Intl.DateTimeFormatOptions) => date.toLocaleDateString("en-GB", { ...options, timeZone: "UTC" });
-  return `${part({ weekday: "short" })} ${d} ${part({ month: "short" })} ${y}`;
+  return formatCalendarDay(day, { includeYear: true, includeWeekday: true });
 }
 
 /** "9 days left", "Launch day", "2 days ago". */
@@ -35,7 +32,7 @@ export function daysLeftLabel(days: number): string {
 }
 
 function nextTrainLabel(at: string): string {
-  return new Date(at).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return `${formatWeekdayShortDate(at)}, ${formatClockTime(at)}`;
 }
 
 function Pill({ tone, children, testId }: { tone: string; children: ReactNode; testId?: string }) {
