@@ -1,6 +1,7 @@
 import type {
   CreateDeepDiveInterviewRound,
   DeepDiveInterviewProgress,
+  DeepDiveInterviewProposal,
   DeepDiveInterviewRoundView,
   DraftDeepDiveInterviewSet,
   InviteDeepDiveInterviewPeople,
@@ -17,6 +18,7 @@ import { api } from "./client";
 export const deepDiveInterviewsQueryKeys = {
   round: (companyId: string) => ["deep-dive-interview-round", companyId] as const,
   progress: (companyId: string) => ["deep-dive-interview-round", companyId, "progress"] as const,
+  proposals: (roundId: string) => ["deep-dive-interview-proposals", roundId] as const,
 };
 
 /** What an invite or a send answers: counts, and the progress read from the website after it. */
@@ -49,4 +51,7 @@ export const deepDiveInterviewsApi = {
     api.post<DeepDiveInterviewInviteResult>(`/deep-dive/interview-rounds/${roundId}/invites`, input),
   send: (roundId: string, input: SendDeepDiveInterviewInvites) =>
     api.post<{ emailed: number; skipped: number; progress: DeepDiveInterviewProgress }>(`/deep-dive/interview-rounds/${roundId}/invites/send`, input),
+  // The synthesis agent's proposed, internal items (GRE-2666).
+  proposals: (roundId: string) =>
+    api.get<{ roundId: string; proposals: DeepDiveInterviewProposal[] }>(`/deep-dive/interview-rounds/${roundId}/synthesis/proposals`),
 };
