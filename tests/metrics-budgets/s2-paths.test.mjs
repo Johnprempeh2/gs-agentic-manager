@@ -57,7 +57,7 @@ test("a PR answer is yes when any one file matches, and lists why", () => {
 test("the S2 check judges only the S2 CI budgets and names what broke", () => {
   const config = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.json"), "utf8"));
   const selected = s2Budgets(config).budgets;
-  assert.equal(selected.length, 6);
+  assert.equal(selected.length, 7);
   assert.ok(selected.every((budget) => budget.number === "S2" && budget.input === "s2"));
 
   const stats = (medianMs, p95Ms) => ({ n: 20, medianMs, p95Ms });
@@ -65,6 +65,7 @@ test("the S2 check judges only the S2 CI budgets and names what broke", () => {
     issueDetailWarmContentPaint: stats(170, 210),
     issueDetailColdContentPaint: stats(490, 600),
     boardColdReady: stats(470, boardP95),
+    issueDetailWarmPageCodeRequests: { n: 20, median: 0, max: 0 },
   } } });
   const check = (data) => checkBudgets(s2Budgets(config), { group: "ci", readReport: () => data });
 
@@ -76,6 +77,13 @@ test("the S2 check judges only the S2 CI budgets and names what broke", () => {
   assert.equal(over.ok, false);
   assert.match(summarize(over), /^S2 page-load check: FAIL - over budget or not measured: board cold open p95\n/);
   assert.match(summarize(over), /OVER board cold open p95: 1300 ms \(limit 1120 ms; 1300 > max 1120\)/);
+
+  // A task page fetched on click again (GRE-2761) fails even when times pass.
+  const fetchedOnClick = report(560);
+  fetchedOnClick.s2.unthrottled.issueDetailWarmPageCodeRequests = { n: 20, median: 121, max: 121 };
+  const onClick = check(fetchedOnClick);
+  assert.equal(onClick.ok, false);
+  assert.match(summarize(onClick), /OVER issue detail warm open page-code requests: 121 \(limit 5; 121 > max 5\)/);
 
   const missing = check({});
   assert.equal(missing.ok, false);

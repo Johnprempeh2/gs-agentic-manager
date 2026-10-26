@@ -9,6 +9,7 @@ vi.mock("@/api/issues", () => ({
   issuesApi: {
     get: vi.fn(),
     listComments: vi.fn(),
+    getTree: vi.fn(),
   },
 }));
 
@@ -96,5 +97,17 @@ describe("prefetchIssueComments", () => {
       queryKeys.issues.comments(issue.identifier!),
     );
     expect(cachedComments?.pages).toEqual([firstPage]);
+  });
+
+  it("warms the tree check a plain task link waits on, so the click does not (GRE-2761)", async () => {
+    const issue = createIssue();
+    const tree = { rootId: issue.id, nodes: [], externalBlockers: [], truncated: false };
+    vi.mocked(issuesApi.listComments).mockResolvedValue([]);
+    vi.mocked(issuesApi.getTree).mockResolvedValue(tree as never);
+
+    await prefetchIssueDetailForNavigation(queryClient, issue.identifier!, { issue });
+
+    expect(issuesApi.getTree).toHaveBeenCalledWith(issue.identifier);
+    expect(queryClient.getQueryData(queryKeys.issueTree(issue.identifier!))).toEqual(tree);
   });
 });

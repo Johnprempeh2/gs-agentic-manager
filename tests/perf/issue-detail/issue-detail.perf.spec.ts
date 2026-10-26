@@ -30,6 +30,7 @@ type NetworkRecord = {
   status?: number;
   responseHeaders?: Record<string, string>;
   ttfbMs?: number;
+  startedAtEpochMs?: number;
   completedAtEpochMs?: number;
 };
 
@@ -44,6 +45,8 @@ type RunMetrics = {
   lcpMs: number | null;
   requestCountBeforeContentPaint: number;
   apiRequestCountBeforeContentPaint: number;
+  apiPathsBeforeContentPaint: string[];
+  pageCodeRequestsBeforeContentPaint: number;
   bytesBeforeContentPaint: number;
   jsBytesBeforeContentPaint: number;
   issueApiTtfbMs: number | null;
@@ -146,7 +149,15 @@ async function seed(request: Page["request"]): Promise<Seed> {
       const boardTitle = `Board ${status} card ${index} ${Date.now()}`;
       const response = await request.post(`/api/companies/${company.id}/issues`, {
         // in_progress needs an assignee; the local-trusted board user avoids waking any agent.
-        data: { title: boardTitle, description: `Seeded board card for ${status}.`, priority: "medium", status, ...(status === "in_progress" ? { assigneeUserId: "local-board" } : {}) },
+        // blocked needs a reason, just like a board-created blocked card.
+        data: {
+          title: boardTitle,
+          description: `Seeded board card for ${status}.`,
+          priority: "medium",
+          status,
+          ...(status === "in_progress" ? { assigneeUserId: "local-board" } : {}),
+          ...(status === "blocked" ? { unblockDescriptor: { owner: "board", action: "Seeded perf card" } } : {}),
+        },
       });
       expect(response.ok(), await response.text()).toBe(true);
       if (index === BOARD_ISSUES_PER_STATUS) boardMarkerTitles.push(boardTitle);
@@ -204,6 +215,7 @@ async function startNetworkCapture(session: Awaited<ReturnType<typeof configureP
       method: event.request.method,
       type: event.type ?? "Other",
       encodedDataLength: 0,
+      startedAtEpochMs: event.wallTime * 1000,
     });
   });
   session.on("Network.responseReceived", (event) => {
@@ -275,7 +287,8 @@ function summarizeNetwork(records: Map<string, NetworkRecord>, seedData: Seed, c
     && record.completedAtEpochMs <= contentPaintEpochMs
   );
   const api = completed.filter((record) => new URL(record.url).pathname.startsWith("/api/"));
-  const scripts = completed.filter((record) => record.type === "Script" || record.mimeType?.includes("javascript"));
+  const isScript = (record: NetworkRecord) => record.type === "Script" || record.mimeType?.includes("javascript");
+  const scripts = completed.filter(isScript);
   const issueApi = completed.find((record) => {
     const pathname = new URL(record.url).pathname;
     return record.method === "GET" && (pathname === `/api/issues/${seedData.issueId}` || pathname === `/api/issues/${seedData.identifier}`);
@@ -283,6 +296,14 @@ function summarizeNetwork(records: Map<string, NetworkRecord>, seedData: Seed, c
   return {
     requestCountBeforeContentPaint: completed.length,
     apiRequestCountBeforeContentPaint: api.length,
+    // Which API calls the first paint waited on, so a count change names its request.
+    apiPathsBeforeContentPaint: api.map((record) => `${record.method} ${new URL(record.url).pathname}${new URL(record.url).search}`),
+    // Script requests the open itself started. Counted by start, not bytes: lazily
+    // imported chunks can report 0 bytes. A warm open from a list should start none,
+    // because the list already fetched the task page (GRE-2761).
+    pageCodeRequestsBeforeContentPaint: [...records.values()].filter((record) =>
+      isScript(record) && record.startedAtEpochMs !== undefined && record.startedAtEpochMs <= contentPaintEpochMs
+    ).length,
     bytesBeforeContentPaint: completed.reduce((sum, record) => sum + record.encodedDataLength, 0),
     jsBytesBeforeContentPaint: scripts.reduce((sum, record) => sum + record.encodedDataLength, 0),
     issueApiTtfbMs: issueApi?.ttfbMs ?? null,
@@ -379,10 +400,12 @@ async function runBoardSample(browser: Browser, baseURL: string, storageState: s
 
 function buildMetricsSummary(results: RunMetrics[], boardResults: BoardMetrics[]) {
   const stats = (values: number[]) => ({ n: values.length, medianMs: Math.round(median(values)), p95Ms: Math.round(percentile(values, 95)), maxMs: Math.round(Math.max(...values)) });
+  const counts = (values: number[]) => ({ n: values.length, median: Math.round(median(values)), max: Math.max(...values) });
   return Object.fromEntries(PROFILES.map((profile) => [profile.name, {
     issueDetailWarmContentPaint: stats(results.filter((r) => r.profile === profile.name && r.scenario === "S1 warm in-app navigation").map((r) => r.contentPaintMs)),
     issueDetailColdContentPaint: stats(results.filter((r) => r.profile === profile.name && r.scenario === "S2 cold open").map((r) => r.contentPaintMs)),
     boardColdReady: stats(boardResults.filter((r) => r.profile === profile.name).map((r) => r.boardReadyMs)),
+    issueDetailWarmPageCodeRequests: counts(results.filter((r) => r.profile === profile.name && r.scenario === "S1 warm in-app navigation").map((r) => r.pageCodeRequestsBeforeContentPaint)),
   }]));
 }
 
@@ -413,7 +436,9 @@ function buildMarkdown(results: RunMetrics[], boardResults: BoardMetrics[] = [])
     "| Profile | Measure | N | Median | p95 | Max |",
     "| --- | --- | ---: | ---: | ---: | ---: |",
     ...Object.entries(buildMetricsSummary(results, boardResults)).flatMap(([profile, measures]) =>
-      Object.entries(measures).map(([measure, value]) => `| ${profile} | ${measure} | ${value.n} | ${formatMs(value.medianMs)} | ${formatMs(value.p95Ms)} | ${formatMs(value.maxMs)} |`)),
+      Object.entries(measures).map(([measure, value]) => "medianMs" in value
+        ? `| ${profile} | ${measure} | ${value.n} | ${formatMs(value.medianMs)} | ${formatMs(value.p95Ms)} | ${formatMs(value.maxMs)} |`
+        : `| ${profile} | ${measure} (requests) | ${value.n} | ${value.median} | - | ${value.max} |`)),
     "",
     "Raw samples and Chrome traces are in the same output directory.",
   ].join("\n");

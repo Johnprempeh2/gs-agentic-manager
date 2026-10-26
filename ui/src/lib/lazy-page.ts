@@ -20,10 +20,26 @@ function reloadOnceForStaleBundle(error: unknown): never {
 /**
  * A page loaded only when its route is opened, so the first screen on a phone
  * downloads less. `name` picks the export, since pages use named exports.
+ *
+ * `loaded` returns the module when a preload already fetched it. React then
+ * gets an already-settled thenable and renders the page without suspending,
+ * which skips React's 300 ms hold on content that follows a fallback.
  */
-export function lazyPage<M, K extends keyof M>(load: () => Promise<M>, name: K) {
-  return lazy(async () => {
-    const module = await load().catch(reloadOnceForStaleBundle);
-    return { default: module[name] as unknown as ComponentType<any> };
+export function lazyPage<M, K extends keyof M>(
+  load: () => Promise<M>,
+  name: K,
+  loaded?: () => M | undefined,
+) {
+  return lazy(() => {
+    const ready = loaded?.();
+    if (ready) {
+      const page = { default: ready[name] as unknown as ComponentType<any> };
+      // React reads a thenable that settles inside `then` as already loaded.
+      return { then: (resolve: (value: typeof page) => void) => resolve(page) } as unknown as Promise<typeof page>;
+    }
+    return load().then(
+      (module) => ({ default: module[name] as unknown as ComponentType<any> }),
+      reloadOnceForStaleBundle,
+    );
   }) as unknown as M[K];
 }

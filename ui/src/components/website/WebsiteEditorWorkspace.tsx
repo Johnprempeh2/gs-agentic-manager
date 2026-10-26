@@ -343,6 +343,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const openComments = comments?.length ?? 0;
   /** A pin clicked in the frame (GRE-2361): the thread the Comments drawer opens on. */
   const [commentFocus, setCommentFocus] = useState<{ n: number; issueId: string } | null>(null);
+  /** GRE-2518: the element over the page that Ask an agent's drawing layer renders into. */
+  const [markupHost, setMarkupHost] = useState<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<Mode>("edit");
   const phone = useIsPhone();
   /** GRE-2394: Edit copy on every open; a GS Studio hand-off needs Motion, so it opens in Layout. */
@@ -523,7 +525,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const captureFor = (target: WebsiteChangeTarget) => async () => {
     const result = await sessionRef.current?.capture(target.kind === "block" ? target.blockId : null);
     if (!result?.ok) return null;
-    return { file: websiteScreenshotFile(result.png, target.kind === "block" ? target.blockId : "page"), width: result.width };
+    return { file: websiteScreenshotFile(result.png, target.kind === "block" ? target.blockId : "page"), width: result.width, url: result.png };
   };
 
   const run = (command: WebsiteEditorCommand, on?: boolean) => sessionRef.current?.command(command, on) ?? false;
@@ -953,6 +955,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               )}
             </div>
           ) : null}
+          {/* GRE-2518: Ask an agent's drawing layer covers the page here; the drawer stays above it. */}
+          <div ref={setMarkupHost} data-testid="website-markup-host" />
         </div>
         {drawer ? (
           <EditorDrawer
@@ -1039,8 +1043,10 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 target={ask.target}
                 initialRequest={ask.request}
                 width={device}
+                displayWidth={width}
                 dirty={dirty}
                 capture={captureFor(ask.target)}
+                markupHost={markupHost}
                 onCancel={() => {
                   if (ask.picked) sessionRef.current?.highlight(null);
                   setAsk(null);

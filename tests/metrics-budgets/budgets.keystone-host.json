@@ -85,6 +85,18 @@
       "baseline": 812,
       "margin": "+50% (same margin as budgets.json). Median of 5 runs x 20 samples: 767, 784, 812, 852, 876 ms; worst run 1.08x baseline, 72% of the limit.",
       "max": 1220
+    },
+    {
+      "id": "s2-issue-warm-page-code-requests-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailWarmPageCodeRequests.median",
+      "samplesPath": "s2.unthrottled.issueDetailWarmPageCodeRequests.n",
+      "minSamples": 20,
+      "baseline": 0,
+      "margin": "Same guard as budgets.json; a count, so the host does not change it. Script requests a warm open from a list starts before its content paint. The list fetches the task page first, so the open starts none (GRE-2761). On bd15c6610 every open started about 121 and the warm median went from about 260 to 553 ms. A few are allowed for a small chunk a later change adds; a page fetched on click again fails.",
+      "max": 5
     }
   ]
 }

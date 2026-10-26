@@ -22,6 +22,10 @@ import { websiteTeamAgent } from "./pending-alert.js";
 // Ask an agent (GRE-2350) is the same task from the full-screen editor: a
 // selected block, or with nothing selected the whole page, plus the width the
 // person saw. The page's open tasks are its comments; the editor lists them.
+//
+// GRE-2518: the person can draw on the screenshot instead of, or as well as,
+// writing. The editor attaches the marked-up PNG and the vector JSON; the task
+// lists the markers and the labels so the agent can read them as text.
 
 export const WEBSITE_CHANGE_REQUEST_ORIGIN_KIND = "website_change_request";
 
@@ -31,6 +35,27 @@ function inline(value: string, max = 200) {
 }
 
 const WIDTH_LABELS = { laptop: "Laptop (1440 px)", tablet: "Tablet (768 px)", phone: "Phone (390 px)" } as const;
+
+/** What a comment with no words shows in the editor's Comments list. */
+export const WEBSITE_DRAWING_ONLY_REQUEST = "Drawing on the page";
+
+/** The task's lines about the person's drawing, or none when they did not draw. */
+function markupLines(markup: CreateWebsiteChangeRequest["markup"], blockId: string | null): string[] {
+  if (!markup) return [];
+  const marks = markup.marks === 1 ? "1 mark" : `${markup.marks} marks`;
+  // The editor names the files after the block, or `page` (see websiteScreenshotFile in the UI).
+  const stem = `website-${blockId ?? "page"}`;
+  return [
+    "**Their drawing**",
+    "",
+    `They drew ${marks} on the screenshot of ${blockId ? "the block" : "the page"}. Two more files are attached: the screenshot with the drawing on it (\`${stem}-markup.png\`) and the drawing as vector data in the screenshot's pixels (\`${stem}-markup.json\`).`,
+    ...(markup.markers > 0
+      ? [markup.markers === 1 ? "- Numbered marker: 1" : `- Numbered markers: 1 to ${markup.markers}, in the order placed`]
+      : []),
+    ...markup.labels.map((label) => `- Label: \`${inline(label, 120)}\``),
+    "",
+  ];
+}
 
 /**
  * The task's description ends with this hidden line, so the editor can list
@@ -153,10 +178,10 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
             ? "A person picked this block on the page and asked for a change."
             : "A person asked for a change to this page from the website editor.",
           "",
-          "**The change, in their words**",
-          "",
-          ...request.request.split(/\r?\n/).map((line) => `> ${line}`),
-          "",
+          ...(request.request
+            ? ["**The change, in their words**", "", ...request.request.split(/\r?\n/).map((line) => `> ${line}`), ""]
+            : ["They wrote no words: the drawing says what to change.", ""]),
+          ...markupLines(request.markup, blockId),
           ...reference,
           "",
           request.screenshot
@@ -240,7 +265,7 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
           identifier: row.identifier ?? null,
           title: row.title,
           status: row.status,
-          request: marker?.request ?? row.title,
+          request: marker ? marker.request || WEBSITE_DRAWING_ONLY_REQUEST : row.title,
           blockId: marker ? marker.blockId : originBlock,
           blockType: marker?.blockType ?? null,
           blockLabel: marker?.blockLabel ?? null,

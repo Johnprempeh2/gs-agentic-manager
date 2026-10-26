@@ -213,7 +213,7 @@ export function readDeepDiveInterviewContextPack(raw: unknown): DeepDiveIntervie
 }
 
 /** Invites may go out only when the round has a set and a person approved every one. */
-export function deepDiveInterviewReadiness(round: Pick<DeepDiveInterviewRound, "sets">) {
+export function deepDiveInterviewReadiness(round: { sets: readonly { status: DeepDiveInterviewSetStatus }[] }) {
   const approved = round.sets.filter((set) => set.status === "approved").length;
   return { total: round.sets.length, approved, ready: round.sets.length > 0 && approved === round.sets.length };
 }

@@ -300,6 +300,14 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
      */
     write: (method: WriteMethod, path: string, body: Record<string, unknown> | undefined, actor: WebsiteBridgeActor,
       idempotencyKey?: string) => send(method, path, body, actor, bridgeWriteSchema, idempotencyKey),
+    /**
+     * Parallel Interview (gs-interview-v1, GRE-2665): `path` is after `/api/admin/v1/interview/`, keyed by the
+     * website organisation id. The answer is parsed by the caller. Reads use the read key, writes the write key.
+     */
+    interviewRead: (path: string, query: Record<string, string | undefined>, actor: WebsiteBridgeActor) =>
+      get(`/api/admin/v1/interview/${path.replace(/^\/+/, "")}`, query, actor, z.record(z.string(), z.unknown())),
+    interviewWrite: (path: string, body: Record<string, unknown>, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
+      send("POST", `interview/${path.replace(/^\/+/, "")}`, body, actor, z.record(z.string(), z.unknown()), idempotencyKey),
     /** Records a refund request on the `refund_request` key. Moves no money. */
     requestRefund: (input: { orderId: string; amountMinor: number; reason: string }, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
       send("POST", "refund-requests", { orderId: input.orderId, amountMinor: input.amountMinor, reason: input.reason }, actor,

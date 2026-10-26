@@ -277,6 +277,55 @@ describeEmbeddedPostgres("website click to change", () => {
     expect(task!.description).not.toContain("No screenshot was sent");
   });
 
+  // GRE-2518: the person drew on the screenshot.
+  it("with a drawing the task names the marked-up files and lists the markers and labels", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const sent = {
+      ...body(a.page, { request: "Fix these." }),
+      screenshot: true,
+      markup: { marks: 4, markers: 2, labels: ["Too big", "Use `lime` --> here"] },
+    };
+    await request(app()).post(url(a.company.id, a.site.id, a.page.id)).send(sent).expect(201);
+    const [task] = await changeTasks(a.company.id);
+    expect(task!.description).toContain("They drew 4 marks on the screenshot of the block.");
+    expect(task!.description).toContain("`website-hero-1-markup.png`");
+    expect(task!.description).toContain("`website-hero-1-markup.json`");
+    expect(task!.description).toContain("- Numbered markers: 1 to 2, in the order placed");
+    expect(task!.description).toContain("- Label: `Too big`");
+    // A backtick in a label cannot break out of its code span.
+    expect(task!.description).toContain("- Label: `Use  lime  --> here`");
+    expect(task!.description).toContain("> Fix these.");
+  });
+
+  it("a drawing with no words makes a task; the Comments list says it is a drawing", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const sent = { requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId, request: "  ", screenshot: true, markup: { marks: 1, markers: 1, labels: [] } };
+    await http.post(target).send(sent).expect(201);
+    const [task] = await changeTasks(a.company.id);
+    expect(task!.description).toContain("They wrote no words: the drawing says what to change.");
+    expect(task!.description).toContain("They drew 1 mark on the screenshot of the page.");
+    expect(task!.description).toContain("`website-page-markup.png`");
+    expect(task!.description).toContain("- Numbered marker: 1");
+    expect(task!.description).not.toContain("**The change, in their words**");
+    const [listed] = (await http.get(target).expect(200)).body as WebsitePageComment[];
+    expect(listed!.request).toBe("Drawing on the page");
+  });
+
+  it("no words and no drawing, or a drawing without its screenshot, is refused", async () => {
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const target = url(a.company.id, a.site.id, a.page.id);
+    const base = { requestId: randomUUID(), pageRevisionId: a.page.latestRevisionId };
+    await http.post(target).send({ ...base, request: " ", screenshot: true }).expect(400);
+    await http.post(target).send({ ...base, request: "Here.", markup: { marks: 1, markers: 0, labels: [] } }).expect(400);
+    await http.post(target).send({ ...base, request: "Here.", screenshot: true, markup: { marks: 0, markers: 0, labels: [] } }).expect(400);
+    await http.post(target).send({ ...base, request: "Here.", screenshot: true, markup: { marks: 101, markers: 0, labels: [] } }).expect(400);
+    await http.post(target).send({ ...base, request: "Here.", screenshot: true, markup: { marks: 1, markers: 0, labels: ["x".repeat(121)] } }).expect(400);
+    expect(await changeTasks(a.company.id)).toHaveLength(0);
+  });
+
   it("a block id without its type, or a type without an id, is refused", async () => {
     const a = await seedWorld("Alpha", "alpha.test");
     const http = request(app());
