@@ -1,5 +1,8 @@
 import express from "express";
 import request from "supertest";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../errors.js";
 
@@ -2956,6 +2959,40 @@ describe.sequential("issue comment reopen routes", () => {
     await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
       "run-1", "Interrupted by board correction", expect.anything(),
     ), { timeout: 2_500 });
+  });
+
+  it("keeps a running Git write safe before applying a correction", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "issue-correction-git-"));
+    const gitDir = join(cwd, ".git");
+    const lock = join(gitDir, "index.lock");
+    try {
+      await mkdir(gitDir);
+      await writeFile(lock, "");
+      const issue = { ...makeIssue("in_progress"), executionRunId: "run-1" };
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockHeartbeatService.getRun.mockResolvedValue({
+        id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+        status: "running", runtimeMode: "legacy",
+        contextSnapshot: { issueId: issue.id, executionWorkspaceCwd: cwd },
+      });
+      mockHeartbeatService.cancelRun.mockResolvedValue({
+        id: "run-1", companyId: issue.companyId, agentId: issue.assigneeAgentId,
+        status: "cancelled",
+      });
+
+      const res = await request(await installActor(createApp()))
+        .post(`/api/issues/${issue.id}/comments`)
+        .send({ body: "Correct after commit", interrupt: true })
+        .timeout({ response: 3_000, deadline: 4_000 });
+      expect(res.status).toBe(201);
+      expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+      await rm(lock);
+      await vi.waitFor(() => expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
+        "run-1", "Interrupted by board correction", expect.anything(),
+      ), { timeout: 2_500 });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   it("cancels an active run when an issue is marked cancelled", async () => {
