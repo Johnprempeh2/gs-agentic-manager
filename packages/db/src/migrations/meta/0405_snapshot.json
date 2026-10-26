@@ -1,5 +1,5 @@
 {
-  "id": "bc83c1b6-ca4d-42f1-81f2-c9ea3eb84a1b",
+  "id": "e9c3e04b-5418-4bfd-a651-10ba9425e841",
   "prevId": "36f198df-69bb-4b64-ad13-235faebd5f8a",
   "version": "7",
   "dialect": "postgresql",
@@ -40406,13 +40406,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "resolver_user_ids": {
-          "name": "resolver_user_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "text",
@@ -47077,6 +47070,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_user_id": {
+          "name": "website_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "email": {
           "name": "email",
           "type": "text",
@@ -47198,6 +47197,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "organisation_contacts_company_website_user_idx": {
+          "name": "organisation_contacts_company_website_user_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "website_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"organisation_contacts\".\"website_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -47248,6 +47269,10 @@
         "organisation_contacts_source_check": {
           "name": "organisation_contacts_source_check",
           "value": "\"organisation_contacts\".\"source\" in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')"
+        },
+        "organisation_contacts_linked_no_email_check": {
+          "name": "organisation_contacts_linked_no_email_check",
+          "value": "\"organisation_contacts\".\"website_user_id\" is null or \"organisation_contacts\".\"email\" is null"
         }
       },
       "isRLSEnabled": false
@@ -48390,6 +48415,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_user_id": {
+          "name": "website_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "email": {
           "name": "email",
           "type": "text",
@@ -48491,6 +48522,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "pipeline_case_contacts_company_website_user_idx": {
+          "name": "pipeline_case_contacts_company_website_user_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "website_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"pipeline_case_contacts\".\"website_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -48537,7 +48590,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "pipeline_case_contacts_linked_no_email_check": {
+          "name": "pipeline_case_contacts_linked_no_email_check",
+          "value": "\"pipeline_case_contacts\".\"website_user_id\" is null or \"pipeline_case_contacts\".\"email\" is null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.pipeline_case_document_requests": {

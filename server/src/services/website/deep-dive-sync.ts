@@ -1,10 +1,12 @@
 // Deep Dive sync to the website (GRE-2439). The public site never queries GSAM,
 // so GSAM pushes: one client's Shared Deep Dive items, Shared files, the
-// document requests linked Shared to them, and published deliverables, as one
+// document requests linked Shared to them, published deliverables, and Shared
+// findings, opportunities and KPIs (GRE-2632), as one
 // snapshot the site stores under that client (the tenant). The snapshot is
 // whole, so an item unshared or a deliverable withdrawn is gone after the next
-// sync. Items reach the payload only through listSharedDeepDiveItemsForClient
-// and listSharedDeepDiveFilesForClient, so Internal items never leave GSAM.
+// sync. Items reach the payload only through listSharedDeepDiveItemsForClient,
+// listSharedDeepDiveFilesForClient and listSharedDeepDiveRecordsForClient, so
+// Internal items never leave GSAM.
 //
 // The site calls back, signed with its own key (gs-bridge-v1), when the client
 // answers a document request; GSAM then marks the request received.
@@ -31,7 +33,12 @@ import {
 } from "@greatstone/shared";
 import { isUniqueViolation } from "../../db-errors.js";
 import { conflict, notFound } from "../../errors.js";
-import { listSharedDeepDiveFilesForClient, listSharedDeepDiveItemsForClient, type DeepDiveClientScope } from "../deep-dive-sharing.js";
+import {
+  listSharedDeepDiveFilesForClient,
+  listSharedDeepDiveItemsForClient,
+  listSharedDeepDiveRecordsForClient,
+  type DeepDiveClientScope,
+} from "../deep-dive-sharing.js";
 import { bridgeCanonicalQuery, bridgeCanonicalString, type WebsiteBridgeActor } from "./data-bridge-client.js";
 import { websiteDataBridgeService, type BridgeSite, type WebsiteDataBridgeOptions } from "./data-bridge.js";
 
@@ -95,7 +102,7 @@ export async function buildDeepDiveSyncPayload(db: Db, scope: DeepDiveClientScop
     .where(and(eq(pipelineCases.id, scope.clientCaseId), eq(pipelineCases.companyId, scope.companyId)))
     .then((rows) => rows[0] ?? null);
   if (!client) throw notFound("Client not found");
-  const [items, files, requests, deliverables] = await Promise.all([
+  const [items, files, requests, deliverables, records] = await Promise.all([
     listSharedDeepDiveItemsForClient(db, scope),
     listSharedDeepDiveFilesForClient(db, scope),
     sharedDocumentRequests(db, scope),
@@ -109,8 +116,13 @@ export async function buildDeepDiveSyncPayload(db: Db, scope: DeepDiveClientScop
         isNotNull(clientDeliverablePublications.publishedAt),
       ))
       .orderBy(asc(clientDeliverablePublications.publishedAt), asc(clientDeliverablePublications.id)),
+    listSharedDeepDiveRecordsForClient(db, scope),
   ]);
   const sharedIds = new Set(items.map((item) => item.id));
+  const sharedFindings = new Map(records.findings.map((finding) => [finding.id, finding]));
+  const sharedOpportunityIds = new Set(records.opportunities.map((opportunity) => opportunity.id));
+  // A link to a stream, finding or opportunity is sent only when that record is in this payload.
+  const streamOf = (finding: { streamCaseId: string }) => (sharedIds.has(finding.streamCaseId) ? finding.streamCaseId : null);
   return {
     schema: DEEP_DIVE_SYNC_SCHEMA,
     tenantId: client.id,
@@ -144,6 +156,42 @@ export async function buildDeepDiveSyncPayload(db: Db, scope: DeepDiveClientScop
       status: row.status as "published" | "accepted",
       publishedAt: row.publishedAt!.toISOString(),
       acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,
+    })),
+    findings: records.findings.map((finding) => ({
+      id: finding.id,
+      streamItemId: streamOf(finding),
+      statement: finding.statement,
+      status: finding.status,
+      evidenceCount: finding.evidenceCount,
+      supersedesId: finding.supersedesFindingId && sharedFindings.has(finding.supersedesFindingId) ? finding.supersedesFindingId : null,
+      updatedAt: (finding.supersededAt ?? finding.decidedAt ?? finding.createdAt).toISOString(),
+    })),
+    opportunities: records.opportunities.map((row) => {
+      const findings = row.findingIds.flatMap((id) => sharedFindings.get(id) ?? []);
+      return {
+        id: row.id,
+        ref: row.ref,
+        title: row.name,
+        statement: row.statement,
+        desiredOutcome: row.desiredOutcome,
+        status: row.state,
+        findingIds: findings.map((finding) => finding.id),
+        streamItemIds: [...new Set(findings.flatMap((finding) => streamOf(finding) ?? []))],
+        updatedAt: row.updatedAt.toISOString(),
+      };
+    }),
+    kpis: records.kpis.map((row) => ({
+      id: row.id,
+      title: row.name,
+      definition: row.definition,
+      scope: row.scope,
+      unit: row.unit,
+      direction: row.direction,
+      baseline: Number(row.baseline),
+      baselinePeriod: row.baselinePeriod,
+      target: Number(row.target),
+      opportunityIds: row.opportunityIds.filter((id) => sharedOpportunityIds.has(id)),
+      updatedAt: row.updatedAt.toISOString(),
     })),
   };
 }
@@ -207,6 +255,9 @@ export function deepDiveSyncService(db: Db, options: DeepDiveSyncOptions = {}) {
         files: payload.files.length,
         documentRequests: payload.documentRequests.length,
         deliverables: payload.deliverables.length,
+        findings: payload.findings.length,
+        opportunities: payload.opportunities.length,
+        kpis: payload.kpis.length,
       },
     };
   }

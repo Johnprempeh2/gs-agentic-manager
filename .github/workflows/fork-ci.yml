@@ -85,6 +85,10 @@ jobs:
       - name: Every company page route is registered
         run: node scripts/check-company-routes.mjs
 
+      # GRE-2623: client users live in the website DB; CRM contacts reference them by website_user_id.
+      - name: No client email or password stored without a website user reference
+        run: node scripts/check-contact-identity.mjs && node --test scripts/check-contact-identity.test.mjs
+
       - name: Every test named in the release switch-test map exists
         run: node scripts/check-switch-tests-map.mjs
 
