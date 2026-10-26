@@ -16699,6 +16699,38 @@ registerCurrentRoute({
   responses: websiteModuleResponses,
 });
 
+const websiteBridgeReadResponses = {
+  ...websiteModuleResponses,
+  409: r.conflict,
+  422: r.unprocessable,
+  502: { description: "The site's signed read failed or the upstream response was invalid" },
+};
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/health`,
+  tags: ["website"],
+  summary: "Read fresh signed bridge health, including siteContract: 1 (website:view). No query parameters",
+  responses: websiteBridgeReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/activity-events`,
+  tags: ["website"],
+  summary: "Read a signed activity page (website:view). Cursor is a non-negative signed 64-bit decimal integer; limit is 1 to 100",
+  query: z.object({ cursor: z.string(), limit: z.string() }),
+  responses: websiteBridgeReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/schema`,
+  tags: ["website"],
+  summary: "Read signed table-existence booleans for billing_lines and client_activity_outbox, without customer rows (website:view). No query parameters",
+  responses: websiteBridgeReadResponses,
+});
+
 registerCurrentRoute({
   method: "post",
   path: `${siteParams}/data-bridge/key`,
