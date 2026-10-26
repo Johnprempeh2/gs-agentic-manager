@@ -9,6 +9,7 @@ import type { Db } from "@greatstone/db";
 import { websiteSite } from "@greatstone/db";
 import type {
   WebsiteCommerceListQuery,
+  WebsiteDataListQuery,
   WebsiteCommerceRefundRequestInput,
   WebsiteCommerceWriteMethod,
   WebsiteCommerceResource,
@@ -192,7 +193,7 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
 
   /** Commerce reads (GRE-2354 2c(a)): the same read key and the same audit on the site. */
   const commerce = {
-    async list(site: BridgeSite, resource: WebsiteCommerceResource, filters: WebsiteCommerceListQuery, actor: WebsiteBridgeActor) {
+    async list(site: BridgeSite, resource: WebsiteCommerceResource, filters: WebsiteCommerceListQuery | WebsiteDataListQuery, actor: WebsiteBridgeActor) {
       return (await client(site)).list(resource, filters, actor);
     },
     async get(site: BridgeSite, resource: WebsiteCommerceResource, id: string, page: { cursor?: string; limit?: number }, actor: WebsiteBridgeActor) {

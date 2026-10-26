@@ -114,6 +114,7 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const query = websiteDataListQuerySchema.safeParse(req.query);
     if (!query.success) throw unprocessable(`The filters are not valid: ${query.error.issues[0]?.path.join(".") || "query"}`, { code: "website_data_filters_invalid" });
     if (resource === "enquiries" && query.data.customer) throw unprocessable("Enquiries cannot be filtered by customer", { code: "website_data_filters_invalid" });
+    if (resource === "billing-lines" && !query.data.customer) throw unprocessable("Billing lines require a customer", { code: "website_data_filters_invalid" });
     res.json(await bridge.list(site, resource, query.data, actorOf(req)));
   });
 
@@ -246,6 +247,12 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     const resource = commerceResourceOf(req);
+    if (resource === "billing-lines") {
+      const query = queryOf(websiteDataListQuerySchema, req);
+      if (!query.customer) throw unprocessable("Billing lines require a customer", { code: "website_data_filters_invalid" });
+      res.json(await bridge.commerce.list(site, resource, query, actorOf(req)));
+      return;
+    }
     res.json(await bridge.commerce.list(site, resource, queryOf(websiteCommerceListQuerySchema, req), actorOf(req)));
   });
 
