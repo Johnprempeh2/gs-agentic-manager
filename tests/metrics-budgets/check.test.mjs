@@ -44,7 +44,7 @@ test("missing values, small samples and missing inputs fail closed", () => {
 test("the committed CI budgets fail on a regressed S2 report and pass at baseline", () => {
   const regress = (file) => {
     const report = fixtureFor(file);
-    if (file.includes("issue-detail")) report.s2.unthrottled.boardColdReady.p95Ms *= 3;
+    if (file.endsWith(config.inputs.s2)) report.s2.unthrottled.boardColdReady.p95Ms *= 3;
     return report;
   };
   const result = checkBudgets(config, { group: "ci", readReport: regress });

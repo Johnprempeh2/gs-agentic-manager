@@ -24,6 +24,13 @@ Override the sample count (minimum five) or port when needed:
 GSAM_ISSUE_PERF_RUNS=7 GSAM_ISSUE_PERF_PORT=3210 pnpm exec playwright test --config tests/perf/issue-detail/playwright.config.ts
 ```
 
+Each sample in `baseline.json` lists the API calls that finished before content
+paint (`apiPathsBeforeContentPaint`) and counts the script requests the open
+itself started (`pageCodeRequestsBeforeContentPaint`). A warm open should start
+none: the list fetches the task page first (GRE-2761). The count goes by
+request start, because lazily imported chunks can report 0 bytes in the
+DevTools protocol and drop out of the byte totals.
+
 Outputs include `baseline.md`, `baseline.json`, and a Chrome trace for the first run of each scenario/profile. Open `*.trace.json` in Chrome DevTools Performance to inspect the `issue-detail:*` user-timing marks.
 
 ## Task layout stability
