@@ -1,7 +1,7 @@
 {
   "_comment": "The one contract between GSAM and the website (GRE-2633). Canonical in gs-agentic-manager; the website vendors this folder with contracts/check.mjs --vendor. Never edit a copy by hand. Test data only.",
   "name": "gs-site-contract",
-  "version": 1,
+  "version": 2,
   "minSiteVersion": 1,
   "surfaces": {
     "bridgeHealth": {
