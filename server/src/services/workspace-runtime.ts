@@ -976,7 +976,14 @@ export async function refreshRemoteTrackingBaseRef(
     .catch(() => null);
   if (!remoteUrl) return [];
 
-  const auth = resolveGitAuth ? await resolveGitAuth(remoteUrl).catch(() => null) : null;
+  let auth: Awaited<ReturnType<GitRemoteAuthProvider>> = null;
+  try {
+    auth = resolveGitAuth ? await resolveGitAuth(remoteUrl) : null;
+  } catch {
+    // A consent denial must never turn into an unauthenticated fetch that can
+    // pick up a host credential helper or an ambient token.
+    return [`Could not refresh base ref ${baseRef}: Git authorization is unavailable.`];
+  }
   try {
     await runGit([
       ...(auth?.configArgs ?? []),
@@ -994,7 +1001,9 @@ export async function refreshRemoteTrackingBaseRef(
       .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, "$1***@")
       .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s"'?]*)\?[^\s"']*/gi, "$1?***");
     const authNote = auth
-      ? ` The fetch authenticated with ${auth.secretName ? `the ${auth.secretName} company-secret GitHub credential` : "the server-environment GitHub credential"}, which may have been rejected.`
+      ? auth.source === "anonymous"
+        ? " The fetch was anonymous."
+        : ` The fetch authenticated with ${auth.secretName ? `the ${auth.secretName} company-secret GitHub credential` : auth.source === "managed_connection" ? "the managed GitHub connection" : "the server-environment GitHub credential"}, which may have been rejected.`
       : "";
     return [`Could not refresh base ref ${baseRef} before preparing the execution workspace: ${message}${authNote}`];
   }
@@ -5177,6 +5186,7 @@ export async function runWorkspaceJobForControl(input: {
   workspace: RealizedExecutionWorkspace;
   command: Record<string, unknown>;
   adapterEnv?: Record<string, string>;
+  requiredEnv?: Record<string, string>;
   recorder?: WorkspaceOperationRecorder | null;
   metadata?: Record<string, unknown> | null;
 }) {
@@ -5196,7 +5206,7 @@ export async function runWorkspaceJobForControl(input: {
     phase: "workspace_provision",
     command: resolved.command,
     cwd: resolved.cwd,
-    env: resolved.env,
+    env: { ...resolved.env, ...(input.requiredEnv ?? {}) },
     label: `Workspace job "${resolved.name}"`,
     metadata: {
       workspaceCommandKind: "job",

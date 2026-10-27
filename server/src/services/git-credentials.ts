@@ -16,14 +16,10 @@ import { secretService } from "./secrets.js";
 import { toolAccessService } from "./tool-access.js";
 
 /**
- * Server-side git credentials for managed project checkouts and execution-workspace base
- * refreshes. Operators store a GitHub token as a company secret under one of the well-known
- * names below (the same convention the GitHub external-object provider reads); this module
- * resolves it and turns it into a git invocation that authenticates clone/fetch against
- * github.com over HTTPS without ever placing the token in argv, URLs, or on disk.
- *
- * The provider factory is deliberately the single seam for future credential sources (for
- * example a brokered GitHub connection): swap the factory, keep every call site unchanged.
+ * Server-side Git credential seam. Foreground task operations follow the live run identity.
+ * Background project operations require explicit project consent to one personal Connector
+ * grant; public repositories run anonymously. Legacy company secrets and server tokens remain
+ * available only to older non-project test/foreground paths, never as project consent.
  */
 
 /** Company-secret names probed for a GitHub token, in priority order. */
@@ -50,7 +46,7 @@ const GIT_CREDENTIAL_HELPER =
 
 export type GitCredential = {
   token: string;
-  source: "managed_connection" | "company_secret" | "server_env";
+  source: "managed_connection" | "company_secret" | "server_env" | "anonymous";
   /** The company-secret name the token came from; null for a server-environment token. */
   secretName: string | null;
   githubIdentity?: { userId: string; login: string };
@@ -165,6 +161,36 @@ export function buildGitAuthInvocation(credential: GitCredential): GitAuthInvoca
   };
 }
 
+/** Public project Git never inherits a host credential helper or token. */
+export function buildAnonymousGitAuthInvocation(): GitAuthInvocation {
+  const configEntries = [
+    ["credential.helper", ""],
+    ["url.https://github.com/.insteadOf", "git@github.com:"],
+    ["url.https://github.com/.insteadOf", "ssh://git@github.com/"],
+    ["url.https://github.com/.insteadOf", "git@www.github.com:"],
+    ["url.https://github.com/.insteadOf", "ssh://git@www.github.com/"],
+  ];
+  return {
+    configArgs: ["-c", "credential.helper="],
+    env: {
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_ASKPASS: "",
+      GH_TOKEN: "",
+      GITHUB_TOKEN: "",
+      [GIT_CREDENTIAL_TOKEN_ENV_KEY]: "",
+      GIT_CONFIG_COUNT: String(configEntries.length),
+      ...Object.fromEntries(configEntries.flatMap(([key, value], index) => [
+        [`GIT_CONFIG_KEY_${index}`, key],
+        [`GIT_CONFIG_VALUE_${index}`, value],
+      ])),
+    },
+    source: "anonymous",
+    secretName: null,
+  };
+}
+
 const GIT_AUTH_FAILURE_PATTERN =
   /authentication failed|could not read username|could not read password|invalid username or password|terminal prompts disabled|repository not found|not accessible|permission denied|HTTP 40[13]|The requested URL returned error: 40[13]/i;
 
@@ -182,6 +208,9 @@ export function describeGitAuthFailure(input: {
     return null;
   }
   if (input.used) {
+    if (input.used.source === "anonymous") {
+      return "The anonymous GitHub operation failed. The repository may be private, unavailable, or renamed.";
+    }
     const label = input.used.secretName
       ? `the ${input.used.secretName} company-secret GitHub credential`
       : input.used.source === "managed_connection"
@@ -219,6 +248,9 @@ export function createGitRemoteAuthProvider(
     heartbeatRunId?: string | null;
     responsibleUserId?: string | null;
     agentId?: string | null;
+    projectId?: string | null;
+    projectWorkspaceId?: string | null;
+    operation?: "prepare" | "inspect" | "remove";
   },
   deps?: {
     secrets?: GitCredentialSecretsDeps;
@@ -268,12 +300,38 @@ export function createGitRemoteAuthProvider(
   };
 
   return async (remoteUrl: string) => {
-    if (!isSupportedGitHubRemoteUrl(remoteUrl)) return null;
-    if (db && context?.heartbeatRunId && context.agentId) {
+    if (!isSupportedGitHubRemoteUrl(remoteUrl)) {
+      if (db && !context?.heartbeatRunId) {
+        throw new Error("Background Git remote is unsupported without project consent");
+      }
+      return null;
+    }
+    if (db && !context?.heartbeatRunId) {
+      const { projectGitAuthorizationService } = await import("./project-git-authorization.js");
+      const credential = await projectGitAuthorizationService(db).resolve({
+        companyId,
+        projectId: context?.projectId ?? null,
+        projectWorkspaceId: context?.projectWorkspaceId ?? null,
+        issueId: context?.issueId ?? null,
+        operation: context?.operation ?? null,
+        remoteUrl,
+      }, secrets);
+      if (!credential) return buildAnonymousGitAuthInvocation();
+      const invocation = buildGitAuthInvocation(credential);
+      return { ...invocation, env: {
+        ...invocation.env,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_SYSTEM: "/dev/null",
+        GIT_ASKPASS: "",
+      } };
+    }
+    if (db && context?.heartbeatRunId) {
+      if (!context.agentId) throw new Error("Foreground Git requires an agent identity");
       const [run] = await db.select({ contextId: heartbeatRuns.activeIdentityContextId }).from(heartbeatRuns).where(and(
         eq(heartbeatRuns.id, context.heartbeatRunId), eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, context.agentId),
       ));
-      if (run?.contextId) {
+      if (!run?.contextId) throw new Error("Foreground Git requires an active run identity");
+      if (run.contextId) {
         const { resolveGitHubOperationCredentials } = await import("./github-operation-credentials.js");
         const result = await resolveGitHubOperationCredentials(db, {
           companyId, runId: context.heartbeatRunId, agentId: context.agentId,
@@ -395,6 +453,7 @@ export async function resolveManagedGitHubIdentitySelection(
     agentId?: string | null;
     allowStandingDelegation?: boolean;
     excludeGrantId?: string;
+    explicitGrantId?: string;
     /**
      * Skip grants that can never yield a git identity: no GitHub account details and a
      * connection whose connector profile is not `github.code`, so nothing will ever fill
@@ -435,6 +494,7 @@ export async function resolveManagedGitHubIdentitySelection(
   const allGrants = await db.select().from(connectionGrants).where(and(
     eq(connectionGrants.companyId, companyId),
     inArray(connectionGrants.connectionId, [...eligibleConnectionIds]),
+    context.explicitGrantId ? eq(connectionGrants.id, context.explicitGrantId) : undefined,
     or(eq(connectionGrants.kind, "agent"), eq(connectionGrants.kind, "user")),
   ));
   const canCarryGitHubDetails = (grant: typeof connectionGrants.$inferSelect) =>
@@ -594,6 +654,7 @@ export async function resolveManagedGitHubCredential(
     responsibleUserId?: string | null;
     agentId?: string | null;
     allowStandingDelegation?: boolean;
+    explicitGrantId?: string;
   },
 ): Promise<{ configured: boolean; identitySource?: "personal" | "dedicated"; credential?: GitCredential; error?: string }> {
   const gitContext = { ...context, requireGitToken: true, requireGitHubDetails: true };
@@ -722,6 +783,7 @@ export async function resolveManagedGitHubCredential(
   } catch {
     failure = { configured: true, identitySource: selection.identitySource, error: "GitHub credentials are temporarily unavailable" };
   }
+  if (context.explicitGrantId) return failure;
   // Retry credential acquisition, never the GitHub operation. An alternate
   // authorization must still belong to this exact principal and account.
   const accountId = selection.grant.providerTenant?.github?.userId;

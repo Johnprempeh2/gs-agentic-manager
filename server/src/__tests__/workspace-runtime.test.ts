@@ -663,6 +663,14 @@ describe("resolveRuntimeProvisionCommand", () => {
 });
 
 describe("refreshRemoteTrackingBaseRef git auth", () => {
+  it("does not fetch with ambient credentials after project consent is denied", async () => {
+    const { repoRoot } = await createClonedRepoWithRemote();
+    await runGit(repoRoot, ["remote", "set-url", "origin", path.join(os.tmpdir(), "paperclip-missing-remote", "repo.git")]);
+    const warnings = await refreshRemoteTrackingBaseRef(repoRoot, "origin/master", async () => {
+      throw new Error("Project GitHub authorization unavailable");
+    });
+    expect(warnings).toEqual(["Could not refresh base ref origin/master: Git authorization is unavailable."]);
+  });
   it("offers the remote URL to the provider and keeps ambient behavior when it returns null", async () => {
     const { remotePath, repoRoot } = await createClonedRepoWithRemote();
     const offeredUrls: string[] = [];

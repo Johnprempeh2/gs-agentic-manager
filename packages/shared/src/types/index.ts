@@ -406,7 +406,7 @@ export type {
   DocumentTextRange,
   UpdateDocumentAnnotationThreadRequest,
 } from "./document-annotation.js";
-export type { Project, ProjectRepository, ProjectRepositoryOptions, ProjectBudgetSummary, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectManagedByPlugin, ProjectWorkspace, ProjectWorkspaceCheckoutHead, ProjectWorkspacePreviewUpdateState, ProjectWorkspacePreviewUpdateStatus, ProjectWorkspacePreviewUpdateTrigger } from "./project.js";
+export type { Project, ProjectRepository, ProjectRepositoryOptions, ProjectGitAuthorization, ProjectBudgetSummary, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectManagedByPlugin, ProjectWorkspace, ProjectWorkspaceCheckoutHead, ProjectWorkspacePreviewUpdateState, ProjectWorkspacePreviewUpdateStatus, ProjectWorkspacePreviewUpdateTrigger } from "./project.js";
 export type {
   CompanySearchCountType,
   CompanySearchExtractIssueResult,

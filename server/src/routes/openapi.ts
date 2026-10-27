@@ -1579,6 +1579,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies/{companyId}/ai-connections/login/{sessionId}",
 
   "GET /api/companies/{companyId}/project-repositories",
+  "GET /api/projects/{id}/git-authorization",
+  "PUT /api/projects/{id}/git-authorization",
   "PUT /api/projects/{id}/repositories",
   "DELETE /api/issues/{id}/documents/{key}",
   "GET /api/companies/{companyId}/decisions",
@@ -5425,6 +5427,30 @@ registry.registerPath({
 });
 
 // ─── Projects ────────────────────────────────────────────────────────────────
+
+const projectGitAuthorizationResponse = z.object({
+  grantId: z.string().uuid().nullable(),
+  authorizedByUserId: z.string().nullable(),
+  options: z.array(z.object({ grantId: z.string().uuid(), connectionName: z.string(), login: z.string() })),
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{id}/git-authorization",
+  tags: ["projects"],
+  summary: "Read explicit background project Git consent and eligible personal GitHub grants",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(projectGitAuthorizationResponse), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/projects/{id}/git-authorization",
+  tags: ["projects"],
+  summary: "Select or revoke the signed-in project writer's personal GitHub grant",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(z.object({ grantId: z.string().uuid().nullable() }).strict()) },
+  responses: { 200: r.ok(projectGitAuthorizationResponse), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
 
 registry.registerPath({
   method: "get",

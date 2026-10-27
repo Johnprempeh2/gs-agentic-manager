@@ -2831,7 +2831,10 @@ function defaultAdditionalProjectWorkspaceDeps(
         resolveGitAuth:
           input.resolveGitAuth ??
           resolveGitAuth ??
-          createGitRemoteAuthProvider(db, input.companyId),
+          createGitRemoteAuthProvider(db, input.companyId, {
+            projectId: input.projectId,
+            operation: "prepare",
+          }),
       }),
     ensureManagedProjectWorkspace: (input) =>
       ensureManagedProjectWorkspace({
@@ -2839,7 +2842,10 @@ function defaultAdditionalProjectWorkspaceDeps(
         resolveGitAuth:
           input.resolveGitAuth ??
           resolveGitAuth ??
-          createGitRemoteAuthProvider(db, input.companyId),
+          createGitRemoteAuthProvider(db, input.companyId, {
+            projectId: input.projectId,
+            operation: "prepare",
+          }),
       }),
     // A realized workspace must hold real content. An empty directory gives the agent an empty
     // referenced workspace, so treat an empty directory the same as a missing one.
@@ -12937,6 +12943,7 @@ export function heartbeatService(
       readNonEmptyString(context.issueId) ?? readNonEmptyString(context.taskId);
     const resolveGitAuth = createGitRemoteAuthProvider(db, agent.companyId, {
       issueId,
+      operation: "prepare",
       heartbeatRunId: readNonEmptyString(context.executionIdentityRunId),
       responsibleUserId:
         readNonEmptyString(context.responsibleUserId) ??
@@ -13199,6 +13206,7 @@ export function heartbeatService(
       readNonEmptyString(context.issueId) ?? readNonEmptyString(context.taskId);
     const resolveGitAuth = createGitRemoteAuthProvider(db, agent.companyId, {
       issueId,
+      operation: "prepare",
       heartbeatRunId: readNonEmptyString(context.executionIdentityRunId),
       responsibleUserId:
         readNonEmptyString(context.responsibleUserId) ??
