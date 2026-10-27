@@ -45,6 +45,15 @@ The selection stores the exact grant and consenting user; there is no automatic
 migration for existing projects. Share with agents, an old task identity,
 company secrets, and server tokens do not authorize background project Git.
 
+Project Configuration shows the current selection and only the signed-in
+writer's eligible personal grants. A writer must choose a grant and confirm
+background Git access to private repositories linked to this project before
+saving. The saved state changes only after the PUT succeeds. A selected grant
+from another writer is shown as unverified here; a writer can replace or revoke
+it. If their own selected grant is no longer eligible, Configuration marks it
+unavailable and offers replacement or revocation. When no personal grant is
+eligible, the section directs the writer to connect GitHub in Apps.
+
 Each background request must name the host project operation and match a current
 project workspace and repository. The server rechecks the consenting writer's
 company and project access, project trust policy, selected grant state, and

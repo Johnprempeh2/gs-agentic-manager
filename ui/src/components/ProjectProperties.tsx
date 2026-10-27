@@ -28,6 +28,7 @@ import { noContactAutofill } from "@/lib/no-contact-autofill";
 interface ProjectPropertiesProps {
   project: Project;
   repositories?: ReactNode;
+  gitAuthorization?: ReactNode;
   onUpdate?: (data: Record<string, unknown>) => void;
   onFieldUpdate?: (field: ProjectConfigFieldKey, data: Record<string, unknown>) => void;
   getFieldSaveState?: (field: ProjectConfigFieldKey) => ProjectFieldSaveState;
@@ -181,7 +182,7 @@ function ArchiveDangerZone({
   );
 }
 
-export function ProjectProperties({ project, repositories, onUpdate, onFieldUpdate, getFieldSaveState, onArchive, archivePending }: ProjectPropertiesProps) {
+export function ProjectProperties({ project, repositories, gitAuthorization, onUpdate, onFieldUpdate, getFieldSaveState, onArchive, archivePending }: ProjectPropertiesProps) {
   const { visible: workspaceIsolationControlsVisible } = useWorkspaceIsolationControls();
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
@@ -433,6 +434,7 @@ export function ProjectProperties({ project, repositories, onUpdate, onFieldUpda
           )}
         </PropertyRow>
         {repositories ?? <ProjectRepositories key={project.id} project={project} />}
+        {gitAuthorization}
         <PropertyRow
           label={<FieldLabel label="Env" state={fieldState("env")} />}
           alignStart
