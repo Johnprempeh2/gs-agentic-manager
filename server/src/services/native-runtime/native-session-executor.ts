@@ -14,6 +14,7 @@ import { nativeCompletionFeedback } from "./native-completion-feedback.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent } from "../acknowledged-native-stop.js";
 import { stoppedCodexTurnIsTextOnly } from "./stopped-codex-turn.js";
 import { prepareVerifiedRemoteProviderPack } from "./remote-provider-pack.js";
+import { remoteProviderPackAuthority } from "./remote-provider-pack-authority.js";
 import { readNativeLocalProcessStop, PROCESS_START_REQUESTED } from "../native-local-process-stop.js";
 import { remoteLeaseCleanupScope } from "../remote-execution-termination.js";
 import { resolveConnectorAssignments, isConnectorSkill } from "../connector-runtime.js";
@@ -70,6 +71,8 @@ import {
   completeRetainedNativeSessionCleanup,
   completeTerminatedLocalNativeSessionCleanup,
   acpxRuntimeSessionDirectoryName,
+  OPENCODE_ISOLATED_HOMES_DIRECTORY,
+  opencodeRuntimeSessionDirectoryName,
   createNativeSessionBackend,
   createRunnerdCodexTransport,
   executeNativeSession,
@@ -183,6 +186,7 @@ import {
 type ActiveNativeSession = {
   session: NativeSession;
   cancelRequested: boolean;
+  cancellationSettled?: Promise<void>;
   restartDetach?: Promise<void>;
 };
 
@@ -220,6 +224,7 @@ type NativeSessionStartup = {
   promise: Promise<ActiveNativeSession | null>;
   resolve: (session: ActiveNativeSession | null) => void;
   stopRequested?: boolean;
+  restartAdmissionPending?: boolean;
   cancellationSettled?: Promise<void>;
 };
 const nativeSessionStartups = new Map<string, NativeSessionStartup>();
@@ -232,6 +237,7 @@ function detachActiveNativeSessionForRestart(active: ActiveNativeSession) {
 async function waitForNativeSessionStartup(
   runId: string,
   timeoutError: () => Error = () => new Error("native_restart_startup_not_ready"),
+  timeoutMs = 30_000,
 ) {
   const startup = nativeSessionStartups.get(runId);
   if (!startup) return null;
@@ -240,7 +246,7 @@ async function waitForNativeSessionStartup(
     return await Promise.race([
       startup.promise,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(timeoutError()), 30_000);
+        timer = setTimeout(() => reject(timeoutError()), timeoutMs);
       }),
     ]);
   } finally {
@@ -254,15 +260,40 @@ export async function detachNativeSessionsForRestart(
   detachedRunIds: string[];
   inactiveRunIds: string[];
   unsupportedRunIds: string[];
+  pendingRunIds: string[];
 }> {
   const detachedRunIds: string[] = [];
   const inactiveRunIds: string[] = [];
   const unsupportedRunIds: string[] = [];
+  const pendingRunIds: string[] = [];
+  const deadline = Date.now() + 30_000;
   for (const runId of new Set(runIds)) {
     nativeRunsDetachingForRestart.add(runId);
-    const active = activeNativeSessions.get(runId) ?? await waitForNativeSessionStartup(runId);
+    let active = activeNativeSessions.get(runId);
+    if (!active) {
+      const startup = nativeSessionStartups.get(runId);
+      if (startup && Date.now() >= deadline) {
+        pendingRunIds.push(runId);
+        continue;
+      }
+      if (startup) startup.restartAdmissionPending = true;
+      try {
+        active = await waitForNativeSessionStartup(runId, undefined, Math.max(0, deadline - Date.now())) ?? undefined;
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== "native_restart_startup_not_ready") throw error;
+        pendingRunIds.push(runId);
+        continue;
+      } finally {
+        if (startup) startup.restartAdmissionPending = false;
+      }
+    }
     if (!active) {
       inactiveRunIds.push(runId);
+      continue;
+    }
+    const stopping = nativeSessionStartups.get(runId);
+    if (stopping?.stopRequested || active.cancelRequested) {
+      pendingRunIds.push(runId);
       continue;
     }
     if (active.session.detachControllerForRestart === undefined) {
@@ -272,7 +303,7 @@ export async function detachNativeSessionsForRestart(
     await detachActiveNativeSessionForRestart(active);
     detachedRunIds.push(runId);
   }
-  return { detachedRunIds, inactiveRunIds, unsupportedRunIds };
+  return { detachedRunIds, inactiveRunIds, unsupportedRunIds, pendingRunIds };
 }
 const MAX_REMOTE_CHECKPOINT_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_REMOTE_CHECKPOINT_EXPANDED_BYTES = 64 * 1024 * 1024;
@@ -5248,7 +5279,10 @@ export function resolveNativeHarnessPersistenceProfile(
         ? {
             name: "opencode",
             location: "filesystem",
-            excludeEntries: [],
+            excludeEntries: [
+              `${opencodeRuntimeSessionDirectoryName(nativeSessionKey(execution))}/${OPENCODE_ISOLATED_HOMES_DIRECTORY}`,
+              `${opencodeRuntimeSessionDirectoryName(nativeSessionKey(execution))}/config/opencode/node_modules`,
+            ],
           }
         : execution.provider.kind === "acpx"
           ? {
@@ -5259,13 +5293,17 @@ export function resolveNativeHarnessPersistenceProfile(
               // they may point outside the runtime tree and are neither safe
               // nor necessary to restore. Credentials and launch-time config
               // are also re-materialized in the replacement sandbox.
-              excludeEntries:
-                execution.provider.agent === "codex"
+              excludeEntries: [
+                ...["home/.npm", "data/pnpm/store"].map((entry) =>
+                  `acpx/${acpxRuntimeSessionDirectoryName(nativeSessionKey(execution))}/${entry}`,
+                ),
+                ...(execution.provider.agent === "codex"
                   ? CODEX_HOME_NON_PERSISTENT_ENTRIES.map(
                       (entry) =>
                         `acpx/${acpxRuntimeSessionDirectoryName(nativeSessionKey(execution))}/codex-home/${entry}`,
                     )
-                  : [],
+                  : []),
+              ],
             }
           : null;
   return {
@@ -6795,6 +6833,7 @@ export async function cancelNativeSession(
   // Do not acknowledge a no-op Stop and let that owner submit a turn afterwards.
   const startup = runStop && !activeNativeSessions.has(runId) ? nativeSessionStartups.get(runId) : undefined;
   let settleStartupCancellation: (() => void) | undefined;
+  let settleActiveCancellation: (() => void) | undefined;
   if (startup) {
     startup.stopRequested = true;
     startup.cancellationSettled = new Promise<void>(resolve => { settleStartupCancellation = resolve; });
@@ -6807,6 +6846,7 @@ export async function cancelNativeSession(
       dispatched = true;
       if (!active.cancelRequested) {
         active.cancelRequested = true;
+        active.cancellationSettled = new Promise<void>(resolve => { settleActiveCancellation = resolve; });
         try {
           if (active.session.cancel) {
             const cancellationAbort = new AbortController();
@@ -7016,6 +7056,7 @@ export async function cancelNativeSession(
     return { dispatched, decision, decisionId, auditId };
   } finally {
     settleStartupCancellation?.();
+    settleActiveCancellation?.();
   }
 }
 
@@ -7204,6 +7245,9 @@ export async function executePaperclipNativeSession(input: {
   ) => Promise<unknown>;
 }): Promise<AdapterExecutionResult> {
   const runId = input.execution.binding.runId;
+  if (nativeRunsDetachingForRestart.has(runId)) {
+    throw new NativeControllerDetachedForRestartError();
+  }
   if (nativeSessionStartups.has(runId)) {
     throw new Error("native_session_supervisor_busy");
   }
@@ -7730,6 +7774,17 @@ async function executePaperclipNativeSessionWithinScope(
     resolve: resolveNativeRuntimeRequest,
   });
   let completedConversationReply: PrpEvent | null = null;
+  const assertControllerActive = () => {
+    if (nativeRunsDetachingForRestart.has(input.execution.binding.runId)) {
+      throw new NativeControllerDetachedForRestartError();
+    }
+  };
+  const startupForAdmission = nativeSessionStartups.get(input.execution.binding.runId);
+  const assertRunAdmissionActive = () => {
+    if (startupForAdmission?.restartAdmissionPending &&
+        nativeSessionStartups.get(input.execution.binding.runId) === startupForAdmission) return;
+    assertControllerActive();
+  };
   const controlPlane = new PaperclipControlPlanePort(
     input.db,
     {
@@ -7744,6 +7799,8 @@ async function executePaperclipNativeSessionWithinScope(
       controlPlaneSourceInstanceId: controlPlaneInstanceId,
     },
     {
+      assertControllerActive,
+      assertRunAdmissionActive,
       onCommittedEvent: async (event) => {
         await toolTrace.observe(event);
         if (event.eventType === "item.completed" &&
@@ -8439,6 +8496,10 @@ async function executePaperclipNativeSessionWithinScope(
                   eq(heartbeatRuns.agentId, input.execution.binding.agentId),
                 )).limit(1);
                 const cancellation = record(currentRun?.resultJson?.nativeCancellation);
+                if (active.cancelRequested) {
+                  await active.cancellationSettled;
+                  throw new NativeCancellationPendingRecoveryError();
+                }
                 if (!currentRun || currentRun.status !== "running" ||
                     currentRun.resultJson?.startupCancellation ||
                     (cancellation.scope === "run" &&
@@ -8448,11 +8509,15 @@ async function executePaperclipNativeSessionWithinScope(
                   // callback fails; no provider turn may follow publication.
                   throw new NativeCancellationPendingRecoveryError();
                 }
-                if (session.resolveRuntimeRequest) await liveQuestions.attach();
                 if (nativeRunsDetachingForRestart.has(input.execution.binding.runId)) {
                   if (session.detachControllerForRestart) await detachActiveNativeSessionForRestart(active);
+                  throw new NativeControllerDetachedForRestartError();
                 }
-                if (active.cancelRequested) throw new NativeCancellationPendingRecoveryError();
+                if (session.resolveRuntimeRequest) await liveQuestions.attach();
+                if (active.cancelRequested) {
+                  await active.cancellationSettled;
+                  throw new NativeCancellationPendingRecoveryError();
+                }
               } else {
                 liveQuestions.close();
                 activeNativeSessions.delete(input.execution.binding.runId);
@@ -10633,21 +10698,31 @@ async function createRunnerdBackendWithinSessionClaim(
       input.execution.provider.kind === "acpx");
   const configuredProviderPackRoot =
     input.runnerRemoteProviderPackPath?.trim() || null;
-  let expectedProviderPackManifest: RemoteProviderPackManifest | null = null;
-  if (requiresRemoteProviderPack) {
-    if (
-      !configuredProviderPackRoot ||
-      !existsSync(configuredProviderPackRoot) ||
-      !lstatSync(configuredProviderPackRoot).isDirectory()
-    ) {
-      throw new Error(
-        "runner_remote_provider_artifact_incompatible: configure GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH with the build-owned provider pack",
-      );
-    }
-    expectedProviderPackManifest = readRemoteProviderPackManifest(
-      configuredProviderPackRoot,
-    );
-  }
+  const providerPackAuthority = requiresRemoteProviderPack
+    ? remoteProviderPackAuthority<RemoteProviderPackManifest>({
+        stateDirectory: root,
+        binding: {
+          companyId: input.execution.binding.companyId,
+          agentId: input.execution.binding.agentId,
+          runId: input.execution.binding.runId,
+          workspaceId: input.execution.binding.executionWorkspaceId,
+          sessionId: nativeSessionKey(input.execution),
+          runnerInstanceId: effectiveRunnerInstanceId,
+          environmentLeaseId: effectiveEnvironmentLeaseId,
+          remoteCwd: remoteTarget!.remoteCwd,
+          providerDigest: nativeSha256(input.execution.provider),
+        },
+        reattach: input.restartRecovery?.kind === "reattach_remote_runner",
+        current: () => {
+          if (!configuredProviderPackRoot || !existsSync(configuredProviderPackRoot) ||
+              !lstatSync(configuredProviderPackRoot).isDirectory()) {
+            throw new Error("runner_remote_provider_artifact_incompatible: configure GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH with the build-owned provider pack");
+          }
+          return readRemoteProviderPackManifest(configuredProviderPackRoot);
+        },
+      })
+    : null;
+  const expectedProviderPackManifest = providerPackAuthority?.manifest ?? null;
   const stagedRemoteProviderPackRoot = remoteRuntimeRoot
     ? posix.join(remoteRuntimeRoot, "provider-pack")
     : null;
@@ -10953,6 +11028,7 @@ async function createRunnerdBackendWithinSessionClaim(
       await verifyRemoteRunner(requiredMode);
       if (requiresRemoteProviderPack && stagedRemoteProviderPackRoot) {
         await verifyRemoteProviderPack(stagedRemoteProviderPackRoot);
+        providerPackAuthority?.recordVerified();
         activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
       }
       remotePrepared = true;
@@ -11279,6 +11355,7 @@ async function createRunnerdBackendWithinSessionClaim(
         },
       });
       activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
+      providerPackAuthority?.recordVerified();
       if (packSource === "staged") {
         await input.onLog?.(
           "stderr",
@@ -12373,6 +12450,7 @@ async function createRunnerdBackendWithinSessionClaim(
           : undefined,
         runnerProcessLauncher: remoteProcessLauncher,
         runnerReconnectGraceMs: remoteTarget ? 120_000 : undefined,
+        runnerProcessReconnectGraceMs: remoteTarget ? null : undefined,
         adoptExistingRunner: adoptedProcess,
         environment: effectiveRunnerEnvironment,
         onDiagnostic: (message) => {

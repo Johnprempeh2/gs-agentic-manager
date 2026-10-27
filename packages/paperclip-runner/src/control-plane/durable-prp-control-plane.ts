@@ -223,6 +223,11 @@ interface SecureChannel {
   sessionId: string;
 }
 
+/** The callback has not dispatched a business operation. */
+export class SemanticToolNotDispatchedError extends Error {
+  constructor() { super("semantic_tool_not_dispatched"); }
+}
+
 export interface DurablePrpControlPlaneOptions {
   stateDirectory: string;
   identity: DurableRecoveryIdentity;
@@ -3236,9 +3241,14 @@ export class DurablePrpControlPlane {
           .then((outcome) =>
             queueResult(outcome.result, outcome.isError === true),
           )
-          .catch(() =>
-            queueResult({ code: "semantic_tool_bridge_failed" }, true),
-          )
+          .catch((error: unknown) => {
+            if (error instanceof SemanticToolNotDispatchedError) {
+              queueResult({ error: { code: "semantic_tool_not_dispatched", retryable: false,
+                message: "The turn stopped before this operation was dispatched." } }, true);
+              return;
+            }
+            queueResult({ code: "semantic_tool_bridge_failed" }, true);
+          })
           .finally(() => this.#pendingSemanticCalls.delete(commandId));
       }
     }

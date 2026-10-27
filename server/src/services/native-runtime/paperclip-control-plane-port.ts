@@ -74,6 +74,8 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
   readonly #db: Db;
   readonly #binding: PaperclipControlPlaneBinding;
   #sessionId: string | null = null;
+  readonly #assertControllerActive?: () => void;
+  readonly #assertRunAdmissionActive?: () => void;
   readonly #onCommittedEvent?: (event: PrpEvent) => Promise<void>;
   readonly #onDuplicateEvent?: (event: PrpEvent) => Promise<void>;
 
@@ -81,11 +83,15 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
     db: Db,
     binding: PaperclipControlPlaneBinding,
     options: {
+      assertControllerActive?: () => void;
+      assertRunAdmissionActive?: () => void;
       onCommittedEvent?: (event: PrpEvent) => Promise<void>;
       onDuplicateEvent?: (event: PrpEvent) => Promise<void>;
     } = {},
   ) {
     this.#db = db;
+    this.#assertControllerActive = options.assertControllerActive;
+    this.#assertRunAdmissionActive = options.assertRunAdmissionActive ?? options.assertControllerActive;
     this.#binding = structuredClone(binding);
     this.#onCommittedEvent = options.onCommittedEvent;
     this.#onDuplicateEvent = options.onDuplicateEvent;
@@ -103,6 +109,7 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
   }
 
   async openRun(input: OpenControlPlaneRunInput): Promise<void> {
+    this.#assertRunAdmissionActive?.();
     const identity = input.identity;
     if (
       identity.companyId !== this.#binding.companyId
@@ -125,6 +132,7 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
     if (!run || !this.#matchesPersistedBinding(run)) {
       throw new Error("native_open_run_not_authorized");
     }
+    this.#assertRunAdmissionActive?.();
     this.#sessionId = identity.sessionId;
   }
 
@@ -152,6 +160,7 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
   }
 
   async checkpointSession(snapshot: PersistedNativeSession): Promise<void> {
+    this.#assertControllerActive?.();
     const identity = snapshot.identity;
     if (
       identity.companyId !== this.#binding.companyId
@@ -183,6 +192,7 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
   }
 
   async appendEvent(value: NativeRunEvent | PrpEvent) {
+    this.#assertControllerActive?.();
     if (!isPrpEvent(value)) throw new Error("native_legacy_event_not_supported");
     const validated = validatePrpEvent(value);
     if (!validated.ok) throw new Error(`native_event_schema_invalid:${validated.issues[0]?.message ?? "unknown"}`);
@@ -267,6 +277,7 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
   }
 
   async completeRun(value: NativeRunResult | CompleteControlPlaneRunInput): Promise<void> {
+    this.#assertControllerActive?.();
     if (!isCompleteInput(value)) throw new Error("native_structured_result_required");
     // Capture compatibility diagnostics before canonical validation removes
     // legacy/non-actionable attention payloads. They are operator evidence,

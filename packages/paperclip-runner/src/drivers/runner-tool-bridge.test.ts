@@ -30,6 +30,25 @@ async function rpc(
 }
 
 describe("runner semantic MCP bridge", () => {
+  it("lets bridge close cancel a durable call without a request timeout", async () => {
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const bridge = await startRunnerToolBridge({
+      tools: [tool("documents.read")],
+      timeoutMs: null,
+      handler: ({ signal }) => new Promise((_resolve, reject) => {
+        entered();
+        signal.addEventListener("abort", () => reject(new Error("handler aborted")), { once: true });
+      }),
+    });
+    bridges.push(bridge);
+    const response = rpc(bridge, { id: "durable", method: "tools/call",
+      params: { name: "documents.read", arguments: {} } });
+    await started;
+    await bridge.close();
+    expect(await (await response).json()).toMatchObject({ result: { isError: true } });
+  });
+
   it("binds to loopback, requires authentication, and exposes a closed catalog", async () => {
     const bridge = await startRunnerToolBridge({
       secret: "session-secret",

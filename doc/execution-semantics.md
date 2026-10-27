@@ -1257,6 +1257,25 @@ controller must recover it through the authenticated ownership checks. This
 preserves active work and queued messages without treating a server restart as
 user cancellation.
 
+Remote runner processes stay alive through a controller outage until their
+authenticated connection lease expires. The controller still has a bounded
+reconnect attempt. Durable semantic tool calls wait for the recovered handler
+before dispatch, and bridge close or turn cancellation ends pending calls.
+Claude's native HTTP MCP client has a one-hour call budget so its default
+60-second timeout does not reject a call during a recoverable outage.
+
+Registered startups share a 30-second shutdown deadline to finish run admission
+and publish their exact session for detachment. The old controller still checks
+the saved run binding. It cannot checkpoint, publish events or settle the run
+after the restart fence. A startup that misses the deadline stays pending for
+reconciliation; it does not hold up detachment of other sessions. A pending
+Stop keeps cancellation with its current owner and prevents a new prompt.
+
+For remote OpenCode and ACPX runs, the controller saves the provider pack
+manifest only after verifying the remote pack. On reattach it can use that
+run-bound manifest even if a newer release removed the old local pack path.
+It still verifies the remote bytes before the provider starts.
+
 Before either shutdown path exits, idle warm sessions close through their
 normal suspend-and-checkpoint path. Remote sessions therefore leave verified
 backup authority for the next controller even though their last run is already

@@ -25,6 +25,7 @@ import {
 } from "@greatstone/db";
 import {
   acpxRuntimeSessionDirectoryName,
+  opencodeRuntimeSessionDirectoryName,
   createPrpSemanticToolInputEnvelope,
   createPrpSemanticToolResultEnvelope,
   validatePrpStructuredRunResult,
@@ -1215,13 +1216,26 @@ describe("native harness persistence profiles", () => {
     });
   });
 
-  it("excludes only nested Codex launch state from ACPX recovery", () => {
+  it("excludes disposable OpenCode homes and package installs from recovery", () => {
+    const opencode = profile({ kind: "opencode" }, "opencode_server");
+    const sessionDirectory = opencodeRuntimeSessionDirectoryName("session");
+    expect(opencode.directories.find((directory) => directory.name === "opencode")).toMatchObject({
+      excludeEntries: [
+        `${sessionDirectory}/homes`,
+        `${sessionDirectory}/config/opencode/node_modules`,
+      ],
+    });
+  });
+
+  it("excludes ACPX caches and nested Codex launch state from recovery", () => {
     const acpx = profile({ kind: "acpx", agent: "codex" }, "acpx_runtime");
     const sessionDirectory = acpxRuntimeSessionDirectoryName("session");
     expect(
       acpx.directories.find((directory) => directory.name === "acpx"),
     ).toMatchObject({
       excludeEntries: [
+        `acpx/${sessionDirectory}/home/.npm`,
+        `acpx/${sessionDirectory}/data/pnpm/store`,
         `acpx/${sessionDirectory}/codex-home/tmp`,
         `acpx/${sessionDirectory}/codex-home/.tmp`,
         `acpx/${sessionDirectory}/codex-home/auth.json`,
@@ -1233,7 +1247,10 @@ describe("native harness persistence profiles", () => {
         { kind: "acpx", agent: "claude" },
         "acpx_runtime",
       ).directories.find((directory) => directory.name === "acpx"),
-    ).toMatchObject({ excludeEntries: [] });
+    ).toMatchObject({ excludeEntries: [
+      `acpx/${sessionDirectory}/home/.npm`,
+      `acpx/${sessionDirectory}/data/pnpm/store`,
+    ] });
   });
 });
 
@@ -4911,7 +4928,7 @@ describe("native startup restart detachment", () => {
       const detached = detachNativeSessionsForRestart([restarting.binding.runId]).catch(error => error);
       if (exceedDeadline) {
         await vi.advanceTimersByTimeAsync(30_000);
-        expect(await detached).toMatchObject({ message: "native_restart_startup_not_ready" });
+        expect(await detached).toMatchObject({ pendingRunIds: [restarting.binding.runId] });
         vi.useRealTimers();
       } else {
         release();
@@ -8194,6 +8211,7 @@ describe("runnerd provider runtime wiring", () => {
     expect(state.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({
         externallySandboxed: true,
+        runnerProcessReconnectGraceMs: null,
         environment: expect.objectContaining({
           GSAM_RUNNER_EXTERNAL_SANDBOX: "1",
         }),

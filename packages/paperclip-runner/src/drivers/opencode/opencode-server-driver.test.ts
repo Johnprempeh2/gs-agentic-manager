@@ -838,10 +838,12 @@ describe("OpenCodeServerDriver", () => {
     );
     const skillRoot = join(root, "skill-source");
     const instructionRoot = join(root, "instruction-source");
+    const legacyHome = join(root, "context", "home-retired");
     roots.push(root, workspace);
     await Promise.all([
       mkdir(join(skillRoot, "references"), { recursive: true }),
       mkdir(instructionRoot, { recursive: true }),
+      mkdir(legacyHome, { recursive: true }),
     ]);
     await Promise.all([
       writeFile(
@@ -890,14 +892,16 @@ describe("OpenCodeServerDriver", () => {
       GSAM_EXECUTION_PROMPT,
     );
     const sessionRoot = join(root, "context");
-    const isolatedHomes = (await readdir(sessionRoot)).filter((entry) =>
+    const isolatedHomes = (await readdir(join(sessionRoot, "homes"))).filter((entry) =>
       entry.startsWith("home-"),
     );
     expect(isolatedHomes).toHaveLength(1);
+    await expect(lstat(legacyHome)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(
       readFile(
         join(
           sessionRoot,
+          "homes",
           isolatedHomes[0]!,
           ".claude",
           "skills",
