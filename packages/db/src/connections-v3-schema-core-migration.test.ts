@@ -34,6 +34,9 @@ describeEmbeddedPostgres("connections v3 schema core migration", () => {
     `;
     expect(chatForeignKey?.definition).toBeTruthy();
     await sql`ALTER TABLE "chat_endpoints" DROP CONSTRAINT "chat_endpoints_company_connection_fk"`;
+    // Migration 0412 adds a project reference to grants. Remove that later
+    // schema's FK before rewinding the 0182 grant tables in this fixture.
+    await sql`ALTER TABLE "projects" DROP CONSTRAINT "projects_git_authorization_grant_id_connection_grants_id_fk"`;
 
     await sql`DELETE FROM "drizzle"."__drizzle_migrations" WHERE "hash" = ${await migrationHash()}`;
     // AI defaults arrive in 0273/0277 and depend on the composite grant key
