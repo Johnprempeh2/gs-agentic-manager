@@ -52,7 +52,7 @@ export function ProjectGitAuthorization({ companyId, projectId }: { companyId: s
     <div className="space-y-1">
       <h2 className="text-sm font-semibold">Background Git access</h2>
       <p className="text-sm text-muted-foreground">
-        Choose a personal GitHub Connector grant for this project. When private repository access is needed,
+        Choose a personal GitHub Connector grant for this project. When access to private repositories linked to this project is needed,
         managed workspace clone, base ref fetch and preview update use the selected grant. Access is checked for each operation.
       </p>
     </div>
@@ -84,7 +84,7 @@ export function ProjectGitAuthorization({ companyId, projectId }: { companyId: s
           {choice && choice !== selected && <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" className="mt-1 accent-primary" checked={consentChecked} disabled={save.isPending}
               onChange={(event) => setConsentChecked(event.target.checked)} />
-            <span>I allow this project to use the selected personal GitHub grant for background Git on its private repository.</span>
+            <span>I allow this project to use the selected personal GitHub grant for background Git on private repositories linked to this project.</span>
           </label>}
           <Button type="button" disabled={!choice || choice === selected || !consentChecked || save.isPending}
             onClick={() => { setSaveError(null); save.mutate(choice); }}>

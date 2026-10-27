@@ -71,6 +71,8 @@ describe("ProjectGitAuthorization", () => {
     expect(container.textContent).toContain("No grant selected");
     const allow = Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent?.includes("Allow background Git"))!;
     expect(allow.disabled).toBe(true);
+    expect(container.querySelector('input[type="checkbox"]')?.closest("label")?.textContent)
+      .toContain("private repositories linked to this project");
     await act(async () => { container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(); });
     expect(allow.disabled).toBe(false);
     await click("Allow background Git");
