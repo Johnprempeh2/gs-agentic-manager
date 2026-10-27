@@ -49,6 +49,7 @@ import {
 } from "../hooks/useResourceMemberships";
 import { ErrorState } from "../components/ErrorState";
 import { ProjectClientChips } from "../components/ProjectClientChips";
+import { ProjectGitAuthorization } from "../components/ProjectGitAuthorization";
 
 /* ── Top-level tab types ── */
 
@@ -952,6 +953,7 @@ export function ProjectDetail() {
         <div className="max-w-4xl">
           <ProjectProperties
             project={project}
+            gitAuthorization={<ProjectGitAuthorization key={project.id} companyId={project.companyId} projectId={project.id} />}
             onUpdate={(data) => updateProject.mutate(data)}
             onFieldUpdate={updateProjectField}
             getFieldSaveState={(field) => fieldSaveStates[field] ?? "idle"}
