@@ -9,7 +9,6 @@ import type {
   WebsiteDataBridgeStatus,
   WebsiteDataListQuery,
   WebsiteDataResource,
-  WebsiteActivityItem,
 } from "@greatstone/shared";
 
 // The website admin bridge (GRE-2323): the "Website data" row on Site connection.
@@ -23,9 +22,6 @@ const dataPath = (companyId: string, siteId: string, resource: WebsiteDataResour
 export type WebsiteDataRecord = Record<string, unknown>;
 
 export const websiteDataBridgeApi = {
-  /** Stored events for one website organisation ID, across that company's sites. */
-  activity: (companyId: string, organisationId: string, cursor?: string) =>
-    api.get<{ items: WebsiteActivityItem[]; nextCursor: string | null }>(`/companies/${encodeURIComponent(companyId)}/website/activity/${encodeURIComponent(organisationId)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   /** Whether GSAM can read the site's records now (website:view). Checked at most once a minute. */
   status: (companyId: string, siteId: string) => api.get<WebsiteDataBridgeStatus>(`${bridgePath(companyId, siteId)}/status`),
   /** A new read key (website:publish, people only). Returns the public key for the site's GSAM_BRIDGE_KEYS, never the private key. */
