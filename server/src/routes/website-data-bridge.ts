@@ -64,19 +64,16 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
       res.status(404).json({ error: "Not found" });
       return;
     }
-    let cursor: { occurredAt: Date; siteId: string; sequence: bigint } | undefined;
+    let cursor: { siteId: string; sequence: bigint } | undefined;
     if (req.query.cursor !== undefined) {
       if (typeof req.query.cursor !== "string" || req.query.cursor.length > 300 || !/^[A-Za-z0-9_-]+$/.test(req.query.cursor)) {
         throw unprocessable("Invalid activity cursor");
       }
       try {
         const parts: unknown = JSON.parse(Buffer.from(req.query.cursor, "base64url").toString("utf8"));
-        if (!Array.isArray(parts) || parts.length !== 3 || typeof parts[0] !== "string" ||
-          typeof parts[1] !== "string" || typeof parts[2] !== "string" || !UUID_RE.test(parts[1]) ||
-          !/^[1-9]\d*$/.test(parts[2])) throw new Error("invalid");
-        const occurredAt = new Date(parts[0]);
-        if (Number.isNaN(occurredAt.valueOf()) || occurredAt.toISOString() !== parts[0]) throw new Error("invalid");
-        cursor = { occurredAt, siteId: parts[1], sequence: BigInt(parts[2]) };
+        if (!Array.isArray(parts) || parts.length !== 2 || typeof parts[0] !== "string" ||
+          typeof parts[1] !== "string" || !/^[1-9]\d*$/.test(parts[0]) || !UUID_RE.test(parts[1])) throw new Error("invalid");
+        cursor = { siteId: parts[1], sequence: BigInt(parts[0]) };
       } catch { throw unprocessable("Invalid activity cursor"); }
     }
     const companySites = await sites.listSites(companyId);

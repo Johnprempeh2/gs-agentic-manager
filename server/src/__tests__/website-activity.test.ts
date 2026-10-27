@@ -103,17 +103,20 @@ describeDb("website activity pull", () => {
     expect(await db.select().from(websiteActivityEvents).where(eq(websiteActivityEvents.siteId, row.id))).toHaveLength(1);
   });
 
-  it("pages a client stream without losing events at equal timestamps", async () => {
+  it("pages by source sequence when event timestamps differ", async () => {
     const row = await site();
-    const events = Array.from({ length: 101 }, (_, index) => event(index + 1));
+    const events = Array.from({ length: 101 }, (_, index) => ({ ...event(index + 1),
+      occurredAt: index % 2 === 0 ? "2026-10-25T12:00:00.000Z" : "2026-10-24T12:00:00.000Z" }));
     const service = websiteActivityService(db, { read: async (_site, cursor) => cursor === "0"
       ? batch(events.slice(0, 100), cursor) : batch(events.slice(100), cursor) });
     expect(await service.pullSite(row)).toBe(101);
     const first = await service.list(row.companyId, organisationId);
     expect(first.items).toHaveLength(100);
     expect(first.nextCursor).not.toBeNull();
-    const [at, siteId, sequence] = JSON.parse(Buffer.from(first.nextCursor!, "base64url").toString("utf8")) as [string, string, string];
-    const second = await service.list(row.companyId, organisationId, { occurredAt: new Date(at), siteId, sequence: BigInt(sequence) });
+    const [sequence, siteId] = JSON.parse(Buffer.from(first.nextCursor!, "base64url").toString("utf8")) as [string, string];
+    const second = await service.list(row.companyId, organisationId, { siteId, sequence: BigInt(sequence) });
+    expect([...first.items, ...second.items].map((item) => item.sequence))
+      .toEqual(Array.from({ length: 101 }, (_, index) => String(101 - index)));
     expect(second.items.map((item) => item.sequence)).toEqual(["1"]);
     expect(second.nextCursor).toBeNull();
   });
@@ -140,6 +143,9 @@ describeDb("website activity pull", () => {
     await db.insert(principalPermissionGrants).values({ companyId: first.companyId, principalType: "agent", principalId: agent!.id, permissionKey: "website:view", scope: { siteIds: [first.id] } });
     const allowed = await request(app).get(path).expect(200);
     expect(allowed.body.items.map((item: { siteId: string }) => item.siteId)).toEqual([first.id]);
+    const afterSecond = Buffer.from(JSON.stringify(["2", first.id])).toString("base64url");
+    const paged = await request(app).get(path).query({ cursor: afterSecond }).expect(200);
+    expect(paged.body.items.map((item: { sequence: string }) => item.sequence)).toEqual(["1"]);
     await instanceSettingsService(db).updateExperimental({ enableWebsiteView: false });
     const disabled = await request(app).get(path).expect(403);
     expect(disabled.body.details?.code ?? disabled.body.code).toBe("not_entitled");

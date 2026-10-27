@@ -52,22 +52,20 @@ export function websiteActivityService(db: Db, reader: WebsiteActivityReader) {
 
   return {
     pullSite,
-    async list(companyId: string, organisationId: string, cursor?: { occurredAt: Date; siteId: string; sequence: bigint }, siteIds?: string[]) {
+    async list(companyId: string, organisationId: string, cursor?: { siteId: string; sequence: bigint }, siteIds?: string[]) {
       if (siteIds?.length === 0) return { items: [], nextCursor: null };
       const rows = await db.select().from(websiteActivityEvents).where(and(
         eq(websiteActivityEvents.companyId, companyId), eq(websiteActivityEvents.organisationId, organisationId),
         ...(siteIds ? [inArray(websiteActivityEvents.siteId, siteIds)] : []),
         ...(cursor ? [or(
-          lt(websiteActivityEvents.occurredAt, cursor.occurredAt),
-          and(eq(websiteActivityEvents.occurredAt, cursor.occurredAt), lt(websiteActivityEvents.siteId, cursor.siteId)),
-          and(eq(websiteActivityEvents.occurredAt, cursor.occurredAt), eq(websiteActivityEvents.siteId, cursor.siteId),
-            lt(websiteActivityEvents.sequence, cursor.sequence)),
+          lt(websiteActivityEvents.sequence, cursor.sequence),
+          and(eq(websiteActivityEvents.sequence, cursor.sequence), lt(websiteActivityEvents.siteId, cursor.siteId)),
         )] : []),
-      )).orderBy(desc(websiteActivityEvents.occurredAt), desc(websiteActivityEvents.siteId), desc(websiteActivityEvents.sequence)).limit(101);
+      )).orderBy(desc(websiteActivityEvents.sequence), desc(websiteActivityEvents.siteId)).limit(101);
       const items = rows.slice(0, 100).map((row) => ({ ...row, sequence: String(row.sequence) }));
       const last = rows[99];
       return { items, nextCursor: rows.length > 100 && last
-        ? Buffer.from(JSON.stringify([last.occurredAt.toISOString(), last.siteId, String(last.sequence)])).toString("base64url")
+        ? Buffer.from(JSON.stringify([String(last.sequence), last.siteId])).toString("base64url")
         : null };
     },
   };
