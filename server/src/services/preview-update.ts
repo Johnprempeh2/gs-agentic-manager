@@ -10,6 +10,9 @@
  * branch; the update is skipped and the reason is shown on the card.
  */
 import { execFile as execFileCallback } from "node:child_process";
+import { realpathSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { projectWorkspaces, workspaceRuntimeServices, type Db } from "@greatstone/db";
@@ -43,10 +46,32 @@ export const PREVIEW_AUTO_UPDATE_TICK_MS = 3 * 60 * 1000;
 const GIT_TIMEOUT_MS = 30_000;
 const MESSAGE_MAX_CHARS = 500;
 
+function previewGitRuntimeEnv(): Record<string, string> {
+  const launcher = process.env.GSAM_GITHUB_LAUNCHER_DIR;
+  const realPath = (entry: string) => {
+    try { return realpathSync(entry); } catch { return path.resolve(entry); }
+  };
+  const realLauncher = launcher ? realPath(launcher) : null;
+  return {
+    // An agent-started sandbox can inherit the run's Git launcher even after
+    // GSAM_* is removed. It replaces the selected grant and drops the local
+    // origin rewrite, so these controller-owned operations must use host Git.
+    PATH: (process.env.PATH ?? "").split(path.delimiter).filter((entry) => {
+      const directory = realPath(entry);
+      return directory !== realLauncher && path.basename(path.dirname(directory)) !== "paperclip-github-runtime";
+    }).join(path.delimiter),
+    GIT_CONFIG_PARAMETERS: "",
+    // The launcher profile can put itself back on PATH in a configured shell job.
+    BASH_ENV: os.devNull,
+    ENV: os.devNull,
+    ZDOTDIR: os.devNull,
+  };
+}
+
 async function git(cwd: string, args: string[], auth?: GitAuthInvocation | null) {
   const result = await execFile("git", ["-C", cwd, ...(auth?.configArgs ?? []), ...args], {
     timeout: GIT_TIMEOUT_MS,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...(auth?.env ?? {}) },
+    env: { ...process.env, ...previewGitRuntimeEnv(), GIT_TERMINAL_PROMPT: "0", ...(auth?.env ?? {}) },
   });
   return result.stdout.trim();
 }
@@ -344,6 +369,7 @@ export function defaultDeps(db: Db): PreviewUpdateDeps {
         adapterEnv: {},
         requiredEnv: {
           ...anonymousEnv,
+          ...previewGitRuntimeEnv(),
           GIT_CONFIG_COUNT: String(configIndex + 1),
           [`GIT_CONFIG_KEY_${configIndex}`]: `url.${cwd}.insteadOf`,
           [`GIT_CONFIG_VALUE_${configIndex}`]: remoteUrl,
