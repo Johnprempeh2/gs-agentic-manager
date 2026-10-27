@@ -23,6 +23,7 @@ export function websiteActivityService(db: Db, reader: WebsiteActivityReader) {
       for (const item of batch.items) {
         const sequence = BigInt(item.sequence);
         if (sequence <= last) throw new Error("Website activity page is unordered or replays an acknowledged event");
+        if (sequence !== last + 1n) throw new Error("Website activity page skips a source sequence");
         last = sequence;
       }
       if (batch.nextCursor !== String(last)) throw new Error("Website activity cursor does not name the last event");

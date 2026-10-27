@@ -42,16 +42,32 @@ describeDb("website activity pull", () => {
     const calls: string[] = [];
     const service = websiteActivityService(db, { read: async (_site, cursor) => {
       calls.push(cursor);
-      return cursor === "0" ? batch([event(1), event(3)], cursor)
-        : cursor === "3" ? batch([event(4)], cursor) : batch([], cursor);
+      return cursor === "0" ? batch([event(1), event(2)], cursor)
+        : cursor === "2" ? batch([event(3)], cursor) : batch([], cursor);
     } });
     expect(await service.pullSite(row)).toBe(2);
     expect(await service.pullSite(row)).toBe(1);
     expect(await service.pullSite(row)).toBe(0);
-    expect(calls).toEqual(["0", "3", "4"]);
+    expect(calls).toEqual(["0", "2", "3"]);
     const events = await db.select().from(websiteActivityEvents).where(eq(websiteActivityEvents.siteId, row.id)).orderBy(asc(websiteActivityEvents.sequence));
-    expect(events.map((item) => Number(item.sequence))).toEqual([1, 3, 4]);
-    expect((await service.list(row.companyId, organisationId)).items.map((item) => item.sequence)).toEqual(["4", "3", "1"]);
+    expect(events.map((item) => Number(item.sequence))).toEqual([1, 2, 3]);
+    expect((await service.list(row.companyId, organisationId)).items.map((item) => item.sequence)).toEqual(["3", "2", "1"]);
+  });
+
+  it("rejects a source gap without advancing the cursor, then replays the filled page", async () => {
+    const row = await site();
+    let gap = true;
+    const service = websiteActivityService(db, { read: async (_site, cursor) => cursor === "0"
+      ? batch(gap ? [event(1), event(3)] : [event(1), event(2), event(3)], cursor)
+      : batch([], cursor) });
+    await expect(service.pullSite(row)).rejects.toThrow(/skips a source sequence/);
+    expect(await db.select().from(websiteActivityEvents).where(eq(websiteActivityEvents.siteId, row.id))).toHaveLength(0);
+    const [cursorBeforeReplay] = await db.select().from(websiteActivityCursors).where(eq(websiteActivityCursors.siteId, row.id));
+    expect(cursorBeforeReplay!.sequence).toBe(0n);
+    gap = false;
+    expect(await service.pullSite(row)).toBe(3);
+    const [cursorAfterReplay] = await db.select().from(websiteActivityCursors).where(eq(websiteActivityCursors.siteId, row.id));
+    expect(cursorAfterReplay!.sequence).toBe(3n);
   });
 
   it("rejects a skipped cursor and leaves the page replayable", async () => {
@@ -65,7 +81,7 @@ describeDb("website activity pull", () => {
 
   it("refuses an unordered page without saving a partial stream", async () => {
     const row = await site();
-    const service = websiteActivityService(db, { read: async () => batch([event(5), event(4)], "0") });
+    const service = websiteActivityService(db, { read: async () => batch([event(1), event(1)], "0") });
     await expect(service.pullSite(row)).rejects.toThrow(/unordered/);
     expect(await db.select().from(websiteActivityEvents).where(eq(websiteActivityEvents.siteId, row.id))).toHaveLength(0);
   });
