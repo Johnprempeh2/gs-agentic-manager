@@ -34,7 +34,25 @@ workspace, including when no local folders are configured. Local execution and s
 staging use the same layout; sandbox restore preserves each repository's Git history.
 See [Project Repository Checkouts](DEVELOPING.md#project-repository-checkouts) for paths,
 ignore rules, and reuse behavior. Responsible-user credential rules still apply.
-A repository selection never delegates credentials.
+A repository selection never delegates credentials. Foreground task Git still
+uses the current run identity. Background checkout preparation and workspace
+rebuilds use a separate, explicit project authorization. An active project
+writer selects their own active personal GitHub Connector grant with
+`PUT /api/projects/:id/git-authorization` and `{ "grantId": "<grant UUID>" }`.
+`GET /api/projects/:id/git-authorization` lists that writer's eligible grants
+and the project's current selection. Sending `{ "grantId": null }` revokes it.
+The selection stores the exact grant and consenting user; there is no automatic
+migration for existing projects. Share with agents, an old task identity,
+company secrets, and server tokens do not authorize background project Git.
+
+Each background request must name the host project operation and match a current
+project workspace and repository. The server rechecks the consenting writer's
+company and project access, project trust policy, selected grant state, and
+current Connector repository permission before issuing a token. Another grant
+for the same GitHub account cannot replace the selected grant. Public GitHub
+repositories use an anonymous Git invocation. Private or unknown repositories
+without consent fail before a credential is supplied. Archived projects cannot
+acquire new background Git credentials.
 
 ## Discovery and setup
 
