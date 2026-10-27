@@ -301,30 +301,34 @@ export function WebsiteChangeAttachments({
         <ul className="space-y-1.5" aria-label="Attached">
           {drafts.map((draft) => {
             const title = draftTitle(draft);
+            // The note takes the full row, so its hint fits in the narrow drawer and on a phone (GRE-2759).
             return (
-              <li key={draft.key} className="flex items-start gap-2 rounded-md border border-border p-1.5" data-testid="website-change-attachment" data-kind={draft.kind}>
+              <li
+                key={draft.key}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 rounded-md border border-border p-1.5"
+                data-testid="website-change-attachment"
+                data-kind={draft.kind}
+              >
                 <DraftThumb draft={draft} />
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="truncate text-xs">
-                    <span className="text-muted-foreground">{draftSource(draft)} · </span>
-                    <span className="font-medium" title={title}>{title}</span>
-                  </p>
-                  <Input
-                    value={draft.note}
-                    onChange={(event) => onNote(draft.key, event.target.value.replace(/[\r\n]+/g, " "))}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !(event.metaKey || event.ctrlKey)) event.preventDefault();
-                    }}
-                    maxLength={NOTE_MAX}
-                    placeholder="Note (optional), e.g. this colour"
-                    aria-label={`Note for ${title}`}
-                    className="h-8"
-                    disabled={disabled}
-                  />
-                </div>
+                <p className="truncate text-xs">
+                  <span className="text-muted-foreground">{draftSource(draft)} · </span>
+                  <span className="font-medium" title={title}>{title}</span>
+                </p>
                 <Button type="button" size="icon-sm" variant="ghost" aria-label={`Remove ${title}`} disabled={disabled} onClick={() => onRemove(draft.key)}>
                   <X />
                 </Button>
+                <Input
+                  value={draft.note}
+                  onChange={(event) => onNote(draft.key, event.target.value.replace(/[\r\n]+/g, " "))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !(event.metaKey || event.ctrlKey)) event.preventDefault();
+                  }}
+                  maxLength={NOTE_MAX}
+                  placeholder="Note (optional), e.g. this colour"
+                  aria-label={`Note for ${title}`}
+                  className="col-span-3 h-8"
+                  disabled={disabled}
+                />
               </li>
             );
           })}

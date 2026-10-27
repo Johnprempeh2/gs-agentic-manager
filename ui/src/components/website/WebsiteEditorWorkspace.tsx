@@ -1144,7 +1144,7 @@ const DRAWER_TITLES: Record<Exclude<Drawer, null>, string> = {
  * narrows and reflows instead of hiding under it; below lg it lies over the
  * right of the canvas, and on a phone it is a bottom sheet. Not modal.
  */
-function EditorDrawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function EditorDrawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <aside
       aria-label={title}
