@@ -1,8 +1,21 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, CalendarClock, FileText, Mail, Pencil, Phone, StickyNote } from "lucide-react";
-import type { CrmFile, CrmTimelineEntry, OrganisationHistory } from "@greatstone/shared";
+import {
+  DEEP_DIVE_INTERVIEW_INVITE_LABELS,
+  DEEP_DIVE_INTERVIEW_LABELS,
+  DEEP_DIVE_PROPOSAL_KINDS,
+  DEEP_DIVE_PROPOSAL_STATUSES,
+  deepDiveInterviewReadiness,
+  type CrmFile,
+  type DeepDiveInterviewRound,
+  type DeepDiveProposalKind,
+  type DeepDiveProposalStatus,
+  type CrmTimelineEntry,
+  type OrganisationHistory,
+} from "@greatstone/shared";
 import { casesApi } from "@/api/cases";
+import { deepDiveInterviewsApi, deepDiveInterviewsQueryKeys } from "@/api/deepDiveInterviews";
 import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOverview";
 import { deepDiveSessionsApi, deepDiveSessionsQueryKeys } from "@/api/deepDiveSessions";
 import { instanceSettingsApi } from "@/api/instanceSettings";
@@ -17,18 +30,19 @@ import { ErrorState } from "@/components/ErrorState";
 import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { PipelineCaseEvidence } from "@/components/PipelineCaseFiles";
 import { ClientVisibilityBadge } from "@/components/SharedWithClientBadge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { useCommerceSite } from "@/hooks/useCommerceSite";
 import { CLIENT_CASE_TYPE, readClientRecord } from "@/lib/client-case";
 import { formatMinor, statusLabel, statusTone, text } from "@/lib/commerce";
 import { formatBytes } from "@/lib/issue-output";
 import {
-  WEBSITE_LINK_TASK,
   clientShared,
   hubDocumentRequests,
   websiteClientUsers,
   type ClientShared,
 } from "@/lib/organisation-hub";
+import { INTERVIEW_INVITE_TONE, interviewCountsText } from "@/lib/deep-dive-interviews";
 import { formatPipelineItemEvent } from "@/lib/pipeline-item-detail";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
@@ -37,8 +51,6 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 // The per-client hub's tabs (GRE-2614). Each one reads the record that owns
 // the data and links to it; "Shared with client" marks what the client sees.
 
-/** The tasks that will fill the placeholder tabs. */
-const INTERVIEWS_TASK = "GRE-2611";
 /** The task that pulls the website's client activity into GSAM (PR 985), and the site side. */
 const WEBSITE_ACTIVITY_TASK = "GRE-2635";
 
@@ -76,7 +88,7 @@ export function WebsiteLinkNotice() {
       <p className="font-medium">Not linked to a website organisation</p>
       <p className="mt-0.5 text-muted-foreground">
         Client users, Commerce and website activity are read from the website by its organisation id, never by name or email.
-        Linking is added in <TaskLink task={WEBSITE_LINK_TASK} />.
+        Link it under Website organisation on the Overview tab.
       </p>
     </div>
   );
@@ -329,14 +341,181 @@ export function DiscoveryPanel({
 
 // ---------------------------------------------------------------- Interviews
 
-export function InterviewsPanel() {
+const INTERVIEW_ROUND_TONE = { setup: "info", open: "running", closed: "archived" } as const;
+const INTERVIEW_SET_TONE = { draft: "pending", approved: "succeeded" } as const;
+
+/** The company's Parallel Interview round, when it is keyed by this client's website organisation id. */
+export function InterviewsPanel({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string | null }) {
+  const enabled = useDeepDiveEnabled();
+  const round = useQuery({
+    queryKey: deepDiveInterviewsQueryKeys.round(companyId),
+    queryFn: () => deepDiveInterviewsApi.get(companyId),
+    enabled: enabled && Boolean(websiteOrganisationId),
+  });
+  const open = <SourceLink to="/deep-dive/interviews">Open Parallel Interview</SourceLink>;
+  if (!websiteOrganisationId) return <HubSection title="Interviews"><NotLinked what="Interview rounds" /></HubSection>;
+  if (!enabled) return <HubSection title="Interviews"><Placeholder>Deep Dive is off on this instance.</Placeholder></HubSection>;
+  if (round.isLoading) return <p className="text-sm text-muted-foreground">Loading the interview round…</p>;
+  if (round.error) return <ErrorState error={round.error} compact />;
+  const current = round.data?.round ?? null;
+  if (!current || current.websiteOrganisationId !== websiteOrganisationId) {
+    return (
+      <HubSection title="Interviews" action={open}>
+        <Placeholder>
+          {current ? "The interview round is for another website organisation, not this client." : "No interview round for this client yet."}{" "}
+          Set one up on <Link to="/deep-dive/interviews" className="font-medium text-foreground hover:underline">Parallel Interview</Link>.
+        </Placeholder>
+      </HubSection>
+    );
+  }
+  const readiness = deepDiveInterviewReadiness(current);
   return (
-    <HubSection title="Interviews">
-      <Placeholder>
-        The Parallel Interview module is being built in{" "}
-        <TaskLink task={INTERVIEWS_TASK} />.
-        This client's interview rounds, who finished, and the released synthesis will show here when it ships.
-      </Placeholder>
+    <div className="space-y-6">
+      <HubSection title="Interview round" action={open}>
+        <div className="space-y-1 rounded-md border border-border px-3 py-2 text-sm" data-testid="organisation-interview-round">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">{DEEP_DIVE_INTERVIEW_LABELS[current.mode]}, about {current.targetMinutes} minutes</p>
+            <StatusBadge status={INTERVIEW_ROUND_TONE[current.status]} label={DEEP_DIVE_INTERVIEW_LABELS[current.status]} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {readiness.total === 0
+              ? "No question sets yet."
+              : `${readiness.approved} of ${readiness.total} question sets approved.`}{" "}
+            Set up {formatDate(current.createdAt)}.
+          </p>
+        </div>
+      </HubSection>
+      <HubSection title={current.mode === "per_team" ? "Teams invited" : "People invited"} label="Interview question sets">
+        {current.sets.length === 0 ? (
+          <Placeholder>No one has a question set yet.</Placeholder>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border border-border" data-testid="organisation-interview-sets">
+            {current.sets.map((set) => (
+              <li key={set.id} className="flex flex-col items-start gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
+                <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+                  <p className="break-words font-medium">{set.target.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {[set.target.detail, `${set.questions.length} questions`, set.approvedAt ? `approved ${formatDate(set.approvedAt)}` : null]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <StatusBadge status={INTERVIEW_SET_TONE[set.status]} label={DEEP_DIVE_INTERVIEW_LABELS[set.status]} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </HubSection>
+      <InterviewProgressSection companyId={companyId} round={current} />
+      <InterviewOutputsSection round={current} />
+    </div>
+  );
+}
+
+/** Who was invited and who finished, read live from the website through the bridge (GRE-2665). */
+function InterviewProgressSection({ companyId, round }: { companyId: string; round: DeepDiveInterviewRound }) {
+  const live = round.status !== "setup";
+  const progress = useQuery({
+    queryKey: deepDiveInterviewsQueryKeys.progress(companyId),
+    queryFn: () => deepDiveInterviewsApi.progress(companyId),
+    enabled: live,
+  });
+  const data = progress.data ?? null;
+  return (
+    <HubSection title="Who finished" label="Interview progress">
+      {!live ? (
+        <Placeholder>Nobody is invited yet. Progress shows here once the round opens on the website.</Placeholder>
+      ) : progress.isLoading ? (
+        <p className="text-sm text-muted-foreground">Reading progress from the website…</p>
+      ) : progress.error && !data ? (
+        <ErrorState error={progress.error} compact />
+      ) : !data || data.total === 0 ? (
+        <Placeholder>The round is open, but nobody is on it yet.</Placeholder>
+      ) : (
+        <div className="space-y-2" data-testid="organisation-interview-progress">
+          <p className="text-sm">
+            <span className="font-semibold">{data.counts.completed} of {data.total}</span> completed
+            <span className="text-muted-foreground"> · {interviewCountsText(data.counts)}</span>
+          </p>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {data.people.map((person) => (
+              <li key={person.websiteEmployeeId} className="flex flex-col items-start gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
+                <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+                  <p className="break-words font-medium">{person.name || "Name not on the website"}</p>
+                  <p className="break-words text-xs text-muted-foreground">
+                    {[person.teamName, person.roleTitle, person.endedAt ? `ended ${formatDate(person.endedAt)}` : null]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <StatusBadge status={INTERVIEW_INVITE_TONE[person.status]} label={DEEP_DIVE_INTERVIEW_INVITE_LABELS[person.status]} />
+              </li>
+            ))}
+          </ul>
+          {data.readAt ? <p className="text-xs text-muted-foreground">Read from the website {formatDateTime(data.readAt)}.</p> : null}
+        </div>
+      )}
+    </HubSection>
+  );
+}
+
+const PROPOSAL_KIND_LABELS: Record<DeepDiveProposalKind, string> = {
+  pain: "Pain points",
+  process: "Processes",
+  finding: "Findings",
+  person: "People",
+  quote: "Quotes",
+};
+const PROPOSAL_STATUS_LABELS: Record<DeepDiveProposalStatus, string> = {
+  proposed: "waiting for a decision",
+  accepted: "accepted",
+  rejected: "rejected",
+};
+
+/** The synthesis agent's proposed items for this round (GRE-2666). All internal: none reach the client. */
+function InterviewOutputsSection({ round }: { round: DeepDiveInterviewRound }) {
+  const live = round.status !== "setup";
+  const proposals = useQuery({
+    queryKey: deepDiveInterviewsQueryKeys.proposals(round.id),
+    queryFn: () => deepDiveInterviewsApi.proposals(round.id),
+    enabled: live,
+  });
+  const items = proposals.data?.proposals ?? [];
+  return (
+    <HubSection title="Outputs" label="Interview outputs" action={<ClientVisibilityBadge shared={false} />}>
+      {!live ? (
+        <Placeholder>The synthesis runs after people finish their interviews.</Placeholder>
+      ) : proposals.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading the synthesis…</p>
+      ) : proposals.error ? (
+        <ErrorState error={proposals.error} compact />
+      ) : items.length === 0 ? (
+        <Placeholder>No synthesis yet. It runs after people finish their interviews.</Placeholder>
+      ) : (
+        <div className="space-y-2" data-testid="organisation-interview-outputs">
+          <p className="text-sm">
+            <span className="font-semibold">{items.length}</span> proposed {items.length === 1 ? "item" : "items"}
+            <span className="text-muted-foreground">
+              {" · "}
+              {DEEP_DIVE_PROPOSAL_STATUSES.map((status) => [status, items.filter((p) => p.status === status).length] as const)
+                .filter(([, n]) => n > 0)
+                .map(([status, n]) => `${n} ${PROPOSAL_STATUS_LABELS[status]}`)
+                .join(", ")}
+            </span>
+          </p>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {DEEP_DIVE_PROPOSAL_KINDS.map((kind) => [kind, items.filter((p) => p.kind === kind).length] as const)
+              .filter(([, n]) => n > 0)
+              .map(([kind, n]) => (
+                <li key={kind} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span>{PROPOSAL_KIND_LABELS[kind]}</span>
+                  <span className="tabular-nums text-muted-foreground">{n}</span>
+                </li>
+              ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">Internal only. An item joins the Deep Dive record only when a person accepts it.</p>
+        </div>
+      )}
     </HubSection>
   );
 }

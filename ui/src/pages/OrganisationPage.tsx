@@ -202,7 +202,7 @@ export function OrganisationPage() {
             </>
           ) : null}
           {!engagementLoading && tab === "discovery" ? <DiscoveryPanel detail={engagement.detail} stages={engagement.stages} history={history.data} /> : null}
-          {tab === "interviews" ? <InterviewsPanel /> : null}
+          {tab === "interviews" ? <InterviewsPanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "deep-dive" ? <DeepDivePanel companyId={companyId} caseIds={caseIds} shared={shared} /> : null}
           {!engagementLoading && tab === "documents" ? (
             <DocumentsPanel caseId={clientCaseId} organisationId={organisation.id} history={history.data} shared={shared} />

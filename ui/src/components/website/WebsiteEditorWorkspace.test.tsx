@@ -194,7 +194,7 @@ async function connect(ackExtra: Record<string, unknown> = {}) {
   };
   await fromFrame({
     type: "hello-ack",
-    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], editorContract: 1, ...ackExtra },
+    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], siteContract: 1, blocks: [{ type: "Hero", label: "Hero" }], editorContract: 1, ...ackExtra },
   });
   const sent = (type: string) => posted.mock.calls.map((call) => call[0] as { type: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
   const save = (requestId: string) => fromFrame({ protocol: 1, session: nonce, type: "save", payload: { requestId, pageId: "page-1", baseRevisionId: "rev-2", data } });
@@ -1147,6 +1147,17 @@ describe("full-screen editor (GRE-2296)", () => {
       const editor = await connect({ editorContract: undefined });
       expect(outOfDate()!.textContent).toContain("Editor host is out of date");
       expect(outOfDate()!.textContent).toContain(`Redeploy the editor host (${EDITOR})`);
+      expect(frame()).toBeNull();
+      expect(editor.sent("load-draft")).toHaveLength(0);
+      expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");
+    });
+
+    it("a site with no GSAM and website contract gets 'Out of date: update the website', not the frame (GRE-2633)", async () => {
+      await render();
+      const editor = await connect({ siteContract: undefined });
+      const message = document.body.querySelector<HTMLElement>('[data-testid="website-site-out-of-date"]');
+      expect(message!.textContent).toContain("Out of date: update the website.");
+      expect(message!.textContent).toContain("The website speaks contract none; GSAM needs 1 or later.");
       expect(frame()).toBeNull();
       expect(editor.sent("load-draft")).toHaveLength(0);
       expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");

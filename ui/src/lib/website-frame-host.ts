@@ -6,8 +6,10 @@ import {
   WEBSITE_FRAME_PROTOCOLS,
   WEBSITE_FRAME_SET_MOTION_TIMEOUT_MS,
   inspectWebsitePuckData,
+  isSiteContractCurrent,
   isWebsiteEditorContractCurrent,
   receiveWebsiteFrameMessage,
+  siteContractOf,
   sanitizeWebsiteFrameSourceHint,
   isWebsiteEditorCommand,
   websiteEditorContractOf,
@@ -58,6 +60,12 @@ export type WebsiteFrameConnection =
    * No draft is sent; the host shows "Editor host is out of date", not the frame.
    */
   | { phase: "out-of-date"; contract: number | null }
+  /**
+   * Editor and preview (GRE-2633): the site speaks an older GSAM and website
+   * contract (`siteContract` in `hello-ack`), or none. No draft is sent; the host
+   * shows "Out of date: update the website", not the frame.
+   */
+  | { phase: "site-out-of-date"; siteContract: number | null }
   | { phase: "refused-protocol"; supported: number[] }
   | { phase: "refused-site" }
   | { phase: "closed" };
@@ -493,6 +501,10 @@ export class WebsiteFrameHostSession<Source> {
       return;
     }
     this.stopHello();
+    if (!isSiteContractCurrent(ack)) {
+      this.setConnection({ phase: "site-out-of-date", siteContract: siteContractOf(ack) });
+      return;
+    }
     if (this.options.mode === "editor" && !isWebsiteEditorContractCurrent(ack)) {
       this.setConnection({ phase: "out-of-date", contract: websiteEditorContractOf(ack) });
       return;

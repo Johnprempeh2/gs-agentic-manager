@@ -227,6 +227,7 @@ describeEmbeddedPostgres("website module routes", () => {
     { name: "domain", fake: { site: { id: "netlify-site", name: "other-site", custom_domain: "www.other.test" } }, code: "website_connect_domain", error: "That address does not reach this Netlify site. Check the live address.", detail: null },
     { name: "no_release_route", fake: { release: { status: 404, body: "<html>Not found</html>" } }, code: "website_connect_no_release_route", error: "This site is not set up for GSAM yet. Ask your website team to set it up, then connect again.", detail: "Details: no answer at /_release." },
     { name: "engine_old", fake: { release: { status: 200, body: { engine: { version: "0.0.9" }, supportedReleaseSchemas: [1] } } }, code: "website_connect_engine_old", error: "This site needs an update before it can connect. Ask your website team to update it.", detail: "Details: site version 0.0.9. GSAM needs 0.1.0 or later." },
+    { name: "site_contract_old", fake: { release: { status: 200, body: { engine: { version: "0.3.1" }, supportedReleaseSchemas: [1] } } }, code: "website_connect_site_contract_old", error: "Out of date: update the website.", detail: "Details: The website speaks contract none; GSAM needs 1 or later." },
   ];
 
   for (const refusal of refusals) {
@@ -275,7 +276,7 @@ describeEmbeddedPostgres("website module routes", () => {
     await request(app()).patch(base).send({ domain: "check.test" }).expect(200);
     expect(moved.calls[0]!.authorization).toBe("Bearer nfp_check_token_value_1");
 
-    withFakeNetlify({ site: { id: "netlify-site", name: "check-site", custom_domain: "check.test" }, release: { status: 200, body: { engine: { version: "0.3.1" }, supportedReleaseSchemas: [1] } } });
+    withFakeNetlify({ site: { id: "netlify-site", name: "check-site", custom_domain: "check.test" }, release: { status: 200, body: { engine: { version: "0.3.1" }, supportedReleaseSchemas: [1], siteContract: 1 } } });
     const updated = await request(app()).patch(base).send({ netlifyToken: "nfp_good_token_value_33" }).expect(200);
     expect(updated.body.engineVersion).toBe("0.3.1");
   });

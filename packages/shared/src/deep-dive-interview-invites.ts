@@ -204,6 +204,12 @@ export const gsInterviewRoundItemSchema = z.object({
   readoutAt: isoOrNull,
   closedAt: isoOrNull,
   deletionDate: isoOrNull,
+  /** What the client sees now (GRE-2667): the released synthesis, or nulls. */
+  released: z
+    .object({ synthesisId: z.string().nullable().optional(), releasedAt: isoOrNull })
+    .nullable()
+    .optional()
+    .transform((v) => (v?.synthesisId ? { synthesisId: v.synthesisId, releasedAt: v.releasedAt } : null)),
 });
 export type GsInterviewRoundItem = z.infer<typeof gsInterviewRoundItemSchema>;
 

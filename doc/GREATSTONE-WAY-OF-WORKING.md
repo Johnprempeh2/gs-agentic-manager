@@ -531,6 +531,19 @@ Merging does not change the live app. A version goes live in these steps.
    Each override is a line in `~/GSAM/preview-overrides.log`. The one-click
    release from the app checks no preview, as before.
 
+   **The website goes first (GRE-2633).** It also refuses an `rc-*` tag when a
+   site connected on live GSAM speaks less than the candidate's
+   `minSiteVersion` in `contracts/manifest.json` (`site_contract_check` reads
+   each site's `/_release`). Deploy the website, then release again. Only in an
+   emergency:
+
+   ```sh
+   scripts/greatstone-release.sh --skip-site-contract "website deploy down, GRE-123 fix" rc-YYYY-MM-DD.N
+   ```
+
+   Each override is a line in `~/GSAM/site-contract-overrides.log`. The
+   contract itself is `contracts/README.md`.
+
    **No database change, no preview (19 Oct 2026).** The preview restores a
    copy of the live database (about 330 MB, 8 to 12 minutes) to prove the
    migrations on real data. A release that changes nothing in the database

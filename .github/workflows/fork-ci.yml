@@ -92,6 +92,10 @@ jobs:
       - name: Every test named in the release switch-test map exists
         run: node scripts/check-switch-tests-map.mjs
 
+      # GRE-2633: the GSAM and website contract matches its hashes and holds no secrets.
+      - name: GSAM and website contract
+        run: node contracts/check.mjs
+
       # DESIGN.md: ui colours, sizes and date formats come from the token layer.
       - name: UI token gates
         run: npm run --silent check:token-gates

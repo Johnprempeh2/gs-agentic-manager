@@ -1,8 +1,9 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
-import { deepDiveOrgUnits, deepDivePeople } from "./deep_dive_boards.js";
+import { deepDiveOrgUnits, deepDivePeople, deepDiveProcesses } from "./deep_dive_boards.js";
+import { deepDiveFindings } from "./deep_dive_findings.js";
 
 // Parallel Interview rounds (GRE-2611, migration 0406). One round per
 // company's Deep Dive, run per team or per person, with Everest's context
@@ -156,6 +157,103 @@ export const deepDiveInterviewInvites = pgTable(
     countsCheck: check(
       "deep_dive_interview_invites_counts_check",
       sql`${table.sentCount} >= 1 and ${table.remindedCount} >= 0`,
+    ),
+  }),
+);
+
+// Synthesis proposals (GRE-2666, migration 0410). What a GSAM agent's synthesis
+// of a round proposes for the Deep Dive: pain, process and finding themes in
+// the agent's words, quotes as evidence under their theme, and each
+// interviewee's role for the organisation board. Every row starts Proposed and
+// a person accepts or rejects it; sharing stays Internal (the check refuses
+// anything else). Raw answers stay on the website: a row keeps only the
+// statement, a quote the gate allowed, and website ids in `sources`, so a
+// withdrawal on the website can find and remove it.
+export const deepDiveInterviewProposals = pgTable(
+  "deep_dive_interview_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    roundId: uuid("round_id").notNull(),
+    websiteOrganisationId: text("website_organisation_id").notNull(),
+    kind: text("kind").$type<"pain" | "process" | "finding" | "person" | "quote">().notNull(),
+    // The merged label's key in the round's evidence; null for a person.
+    themeKey: text("theme_key"),
+    // A quote's theme. Removing the theme removes its quotes.
+    parentId: uuid("parent_id").references((): AnyPgColumn => deepDiveInterviewProposals.id, { onDelete: "cascade" }),
+    label: text("label").notNull().default(""),
+    // A theme: the agent's prose. A quote: the verbatim line. A person: their role title.
+    statement: text("statement").notNull(),
+    unitId: uuid("unit_id").references(() => deepDiveOrgUnits.id, { onDelete: "set null" }),
+    voices: integer("voices").notNull().default(0),
+    firstHandVoices: integer("first_hand_voices").notNull().default(0),
+    websiteInsightId: text("website_insight_id"),
+    websiteEmployeeId: text("website_employee_id"),
+    // Shown without the person: no attribution consent, or the website redacted it.
+    anonymous: boolean("anonymous").notNull().default(true),
+    // [{ interviewId, userId, employeeId }]: website ids only.
+    sources: jsonb("sources").$type<unknown[]>().notNull().default([]),
+    status: text("status").$type<"proposed" | "accepted" | "rejected">().notNull().default("proposed"),
+    visibility: text("visibility").$type<"internal">().notNull().default("internal"),
+    rulesVersion: text("rules_version").notNull(),
+    proposedByAgentId: uuid("proposed_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    proposedByUserId: text("proposed_by_user_id"),
+    decidedByUserId: text("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    // The Deep Dive record an accepted theme or person became (GRE-2756,
+    // migration 0411): a proposed finding, a person on the organisation board
+    // or a process candidate. An accepted quote is that record's qualitative
+    // evidence through its theme. Removing the record keeps the decision.
+    findingId: uuid("finding_id").references(() => deepDiveFindings.id, { onDelete: "set null" }),
+    personId: uuid("person_id").references(() => deepDivePeople.id, { onDelete: "set null" }),
+    processId: uuid("process_id").references(() => deepDiveProcesses.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    roundFk: foreignKey({
+      name: "deep_dive_interview_proposals_round_scope_fk",
+      columns: [table.roundId, table.companyId, table.websiteOrganisationId],
+      foreignColumns: [deepDiveInterviewRounds.id, deepDiveInterviewRounds.companyId, deepDiveInterviewRounds.websiteOrganisationId],
+    }).onDelete("cascade"),
+    roundIdx: index("deep_dive_interview_proposals_round_idx").on(table.roundId, table.status),
+    companyIdx: index("deep_dive_interview_proposals_company_idx").on(table.companyId),
+    parentIdx: index("deep_dive_interview_proposals_parent_idx").on(table.parentId),
+    findingIdx: index("deep_dive_interview_proposals_finding_idx").on(table.findingId),
+    personIdx: index("deep_dive_interview_proposals_person_idx").on(table.personId),
+    processIdx: index("deep_dive_interview_proposals_process_idx").on(table.processId),
+    kindCheck: check(
+      "deep_dive_interview_proposals_kind_check",
+      sql`${table.kind} in ('pain', 'process', 'finding', 'person', 'quote')`,
+    ),
+    statusCheck: check("deep_dive_interview_proposals_status_check", sql`${table.status} in ('proposed', 'accepted', 'rejected')`),
+    visibilityCheck: check("deep_dive_interview_proposals_visibility_check", sql`${table.visibility} = 'internal'`),
+    statementCheck: check("deep_dive_interview_proposals_statement_check", sql`length(btrim(${table.statement})) > 0`),
+    quoteCheck: check(
+      "deep_dive_interview_proposals_quote_check",
+      sql`(${table.kind} = 'quote') = (${table.parentId} is not null)
+        and (${table.kind} <> 'quote' or ${table.websiteInsightId} is not null)`,
+    ),
+    decidedCheck: check(
+      "deep_dive_interview_proposals_decided_check",
+      sql`(${table.status} = 'proposed') = (${table.decidedAt} is null)
+        and (${table.decidedAt} is null) = (${table.decidedByUserId} is null)`,
+    ),
+    idsCheck: check(
+      "deep_dive_interview_proposals_ids_check",
+      sql`(${table.websiteEmployeeId} is null or ${table.websiteEmployeeId} ~ '^[A-Za-z0-9_-]{1,128}$')
+        and (${table.websiteInsightId} is null or ${table.websiteInsightId} ~ '^[A-Za-z0-9_-]{1,128}$')
+        and jsonb_typeof(${table.sources}) = 'array'`,
+    ),
+    recordCheck: check(
+      "deep_dive_interview_proposals_record_check",
+      sql`(${table.findingId} is null or (${table.kind} in ('pain', 'finding') and ${table.status} = 'accepted'))
+        and (${table.personId} is null or (${table.kind} = 'person' and ${table.status} = 'accepted'))
+        and (${table.processId} is null or (${table.kind} = 'process' and ${table.status} = 'accepted'))`,
+    ),
+    votesCheck: check(
+      "deep_dive_interview_proposals_voices_check",
+      sql`${table.voices} >= 0 and ${table.firstHandVoices} >= 0 and ${table.firstHandVoices} <= ${table.voices}`,
     ),
   }),
 );

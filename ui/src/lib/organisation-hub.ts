@@ -41,14 +41,11 @@ export function engagementCaseId(
   return (newest.find((item) => !item.terminalKind) ?? newest[0])?.id ?? null;
 }
 
-/** The task that stores the website organisation id on GSAM organisations. */
-export const WEBSITE_LINK_TASK = "GRE-2682";
-
 /**
  * The client's website organisation id (the website's `customers.id`): the one
- * key for every website read about this client (GRE-2609). GSAM does not store
- * it yet; GRE-2682 adds it as `websiteOrganisationId`. Until then every
- * organisation reads as not linked. Never match a client by name or email.
+ * key for every website read about this client (GRE-2609), stored as
+ * `websiteOrganisationId` (GRE-2682). Without it the organisation reads as not
+ * linked. Never match a client by name or email.
  */
 export function websiteOrganisationIdOf(organisation: object): string | null {
   const value = (organisation as { websiteOrganisationId?: unknown }).websiteOrganisationId;

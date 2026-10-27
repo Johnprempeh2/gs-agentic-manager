@@ -26,6 +26,7 @@ import {
   createAgentHireSchema,
   updateAgentSchema,
   updateAgentPermissionsSchema,
+  addAgentProjectAccessSchema,
   updateAgentInstructionsPathSchema,
   updateAgentInstructionsBundleSchema,
   upsertAgentInstructionsFileSchema,
@@ -392,6 +393,9 @@ import {
   openDeepDiveInterviewRoundSchema,
   inviteDeepDiveInterviewPeopleSchema,
   sendDeepDiveInterviewInvitesSchema,
+  submitDeepDiveSynthesisSchema,
+  decideDeepDiveInterviewProposalSchema,
+  releaseDeepDiveInterviewSynthesisSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -1576,6 +1580,8 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "GET /api/agents/{id}/project-access",
+  "POST /api/agents/{id}/project-access",
   "DELETE /api/generated-images/{id}",
   "DELETE /api/generated-videos/{id}",
   "DELETE /api/motion-studies/{id}",
@@ -4176,6 +4182,25 @@ registry.registerPath({
     body: jsonBody(updateAgentPermissionsSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+const agentProjectAccessResponse = z.object({ projectIds: z.array(z.string().uuid()), canManage: z.boolean() });
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/project-access",
+  tags: ["agents"],
+  summary: "Read an agent's allowed projects and the operator's management capability",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(agentProjectAccessResponse), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/project-access",
+  tags: ["agents"],
+  summary: "Add allowed projects without replacing other permissions",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(addAgentProjectAccessSchema) },
+  responses: { 200: r.ok(agentProjectAccessResponse), 400: r.badRequest, 401: r.unauthorized,
+    403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({
@@ -17384,6 +17409,88 @@ registerCurrentRoute({
   summary: "Email the join link again (resend) or a reminder (remind) to people this round invited",
   body: sendDeepDiveInterviewInvitesSchema,
   responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+// Parallel Interview synthesis (GRE-2666): the tool a GSAM agent calls. It reads
+// the round's interviews through gs-interview-v1, applies the rules in code
+// (two voices, quote gate, label merge, roll-up by team) and writes only
+// Proposed, Internal items. Only a person accepts or rejects one.
+const bridgeDown = { 502: { description: "The website did not answer or answered in a form GSAM does not understand" } };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/evidence",
+  tags: ["deep-dive"],
+  summary:
+    "Read the round's interviews with every synthesis rule applied: merged themes with voices and promotion, " +
+    "allowed quotes, roll-up by team and people for the board (no raw answers)",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/proposals",
+  tags: ["deep-dive"],
+  summary: "List the round's synthesis proposals and what a person decided",
+  responses: { ...interviewResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/proposals",
+  tags: ["deep-dive"],
+  summary:
+    "Submit the agent's statements for promoted themes, with quotes; checked against fresh evidence, " +
+    "all or nothing, and written as Proposed and Internal",
+  body: submitDeepDiveSynthesisSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok(), ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/withdrawals",
+  tags: ["deep-dive"],
+  summary: "Apply the website's withdrawals: remove the withdrawn people's quotes and undecided proposals",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-proposals/{proposalId}/decision",
+  tags: ["deep-dive"],
+  summary: "Accept or reject a synthesis proposal (only a person). Accepting makes its Internal Deep Dive record: a pain or finding becomes a proposed finding in the given stream and GIF cell, a process a process candidate, a person a board person named live from the website, a quote evidence for its theme",
+  body: decideDeepDiveInterviewProposalSchema,
+  responses: interviewWriteResponses,
+});
+
+// Parallel Interview release (GRE-2667): only a person releases the reviewed
+// synthesis to the client's website, keyed by the organisation id, or
+// withdraws it. Agents get 403 on both.
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/release",
+  tags: ["deep-dive"],
+  summary: "Read what the client sees now (read live from the website) and whether the synthesis is reviewed enough to release",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/release",
+  tags: ["deep-dive"],
+  summary:
+    "Release the reviewed synthesis to the client (only a person): the accepted themes and quotes are pushed to the " +
+    "website under the round's organisation id and the client sees them at once",
+  body: releaseDeepDiveInterviewSynthesisSchema,
+  responses: { ...interviewWriteResponses, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/withdraw",
+  tags: ["deep-dive"],
+  summary: "Withdraw the released synthesis (only a person): the client stops seeing it at once",
+  responses: { ...interviewWriteResponses, ...bridgeDown },
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it

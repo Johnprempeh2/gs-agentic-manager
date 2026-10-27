@@ -31,12 +31,15 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { InterviewInvites } from "./DeepDiveInterviewInvites";
+import { InterviewReview } from "./DeepDiveInterviewReview";
 
 // Parallel Interview (GRE-2611): the Deep Dive's first step. Set up the one
 // round (per team or per person, about 20 minutes, Everest's context pack),
 // draft a question set for each team or person from what the Deep Dive
 // already knows, and approve each set. Invites go out from the website only
-// after every set is approved (GRE-2665, DeepDiveInterviewInvites).
+// after every set is approved (GRE-2665, DeepDiveInterviewInvites). Once the
+// round is open, a person reviews the agent's synthesis and releases it
+// (GRE-2756, DeepDiveInterviewReview).
 
 const SET_TONE = { draft: "pending", approved: "succeeded" } as const;
 const ROUND_TONE = { setup: "pending", open: "running", closed: "archived" } as const;
@@ -506,6 +509,7 @@ export function DeepDiveInterviews() {
           <RoundSetup key={view.round.updatedAt} round={view.round} companyId={companyId} />
           <QuestionSets view={view as DeepDiveInterviewRoundView & { round: DeepDiveInterviewRound }} companyId={companyId} />
           <InterviewInvites round={view.round} companyId={companyId} />
+          {view.round.status !== "setup" ? <InterviewReview round={view.round} companyId={companyId} /> : null}
         </>
       ) : (
         <SetUpRound companyId={companyId} />
