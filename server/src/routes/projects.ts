@@ -53,6 +53,7 @@ import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { environmentService } from "../services/environments.js";
 import { secretService } from "../services/secrets.js";
+import { projectGitAuthorizationService } from "../services/project-git-authorization.js";
 
 const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
 const SHARED_WORKSPACE_STOP_AND_RESTART_ACTIONS = new Set(["stop", "restart"]);
@@ -199,6 +200,22 @@ export function projectRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     const viewer = await repositoryViewer(req);
     res.json(await toolAccessService(db).listProjectRepositories(companyId, viewer.userId, viewer.localTrusted));
+  });
+
+  router.get("/projects/:id/git-authorization", async (req, res) => {
+    assertBoard(req);
+    const project = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Project not found");
+    if (!project || !(await assertProjectReadAllowed(req, res, project))) return;
+    if (!req.actor.userId) throw forbidden("A signed-in project writer is required");
+    res.json(await projectGitAuthorizationService(db).read(project.companyId, project.id, req.actor.userId));
+  });
+
+  router.put("/projects/:id/git-authorization", validate(z.object({ grantId: z.string().uuid().nullable() }).strict()), async (req, res) => {
+    assertBoard(req);
+    const project = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Project not found");
+    if (!project || !(await assertProjectReadAllowed(req, res, project))) return;
+    if (!req.actor.userId) throw forbidden("A signed-in project writer is required");
+    res.json(await projectGitAuthorizationService(db).set(project.companyId, project.id, req.actor.userId, req.body.grantId));
   });
 
   router.put("/projects/:id/repositories", validate(z.object({ repositoryIds: z.array(z.string().regex(/^\d+$/)) })), async (req, res) => {

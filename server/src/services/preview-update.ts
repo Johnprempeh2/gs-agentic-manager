@@ -10,6 +10,9 @@
  * branch; the update is skipped and the reason is shown on the card.
  */
 import { execFile as execFileCallback } from "node:child_process";
+import { realpathSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { projectWorkspaces, workspaceRuntimeServices, type Db } from "@greatstone/db";
@@ -27,6 +30,7 @@ import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { findExistingManagedProjectCheckout } from "./managed-project-checkout.js";
 import { projectService } from "./projects.js";
+import { buildAnonymousGitAuthInvocation, createGitRemoteAuthProvider, type GitAuthInvocation, type GitRemoteAuthProvider } from "./git-credentials.js";
 import { workspaceOperationService } from "./workspace-operations.js";
 import {
   runWorkspaceJobForControl,
@@ -42,10 +46,32 @@ export const PREVIEW_AUTO_UPDATE_TICK_MS = 3 * 60 * 1000;
 const GIT_TIMEOUT_MS = 30_000;
 const MESSAGE_MAX_CHARS = 500;
 
-async function git(cwd: string, args: string[]) {
-  const result = await execFile("git", ["-C", cwd, ...args], {
+function previewGitRuntimeEnv(): Record<string, string> {
+  const launcher = process.env.GSAM_GITHUB_LAUNCHER_DIR;
+  const realPath = (entry: string) => {
+    try { return realpathSync(entry); } catch { return path.resolve(entry); }
+  };
+  const realLauncher = launcher ? realPath(launcher) : null;
+  return {
+    // An agent-started sandbox can inherit the run's Git launcher even after
+    // GSAM_* is removed. It replaces the selected grant and drops the local
+    // origin rewrite, so these controller-owned operations must use host Git.
+    PATH: (process.env.PATH ?? "").split(path.delimiter).filter((entry) => {
+      const directory = realPath(entry);
+      return directory !== realLauncher && path.basename(path.dirname(directory)) !== "paperclip-github-runtime";
+    }).join(path.delimiter),
+    GIT_CONFIG_PARAMETERS: "",
+    // The launcher profile can put itself back on PATH in a configured shell job.
+    BASH_ENV: os.devNull,
+    ENV: os.devNull,
+    ZDOTDIR: os.devNull,
+  };
+}
+
+async function git(cwd: string, args: string[], auth?: GitAuthInvocation | null) {
+  const result = await execFile("git", ["-C", cwd, ...(auth?.configArgs ?? []), ...args], {
     timeout: GIT_TIMEOUT_MS,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: { ...process.env, ...previewGitRuntimeEnv(), GIT_TERMINAL_PROMPT: "0", ...(auth?.env ?? {}) },
   });
   return result.stdout.trim();
 }
@@ -63,7 +89,11 @@ export type PreviewCheckoutInspection =
  * Says whether the checkout can be updated and whether `origin` has new commits.
  * Uses `git ls-remote`, so nothing in the checkout changes.
  */
-export async function inspectPreviewCheckout(cwd: string, branch: string): Promise<PreviewCheckoutInspection> {
+export async function inspectPreviewCheckout(
+  cwd: string,
+  branch: string,
+  resolveGitAuth?: GitRemoteAuthProvider,
+): Promise<PreviewCheckoutInspection> {
   const current = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (current !== branch) {
     return {
@@ -79,7 +109,9 @@ export async function inspectPreviewCheckout(cwd: string, branch: string): Promi
     };
   }
   const head = await git(cwd, ["rev-parse", "HEAD"]);
-  const remoteLine = await git(cwd, ["ls-remote", "origin", `refs/heads/${branch}`]);
+  const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]);
+  const auth = resolveGitAuth ? await resolveGitAuth(remoteUrl) : null;
+  const remoteLine = await git(cwd, ["ls-remote", "origin", `refs/heads/${branch}`], auth);
   const remote = remoteLine.split(/\s+/)[0] ?? "";
   if (!remote) throw new Error(`origin has no "${branch}" branch`);
   if (remote === head) return { kind: "up_to_date", head };
@@ -119,7 +151,7 @@ export interface PreviewUpdateDeps {
   listRunningPreviewWorkspaces(): Promise<Array<{ projectId: string; workspaceId: string }>>;
   saveState(workspaceId: string, patch: StatePatch): Promise<void>;
   resolveCwd(target: PreviewUpdateTarget): Promise<string | null>;
-  inspect(cwd: string, branch: string): Promise<PreviewCheckoutInspection>;
+  inspect(cwd: string, branch: string, target: PreviewUpdateTarget): Promise<PreviewCheckoutInspection>;
   runJob(target: PreviewUpdateTarget, cwd: string, job: WorkspaceCommandDefinition, trigger: ProjectWorkspacePreviewUpdateTrigger): Promise<void>;
   restart(target: PreviewUpdateTarget, cwd: string): Promise<void>;
   shortHead(cwd: string): Promise<string | null>;
@@ -190,7 +222,7 @@ export function createPreviewUpdateService(deps: PreviewUpdateDeps) {
 
       let inspection: PreviewCheckoutInspection;
       try {
-        inspection = await deps.inspect(cwd, branch);
+        inspection = await deps.inspect(cwd, branch, target);
       } catch (error) {
         return finish("failed", { message: clip(`Could not check for new commits: ${errorText(error)}`) });
       }
@@ -285,7 +317,7 @@ async function savePreviewUpdateState(db: Db, workspaceId: string, patch: StateP
     .where(eq(projectWorkspaces.id, workspaceId));
 }
 
-function defaultDeps(db: Db): PreviewUpdateDeps {
+export function defaultDeps(db: Db): PreviewUpdateDeps {
   const projects = projectService(db);
   const operations = workspaceOperationService(db);
   const systemActor = (target: PreviewUpdateTarget) => ({ id: null, name: "Preview auto-update", companyId: target.project.companyId });
@@ -309,8 +341,25 @@ function defaultDeps(db: Db): PreviewUpdateDeps {
     },
     saveState: (workspaceId, patch) => savePreviewUpdateState(db, workspaceId, patch),
     resolveCwd: async (target) => target.workspace.cwd ?? await findExistingManagedProjectCheckout(target.project, target.workspace),
-    inspect: inspectPreviewCheckout,
+    inspect: (cwd, branch, target) => inspectPreviewCheckout(cwd, branch,
+      createGitRemoteAuthProvider(db, target.project.companyId, {
+        projectId: target.project.id,
+        projectWorkspaceId: target.workspace.id,
+        operation: "inspect",
+      })),
     async runJob(target, cwd, job, trigger) {
+      const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]);
+      const auth = await createGitRemoteAuthProvider(db, target.project.companyId, {
+        projectId: target.project.id,
+        projectWorkspaceId: target.workspace.id,
+        operation: "prepare",
+      })(remoteUrl);
+      const branch = target.workspace.defaultRef ?? target.workspace.repoRef ?? "main";
+      await git(cwd, ["pull", "--ff-only", "origin", branch], auth);
+      // An update job may contain its own `git pull`. Rewrite the exact origin
+      // URL to the already updated checkout so the shell never needs the token.
+      const anonymousEnv = buildAnonymousGitAuthInvocation().env;
+      const configIndex = Number(anonymousEnv.GIT_CONFIG_COUNT);
       const recorder = operations.createRecorder({ companyId: target.project.companyId });
       await runWorkspaceJobForControl({
         actor: systemActor(target),
@@ -318,6 +367,13 @@ function defaultDeps(db: Db): PreviewUpdateDeps {
         workspace: realizedWorkspace(target, cwd),
         command: job.rawConfig,
         adapterEnv: {},
+        requiredEnv: {
+          ...anonymousEnv,
+          ...previewGitRuntimeEnv(),
+          GIT_CONFIG_COUNT: String(configIndex + 1),
+          [`GIT_CONFIG_KEY_${configIndex}`]: `url.${cwd}.insteadOf`,
+          [`GIT_CONFIG_VALUE_${configIndex}`]: remoteUrl,
+        },
         recorder,
         metadata: {
           action: "preview_update",

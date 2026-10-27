@@ -11,6 +11,7 @@ import { issueUrl } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { errorStateMessage } from "../ErrorState";
+import { useIsPhone } from "../../hooks/useIsPhone";
 import { markupDocument, markupJsonFile, markupSummary, pngSize, renderMarkupPng, type MarkupShape } from "../../lib/website-markup";
 import { WebsiteMarkupLayer } from "./WebsiteMarkupLayer";
 import {
@@ -164,6 +165,10 @@ export function WebsiteChangeRequestPanel({
   const [shapes, setShapes] = useState<MarkupShape[]>([]);
   const [drawing, setDrawing] = useState(false);
   const canDraw = shot.status === "ready" && markupHost !== null;
+  // GRE-2759: on a phone the drawing covers the sheet, so it opens only when asked and the box shows first.
+  const phone = useIsPhone();
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
 
   useEffect(() => {
     let live = true;
@@ -172,7 +177,7 @@ export function WebsiteChangeRequestPanel({
       const size = screenshot ? pngSize(screenshot.url) : null;
       if (!screenshot || !size) return setShot({ status: "none" });
       setShot({ status: "ready", screenshot, size });
-      setDrawing(true);
+      if (!phoneRef.current) setDrawing(true);
     });
     return () => {
       live = false;
@@ -389,13 +394,13 @@ export function WebsiteChangeRequestPanel({
                   {drawing ? "Hide drawing tools" : shapes.length > 0 ? "Edit drawing" : "Draw on the page"}
                 </Button>
                 {shapes.length > 0 ? (
-                  <>
+                  <span className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Your drawing: {marks}</span>
                     <Button type="button" size="sm" variant="ghost" onClick={() => setShapes([])}>
                       <Eraser />
                       Clear
                     </Button>
-                  </>
+                  </span>
                 ) : drawing ? (
                   <span className="text-xs text-muted-foreground">Draw on the screenshot of {subjectName}.</span>
                 ) : null}

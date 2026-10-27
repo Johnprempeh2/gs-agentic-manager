@@ -155,7 +155,7 @@ describe("createGitRemoteAuthProvider", () => {
     expect(invocation?.secretName).toBe("GH_TOKEN");
   });
 
-  it("ignores a managed connection installed only for another agent", async () => {
+  it("does not use an agent's legacy token for an unscoped background request", async () => {
     const query = (rows: unknown[]) => ({
       from: () => ({ where: async () => rows }),
     });
@@ -181,12 +181,8 @@ describe("createGitRemoteAuthProvider", () => {
       env: {},
     });
 
-    const invocation = await provider(githubUrl);
-
-    expect(invocation?.source).toBe("company_secret");
-    expect(invocation?.secretName).toBe("GH_TOKEN");
-    expect(invocation?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY]).toBe("agent-b-legacy-token");
-    expect(db.select).toHaveBeenCalledTimes(2);
+    await expect(provider(githubUrl)).rejects.toThrow(/host project operation/i);
+    expect(secrets.getByName).not.toHaveBeenCalled();
   });
 });
 
@@ -242,16 +238,14 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
     });
   });
 
-  it("skips a grant on a connection that is not github.code and falls back to legacy credentials", async () => {
+  it("does not fall back to a legacy token for an unscoped background request", async () => {
     toolAccess.refreshManagedGitHubGrantAccess.mockReset();
     const db = buildDb([[connection()], [install], [grant()], []]);
     const secrets = buildSecretsFake({ GITHUB_TOKEN: "legacy-token" });
     const provider = createGitRemoteAuthProvider(db, "company-1", context, { secrets, env: {} });
 
-    const invocation = await provider("https://github.com/example/repo.git");
-
-    expect(invocation?.source).toBe("company_secret");
-    expect(invocation?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY]).toBe("legacy-token");
+    await expect(provider("https://github.com/example/repo.git")).rejects.toThrow(/host project operation/i);
+    expect(secrets.getByName).not.toHaveBeenCalled();
     expect(toolAccess.refreshManagedGitHubGrantAccess).not.toHaveBeenCalled();
   });
 

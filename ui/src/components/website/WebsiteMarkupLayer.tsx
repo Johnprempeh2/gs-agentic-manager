@@ -160,7 +160,8 @@ export function WebsiteMarkupLayer({
   };
 
   return (
-    <div className="absolute inset-0 z-raised flex flex-col bg-muted" data-testid="website-markup-layer">
+    // On a phone the editor's drawer is a bottom sheet; the drawing goes over it until Done (GRE-2759).
+    <div className="absolute inset-0 z-sticky flex flex-col bg-muted sm:z-raised" data-testid="website-markup-layer">
       <div
         role="toolbar"
         aria-label="Drawing tools"
