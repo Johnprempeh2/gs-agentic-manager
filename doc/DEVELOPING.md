@@ -856,6 +856,14 @@ When an additional repository has a configured local checkout, GS Agentic Manage
 
 Sandbox staging, including Daytona, transfers each repository's Git history and working files. Restore merges files and commits back into each local task checkout independently. Durable sandbox recovery keeps the same repository snapshots. Normal ignore and workspace exclusion rules still apply. A clone failure stops task preparation with an error so the agent does not start with only part of the project.
 
+Background project Git operations require the project's explicit personal
+GitHub Connector authorization. A project writer selects or revokes their own
+grant through `/api/projects/:id/git-authorization`. Existing projects start
+without consent; public repositories remain anonymous. Private or unknown
+repositories without valid consent stop preparation or rebuild with an access
+error. Foreground task runs continue to use their active run identity. See
+`doc/project-repositories.md` for the consent and revocation contract.
+
 Staging preserves relative symlink targets in secondary repositories, including skill links such as `.claude/skills/demo -> ../../skills/demo`. It does not rewrite them to host temporary paths or copy their target contents in place of the link. Daytona still rejects outbound archives with absolute or escaping link targets before extraction.
 
 If a repository is detached or its source configuration changes, its previous task copy is retained under `.paperclip-runtime/detached-repositories/` and excluded from future sandbox transfers. Referenced projects continue to use the separate read-only multi-project workspace behavior.

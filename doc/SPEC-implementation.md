@@ -226,6 +226,14 @@ The board can select multiple repositories from its usable personal and shared
 GitHub grants. Selection does not grant runtime credential access. Legacy workspace
 URLs remain valid. Project creation and repository replacement are transactional.
 See `doc/project-repositories.md` for the API and UI contract.
+Background project Git access requires a separate, explicit selection of one
+active personal GitHub Connector grant by an active project writer. Store the
+exact grant and consenting user on the project, with no inferred migration.
+Check current membership, project access, trust policy, workspace and repository
+scope, connection state, and repository permission on each background request.
+Public GitHub repositories use anonymous Git. Private or unknown repositories
+without valid consent receive no credential. Foreground task Git retains its
+active run identity policy.
 
 ## 7.6 `issues` (core task entity)
 
