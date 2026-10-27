@@ -1,7 +1,7 @@
 {
   "_comment": "The one contract between GSAM and the website (GRE-2633). Canonical in gs-agentic-manager; the website vendors this folder with contracts/check.mjs --vendor. Never edit a copy by hand. Test data only.",
   "name": "gs-site-contract",
-  "version": 1,
+  "version": 2,
   "minSiteVersion": 1,
   "surfaces": {
     "bridgeHealth": {
@@ -69,9 +69,9 @@
     }
   },
   "files": {
-    "README.md": "064aea9cc7ccf4e64aace87d1f3ff3b3818b3112241cd66fc9d3597193a4b509",
+    "README.md": "f25b3eab94a4393fd4665db18432126fd5bfbafc8d8cdc3d47eec5c2d8391897",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
-    "gs-bridge-v1/README.md": "d742f4830a2011d5628a946cf3615d5083fccca9d9a3a8c9db58fb63d1cfb4e1",
+    "gs-bridge-v1/README.md": "d7bb122f1bbc478fd257cd1d13ab3050fc7938de8d264622e094d96df5281710",
     "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
     "gs-interview-v1/README.md": "caaaae40633578e29f722179b27ae5491b8d43922ff610c93b96dcdf45f0e302",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
@@ -91,5 +91,5 @@
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "95f9e39496e5175b938bc7fba65bd248a87f585830914109d7e024a322330792"
+  "contentHash": "f722cc389573c224f31b14da37a9201566b1cffb331619477a66f73cb49e833a"
 }

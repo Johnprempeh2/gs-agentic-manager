@@ -108,6 +108,15 @@ function client(answers: Array<Response | Error>) {
 }
 
 describe("website bridge client", () => {
+  it("rejects a release health response without a positive site contract and read capability", async () => {
+    for (const health of [{ ...HEALTH, siteContract: 0 }, { ...HEALTH, capability: "write" }]) {
+      const { c, calls } = client([json(200, health)]);
+      await expect(c.releaseHealth(ACTOR)).rejects.toMatchObject({ code: "bad_response", status: 502 });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.method).toBe("GET");
+    }
+  });
+
   it("signs each attempt afresh, so a retry is never a replay", async () => {
     const { c, calls, sleeps } = client([json(503, { error: { code: "unavailable" } }), new TypeError("fetch failed"), json(200, HEALTH)]);
     await expect(c.health(ACTOR)).resolves.toMatchObject({ ok: true });

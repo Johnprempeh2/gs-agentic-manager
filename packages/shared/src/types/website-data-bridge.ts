@@ -33,6 +33,12 @@ export interface WebsiteBillingLine {
 export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
   /** GET → `WebsiteDataBridgeStatus` (website:view). Checks the site's health route, cached for 60 s. */
   status: "/companies/:companyId/website/sites/:siteId/data-bridge/status",
+  /** GET → signed bridge health, including siteContract: 1 (website:view). */
+  health: "/companies/:companyId/website/sites/:siteId/data-bridge/health",
+  /** GET → signed, bounded activity page. Requires decimal cursor and limit 1–100 (website:view). */
+  activityEvents: "/companies/:companyId/website/sites/:siteId/data-bridge/activity-events",
+  /** GET → table existence booleans only; no customer rows (website:view). */
+  schemaProbe: "/companies/:companyId/website/sites/:siteId/data-bridge/schema",
   /**
    * POST `CreateWebsiteDataBridgeKey` → 201 `WebsiteDataBridgeKey` (website:publish, people only). Makes a new read
    * key pair, keeps the private key in the vault and returns the public key for the site's GSAM_BRIDGE_KEYS.
@@ -199,6 +205,11 @@ export const websiteDataListQuerySchema = z.object({
   updatedSince: z.string().datetime({ offset: true }).optional(),
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+}).strict();
+export const websiteActivityEventsQuerySchema = z.object({
+  cursor: z.string().regex(/^(0|[1-9]\d{0,18})$/)
+    .refine((value) => /^(0|[1-9]\d{0,18})$/.test(value) && BigInt(value) <= 9223372036854775807n),
+  limit: z.string().regex(/^(?:[1-9]|[1-9]\d|100)$/).transform(Number),
 }).strict();
 export type WebsiteDataListQuery = z.infer<typeof websiteDataListQuerySchema>;
 
