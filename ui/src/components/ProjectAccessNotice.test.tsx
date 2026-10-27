@@ -42,7 +42,7 @@ describe("project access notice", () => {
     vi.mocked(agentsApi.getProjectAccess).mockResolvedValue({ projectIds: ["project"], canManage: true });
     vi.mocked(agentsApi.retryFailedRun).mockResolvedValue({} as never);
     await render();
-    expect(container.textContent).toContain("Project access is saved");
+    await vi.waitFor(() => expect(container.textContent).toContain("Project access is saved"));
     await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
     expect(agentsApi.retryFailedRun).toHaveBeenCalledWith("agent", "run", "company");
     expect(onRetried).toHaveBeenCalledOnce();
