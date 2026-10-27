@@ -306,12 +306,12 @@ export function WebsiteChangeAttachments({
             return (
               <li
                 key={draft.key}
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 rounded-md border border-border p-1.5"
+                className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border border-border p-1.5"
                 data-testid="website-change-attachment"
                 data-kind={draft.kind}
               >
                 <DraftThumb draft={draft} />
-                <p className="truncate text-xs">
+                <p className="min-w-0 flex-1 truncate text-xs">
                   <span className="text-muted-foreground">{draftSource(draft)} · </span>
                   <span className="font-medium" title={title}>{title}</span>
                 </p>
@@ -327,7 +327,7 @@ export function WebsiteChangeAttachments({
                   maxLength={NOTE_MAX}
                   placeholder="Note (optional), e.g. this colour"
                   aria-label={`Note for ${title}`}
-                  className="col-span-3 h-8"
+                  className="h-8 basis-full"
                   disabled={disabled}
                 />
               </li>
