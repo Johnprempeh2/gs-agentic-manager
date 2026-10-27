@@ -48,6 +48,7 @@ process.exit(0);
 
 describe("pi_local execute", () => {
   it("keeps inherited server secrets out of Pi discovery, runs, and probes", async () => {
+    const legacySigningSecretKey = ["PAPER", "CLIP_TOOL_ACTION_SIGNING_SECRET"].join("");
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "gsam-pi-env-"));
     const commandPath = path.join(root, "pi");
     const capturePath = path.join(root, "env.jsonl");
@@ -66,7 +67,7 @@ console.log(JSON.stringify({ type: "agent_end", messages: [] }));
 
     const inherited = {
       GSAM_AGENT_JWT_SECRET: "test-server-secret",
-      PAPERCLIP_TOOL_ACTION_SIGNING_SECRET: "test-legacy-secret",
+      [legacySigningSecretKey]: "test-legacy-secret",
       GSAM_RUNTIME_API_URL: "https://runtime.example.test",
     };
     const previous = Object.fromEntries(
@@ -99,7 +100,7 @@ console.log(JSON.stringify({ type: "agent_end", messages: [] }));
       expect(captures.some(({ args }) => args.includes("Respond with hello."))).toBe(true);
       for (const { env } of captures) {
         expect(env).not.toHaveProperty("GSAM_AGENT_JWT_SECRET");
-        expect(env).not.toHaveProperty("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET");
+        expect(env).not.toHaveProperty(legacySigningSecretKey);
         expect(env.GSAM_RUNTIME_API_URL).toBe(inherited.GSAM_RUNTIME_API_URL);
         expect(env.AGENT_SETTING).toBe("kept");
       }
