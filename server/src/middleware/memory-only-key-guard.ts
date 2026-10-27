@@ -16,6 +16,32 @@ const MEMORY_PATHS = [
   /^\/api\/mcp\/memory-tools\/?$/i,
 ];
 
+export const MEMORY_KEY_NETWORK_CODE = "MEMORY_KEY_TAILNET_ONLY";
+export const MEMORY_KEY_NETWORK_MESSAGE =
+  "Memory keys work only over the tailnet (or on this PC), never through Tailscale Funnel or the public internet.";
+
+/**
+ * Where a memory key may come from (GRE-2668): this PC, or the tailnet. A
+ * request through Tailscale Funnel carries `Tailscale-Funnel-Request`, set by
+ * tailscaled, and is refused whatever its address (Funnel proxies from
+ * 127.0.0.1). `GSAM_MEMORY_KEYS_ANY_NETWORK=true` lifts the address check for
+ * a hosted instance; Funnel stays refused.
+ */
+export function memoryKeyNetworkRefusal(
+  req: Pick<Request, "headers"> & { socket?: { remoteAddress?: string | null } | null },
+  env: NodeJS.ProcessEnv = process.env,
+): "funnel" | "not_tailnet" | null {
+  if (req.headers["tailscale-funnel-request"] !== undefined) return "funnel";
+  if (env.GSAM_MEMORY_KEYS_ANY_NETWORK === "true") return null;
+  const address = (req.socket?.remoteAddress ?? "").replace(/^::ffff:/i, "").toLowerCase();
+  if (address === "127.0.0.1" || address === "::1") return null;
+  // Tailscale addresses: 100.64.0.0/10 and fd7a:115c:a1e0::/48.
+  const v4 = /^100\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(address);
+  if (v4 && Number(v4[1]) >= 64 && Number(v4[1]) <= 127) return null;
+  if (address.startsWith("fd7a:115c:a1e0:")) return null;
+  return "not_tailnet";
+}
+
 export function isMemoryOnlyActor(actor: Request["actor"]) {
   return actor.type === "agent" && actor.keyScope?.kind === "memory_only";
 }
@@ -68,6 +94,11 @@ export function memoryOnlyKeyGuard(db: Db): RequestHandler {
     }
     if (!isMemoryPath(req.path)) {
       next(forbidden(MEMORY_ONLY_KEY_DENIED_MESSAGE, { code: "MEMORY_ONLY_KEY" }));
+      return;
+    }
+    const network = memoryKeyNetworkRefusal(req);
+    if (network) {
+      next(forbidden(MEMORY_KEY_NETWORK_MESSAGE, { code: MEMORY_KEY_NETWORK_CODE, reason: network }));
       return;
     }
     const { agentId, companyId } = req.actor;

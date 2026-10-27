@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { OrganisationDetail, OrganisationHistory } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/context/ToastContext";
 import { emptyOrganisationCrmFields } from "@/fixtures/organisationCrmFields";
 import { OrganisationPage } from "./OrganisationPage";
 
@@ -29,8 +30,43 @@ vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
 vi.mock("@/api/access", () => ({ accessApi: { listUserDirectory: () => Promise.resolve({ users: mockPeople.users }) } }));
 vi.mock("@/api/agents", () => ({ agentsApi: { list: () => Promise.resolve(mockPeople.agents) } }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
-vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
+vi.mock("@/context/CompanyContext", () => ({
+  useCompany: () => ({ selectedCompanyId: "company-1" }),
+  useOptionalCompany: () => ({ selectedCompanyId: "company-1" }),
+}));
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => false }));
+vi.mock("@/context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
+
+const mockPipelines = vi.hoisted(() => ({
+  get: vi.fn(),
+  getCase: vi.fn(),
+  getCaseJourney: vi.fn(),
+  getCaseFiles: vi.fn(),
+  getCaseEvents: vi.fn(),
+  listCaseEvidenceCandidates: vi.fn(),
+}));
+const mockSites = vi.hoisted(() => ({ sites: vi.fn() }));
+const mockBridge = vi.hoisted(() => ({ previewDeepDiveSync: vi.fn(), list: vi.fn(), get: vi.fn() }));
+// Greatstone's Commerce site; null for every other company (the default here).
+const mockCommerce = vi.hoisted(() => ({ site: null as null | { site: { id: string }; feature: { id: string } } }));
+vi.mock("@/hooks/useCommerceSite", () => ({
+  useCommerceSite: () => ({ commerce: mockCommerce.site, isLoading: false }),
+  useCommerceCustomers: () => ({ data: [], isLoading: false, error: null }),
+}));
+vi.mock("@/api/pipelines", () => ({ pipelinesApi: mockPipelines }));
+vi.mock("@/api/website", () => ({ websiteModuleApi: mockSites }));
+vi.mock("@/api/website-data-bridge", () => ({ websiteDataBridgeApi: mockBridge }));
+const mockExperimental = vi.hoisted(() => ({ settings: {} as Record<string, boolean> }));
+vi.mock("@/api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: () => Promise.resolve(mockExperimental.settings) } }));
+const mockInterviews = vi.hoisted(() => ({ get: vi.fn(), progress: vi.fn(), proposals: vi.fn() }));
+vi.mock("@/api/deepDiveInterviews", () => ({
+  deepDiveInterviewsApi: mockInterviews,
+  deepDiveInterviewsQueryKeys: {
+    round: (companyId: string) => ["deep-dive-interview-round", companyId],
+    progress: (companyId: string) => ["deep-dive-interview-round", companyId, "progress"],
+    proposals: (roundId: string) => ["deep-dive-interview-proposals", roundId],
+  },
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -49,6 +85,7 @@ function detail(overrides: Partial<OrganisationDetail> = {}): OrganisationDetail
     notes: null,
     source: "manual",
     externalId: null,
+    websiteOrganisationId: null,
     archivedAt: null,
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
@@ -115,6 +152,22 @@ function history(overrides: Partial<OrganisationHistory> = {}): OrganisationHist
   };
 }
 
+const STAGES = [
+  { id: "s1", key: "executive-discovery", name: "Executive Discovery", kind: "open", position: 0 },
+  { id: "s2", key: "deep-dive", name: "Deep Dive", kind: "working", position: 1 },
+];
+
+/** The item read as the server sends it: its pipeline carries no stages. */
+function caseDetail(caseId: string, caseType: string) {
+  return {
+    case: { id: caseId, companyId: "company-1", pipelineId: "pipe-1", stageId: "s1", title: "Acme drill rig", fields: { owner: "Ama Owusu" }, organisationId: "org-1" },
+    caseType,
+    stageEnteredAt: "2026-10-05T09:00:00Z",
+    stage: STAGES[0],
+    pipeline: { id: "pipe-1", name: "Client journey" },
+  };
+}
+
 describe("Organisation company page", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -124,6 +177,15 @@ describe("Organisation company page", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     for (const fn of Object.values(mockApi)) fn.mockReset();
+    for (const fn of [...Object.values(mockPipelines), ...Object.values(mockSites), ...Object.values(mockBridge), ...Object.values(mockInterviews)]) fn.mockReset();
+    // A sales deal by default: no client journey, portal or website hub.
+    mockPipelines.getCase.mockImplementation((caseId: string) => Promise.resolve(caseDetail(caseId, "sales")));
+    mockPipelines.get.mockImplementation(() => Promise.resolve({ id: "pipe-1", name: "Client journey", stages: STAGES }));
+    mockPipelines.getCaseEvents.mockResolvedValue({ items: [], pagination: { limit: 50, offset: 0, nextOffset: null } });
+    mockPipelines.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
+    mockPipelines.listCaseEvidenceCandidates.mockResolvedValue({ attachments: [], documents: [] });
+    mockSites.sites.mockResolvedValue([]);
+    mockCommerce.site = null;
   });
 
   afterEach(() => {
@@ -131,16 +193,18 @@ describe("Organisation company page", () => {
     container.remove();
   });
 
-  async function render() {
+  async function render(path = "/organisations/org-1") {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <MemoryRouter initialEntries={["/organisations/org-1"]}>
+          <ToastProvider>
+          <MemoryRouter key={path} initialEntries={[path]}>
             <Routes>
               <Route path="/organisations/:organisationId" element={<OrganisationPage />} />
             </Routes>
           </MemoryRouter>
+          </ToastProvider>
         </QueryClientProvider>,
       );
     });
@@ -166,7 +230,7 @@ describe("Organisation company page", () => {
     expect(container.querySelector('a[href="/organisations"]')?.textContent).toBe("Back to Organisations");
   });
 
-  it("shows company info, country owner, contacts and the engagement history", async () => {
+  it("shows company info, client users from the website and the engagement history", async () => {
     mockApi.get.mockResolvedValue(detail());
     mockApi.history.mockResolvedValue(history());
     await render();
@@ -177,10 +241,10 @@ describe("Organisation company page", () => {
     expect(info.textContent).toContain("CountryGhana");
     expect(info.textContent).toContain("Last contact7 Oct 2026");
 
-    const contacts = container.querySelector('section[aria-label="Contacts"]')!;
-    expect(contacts.textContent).toContain("Kofi Mensah");
-    expect(contacts.querySelector('a[href="mailto:kofi@acme.example"]')).not.toBeNull();
-    expect(contacts.querySelector('a[href="tel:+233 20 000 0000"]')).not.toBeNull();
+    // People come from the website, never the GSAM contact copy (GRE-2609).
+    expect(container.querySelector('section[aria-label="Contacts"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="Client users"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("kofi@acme.example");
 
     const engagement = container.querySelector('section[aria-label="Engagement history"]')!;
     expect(engagement.querySelector('a[href="/pipelines/pipe-1/items/case-1"]')?.textContent).toBe("Acme drill rig");
@@ -280,9 +344,7 @@ describe("Organisation company page", () => {
     expect(info.textContent).toContain("From Pipedrive");
     expect(info.textContent).toContain("LabelsDevTools, Partner");
     expect(info.textContent).toContain("Number of employees120");
-    const contacts = container.querySelector('section[aria-label="Contacts"]')!;
-    expect(contacts.querySelector("summary")?.textContent).toBe("From Pipedrive (1)");
-    expect(contacts.textContent).toContain("GitHub handlekofi-m");
+    expect(container.textContent).not.toContain("GitHub handle");
   });
 
   it("lists imported activities, notes and calls", async () => {
@@ -312,7 +374,7 @@ describe("Organisation company page", () => {
         },
       ],
     }));
-    await render();
+    await render("/organisations/org-1?tab=activity");
     const section = container.querySelector('section[aria-label="Activities and notes"]')!;
     const rows = section.querySelectorAll("li");
     expect(rows).toHaveLength(4);
@@ -347,7 +409,7 @@ describe("Organisation company page", () => {
         },
       ],
     }));
-    await render();
+    await render("/organisations/org-1?tab=documents");
     const section = container.querySelector('section[aria-label="Files"]')!;
     const rows = section.querySelectorAll("li");
     expect(rows).toHaveLength(2);
@@ -360,11 +422,10 @@ describe("Organisation company page", () => {
     expect(rows[1]!.textContent).toContain("Not copied into GSAM: Linked from googledrive");
   });
 
-  it("shows empty states when there are no contacts and no history", async () => {
+  it("shows empty states when there is no history", async () => {
     mockApi.get.mockResolvedValue(detail({ contacts: [] }));
     mockApi.history.mockResolvedValue(history({ lastContactAt: null, cases: [] }));
     await render();
-    expect(container.textContent).toContain("No contacts yet. Use Edit to add one.");
     expect(container.textContent).toContain("No pipeline items for this organisation yet.");
     expect(container.textContent).toContain("Last contactNo contact yet");
     expect(container.querySelector('section[aria-label="Activities and notes"]')).toBeNull();
@@ -377,5 +438,303 @@ describe("Organisation company page", () => {
     await render();
     expect(container.textContent).toContain("Acme Mining");
     expect(container.textContent).toContain("Could not load the history. Server unavailable");
+  });
+
+  describe("client hub (GRE-2614)", () => {
+    it("shows every hub tab and keeps the chosen tab in the address", async () => {
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      await render();
+      const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+      expect(tabs).toEqual([
+        "Overview", "Executive Discovery", "Interviews", "Deep Dive", "Documents",
+        "Deliverables", "Commerce", "Billing", "Activity", "Client view",
+      ]);
+      expect(container.querySelector('[data-testid="organisation-tab-overview"]')).not.toBeNull();
+      const engagement = container.querySelector('[data-testid="organisation-engagement"]')!;
+      expect(engagement.textContent).toContain("Ama Owusu");
+      expect(engagement.textContent).toContain("Executive Discovery");
+      expect(mockPipelines.get).toHaveBeenCalledWith("pipe-1");
+    });
+
+    describe("Interviews tab (GRE-2616)", () => {
+      const set = (id: string, name: string, status: "draft" | "approved") => ({
+        id,
+        roundId: "round-1",
+        target: { kind: "unit", id: `unit-${id}`, name, detail: "Operations" },
+        status,
+        questions: [{}, {}, {}],
+        known: [],
+        leftOut: 0,
+        approvedByUserId: status === "approved" ? "user-1" : null,
+        approvedAt: status === "approved" ? "2026-10-20T09:00:00Z" : null,
+        draftedByAgentId: null,
+        draftedByUserId: null,
+        createdAt: "2026-10-19T09:00:00Z",
+        updatedAt: "2026-10-19T09:00:00Z",
+      });
+      const round = (websiteOrganisationId: string, status: "setup" | "open" = "setup") => ({
+        round: {
+          id: "round-1",
+          companyId: "company-1",
+          websiteOrganisationId,
+          mode: "per_team",
+          targetMinutes: 20,
+          contextPack: {},
+          status,
+          createdAt: "2026-10-18T09:00:00Z",
+          updatedAt: "2026-10-18T09:00:00Z",
+          sets: [set("s1", "Mine planning", "approved"), set("s2", "Plant maintenance", "draft")],
+        },
+        available: [],
+      });
+
+      beforeEach(() => {
+        mockExperimental.settings = { enableDeepDive: true, enableCases: true };
+        mockApi.history.mockResolvedValue(history());
+      });
+      afterEach(() => {
+        mockExperimental.settings = {};
+      });
+
+      it("shows the round and its question sets when the round is for this client's website organisation", async () => {
+        mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+        mockInterviews.get.mockResolvedValue(round("cust-9"));
+        await render("/organisations/org-1?tab=interviews");
+        expect(mockInterviews.get).toHaveBeenCalledWith("company-1");
+        const summary = container.querySelector('[data-testid="organisation-interview-round"]')!;
+        expect(summary.textContent).toContain("Per team, about 20 minutes");
+        expect(summary.textContent).toContain("1 of 2 question sets approved");
+        const rows = [...container.querySelectorAll('[data-testid="organisation-interview-sets"] li')];
+        expect(rows.map((row) => row.textContent)).toEqual([
+          expect.stringContaining("Mine planning"),
+          expect.stringContaining("Plant maintenance"),
+        ]);
+        expect(rows[0]!.textContent).toContain("3 questions · approved 20 Oct 2026");
+        expect(container.querySelector('a[href="/deep-dive/interviews"]')).not.toBeNull();
+        // A round still in setup has nobody on it: nothing is read from the website yet.
+        expect(container.textContent).toContain("Progress shows here once the round opens on the website.");
+        expect(mockInterviews.progress).not.toHaveBeenCalled();
+        expect(mockInterviews.proposals).not.toHaveBeenCalled();
+      });
+
+      it("shows who finished and the synthesis outputs once the round is open", async () => {
+        const person = (id: string, name: string, status: string, endedAt: string | null = null) => ({
+          websiteEmployeeId: id, websiteUserId: null, name, email: `${id}@client.test`, roleTitle: "Planner",
+          unitId: "unit-s1", teamName: "Mine planning", setId: "s1", status, startedAt: null, endedAt,
+          completionScore: null, invitedAt: "2026-10-21T09:00:00Z", sentCount: 1, lastSentAt: null, remindedCount: 0, lastRemindedAt: null,
+        });
+        const proposal = (id: string, kind: string, status: string) => ({ id, roundId: "round-1", kind, status, visibility: "internal" });
+        mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+        mockInterviews.get.mockResolvedValue(round("cust-9", "open"));
+        mockInterviews.progress.mockResolvedValue({
+          roundId: "round-1", status: "open", websiteOrganisationId: "cust-9", allowedEmailDomains: [], seatTotal: null,
+          readAt: "2026-10-25T09:00:00Z", total: 2,
+          counts: { invited: 1, started: 0, completed: 1, abandoned: 0, declined: 0 },
+          teams: [],
+          people: [person("e1", "Ama Mensah", "completed", "2026-10-24T09:00:00Z"), person("e2", "Kofi Boateng", "invited")],
+        });
+        mockInterviews.proposals.mockResolvedValue({
+          roundId: "round-1",
+          proposals: [proposal("p1", "pain", "proposed"), proposal("p2", "pain", "accepted"), proposal("p3", "quote", "proposed")],
+        });
+        await render("/organisations/org-1?tab=interviews");
+        expect(mockInterviews.progress).toHaveBeenCalledWith("company-1");
+        expect(mockInterviews.proposals).toHaveBeenCalledWith("round-1");
+        const progress = container.querySelector('[data-testid="organisation-interview-progress"]')!;
+        expect(progress.textContent).toContain("1 of 2 completed");
+        const people = [...progress.querySelectorAll("li")].map((row) => row.textContent);
+        expect(people).toEqual([expect.stringContaining("Ama Mensah"), expect.stringContaining("Kofi Boateng")]);
+        expect(people[0]).toContain("ended 24 Oct 2026");
+        expect(people[0]).toContain("Completed");
+        expect(people[1]).toContain("Invited");
+        const outputs = container.querySelector('[data-testid="organisation-interview-outputs"]')!;
+        expect(outputs.textContent).toContain("3 proposed items");
+        expect(outputs.textContent).toContain("2 waiting for a decision, 1 accepted");
+        expect([...outputs.querySelectorAll("li")].map((row) => row.textContent)).toEqual(["Pain points2", "Quotes1"]);
+        expect(container.querySelector('[aria-label="Interview outputs"] [data-testid="not-shared-with-client"]')).not.toBeNull();
+      });
+
+      it("does not show another organisation's round", async () => {
+        mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+        mockInterviews.get.mockResolvedValue(round("cust-other"));
+        await render("/organisations/org-1?tab=interviews");
+        expect(container.textContent).toContain("The interview round is for another website organisation, not this client.");
+        expect(container.querySelector('[data-testid="organisation-interview-sets"]')).toBeNull();
+        expect(mockInterviews.progress).not.toHaveBeenCalled();
+        expect(mockInterviews.proposals).not.toHaveBeenCalled();
+      });
+
+      it("reads nothing for a client with no website organisation id", async () => {
+        mockApi.get.mockResolvedValue(detail());
+        await render("/organisations/org-1?tab=interviews");
+        expect(mockInterviews.get).not.toHaveBeenCalled();
+        expect(container.textContent).toContain("Interview rounds show here once this client is linked");
+      });
+    });
+
+    describe("Billing tab (GRE-2725)", () => {
+      beforeEach(() => {
+        mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
+        mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+        mockApi.history.mockResolvedValue(history());
+      });
+
+      it("lists the client's billing lines, read by its website organisation id", async () => {
+        mockBridge.list.mockResolvedValue({
+          items: [
+            { id: "bl-1", customer_id: "cust-9", description: "Platform licence", qty: 3, unit_price_minor: "12000", currency: "GBP", billing_period: "monthly", next_bill_on: "2026-11-01", status: "active" },
+            { id: "bl-2", customer_id: "cust-9", description: "Support retainer", qty: 1, unit_price_minor: "250000", currency: "GBP", billing_period: "multi_year", next_bill_on: null, status: "ended" },
+          ],
+          nextCursor: null,
+        });
+        await render("/organisations/org-1?tab=billing");
+        expect(mockBridge.list).toHaveBeenCalledWith("company-1", "site-1", "billing-lines", { customer: "cust-9", limit: 100 });
+        const rows = [...container.querySelectorAll('[data-testid="organisation-billing-lines"] li')];
+        expect(rows).toHaveLength(2);
+        expect(rows[0]!.textContent).toContain("Platform licence");
+        expect(rows[0]!.textContent).toContain("Qty: 3");
+        expect(rows[0]!.textContent).toContain("£120.00");
+        expect(rows[0]!.textContent).toContain("Monthly");
+        expect(rows[0]!.textContent).toContain("1 Nov 2026");
+        expect(rows[0]!.textContent).toContain("Active");
+        expect(rows[1]!.textContent).toContain("£2,500.00");
+        expect(rows[1]!.textContent).toContain("Multi-year");
+        expect(rows[1]!.textContent).toContain("Next bill: None");
+        expect(rows[1]!.textContent).toContain("Ended");
+        // Read only: no buttons or edit links on the lines.
+        expect(container.querySelector('[data-testid="organisation-billing-lines"] button, [data-testid="organisation-billing-lines"] a')).toBeNull();
+      });
+
+      it("says so when the client has no billing lines", async () => {
+        mockBridge.list.mockResolvedValue({ items: [], nextCursor: null });
+        await render("/organisations/org-1?tab=billing");
+        expect(container.textContent).toContain("This client has no recurring billing lines on the website.");
+        expect(container.querySelector('[data-testid="organisation-billing-lines"]')).toBeNull();
+      });
+
+      it("says the website could not be reached when the bridge read fails", async () => {
+        mockBridge.list.mockRejectedValue(new Error("GSAM could not reach the website's data bridge. Check the bridge address and that the site is up."));
+        await render("/organisations/org-1?tab=billing");
+        const alert = container.querySelector('[role="alert"]')!;
+        expect(alert.textContent).toContain("Could not reach the website");
+        expect(alert.textContent).toContain("could not reach the website's data bridge");
+      });
+
+      it("does not read billing for a client with no website organisation id", async () => {
+        mockApi.get.mockResolvedValue(detail());
+        await render("/organisations/org-1?tab=billing");
+        expect(container.textContent).toContain("Recurring billing lines show here once this client is linked");
+        expect(mockBridge.list).not.toHaveBeenCalled();
+      });
+    });
+
+    it("shows the open engagement when the organisation has several, and the one asked for", async () => {
+      const base = history().cases[0]!;
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history({
+        cases: [
+          { ...base, id: "case-old", title: "Old deal", terminalKind: "done", createdAt: "2026-10-09T00:00:00Z" },
+          { ...base, id: "case-open", title: "Acme engagement", terminalKind: null, createdAt: "2026-09-01T00:00:00Z" },
+        ],
+      }));
+      await render();
+      expect(mockPipelines.getCase).toHaveBeenCalledWith("case-open");
+      expect((container.querySelector('select[aria-label="Engagement shown"]') as HTMLSelectElement).value).toBe("case-open");
+      await render("/organisations/org-1?case=case-old");
+      expect(mockPipelines.getCase).toHaveBeenCalledWith("case-old");
+    });
+
+    it("lists document requests as received, answered or missing, and marks those the client sees", async () => {
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      mockPipelines.getCase.mockImplementation((caseId: string) => Promise.resolve(caseDetail(caseId, "client")));
+      mockPipelines.getCaseJourney.mockResolvedValue({
+        caseId: "case-1",
+        stages: [{
+          id: "s2", name: "Deep Dive", requests: [
+            { id: "r1", stageId: "s2", title: "Org chart", note: null, createdAt: "2026-10-01T00:00:00Z",
+              received: { evidenceId: "e1", title: "Org chart.pdf", contentPath: "/api/files/e1", receivedAt: "2026-10-04T00:00:00Z" } },
+            { id: "r2", stageId: "s2", title: "Price list", note: null, createdAt: "2026-10-02T00:00:00Z", received: null },
+            { id: "r3", stageId: "s2", title: "Board minutes", note: null, createdAt: "2026-10-03T00:00:00Z", received: null,
+              websiteAnswer: { answeredAt: "2026-10-06T00:00:00Z", answeredBy: { customerId: "cu1", name: "Kofi Mensah", email: null }, note: null, fileName: "minutes.pdf" } },
+          ],
+        }],
+      });
+      mockSites.sites.mockResolvedValue([{ id: "site-1" }]);
+      mockBridge.previewDeepDiveSync.mockResolvedValue({
+        items: [], files: [], deliverables: [],
+        documentRequests: [{ id: "r2", title: "Price list", note: null, itemIds: ["i1"], status: "open", receivedAt: null, createdAt: "2026-10-02T00:00:00Z" }],
+      });
+      await render("/organisations/org-1?tab=documents");
+
+      expect(mockBridge.previewDeepDiveSync).toHaveBeenCalledWith("company-1", "site-1", "case-1");
+      const section = container.querySelector('section[aria-label="Document requests"]')!;
+      expect(section.querySelector("h2")?.textContent).toBe("Requested (1 missing)");
+      const rows = [...section.querySelectorAll("li")];
+      expect(rows.map((row) => row.querySelector("p")?.textContent)).toEqual(["Price list", "Board minutes", "Org chart"]);
+      expect(rows[0]!.textContent).toContain("Missing");
+      expect(rows[0]!.querySelector('[data-testid="shared-with-client"]')).not.toBeNull();
+      expect(rows[1]!.textContent).toContain("Answered on the website");
+      expect(rows[1]!.textContent).toContain("by Kofi Mensah");
+      expect(rows[1]!.querySelector('[data-testid="shared-with-client"]')).toBeNull();
+      // Not shared is said, never left to a missing badge.
+      expect(rows[1]!.querySelector('[data-testid="not-shared-with-client"]')?.textContent).toBe("Not on website");
+      expect(rows[2]!.textContent).toContain("Deep Dive · asked 1 Oct 2026 · received 4 Oct 2026");
+      expect(rows[2]!.querySelector('a[href="/api/files/e1"]')).not.toBeNull();
+    });
+
+    it("shows a client with no website organisation id as not linked, never matched by name", async () => {
+      mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      await render();
+      expect(container.querySelector('[data-testid="organisation-not-linked"]')?.textContent).toContain("Not linked to a website organisation");
+      expect(container.querySelector('[data-testid="organisation-not-linked"]')?.textContent).toContain("Link it under Website organisation");
+      expect(container.querySelector('section[aria-label="Client users"]')?.textContent).toContain("once this client is linked");
+      await render("/organisations/org-1?tab=commerce");
+      expect(container.textContent).toContain("Quotes, orders, invoices and licences show here once this client is linked");
+      await render("/organisations/org-1?tab=activity");
+      expect(container.querySelector('section[aria-label="Website activity"]')?.textContent).toContain("once this client is linked");
+      // No website read guesses the client from its name or domain.
+      expect(mockBridge.list).not.toHaveBeenCalled();
+      expect(mockBridge.get).not.toHaveBeenCalled();
+    });
+
+    it("reads a linked client's users and records from the website by its organisation id", async () => {
+      mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
+      mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
+      mockApi.history.mockResolvedValue(history());
+      mockBridge.get.mockResolvedValue({
+        item: { id: "cust-9", name: "Acme Mining Ltd", customer_users: [{ id: "wu-1", name: "Esi Boateng", email: "esi@acme.example", role: "owner" }] },
+      });
+      mockBridge.list.mockResolvedValue({ items: [], nextCursor: null });
+      await render();
+      expect(container.querySelector('[data-testid="organisation-not-linked"]')).toBeNull();
+      expect(mockBridge.get).toHaveBeenCalledWith("company-1", "site-1", "customers", "cust-9");
+      const users = container.querySelector('[data-testid="organisation-website-users"]')!;
+      expect(users.textContent).toContain("Esi Boateng");
+      expect(users.textContent).toContain("wu-1");
+      expect(container.textContent).not.toContain("kofi@acme.example");
+      await render("/organisations/org-1?tab=commerce");
+      expect(mockBridge.list).toHaveBeenCalledWith("company-1", "site-1", "orders", { customer: "cust-9", limit: 100 });
+    });
+
+    it("waits for the engagement before a tab says there is none", async () => {
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      mockPipelines.getCase.mockReturnValue(new Promise(() => {}));
+      await render("/organisations/org-1?tab=documents");
+      expect(container.textContent).toContain("Loading the engagement…");
+      expect(container.textContent).not.toContain("no client engagement yet");
+    });
+
+    it("asks for no client journey data when the engagement is a sales deal", async () => {
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      await render("/organisations/org-1?tab=deliverables");
+      expect(container.textContent).toContain("This organisation has no client engagement yet.");
+      expect(mockBridge.previewDeepDiveSync).not.toHaveBeenCalled();
+    });
   });
 });

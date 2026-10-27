@@ -279,6 +279,16 @@ export interface WebsiteChangeRequestResult {
   projectId: string | null;
 }
 
+/** An image stored on a change request task (GRE-2527). */
+export interface WebsiteChangeImage {
+  attachmentId: string;
+  issueId: string;
+  contentType: string;
+  byteSize: number;
+  originalFilename: string | null;
+  contentPath: string;
+}
+
 /**
  * An open comment on a page (GRE-2350): a change request task that is not done
  * or cancelled. `number` is its place among the page's open comments, oldest
@@ -348,6 +358,11 @@ export const WEBSITE_MODULE_API_ROUTES = {
    * POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId.
    */
   pageChangeRequests: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests",
+  /**
+   * POST multipart `file` → 201 `WebsiteChangeImage` (website:edit). GRE-2527: an image the person
+   * attached to that page's change request task. PNG, JPEG, WebP or GIF by its bytes, no SVG, at most 8 MB.
+   */
+  pageChangeRequestImages: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests/:issueId/images",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
   media: "/companies/:companyId/website/sites/:siteId/media",
   /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */
@@ -424,6 +439,49 @@ export interface WebsiteHomeActivity {
   createdAt: string;
 }
 
+/** A GSAM issue as the Home links to it. */
+export interface WebsiteHomeIssueLink {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+}
+
+/** Where this week's website release train is (GRE-2641). `none`: no train this week. */
+export type WebsiteTrainState = "none" | "cut" | "checking" | "waiting_for_approval" | "approved" | "rejected" | "live";
+
+/** The weekly website release train (GRE-2641, 25 Oct 2026). */
+export interface WebsiteHomeTrain {
+  /** The newest issue the "Weekly website release train" routine made; null before the first run. */
+  issue: WebsiteHomeIssueLink | null;
+  /** The `web-rc-YYYY-MM-DD` tag named on that issue, once cut. */
+  tag: string | null;
+  state: WebsiteTrainState;
+  /** The `weekly-release` card on that issue. */
+  card: {
+    id: string;
+    status: string;
+    /** The person who accepted or rejected it. */
+    resolvedByName: string | null;
+    resolvedAt: string | null;
+  } | null;
+  /** When the routine makes the next train. */
+  nextRunAt: string | null;
+}
+
+/** The launch date of the new site and the gates in front of it (GRE-2641). */
+export interface WebsiteHomeLaunch {
+  /** `YYYY-MM-DD`; null when no date is set. */
+  targetDate: string | null;
+  /** `agreed` once John or Ben accepts the launch card. */
+  agreement: "proposed" | "agreed";
+  /** Whole days from today (London) to the target; negative once passed. */
+  daysLeft: number | null;
+  /** The issue that holds the launch card. */
+  cardIssue: WebsiteHomeIssueLink | null;
+  gates: { label: string; identifier: string; issue: WebsiteHomeIssueLink | null }[];
+}
+
 /** The Website Home at a glance (24 Oct 2026): one read instead of five lists. */
 export interface WebsiteHomeSummary {
   /** Non-archived pages by status. */
@@ -447,4 +505,6 @@ export interface WebsiteHomeSummary {
   liveFraming: "allowed" | "refused" | "unknown";
   /** The same check of the In development address; `unknown` when there is none. */
   devFraming: "allowed" | "refused" | "unknown";
+  train: WebsiteHomeTrain;
+  launch: WebsiteHomeLaunch;
 }

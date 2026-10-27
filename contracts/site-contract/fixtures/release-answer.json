@@ -1,0 +1,10 @@
+{
+  "release": 7,
+  "siteId": "site-test-1",
+  "number": 7,
+  "source": "baked",
+  "engine": { "version": "0.4.0", "commit": "0123456789abcdef0123456789abcdef01234567" },
+  "supportedReleaseSchemas": [1],
+  "siteContract": 1,
+  "refused": null
+}

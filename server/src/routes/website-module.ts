@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import multer from "multer";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import publicImport from "../services/website/public-import-v1.json" with { type: "json" };
 import { and, eq } from "drizzle-orm";
@@ -28,8 +29,11 @@ import {
   updateWebsitePageSchema,
   updateWebsiteSiteSchema,
   websiteReleaseActionSchema,
+  WEBSITE_CHANGE_IMAGE_MAX_BYTES,
+  WEBSITE_CHANGE_MAX_ATTACHMENTS,
   type PermissionKey,
   type WebsiteAccess,
+  type WebsiteChangeImage,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
 import { HttpError, conflict, unprocessable } from "../errors.js";
@@ -51,7 +55,13 @@ import {
   type WebsitePerson,
   type WebsitePublishOptions,
 } from "../services/website/publish.js";
-import { websiteChangeRequestService } from "../services/website/change-request.js";
+import {
+  isWebsiteChangeRequestFor,
+  sniffWebsiteChangeImage,
+  websiteChangeRequestService,
+} from "../services/website/change-request.js";
+import { issueService } from "../services/issues.js";
+import type { StorageService } from "../storage/types.js";
 import type { WebsiteConnectionChecker } from "../services/website/connect-check.js";
 import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { WEBSITE_MESSAGES, type WebsiteMessageKey } from "../services/website/messages.js";
@@ -102,6 +112,8 @@ export interface WebsiteModuleRouteOptions {
   enquiryReader?: WebsiteEnquiryReader;
   /** Test seam for the Pipedrive copy; production uses the connected Pipedrive writer. */
   enquiryCopy?: WebsiteEnquiryCopy;
+  /** Where images attached to Ask an agent go (GRE-2527). Without it the upload route answers 503. */
+  storage?: StorageService;
 }
 
 /** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
@@ -140,6 +152,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
   const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
+  const issues = issueService(db);
   const access = accessService(db);
   const collectionValidator = new Ajv2020({ allErrors: true });
   const fieldValidators = new Map<string, ReturnType<typeof collectionValidator.compile>>();
@@ -671,6 +684,95 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       });
     }
     res.status(created ? 201 : 200).json(result);
+  });
+
+  // GRE-2527: an image the person attached to Ask an agent, stored on that
+  // page's change request task. website:edit, the task in this company and on
+  // this page. The bytes must be PNG, JPEG, WebP or GIF, whatever the name or
+  // the browser says: no SVG, nothing a browser could run. At most 8 MB.
+  const changeImageUpload = multer({
+    storage: multer.memoryStorage(),
+    defParamCharset: "utf8",
+    limits: { fileSize: WEBSITE_CHANGE_IMAGE_MAX_BYTES, files: 1 },
+  });
+  router.post(WEBSITE_MODULE_API_ROUTES.pageChangeRequestImages, async (req, res) => {
+    const found = await sitePageFor(req, res, "website:edit");
+    if (!found) return;
+    const { page } = found;
+    const issueId = req.params.issueId as string;
+    const issue = UUID_RE.test(issueId) ? await issues.getById(issueId) : null;
+    if (!issue || !isWebsiteChangeRequestFor(issue, page)) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    if (!options.storage) {
+      res.status(503).json({ error: "Image upload is not set up on this server." });
+      return;
+    }
+    // The request takes at most 10 attachments, plus the screenshot and the drawing's two files.
+    if ((await issues.listAttachments(issue.id)).length >= WEBSITE_CHANGE_MAX_ATTACHMENTS + 3) {
+      res.status(422).json({ error: "This task already has all the images one request takes.", code: "website_change_image_limit" });
+      return;
+    }
+    try {
+      await new Promise<void>((resolve, reject) => changeImageUpload.single("file")(req, res, (err: unknown) => (err ? reject(err) : resolve())));
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        res.status(422).json({
+          error: err.code === "LIMIT_FILE_SIZE" ? "The image is larger than 8 MB. Make it smaller and try again." : err.message,
+          code: err.code === "LIMIT_FILE_SIZE" ? "website_change_image_too_large" : "website_change_image_invalid",
+        });
+        return;
+      }
+      throw err;
+    }
+    const file = (req as Request & { file?: { buffer: Buffer; originalname: string } }).file;
+    if (!file || file.buffer.length === 0) {
+      res.status(422).json({ error: "Choose an image to attach.", code: "website_change_image_missing" });
+      return;
+    }
+    const contentType = sniffWebsiteChangeImage(file.buffer);
+    if (!contentType) {
+      res.status(422).json({ error: "Attach a PNG, JPEG, WebP or GIF image. Other files, SVG included, are not taken.", code: "website_change_image_type" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const stored = await options.storage.putFile({
+      companyId: page.companyId,
+      namespace: `issues/${issue.id}`,
+      originalFilename: file.originalname || null,
+      contentType,
+      body: file.buffer,
+    });
+    const attachment = await issues.createAttachment({
+      issueId: issue.id,
+      issueCommentId: null,
+      provider: stored.provider,
+      objectKey: stored.objectKey,
+      contentType: stored.contentType,
+      byteSize: stored.byteSize,
+      sha256: stored.sha256,
+      originalFilename: stored.originalFilename,
+      createdByAgentId: actor.agentId,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      createdByRunId: actor.runId,
+    });
+    await log(req, page.companyId, "website.change_image_attached", "issue", issue.id, {
+      siteId: page.siteId,
+      pageId: page.id,
+      attachmentId: attachment.id,
+      contentType,
+      byteSize: stored.byteSize,
+    });
+    const body: WebsiteChangeImage = {
+      attachmentId: attachment.id,
+      issueId: issue.id,
+      contentType,
+      byteSize: stored.byteSize,
+      originalFilename: stored.originalFilename ?? null,
+      contentPath: `/api/attachments/${attachment.id}/content`,
+    };
+    res.status(201).json(body);
   });
 
   router.get(WEBSITE_MODULE_API_ROUTES.media, async (req, res) => {

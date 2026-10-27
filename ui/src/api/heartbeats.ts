@@ -28,6 +28,7 @@ export interface ActiveRunForIssue {
   triggerDetail: string | null;
   contextCommentId?: string | null;
   contextWakeCommentId?: string | null;
+  correctionState?: "waiting" | "restarting" | "delivered" | null;
   startedAt: string | Date | null;
   finishedAt: string | Date | null;
   createdAt: string | Date;
@@ -61,6 +62,7 @@ export interface LiveRunForIssue {
   triggerDetail: string | null;
   contextCommentId?: string | null;
   contextWakeCommentId?: string | null;
+  correctionState?: "waiting" | "restarting" | "delivered" | null;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;

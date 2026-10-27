@@ -8,6 +8,7 @@ import {
   companies,
   createDb,
   instanceSettings,
+  organisationContacts,
   pipelineCaseContacts,
   pipelineCaseEvents,
   pipelineCases,
@@ -220,6 +221,24 @@ describeEmbeddedPostgres("pipeline case contacts", () => {
     await agentWithoutGrant.patch(`/api/cases/${caseId}/contacts/${contact.body.id}`).send({ name: "Changed" }).expect(403);
     await agentWithoutGrant.delete(`/api/cases/${caseId}/contacts/${contact.body.id}`).expect(403);
     expect(await db.select().from(pipelineCaseContacts)).toEqual([expect.objectContaining({ name: "Ama" })]);
+  });
+
+  // GRE-2658: a contact linked to a website account is referenced by website_user_id and keeps no email copy.
+  it("holds an email only for contacts not linked to a website account", async () => {
+    const company = await seedCompany("Greatstone");
+    const { caseId } = await seedClientCase(company.id, "Client A");
+
+    await db.insert(pipelineCaseContacts).values({ companyId: company.id, caseId, name: "Prospect", email: "p@example.com" });
+    await db.insert(pipelineCaseContacts).values({ companyId: company.id, caseId, name: "Linked", websiteUserId: "web_user_1" });
+    await expect(
+      db.insert(pipelineCaseContacts).values({ companyId: company.id, caseId, name: "Both", websiteUserId: "web_user_2", email: "b@example.com" }),
+    ).rejects.toMatchObject({ cause: expect.objectContaining({ constraint_name: "pipeline_case_contacts_linked_no_email_check" }) });
+
+    await db.insert(organisationContacts).values({ companyId: company.id, name: "Prospect", email: "p@example.com" });
+    await db.insert(organisationContacts).values({ companyId: company.id, name: "Linked", websiteUserId: "web_user_1" });
+    await expect(
+      db.insert(organisationContacts).values({ companyId: company.id, name: "Both", websiteUserId: "web_user_2", email: "b@example.com" }),
+    ).rejects.toMatchObject({ cause: expect.objectContaining({ constraint_name: "organisation_contacts_linked_no_email_check" }) });
   });
 
   it("shows how long each case has been in its stage", async () => {

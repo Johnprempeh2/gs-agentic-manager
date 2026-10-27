@@ -9,6 +9,7 @@ import {
   websiteCommerceItemQuerySchema,
   websiteCommerceListQuerySchema,
   websiteDataListQuerySchema,
+  websiteActivityEventsQuerySchema,
   websiteCommerceRefundRequestSchema,
   websiteCommerceWriteOperation,
   websitePaymentReportQuerySchema,
@@ -131,6 +132,27 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     res.json(await bridge.status(site));
   });
 
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.health, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await bridge.releaseHealth(site, actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.activityEvents, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const query = queryOf(websiteActivityEventsQuerySchema, req);
+    res.json(await bridge.activityEvents(site, query.cursor, query.limit, actorOf(req)));
+  });
+
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.schemaProbe, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await bridge.schemaProbe(site, actorOf(req)));
+  });
+
   router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.key, validate(createWebsiteDataBridgeKeySchema), async (req, res) => {
     const site = await siteFor(req, res, "website:publish");
     if (!site) return;
@@ -153,6 +175,7 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const query = websiteDataListQuerySchema.safeParse(req.query);
     if (!query.success) throw unprocessable(`The filters are not valid: ${query.error.issues[0]?.path.join(".") || "query"}`, { code: "website_data_filters_invalid" });
     if (resource === "enquiries" && query.data.customer) throw unprocessable("Enquiries cannot be filtered by customer", { code: "website_data_filters_invalid" });
+    if (resource === "billing-lines" && !query.data.customer) throw unprocessable("Billing lines require a customer", { code: "website_data_filters_invalid" });
     res.json(await bridge.list(site, resource, query.data, actorOf(req)));
   });
 
@@ -285,6 +308,12 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     const resource = commerceResourceOf(req);
+    if (resource === "billing-lines") {
+      const query = queryOf(websiteDataListQuerySchema, req);
+      if (!query.customer) throw unprocessable("Billing lines require a customer", { code: "website_data_filters_invalid" });
+      res.json(await bridge.commerce.list(site, resource, query, actorOf(req)));
+      return;
+    }
     res.json(await bridge.commerce.list(site, resource, queryOf(websiteCommerceListQuerySchema, req), actorOf(req)));
   });
 

@@ -1,0 +1,8 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/deep-dive-sync-ack",
+  "title": "The site's answer to a Deep Dive push",
+  "type": "object",
+  "required": ["ok", "tenantId"],
+  "properties": { "ok": { "const": true }, "tenantId": { "type": "string", "format": "uuid" } }
+}

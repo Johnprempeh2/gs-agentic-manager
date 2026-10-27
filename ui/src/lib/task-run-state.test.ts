@@ -35,6 +35,16 @@ const labels: Record<string, string> = { "gre-2217": "GRE-2217", "gre-2019": "GR
 const issueLabel = (id: string) => labels[id];
 
 describe("deriveTaskRunState", () => {
+  it("shows a correction waiting on the active run", () => {
+    const state = deriveTaskRunState("issue", [run({ correctionState: "waiting" })], { now: NOW })!;
+    expect(describeTaskRunState(state, { now: NOW }).label).toBe("Correction waiting");
+  });
+
+  it("shows a queued replacement as restarting with correction", () => {
+    const state = deriveTaskRunState("issue", [run({ status: "queued", startedAt: null, correctionState: "restarting" })], { now: NOW })!;
+    expect(describeTaskRunState(state, { now: NOW }).label).toBe("Restarting with correction");
+  });
+
   it("running: says Working with elapsed time and last output", () => {
     const runs = [run({ id: "r1", issueId: "gre-2217", lastEventAt: ago(20_000) })];
     const state = deriveTaskRunState("gre-2217", runs, { now: NOW, agentsById: lintelOneSlot });

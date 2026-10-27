@@ -1,5 +1,5 @@
 {
-  "id": "388ec3d7-2863-4c6d-959e-8ef64a9f3089",
+  "id": "e9c3e04b-5418-4bfd-a651-10ba9425e841",
   "prevId": "36f198df-69bb-4b64-ad13-235faebd5f8a",
   "version": "7",
   "dialect": "postgresql",
@@ -47070,6 +47070,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_user_id": {
+          "name": "website_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "email": {
           "name": "email",
           "type": "text",
@@ -47191,6 +47197,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "organisation_contacts_company_website_user_idx": {
+          "name": "organisation_contacts_company_website_user_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "website_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"organisation_contacts\".\"website_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -47241,6 +47269,10 @@
         "organisation_contacts_source_check": {
           "name": "organisation_contacts_source_check",
           "value": "\"organisation_contacts\".\"source\" in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')"
+        },
+        "organisation_contacts_linked_no_email_check": {
+          "name": "organisation_contacts_linked_no_email_check",
+          "value": "\"organisation_contacts\".\"website_user_id\" is null or \"organisation_contacts\".\"email\" is null"
         }
       },
       "isRLSEnabled": false
@@ -48383,6 +48415,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_user_id": {
+          "name": "website_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "email": {
           "name": "email",
           "type": "text",
@@ -48484,6 +48522,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "pipeline_case_contacts_company_website_user_idx": {
+          "name": "pipeline_case_contacts_company_website_user_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "website_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"pipeline_case_contacts\".\"website_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -48530,7 +48590,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "pipeline_case_contacts_linked_no_email_check": {
+          "name": "pipeline_case_contacts_linked_no_email_check",
+          "value": "\"pipeline_case_contacts\".\"website_user_id\" is null or \"pipeline_case_contacts\".\"email\" is null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.pipeline_case_document_requests": {
@@ -65965,248 +66030,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.website_activity_cursors": {
-      "name": "website_activity_cursors",
-      "schema": "",
-      "columns": {
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "site_id": {
-          "name": "site_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sequence": {
-          "name": "sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "website_activity_cursors_company_id_companies_id_fk": {
-          "name": "website_activity_cursors_company_id_companies_id_fk",
-          "tableFrom": "website_activity_cursors",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "website_activity_cursors_company_id_site_id_website_site_company_id_id_fk": {
-          "name": "website_activity_cursors_company_id_site_id_website_site_company_id_id_fk",
-          "tableFrom": "website_activity_cursors",
-          "tableTo": "website_site",
-          "columnsFrom": [
-            "company_id",
-            "site_id"
-          ],
-          "columnsTo": [
-            "company_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "website_activity_cursors_company_id_site_id_pk": {
-          "name": "website_activity_cursors_company_id_site_id_pk",
-          "columns": [
-            "company_id",
-            "site_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "website_activity_cursor_positive": {
-          "name": "website_activity_cursor_positive",
-          "value": "\"website_activity_cursors\".\"sequence\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.website_activity_events": {
-      "name": "website_activity_events",
-      "schema": "",
-      "columns": {
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "site_id": {
-          "name": "site_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sequence": {
-          "name": "sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ingested_at": {
-          "name": "ingested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "website_activity_client_idx": {
-          "name": "website_activity_client_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sequence",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "website_activity_events_company_id_companies_id_fk": {
-          "name": "website_activity_events_company_id_companies_id_fk",
-          "tableFrom": "website_activity_events",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "website_activity_events_company_id_site_id_website_site_company_id_id_fk": {
-          "name": "website_activity_events_company_id_site_id_website_site_company_id_id_fk",
-          "tableFrom": "website_activity_events",
-          "tableTo": "website_site",
-          "columnsFrom": [
-            "company_id",
-            "site_id"
-          ],
-          "columnsTo": [
-            "company_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "website_activity_events_company_id_site_id_sequence_pk": {
-          "name": "website_activity_events_company_id_site_id_sequence_pk",
-          "columns": [
-            "company_id",
-            "site_id",
-            "sequence"
-          ]
-        }
-      },
-      "uniqueConstraints": {
-        "website_activity_source_id_uq": {
-          "name": "website_activity_source_id_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "company_id",
-            "site_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "website_activity_sequence_positive": {
-          "name": "website_activity_sequence_positive",
-          "value": "\"website_activity_events\".\"sequence\" > 0"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.website_bridge_inbound_nonces": {

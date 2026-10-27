@@ -160,6 +160,19 @@ describe("describeInteractionAudience", () => {
     );
   });
 
+  it("names the shared resolver audience without claiming the card is open", () => {
+    const audience = describeInteractionAudience({
+      interaction: confirmation({
+        resolverUserIds: ["john", "ben"],
+        requestedResolverPolicy: "human_only",
+        effectiveResolverPolicy: "human_only",
+      }),
+    });
+    expect(audience.isOpen).toBe(false);
+    expect(audience.summary).toContain("first answer counts");
+    expect(audience.label).toBe("Addressed");
+  });
+
   it("keeps addressee ownership copy when a named agent owns the card", () => {
     const audience = describeInteractionAudience({
       interaction: confirmation({ addresseeAgentId: "agent-release" }),

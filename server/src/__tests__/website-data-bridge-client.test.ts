@@ -26,7 +26,7 @@ const PRIVATE = createPrivateKey({
 });
 const CREDENTIAL = { kid: CONTRACT.key.kid, privateKey: PRIVATE };
 const ACTOR = { type: "agent" as const, id: "d5651a41-e5e0-4512-8fb0-069815ff4278", runId: "9ef9feeb-d13b-450d-b404-89a39e406161" };
-const HEALTH = { ok: true, kid: CONTRACT.key.kid, capability: "read", serverTime: "2026-10-24T22:00:00.000Z", schema: "gs-bridge-v1" };
+const HEALTH = { ok: true, kid: CONTRACT.key.kid, capability: "read", serverTime: "2026-10-24T22:00:00.000Z", schema: "gs-bridge-v1", siteContract: 1 };
 
 function parseActor(actor: string) {
   const [type, id] = actor.split(":") as ["agent" | "user", string];
@@ -108,6 +108,15 @@ function client(answers: Array<Response | Error>) {
 }
 
 describe("website bridge client", () => {
+  it("rejects a release health response without a positive site contract and read capability", async () => {
+    for (const health of [{ ...HEALTH, siteContract: 0 }, { ...HEALTH, capability: "write" }]) {
+      const { c, calls } = client([json(200, health)]);
+      await expect(c.releaseHealth(ACTOR)).rejects.toMatchObject({ code: "bad_response", status: 502 });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.method).toBe("GET");
+    }
+  });
+
   it("signs each attempt afresh, so a retry is never a replay", async () => {
     const { c, calls, sleeps } = client([json(503, { error: { code: "unavailable" } }), new TypeError("fetch failed"), json(200, HEALTH)]);
     await expect(c.health(ACTOR)).resolves.toMatchObject({ ok: true });

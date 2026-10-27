@@ -36,7 +36,7 @@ if (!embeddedPostgresSupport.supported) {
 }
 
 type Actor = Express.Request["actor"];
-type Seen = { url: string; headers: Record<string, string>; verified: boolean };
+type Seen = { url: string; method: string; headers: Record<string, string>; verified: boolean };
 
 // GRE-2323: the read key's setup (people only; the private key never in a response), the "Website data" status, and
 // signed reads that name the caller. The site is a fake fetch that checks each signature with the public key the
@@ -60,7 +60,7 @@ describeEmbeddedPostgres("website data bridge routes", () => {
       run: headers["x-gs-bridge-run"] ?? null, bodySha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" });
     const verified = Boolean(pub) && verify(null, Buffer.from(canonical), createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: pub! }, format: "jwk" }),
       Buffer.from(headers["x-gs-bridge-signature"]!, "base64url"));
-    seen.push({ url: url.toString(), headers, verified });
+    seen.push({ url: url.toString(), method: String(init.method), headers, verified });
     if (!verified) return new Response(JSON.stringify({ error: { code: "bad_signature" } }), { status: 401 });
     return answer(url);
   }) as unknown as typeof fetch;
@@ -179,7 +179,7 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect((await http.get(`${base}/data-bridge/status`).expect(200)).body).toMatchObject({ state: "not_set_up", keyId: null, url: "https://www.greatstone.test" });
 
     const key = await makeKey(base);
-    answer = () => Response.json({ ok: true, kid: key.keyId, capability: "read", serverTime: new Date(Date.now() + 3_000).toISOString(), schema: "gs-bridge-v1" });
+    answer = () => Response.json({ ok: true, kid: key.keyId, capability: "read", serverTime: new Date(Date.now() + 3_000).toISOString(), schema: "gs-bridge-v1", siteContract: 1 });
     const ok = (await http.get(`${base}/data-bridge/status`).expect(200)).body as WebsiteDataBridgeStatus;
     expect(ok).toMatchObject({ state: "connected", keyId: key.keyId, message: null });
     expect(ok.clockSkewSeconds).toBeGreaterThanOrEqual(2);
@@ -193,6 +193,15 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     const failing = (await http.get(`${base}/data-bridge/status`).expect(200)).body as WebsiteDataBridgeStatus;
     expect(failing).toMatchObject({ state: "failing", keyId: second.keyId });
     expect(failing.message).toMatch(/GSAM_BRIDGE_KEYS/);
+  });
+
+  it("shows a site on an older GSAM and website contract as out of date (GRE-2633)", async () => {
+    const { base } = await seedSite();
+    const key = await makeKey(base);
+    answer = () => Response.json({ ok: true, kid: key.keyId, capability: "read", serverTime: new Date().toISOString(), schema: "gs-bridge-v1" });
+    const old = (await request(app()).get(`${base}/data-bridge/status`).expect(200)).body as WebsiteDataBridgeStatus;
+    expect(old).toMatchObject({ state: "failing", keyId: key.keyId });
+    expect(old.message).toBe("Out of date: update the website. The website speaks contract none; GSAM needs 1 or later.");
   });
 
   it("reads through the bridge as the calling agent and run, read only", async () => {
@@ -276,6 +285,34 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect(seen.every((s) => s.verified)).toBe(true);
   });
 
+  it("reads billing lines for one customer through either read path with website:view", async () => {
+    const { base, companyId } = await seedSite();
+    const customer = randomUUID();
+    const otherCustomer = randomUUID();
+    const line = { id: randomUUID(), customer_id: customer, description: "Monthly service", qty: 2,
+      unit_price_minor: "1250", currency: "GBP", billing_period: "monthly", next_bill_on: "2026-12-01", status: "active" };
+    await makeKey(base);
+    answer = (url) => Response.json({ items: url.searchParams.get("customer") === customer ? [line] : [], nextCursor: null });
+    const { actor } = await seedAgent(companyId, ["website:view"]);
+
+    for (const route of ["data", "commerce"]) {
+      const path = `${base}/${route}/billing-lines`;
+      expect((await request(app(actor)).get(`${path}?customer=${customer}`).expect(200)).body.items).toEqual([line]);
+      expect(seen.at(-1)?.url).toBe(`https://www.greatstone.test/api/admin/v1/billing-lines?customer=${customer}`);
+      expect((await request(app(actor)).get(`${path}?customer=${otherCustomer}`).expect(200)).body.items).toEqual([]);
+      const calls = seen.length;
+      await request(app(actor)).get(path).expect(422);
+      await request(app(actor)).get(`${path}?customer=bad`).expect(422);
+      expect(seen).toHaveLength(calls);
+      await request(app(actor)).post(path).send({}).expect(route === "data" ? 404 : 403);
+    }
+    const { actor: denied } = await seedAgent(companyId, []);
+    await request(app(denied)).get(`${base}/data/billing-lines?customer=${customer}`).expect(403);
+    await request(app(denied)).get(`${base}/commerce/billing-lines?customer=${customer}`).expect(403);
+    await request(app(actor)).get(`${base}/data/unknown-resource?customer=${customer}`).expect(422);
+    await request(app(actor)).get(`${base}/commerce/unknown-resource?customer=${customer}`).expect(422);
+  });
+
   it("refuses a caller without website:view, and a site in another company is not found", async () => {
     const { base, companyId } = await seedSite();
     const { actor } = await seedAgent(companyId, []);
@@ -284,5 +321,79 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     await request(app(actor)).get(`${base}/commerce/offerings`).expect(403);
     await request(app(actor)).get(`${base}/commerce/payments`).expect(403);
     await request(app()).get(`/api/companies/${companyId}/website/sites/${randomUUID()}/data-bridge/status`).expect(404);
+  });
+
+  it("checks staging health, activity and table existence with one scoped read key and no rows", async () => {
+    const { base: publicBase, companyId } = await seedSite();
+    const stagingSite = (await request(app()).post(`/api/companies/${companyId}/website/sites`)
+      .send({ name: "Staging", domain: "gre1795-website-db-staging.netlify.app",
+        netlifySiteId: "8c1135a6-6f8e-43f4-b9b2-3c4d5b6a36cb" }).expect(201)).body;
+    const siteId = stagingSite.id as string;
+    const stagingBase = `/api/companies/${companyId}/website/sites/${siteId}`;
+    const { actor, agentId } = await seedAgent(companyId, []);
+    await db.insert(principalPermissionGrants).values({ companyId, principalType: "agent", principalId: agentId,
+      permissionKey: "website:view", scope: { siteIds: [siteId] } });
+    const http = request(app(actor));
+
+    for (const path of ["health", "activity-events?cursor=0&limit=1", "schema"]) {
+      await http.get(`${stagingBase}/data-bridge/${path}`).expect(409);
+      await http.get(`${publicBase}/data-bridge/${path}`).expect(404);
+    }
+    const { actor: denied } = await seedAgent(companyId, []);
+    await request(app(denied)).get(`${stagingBase}/data-bridge/health`).expect(403);
+    await request(app(denied)).get(`${stagingBase}/data-bridge/activity-events?cursor=0&limit=1`).expect(403);
+    await request(app(denied)).get(`${stagingBase}/data-bridge/schema`).expect(403);
+    expect(seen).toHaveLength(0);
+
+    const key = await makeKey(stagingBase);
+    answer = (url) => {
+      if (url.pathname.endsWith("/health")) return Response.json({ ok: true, kid: key.keyId, capability: "read",
+        serverTime: new Date().toISOString(), schema: "gs-bridge-v1", siteContract: 1 });
+      if (url.pathname.endsWith("/activity-events")) return Response.json({ items: [], nextCursor: "0" });
+      if (url.pathname.endsWith("/schema")) return Response.json({ tables: { billing_lines: true, client_activity_outbox: false } });
+      return Response.json({ error: { code: "not_found" } }, { status: 404 });
+    };
+    expect((await http.get(`${stagingBase}/data-bridge/health`).expect(200)).body).toMatchObject({ siteContract: 1, capability: "read" });
+    expect((await http.get(`${stagingBase}/data-bridge/activity-events?cursor=0&limit=1`).expect(200)).body)
+      .toEqual({ items: [], nextCursor: "0" });
+    expect((await http.get(`${stagingBase}/data-bridge/schema`).expect(200)).body)
+      .toEqual({ tables: { billing_lines: true, client_activity_outbox: false } });
+    expect(seen.map((s) => new URL(s.url).pathname)).toEqual([
+      "/api/admin/v1/health", "/api/admin/v1/activity-events", "/api/admin/v1/schema",
+    ]);
+    expect(seen.every((s) => s.verified && s.method === "GET" && new URL(s.url).hostname === "gre1795-website-db-staging.netlify.app"
+      && s.headers["x-gs-bridge-key"] === key.keyId && s.headers["x-gs-bridge-actor"] === `agent:${agentId}`)).toBe(true);
+    expect(seen[1]!.url).toBe("https://gre1795-website-db-staging.netlify.app/api/admin/v1/activity-events?cursor=0&limit=1");
+
+    answer = () => Response.json({ items: [{ sequence: "9", id: randomUUID(), organisationId: randomUUID(),
+      kind: "quote.made", subjectId: "quote-1", label: "Quote made", occurredAt: new Date().toISOString(), privateKey: "must not escape" }],
+    nextCursor: "9" });
+    const eventPage = (await http.get(`${stagingBase}/data-bridge/activity-events?cursor=0&limit=1`).expect(200)).body;
+    expect(eventPage.items).toHaveLength(1);
+    expect(eventPage.nextCursor).toBe("9");
+    expect(JSON.stringify(eventPage)).not.toContain("privateKey");
+
+    for (const health of [
+      { ok: true, kid: key.keyId, capability: "read", serverTime: new Date().toISOString(), schema: "gs-bridge-v1", siteContract: 0 },
+      { ok: true, kid: key.keyId, capability: "write", serverTime: new Date().toISOString(), schema: "gs-bridge-v1", siteContract: 1 },
+    ]) {
+      answer = () => Response.json(health);
+      const invalid = await http.get(`${stagingBase}/data-bridge/health`).expect(502);
+      expect(invalid.body.details?.code ?? invalid.body.code).toBe("website_bridge_bad_response");
+    }
+
+    const calls = seen.length;
+    for (const query of ["", "?cursor=x&limit=1", "?cursor=9223372036854775808&limit=1", "?cursor=0&limit=0",
+      "?cursor=0&limit=101", "?cursor=0&limit=1&path=customers"]) {
+      await http.get(`${stagingBase}/data-bridge/activity-events${query}`).expect(422);
+    }
+    await http.get(`${stagingBase}/data-bridge/health?url=https://public.greatstone.test`).expect(422);
+    await http.get(`${stagingBase}/data-bridge/schema?table=customers`).expect(422);
+    expect(seen).toHaveLength(calls);
+
+    answer = () => Response.json({ error: { code: "unavailable" } }, { status: 503 });
+    const failure = await http.get(`${stagingBase}/data-bridge/schema`).expect(502);
+    expect(failure.body.details?.code ?? failure.body.code).toBe("website_bridge_server_error");
+    expect(seen.every((s) => s.method === "GET")).toBe(true);
   });
 });

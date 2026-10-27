@@ -55,6 +55,7 @@ export function createSanitizedAcpxSpawnInput(
     "RUST_BACKTRACE",
     "GSAM_NATIVE_MCP_NAME",
     "GSAM_NATIVE_MCP_URL",
+    ...(agent === "claude" && environment !== undefined ? ["MCP_TOOL_TIMEOUT"] : []),
     ...credentialNames,
   ]);
   let retainedBytes = 0;

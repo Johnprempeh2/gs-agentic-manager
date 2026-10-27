@@ -179,6 +179,68 @@ export type RestoreWebsiteRevision = z.infer<typeof restoreWebsiteRevisionSchema
 export const WEBSITE_COMMENT_WIDTHS = ["laptop", "tablet", "phone"] as const;
 export type WebsiteCommentWidth = (typeof WEBSITE_COMMENT_WIDTHS)[number];
 
+/** Most marks one drawing keeps (GRE-2518). */
+export const WEBSITE_MARKUP_MAX_MARKS = 100;
+/** Longest text label on a drawing. */
+export const WEBSITE_MARKUP_MAX_LABEL = 120;
+
+/** Most attachments one Ask an agent request carries (GRE-2527). */
+export const WEBSITE_CHANGE_MAX_ATTACHMENTS = 10;
+/** Longest one-line note on an attachment. */
+export const WEBSITE_CHANGE_NOTE_MAX = 140;
+/** Largest image a person can upload to a request. The server checks it again. */
+export const WEBSITE_CHANGE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+/** The image types a request takes. No SVG: it can carry script. The server checks the bytes, not the name. */
+export const WEBSITE_CHANGE_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export type WebsiteChangeImageType = (typeof WEBSITE_CHANGE_IMAGE_TYPES)[number];
+
+const attachmentNoteSchema = z
+  .string()
+  .trim()
+  .max(WEBSITE_CHANGE_NOTE_MAX)
+  .regex(/^[^\r\n]*$/, "Keep the note to one line.")
+  .optional();
+
+/**
+ * GRE-2527: one thing the person added to show what they mean. An `upload` is
+ * a file GSAM attaches to the task right after, by name; `media` is an image
+ * already in Website media or Image Studio, by its asset; a `link` is a
+ * reference site; an `effect` is one from the site's effects library.
+ */
+export const websiteChangeAttachmentSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("upload"), name: z.string().trim().min(1).max(200), note: attachmentNoteSchema }).strict(),
+  z
+    .object({
+      kind: z.literal("media"),
+      source: z.enum(["website", "studio"]),
+      assetId: z.string().uuid(),
+      label: z.string().trim().max(200),
+      note: attachmentNoteSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("link"),
+      url: z
+        .string()
+        .trim()
+        .max(2000)
+        .url()
+        .refine((url) => /^https?:\/\//i.test(url), "Use an http or https address."),
+      note: attachmentNoteSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("effect"),
+      effectId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/),
+      label: z.string().trim().max(120),
+      note: attachmentNoteSchema,
+    })
+    .strict(),
+]);
+export type WebsiteChangeAttachment = z.infer<typeof websiteChangeAttachmentSchema>;
+
 /**
  * Click to change (GRE-2121) and Ask an agent (GRE-2350). With a block, the
  * task is about that block; with no `blockId` and `blockType`, it is about the
@@ -203,15 +265,41 @@ export const createWebsiteChangeRequestSchema = z
       .strict()
       .nullable()
       .optional(),
-    /** The change, in the person's own words. */
-    request: z.string().trim().min(1).max(4000),
+    /** The change, in the person's own words. May be empty when they drew it instead. */
+    request: z.string().trim().max(4000),
     /** The editor captured a PNG (GRE-2361); GSAM attaches it to the task right after. */
     screenshot: z.boolean().optional(),
+    /**
+     * GRE-2518: the person drew on the screenshot. GSAM attaches the marked-up
+     * PNG and the drawing's vector JSON right after; this is what the task
+     * says about them, so the agent can read the labels without the image.
+     */
+    markup: z
+      .object({
+        /** Marks drawn: pen, arrow, box, highlight, label and marker each count one. */
+        marks: z.number().int().positive().max(WEBSITE_MARKUP_MAX_MARKS),
+        /** Numbered markers, 1 to `markers`. */
+        markers: z.number().int().min(0).max(WEBSITE_MARKUP_MAX_MARKS),
+        /** The text labels, in the order drawn. */
+        labels: z.array(z.string().trim().min(1).max(WEBSITE_MARKUP_MAX_LABEL)).max(WEBSITE_MARKUP_MAX_MARKS),
+      })
+      .strict()
+      .optional(),
+    /** GRE-2527: images, media, links and effects, in the order added. */
+    attachments: z.array(websiteChangeAttachmentSchema).max(WEBSITE_CHANGE_MAX_ATTACHMENTS).optional(),
   })
   .strict()
   .refine((value) => (value.blockId === undefined) === (value.blockType === undefined), {
     message: "Send blockId and blockType together, or neither for the whole page.",
     path: ["blockType"],
+  })
+  .refine((value) => value.request.length > 0 || value.markup !== undefined || (value.attachments?.length ?? 0) > 0, {
+    message: "Describe, draw or attach what you want changed.",
+    path: ["request"],
+  })
+  .refine((value) => value.markup === undefined || value.screenshot === true, {
+    message: "A drawing needs the screenshot it was drawn on.",
+    path: ["markup"],
   });
 export type CreateWebsiteChangeRequest = z.infer<typeof createWebsiteChangeRequestSchema>;
 

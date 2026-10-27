@@ -194,7 +194,7 @@ async function connect(ackExtra: Record<string, unknown> = {}) {
   };
   await fromFrame({
     type: "hello-ack",
-    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], blocks: [{ type: "Hero", label: "Hero" }], editorContract: 1, ...ackExtra },
+    payload: { protocol: 1, nonce, siteId: "site-1", engine: { version: "1.0.0", commit: "b".repeat(40) }, supportedReleaseSchemas: [1], siteContract: 1, blocks: [{ type: "Hero", label: "Hero" }], editorContract: 1, ...ackExtra },
   });
   const sent = (type: string) => posted.mock.calls.map((call) => call[0] as { type: string; payload: Record<string, unknown> }).filter((message) => message.type === type);
   const save = (requestId: string) => fromFrame({ protocol: 1, session: nonce, type: "save", payload: { requestId, pageId: "page-1", baseRevisionId: "rev-2", data } });
@@ -337,7 +337,21 @@ describe("WebsiteFullScreenEditor", () => {
     expect(image.alt).toBe("Team");
   });
 
-  it("click to change: pick, describe, confirm creates exactly one task with the durable reference", async () => {
+  it("Ask an agent offers the effects library the site's editor sent (GRE-2527)", async () => {
+    await render();
+    await openPreview();
+    const { pickBlock } = await connect({ motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "/motion/ascent.webp" }] });
+    await pickBlock();
+    await act(async () => button("Effect").click());
+    await flush();
+    const choice = document.body.querySelector<HTMLButtonElement>('[data-testid="website-change-effects"] button')!;
+    expect(choice.textContent).toBe("Ascent");
+    await act(async () => choice.click());
+    await flush();
+    expect(panel()!.querySelector('[data-testid="website-change-attachment"]')!.textContent).toBe("Effect · Ascent");
+  });
+
+  it("click to change: pick, describe, Send creates exactly one task with the durable reference", async () => {
     api.requestChange.mockResolvedValue({ issueId: "issue-1", identifier: "GRE-9001", title: "Website change: Hero banner on Home", assigneeAgentId: "lintel", projectId: "proj-1" });
     await render();
     await openPreview();
@@ -348,15 +362,12 @@ describe("WebsiteFullScreenEditor", () => {
     expect(panel()!.dataset.step).toBe("describe");
     expect(panel()!.textContent).toContain("Hero banner on Home");
     expect(panel()!.textContent).not.toContain("h1");
-    expect(button("Review").disabled).toBe(true);
+    expect(button("Send").disabled).toBe(true);
+    expect(textarea().placeholder).toBe("Describe or draw what you want changed");
 
     await type("Make the heading shorter.");
-    await act(async () => button("Review").click());
-    expect(panel()!.dataset.step).toBe("confirm");
-    expect(document.body.querySelector('[data-testid="website-change-summary"]')!.textContent).toBe("Make the heading shorter.");
     expect(api.requestChange).not.toHaveBeenCalled();
-
-    await act(async () => button("Create task").click());
+    await act(async () => button("Send").click());
     await flush();
     expect(api.requestChange).toHaveBeenCalledTimes(1);
     const [companyId, siteId, pageId, input] = api.requestChange.mock.calls[0]!;
@@ -377,7 +388,7 @@ describe("WebsiteFullScreenEditor", () => {
     expect(text()).toContain("is with the website agent");
   });
 
-  it("click to change: Cancel at describe or confirm creates nothing and clears the highlight", async () => {
+  it("click to change: Cancel creates nothing and clears the highlight", async () => {
     await render();
     await openPreview();
     const { pickBlock, sent } = await connect();
@@ -388,7 +399,6 @@ describe("WebsiteFullScreenEditor", () => {
 
     await pickBlock();
     await type("Change the photo.");
-    await act(async () => button("Review").click());
     await act(async () => button("Cancel").click());
     expect(panel()).toBeNull();
     expect(api.requestChange).not.toHaveBeenCalled();
@@ -424,8 +434,7 @@ describe("WebsiteFullScreenEditor", () => {
       await act(async () => labelled("Ask an agent").click());
       await flush();
       await type(words);
-      await act(async () => button("Review").click());
-      await act(async () => button("Create task").click());
+      await act(async () => button("Send").click());
       await flush();
     }
 
@@ -610,6 +619,119 @@ describe("WebsiteFullScreenEditor", () => {
         expect(issues.addComment).toHaveBeenCalledWith("issue-7", expect.stringContaining("No screenshot is attached to this task."));
         expect(panel()!.dataset.step).toBe("created");
         expect(panel()!.querySelector('[data-testid="website-change-screenshot"]')!.textContent).toContain("did not upload");
+      });
+    });
+
+    describe("draw on the page (GRE-2518)", () => {
+      const COMMENT_MESSAGES = { editorMessages: ["comment-pins", "pin-clicked", "ask-agent", "capture"] };
+      /** A PNG header the size of a 1440 x 900 screenshot: enough for the drawing to read its size. */
+      const PNG_1440 = (() => {
+        const bytes = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, ..."IHDR".split("").map((c) => c.charCodeAt(0)), 0, 0, 5, 160, 0, 0, 3, 132, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        return `data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`;
+      })();
+      const originals = {
+        src: Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src")!,
+        getContext: HTMLCanvasElement.prototype.getContext,
+        toBlob: HTMLCanvasElement.prototype.toBlob,
+      };
+
+      beforeEach(() => {
+        // jsdom loads no images and has no 2D canvas: load at once and record nothing.
+        Object.defineProperty(HTMLImageElement.prototype, "src", {
+          configurable: true,
+          set(this: HTMLImageElement) {
+            setTimeout(() => this.onload?.(new Event("load")));
+          },
+        });
+        const ctx = new Proxy({}, { get: (_target, prop) => (prop === "measureText" ? () => ({ width: 40 }) : () => undefined), set: () => true });
+        HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.toBlob = function (done: BlobCallback) {
+          done(new Blob(["png"], { type: "image/png" }));
+        };
+      });
+
+      afterEach(() => {
+        Object.defineProperty(HTMLImageElement.prototype, "src", originals.src);
+        HTMLCanvasElement.prototype.getContext = originals.getContext;
+        HTMLCanvasElement.prototype.toBlob = originals.toBlob;
+      });
+
+      const layer = () => document.body.querySelector<HTMLElement>('[data-testid="website-markup-layer"]');
+      const canvas = () => document.body.querySelector<SVGSVGElement>('[data-testid="website-markup-canvas"]')!;
+      async function tapCanvas(x: number, y: number) {
+        canvas().getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 450, right: 720, bottom: 450, x: 0, y: 0, toJSON: () => ({}) });
+        await act(async () => {
+          canvas().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, pointerId: 1 }));
+        });
+      }
+
+      async function openOnBlock() {
+        await render();
+        const editor = await connect(COMMENT_MESSAGES);
+        await editor.reply("ask-agent", { blockId: "h1", blockType: "Hero", label: "Hero banner" });
+        const [capture] = editor.sentMessages("capture");
+        expect(capture!.payload).toEqual({ blockId: "h1" });
+        return { editor, capture: capture! };
+      }
+
+      it("the screenshot is taken as the box opens and the drawing layer covers the page, in Edit copy", async () => {
+        const { editor, capture } = await openOnBlock();
+        expect(panel()!.querySelector('[data-testid="website-change-drawing"]')!.getAttribute("data-state")).toBe("pending");
+        expect(layer()).toBeNull();
+
+        await editor.reply("capture-result", { requestId: capture.id, ok: true, png: PNG_1440, width: 1440 });
+        const host = document.body.querySelector('[data-testid="website-markup-host"]')!;
+        expect(host.contains(layer())).toBe(true);
+        expect(layer()!.querySelector("img")!.getAttribute("src")).toBe(PNG_1440);
+        expect(canvas().getAttribute("viewBox")).toBe("0 0 1440 900");
+
+        await act(async () => button("Done").click());
+        expect(layer()).toBeNull();
+        await act(async () => button("Draw on the page").click());
+        expect(layer()).not.toBeNull();
+      });
+
+      it("a marker and a label, then Cmd+Enter: one task with the words, the drawing and three files", async () => {
+        api.requestChange.mockResolvedValue(created);
+        issues.uploadAttachment.mockResolvedValue({ id: "att-1" });
+        const { editor, capture } = await openOnBlock();
+        await editor.reply("capture-result", { requestId: capture.id, ok: true, png: PNG_1440, width: 1440 });
+
+        await act(async () => labelled("Numbered marker").click());
+        await tapCanvas(360, 225);
+        await act(async () => labelled("Text label").click());
+        await tapCanvas(100, 50);
+        const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Label text"]')!;
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Make this bigger");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+        expect(canvas().querySelectorAll("[data-mark]")).toHaveLength(2);
+
+        await type("Use the new tagline.");
+        await key({ key: "Enter", metaKey: true }, textarea());
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+        await flush();
+
+        expect(api.requestChange).toHaveBeenCalledTimes(1);
+        expect(api.requestChange.mock.calls[0]![3]).toMatchObject({
+          blockId: "h1",
+          request: "Use the new tagline.",
+          screenshot: true,
+          markup: { marks: 2, markers: 1, labels: ["Make this bigger"] },
+        });
+        const files = issues.uploadAttachment.mock.calls.map((call) => call[2] as File);
+        expect(files.map((file) => file.name)).toEqual(["website-h1.png", "website-h1-markup.png", "website-h1-markup.json"]);
+        const doc = JSON.parse(await files[2]!.text());
+        expect(doc).toMatchObject({ version: 1, width: 1440, height: 900, device: "laptop" });
+        expect(doc.shapes).toEqual([
+          { kind: "marker", color: "red", x: 720, y: 450, n: 1 },
+          { kind: "text", color: "red", x: 200, y: 100, text: "Make this bigger" },
+        ]);
+        expect(panel()!.dataset.step).toBe("created");
+        expect(panel()!.querySelector('[data-testid="website-change-screenshot"]')!.textContent).toContain("your drawing are attached");
+        expect(layer()).toBeNull();
       });
     });
   });
@@ -1039,6 +1161,17 @@ describe("full-screen editor (GRE-2296)", () => {
       const editor = await connect({ editorContract: undefined });
       expect(outOfDate()!.textContent).toContain("Editor host is out of date");
       expect(outOfDate()!.textContent).toContain(`Redeploy the editor host (${EDITOR})`);
+      expect(frame()).toBeNull();
+      expect(editor.sent("load-draft")).toHaveLength(0);
+      expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");
+    });
+
+    it("a site with no GSAM and website contract gets 'Out of date: update the website', not the frame (GRE-2633)", async () => {
+      await render();
+      const editor = await connect({ siteContract: undefined });
+      const message = document.body.querySelector<HTMLElement>('[data-testid="website-site-out-of-date"]');
+      expect(message!.textContent).toContain("Out of date: update the website.");
+      expect(message!.textContent).toContain("The website speaks contract none; GSAM needs 1 or later.");
       expect(frame()).toBeNull();
       expect(editor.sent("load-draft")).toHaveLength(0);
       expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");

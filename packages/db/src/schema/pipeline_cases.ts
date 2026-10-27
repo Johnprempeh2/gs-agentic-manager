@@ -179,6 +179,10 @@ export const pipelineCaseContacts = pgTable(
     name: text("name").notNull(),
     role: text("role"),
     phone: text("phone"),
+    // Same rule as organisation_contacts (GRE-2658): a person with a website
+    // account is referenced by website_user_id and holds no email copy; `email`
+    // is only for someone not yet linked to a website account.
+    websiteUserId: text("website_user_id"),
     email: text("email"),
     position: integer("position").notNull().default(0),
     source: text("source"),
@@ -193,6 +197,13 @@ export const pipelineCaseContacts = pgTable(
     caseSourceExternalUq: uniqueIndex("pipeline_case_contacts_case_source_external_uq")
       .on(table.caseId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
+    websiteUserIdx: index("pipeline_case_contacts_company_website_user_idx")
+      .on(table.companyId, table.websiteUserId)
+      .where(sql`${table.websiteUserId} is not null`),
+    linkedNoEmailCheck: check(
+      "pipeline_case_contacts_linked_no_email_check",
+      sql`${table.websiteUserId} is null or ${table.email} is null`,
+    ),
   }),
 );
 

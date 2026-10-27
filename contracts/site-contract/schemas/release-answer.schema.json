@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/release-answer",
+  "title": "GET /_release: the release the site serves, its engine and the contract it speaks. Not signed; no secrets.",
+  "type": "object",
+  "required": ["number", "siteId", "engine", "supportedReleaseSchemas", "siteContract"],
+  "properties": {
+    "number": { "type": "integer", "minimum": 0 },
+    "release": { "type": "integer", "minimum": 0 },
+    "siteId": { "type": "string", "minLength": 1 },
+    "source": { "type": "string" },
+    "engine": {
+      "type": "object",
+      "required": ["version"],
+      "properties": { "version": { "type": "string", "pattern": "^v?\\d+\\.\\d+\\.\\d+" }, "commit": { "type": "string" } }
+    },
+    "supportedReleaseSchemas": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 }, "contains": { "const": 1 } },
+    "siteContract": { "type": "integer", "minimum": 1 },
+    "refused": {}
+  }
+}

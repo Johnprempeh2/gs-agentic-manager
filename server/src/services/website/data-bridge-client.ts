@@ -159,7 +159,22 @@ const MAX_RETRY_AFTER_MS = 5_000;
 const errorBody = z.object({ error: z.object({ code: z.string() }), current: z.record(z.string(), z.unknown()).optional() });
 export const bridgeHealthSchema = z.object({
   ok: z.literal(true), kid: z.string(), capability: z.string(), serverTime: z.string(), schema: z.literal(BRIDGE_SCHEME),
+  /** The GSAM and website contract the site speaks (GRE-2633); a site from before it leaves it out. */
+  siteContract: z.number().int().positive().optional().catch(undefined),
 });
+export const bridgeReleaseHealthSchema = bridgeHealthSchema.extend({
+  capability: z.literal("read"), siteContract: z.number().int().positive(),
+});
+export const bridgeActivityEventsSchema = z.object({
+  items: z.array(z.object({
+    sequence: z.string().max(19).regex(/^(0|[1-9]\d*)$/), id: z.string(), organisationId: z.string(),
+    kind: z.string(), subjectId: z.string().nullable(), label: z.string(), occurredAt: z.string(),
+  })).max(100),
+  nextCursor: z.string().max(19).regex(/^(0|[1-9]\d*)$/),
+});
+export const bridgeSchemaProbeSchema = z.object({
+  tables: z.object({ billing_lines: z.boolean(), client_activity_outbox: z.boolean() }).strict(),
+}).strict();
 export const bridgeListSchema = z.object({ items: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable() });
 export const bridgeItemSchema = z.object({ item: z.record(z.string(), z.unknown()) });
 /** `imports/:id`: the job, and a page of its rows. */
@@ -279,6 +294,10 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     health: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeHealthSchema),
     activity: (cursor: string, actor: WebsiteBridgeActor) =>
       get("/api/admin/v1/activity-events", { cursor, limit: "100" }, actor, websiteActivityBatchSchema),
+    releaseHealth: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeReleaseHealthSchema),
+    activityEvents: (cursor: string, limit: number, actor: WebsiteBridgeActor) =>
+      get("/api/admin/v1/activity-events", { cursor, limit: String(limit) }, actor, bridgeActivityEventsSchema),
+    schemaProbe: (actor: WebsiteBridgeActor) => get("/api/admin/v1/schema", {}, actor, bridgeSchemaProbeSchema),
     list: (resource: WebsiteDataResource | WebsiteCommerceResource,
       filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/${resource}`, { customer: filters.customer, updatedSince: filters.updatedSince, cursor: filters.cursor,
@@ -302,6 +321,14 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
      */
     write: (method: WriteMethod, path: string, body: Record<string, unknown> | undefined, actor: WebsiteBridgeActor,
       idempotencyKey?: string) => send(method, path, body, actor, bridgeWriteSchema, idempotencyKey),
+    /**
+     * Parallel Interview (gs-interview-v1, GRE-2665): `path` is after `/api/admin/v1/interview/`, keyed by the
+     * website organisation id. The answer is parsed by the caller. Reads use the read key, writes the write key.
+     */
+    interviewRead: (path: string, query: Record<string, string | undefined>, actor: WebsiteBridgeActor) =>
+      get(`/api/admin/v1/interview/${path.replace(/^\/+/, "")}`, query, actor, z.record(z.string(), z.unknown())),
+    interviewWrite: (path: string, body: Record<string, unknown>, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
+      send("POST", `interview/${path.replace(/^\/+/, "")}`, body, actor, z.record(z.string(), z.unknown()), idempotencyKey),
     /** Records a refund request on the `refund_request` key. Moves no money. */
     requestRefund: (input: { orderId: string; amountMinor: number; reason: string }, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
       send("POST", "refund-requests", { orderId: input.orderId, amountMinor: input.amountMinor, reason: input.reason }, actor,

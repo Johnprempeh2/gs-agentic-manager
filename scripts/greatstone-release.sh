@@ -39,10 +39,14 @@ die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 # not run it or does not answer. Emergencies only; the reason goes to
 # $GS_ROOT/preview-overrides.log.
 # --pc-gate: decide by the PC test gate's pass marker, not GitHub.
+# --skip-site-contract "<reason>": release an rc-* tag although a connected
+# site speaks an older GSAM and website contract (GRE-2633). Emergencies only;
+# the reason goes to $GS_ROOT/site-contract-overrides.log.
 FULL_RESTART=0
 NO_DB_CHANGE=0
 SKIP_TEST_GATE=""
 SKIP_PREVIEW=""
+SKIP_SITE_CONTRACT=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --full-restart) FULL_RESTART=1; shift ;;
@@ -55,6 +59,10 @@ while [ "$#" -gt 0 ]; do
       [ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" ] && case "$2" in rc-* | live-* | --*) false ;; esac \
         || die "--skip-preview needs a reason first, for example: --skip-preview \"preview host down, fix for GRE-123\" rc-YYYY-MM-DD.N"
       SKIP_PREVIEW="$2"; shift 2 ;;
+    --skip-site-contract)
+      [ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" ] && case "$2" in rc-* | live-* | --*) false ;; esac \
+        || die "--skip-site-contract needs a reason first, for example: --skip-site-contract \"website deploy is down, fix for GRE-123\" rc-YYYY-MM-DD.N"
+      SKIP_SITE_CONTRACT="$2"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -62,7 +70,7 @@ TAG="${1:-}"
 case "$TAG" in
   rc-*) MODE=release ;;
   live-*) MODE=rollback ;;
-  *) die "usage: greatstone-release.sh [--full-restart] [--pc-gate] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
+  *) die "usage: greatstone-release.sh [--full-restart] [--pc-gate] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] [--skip-site-contract \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
 # GSAM_RELEASE_FROM_APP=1: started by the live server (the Releases page, GRE-121).
@@ -140,6 +148,16 @@ if [ "$MODE" = release ]; then
     say "Test gate SKIPPED for $TAG ($TARGET): $SKIP_TEST_GATE. Logged in $TEST_GATE_DIR/overrides.log."
   else
     die "$GATE"
+  fi
+  # GRE-2633: every connected site must speak the contract this release needs,
+  # so the website deploys first and the editor never fails silently.
+  if CONTRACT_NOTE="$(site_contract_check "$TARGET")"; then
+    say "Site contract: $CONTRACT_NOTE"
+  elif [ -n "$SKIP_SITE_CONTRACT" ]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TAG" "$TARGET" "${USER:-unknown}" "$(printf '%s' "$SKIP_SITE_CONTRACT" | tr '\t\n' '  ')" >>"$GS_ROOT/site-contract-overrides.log"
+    say "Site contract check SKIPPED for $TAG ($TARGET): $SKIP_SITE_CONTRACT. Logged in $GS_ROOT/site-contract-overrides.log. Why: $CONTRACT_NOTE"
+  else
+    die "$CONTRACT_NOTE"
   fi
   # The preview proves the database migrations on a copy of the live data. A
   # release that changes nothing in the database needs none (John, 19 Oct

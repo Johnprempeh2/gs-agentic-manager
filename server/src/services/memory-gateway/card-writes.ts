@@ -82,7 +82,13 @@ export function memoryCardService(db: Db, gateway: MemoryGatewayService, reviews
    * replaced by the new version, as an edit; a confirmed card stays in force
    * and the new version challenges it, so confirming it replaces the card.
    */
-  async function revise(caller: MemoryCaller, recordId: string, input: ReviseMemoryRecord): Promise<MemoryReviseResult> {
+  async function revise(
+    caller: MemoryCaller,
+    recordId: string,
+    input: ReviseMemoryRecord,
+    /** The sync route (GRE-2668) only: the new version's own source details and date. */
+    replace: { evidence?: Record<string, unknown> | null; effectiveFrom?: Date | null } = {},
+  ): Promise<MemoryReviseResult> {
     const operation = "revise";
     const { row, scope, access } = await loadReadable(caller, recordId, operation);
     const audit = { scopeIds: [scope.id], recordId: row.id };
@@ -132,8 +138,8 @@ export function memoryCardService(db: Db, gateway: MemoryGatewayService, reviews
           runId: caller.runId,
           sourceKind: row.sourceKind,
           sourceId: row.sourceId,
-          evidence: row.evidence,
-          effectiveFrom: row.effectiveFrom,
+          evidence: replace.evidence === undefined ? row.evidence : replace.evidence,
+          effectiveFrom: replace.effectiveFrom === undefined ? row.effectiveFrom : replace.effectiveFrom,
           effectiveTo: row.effectiveTo,
           supersedesId: replacesProposal ? row.id : null,
           version: row.version + 1,

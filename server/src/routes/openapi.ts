@@ -26,6 +26,7 @@ import {
   createAgentHireSchema,
   updateAgentSchema,
   updateAgentPermissionsSchema,
+  addAgentProjectAccessSchema,
   updateAgentInstructionsPathSchema,
   updateAgentInstructionsBundleSchema,
   upsertAgentInstructionsFileSchema,
@@ -133,6 +134,10 @@ import {
   contributeMemorySchema,
   importMemorySchema,
   checkMemoryImportSchema,
+  syncMemorySchema,
+  readHandoffSchema,
+  updateHandoffSchema,
+  reconcileHandoffFileSchema,
   createMemoryConnectionSchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
@@ -381,6 +386,16 @@ import {
   addDeepDiveSessionQuestionSchema,
   answerToDeepDiveFindingSchema,
   planDeepDiveSessionSchema,
+  createDeepDiveInterviewRoundSchema,
+  updateDeepDiveInterviewRoundSchema,
+  draftDeepDiveInterviewSetSchema,
+  updateDeepDiveInterviewSetSchema,
+  openDeepDiveInterviewRoundSchema,
+  inviteDeepDiveInterviewPeopleSchema,
+  sendDeepDiveInterviewInvitesSchema,
+  submitDeepDiveSynthesisSchema,
+  decideDeepDiveInterviewProposalSchema,
+  releaseDeepDiveInterviewSynthesisSchema,
   updateDeepDiveSessionQuestionSchema,
   updateDeepDiveSessionSchema,
   createDeepDiveOfferingSchema,
@@ -489,6 +504,7 @@ import {
   runCrmSyncBindingSchema,
   setAgentPipelineLevelSchema,
   setMemoryScopeStewardSchema,
+  setOrganisationWebsiteLinkSchema,
   startWebsiteGoogleConnectSchema,
   startWorkflowTemplateSchema,
   updateClientJourneyDeliverableSchema,
@@ -1564,6 +1580,8 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "GET /api/agents/{id}/project-access",
+  "POST /api/agents/{id}/project-access",
   "DELETE /api/generated-images/{id}",
   "DELETE /api/generated-videos/{id}",
   "DELETE /api/motion-studies/{id}",
@@ -4166,6 +4184,25 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
+const agentProjectAccessResponse = z.object({ projectIds: z.array(z.string().uuid()), canManage: z.boolean() });
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/project-access",
+  tags: ["agents"],
+  summary: "Read an agent's allowed projects and the operator's management capability",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(agentProjectAccessResponse), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/project-access",
+  tags: ["agents"],
+  summary: "Add allowed projects without replacing other permissions",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(addAgentProjectAccessSchema) },
+  responses: { 200: r.ok(agentProjectAccessResponse), 400: r.badRequest, 401: r.unauthorized,
+    403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
 registry.registerPath({
   method: "patch",
   path: "/api/agents/{id}/instructions-path",
@@ -6286,6 +6323,46 @@ registry.registerPath({
     "Add up to 50 entries brought in from Claude or ChatGPT as unreviewed contributions with app provenance; repeats in the scope are skipped and entries with sensitive content are held back",
   request: { params: memoryCompanyParams, body: jsonBody(importMemorySchema) },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/sync",
+  tags: ["memory"],
+  summary:
+    "Mac sync of a person's Claude Code and Codex turns and memory files into that person's own scope; text already held is skipped, a changed file is revised",
+  request: { params: memoryCompanyParams, body: jsonBody(syncMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/handoff",
+  tags: ["memory"],
+  summary:
+    "Read the person's live handoff (focus, threads, waiting on, notes, last tool), with the changes since a time or since this tool last wrote it",
+  request: { params: memoryCompanyParams, query: readHandoffSchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/handoff",
+  tags: ["memory"],
+  summary:
+    "Update parts of the live handoff as a new version; agents may change only threads and the waiting list, and only from a live run",
+  request: { params: memoryCompanyParams, body: jsonBody(updateHandoffSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/handoff/file",
+  tags: ["memory"],
+  summary:
+    "Reconcile NOW.md from the Mac sync with the live handoff part by part (newest wins, clashes recorded) and return the text to write back",
+  request: { params: memoryCompanyParams, body: jsonBody(reconcileHandoffFileSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -15407,6 +15484,18 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/website-link",
+  tags: ["organisations"],
+  summary: "Link an organisation to its website organisation, or clear the link with null (Work cases, website view)",
+  body: setOrganisationWebsiteLinkSchema,
+  responses: {
+    200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+    409: r.conflict, 422: r.unprocessable,
+  },
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/organisations/{organisationId}/contacts",
   tags: ["organisations"],
@@ -16324,6 +16413,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/change-requests/{issueId}/images`,
+  tags: ["website"],
+  summary: "Ask an agent: attach an image (multipart `file`) to that page's change request task. PNG, JPEG, WebP or GIF by its bytes, no SVG, at most 8 MB; 404 when the task is not a change request on this page (website:edit)",
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
   method: "get",
   path: `${siteParams}/pages/{pageId}/change-requests`,
   tags: ["website"],
@@ -16616,6 +16713,38 @@ registerCurrentRoute({
   tags: ["website"],
   summary: "Whether GSAM can read the site's own records through the signed admin bridge: not_set_up, connected or failing, with the read key's id (website:view). Checked at most once a minute",
   responses: websiteModuleResponses,
+});
+
+const websiteBridgeReadResponses = {
+  ...websiteModuleResponses,
+  409: r.conflict,
+  422: r.unprocessable,
+  502: { description: "The site's signed read failed or the upstream response was invalid" },
+};
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/health`,
+  tags: ["website"],
+  summary: "Read fresh signed bridge health, including siteContract: 1 (website:view). No query parameters",
+  responses: websiteBridgeReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/activity-events`,
+  tags: ["website"],
+  summary: "Read a signed activity page (website:view). Cursor is a non-negative signed 64-bit decimal integer; limit is 1 to 100",
+  query: z.object({ cursor: z.string(), limit: z.string() }),
+  responses: websiteBridgeReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data-bridge/schema`,
+  tags: ["website"],
+  summary: "Read signed table-existence booleans for billing_lines and client_activity_outbox, without customer rows (website:view). No query parameters",
+  responses: websiteBridgeReadResponses,
 });
 
 registerCurrentRoute({
@@ -17216,6 +17345,200 @@ registerCurrentRoute({
     "the statement defaults to the answer",
   body: answerToDeepDiveFindingSchema,
   responses: { ...sessionWriteResponses, 201: r.ok() },
+});
+
+// Parallel Interview rounds (GRE-2611): one round per Deep Dive, a question set
+// per team or person drafted from what is known, and a person's approval.
+const interviewResponses = { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const interviewWriteResponses = { ...interviewResponses, 400: r.badRequest, 409: r.conflict, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/interview-round",
+  tags: ["deep-dive"],
+  summary: "Get the Parallel Interview round (or null) with its question sets, and the teams or people not yet given a set",
+  responses: interviewResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/interview-round",
+  tags: ["deep-dive"],
+  summary: "Set up the company's one interview round: per team or per person, target length and Everest's context pack",
+  body: createDeepDiveInterviewRoundSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/interview-rounds/{roundId}",
+  tags: ["deep-dive"],
+  summary: "Change the round's mode, length or context pack while it is in Setup (the mode only while it has no sets)",
+  body: updateDeepDiveInterviewRoundSchema,
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/sets",
+  tags: ["deep-dive"],
+  summary:
+    "Draft a question set for one team or person: Known cells are placed, Indicated validated, Unknown investigated",
+  body: draftDeepDiveInterviewSetSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/deep-dive/interview-sets/{setId}",
+  tags: ["deep-dive"],
+  summary: "Replace a set's questions while the round is in Setup; the set goes back to Draft",
+  body: updateDeepDiveInterviewSetSchema,
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-sets/{setId}/redraft",
+  tags: ["deep-dive"],
+  summary: "Draft a set again from what the Deep Dive knows now; the set goes back to Draft",
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-sets/{setId}/approve",
+  tags: ["deep-dive"],
+  summary: "Approve a set's questions (only a person may approve)",
+  responses: interviewWriteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/deep-dive/interview-sets/{setId}",
+  tags: ["deep-dive"],
+  summary: "Remove a question set while the round is in Setup",
+  responses: interviewWriteResponses,
+});
+
+// Parallel Interview invites (GRE-2665): open the round on the website, invite
+// people (only website ids are stored), send again or remind, and read the live
+// status per team and per person. Only a person opens and sends.
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/interview-round/progress",
+  tags: ["deep-dive"],
+  summary: "Read the round's live status per team and per person from the website (names and emails are not stored)",
+  responses: { ...interviewResponses, 409: r.conflict, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/open",
+  tags: ["deep-dive"],
+  summary: "Open the round on the website (only a person; refused until every question set is approved)",
+  body: openDeepDiveInterviewRoundSchema,
+  responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/invites",
+  tags: ["deep-dive"],
+  summary: "Invite people from the board or by hand; the website makes the account or uses an existing website user",
+  body: inviteDeepDiveInterviewPeopleSchema,
+  responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/invites/send",
+  tags: ["deep-dive"],
+  summary: "Email the join link again (resend) or a reminder (remind) to people this round invited",
+  body: sendDeepDiveInterviewInvitesSchema,
+  responses: { ...interviewWriteResponses, 502: { description: "The website did not answer or answered in a form GSAM does not understand" } },
+});
+
+// Parallel Interview synthesis (GRE-2666): the tool a GSAM agent calls. It reads
+// the round's interviews through gs-interview-v1, applies the rules in code
+// (two voices, quote gate, label merge, roll-up by team) and writes only
+// Proposed, Internal items. Only a person accepts or rejects one.
+const bridgeDown = { 502: { description: "The website did not answer or answered in a form GSAM does not understand" } };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/evidence",
+  tags: ["deep-dive"],
+  summary:
+    "Read the round's interviews with every synthesis rule applied: merged themes with voices and promotion, " +
+    "allowed quotes, roll-up by team and people for the board (no raw answers)",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/proposals",
+  tags: ["deep-dive"],
+  summary: "List the round's synthesis proposals and what a person decided",
+  responses: { ...interviewResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/proposals",
+  tags: ["deep-dive"],
+  summary:
+    "Submit the agent's statements for promoted themes, with quotes; checked against fresh evidence, " +
+    "all or nothing, and written as Proposed and Internal",
+  body: submitDeepDiveSynthesisSchema,
+  responses: { ...interviewWriteResponses, 201: r.ok(), ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/withdrawals",
+  tags: ["deep-dive"],
+  summary: "Apply the website's withdrawals: remove the withdrawn people's quotes and undecided proposals",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-proposals/{proposalId}/decision",
+  tags: ["deep-dive"],
+  summary: "Accept or reject a synthesis proposal (only a person). Accepting makes its Internal Deep Dive record: a pain or finding becomes a proposed finding in the given stream and GIF cell, a process a process candidate, a person a board person named live from the website, a quote evidence for its theme",
+  body: decideDeepDiveInterviewProposalSchema,
+  responses: interviewWriteResponses,
+});
+
+// Parallel Interview release (GRE-2667): only a person releases the reviewed
+// synthesis to the client's website, keyed by the organisation id, or
+// withdraws it. Agents get 403 on both.
+registerCurrentRoute({
+  method: "get",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/release",
+  tags: ["deep-dive"],
+  summary: "Read what the client sees now (read live from the website) and whether the synthesis is reviewed enough to release",
+  responses: { ...interviewResponses, 409: r.conflict, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/release",
+  tags: ["deep-dive"],
+  summary:
+    "Release the reviewed synthesis to the client (only a person): the accepted themes and quotes are pushed to the " +
+    "website under the round's organisation id and the client sees them at once",
+  body: releaseDeepDiveInterviewSynthesisSchema,
+  responses: { ...interviewWriteResponses, ...bridgeDown },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/deep-dive/interview-rounds/{roundId}/synthesis/withdraw",
+  tags: ["deep-dive"],
+  summary: "Withdraw the released synthesis (only a person): the client stops seeing it at once",
+  responses: { ...interviewWriteResponses, ...bridgeDown },
 });
 
 // Deep Dive boards (GRE-2369). Every write answers with the whole board it

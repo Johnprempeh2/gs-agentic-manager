@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "gs-site-contract/document-request-answer",
+  "title": "POST <gsam>/api/website-bridge/v1/tenants/:tenantId/document-requests/:requestId/answer: the site's signed call back",
+  "type": "object",
+  "required": ["answerId", "answeredBy"],
+  "additionalProperties": false,
+  "properties": {
+    "answerId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,80}$" },
+    "answeredBy": {
+      "type": "object",
+      "required": ["customerId"],
+      "additionalProperties": false,
+      "properties": {
+        "customerId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+        "name": { "type": ["string", "null"], "maxLength": 200 },
+        "email": { "type": ["string", "null"], "maxLength": 320 }
+      }
+    },
+    "note": { "type": ["string", "null"], "maxLength": 2000 },
+    "fileName": { "type": ["string", "null"], "maxLength": 255 }
+  }
+}

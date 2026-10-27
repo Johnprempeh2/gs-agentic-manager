@@ -97,6 +97,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
             or(
               isNull(issueThreadInteractions.addresseeUserId),
               inArray(issueThreadInteractions.addresseeUserId, viewerUserIds),
+              sql`${issueThreadInteractions.resolverUserIds} && ARRAY[${sql.join(viewerUserIds.map((id) => sql`${id}`), sql`, `)}]::text[]`,
             ),
             gte(issueThreadInteractions.updatedAt, new Date(now.getTime() - EXPIRED_CARD_LOOKBACK_MS)),
             notInArray(issues.status, CLOSED_ISSUE_STATUSES),

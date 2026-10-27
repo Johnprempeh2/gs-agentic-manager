@@ -1,0 +1,1 @@
+{ "ok": true, "kid": "test-read-1", "capability": "read", "serverTime": "2026-10-25T12:00:00.000Z", "schema": "gs-bridge-v1", "siteContract": 1 }

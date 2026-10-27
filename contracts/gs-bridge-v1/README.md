@@ -1,13 +1,14 @@
 # gs-bridge-v1: how GSAM signs a call to the website's admin API
 
-GRE-2323. This folder is at the same path in `greatstone-website` and `gs-agentic-manager`. If you change
-`vectors.json` in one repo, change it in the other repo's pull request too. Both test suites check against it.
+GRE-2323. This folder is part of the GSAM and website contract (`contracts/README.md`, GRE-2633). Change it
+only in `gs-agentic-manager`; the website vendors it with `contracts/check.mjs --vendor`. Both test suites check
+against `vectors.json`.
 
 ## Keys
 
 - Each capability has its own Ed25519 key pair, and staging and live use different keys. GSAM makes the pair and keeps the private key as a company secret.
 - The site holds only the public keys, in `GSAM_BRIDGE_KEYS`. This is a JSON list of `{ "kid", "capability", "publicKey", "notAfter"? }`, where `publicKey` is the raw 32-byte key in base64url. A `kid` is lower case, 3 to 64 characters, for example `stg-read-2026-10`.
-- `capability` is `read`, `write` or `refund_request`. `read` is accepted only for `GET`. `write` is accepted only for `PUT /api/admin/v1/deep-dive/tenants/:tenantId` (GRE-2439, below).
+- `capability` is `read`, `write` or `refund_request`. `read` is accepted only for `GET`. `write` is accepted on typed write routes, including the Deep Dive sync below and the interview routes in `gs-interview-v1/README.md`; writes use `gs-bridge-v2` and `X-GS-Bridge-Idempotency-Key`.
 - To rotate a key: list both keys, move GSAM to the new one, then remove the old one. To revoke a key: remove it and redeploy.
 - `GSAM_BRIDGE_ALLOWED_IPS` is optional: a comma-separated list of exact client IPs. It is off when empty.
 
@@ -53,6 +54,14 @@ The shared schema is `packages/shared/src/website-activity.ts` in GSAM; copy/pub
 
 The outbox sequence is global per site, including all organisations. GSAM keeps one cursor per site and stores rows keyed by company, site and source sequence. It commits the page and cursor together; an interrupted pull retries the same page. The source event ID is also unique per site, so conflicting duplicates fail without advancing the cursor. A site must not advance `nextCursor` beyond its last returned event or return rows out of order.
 
+## Fixed release checks (GRE-2813)
+
+All three calls are signed `GET` requests with the site's `read` key. GSAM checks company, site and `website:view` before signing. Callers cannot choose an upstream path or URL.
+
+- `GET /api/admin/v1/health` returns `{ ok: true, kid, capability: "read", serverTime, schema: "gs-bridge-v1", siteContract: 1 }`. GSAM returns the fresh body for a release check; its older status summary can remain cached.
+- `GET /api/admin/v1/activity-events?cursor=<decimal>&limit=<1..100>` returns `{ items, nextCursor }`. The decimal cursor starts at `0`; `nextCursor` is the last returned sequence, or the input cursor if the page is empty. Each item has `sequence`, `id`, `organisationId`, `kind`, `subjectId`, `label` and `occurredAt`. No other item fields pass through the GSAM proxy.
+- `GET /api/admin/v1/schema` returns exactly `{ "tables": { "billing_lines": true|false, "client_activity_outbox": true|false } }`. It checks those two fixed table names and returns no rows. An absent table is `false`; an unavailable database is `503`, never `false`. The website implementation belongs to GRE-2816.
+
 ## Deep Dive sync (GRE-2439)
 
 The public site never queries GSAM. GSAM pushes one client's Deep Dive snapshot, and the site calls back when a
@@ -81,13 +90,17 @@ same snapshot, so a PUT twice is the same as once.
   "items": [{ "id", "type", "key", "title", "summary", "status", "fields", "parentId", "updatedAt" }],
   "files": [{ "id", "itemId", "title", "kind", "status": "held" | "missing", "heldAt" }],
   "documentRequests": [{ "id", "title", "note", "itemIds", "status": "open" | "received", "receivedAt", "createdAt" }],
-  "deliverables": [{ "id", "title", "version", "status": "published" | "accepted", "publishedAt", "acceptedAt" }]
+  "deliverables": [{ "id", "title", "version", "status": "published" | "accepted", "publishedAt", "acceptedAt" }],
+  "findings": [{ "id", "streamItemId": "<Shared stream id>" | null, "statement", "status": "proposed" | "validated" | "rejected" | "superseded", "evidenceCount", "supersedesId": "<finding id>" | null, "updatedAt" }],
+  "opportunities": [{ "id", "ref", "title", "statement", "desiredOutcome", "status": "draft" | "refined" | "validated", "findingIds": ["<finding id>"], "streamItemIds": ["<Shared stream id>"], "updatedAt" }],
+  "kpis": [{ "id", "title", "definition", "scope": "company" | "division" | "department" | "team" | "individual", "unit", "direction": "up" | "down" | "steady", "baseline", "baselinePeriod", "target", "opportunityIds": ["<opportunity id>"], "updatedAt" }]
 }
 ```
 
 - Only Shared items are sent. A Shared item whose parent is Internal is sent with `parentId: null`.
 - Only files and document requests linked Shared to a Shared item are sent.
 - Only deliverables that are published or accepted are sent; metadata only, no file content in this step.
+- The three additive arrays are always present, empty when there are no Shared records. Links name records in this same payload. KPI readings are not in v1; the site shows baseline and target only.
 - The site answers `{ "ok": true, "tenantId": "<uuid>" }`, or an error as below.
 
 ### Call back: the site to GSAM

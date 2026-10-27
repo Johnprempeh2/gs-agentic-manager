@@ -11,9 +11,10 @@ vi.mock("./issues.js", () => ({
 
 type SelectRow = Record<string, unknown>;
 
-function createSelectChain(rows: SelectRow[]) {
+function createSelectChain(rows: SelectRow[] | ((table: unknown) => SelectRow[])) {
   return {
-    from() {
+    from(table?: unknown) {
+      const selectedRows = typeof rows === "function" ? rows(table) : rows;
       const query = {
         innerJoin() {
           return query;
@@ -21,7 +22,7 @@ function createSelectChain(rows: SelectRow[]) {
         where() {
           return {
             then(callback: (rows: SelectRow[]) => unknown) {
-              return Promise.resolve(callback(rows));
+              return Promise.resolve(callback(selectedRows));
             },
           };
         },
@@ -168,12 +169,10 @@ describe("issueThreadInteractionService", () => {
       updatedAt: new Date("2026-04-20T10:00:00.000Z"),
     };
 
-    let selectCallCount = 0;
     const db: any = {
-      select: vi.fn(() => {
-        selectCallCount += 1;
-        return createSelectChain(selectCallCount <= 2 ? [existingRow] : []);
-      }),
+      select: vi.fn(() => createSelectChain((table) =>
+        getTableName(table as never) === "issue_thread_interactions" ? [existingRow] : [],
+      )),
       insert: vi.fn(),
       update: vi.fn(),
     };

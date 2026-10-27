@@ -264,11 +264,15 @@ async function dispatch(
         permissionMode: params.permissionMode,
         systemInstructions: params.systemInstructions,
         runtimeContext: params.runtimeContext,
-        environment: process.env,
+        environment: params.agent === "claude"
+          ? { ...process.env, MCP_TOOL_TIMEOUT: String(60 * 60 * 1_000) }
+          : process.env,
         expectedIdentity: params.expectedIdentity,
         semanticTools: {
           tools: params.tools,
           handler: waitForTool,
+          // The runner lease and turn cancellation own this durable call.
+          timeoutMs: null,
         },
         onGoalUpdate: (goal) => {
           // Admission can emit a snapshot before the verified host is assigned.

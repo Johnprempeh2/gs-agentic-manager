@@ -381,6 +381,7 @@ export {
   agentPipelineAccessSchema,
   setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
+  addAgentProjectAccessSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
   type BuiltInAgentReset,

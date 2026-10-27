@@ -4,7 +4,7 @@ import { z } from "zod";
 // over a signed, read-only call to `<site>/api/admin/v1/*`.
 
 export const WEBSITE_DATA_RESOURCES = [
-  "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries",
+  "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries", "billing-lines",
 ] as const;
 export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
 
@@ -13,13 +13,32 @@ export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
  * `imports/:id` pages its rows with `?cursor=&limit=`. The FX rate and the payment report have routes of their own.
  */
 export const WEBSITE_COMMERCE_RESOURCES = [
-  "offerings", "categories", "vendors", "pricing-rules", "customer-tiers", "imports",
+  "offerings", "categories", "vendors", "pricing-rules", "customer-tiers", "imports", "billing-lines",
 ] as const;
 export type WebsiteCommerceResource = (typeof WEBSITE_COMMERCE_RESOURCES)[number];
+
+/** A billing line returned by the website's admin bridge (minor units are decimal strings). */
+export interface WebsiteBillingLine {
+  id: string;
+  customer_id: string;
+  description: string;
+  qty: number;
+  unit_price_minor: string;
+  currency: string;
+  billing_period: "monthly" | "quarterly" | "annual" | "multi_year";
+  next_bill_on: string | null;
+  status: "active" | "paused" | "ended";
+}
 
 export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
   /** GET → `WebsiteDataBridgeStatus` (website:view). Checks the site's health route, cached for 60 s. */
   status: "/companies/:companyId/website/sites/:siteId/data-bridge/status",
+  /** GET → signed bridge health, including siteContract: 1 (website:view). */
+  health: "/companies/:companyId/website/sites/:siteId/data-bridge/health",
+  /** GET → signed, bounded activity page. Requires decimal cursor and limit 1–100 (website:view). */
+  activityEvents: "/companies/:companyId/website/sites/:siteId/data-bridge/activity-events",
+  /** GET → table existence booleans only; no customer rows (website:view). */
+  schemaProbe: "/companies/:companyId/website/sites/:siteId/data-bridge/schema",
   /**
    * POST `CreateWebsiteDataBridgeKey` → 201 `WebsiteDataBridgeKey` (website:publish, people only). Makes a new read
    * key pair, keeps the private key in the vault and returns the public key for the site's GSAM_BRIDGE_KEYS.
@@ -187,9 +206,14 @@ export const websiteDataListQuerySchema = z.object({
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 }).strict();
+export const websiteActivityEventsQuerySchema = z.object({
+  cursor: z.string().regex(/^(0|[1-9]\d{0,18})$/)
+    .refine((value) => /^(0|[1-9]\d{0,18})$/.test(value) && BigInt(value) <= 9223372036854775807n),
+  limit: z.string().regex(/^(?:[1-9]|[1-9]\d|100)$/).transform(Number),
+}).strict();
 export type WebsiteDataListQuery = z.infer<typeof websiteDataListQuerySchema>;
 
-/** Commerce lists have no customer filter. */
+/** Catalogue commerce lists have no customer filter; billing-lines uses websiteDataListQuerySchema. */
 export const websiteCommerceListQuerySchema = websiteDataListQuerySchema.omit({ customer: true });
 export type WebsiteCommerceListQuery = z.infer<typeof websiteCommerceListQuerySchema>;
 
@@ -280,6 +304,59 @@ export interface DeepDiveSyncDeliverable {
   acceptedAt: string | null;
 }
 
+// Findings, opportunities and KPIs (GRE-2632). Each has its own array, not an item `type`: their shapes are
+// fixed and typed, unlike an item's free `fields`. Only Shared records of this tenant are sent. A link to another
+// record (a stream, a finding, an opportunity) is sent only when that record is in the same payload, so an
+// Internal record's id never leaves GSAM. No authors, owners or internal notes.
+
+/** A Shared Deep Dive finding on one of this tenant's Investigation Streams. */
+export interface DeepDiveSyncFinding {
+  id: string;
+  /** The `deep_dive_stream` item it belongs to, only when that item is also Shared; otherwise null. */
+  streamItemId: string | null;
+  statement: string;
+  status: "proposed" | "validated" | "rejected" | "superseded";
+  /** How many pieces of evidence back it. */
+  evidenceCount: number;
+  /** The finding this one replaces, only when that finding is also Shared; otherwise null. */
+  supersedesId: string | null;
+  updatedAt: string;
+}
+
+/** A Shared opportunity whose linked findings are all on this tenant's streams. */
+export interface DeepDiveSyncOpportunity {
+  id: string;
+  /** The opportunity's short reference, for example `OP-3`; empty when none was given. */
+  ref: string;
+  title: string;
+  statement: string;
+  desiredOutcome: string;
+  status: "draft" | "refined" | "validated";
+  /** Its Shared findings in this payload. */
+  findingIds: string[];
+  /** The Shared `deep_dive_stream` items of those findings. */
+  streamItemIds: string[];
+  updatedAt: string;
+}
+
+/** A Shared KPI that moves only through this tenant's opportunities (roadmap → commercial → build → opportunity). */
+export interface DeepDiveSyncKpi {
+  id: string;
+  title: string;
+  /** How the number is calculated. */
+  definition: string;
+  scope: "company" | "division" | "department" | "team" | "individual";
+  unit: string;
+  direction: "up" | "down" | "steady";
+  baseline: number;
+  /** The period the baseline covers. */
+  baselinePeriod: string;
+  target: number;
+  /** Its Shared opportunities in this payload. */
+  opportunityIds: string[];
+  updatedAt: string;
+}
+
 export interface DeepDiveSyncPayload {
   schema: typeof DEEP_DIVE_SYNC_SCHEMA;
   tenantId: string;
@@ -289,12 +366,24 @@ export interface DeepDiveSyncPayload {
   files: DeepDiveSyncFile[];
   documentRequests: DeepDiveSyncDocumentRequest[];
   deliverables: DeepDiveSyncDeliverable[];
+  /** Added in GRE-2632; a site that does not know them can ignore them. */
+  findings: DeepDiveSyncFinding[];
+  opportunities: DeepDiveSyncOpportunity[];
+  kpis: DeepDiveSyncKpi[];
 }
 
 export interface DeepDiveSyncResult {
   tenantId: string;
   syncedAt: string;
-  counts: { items: number; files: number; documentRequests: number; deliverables: number };
+  counts: {
+    items: number;
+    files: number;
+    documentRequests: number;
+    deliverables: number;
+    findings: number;
+    opportunities: number;
+    kpis: number;
+  };
 }
 
 const bridgeKidSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{2,63}$/, "3 to 64 lower-case letters, digits or dashes");

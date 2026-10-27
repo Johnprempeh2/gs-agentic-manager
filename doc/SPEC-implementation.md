@@ -24,6 +24,15 @@ GS Agentic Manager V1 must provide a full control-plane loop for autonomous agen
    An effective task or ancestor pause replaces the message composer with an
    amber Resume takeover. New board messages, including updates with comments,
    are rejected until the hold is released. Drafts survive pause and resume.
+   While an active run owns a task, a board user may post a correction with
+   "Interrupt with this". The comment is saved before delivery. A supported
+   live session receives it through steering. Claude ACP accepts it as a new
+   prompt at the next provider turn boundary and acknowledges that prompt
+   before the run continues. If live delivery fails, the run stops and resumes
+   with the correction at the start of the next task context. An explicit
+   finish-before-update critical section, an active Git write/rebase, or a
+   migration in the local run process tree delays the stop for at most two
+   minutes. The comment response does not wait for that delay.
 
 Success means one operator can run a small AI-native company end-to-end with clear visibility and control.
 
@@ -726,8 +735,12 @@ become `human_only`, and both are marked `legacy_inherited_restriction`. Resolve
 outcomes and resolver attribution are immutable.
 
 An explicit named agent or user addressee and a company-configured cap may narrow
-the effective audience. Only the exact named addressee may resolve an addressed
-interaction; a human does not override a user addressee. A cap never widens the
+the effective audience. A decision card may name `resolverUserIds`, a set of active
+company members who can answer it. A decision addressed to an owner or admin,
+or an unaddressed `human_only` decision, defaults to the company's active owner
+and admin users when no set is supplied. For these cards the first answer wins;
+the winner and time remain in the interaction audit. Other addressed interactions
+remain limited to their exact addressee. A cap never widens the
 requested audience. Tool-action confirmations and
 other hard-governed action cards remain `human_only` (or move to the formal approval
 system) regardless of a requested open audience.
@@ -1207,6 +1220,8 @@ The current app also exposes V1-supporting surfaces for:
   - `POST /companies/:companyId/decision-archive-proposals`
 
 Queue and triage mutations accept board non-viewers and active standard-scope agents, apply responsible-user intersection for run JWTs, and reject low-trust, `task_bridge`, and `skill_test` contexts. Missing, cross-company, and unauthorized attention sources share the same not-found response.
+
+Low-trust project access can be extended by a board operator who may manage agents. `GET` and `POST /api/agents/:id/project-access` read and add allowed projects. The add operation locks the agent, accepts only projects in the agent's company that the operator may read, preserves every existing trust restriction, and logs each new addition. Saving access does not start or retry a task. The agent permissions screen shows the current projects and offers the add action. A task whose latest failed run has the fork's low-trust boundary denial code links to that screen. It offers a separate retry after the agent's current project boundary includes the task project.
 
 The attention feed returns server-computed `shelf`, `retentionDays`, `keep`, `archivedAt`, and `retentionVersion` fields. Archived rows are excluded by default and selected with `archived=true`. Bulk archive proposals bind the exact source identities, per-item reasons, activity timestamps, and expected retention versions into the signed decisions-v1 target snapshots; acceptance re-authorizes both proposer and decider and commits all rows or none.
 

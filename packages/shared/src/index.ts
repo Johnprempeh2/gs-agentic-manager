@@ -519,6 +519,7 @@ export * from "./validators/website-module.js";
 export * from "./website-sitemap.js";
 export * from "./website-features.js";
 export * from "./website-frame.js";
+export * from "./site-contract.js";
 export * from "./types/website-data-bridge.js";
 export * from "./website-activity.js";
 export * from "./types/intelligence.js";
@@ -1142,6 +1143,7 @@ export type {
   AgentDetail,
   ClearAgentErrorResponse,
   AgentPermissions,
+  AgentProjectAccess,
   AgentInstructionsBundleMode,
   AgentInstructionsFileSummary,
   AgentInstructionsFileDetail,
@@ -2249,6 +2251,7 @@ export {
   agentPipelineAccessSchema,
   setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
+  addAgentProjectAccessSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
   type BuiltInAgentReset,
@@ -3242,6 +3245,10 @@ export * from "./deep-dive-boards.js";
 export * from "./deep-dive-opportunities.js";
 export * from "./deep-dive-traceability.js";
 export * from "./deep-dive-overview.js";
+export * from "./deep-dive-interviews.js";
+export * from "./deep-dive-interview-invites.js";
+export * from "./deep-dive-interview-synthesis.js";
+export * from "./deep-dive-interview-release.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
 export * from "./studio/looks.js";
@@ -3259,6 +3266,8 @@ export {
 } from "./agent-teams.js";
 export * from "./memory.js";
 export * from "./memory-import.js";
+export * from "./memory-sync.js";
+export * from "./memory-handoff.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
@@ -3272,7 +3281,7 @@ export * from "./entitlement-document.js";
 export * from "./password-policy.js";
 export * from "./partner-branding.js";
 export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
-export type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
+export type { MorningSummary, MorningSummaryDeal, MorningSummaryHandoff, MorningSummaryTask, NotificationPreferences, RecentNotification } from "./types/notification-preferences.js";
 export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
 export {
   updateNotificationPreferencesSchema,

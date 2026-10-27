@@ -539,6 +539,9 @@ export function DeepDive() {
             <Link to="/deep-dive/overview" className="text-xs font-medium underline-offset-4 hover:underline">
               Overview
             </Link>
+            <Link to="/deep-dive/interviews" className="text-xs font-medium underline-offset-4 hover:underline">
+              Parallel Interview
+            </Link>
             <Link to="/deep-dive/sessions" className="text-xs font-medium underline-offset-4 hover:underline">
               Sessions
             </Link>

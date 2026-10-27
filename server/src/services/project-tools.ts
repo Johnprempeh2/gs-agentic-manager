@@ -32,6 +32,9 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   commerce_convert_quote: mcpToolHints("write", { idempotent: true }),
   commerce_import_dry_run: mcpToolHints("write", { idempotent: true }),
   commerce_request_refund: mcpToolHints("write", { idempotent: true }),
+  interview_round_get: mcpToolHints("read"),
+  interview_synthesis_get: mcpToolHints("read"),
+  interview_set_draft: mcpToolHints("write"),
 };
 /** Read-only tool outside the runner catalog: the website feature registry (GRE-2325). Needs website:view. */
 const WEBSITE_FEATURES_TOOL = {
@@ -238,6 +241,42 @@ const WEBSITE_COMMERCE_TOOLS = [
   },
 ];
 
+/**
+ * Parallel Interview (GRE-2667): agents read a round's status and synthesis, and draft question sets for a person to
+ * approve. No tool approves a set, decides a proposal, releases or withdraws: those routes answer an agent with 403,
+ * and these tools never call them.
+ */
+const roundIdProperty = { type: "string", description: "The interview round id (interview_round_get shows it)." };
+const INTERVIEW_TOOLS = [
+  {
+    name: "interview_round_get",
+    description: "Read this company's Parallel Interview round: its status, mode, question sets (draft or approved) with who drafted and approved each, how many people are invited, started, completed, abandoned or declined per team, and what the client sees now. No names, emails or interview answers.",
+    annotations: PROJECT_TOOL_HINTS.interview_round_get,
+    inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+  {
+    name: "interview_synthesis_get",
+    description: "Read a round's synthesis: each proposed theme, quote and role with what a person decided, whether it is reviewed enough to release (and what still blocks it), and what the client sees now. Release is a person's action in GSAM.",
+    annotations: PROJECT_TOOL_HINTS.interview_synthesis_get,
+    inputSchema: { type: "object", properties: { roundId: roundIdProperty }, required: ["roundId"], additionalProperties: false },
+  },
+  {
+    name: "interview_set_draft",
+    description: "Draft the question set for one team (per-team round) or one person (per-person round) from what the Deep Dive knows now. It stays Draft; a person approves it before anyone is invited. Only while the round is in setup.",
+    annotations: PROJECT_TOOL_HINTS.interview_set_draft,
+    inputSchema: {
+      type: "object",
+      properties: {
+        roundId: roundIdProperty,
+        unitId: { type: "string", description: "Per-team round: the team's id on the organisation board." },
+        personId: { type: "string", description: "Per-person round: the person's id on the organisation board." },
+      },
+      required: ["roundId"],
+      additionalProperties: false,
+    },
+  },
+];
+
 export function projectToolDefinitions(workMode: string, includeTask = false) {
   const catalog: Array<{ name: string; description: string; annotations: McpToolHints | undefined; inputSchema: unknown }> = CAPABILITY_SEMANTIC_TOOL_CATALOG.filter(tool =>
     (PROJECT_TOOL_NAMES.includes(tool.operationId) || includeTask && tool.operationId === "create_task")
@@ -248,7 +287,7 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS];
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...INTERVIEW_TOOLS];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -386,6 +425,42 @@ async function commerceToolCall(input: { apiUrl: string; token: string; companyI
 
 const COMMERCE_TOOL_NAMES = new Set(WEBSITE_COMMERCE_TOOLS.map((tool) => tool.name));
 
+/** Through the normal interview routes, so the company check, the entitlement and the people-only rules apply. */
+async function interviewToolCall(input: { apiUrl: string; token: string; companyId: string; name: string; args: Record<string, unknown> }) {
+  const uuid = z.string().uuid();
+  if (input.name === "interview_round_get") {
+    z.object({}).strict().parse(input.args);
+    const company = `/companies/${encodeURIComponent(input.companyId)}/deep-dive/interview-round`;
+    const view = await apiGet(input.apiUrl, input.token, company);
+    const round = view.round as { id: string; status: string } | null;
+    if (!round || round.status === "setup") return { ...view, progress: null, release: null };
+    const [progress, release] = await Promise.all([
+      apiGet(input.apiUrl, input.token, `${company}/progress`),
+      apiGet(input.apiUrl, input.token, `/deep-dive/interview-rounds/${encodeURIComponent(round.id)}/synthesis/release`),
+    ]);
+    // Counts only: names and emails stay on the progress page.
+    const { people: _people, ...counts } = progress as { people?: unknown };
+    return { ...view, progress: counts, release };
+  }
+  if (input.name === "interview_synthesis_get") {
+    const { roundId } = z.object({ roundId: uuid }).strict().parse(input.args);
+    const round = `/deep-dive/interview-rounds/${encodeURIComponent(roundId)}/synthesis`;
+    const [proposals, release] = await Promise.all([
+      apiGet(input.apiUrl, input.token, `${round}/proposals`),
+      apiGet(input.apiUrl, input.token, `${round}/release`),
+    ]);
+    return { ...proposals, release };
+  }
+  const args = z.object({ roundId: uuid, unitId: uuid.optional(), personId: uuid.optional() }).strict().parse(input.args);
+  if (Boolean(args.unitId) === Boolean(args.personId)) throw badRequest("Give a unitId or a personId");
+  const target = args.unitId ? { unitId: args.unitId } : { personId: args.personId };
+  // A draft only: approving is a person's action, and no tool calls it.
+  return apiSend(input.apiUrl, input.token, "POST", `/deep-dive/interview-rounds/${encodeURIComponent(args.roundId)}/sets`, target,
+    createHash("sha256").update(`interview-set-draft:${args.roundId}:${args.unitId ?? args.personId}`).digest("base64url").slice(0, 22));
+}
+
+const INTERVIEW_TOOL_NAMES = new Set(INTERVIEW_TOOLS.map((tool) => tool.name));
+
 /** All transports use the normal authenticated API, including its validation and audit path. */
 export async function callProjectTool(input: {
   name: string; arguments: Record<string, unknown>; apiUrl: string; token: string;
@@ -400,6 +475,9 @@ export async function callProjectTool(input: {
   }
   if (COMMERCE_TOOL_NAMES.has(input.name)) {
     return commerceToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId, name: input.name, args });
+  }
+  if (INTERVIEW_TOOL_NAMES.has(input.name)) {
+    return interviewToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });
   }
   if (input.name === "website_style_get") {
     const { siteId, fresh } = z.object({ siteId: z.string().uuid(), fresh: z.boolean().optional() }).strict().parse(args);

@@ -19,6 +19,19 @@ GS Agentic Manager separates four concepts that are easy to blur together:
 
 The system works best when those are kept separate.
 
+Board corrections on an active task are ordinary attributed comments with a
+`correction` metadata marker. The comment is durable before GS Agentic Manager
+tries live steering or a stop and successor wake. The target run and board
+actor are recorded in activity. A run flagged "finish before update" keeps its
+critical section for up to two minutes before the fallback stop proceeds. The
+same wait checks Git lock/rebase state in the execution workspace and migration
+commands in the run's local process tree. A timeout records a separate audit
+event. The comment request returns after saving and auditing; delivery and any
+successor wake continue in the background.
+Adapters without acknowledged live steering use the successor wake. The run
+state shows "Correction waiting" during the handoff and "Restarting with
+correction" on a queued successor.
+
 ## 2. Assignee Semantics
 
 An issue has at most one assignee.
@@ -1243,6 +1256,25 @@ execution finalizer cannot suspend or signal the durable runner: the next
 controller must recover it through the authenticated ownership checks. This
 preserves active work and queued messages without treating a server restart as
 user cancellation.
+
+Remote runner processes stay alive through a controller outage until their
+authenticated connection lease expires. The controller still has a bounded
+reconnect attempt. Durable semantic tool calls wait for the recovered handler
+before dispatch, and bridge close or turn cancellation ends pending calls.
+Claude's native HTTP MCP client has a one-hour call budget so its default
+60-second timeout does not reject a call during a recoverable outage.
+
+Registered startups share a 30-second shutdown deadline to finish run admission
+and publish their exact session for detachment. The old controller still checks
+the saved run binding. It cannot checkpoint, publish events or settle the run
+after the restart fence. A startup that misses the deadline stays pending for
+reconciliation; it does not hold up detachment of other sessions. A pending
+Stop keeps cancellation with its current owner and prevents a new prompt.
+
+For remote OpenCode and ACPX runs, the controller saves the provider pack
+manifest only after verifying the remote pack. On reattach it can use that
+run-bound manifest even if a newer release removed the old local pack path.
+It still verifies the remote bytes before the provider starts.
 
 Before either shutdown path exits, idle warm sessions close through their
 normal suspend-and-checkpoint path. Remote sessions therefore leave verified

@@ -1,5 +1,5 @@
 {
-  "_comment": "gs-bridge-v1 signing vectors (GRE-2323). The same file lives at this path in greatstone-website and gs-agentic-manager; change both or neither. TEST ONLY key: the seed is public.",
+  "_comment": "gs-bridge-v1 signing vectors (GRE-2323). Canonical copy in gs-agentic-manager; the website vendors it with contracts/check.mjs --vendor. TEST ONLY key: the seed is public. Every actor, run and id here is made up.",
   "key": {
     "kid": "test-read-1",
     "capability": "read",
@@ -13,14 +13,14 @@
       "url": "https://staging.example.test/api/admin/v1/health",
       "time": 1793000000,
       "nonce": "AAECAwQFBgcICQoLDA0ODw",
-      "actor": "agent:d5651a41-e5e0-4512-8fb0-069815ff4278",
-      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "actor": "agent:00000000-0000-4000-8000-0000000000a1",
+      "run": "00000000-0000-4000-8000-0000000000b1",
       "body": "",
       "expected": {
         "canonicalQuery": "",
         "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "canonical": "gs-bridge-v1\nGET\nstaging.example.test\n/api/admin/v1/health\n1793000000\nAAECAwQFBgcICQoLDA0ODw\nagent:d5651a41-e5e0-4512-8fb0-069815ff4278\n9ef9feeb-d13b-450d-b404-89a39e406161\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "signature": "5yRNy1hYG5HYrhgDdPLmA-75yEhLMilJ2neXmFB9pP7JNc1eS8d-QrnhlLc6Y6B3_N6hfT2CgQwJQMGsRKl5Dw"
+        "canonical": "gs-bridge-v1\nGET\nstaging.example.test\n/api/admin/v1/health\n1793000000\nAAECAwQFBgcICQoLDA0ODw\nagent:00000000-0000-4000-8000-0000000000a1\n00000000-0000-4000-8000-0000000000b1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signature": "zvICgN54kiKtpU0PS9YoRIbD5nwWor2gb1sVw0ck4HuIA3jPfxr70tHIQ8FrYG_NwrRAyVerws9z3GD16k3-Cw"
       }
     },
     {
@@ -29,14 +29,14 @@
       "url": "https://staging.example.test/api/admin/v1/orders?updatedSince=2026-10-01T00%3A00%3A00Z&limit=2&customer=11111111-1111-4111-8111-111111111111&cursor=a+b",
       "time": 1793000001,
       "nonce": "EBESExQVFhcYGRobHB0eHw",
-      "actor": "user:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP",
+      "actor": "user:test-user-1",
       "run": null,
       "body": "",
       "expected": {
         "canonicalQuery": "cursor=a%20b&customer=11111111-1111-4111-8111-111111111111&limit=2&updatedSince=2026-10-01T00%3A00%3A00Z",
         "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "canonical": "gs-bridge-v1\nGET\nstaging.example.test\n/api/admin/v1/orders?cursor=a%20b&customer=11111111-1111-4111-8111-111111111111&limit=2&updatedSince=2026-10-01T00%3A00%3A00Z\n1793000001\nEBESExQVFhcYGRobHB0eHw\nuser:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "signature": "dMAFuTbgRXehlGIXB-k_4UKMmOFK7aU54Xk3U0jlmwvHB9L5snw933KeHjt15BnxQRgzSKKGjQmvbO_YmmVACw"
+        "canonical": "gs-bridge-v1\nGET\nstaging.example.test\n/api/admin/v1/orders?cursor=a%20b&customer=11111111-1111-4111-8111-111111111111&limit=2&updatedSince=2026-10-01T00%3A00%3A00Z\n1793000001\nEBESExQVFhcYGRobHB0eHw\nuser:test-user-1\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signature": "UMZVe5u4xLqvXkRVC6DCXsO8dOxFRTyCs8Z0QvnKy6nYEoPwSpR63niCYJ30vumcwvkeeWMoTs4OLSGa-OgVAw"
       }
     },
     {
@@ -83,14 +83,14 @@
       "time": 1793000010,
       "nonce": "QEFCQ0RFRkdISUpLTE1OTw",
       "idempotencyKey": "UFFSU1RVVldYWVpbXF1eXw",
-      "actor": "user:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP",
-      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "actor": "user:test-user-1",
+      "run": "00000000-0000-4000-8000-0000000000b1",
       "body": "{\"expectedRowVersion\":3,\"name\":\"Aspose.Words for .NET\"}",
       "expected": {
         "canonicalQuery": "",
         "bodySha256": "9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c",
-        "canonical": "gs-bridge-v2\nPATCH\nstaging.example.test\n/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001\n1793000010\nQEFCQ0RFRkdISUpLTE1OTw\nuser:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP\n9ef9feeb-d13b-450d-b404-89a39e406161\n9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c\nUFFSU1RVVldYWVpbXF1eXw",
-        "signature": "9GhRu3rbDwyX7BIwf-ZGJL5TCSJf67_ZngjTjTUinY-GFayYs_AOKTlJtSrwiq0kddDPN56WlpMRTus4fUw5BA"
+        "canonical": "gs-bridge-v2\nPATCH\nstaging.example.test\n/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001\n1793000010\nQEFCQ0RFRkdISUpLTE1OTw\nuser:test-user-1\n00000000-0000-4000-8000-0000000000b1\n9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c\nUFFSU1RVVldYWVpbXF1eXw",
+        "signature": "e59cTk4lt7itkuVKk5vTtde8quP4kNl-SuNzfJDgUr2PIM9VC5sIkHjv282MYiOKfDGRXh0cI5FKtYtT5p7ZCg"
       }
     },
     {
@@ -102,14 +102,14 @@
       "time": 1793000013,
       "nonce": "YGFiY2RlZmdoaWprbG1ubw",
       "idempotencyKey": "UFFSU1RVVldYWVpbXF1eXw",
-      "actor": "user:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP",
-      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "actor": "user:test-user-1",
+      "run": "00000000-0000-4000-8000-0000000000b1",
       "body": "{\"expectedRowVersion\":3,\"name\":\"Aspose.Words for .NET\"}",
       "expected": {
         "canonicalQuery": "",
         "bodySha256": "9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c",
-        "canonical": "gs-bridge-v2\nPATCH\nstaging.example.test\n/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001\n1793000013\nYGFiY2RlZmdoaWprbG1ubw\nuser:UGJwnXKO0P0yBvVh4krv4LH3EThDwrRP\n9ef9feeb-d13b-450d-b404-89a39e406161\n9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c\nUFFSU1RVVldYWVpbXF1eXw",
-        "signature": "1cc4V4w38mmzcNIfzKznCoBDKDaBSfn6gMVOmz-kFjhTVC0dOFc2cjmSYt2CuQgsmKiu33xyXtNrO2iCrmRCCQ"
+        "canonical": "gs-bridge-v2\nPATCH\nstaging.example.test\n/api/admin/v1/offerings/c0ffee00-0000-4000-8000-000000000001\n1793000013\nYGFiY2RlZmdoaWprbG1ubw\nuser:test-user-1\n00000000-0000-4000-8000-0000000000b1\n9596881fda0866d03ab436d12a57539d88875b5336cfa2763da8ff014e1d303c\nUFFSU1RVVldYWVpbXF1eXw",
+        "signature": "Ovg52yDkpd6oBsZK9lIBsT_Ze0nvBJ_G9dIGyHCOgVTeDb0acDUc0AS9ZEvv6_IH5F9JDipsBhF188QCV5TvCg"
       }
     },
     {
@@ -121,14 +121,14 @@
       "time": 1793000020,
       "nonce": "cHFyc3R1dnd4eXp7fH1-fw",
       "idempotencyKey": "gIGCg4SFhoeIiYqLjI2Ojw",
-      "actor": "agent:d5651a41-e5e0-4512-8fb0-069815ff4278",
+      "actor": "agent:00000000-0000-4000-8000-0000000000a1",
       "run": null,
       "body": "",
       "expected": {
         "canonicalQuery": "",
         "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "canonical": "gs-bridge-v2\nPOST\nstaging.example.test\n/api/admin/v1/quotes/c2000000-0000-4000-8000-000000000001/convert\n1793000020\ncHFyc3R1dnd4eXp7fH1-fw\nagent:d5651a41-e5e0-4512-8fb0-069815ff4278\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\ngIGCg4SFhoeIiYqLjI2Ojw",
-        "signature": "bgcjQqHHnR7jnwRU3PUfozT1W9xGlrFNRKXPXWnva42cM7tk7B_cLkLm_cukQnByA_UnLPHxlx8sW7skpLIFAA"
+        "canonical": "gs-bridge-v2\nPOST\nstaging.example.test\n/api/admin/v1/quotes/c2000000-0000-4000-8000-000000000001/convert\n1793000020\ncHFyc3R1dnd4eXp7fH1-fw\nagent:00000000-0000-4000-8000-0000000000a1\n-\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\ngIGCg4SFhoeIiYqLjI2Ojw",
+        "signature": "AGLPajMjNDZrNV6OGNLvPItl-3a4ucYmp2b1JrCqBu_iwEzA6w3F5Z8N3T9oIH2NFPP0e1zeM4tePz_MGtcVBw"
       }
     },
     {
@@ -140,14 +140,14 @@
       "time": 1793000030,
       "nonce": "kJGSk5SVlpeYmZqbnJ2enw",
       "idempotencyKey": "oKGio6SlpqeoqaqrrK2urw",
-      "actor": "agent:d5651a41-e5e0-4512-8fb0-069815ff4278",
-      "run": "9ef9feeb-d13b-450d-b404-89a39e406161",
+      "actor": "agent:00000000-0000-4000-8000-0000000000a1",
+      "run": "00000000-0000-4000-8000-0000000000b1",
       "body": "{\"orderId\":\"c3000000-0000-4000-8000-000000000001\",\"amountMinor\":100,\"reason\":\"Charged twice\"}",
       "expected": {
         "canonicalQuery": "",
         "bodySha256": "2d88a0681c10c4e9dae46d1f695c94d5f87d060eb26d1fe2b97da3eced59f56c",
-        "canonical": "gs-bridge-v2\nPOST\nstaging.example.test\n/api/admin/v1/refund-requests\n1793000030\nkJGSk5SVlpeYmZqbnJ2enw\nagent:d5651a41-e5e0-4512-8fb0-069815ff4278\n9ef9feeb-d13b-450d-b404-89a39e406161\n2d88a0681c10c4e9dae46d1f695c94d5f87d060eb26d1fe2b97da3eced59f56c\noKGio6SlpqeoqaqrrK2urw",
-        "signature": "wssyQuiUzMjGt7eDzeTGG9EaC5JIscinNTm9DcLkLLbqX6LBVkFyqL-RVAmioLwYd8cg9ypqXIVWAubFt9sZCA"
+        "canonical": "gs-bridge-v2\nPOST\nstaging.example.test\n/api/admin/v1/refund-requests\n1793000030\nkJGSk5SVlpeYmZqbnJ2enw\nagent:00000000-0000-4000-8000-0000000000a1\n00000000-0000-4000-8000-0000000000b1\n2d88a0681c10c4e9dae46d1f695c94d5f87d060eb26d1fe2b97da3eced59f56c\noKGio6SlpqeoqaqrrK2urw",
+        "signature": "CqVvcLJt4mNtIxXNIn4FKpAmS9_0X3K9aAA8Re9nqgaXqBLfQf5beIlC3BSBV3SEhyyEwiRePDnkysETtltWAg"
       }
     }
   ]

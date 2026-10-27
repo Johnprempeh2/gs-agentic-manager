@@ -384,7 +384,7 @@ describe("issue update comment wakeups", () => {
     );
   });
 
-  it("interrupts the active run and wakes the newly assigned agent with handoff context", async () => {
+  it("rejects a correction combined with reassignment to another agent", async () => {
     const existing = makeIssue({
       assigneeAgentId: PREVIOUS_AGENT_ID,
       assigneeUserId: null,
@@ -428,49 +428,15 @@ describe("issue update comment wakeups", () => {
         interrupt: true,
       });
 
-    expect(res.status).toBe(200);
-    expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
-      "run-1",
-      "Interrupted by board comment",
-      expect.objectContaining({
-        errorCode: "operator_interrupted",
-        resultJson: expect.objectContaining({
-          operatorInterrupted: true,
-          interruptionSource: "issue_comment_interrupt",
-          interruptedIssueId: existing.id,
-        }),
-        eventMessage: "run interrupted by board comment",
-        eventPayload: expect.objectContaining({
-          issueId: existing.id,
-          source: "issue_comment_interrupt",
-        }),
-      }),
-    );
-    await vi.waitFor(() => expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(1));
-    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
-      ASSIGNEE_AGENT_ID,
-      expect.objectContaining({
-        source: "assignment",
-        reason: "issue_assigned",
-        payload: expect.objectContaining({
-          issueId: existing.id,
-          commentId: "comment-interrupt-agent",
-          interruptedRunId: "run-1",
-          mutation: "update",
-        }),
-        contextSnapshot: expect.objectContaining({
-          issueId: existing.id,
-          taskId: existing.id,
-          commentId: "comment-interrupt-agent",
-          wakeCommentId: "comment-interrupt-agent",
-          interruptedRunId: "run-1",
-          source: "issue.update",
-        }),
-      }),
-    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Post the correction before changing the assignee");
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+    expect(mockIssueService.addComment).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
   });
 
-  it("interrupts the active run without waking an agent when the handoff assigns a user", async () => {
+  it("rejects a correction combined with reassignment to a user", async () => {
     const existing = makeIssue({
       assigneeAgentId: PREVIOUS_AGENT_ID,
       assigneeUserId: null,
@@ -514,24 +480,11 @@ describe("issue update comment wakeups", () => {
         interrupt: true,
       });
 
-    expect(res.status).toBe(200);
-    expect(mockHeartbeatService.cancelRun).toHaveBeenCalledWith(
-      "run-2",
-      "Interrupted by board comment",
-      expect.objectContaining({
-        errorCode: "operator_interrupted",
-        resultJson: expect.objectContaining({
-          operatorInterrupted: true,
-          interruptionSource: "issue_comment_interrupt",
-          interruptedIssueId: existing.id,
-        }),
-        eventMessage: "run interrupted by board comment",
-      }),
-    );
-    await vi.waitFor(() => expect(mockIssueService.findMentionedAgents).toHaveBeenCalledWith(
-      existing.companyId,
-      "stop here, I will take it",
-    ));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Post the correction before changing the assignee");
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+    expect(mockIssueService.addComment).not.toHaveBeenCalled();
+    expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
     expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
   });
 

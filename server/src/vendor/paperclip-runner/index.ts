@@ -80,12 +80,17 @@ export const CAPABILITY_SEMANTIC_TOOL_CATALOG =
   runner.CAPABILITY_SEMANTIC_TOOL_CATALOG;
 export const HarnessRuntimeRequestResolutionError =
   runner.HarnessRuntimeRequestResolutionError;
+export const HarnessCapabilityUnavailableError = runner.HarnessCapabilityUnavailableError;
 export const NATIVE_RUNTIME_ASSET_SCHEMA = runner.NATIVE_RUNTIME_ASSET_SCHEMA;
 export const GSAM_EXECUTION_PROMPT = runner.GSAM_EXECUTION_PROMPT;
 export const GSAM_EXECUTION_PROMPT_REVISION =
   runner.GSAM_EXECUTION_PROMPT_REVISION;
 export const acpxRuntimeSessionDirectoryName =
   runner.acpxRuntimeSessionDirectoryName;
+export const OPENCODE_ISOLATED_HOMES_DIRECTORY =
+  runner.OPENCODE_ISOLATED_HOMES_DIRECTORY;
+export const opencodeRuntimeSessionDirectoryName =
+  runner.opencodeRuntimeSessionDirectoryName;
 export const canonicalNativeRuntimeContextDigest =
   runner.canonicalNativeRuntimeContextDigest;
 export const createNativeSessionBackend = runner.createNativeSessionBackend;

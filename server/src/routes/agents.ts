@@ -66,6 +66,7 @@ import {
 } from "@greatstone/adapter-utils/server-utils";
 import { trackAgentCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
+import { registerAgentProjectAccessRoutes } from "./agent-project-access.js";
 import { inheritNativeRunnerAdapterConfig } from "../services/native-runtime/native-agent-runtime-inheritance.js";
 import { agentInstructionsBundleMode } from "../services/agent-instructions.js";
 import {
@@ -5133,6 +5134,8 @@ export function agentRoutes(
     res.status(201).json(redactAgentRowForResponse(agent));
   });
 
+  registerAgentProjectAccessRoutes(router, db);
+
   router.patch("/agents/:id/permissions", validate(updateAgentPermissionsSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Agent not found");
@@ -7046,6 +7049,7 @@ export function agentRoutes(
       triggerDetail: heartbeatRuns.triggerDetail,
       contextCommentId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'commentId'`.as("contextCommentId"),
       contextWakeCommentId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'wakeCommentId'`.as("contextWakeCommentId"),
+      correctionState: sql<string | null>`case when ${heartbeatRuns.status} = 'queued' and ${heartbeatRuns.contextSnapshot} ->> 'correctionCommentId' is not null then 'restarting' else ${heartbeatRuns.resultJson} ->> 'correctionState' end`.as("correctionState"),
       startedAt: heartbeatRuns.startedAt,
       finishedAt: heartbeatRuns.finishedAt,
       createdAt: heartbeatRuns.createdAt,
@@ -7715,6 +7719,7 @@ export function agentRoutes(
         triggerDetail: heartbeatRuns.triggerDetail,
         contextCommentId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'commentId'`.as("contextCommentId"),
         contextWakeCommentId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'wakeCommentId'`.as("contextWakeCommentId"),
+        correctionState: sql<string | null>`case when ${heartbeatRuns.status} = 'queued' and ${heartbeatRuns.contextSnapshot} ->> 'correctionCommentId' is not null then 'restarting' else ${heartbeatRuns.resultJson} ->> 'correctionState' end`.as("correctionState"),
         startedAt: heartbeatRuns.startedAt,
         finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,

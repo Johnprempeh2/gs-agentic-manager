@@ -2,29 +2,43 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify, type KeyObject } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
+  caseDocuments,
   cases,
   clientDeliverablePublications,
   companies,
   companyMemberships,
   createDb,
+  deepDiveBuilds,
+  deepDiveCommercials,
+  deepDiveFindingEvidence,
+  deepDiveFindings,
   deepDiveItemFiles,
+  deepDiveKpis,
+  deepDiveOpportunities,
+  deepDiveOpportunityFindings,
+  deepDivePeople,
+  deepDiveRoadmapItems,
+  deepDiveRoadmapKpis,
+  documents,
   instanceSettings,
   issueWorkProducts,
   issues,
   pipelineCaseDocumentRequests,
+  pipelineCaseEvidence,
   pipelineCases,
   pipelineStages,
   pipelines,
   principalPermissionGrants,
 } from "@greatstone/db";
 import type { DeepDiveSyncPayload, WebsiteDataBridgeKey } from "@greatstone/shared";
+import { contractErrors } from "./helpers/site-contract.js";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
@@ -70,6 +84,9 @@ describeEmbeddedPostgres("website Deep Dive sync (GRE-2439)", () => {
     const payload = JSON.parse(body) as DeepDiveSyncPayload;
     pushed.push({ url: url.toString(), method: init.method!, verified, body: payload });
     if (!verified) return new Response(JSON.stringify({ error: { code: "bad_signature" } }), { status: 401 });
+    // Every push GSAM makes must pass the shared contract the website checks too (GRE-2633).
+    const contractProblem = contractErrors("deepDiveSync", payload);
+    if (contractProblem) throw new Error(`the push breaks the GSAM and website contract: ${contractProblem}`);
     return Response.json({ ok: true, tenantId: payload.tenantId });
   }) as unknown as typeof fetch;
   const options: WebsiteDataBridgeOptions = {
@@ -186,6 +203,65 @@ describeEmbeddedPostgres("website Deep Dive sync (GRE-2439)", () => {
     return { client, shared, internal, sharedChild, internalParentChild, sharedRequest, internalRequest, internalLinkRequest, published, withdrawn };
   }
 
+  // GRE-2632: findings, opportunities and KPIs. New rows are Internal (the database insists); Shared is set after.
+  type Visibility = "internal" | "shared";
+
+  async function seedFinding(companyId: string, stream: { id: string; clientCaseId: string | null }, statement: string, visibility: Visibility, evidence = 0) {
+    let [cell] = await db.select().from(caseDocuments).where(and(eq(caseDocuments.caseId, stream.id), eq(caseDocuments.key, "gif-current-state")));
+    if (!cell) {
+      const [doc] = await db.insert(documents).values({ companyId, title: "Current state", latestBody: "# Current state\n" }).returning();
+      [cell] = await db.insert(caseDocuments).values({ companyId, caseId: stream.id, documentId: doc!.id, key: "gif-current-state" }).returning();
+    }
+    const [finding] = await db.insert(deepDiveFindings).values({ companyId, streamCaseId: stream.id, gifDocumentId: cell!.id, statement }).returning();
+    for (let i = 0; i < evidence; i += 1) {
+      const [row] = await db.insert(pipelineCaseEvidence).values({ companyId, caseId: stream.clientCaseId!, kind: "link", title: `Source ${i}`, url: `https://example.test/${randomUUID()}` }).returning();
+      await db.insert(deepDiveFindingEvidence).values({ companyId, findingId: finding!.id, evidenceId: row!.id });
+    }
+    await db.update(deepDiveFindings).set({ status: "validated", decidedAt: new Date(), decidedByUserId: "staff-user" }).where(eq(deepDiveFindings.id, finding!.id));
+    await db.update(deepDiveFindings).set({ visibility }).where(eq(deepDiveFindings.id, finding!.id));
+    return finding!;
+  }
+
+  async function seedOpportunity(companyId: string, name: string, findingIds: string[], visibility: Visibility) {
+    const [row] = await db.insert(deepDiveOpportunities).values({
+      companyId, ref: `OP-${name}`, name, statement: `${name} statement`, desiredOutcome: `${name} outcome`,
+      rootCause: `${name} root cause`, potentialValue: `${name} internal estimate`,
+    }).returning();
+    for (const findingId of findingIds) await db.insert(deepDiveOpportunityFindings).values({ companyId, opportunityId: row!.id, findingId });
+    await db.update(deepDiveOpportunities).set({ visibility }).where(eq(deepDiveOpportunities.id, row!.id));
+    return row!;
+  }
+
+  /** A KPI moved by a roadmap item for each opportunity given (roadmap → commercial → build → opportunity). */
+  async function seedKpi(companyId: string, name: string, opportunityIds: string[], visibility: Visibility) {
+    const [owner] = await db.insert(deepDivePeople).values({ companyId, name: `${name} owner person` }).returning();
+    const [kpi] = await db.insert(deepDiveKpis).values({
+      companyId, name, ownerPersonId: owner!.id, unit: "days", direction: "down", baseline: "8", definition: `${name} definition`,
+      baselinePeriod: "Q3 2026", target: "1.5",
+    }).returning();
+    for (const opportunityId of opportunityIds) {
+      const [build] = await db.insert(deepDiveBuilds).values({ companyId, opportunityId, name: `${name} build` }).returning();
+      const [commercial] = await db.insert(deepDiveCommercials).values({ companyId, buildId: build!.id, name: `${name} commercial` }).returning();
+      const [roadmap] = await db.insert(deepDiveRoadmapItems).values({ companyId, commercialId: commercial!.id, name: `${name} roadmap` }).returning();
+      await db.insert(deepDiveRoadmapKpis).values({ companyId, roadmapItemId: roadmap!.id, kpiId: kpi!.id });
+    }
+    await db.update(deepDiveKpis).set({ visibility }).where(eq(deepDiveKpis.id, kpi!.id));
+    return kpi!;
+  }
+
+  /** On one engagement: Shared and Internal findings, opportunities and KPIs, and Shared ones under Internal parents. */
+  async function seedRecords(companyId: string, e: Awaited<ReturnType<typeof seedEngagement>>, label: string) {
+    const finding = await seedFinding(companyId, e.shared, `${label} quotes take 8 days`, "shared", 2);
+    const internalFinding = await seedFinding(companyId, e.shared, `${label} internal finding`, "internal");
+    const findingOnInternalStream = await seedFinding(companyId, e.internal, `${label} finding on internal stream`, "shared");
+    const opportunity = await seedOpportunity(companyId, `${label} faster quotes`, [finding.id, internalFinding.id], "shared");
+    const internalOpportunity = await seedOpportunity(companyId, `${label} internal opportunity`, [finding.id], "internal");
+    const kpi = await seedKpi(companyId, `${label} quote days`, [opportunity.id], "shared");
+    const internalKpi = await seedKpi(companyId, `${label} internal kpi`, [opportunity.id], "internal");
+    const kpiOfInternalOpportunity = await seedKpi(companyId, `${label} kpi with hidden parent`, [internalOpportunity.id], "shared");
+    return { finding, internalFinding, findingOnInternalStream, opportunity, internalOpportunity, kpi, internalKpi, kpiOfInternalOpportunity };
+  }
+
   function signedAnswer(site: { siteKeyId: string; sitePrivateKey: KeyObject }, tenantId: string, requestId: string,
     body: Record<string, unknown>, opts: { time?: number; nonce?: string; actor?: string; key?: KeyObject; kid?: string; sendBody?: Record<string, unknown> } = {}) {
     const json = JSON.stringify(body);
@@ -226,7 +302,7 @@ describeEmbeddedPostgres("website Deep Dive sync (GRE-2439)", () => {
     expect(preview.deliverables.map((d) => d.id)).toEqual([a.published.id]);
 
     const res = await request(app()).post(`${site.base}/deep-dive-sync/${a.client.id}`).expect(200);
-    expect(res.body.counts).toEqual({ items: 3, files: 1, documentRequests: 1, deliverables: 1 });
+    expect(res.body.counts).toEqual({ items: 3, files: 1, documentRequests: 1, deliverables: 1, findings: 0, opportunities: 0, kpis: 0 });
     expect(pushed).toHaveLength(1);
     expect(pushed[0]).toMatchObject({ method: "PUT", verified: true, url: `https://www.greatstone.test/api/admin/v1/deep-dive/tenants/${a.client.id}` });
     const wire = JSON.stringify(pushed[0]!.body);
@@ -356,5 +432,76 @@ describeEmbeddedPostgres("website Deep Dive sync (GRE-2439)", () => {
     const rows = await db.select().from(pipelineCaseDocumentRequests).where(eq(pipelineCaseDocumentRequests.companyId, companyId));
     const answered = rows.filter((r) => r.websiteAnsweredAt).map((r) => r.id);
     expect(answered).toEqual([a.sharedRequest.id]);
+  });
+  it("sends Shared findings, opportunities and KPIs, never Internal ones, in the preview and the push", async () => {
+    const companyId = await seedCompany("Greatstone G");
+    const site = await seedSite(companyId);
+    const a = await seedEngagement(companyId, "Client A");
+    const r = await seedRecords(companyId, a, "A");
+
+    const preview = (await request(app()).get(`${site.base}/deep-dive-sync/${a.client.id}/preview`).expect(200)).body as DeepDiveSyncPayload;
+    expect(preview.schema).toBe("gs-deep-dive-sync-v1");
+    expect(preview.findings.map((f) => f.id).sort()).toEqual([r.finding.id, r.findingOnInternalStream.id].sort());
+    expect(preview.findings.find((f) => f.id === r.finding.id)).toEqual({
+      id: r.finding.id, streamItemId: a.shared.id, statement: "A quotes take 8 days", status: "validated", evidenceCount: 2,
+      supersedesId: null, updatedAt: expect.any(String),
+    });
+    // A Shared finding on an Internal stream is sent without the stream's id.
+    expect(preview.findings.find((f) => f.id === r.findingOnInternalStream.id)!.streamItemId).toBeNull();
+    // The opportunity lists only its Shared finding.
+    expect(preview.opportunities).toEqual([{
+      id: r.opportunity.id, ref: "OP-A faster quotes", title: "A faster quotes", statement: "A faster quotes statement",
+      desiredOutcome: "A faster quotes outcome", status: "draft", findingIds: [r.finding.id], streamItemIds: [a.shared.id],
+      updatedAt: expect.any(String),
+    }]);
+    expect(preview.kpis.map((k) => k.id).sort()).toEqual([r.kpi.id, r.kpiOfInternalOpportunity.id].sort());
+    expect(preview.kpis.find((k) => k.id === r.kpi.id)).toEqual({
+      id: r.kpi.id, title: "A quote days", definition: "A quote days definition", scope: "company", unit: "days", direction: "down",
+      baseline: 8, baselinePeriod: "Q3 2026", target: 1.5, opportunityIds: [r.opportunity.id], updatedAt: expect.any(String),
+    });
+    // A Shared KPI under an Internal opportunity is sent without the opportunity's id.
+    expect(preview.kpis.find((k) => k.id === r.kpiOfInternalOpportunity.id)!.opportunityIds).toEqual([]);
+
+    const res = await request(app()).post(`${site.base}/deep-dive-sync/${a.client.id}`).expect(200);
+    expect(res.body.counts).toMatchObject({ findings: 2, opportunities: 1, kpis: 2 });
+    expect(pushed[0]!.body.findings).toEqual(preview.findings);
+    expect(pushed[0]!.body.opportunities).toEqual(preview.opportunities);
+    expect(pushed[0]!.body.kpis).toEqual(preview.kpis);
+    for (const wire of [JSON.stringify(preview), JSON.stringify(pushed[0]!.body)]) {
+      for (const hidden of [r.internalFinding.id, r.internalOpportunity.id, r.internalKpi.id, "internal finding", "internal opportunity",
+        "internal kpi", "root cause", "internal estimate", "owner person", "staff-user"]) {
+        expect(wire).not.toContain(hidden);
+      }
+    }
+  });
+
+  it("never sends another client's findings, opportunities or KPIs, nor one shared between two clients", async () => {
+    const companyId = await seedCompany("Greatstone H");
+    const site = await seedSite(companyId);
+    const a = await seedEngagement(companyId, "Client A");
+    const b = await seedEngagement(companyId, "Client B");
+    const ra = await seedRecords(companyId, a, "A");
+    const rb = await seedRecords(companyId, b, "B");
+    const mixed = await seedOpportunity(companyId, "mixed opportunity", [ra.finding.id, rb.finding.id], "shared");
+    const mixedKpi = await seedKpi(companyId, "mixed kpi", [ra.opportunity.id, rb.opportunity.id], "shared");
+    const unlinked = await seedOpportunity(companyId, "unlinked opportunity", [], "shared");
+    const otherCompany = await seedCompany("Other Co H");
+    const c = await seedEngagement(otherCompany, "Client C");
+    const rc = await seedRecords(otherCompany, c, "C");
+
+    const preview = (await request(app()).get(`${site.base}/deep-dive-sync/${b.client.id}/preview`).expect(200)).body as DeepDiveSyncPayload;
+    expect(preview.findings.map((f) => f.id).sort()).toEqual([rb.finding.id, rb.findingOnInternalStream.id].sort());
+    expect(preview.opportunities.map((o) => o.id)).toEqual([rb.opportunity.id]);
+
+    await request(app()).post(`${site.base}/deep-dive-sync/${a.client.id}`).expect(200);
+    const body = pushed[0]!.body;
+    expect(body.findings.map((f) => f.id).sort()).toEqual([ra.finding.id, ra.findingOnInternalStream.id].sort());
+    expect(body.opportunities.map((o) => o.id)).toEqual([ra.opportunity.id]);
+    expect(body.kpis.map((k) => k.id).sort()).toEqual([ra.kpi.id, ra.kpiOfInternalOpportunity.id].sort());
+    const wire = JSON.stringify(body);
+    for (const other of [rb.finding.id, rb.opportunity.id, rb.kpi.id, mixed.id, mixedKpi.id, unlinked.id, rc.finding.id, rc.opportunity.id,
+      rc.kpi.id, "B quotes", "mixed", "unlinked", "C quotes"]) {
+      expect(wire).not.toContain(other);
+    }
   });
 });

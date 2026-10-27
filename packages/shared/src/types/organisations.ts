@@ -21,6 +21,12 @@ export interface OrganisationContact {
   organisationId: string | null;
   name: string;
   role: string | null;
+  /**
+   * The person's account on the client website (GRE-2658). Set means the
+   * website holds who they are and `email` is null; unset means a CRM entry
+   * not yet linked to a website account.
+   */
+  websiteUserId?: string | null;
   email: string | null;
   phone: string | null;
   isKeyContact: boolean;
@@ -75,6 +81,11 @@ export interface Organisation {
   crmFields?: CrmRecordField[];
   source: OrganisationSource;
   externalId: string | null;
+  /**
+   * The website organisation (website customers.id) a person linked this organisation to (GRE-2682); null when it
+   * is not linked. Never matched by name, domain or email.
+   */
+  websiteOrganisationId: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;

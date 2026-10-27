@@ -62,6 +62,7 @@ const SCOPE_KIND_HINT: Record<string, string> = {
   restricted_project: "only people named on this project",
   client: "only people working with this client",
   agent: "one agent's working notes",
+  person: "one person's own work, shared by their apps",
 };
 
 /** The scope offered first: the organisation scope, else the first one listed. */

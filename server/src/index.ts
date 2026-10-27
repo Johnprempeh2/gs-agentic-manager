@@ -6,6 +6,7 @@ import "@greatstone/shared/legacy-env-bootstrap";
 // instrumentationReady before opening DB connections or constructing the
 // HTTP server, so trace coverage does not depend on incidental timing.
 import { instrumentationReady, shutdownInstrumentation } from "./instrumentation.js";
+import { createTrackedSingleFlight } from "./lib/single-flight.js";
 import { sentryReady, shutdownSentry, captureException } from "./sentry.js";
 import { waitForPendingRunFailureReports } from "./services/run-failure-report.js";
 import { setBoardIdentityDeploymentMode } from "./services/board-identity.js";
@@ -128,6 +129,7 @@ import { emailChannelService } from "./services/email-channels.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
+import { runScheduledMemoryPersonFeed } from "./services/memory-gateway/person-feed.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
@@ -1342,6 +1344,16 @@ async function startServerWithDatabaseTeardown(
       });
     heartbeatSchedulerInFlight.add(tracked);
   };
+  const runPeriodicRecovery = createTrackedSingleFlight({
+    trackWork: trackHeartbeatSchedulerWork,
+    onSkipped: (inFlightForMs) => {
+      if (inFlightForMs >= 3 * config.heartbeatSchedulerIntervalMs) {
+        logger.error({ inFlightForMs }, "periodic heartbeat recovery remains in flight; duplicate pass suppressed");
+      } else {
+        logger.warn({ inFlightForMs }, "skipped periodic heartbeat recovery tick; previous chain still in flight");
+      }
+    },
+  });
   const waitForHeartbeatSchedulerIdle = async () => {
     while (heartbeatSchedulerInFlight.size > 0) {
       await Promise.allSettled([...heartbeatSchedulerInFlight]);
@@ -1390,6 +1402,8 @@ async function startServerWithDatabaseTeardown(
     ["memory_retention", () => runScheduledMemoryRetention(db)],
     // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
     ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
+    // GRE-2668: John's and Ben's comments, card answers and closed tasks into the owner's shared memory, every 2 hours.
+    ["memory_person_feed", () => runScheduledMemoryPersonFeed(db, { engine: memoryIngestEngine })],
     // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
     ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
     // GRE-1187: meeting reminders, slippage alerts and "Why?" requests by email.
@@ -2228,7 +2242,7 @@ async function startServerWithDatabaseTeardown(
           }
           // Periodically reap orphaned runs (5-min staleness threshold) and make sure
           // persisted queued work is still being driven forward.
-          trackHeartbeatSchedulerWork(heartbeat
+          runPeriodicRecovery(() => heartbeat
             .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {

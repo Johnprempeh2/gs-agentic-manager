@@ -1,6 +1,7 @@
 import type { issuesApi } from "../../api/issues";
 import { DispositionRecoveryProvider } from "../../components/DispositionRecoveryNotice";
 import { ExecutionBlockerNotice } from "../../components/ExecutionBlockerNotice";
+import { ProjectAccessNotice } from "../../components/ProjectAccessNotice";
 import { EmailTaskActivity } from "../../components/EmailTaskActivity";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import { TabledBanner } from "../../components/decisions-feed/TabledBanner";
@@ -275,6 +276,7 @@ export function IssueDetailChatPanel({
       {issue.executionBlocker && (
         <ExecutionBlockerNotice companyId={issue.companyId} issueId={issue.id} blocker={issue.executionBlocker} onRetried={invalidateIssueDetail} />
       )}
+      <ProjectAccessNotice companyId={issue.companyId} issueId={issue.id} projectId={issue.projectId} assigneeAgentId={issue.assigneeAgentId} onRetried={invalidateIssueDetail} />
       {/* Agent chats hide the task header, so its tabled banner too (GRE-1475). */}
       {issue.conversationAgentId ? <TabledBanner issue={issue} chat /> : null}
       {resolvedDetailTab === "chat" ? (

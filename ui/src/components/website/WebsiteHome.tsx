@@ -37,6 +37,7 @@ import { pickLivePreviewService } from "../LivePreviewCard";
 import { RELEASE_STATUS_COPY, isReleaseActive, releaseDate, releaseTime } from "./WebsiteReleases";
 import { useCanPublishWebsite, useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteFeaturesSection } from "./features/WebsiteFeatureCards";
+import { TrainAndLaunch } from "./WebsiteTrainAndLaunch";
 import {
   LinkProjectFirst,
   PreviewStage,
@@ -774,6 +775,7 @@ export function WebsiteHomeTab({
     <div className="space-y-6" data-testid="website-home">
       <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site?.editorFrameOrigin ? onEditPages : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
+      {home ? <TrainAndLaunch train={home.train ?? null} launch={home.launch ?? null} /> : null}
       <WebsiteFeaturesSection companyId={companyId} site={site} canChange={canPublish} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}

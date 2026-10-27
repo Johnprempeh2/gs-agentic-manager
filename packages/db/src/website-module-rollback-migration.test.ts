@@ -13,7 +13,7 @@ const MIGRATION_FILE = "0384_website_module_foundation.sql";
 const SITEMAP_MIGRATION_FILE = "0385_website_sitemap_options.sql";
 const FEATURE_MIGRATION_FILE = "0393_website_features.sql";
 const DATA_BRIDGE_MIGRATION_FILE = "0394_website_data_bridge.sql";
-const ACTIVITY_MIGRATION_FILE = "0405_eminent_pet_avengers.sql";
+const ACTIVITY_MIGRATION_FILE = "0412_mute_drax.sql";
 const WEBSITE_TABLES = ["website_site", "website_page", "website_entry", "website_release", "website_sitemap_option", "website_feature", "website_activity_events", "website_activity_cursors"];
 const cleanups: Array<() => Promise<void>> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();

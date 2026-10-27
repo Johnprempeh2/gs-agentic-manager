@@ -25,6 +25,7 @@ import {
 } from "@greatstone/db";
 import {
   acpxRuntimeSessionDirectoryName,
+  opencodeRuntimeSessionDirectoryName,
   createPrpSemanticToolInputEnvelope,
   createPrpSemanticToolResultEnvelope,
   validatePrpStructuredRunResult,
@@ -304,6 +305,7 @@ import {
   sha256DirectoryTree,
   stageRemoteRunnerDirectory,
   steerNativeSession,
+  deliverNativeSessionCorrectionAtBoundary,
   syncRemoteRunnerDirectoryOut,
   verifyNativeHarnessBackup,
   shouldRestoreNativeHarnessBackupIntoSandbox,
@@ -1214,13 +1216,26 @@ describe("native harness persistence profiles", () => {
     });
   });
 
-  it("excludes only nested Codex launch state from ACPX recovery", () => {
+  it("excludes disposable OpenCode homes and package installs from recovery", () => {
+    const opencode = profile({ kind: "opencode" }, "opencode_server");
+    const sessionDirectory = opencodeRuntimeSessionDirectoryName("session");
+    expect(opencode.directories.find((directory) => directory.name === "opencode")).toMatchObject({
+      excludeEntries: [
+        `${sessionDirectory}/homes`,
+        `${sessionDirectory}/config/opencode/node_modules`,
+      ],
+    });
+  });
+
+  it("excludes ACPX caches and nested Codex launch state from recovery", () => {
     const acpx = profile({ kind: "acpx", agent: "codex" }, "acpx_runtime");
     const sessionDirectory = acpxRuntimeSessionDirectoryName("session");
     expect(
       acpx.directories.find((directory) => directory.name === "acpx"),
     ).toMatchObject({
       excludeEntries: [
+        `acpx/${sessionDirectory}/home/.npm`,
+        `acpx/${sessionDirectory}/data/pnpm/store`,
         `acpx/${sessionDirectory}/codex-home/tmp`,
         `acpx/${sessionDirectory}/codex-home/.tmp`,
         `acpx/${sessionDirectory}/codex-home/auth.json`,
@@ -1232,7 +1247,10 @@ describe("native harness persistence profiles", () => {
         { kind: "acpx", agent: "claude" },
         "acpx_runtime",
       ).directories.find((directory) => directory.name === "acpx"),
-    ).toMatchObject({ excludeEntries: [] });
+    ).toMatchObject({ excludeEntries: [
+      `acpx/${sessionDirectory}/home/.npm`,
+      `acpx/${sessionDirectory}/data/pnpm/store`,
+    ] });
   });
 });
 
@@ -4910,7 +4928,7 @@ describe("native startup restart detachment", () => {
       const detached = detachNativeSessionsForRestart([restarting.binding.runId]).catch(error => error);
       if (exceedDeadline) {
         await vi.advanceTimersByTimeAsync(30_000);
-        expect(await detached).toMatchObject({ message: "native_restart_startup_not_ready" });
+        expect(await detached).toMatchObject({ pendingRunIds: [restarting.binding.runId] });
         vi.useRealTimers();
       } else {
         release();
@@ -5653,14 +5671,16 @@ describe("native session same-turn steering", () => {
   const capabilities = vi.fn();
   const snapshot = vi.fn();
   const steer = vi.fn();
+  const deliverAtTurnBoundary = vi.fn();
 
   beforeEach(() => {
     state.release = null;
     capabilities.mockReset().mockResolvedValue({ steering: true });
     snapshot.mockReset().mockResolvedValue({ activeTurnId: "provider-turn-1" });
     steer.mockReset().mockResolvedValue(undefined);
+    deliverAtTurnBoundary.mockReset().mockResolvedValue(undefined);
     state.execute.mockReset().mockImplementation(async (options) => {
-      options.onSession?.({ capabilities, snapshot, steer, cancel: vi.fn() });
+      options.onSession?.({ capabilities, snapshot, steer, deliverAtTurnBoundary, cancel: vi.fn() });
       await new Promise<void>((resolve) => {
         state.release = resolve;
       });
@@ -5711,6 +5731,38 @@ describe("native session same-turn steering", () => {
       correlationId: "queued-comment-1",
     });
 
+    state.release?.();
+    await running;
+  });
+
+  it("passes a correction and comment ID to the active session boundary", async () => {
+    const { running } = await startActiveSession();
+    await deliverNativeSessionCorrectionAtBoundary({
+      runId: execution.binding.runId,
+      message: "Use the corrected requirement",
+      correlationId: "comment-correction",
+    });
+    expect(deliverAtTurnBoundary).toHaveBeenCalledWith({
+      turnId: "provider-turn-1",
+      message: { role: "user", text: "Use the corrected requirement" },
+      correlationId: "comment-correction",
+      signal: expect.any(AbortSignal),
+    });
+    state.release?.();
+    await running;
+  });
+
+  it("withdraws an ACP correction when its turn boundary deadline passes", async () => {
+    const { running } = await startActiveSession();
+    deliverAtTurnBoundary.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise<void>((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    await expect(deliverNativeSessionCorrectionAtBoundary({
+      runId: execution.binding.runId,
+      message: "Use the corrected requirement",
+      correlationId: "comment-timeout",
+      timeoutMs: 10,
+    })).rejects.toThrow("turn boundary timed out");
     state.release?.();
     await running;
   });
@@ -8159,6 +8211,7 @@ describe("runnerd provider runtime wiring", () => {
     expect(state.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({
         externallySandboxed: true,
+        runnerProcessReconnectGraceMs: null,
         environment: expect.objectContaining({
           GSAM_RUNNER_EXTERNAL_SANDBOX: "1",
         }),

@@ -9,6 +9,7 @@ import type { Db } from "@greatstone/db";
 import { websiteSite } from "@greatstone/db";
 import type {
   WebsiteCommerceListQuery,
+  WebsiteDataListQuery,
   WebsiteCommerceRefundRequestInput,
   WebsiteCommerceWriteMethod,
   WebsiteCommerceResource,
@@ -18,6 +19,7 @@ import type {
   WebsiteDataResource,
   WebsitePaymentReportQuery,
 } from "@greatstone/shared";
+import { SITE_CONTRACT_OUT_OF_DATE_MESSAGE, isSiteContractCurrent, siteContractDetail } from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 import { secretService } from "../secrets.js";
 import type { WebsiteEnquiry, WebsiteEnquiryReader } from "./enquiries.js";
@@ -171,8 +173,12 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     let value: WebsiteDataBridgeStatus;
     try {
       const health = await (await client(site)).health(STATUS_ACTOR);
-      value = { state: "connected", keyId: site.dataBridgeReadKeyId, url, checkedAt, message: null,
-        clockSkewSeconds: Math.round((Date.parse(health.serverTime) - now()) / 1000) };
+      const clockSkewSeconds = Math.round((Date.parse(health.serverTime) - now()) / 1000);
+      // GRE-2633: a site on an older GSAM and website contract says so, instead of failing later on a read.
+      value = isSiteContractCurrent(health)
+        ? { state: "connected", keyId: site.dataBridgeReadKeyId, url, checkedAt, message: null, clockSkewSeconds }
+        : { state: "failing", keyId: site.dataBridgeReadKeyId, url, checkedAt, clockSkewSeconds,
+          message: `${SITE_CONTRACT_OUT_OF_DATE_MESSAGE} ${siteContractDetail(health)}` };
     } catch (error) {
       if (!(error instanceof WebsiteBridgeError)) throw error;
       value = { state: "failing", keyId: site.dataBridgeReadKeyId, url, checkedAt, message: error.message, clockSkewSeconds: null };
@@ -186,13 +192,25 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     return (await client(site)).list(resource, filters, actor);
   }
 
+  async function releaseHealth(site: BridgeSite, actor: WebsiteBridgeActor) {
+    return (await client(site)).releaseHealth(actor);
+  }
+
+  async function activityEvents(site: BridgeSite, cursor: string, limit: number, actor: WebsiteBridgeActor) {
+    return (await client(site)).activityEvents(cursor, limit, actor);
+  }
+
+  async function schemaProbe(site: BridgeSite, actor: WebsiteBridgeActor) {
+    return (await client(site)).schemaProbe(actor);
+  }
+
   async function get(site: BridgeSite, resource: WebsiteDataResource, id: string, actor: WebsiteBridgeActor) {
     return (await client(site)).get(resource, id, actor);
   }
 
   /** Commerce reads (GRE-2354 2c(a)): the same read key and the same audit on the site. */
   const commerce = {
-    async list(site: BridgeSite, resource: WebsiteCommerceResource, filters: WebsiteCommerceListQuery, actor: WebsiteBridgeActor) {
+    async list(site: BridgeSite, resource: WebsiteCommerceResource, filters: WebsiteCommerceListQuery | WebsiteDataListQuery, actor: WebsiteBridgeActor) {
       return (await client(site)).list(resource, filters, actor);
     },
     async get(site: BridgeSite, resource: WebsiteCommerceResource, id: string, page: { cursor?: string; limit?: number }, actor: WebsiteBridgeActor) {
@@ -236,6 +254,6 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
-  return { client, commerceClient, createKey, status, list, get, commerce, enquiryReader };
+  return { client, commerceClient, createKey, status, releaseHealth, activityEvents, schemaProbe, list, get, commerce, enquiryReader };
 }
 export type WebsiteDataBridgeService = ReturnType<typeof websiteDataBridgeService>;
