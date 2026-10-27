@@ -19,7 +19,8 @@ import {
   type WebsiteEntryDetail,
   type CreateWebsiteEntry,
   type CreateWebsiteChangeRequest,
-  type WebsiteChangeRequestResult,
+  type WebsiteChangeImage,
+  WebsiteChangeRequestResult,
   type WebsitePageComment,
   type WebsiteRelease,
   type WebsiteHomeSummary,
@@ -137,6 +138,14 @@ export const websiteModuleApi = {
     api.get<WebsitePageComment[]>(`${pagePath(companyId, siteId, pageId)}/change-requests`),
   requestChange: (companyId: string, siteId: string, pageId: string, input: CreateWebsiteChangeRequest) =>
     api.post<WebsiteChangeRequestResult>(`${pagePath(companyId, siteId, pageId)}/change-requests`, input),
+  /** GRE-2527: an image the person attached, stored on that change request task. The server checks type and size. */
+  uploadChangeImage: async (companyId: string, siteId: string, pageId: string, issueId: string, file: File) => {
+    // A pasted file can lose its data after the paste handler returns: read it now.
+    const safeFile = new File([await file.arrayBuffer()], file.name, { type: file.type });
+    const form = new FormData();
+    form.append("file", safeFile);
+    return api.postForm<WebsiteChangeImage>(`${pagePath(companyId, siteId, pageId)}/change-requests/${encodeURIComponent(issueId)}/images`, form);
+  },
   media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
   entries: (companyId: string, siteId: string, collection: string) =>
     api.get<WebsiteEntry[]>(`${sitePath(companyId, siteId)}/entries?collection=${encodeURIComponent(collection)}`),

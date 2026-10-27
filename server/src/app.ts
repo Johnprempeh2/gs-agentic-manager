@@ -791,6 +791,7 @@ export async function createApp(
       allowLocalhostEditor: process.env.NODE_ENV !== "production",
       heartbeat: connectionIntentHeartbeat,
       enquiryReader: websiteEnquiryReader,
+      storage: opts.storageService,
     }),
   );
   api.use(websiteFeaturesRoutes(db));

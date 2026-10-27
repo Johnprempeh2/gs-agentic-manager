@@ -13,6 +13,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { errorStateMessage } from "../ErrorState";
 import { markupDocument, markupJsonFile, markupSummary, pngSize, renderMarkupPng, type MarkupShape } from "../../lib/website-markup";
 import { WebsiteMarkupLayer } from "./WebsiteMarkupLayer";
+import {
+  MAX_ATTACHMENTS,
+  imageFileProblem,
+  pastedImageFiles,
+  requestAttachments,
+  uniqueImageFile,
+  type DraftAttachment,
+  type NewDraftAttachment,
+} from "../../lib/website-change-attachments";
+import { WebsiteChangeAttachments, type WebsiteChangeEffect } from "./WebsiteChangeAttachments";
 
 // Click to change (GRE-2121, plan 3.4). The person picks a block in the
 // preview, says what to change, and sees it back before anything is made.
@@ -30,6 +40,11 @@ import { WebsiteMarkupLayer } from "./WebsiteMarkupLayer";
 // GRE-2518: the screenshot is taken as the box opens and shown over the page
 // with drawing tools. One Send button (or Cmd/Ctrl+Enter) makes the task with
 // the words, the screenshot, the marked-up PNG and the drawing's vector JSON.
+//
+// GRE-2527: the person can also paste or upload images, pick one from Website
+// media or GS Studio, add a reference site or an effect, each with a note. The
+// request lists them; uploads go to the task through the website route, which
+// checks the type and size again.
 
 /** What the comment is about: a block (picked in preview or selected in the editor) or the whole page. */
 export type WebsiteChangeTarget =
@@ -75,8 +90,15 @@ function newRequestId() {
 
 const SEND_KEYS = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘ Enter" : "Ctrl Enter";
 
-/** What became of the files: the screenshot and drawing attached, or the ones that did not upload. */
-type Attached = { files: "none" | "screenshot" | "drawing"; failed: string[] };
+/** What became of the files: the screenshot and drawing attached, the person's images, and the ones that did not upload. */
+type Attached = { files: "none" | "screenshot" | "drawing"; images: number; failed: string[] };
+
+let draftKeys = 0;
+const nextDraftKey = () => `attachment-${(draftKeys += 1)}`;
+const previewUrlOf = (file: File) => (typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "");
+const revokePreview = (draft: DraftAttachment) => {
+  if (draft.kind === "upload" && draft.previewUrl && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(draft.previewUrl);
+};
 
 export function WebsiteChangeRequestPanel({
   companyId,
@@ -89,6 +111,7 @@ export function WebsiteChangeRequestPanel({
   dirty = false,
   capture,
   markupHost = null,
+  effects = [],
   onCancel,
   onEditBlock,
 }: {
@@ -108,6 +131,8 @@ export function WebsiteChangeRequestPanel({
   capture?: () => Promise<WebsiteScreenshot | null>;
   /** Where the drawing layer goes: over the page in the editor. None: no drawing. */
   markupHost?: HTMLElement | null;
+  /** The site's effects library, from the site's editor. Empty: no Effect button. */
+  effects?: readonly WebsiteChangeEffect[];
   /** Clears the pick. Nothing is created. */
   onCancel: () => void;
   /** Opens the block in the editor for a words or image change (preview picks only). */
@@ -119,7 +144,11 @@ export function WebsiteChangeRequestPanel({
   // One id per pick: a repeated send returns the same task, never a second one.
   const [requestId] = useState(newRequestId);
   const [created, setCreated] = useState<WebsiteChangeRequestResult | null>(null);
-  const [attached, setAttached] = useState<Attached>({ files: "none", failed: [] });
+  const [attached, setAttached] = useState<Attached>({ files: "none", images: 0, failed: [] });
+  const [drafts, setDrafts] = useState<DraftAttachment[]>([]);
+  const [attachProblem, setAttachProblem] = useState<string | null>(null);
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
   const block = target.kind === "block" ? target : null;
   const blockName = block ? block.label.trim() || block.blockType : "The whole page";
   const pageRevisionId = block?.pageRevisionId ?? page.latestRevisionId;
@@ -150,6 +179,45 @@ export function WebsiteChangeRequestPanel({
     };
   }, []);
 
+  // The previews of uploaded images live as long as the box.
+  useEffect(() => () => draftsRef.current.forEach(revokePreview), []);
+
+  const addFiles = (files: File[], pasted = false) => {
+    const room = MAX_ATTACHMENTS - draftsRef.current.length;
+    const problems: string[] = [];
+    const taken = draftsRef.current.flatMap((draft) => (draft.kind === "upload" ? [draft.file.name] : []));
+    const added: DraftAttachment[] = [];
+    for (const file of files) {
+      const problem = imageFileProblem(file);
+      if (problem) {
+        problems.push(problem);
+        continue;
+      }
+      if (added.length >= room) {
+        problems.push(`Only ${MAX_ATTACHMENTS} attachments fit on one request.`);
+        break;
+      }
+      const named = uniqueImageFile(file, taken, pasted);
+      taken.push(named.name);
+      added.push({ key: nextDraftKey(), kind: "upload", file: named, previewUrl: previewUrlOf(named), note: "" });
+    }
+    if (added.length > 0) setDrafts((current) => [...current, ...added]);
+    setAttachProblem(problems.length > 0 ? problems.join(" ") : null);
+  };
+  const addDraft = (draft: NewDraftAttachment) => {
+    if (draftsRef.current.length >= MAX_ATTACHMENTS) return;
+    setDrafts((current) => [...current, { ...draft, key: nextDraftKey(), note: "" }]);
+    setAttachProblem(null);
+  };
+  const setNote = (key: string, note: string) =>
+    setDrafts((current) => current.map((draft) => (draft.key === key ? { ...draft, note } : draft)));
+  const removeDraft = (key: string) =>
+    setDrafts((current) => {
+      const gone = current.find((draft) => draft.key === key);
+      if (gone) revokePreview(gone);
+      return current.filter((draft) => draft.key !== key);
+    });
+
   // On a phone the panel sits below the page controls; bring it into view on each pick.
   useEffect(() => {
     panelRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
@@ -157,12 +225,14 @@ export function WebsiteChangeRequestPanel({
 
   const words = request.trim();
   const drawn = canDraw ? shapes : [];
-  const canSend = Boolean(pageRevisionId) && (words.length > 0 || drawn.length > 0);
+  const canSend = Boolean(pageRevisionId) && (words.length > 0 || drawn.length > 0 || drafts.length > 0);
 
   const submit = useMutation({
     mutationFn: async () => {
       const screenshot = await shotRef.current!;
       const markup = screenshot ? markupSummary(drawn) : undefined;
+      const sentDrafts = drafts;
+      const attachments = requestAttachments(sentDrafts);
       const result = await websiteModuleApi.requestChange(companyId, siteId, page.id, {
         requestId,
         pageRevisionId: pageRevisionId!,
@@ -179,36 +249,41 @@ export function WebsiteChangeRequestPanel({
         request: words,
         ...(screenshot ? { screenshot: true } : {}),
         ...(markup ? { markup } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       });
-      if (!screenshot) {
-        setAttached({ files: "none", failed: [] });
-        return result;
+      const files: { file: File | null; name: string; image?: true }[] = [];
+      if (screenshot) {
+        files.push({ file: screenshot.file, name: "the screenshot" });
+        const size = pngSize(screenshot.url);
+        if (markup && size) {
+          const png = await renderMarkupPng(screenshot.url, drawn, fileStem).catch(() => null);
+          files.push({ file: png, name: "the marked-up screenshot" });
+          files.push({ file: markupJsonFile(markupDocument(drawn, size, width), fileStem), name: "the drawing's vector file" });
+        }
       }
-      const files: { file: File | null; name: string }[] = [{ file: screenshot.file, name: "the screenshot" }];
-      const size = pngSize(screenshot.url);
-      if (markup && size) {
-        const png = await renderMarkupPng(screenshot.url, drawn, fileStem).catch(() => null);
-        files.push({ file: png, name: "the marked-up screenshot" });
-        files.push({ file: markupJsonFile(markupDocument(drawn, size, width), fileStem), name: "the drawing's vector file" });
+      for (const draft of sentDrafts) {
+        if (draft.kind === "upload") files.push({ file: draft.file, name: draft.file.name, image: true });
       }
       const failed: string[] = [];
       let reason = "";
-      for (const { file, name } of files) {
+      for (const { file, name, image } of files) {
         if (!file) {
           failed.push(`${name} (this browser could not draw it)`);
           continue;
         }
         try {
-          await issuesApi.uploadAttachment(companyId, result.issueId, file);
+          if (image) await websiteModuleApi.uploadChangeImage(companyId, siteId, page.id, result.issueId, file);
+          else await issuesApi.uploadAttachment(companyId, result.issueId, file);
         } catch (error) {
           reason = errorStateMessage(error);
           failed.push(`${name} (${reason})`);
         }
       }
-      setAttached({ files: markup ? "drawing" : "screenshot", failed });
+      const images = files.filter((file) => file.image).length;
+      setAttached({ files: !screenshot ? "none" : markup ? "drawing" : "screenshot", images, failed });
       if (failed.length > 0) {
         // The task says these are attached: correct it on the task, so the agent is not left looking.
-        const none = failed.length === files.length;
+        const none = failed.length === files.length && images === 0;
         await issuesApi
           .addComment(
             result.issueId,
@@ -278,6 +353,13 @@ export function WebsiteChangeRequestPanel({
             event.preventDefault();
             send();
           }}
+          onPaste={(event) => {
+            if (submit.isPending) return;
+            const files = pastedImageFiles(event.clipboardData);
+            if (files.length === 0) return;
+            event.preventDefault();
+            addFiles(files, true);
+          }}
         >
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">What should change?</span>
@@ -325,6 +407,19 @@ export function WebsiteChangeRequestPanel({
             ) : null}
           </div>
 
+          <WebsiteChangeAttachments
+            companyId={companyId}
+            siteId={siteId}
+            drafts={drafts}
+            effects={effects}
+            problem={attachProblem}
+            disabled={submit.isPending}
+            onAddFiles={(files) => addFiles(files)}
+            onAdd={addDraft}
+            onNote={setNote}
+            onRemove={removeDraft}
+          />
+
           {submit.error ? (
             <p role="alert" className="text-sm text-status-danger-foreground">
               The task was not created: {errorStateMessage(submit.error)}
@@ -368,7 +463,12 @@ export function WebsiteChangeRequestPanel({
             </p>
           ) : attached.failed.length > 0 ? (
             <p className="text-xs text-status-warning-foreground" data-testid="website-change-screenshot">
-              {attached.files === "drawing" ? "Some files did not upload" : "The screenshot did not upload"}: {attached.failed.join("; ")}. The task says so.
+              {attached.files === "screenshot" && attached.images === 0 ? "The screenshot did not upload" : "Some files did not upload"}: {attached.failed.join("; ")}. The task says so.
+            </p>
+          ) : null}
+          {attached.images > 0 && attached.failed.length === 0 ? (
+            <p className="text-xs text-muted-foreground" data-testid="website-change-images">
+              {attached.images === 1 ? "Your image is attached to the task." : `Your ${attached.images} images are attached to the task.`}
             </p>
           ) : null}
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>Done</Button>

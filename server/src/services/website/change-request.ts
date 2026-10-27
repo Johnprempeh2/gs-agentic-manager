@@ -1,8 +1,10 @@
-import { and, asc, eq, isNull, like, notInArray, or } from "drizzle-orm";
-import { issues as issuesTable, type Db } from "@greatstone/db";
+import { and, asc, eq, inArray, isNull, like, notInArray, or } from "drizzle-orm";
+import { assets, issues as issuesTable, type Db } from "@greatstone/db";
 import {
   inspectWebsitePuckData,
   type CreateWebsiteChangeRequest,
+  type WebsiteChangeAttachment,
+  type WebsiteChangeImageType,
   type WebsiteChangeRequestResult,
   type WebsitePageComment,
 } from "@greatstone/shared";
@@ -26,6 +28,10 @@ import { websiteTeamAgent } from "./pending-alert.js";
 // GRE-2518: the person can draw on the screenshot instead of, or as well as,
 // writing. The editor attaches the marked-up PNG and the vector JSON; the task
 // lists the markers and the labels so the agent can read them as text.
+//
+// GRE-2527: the person can also attach images (uploaded, or picked from
+// Website media or Image Studio), reference sites and effects from the
+// effects library, each with a one-line note. The task lists every one.
 
 export const WEBSITE_CHANGE_REQUEST_ORIGIN_KIND = "website_change_request";
 
@@ -38,6 +44,8 @@ const WIDTH_LABELS = { laptop: "Laptop (1440 px)", tablet: "Tablet (768 px)", ph
 
 /** What a comment with no words shows in the editor's Comments list. */
 export const WEBSITE_DRAWING_ONLY_REQUEST = "Drawing on the page";
+/** What a comment with only attachments (no words, no drawing) shows there. */
+export const WEBSITE_ATTACHMENTS_ONLY_REQUEST = "Images and references";
 
 /** The task's lines about the person's drawing, or none when they did not draw. */
 function markupLines(markup: CreateWebsiteChangeRequest["markup"], blockId: string | null): string[] {
@@ -57,6 +65,50 @@ function markupLines(markup: CreateWebsiteChangeRequest["markup"], blockId: stri
   ];
 }
 
+const ATTACHMENT_SOURCES = { website: "Website media", studio: "GS Studio" } as const;
+
+/** The task's lines listing what the person attached, in the order they added it. */
+function attachmentLines(attachments: WebsiteChangeAttachment[] | undefined): string[] {
+  if (!attachments?.length) return [];
+  const lines = attachments.map((attachment, index) => {
+    const note = attachment.note ? ` Their note: \`${inline(attachment.note, 140)}\`` : "";
+    const n = `${index + 1}.`;
+    switch (attachment.kind) {
+      case "upload":
+        return `${n} Image they uploaded, attached to this task as \`${inline(attachment.name)}\`.${note}`;
+      case "media":
+        return `${n} Image from ${ATTACHMENT_SOURCES[attachment.source]}${attachment.label ? ` \`${inline(attachment.label)}\`` : ""}: asset \`${attachment.assetId}\`, at \`/api/assets/${attachment.assetId}/content\`.${note}`;
+      case "link":
+        return `${n} Reference site: \`${inline(attachment.url, 2000)}\`. Look at it for the idea; do not copy its words, images or code.${note}`;
+      case "effect":
+        return `${n} Effect from the effects library: \`${attachment.effectId}\`${attachment.label ? ` (${inline(attachment.label, 120)})` : ""}.${note}`;
+    }
+  });
+  return ["**What they attached**", "", ...lines, ""];
+}
+
+/** The image type the bytes say, or null. Only PNG, JPEG, WebP and GIF: never SVG or anything a browser could run. */
+export function sniffWebsiteChangeImage(bytes: Buffer): WebsiteChangeImageType | null {
+  const starts = (signature: number[], at = 0) => bytes.length >= at + signature.length && signature.every((byte, index) => bytes[at + index] === byte);
+  if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
+  if (starts([0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (starts([0x47, 0x49, 0x46, 0x38]) && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61) return "image/gif";
+  if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8)) return "image/webp";
+  return null;
+}
+
+/** True when the task is a change request on this page (the whole page or one of its blocks). */
+export function isWebsiteChangeRequestFor(
+  issue: { companyId: string; originKind: string | null; originId: string | null },
+  page: Pick<PageRow, "id" | "companyId">,
+) {
+  return (
+    issue.companyId === page.companyId &&
+    issue.originKind === WEBSITE_CHANGE_REQUEST_ORIGIN_KIND &&
+    (issue.originId === page.id || Boolean(issue.originId?.startsWith(`${page.id}:`)))
+  );
+}
+
 /**
  * The task's description ends with this hidden line, so the editor can list
  * the comment without parsing the prose. `<` and `>` are JSON-escaped, so the
@@ -72,6 +124,15 @@ interface CommentMarker {
   blockLabel: string | null;
   pageRevisionId: string;
   width: string | null;
+  /** GRE-2527: how many attachments, and whether there is a drawing. Older markers have neither. */
+  attachments?: number;
+  drawing?: boolean;
+}
+
+/** What the Comments list shows for a comment: the person's words, or what they sent instead. */
+function commentText(marker: CommentMarker) {
+  if (marker.request) return marker.request;
+  return (marker.attachments ?? 0) > 0 && !marker.drawing ? WEBSITE_ATTACHMENTS_ONLY_REQUEST : WEBSITE_DRAWING_ONLY_REQUEST;
 }
 
 function markerLine(marker: CommentMarker) {
@@ -93,6 +154,8 @@ export function readWebsiteCommentMarker(description: string | null): CommentMar
       blockLabel: text(value.blockLabel),
       pageRevisionId: text(value.pageRevisionId) ?? "",
       width: text(value.width),
+      ...(typeof value.attachments === "number" ? { attachments: value.attachments } : {}),
+      ...(value.drawing === true ? { drawing: true } : {}),
     };
   } catch {
     return null;
@@ -134,6 +197,20 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
         if (!block || block.type !== blockType) {
           throw unprocessable("That block is not on this version of the page. Reload the page and pick it again.", {
             code: "website_change_block_unknown",
+          });
+        }
+      }
+
+      // A picked image must be an asset of this company: one client never points a task at another's file.
+      const assetIds = [...new Set((request.attachments ?? []).flatMap((attachment) => (attachment.kind === "media" ? [attachment.assetId] : [])))];
+      if (assetIds.length > 0) {
+        const found = await db
+          .select({ id: assets.id })
+          .from(assets)
+          .where(and(eq(assets.companyId, site.companyId), inArray(assets.id, assetIds)));
+        if (found.length !== assetIds.length) {
+          throw unprocessable("One of the picked images is not in this company's media. Pick it again.", {
+            code: "website_change_attachment_unknown",
           });
         }
       }
@@ -180,8 +257,9 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
           "",
           ...(request.request
             ? ["**The change, in their words**", "", ...request.request.split(/\r?\n/).map((line) => `> ${line}`), ""]
-            : ["They wrote no words: the drawing says what to change.", ""]),
+            : [request.markup ? "They wrote no words: the drawing says what to change." : "They wrote no words: what they attached says what to change.", ""]),
           ...markupLines(request.markup, blockId),
+          ...attachmentLines(request.attachments),
           ...reference,
           "",
           request.screenshot
@@ -197,6 +275,8 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
             blockLabel: request.blockLabel || null,
             pageRevisionId: request.pageRevisionId,
             width,
+            ...(request.attachments?.length ? { attachments: request.attachments.length } : {}),
+            ...(request.markup ? { drawing: true } : {}),
           }),
         ].join("\n"),
         status: "todo",
@@ -265,7 +345,7 @@ export function websiteChangeRequestService(db: Db, deps: { heartbeat?: IssueAss
           identifier: row.identifier ?? null,
           title: row.title,
           status: row.status,
-          request: marker ? marker.request || WEBSITE_DRAWING_ONLY_REQUEST : row.title,
+          request: marker ? commentText(marker) : row.title,
           blockId: marker ? marker.blockId : originBlock,
           blockType: marker?.blockType ?? null,
           blockLabel: marker?.blockLabel ?? null,

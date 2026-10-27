@@ -337,6 +337,20 @@ describe("WebsiteFullScreenEditor", () => {
     expect(image.alt).toBe("Team");
   });
 
+  it("Ask an agent offers the effects library the site's editor sent (GRE-2527)", async () => {
+    await render();
+    await openPreview();
+    const { pickBlock } = await connect({ motionEffects: [{ id: "bg.ascent", label: "Ascent", still: "/motion/ascent.webp" }] });
+    await pickBlock();
+    await act(async () => button("Effect").click());
+    await flush();
+    const choice = document.body.querySelector<HTMLButtonElement>('[data-testid="website-change-effects"] button')!;
+    expect(choice.textContent).toBe("Ascent");
+    await act(async () => choice.click());
+    await flush();
+    expect(panel()!.querySelector('[data-testid="website-change-attachment"]')!.textContent).toBe("Effect · Ascent");
+  });
+
   it("click to change: pick, describe, Send creates exactly one task with the durable reference", async () => {
     api.requestChange.mockResolvedValue({ issueId: "issue-1", identifier: "GRE-9001", title: "Website change: Hero banner on Home", assigneeAgentId: "lintel", projectId: "proj-1" });
     await render();

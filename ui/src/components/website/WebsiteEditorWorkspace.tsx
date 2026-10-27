@@ -667,6 +667,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const motionOptions =
     motionReady && insertBlockId ? blockMotionOptions(session.motionCapabilities, session.shownPageData, insertBlockId) : null;
   const engineEffects = motionReady ? session.motionCapabilities.effects : [];
+  // GRE-2527: Ask an agent offers the site's effects library whenever the site's editor sent one.
+  const askEffects = session?.motionCapabilities.effects ?? [];
   // GRE-2522: the frozen Two Doors home page takes no Background change from the picker.
   const motionBlockType = motionOptions?.blockType ?? (insertBlockId && editorState?.selection?.blockId === insertBlockId ? editorState.selection.blockType : null);
   const motionFrozen = isFrozenBackground(page.slug, motionBlockType, motionReady ? session.shownPageData : null);
@@ -1066,6 +1068,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                 dirty={dirty}
                 capture={captureFor(ask.target)}
                 markupHost={markupHost}
+                effects={askEffects}
                 onCancel={() => {
                   if (ask.picked) sessionRef.current?.highlight(null);
                   setAsk(null);
