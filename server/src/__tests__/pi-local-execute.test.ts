@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execute } from "@greatstone/adapter-pi-local/server";
+import { discoverPiModels, execute, testEnvironment } from "@greatstone/adapter-pi-local/server";
 
 async function writeFakePiCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
@@ -47,6 +47,70 @@ process.exit(0);
 }
 
 describe("pi_local execute", () => {
+  it("keeps inherited server secrets out of Pi discovery, runs, and probes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gsam-pi-env-"));
+    const commandPath = path.join(root, "pi");
+    const capturePath = path.join(root, "env.jsonl");
+    await fs.writeFile(commandPath, `#!/usr/bin/env node
+require("node:fs").appendFileSync(${JSON.stringify(capturePath)}, JSON.stringify({ args: process.argv.slice(2), env: process.env }) + "\\n");
+if (process.argv.includes("--list-models")) {
+  console.log("provider  model");
+  console.log("google    gemini-3-flash-preview");
+  process.exit(0);
+}
+console.log(JSON.stringify({ type: "agent_start" }));
+console.log(JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: "hello" }] }, toolResults: [] }));
+console.log(JSON.stringify({ type: "agent_end", messages: [] }));
+`, "utf8");
+    await fs.chmod(commandPath, 0o755);
+
+    const inherited = {
+      GSAM_AGENT_JWT_SECRET: "test-server-secret",
+      PAPERCLIP_TOOL_ACTION_SIGNING_SECRET: "test-legacy-secret",
+      GSAM_RUNTIME_API_URL: "https://runtime.example.test",
+    };
+    const previous = Object.fromEntries(
+      ["HOME", ...Object.keys(inherited)].map((key) => [key, process.env[key]]),
+    );
+    process.env.HOME = root;
+    Object.assign(process.env, inherited);
+    try {
+      await discoverPiModels({ command: commandPath, cwd: root, env: { AGENT_SETTING: "kept" } });
+      await execute({
+        runId: "run-pi-env-test",
+        agent: { id: "agent-env", companyId: "company-env", name: "Pi Agent", adapterType: "pi_local", adapterConfig: {} },
+        runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+        config: { command: commandPath, cwd: root, model: "google/gemini-3-flash-preview", promptTemplate: "Keep working.", env: { AGENT_SETTING: "kept" } },
+        context: {},
+        authToken: "test-run-token",
+        onLog: async () => {},
+      });
+      const probe = await testEnvironment({
+        companyId: "company-env",
+        adapterType: "pi_local",
+        config: { command: commandPath, cwd: root, model: "google/gemini-3-flash-preview", env: { AGENT_SETTING: "kept" } },
+      });
+      expect(probe.status).toBe("pass");
+      const captures = (await fs.readFile(capturePath, "utf8")).trim().split("\n").map(
+        (line) => JSON.parse(line) as { args: string[]; env: Record<string, string> },
+      );
+      expect(captures.some(({ args }) => args.includes("--list-models"))).toBe(true);
+      expect(captures.some(({ env }) => env.GSAM_AGENT_ID === "agent-env")).toBe(true);
+      expect(captures.some(({ args }) => args.includes("Respond with hello."))).toBe(true);
+      for (const { env } of captures) {
+        expect(env).not.toHaveProperty("GSAM_AGENT_JWT_SECRET");
+        expect(env).not.toHaveProperty("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET");
+        expect(env.GSAM_RUNTIME_API_URL).toBe(inherited.GSAM_RUNTIME_API_URL);
+        expect(env.AGENT_SETTING).toBe("kept");
+      }
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
   it("fails the run when Pi exhausts automatic retries despite exiting 0", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-pi-execute-"));
     const workspace = path.join(root, "workspace");
