@@ -239,6 +239,10 @@ public identity, and the existing unique singleton-key index makes concurrent
 or later attempts to replace it fail closed. The server loads the row before
 constructing URL-dependent runtime services on every boot.
 
+## Website client activity
+
+`website_activity_events` stores the website's content-free client event projection, keyed by company, site and source sequence. `organisation_id` is the website's canonical client UUID; the table does not infer a client from a name or email. `website_activity_cursors` holds one acknowledged outbox sequence per site. The poller inserts a page and advances its cursor in one transaction, so a crash replays the same page and cannot silently skip it. The source event ID is unique per site. The website owns the append-only outbox and exposes it through the signed read bridge; it never sends events to GSAM.
+
 ## Resource membership tables
 
 GS Agentic Manager stores current-user sidebar membership state in:

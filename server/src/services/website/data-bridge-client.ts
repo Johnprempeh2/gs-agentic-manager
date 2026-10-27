@@ -7,7 +7,7 @@
 // same string with the idempotency key as a last line.
 import { createHash, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { z } from "zod";
-import { deepDiveSyncSitePath, type DeepDiveSyncPayload, type WebsiteCommerceResource, type WebsiteDataResource } from "@greatstone/shared";
+import { deepDiveSyncSitePath, websiteActivityBatchSchema, type DeepDiveSyncPayload, type WebsiteCommerceResource, type WebsiteDataResource } from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 
 export const BRIDGE_SCHEME = "gs-bridge-v1";
@@ -292,6 +292,8 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
 
   return {
     health: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeHealthSchema),
+    activity: (cursor: string, actor: WebsiteBridgeActor) =>
+      get("/api/admin/v1/activity-events", { cursor, limit: "100" }, actor, websiteActivityBatchSchema),
     releaseHealth: (actor: WebsiteBridgeActor) => get("/api/admin/v1/health", {}, actor, bridgeReleaseHealthSchema),
     activityEvents: (cursor: string, limit: number, actor: WebsiteBridgeActor) =>
       get("/api/admin/v1/activity-events", { cursor, limit: String(limit) }, actor, bridgeActivityEventsSchema),

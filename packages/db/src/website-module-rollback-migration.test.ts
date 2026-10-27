@@ -13,7 +13,8 @@ const MIGRATION_FILE = "0384_website_module_foundation.sql";
 const SITEMAP_MIGRATION_FILE = "0385_website_sitemap_options.sql";
 const FEATURE_MIGRATION_FILE = "0393_website_features.sql";
 const DATA_BRIDGE_MIGRATION_FILE = "0394_website_data_bridge.sql";
-const WEBSITE_TABLES = ["website_site", "website_page", "website_entry", "website_release", "website_sitemap_option", "website_feature"];
+const ACTIVITY_MIGRATION_FILE = "0413_curly_salo.sql";
+const WEBSITE_TABLES = ["website_site", "website_page", "website_entry", "website_release", "website_sitemap_option", "website_feature", "website_activity_events", "website_activity_cursors"];
 const cleanups: Array<() => Promise<void>> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -117,6 +118,7 @@ describeEmbeddedPostgres("website module migration 0384 rollback", () => {
       SITEMAP_MIGRATION_FILE,
       FEATURE_MIGRATION_FILE,
       DATA_BRIDGE_MIGRATION_FILE,
+      ACTIVITY_MIGRATION_FILE,
     ]);
     await applyPendingMigrations(database.connectionString);
     expect(await tablesPresent(sql)).toEqual([...WEBSITE_TABLES].sort());

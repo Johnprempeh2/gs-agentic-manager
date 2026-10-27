@@ -46,6 +46,14 @@ To build the canonical query, decode the query as `URLSearchParams` does. Sort t
 - A list returns `{ items, nextCursor }`. The cursor is opaque, and `null` ends the read. A get returns `{ item }`.
 - An error returns `{ error: { code } }` only. The codes are `bad_key`, `expired`, `bad_signature` and `replay` (401), `capability_denied` and `ip_denied` (403), `not_found` (404), `bad_request` (400) and `unavailable` (503).
 
+## Client activity outbox (GRE-2635)
+
+The website records each client event in an append-only outbox **in the same database transaction as the action**. It never calls GSAM. Assign the outbox sequence under a transaction-held counter-row lock, so sequence order is commit order. A normal database `nextval()` is unsafe: transaction 2 can commit sequence 2 while transaction 1 still holds sequence 1, then GSAM can skip sequence 1. GSAM calls `GET /api/admin/v1/activity-events?cursor=<decimal>&limit=100` with its existing `read` key. The website returns `{ "items": [...], "nextCursor": "<decimal>" }` in ascending sequence order. A fresh reader sends `cursor=0`. The site returns only committed rows with sequence greater than the supplied cursor; it must not delete or hide a row before GSAM has read it. An empty page returns the supplied cursor. `nextCursor` always names the last returned row, even if the page is shorter than the limit.
+
+The shared schema is `packages/shared/src/website-activity.ts` in GSAM; copy/publish the exact schema for the website build. Each item has `sequence` (positive decimal string), `id` (stable UUID), `organisationId` (website UUID), `kind`, `subjectId` (short opaque record ID), `label` (short display label), and `occurredAt` (ISO timestamp with offset). The 15 permitted kinds are in that schema. Labels must describe the action only, for example `Interview started`; never put interview answers, document content, enquiry messages, personal details, invoice amounts, or other payloads in events.
+
+The outbox sequence is global per site, including all organisations. GSAM keeps one cursor per site and stores rows keyed by company, site and source sequence. It commits the page and cursor together; an interrupted pull retries the same page. The source event ID is also unique per site, so conflicting duplicates fail without advancing the cursor. A site must not advance `nextCursor` beyond its last returned event or return rows out of order.
+
 ## Fixed release checks (GRE-2813)
 
 All three calls are signed `GET` requests with the site's `read` key. GSAM checks company, site and `website:view` before signing. Callers cannot choose an upstream path or URL.

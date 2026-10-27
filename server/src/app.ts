@@ -79,6 +79,7 @@ import { websiteDataBridgeRoutes } from "./routes/website-data-bridge.js";
 import { websiteBridgeInboundRoutes, websiteDeepDiveSyncRoutes } from "./routes/website-deep-dive-sync.js";
 import { websiteDataBridgeService } from "./services/website/data-bridge.js";
 import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
+import { startWebsiteActivityScheduler } from "./services/website/activity.js";
 import { websiteEnquiryPipedriveCopy } from "./services/website/enquiry-pipedrive.js";
 import { registerWebsitePublishStarter } from "./services/website/publish-approval.js";
 import { websitePublishStarter } from "./services/website/publish.js";
@@ -1443,6 +1444,9 @@ export async function createApp(
       logger.warn({ err, siteId }, "website enquiry pull failed");
     },
   );
+  const stopWebsiteActivityScheduler = startWebsiteActivityScheduler(db, (err, siteId) => {
+    logger.warn({ err, siteId }, "website activity pull failed");
+  });
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
@@ -1551,6 +1555,7 @@ export async function createApp(
       }
       stopCrmSyncScheduler();
       stopWebsiteEnquiryScheduler();
+      stopWebsiteActivityScheduler();
       devWatcher?.close();
       viteHtmlRenderer?.dispose();
       void viteDevServer?.close().catch(() => undefined);
