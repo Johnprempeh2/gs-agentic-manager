@@ -292,7 +292,7 @@ async function savePreviewUpdateState(db: Db, workspaceId: string, patch: StateP
     .where(eq(projectWorkspaces.id, workspaceId));
 }
 
-function defaultDeps(db: Db): PreviewUpdateDeps {
+export function defaultDeps(db: Db): PreviewUpdateDeps {
   const projects = projectService(db);
   const operations = workspaceOperationService(db);
   const systemActor = (target: PreviewUpdateTarget) => ({ id: null, name: "Preview auto-update", companyId: target.project.companyId });
@@ -323,12 +323,18 @@ function defaultDeps(db: Db): PreviewUpdateDeps {
         operation: "inspect",
       })),
     async runJob(target, cwd, job, trigger) {
-      const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]).catch(() => null);
-      const auth = remoteUrl ? await createGitRemoteAuthProvider(db, target.project.companyId, {
+      const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]);
+      const auth = await createGitRemoteAuthProvider(db, target.project.companyId, {
         projectId: target.project.id,
         projectWorkspaceId: target.workspace.id,
         operation: "prepare",
-      })(remoteUrl) : buildAnonymousGitAuthInvocation();
+      })(remoteUrl);
+      const branch = target.workspace.defaultRef ?? target.workspace.repoRef ?? "main";
+      await git(cwd, ["pull", "--ff-only", "origin", branch], auth);
+      // An update job may contain its own `git pull`. Rewrite the exact origin
+      // URL to the already updated checkout so the shell never needs the token.
+      const anonymousEnv = buildAnonymousGitAuthInvocation().env;
+      const configIndex = Number(anonymousEnv.GIT_CONFIG_COUNT);
       const recorder = operations.createRecorder({ companyId: target.project.companyId });
       await runWorkspaceJobForControl({
         actor: systemActor(target),
@@ -336,7 +342,12 @@ function defaultDeps(db: Db): PreviewUpdateDeps {
         workspace: realizedWorkspace(target, cwd),
         command: job.rawConfig,
         adapterEnv: {},
-        requiredEnv: auth?.env ?? buildAnonymousGitAuthInvocation().env,
+        requiredEnv: {
+          ...anonymousEnv,
+          GIT_CONFIG_COUNT: String(configIndex + 1),
+          [`GIT_CONFIG_KEY_${configIndex}`]: `url.${cwd}.insteadOf`,
+          [`GIT_CONFIG_VALUE_${configIndex}`]: remoteUrl,
+        },
         recorder,
         metadata: {
           action: "preview_update",
