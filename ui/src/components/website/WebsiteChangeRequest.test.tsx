@@ -218,3 +218,55 @@ describe("Ask an agent attachments (GRE-2527)", () => {
     expect(issues.addComment).toHaveBeenCalledWith("issue-1", expect.stringContaining("Missing: mood.png"));
   });
 });
+
+describe("Ask an agent on a phone (GRE-2759)", () => {
+  /** A PNG header the size of a 780 x 1600 screenshot: enough for the drawing to read its size. */
+  const PNG = (() => {
+    const bytes = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, ..."IHDR".split("").map((c) => c.charCodeAt(0)), 0, 0, 3, 12, 0, 0, 6, 64, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    return `data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`;
+  })();
+  const matchMedia = window.matchMedia;
+  const layer = () => document.body.querySelector('[data-testid="website-markup-layer"]');
+
+  let host: HTMLDivElement;
+
+  afterEach(() => {
+    window.matchMedia = matchMedia;
+    host.remove();
+  });
+
+  async function renderWithDrawing(phone: boolean) {
+    window.matchMedia = ((query: string) =>
+      ({ matches: phone && query === "(width < 40rem)", media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+    // The editor's canvas: outside the panel's root, like the real host.
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const capture = async () => ({ file: png("page.png"), width: 390, url: PNG });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <WebsiteChangeRequestPanel companyId="co-1" siteId="site-1" page={page} target={{ kind: "page" }} width="phone" capture={capture} markupHost={host} onCancel={() => {}} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+  }
+
+  it("opens the drawing at once on a laptop", async () => {
+    await renderWithDrawing(false);
+    expect(layer()).not.toBeNull();
+  });
+
+  it("keeps the drawing closed on a phone until the person asks, so the box shows first", async () => {
+    await renderWithDrawing(true);
+    expect(layer()).toBeNull();
+    await click(button("Draw on the page"));
+    expect(layer()).not.toBeNull();
+    await click([...host.querySelectorAll("button")].find((el) => el.textContent?.trim() === "Done")!);
+    expect(layer()).toBeNull();
+    expect(button("Edit drawing") ?? button("Draw on the page")).toBeTruthy();
+  });
+});
