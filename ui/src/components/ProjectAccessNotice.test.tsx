@@ -32,9 +32,13 @@ describe("project access notice", () => {
   }
 
   it("links the denied task to agent settings and waits for an explicit retry", async () => {
+    let resolveAccess!: (value: Awaited<ReturnType<typeof agentsApi.getProjectAccess>>) => void;
+    vi.mocked(agentsApi.getProjectAccess).mockReturnValue(new Promise(resolve => { resolveAccess = resolve; }));
     await render();
     expect(container.textContent).toContain("cannot access this task's project");
-    expect(container.querySelector("a")?.getAttribute("href")).toBe("/agents/agent/permissions");
+    expect(container.querySelector("a")).toBeNull();
+    await act(async () => { resolveAccess({ projectIds: [], canManage: true }); });
+    await vi.waitFor(() => expect(container.querySelector("a")?.getAttribute("href")).toBe("/agents/agent/permissions"));
     expect(agentsApi.retryFailedRun).not.toHaveBeenCalled();
   });
 
