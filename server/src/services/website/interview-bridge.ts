@@ -380,6 +380,14 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
       addUser(user: { userId: string; email: string; name: string }) {
         users.set(user.userId, user);
       },
+      /** Someone on the round who joined with its link, completed, as the site lists them. */
+      addPerson(roundId: string, person: { employeeId: string; userId?: string | null; name: string; roleTitle?: string; unitId?: string | null }) {
+        rounds.get(roundId)?.people.set(person.employeeId, {
+          userId: person.userId ?? null, employeeId: person.employeeId, email: "", name: person.name, roleTitle: person.roleTitle ?? "",
+          unitId: person.unitId ?? null, status: "completed", sessionStartedAt: null, sessionEndedAt: null, completionScore: null,
+          invitedAt: now(), becomes: "completed",
+        });
+      },
       /** An ended interview, as the website stores it. */
       addInterview(roundId: string, detail: GsInterviewDetail & { turns?: { seq: number; role: string; content: string }[] }) {
         rounds.get(roundId)?.interviews.set(detail.interview.interviewId, { ...detail, turns: detail.turns ?? [] });

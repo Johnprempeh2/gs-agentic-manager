@@ -2864,6 +2864,13 @@
       "when": 1792995865411,
       "tag": "0410_deep_dive_interview_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 411,
+      "version": "7",
+      "when": 1793001920203,
+      "tag": "0411_deep_dive_interview_proposal_records",
+      "breakpoints": true
     }
   ]
 }
