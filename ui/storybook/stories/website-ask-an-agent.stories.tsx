@@ -74,7 +74,12 @@ function swatch(hue: number) {
   return canvas.toDataURL("image/png");
 }
 
-const MEDIA_LABELS = ["Office front", "Team at work", "Harbour view", "Client meeting", "Desk detail", "City at dusk", "Notebook", "Coffee table", "Stairwell", "Garden"];
+// The first two are long and differ only at the end, to check that names are not cut off.
+const MEDIA_LABELS = [
+  "Greatstone office front entrance in the morning light",
+  "Greatstone office front entrance in the evening light",
+  "Office front", "Team at work", "Harbour view", "Client meeting", "Desk detail", "City at dusk", "Notebook", "Coffee table", "Stairwell", "Garden",
+];
 
 const EFFECTS = [
   { id: "aurora", label: "Aurora background", description: "Slow colour bands that drift behind the block." },
@@ -168,4 +173,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Laptop: Story = { render: () => <AskAnAgentShell phone={false} /> };
-export const Phone: Story = { render: () => <AskAnAgentShell phone /> };
+export const Phone: Story = {
+  render: () => <AskAnAgentShell phone />,
+  globals: { viewport: { value: "mobile", isRotated: false } },
+};

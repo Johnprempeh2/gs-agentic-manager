@@ -123,7 +123,8 @@ function MediaChoices({
           {tab === "website" ? "This site has no images in Website media yet." : "No finished GS Studio images yet."}
         </p>
       ) : (
-        // Two columns at every width: the drawer is narrow even on a laptop, so names stay readable.
+        // Two columns at every width: the drawer is narrow even on a laptop. Names show in full
+        // (no clamp) because a touch screen cannot show the hover title.
         <ul className="grid max-h-64 grid-cols-2 gap-1.5 overflow-y-auto">
           {items.map((item) => (
             <li key={item.key} className="min-w-0">
@@ -137,7 +138,7 @@ function MediaChoices({
                 <span className="block aspect-video overflow-hidden rounded border border-border bg-muted">
                   <img src={item.contentPath} alt="" loading="lazy" className="size-full object-cover" />
                 </span>
-                <span className="line-clamp-2 break-words text-micro">{item.label}</span>
+                <span className="block break-words text-micro">{item.label}</span>
               </button>
             </li>
           ))}
