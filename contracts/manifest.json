@@ -48,7 +48,7 @@
       "fixture": "site-contract/fixtures/contract-file.json"
     },
     "deepDiveSync": {
-      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant.",
+      "what": "PUT /api/admin/v1/deep-dive/tenants/:tenantId, GSAM's snapshot of one tenant, including Shared findings, opportunities and KPI arrays.",
       "syncSchema": "gs-deep-dive-sync-v1",
       "schema": "site-contract/schemas/deep-dive-sync.schema.json",
       "fixture": "site-contract/fixtures/deep-dive-sync.json"
@@ -64,16 +64,16 @@
       "fixture": "site-contract/fixtures/document-request-answer.json"
     },
     "interviews": {
-      "what": "GSAM runs a Parallel Interview round on the website.",
+      "what": "The signed admin bridge contract for interview rounds, invites, reads, synthesis and agreement acceptance.",
       "doc": "gs-interview-v1/README.md"
     }
   },
   "files": {
     "README.md": "064aea9cc7ccf4e64aace87d1f3ff3b3818b3112241cd66fc9d3597193a4b509",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
-    "gs-bridge-v1/README.md": "46d58921325543222afa304eeaa4e6e78538c13011185427200685694b8f612d",
+    "gs-bridge-v1/README.md": "d742f4830a2011d5628a946cf3615d5083fccca9d9a3a8c9db58fb63d1cfb4e1",
     "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
-    "gs-interview-v1/README.md": "b0e51343c5e223cccc999745daaa59a425c783d1bf0a47b7ecf387d93abedea2",
+    "gs-interview-v1/README.md": "caaaae40633578e29f722179b27ae5491b8d43922ff610c93b96dcdf45f0e302",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
     "site-contract/fixtures/bridge-health.json": "f63e3e7429bd4a0e1821f8ef7287122a62ebb1e975d496bcd6166ed705997878",
     "site-contract/fixtures/contract-file.json": "1630f8e3b026dbdc394cc14b97f9da162bda5fcde93e19adbf8137b1657b62f2",
@@ -91,5 +91,5 @@
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "bfe97888271dc46fa77b4ae905bfade5e74a0d5af98087ac42d8aa6372075339"
+  "contentHash": "95f9e39496e5175b938bc7fba65bd248a87f585830914109d7e024a322330792"
 }

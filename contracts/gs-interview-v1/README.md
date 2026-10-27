@@ -26,6 +26,14 @@ website's own pipeline (`POST rounds/{roundId}/synthesis`, then `…/release`) s
 A **round** is one interview engagement. GSAM makes the round id (uuid) and keeps it. The website stores the round
 under that id. One round per client engagement (the Deep Dive's first step).
 
+**The data processing agreement comes first** (GRE-2794, gate GRE-2656; John, 26 Oct). A company admin of the
+organisation reads and accepts the interview data processing agreement in the client portal (`#portal/agreement`).
+Until the organisation has accepted the **current** text (its `version` and `contentSha256`):
+`POST rounds/{roundId}/invites` and `POST rounds/{roundId}/invites/send` (resend and remind) answer
+`409 { error: { code: "agreement_required" } }` and write and email nothing; the round's `joinUrl` is `null`; the join
+link refuses; nobody can take a seat. A round may still be created, updated and opened. A new agreement text is a new
+version: invites stop again until an admin accepts it. Read the state with `GET agreement` (below).
+
 ## Writes (write key, POST)
 
 ### `POST rounds/{roundId}` — create or update a round
@@ -65,11 +73,14 @@ under that id. One round per client engagement (the Deep Dive's first step).
   it started with only for its current turn; the next turn reads the new one.
 - `voice: false` takes voice away from this round at once (typed only, the Indago fallback); `true` or absent offers
   it when the site has voice on. The site-wide `VOICE_ENABLED=0` still wins.
+- `retentionDays` (0 to 3650, default 90) and `readoutAt` set the retention delete date (see "What the website owns").
+  They come with GRE-2653 (website PR #134).
 - Units are upserted by id. A unit that GSAM leaves out is kept if anyone is placed in it, otherwise removed.
 - `status: open` needs an approved context pack, `seatTotal > 0` and at least one allowed domain. `draft` and
   `closed` refuse new interviews; `closed` also closes enrolment.
 - Answer `200 { round }` (shape under "Reads"). The round's `joinUrl` carries the enrolment token. It is returned on
-  every answer; `rotateToken: true` makes a new token and the old link stops working.
+  every answer (`null` until the organisation has accepted the agreement); `rotateToken: true` makes a new token and the
+  old link stops working.
 
 ### `POST rounds/{roundId}/invites` — invite people
 
@@ -95,6 +106,7 @@ under that id. One round per client engagement (the Deep Dive's first step).
 - Answer `200 { invited: [ { userId, organisationId, employeeId, outcome: "created | updated" } ], emailed }`, in the
   order sent. No name or email comes back: GSAM stores only the ids.
 - At most 200 people per call.
+- `409 agreement_required` until the organisation has accepted the current data processing agreement.
 
 ### `POST rounds/{roundId}/invites/send` — resend the link or send a reminder
 
@@ -107,7 +119,8 @@ under that id. One round per client engagement (the Deep Dive's first step).
   `400` and nothing is sent.
 - `resend` emails the join link to those who have not started (status `invited`). `remind` emails a reminder to those
   who have not finished (`invited` or `started`). Others are skipped: nobody who completed or declined gets an email.
-- The round must be open (`400` otherwise).
+- The round must be open (`400` otherwise), and the organisation must have accepted the current data processing
+  agreement (`409 agreement_required` otherwise).
 - Answer `200 { emailed, skipped }`. Each call with a **new** idempotency key emails again, so a second reminder is
   sent; a replay of the same key and body emails nothing.
 
@@ -157,9 +170,11 @@ after the idle limit). Answer `200 { round, closedSessions }`.
 
 ```json
 { "item": { "id": "uuid", "organisationId": "uuid", "mode": "team", "status": "open",
-  "targetMinutes": 20, "seatTotal": 40, "joinUrl": "https://…/#join/<token>", "enrol": { … },
+  "targetMinutes": 20, "seatTotal": 40, "joinUrl": "https://…/#join/<token> or null", "enrol": { … },
+  "agreement": { "version": "v2", "contentSha256": "hex", "accepted": true, "acceptedAt": "ISO or null" },
   "counts": { "invited": 0, "started": 0, "completed": 0, "declined": 0, "abandoned": 0 },
   "spendPence": 0, "costEnvelopePence": 50000, "contextPackVersion": 3,
+  "retentionDays": 90, "readoutAt": "ISO or null", "closedAt": "ISO or null", "deletionDate": "ISO or null",
   "released": { "synthesisId": "uuid or null", "releasedAt": "ISO or null" } } }
 ```
 
@@ -209,6 +224,29 @@ person with it. An interview that is not eligible answers `404`.
 ### `GET rounds/{roundId}/synthesis/released`
 
 `{ item: <synthesis or null> }`: exactly what the client sees.
+
+### `GET agreement` — the organisation's acceptance of the data processing agreement
+
+Path: `/api/admin/v1/interview/organisations/{organisationId}/agreement` (not under a round). An organisation that is
+not this tenant's answers `404`.
+
+```json
+{ "item": { "key": "interview-dpa", "version": "v2", "contentSha256": "hex", "accepted": true,
+  "acceptance": <record or null>,
+  "history": [ { "id": "uuid", "organisationId": "uuid", "agreementKey": "interview-dpa", "version": "v2",
+    "contentSha256": "hex", "acceptedAt": "ISO (UTC)", "userId": "website user id", "name": "…", "email": "…",
+    "roleTitle": "as typed", "legalName": "as typed", "companyCountry": "or null", "companyNumber": "or null",
+    "registeredAddress": "or null", "readConfirmed": true, "authorityConfirmed": true, "ipAddress": "…",
+    "current": true } ] } }
+```
+
+`acceptance` is the record for the current text; `history` is every acceptance, newest first. Records are kept and
+cannot be edited.
+
+### `GET agreement/acceptances/{acceptanceId}/copy` — the accepted agreement with its record
+
+`{ item: { filename, contentType: "text/html; charset=utf-8", html } }`: one self-contained HTML file, the acceptance
+record and then the agreement text exactly as accepted. The company admin downloads the same file in the portal.
 
 ## What the website does on its own
 
