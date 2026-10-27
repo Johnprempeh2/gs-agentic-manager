@@ -47,7 +47,7 @@ const SELECT_CLASS =
 
 const GIF_LABEL = new Map(DEEP_DIVE_GIF.map((gif) => [gif.key, gif.label]));
 
-interface StreamOption {
+export interface StreamOption {
   key: string;
   label: string;
   row: CaseSummary;

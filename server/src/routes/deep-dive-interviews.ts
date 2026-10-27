@@ -42,7 +42,8 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 // rows carry counts only, never a name or an email.
 // Synthesis (GRE-2666): an agent (or a person) reads the rule-checked evidence
 // and submits statements; the tool writes only Proposed, Internal rows. Only a
-// person accepts or rejects a proposal.
+// person accepts or rejects a proposal; accepting makes its Deep Dive record
+// (GRE-2756).
 // Release (GRE-2667): only a person releases the reviewed synthesis to the
 // client's website or withdraws it; anyone with access reads what the client
 // sees now.
@@ -281,8 +282,12 @@ export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: In
     async (req, res) => {
       const companyId = await proposalInScope(req);
       const input = req.body as DecideDeepDiveInterviewProposal;
-      const proposal = await synthesis.decide(req.params.proposalId as string, input, interviewActor(req));
-      await log(req, companyId, `deep_dive_interview.proposal_${input.decision}`, proposal.roundId, { proposalId: proposal.id, kind: proposal.kind });
+      const proposal = await synthesis.decide(req.params.proposalId as string, input, interviewActor(req), bridgeActor(req));
+      await log(req, companyId, `deep_dive_interview.proposal_${input.decision}`, proposal.roundId, {
+        proposalId: proposal.id,
+        kind: proposal.kind,
+        record: proposal.record,
+      });
       res.json(proposal);
     },
   );

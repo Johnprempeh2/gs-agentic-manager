@@ -3,7 +3,7 @@
   "$id": "gs-site-contract/deep-dive-sync",
   "title": "PUT /api/admin/v1/deep-dive/tenants/:tenantId: GSAM's whole snapshot of one tenant (GRE-2439)",
   "type": "object",
-  "required": ["schema", "tenantId", "tenantName", "generatedAt", "items", "files", "documentRequests", "deliverables"],
+  "required": ["schema", "tenantId", "tenantName", "generatedAt", "items", "files", "documentRequests", "deliverables", "findings", "opportunities", "kpis"],
   "additionalProperties": false,
   "definitions": {
     "id": { "type": "string", "minLength": 1 },

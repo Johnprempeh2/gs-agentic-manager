@@ -14,6 +14,7 @@ import {
 } from "@greatstone/shared";
 import { deepDiveInterviewsApi, deepDiveInterviewsQueryKeys } from "@/api/deepDiveInterviews";
 import { deepDiveBoardsQueryKeys, deepDiveOrgApi } from "@/api/deepDiveBoards";
+import { INTERVIEW_INVITE_TONE, INTERVIEW_STATUS_ORDER, interviewCountsText } from "@/lib/deep-dive-interviews";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,14 +27,6 @@ import { StatusBadge } from "@/components/StatusBadge";
 // from the organisation board or by hand. Names, emails and status are read live
 // from the website; GSAM keeps only the website ids.
 
-const INVITE_TONE = {
-  invited: "pending",
-  started: "running",
-  completed: "succeeded",
-  abandoned: "warning",
-  declined: "rejected",
-} as const;
-
 /** The bar's colour per status, from the semantic status tokens. */
 const BAR_TONE: Record<keyof DeepDiveInterviewStatusCounts, string> = {
   completed: "bg-status-success",
@@ -42,7 +35,6 @@ const BAR_TONE: Record<keyof DeepDiveInterviewStatusCounts, string> = {
   abandoned: "bg-status-warning",
   declined: "bg-status-danger",
 };
-const BAR_ORDER = ["completed", "started", "invited", "abandoned", "declined"] as const;
 
 function errorText(error: unknown): string | null {
   return error instanceof Error ? error.message : null;
@@ -341,19 +333,13 @@ function StatusBar({ counts, total }: { counts: DeepDiveInterviewStatusCounts; t
   if (total === 0) return null;
   return (
     <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-      {BAR_ORDER.map((status) =>
+      {INTERVIEW_STATUS_ORDER.map((status) =>
         counts[status] > 0 ? (
           <span key={status} className={BAR_TONE[status]} style={{ width: `${(counts[status] / total) * 100}%` }} />
         ) : null,
       )}
     </div>
   );
-}
-
-function countsText(counts: DeepDiveInterviewStatusCounts) {
-  return BAR_ORDER.filter((status) => counts[status] > 0)
-    .map((status) => `${counts[status]} ${DEEP_DIVE_INTERVIEW_INVITE_LABELS[status].toLowerCase()}`)
-    .join(", ");
 }
 
 function PersonRow({ person, roundId, companyId }: { person: DeepDiveInterviewProgressPerson; roundId: string; companyId: string }) {
@@ -378,7 +364,7 @@ function PersonRow({ person, roundId, companyId }: { person: DeepDiveInterviewPr
         {send.error ? <p role="alert" className="text-xs text-destructive">{errorText(send.error)}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <StatusBadge status={INVITE_TONE[person.status]} label={DEEP_DIVE_INTERVIEW_INVITE_LABELS[person.status]} />
+        <StatusBadge status={INTERVIEW_INVITE_TONE[person.status]} label={DEEP_DIVE_INTERVIEW_INVITE_LABELS[person.status]} />
         {kind ? (
           <Button type="button" size="xs" variant="outline" disabled={send.isPending} onClick={() => send.mutate(undefined)}>
             {send.isPending ? "Sending..." : kind === "resend" ? "Resend" : "Remind"}
@@ -419,7 +405,7 @@ function Progress({ progress, roundId, companyId, onRefresh, refreshing }: {
               {progress.seatTotal ? <span className="text-muted-foreground"> · {progress.seatTotal} seats</span> : null}
             </p>
             <StatusBar counts={progress.counts} total={progress.total} />
-            <p className="text-xs text-muted-foreground">{countsText(progress.counts)}</p>
+            <p className="text-xs text-muted-foreground">{interviewCountsText(progress.counts)}</p>
           </Card>
           {progress.teams.map((team) => {
             const people = progress.people.filter((p) => p.unitId === team.unitId);

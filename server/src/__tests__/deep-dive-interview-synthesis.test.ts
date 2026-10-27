@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
+import { eq } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -60,6 +61,8 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
 
   afterEach(async () => {
     await db.delete(deepDiveInterviewRounds);
+    await db.delete(deepDiveFindings);
+    await db.delete(deepDiveProcesses);
     await db.delete(deepDivePeople);
     await db.delete(deepDiveOrgUnits);
     await db.delete(activityLog);
@@ -143,7 +146,7 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
       await request(app(person)).post(`/api/deep-dive/interview-sets/${setId}/approve`).expect(200);
     }
     await request(app(person)).post(`/api/deep-dive/interview-rounds/${roundId}/open`).send({ allowedEmailDomains: ["northwind.example"], seatTotal: 10 }).expect(200);
-    return { roundId, co: co!, finance: finance!, depot: depot! };
+    return { roundId, streamCaseId: stream!.id, co: co!, finance: finance!, depot: depot! };
   }
 
   function interview(id: string, unitId: string, insights: object[], consent = { participation: true, attribution: true }): GsInterviewDetail & { turns: { seq: number; role: string; content: string }[] } {
@@ -263,8 +266,8 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
     expect(rows.filter((row) => row.kind === "person")).toMatchObject([{ websiteEmployeeId: "emp_i1", statement: "Role i1", unitId: round.finance.id }]);
 
     // An agent never decides; a person does, once.
-    await request(app(agent)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "accepted" }).expect(403);
-    const accepted = await request(app(person)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "accepted" }).expect(200);
+    await request(app(agent)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "accepted", streamCaseId: round.streamCaseId }).expect(403);
+    const accepted = await request(app(person)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "accepted", streamCaseId: round.streamCaseId }).expect(200);
     expect(accepted.body).toMatchObject({ status: "accepted", decidedByUserId: "board-user", visibility: "internal" });
     await request(app(person)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "rejected" }).expect(409);
 
@@ -274,6 +277,106 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
     const after = await db.select().from(deepDiveInterviewProposals);
     expect(after.filter((row) => row.kind === "pain")).toHaveLength(1);
     expect(after.filter((row) => row.kind === "quote")).toHaveLength(2);
+  });
+
+  it("turns each accepted item into its Internal Deep Dive record, and only a person can accept (GRE-2756)", async () => {
+    bridge = createFakeInterviewBridge();
+    const company = await seedCompany("DSA");
+    const round = await seedOpenRound(company.id);
+    const kinds = (id: string, quote: string) => [
+      pain(`${id}p`, "Re-keying orders into SAP", quote),
+      { ...pain(`${id}w`, "Month-end close handoff", "The close waits on the depot's sheet."), type: "workflow" },
+      { ...pain(`${id}o`, "Teams trust the spreadsheet", "Everyone checks the spreadsheet first."), type: "observation" },
+    ];
+    bridge.fake.addInterview(round.roundId, interview("i1", round.finance.id, kinds("a", "Every morning we re-key orders into SAP by hand.")));
+    bridge.fake.addInterview(round.roundId, interview("i2", round.depot.id, kinds("b", "I spend an hour rekeying orders in SAP."), { participation: true, attribution: false }));
+    bridge.fake.addPerson(round.roundId, { employeeId: "emp_i1", userId: "usr_i1", name: "Ama Mensah", roleTitle: "Role i1", unitId: round.finance.id });
+    const agent = await seedAgentActor(company.id);
+    const evidence = (await request(app(agent)).get(`/api/deep-dive/interview-rounds/${round.roundId}/synthesis/evidence`).expect(200)).body as DeepDiveSynthesisEvidence;
+    const key = (kind: string) => evidence.themes.find((t) => t.kind === kind)!.key;
+    await request(app(agent)).post(`/api/deep-dive/interview-rounds/${round.roundId}/synthesis/proposals`).send({
+      items: [
+        { themeKey: key("pain"), statement: "Orders are typed into SAP twice.", quotes: [{ insightId: "ap", quote: "we re-key orders into SAP by hand" }, { insightId: "bp", quote: "I spend an hour rekeying orders in SAP." }] },
+        { themeKey: key("process"), statement: "Month-end close waits on the depot." },
+        { themeKey: key("finding"), statement: "The spreadsheet is the source people trust." },
+      ],
+    }).expect(201);
+    const rows = await db.select().from(deepDiveInterviewProposals);
+    const of = (kind: string) => rows.find((row) => row.kind === kind)!;
+    const decide = (actor: Express.Request["actor"], id: string, body: object) =>
+      request(app(actor)).post(`/api/deep-dive/interview-proposals/${id}/decision`).send(body);
+    const before = await counts();
+
+    // An agent can accept nothing, and nothing is made.
+    for (const row of rows) await decide(agent, row.id, { decision: "accepted", streamCaseId: round.streamCaseId }).expect(403);
+    expect(await counts()).toEqual(before);
+    expect((await db.select().from(deepDiveInterviewProposals)).every((row) => row.status === "proposed")).toBe(true);
+
+    // A pain needs its stream; then it is a proposed, Internal finding in that stream's GIF cell.
+    await decide(person, of("pain").id, { decision: "accepted" }).expect(422);
+    const pain_ = (await decide(person, of("pain").id, { decision: "accepted", streamCaseId: round.streamCaseId }).expect(200)).body as DeepDiveInterviewProposal;
+    expect(pain_.record).toMatchObject({ type: "finding" });
+    const [finding] = await db.select().from(deepDiveFindings).where(eq(deepDiveFindings.id, pain_.record!.id!));
+    const [cell] = await db.select().from(caseDocuments).where(eq(caseDocuments.id, finding!.gifDocumentId));
+    expect(finding).toMatchObject({ streamCaseId: round.streamCaseId, statement: "Orders are typed into SAP twice.", status: "proposed", visibility: "internal", proposedByAgentId: (agent as { agentId: string }).agentId, decidedAt: null });
+    expect(cell!.key).toBe("gif-current-state");
+
+    // A finding in the cell the person picks.
+    const found = (await decide(person, of("finding").id, { decision: "accepted", streamCaseId: round.streamCaseId, gifKey: "evidence" }).expect(200)).body as DeepDiveInterviewProposal;
+    const [second] = await db.select().from(deepDiveFindings).where(eq(deepDiveFindings.id, found.record!.id!));
+    expect((await db.select().from(caseDocuments).where(eq(caseDocuments.id, second!.gifDocumentId)))[0]!.key).toBe("gif-evidence");
+
+    // A process: a candidate on the process board, no lane yet.
+    const proc = (await decide(person, of("process").id, { decision: "accepted" }).expect(200)).body as DeepDiveInterviewProposal;
+    const [candidate] = await db.select().from(deepDiveProcesses).where(eq(deepDiveProcesses.id, proc.record!.id!));
+    expect(candidate).toMatchObject({ name: "Month-end close handoff", offeringId: null, visibility: "internal" });
+
+    // A person: on the board in their team, named live from the website.
+    const who = (await decide(person, of("person").id, { decision: "accepted" }).expect(200)).body as DeepDiveInterviewProposal;
+    const [boardPerson] = await db.select().from(deepDivePeople).where(eq(deepDivePeople.id, who.record!.id!));
+    expect(boardPerson).toMatchObject({ name: "Ama Mensah", role: "Role i1", unitId: round.finance.id, side: "client", visibility: "internal" });
+    expect(JSON.stringify(await db.select().from(deepDiveInterviewProposals))).not.toContain("Ama Mensah");
+
+    // Quotes: evidence for their theme's finding, through the theme. An anonymous quote names nobody.
+    const quotes = rows.filter((row) => row.kind === "quote");
+    for (const q of quotes) await decide(person, q.id, { decision: "accepted" }).expect(200);
+    const listed = (await request(app(person)).get(`/api/deep-dive/interview-rounds/${round.roundId}/synthesis/proposals`).expect(200)).body.proposals as DeepDiveInterviewProposal[];
+    const evidenceFor = listed.filter((p) => p.kind === "quote" && p.parentId === of("pain").id);
+    expect(evidenceFor.map((q) => q.status)).toEqual(["accepted", "accepted"]);
+    expect(evidenceFor.find((q) => q.websiteInsightId === "bp")).toMatchObject({ anonymous: true, websiteEmployeeId: null, sources: [{ interviewId: "i2", userId: null, employeeId: null }] });
+
+    // Nothing is shared: every record made is Internal.
+    expect(await counts()).toEqual({ ...before, findings: 2, processes: 1, people: 1 });
+    for (const table of [deepDiveFindings, deepDiveProcesses, deepDivePeople]) {
+      expect((await db.select().from(table)).every((row) => row.visibility === "internal")).toBe(true);
+    }
+    // A rejected theme makes nothing, and its quotes cannot be accepted after it.
+    await decide(person, of("pain").id, { decision: "rejected" }).expect(409);
+  });
+
+  it("refuses a stream from another company and a person the website no longer names (GRE-2756)", async () => {
+    bridge = createFakeInterviewBridge();
+    const company = await seedCompany("DSB");
+    const round = await seedOpenRound(company.id);
+    seedInterviews(round.roundId, round);
+    const other = await seedOpenRound((await seedCompany("DSC")).id);
+    const agent = await seedAgentActor(company.id);
+    const evidence = (await request(app(agent)).get(`/api/deep-dive/interview-rounds/${round.roundId}/synthesis/evidence`).expect(200)).body as DeepDiveSynthesisEvidence;
+    const rekey = evidence.themes.find((t) => t.labels.includes("Re-keying orders into SAP"))!;
+    await request(app(agent)).post(`/api/deep-dive/interview-rounds/${round.roundId}/synthesis/proposals`).send({
+      items: [{ themeKey: rekey.key, statement: "Orders are typed twice.", quotes: [{ insightId: "a1", quote: "we re-key orders into SAP" }] }],
+    }).expect(201);
+    const rows = await db.select().from(deepDiveInterviewProposals).where(eq(deepDiveInterviewProposals.roundId, round.roundId));
+    const theme = rows.find((row) => row.kind === "pain")!;
+    const refused = await request(app(person)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "accepted", streamCaseId: other.streamCaseId }).expect(422);
+    expect(refused.body.error).toContain("not found in this company");
+    // emp_i1 is not on the website's list of people for this round.
+    await request(app(person)).post(`/api/deep-dive/interview-proposals/${rows.find((row) => row.kind === "person")!.id}/decision`).send({ decision: "accepted" }).expect(409);
+    // Rejecting the theme leaves its quote with nothing to be evidence for.
+    await request(app(person)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "rejected" }).expect(200);
+    await request(app(person)).post(`/api/deep-dive/interview-proposals/${rows.find((row) => row.kind === "quote")!.id}/decision`).send({ decision: "accepted" }).expect(409);
+    expect((await db.select().from(deepDiveInterviewProposals).where(eq(deepDiveInterviewProposals.roundId, round.roundId))).filter((row) => row.status !== "proposed").map((row) => row.kind)).toEqual(["pain"]);
+    expect(await db.select().from(deepDiveFindings)).toEqual([]);
   });
 
   it("removes a withdrawn person's quotes and undecided items, and trims decided ones", async () => {
@@ -293,7 +396,7 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
       ],
     }).expect(201);
     const rekeyRow = (await db.select().from(deepDiveInterviewProposals)).find((row) => row.themeKey === rekey.key && row.kind === "pain")!;
-    await request(app(person)).post(`/api/deep-dive/interview-proposals/${rekeyRow.id}/decision`).send({ decision: "accepted" }).expect(200);
+    await request(app(person)).post(`/api/deep-dive/interview-proposals/${rekeyRow.id}/decision`).send({ decision: "accepted", streamCaseId: round.streamCaseId }).expect(200);
 
     // i1 hard-deletes everything on the website.
     bridge.fake.withdraw(round.roundId, { userId: "usr_i1", interviewId: null });

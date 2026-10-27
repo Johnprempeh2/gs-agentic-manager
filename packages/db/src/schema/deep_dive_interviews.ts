@@ -2,7 +2,8 @@ import { sql } from "drizzle-orm";
 import { type AnyPgColumn, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
-import { deepDiveOrgUnits, deepDivePeople } from "./deep_dive_boards.js";
+import { deepDiveOrgUnits, deepDivePeople, deepDiveProcesses } from "./deep_dive_boards.js";
+import { deepDiveFindings } from "./deep_dive_findings.js";
 
 // Parallel Interview rounds (GRE-2611, migration 0406). One round per
 // company's Deep Dive, run per team or per person, with Everest's context
@@ -199,6 +200,13 @@ export const deepDiveInterviewProposals = pgTable(
     proposedByUserId: text("proposed_by_user_id"),
     decidedByUserId: text("decided_by_user_id"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    // The Deep Dive record an accepted theme or person became (GRE-2756,
+    // migration 0411): a proposed finding, a person on the organisation board
+    // or a process candidate. An accepted quote is that record's qualitative
+    // evidence through its theme. Removing the record keeps the decision.
+    findingId: uuid("finding_id").references(() => deepDiveFindings.id, { onDelete: "set null" }),
+    personId: uuid("person_id").references(() => deepDivePeople.id, { onDelete: "set null" }),
+    processId: uuid("process_id").references(() => deepDiveProcesses.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -211,6 +219,9 @@ export const deepDiveInterviewProposals = pgTable(
     roundIdx: index("deep_dive_interview_proposals_round_idx").on(table.roundId, table.status),
     companyIdx: index("deep_dive_interview_proposals_company_idx").on(table.companyId),
     parentIdx: index("deep_dive_interview_proposals_parent_idx").on(table.parentId),
+    findingIdx: index("deep_dive_interview_proposals_finding_idx").on(table.findingId),
+    personIdx: index("deep_dive_interview_proposals_person_idx").on(table.personId),
+    processIdx: index("deep_dive_interview_proposals_process_idx").on(table.processId),
     kindCheck: check(
       "deep_dive_interview_proposals_kind_check",
       sql`${table.kind} in ('pain', 'process', 'finding', 'person', 'quote')`,
@@ -233,6 +244,12 @@ export const deepDiveInterviewProposals = pgTable(
       sql`(${table.websiteEmployeeId} is null or ${table.websiteEmployeeId} ~ '^[A-Za-z0-9_-]{1,128}$')
         and (${table.websiteInsightId} is null or ${table.websiteInsightId} ~ '^[A-Za-z0-9_-]{1,128}$')
         and jsonb_typeof(${table.sources}) = 'array'`,
+    ),
+    recordCheck: check(
+      "deep_dive_interview_proposals_record_check",
+      sql`(${table.findingId} is null or (${table.kind} in ('pain', 'finding') and ${table.status} = 'accepted'))
+        and (${table.personId} is null or (${table.kind} = 'person' and ${table.status} = 'accepted'))
+        and (${table.processId} is null or (${table.kind} = 'process' and ${table.status} = 'accepted'))`,
     ),
     votesCheck: check(
       "deep_dive_interview_proposals_voices_check",

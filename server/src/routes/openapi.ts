@@ -17490,7 +17490,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/deep-dive/interview-proposals/{proposalId}/decision",
   tags: ["deep-dive"],
-  summary: "Accept or reject a synthesis proposal (only a person)",
+  summary: "Accept or reject a synthesis proposal (only a person). Accepting makes its Internal Deep Dive record: a pain or finding becomes a proposed finding in the given stream and GIF cell, a process a process candidate, a person a board person named live from the website, a quote evidence for its theme",
   body: decideDeepDiveInterviewProposalSchema,
   responses: interviewWriteResponses,
 });
