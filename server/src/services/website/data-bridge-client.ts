@@ -162,7 +162,9 @@ export const bridgeHealthSchema = z.object({
   /** The GSAM and website contract the site speaks (GRE-2633); a site from before it leaves it out. */
   siteContract: z.number().int().positive().optional().catch(undefined),
 });
-export const bridgeReleaseHealthSchema = bridgeHealthSchema.extend({ siteContract: z.number().int().nonnegative() });
+export const bridgeReleaseHealthSchema = bridgeHealthSchema.extend({
+  capability: z.literal("read"), siteContract: z.number().int().positive(),
+});
 export const bridgeActivityEventsSchema = z.object({
   items: z.array(z.object({
     sequence: z.string().max(19).regex(/^(0|[1-9]\d*)$/), id: z.string(), organisationId: z.string(),

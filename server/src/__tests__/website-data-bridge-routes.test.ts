@@ -373,6 +373,15 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect(eventPage.nextCursor).toBe("9");
     expect(JSON.stringify(eventPage)).not.toContain("privateKey");
 
+    for (const health of [
+      { ok: true, kid: key.keyId, capability: "read", serverTime: new Date().toISOString(), schema: "gs-bridge-v1", siteContract: 0 },
+      { ok: true, kid: key.keyId, capability: "write", serverTime: new Date().toISOString(), schema: "gs-bridge-v1", siteContract: 1 },
+    ]) {
+      answer = () => Response.json(health);
+      const invalid = await http.get(`${stagingBase}/data-bridge/health`).expect(502);
+      expect(invalid.body.details?.code ?? invalid.body.code).toBe("website_bridge_bad_response");
+    }
+
     const calls = seen.length;
     for (const query of ["", "?cursor=x&limit=1", "?cursor=9223372036854775808&limit=1", "?cursor=0&limit=0",
       "?cursor=0&limit=101", "?cursor=0&limit=1&path=customers"]) {
