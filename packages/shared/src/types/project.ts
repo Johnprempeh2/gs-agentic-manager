@@ -160,3 +160,9 @@ export interface ProjectRepositoryOptions {
   connectionCount: number;
   failedConnectionCount: number;
 }
+
+export interface ProjectGitAuthorization {
+  grantId: string | null;
+  authorizedByUserId: string | null;
+  options: Array<{ grantId: string; connectionName: string; login: string }>;
+}

@@ -7,6 +7,7 @@ export const lanes = {
       "tests/lifecycle-baseline/authority.test.ts",
       "tests/lifecycle-baseline/accounting.test.ts",
       "tests/lifecycle-baseline/github-setup-guidance.test.ts",
+      "tests/lifecycle-baseline/project-git-consent.test.ts",
       // GRE-1781: a reviewer wake names the PATCH that records the decision.
       "tests/lifecycle-baseline/review-decision-wake.test.ts",
       // GRE-1897: an opening "I will check now" comment does not hide the final report.

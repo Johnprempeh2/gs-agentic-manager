@@ -27,6 +27,7 @@ import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { findExistingManagedProjectCheckout } from "./managed-project-checkout.js";
 import { projectService } from "./projects.js";
+import { buildAnonymousGitAuthInvocation, createGitRemoteAuthProvider, type GitAuthInvocation, type GitRemoteAuthProvider } from "./git-credentials.js";
 import { workspaceOperationService } from "./workspace-operations.js";
 import {
   runWorkspaceJobForControl,
@@ -42,10 +43,10 @@ export const PREVIEW_AUTO_UPDATE_TICK_MS = 3 * 60 * 1000;
 const GIT_TIMEOUT_MS = 30_000;
 const MESSAGE_MAX_CHARS = 500;
 
-async function git(cwd: string, args: string[]) {
-  const result = await execFile("git", ["-C", cwd, ...args], {
+async function git(cwd: string, args: string[], auth?: GitAuthInvocation | null) {
+  const result = await execFile("git", ["-C", cwd, ...(auth?.configArgs ?? []), ...args], {
     timeout: GIT_TIMEOUT_MS,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...(auth?.env ?? {}) },
   });
   return result.stdout.trim();
 }
@@ -63,7 +64,11 @@ export type PreviewCheckoutInspection =
  * Says whether the checkout can be updated and whether `origin` has new commits.
  * Uses `git ls-remote`, so nothing in the checkout changes.
  */
-export async function inspectPreviewCheckout(cwd: string, branch: string): Promise<PreviewCheckoutInspection> {
+export async function inspectPreviewCheckout(
+  cwd: string,
+  branch: string,
+  resolveGitAuth?: GitRemoteAuthProvider,
+): Promise<PreviewCheckoutInspection> {
   const current = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (current !== branch) {
     return {
@@ -79,7 +84,9 @@ export async function inspectPreviewCheckout(cwd: string, branch: string): Promi
     };
   }
   const head = await git(cwd, ["rev-parse", "HEAD"]);
-  const remoteLine = await git(cwd, ["ls-remote", "origin", `refs/heads/${branch}`]);
+  const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]);
+  const auth = resolveGitAuth ? await resolveGitAuth(remoteUrl) : null;
+  const remoteLine = await git(cwd, ["ls-remote", "origin", `refs/heads/${branch}`], auth);
   const remote = remoteLine.split(/\s+/)[0] ?? "";
   if (!remote) throw new Error(`origin has no "${branch}" branch`);
   if (remote === head) return { kind: "up_to_date", head };
@@ -119,7 +126,7 @@ export interface PreviewUpdateDeps {
   listRunningPreviewWorkspaces(): Promise<Array<{ projectId: string; workspaceId: string }>>;
   saveState(workspaceId: string, patch: StatePatch): Promise<void>;
   resolveCwd(target: PreviewUpdateTarget): Promise<string | null>;
-  inspect(cwd: string, branch: string): Promise<PreviewCheckoutInspection>;
+  inspect(cwd: string, branch: string, target: PreviewUpdateTarget): Promise<PreviewCheckoutInspection>;
   runJob(target: PreviewUpdateTarget, cwd: string, job: WorkspaceCommandDefinition, trigger: ProjectWorkspacePreviewUpdateTrigger): Promise<void>;
   restart(target: PreviewUpdateTarget, cwd: string): Promise<void>;
   shortHead(cwd: string): Promise<string | null>;
@@ -190,7 +197,7 @@ export function createPreviewUpdateService(deps: PreviewUpdateDeps) {
 
       let inspection: PreviewCheckoutInspection;
       try {
-        inspection = await deps.inspect(cwd, branch);
+        inspection = await deps.inspect(cwd, branch, target);
       } catch (error) {
         return finish("failed", { message: clip(`Could not check for new commits: ${errorText(error)}`) });
       }
@@ -309,8 +316,19 @@ function defaultDeps(db: Db): PreviewUpdateDeps {
     },
     saveState: (workspaceId, patch) => savePreviewUpdateState(db, workspaceId, patch),
     resolveCwd: async (target) => target.workspace.cwd ?? await findExistingManagedProjectCheckout(target.project, target.workspace),
-    inspect: inspectPreviewCheckout,
+    inspect: (cwd, branch, target) => inspectPreviewCheckout(cwd, branch,
+      createGitRemoteAuthProvider(db, target.project.companyId, {
+        projectId: target.project.id,
+        projectWorkspaceId: target.workspace.id,
+        operation: "inspect",
+      })),
     async runJob(target, cwd, job, trigger) {
+      const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]).catch(() => null);
+      const auth = remoteUrl ? await createGitRemoteAuthProvider(db, target.project.companyId, {
+        projectId: target.project.id,
+        projectWorkspaceId: target.workspace.id,
+        operation: "prepare",
+      })(remoteUrl) : buildAnonymousGitAuthInvocation();
       const recorder = operations.createRecorder({ companyId: target.project.companyId });
       await runWorkspaceJobForControl({
         actor: systemActor(target),
@@ -318,6 +336,7 @@ function defaultDeps(db: Db): PreviewUpdateDeps {
         workspace: realizedWorkspace(target, cwd),
         command: job.rawConfig,
         adapterEnv: {},
+        requiredEnv: auth?.env ?? buildAnonymousGitAuthInvocation().env,
         recorder,
         metadata: {
           action: "preview_update",

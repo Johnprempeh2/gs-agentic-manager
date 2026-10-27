@@ -2871,6 +2871,13 @@
       "when": 1793001920203,
       "tag": "0411_deep_dive_interview_proposal_records",
       "breakpoints": true
+    },
+    {
+      "idx": 412,
+      "version": "7",
+      "when": 1793086960211,
+      "tag": "0412_brainy_thor_girl",
+      "breakpoints": true
     }
   ]
 }

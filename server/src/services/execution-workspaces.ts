@@ -3401,6 +3401,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
             repoUrl: row.repoUrl,
             resolveGitAuth: createGitRemoteAuthProvider(db, row.companyId, {
               issueId: row.sourceIssueId ?? issue.id,
+              projectId: row.projectId,
+              projectWorkspaceId: row.projectWorkspaceId,
+              operation: "prepare",
             }),
           });
           resolvedBaseCwd = managedWorkspace.cwd;

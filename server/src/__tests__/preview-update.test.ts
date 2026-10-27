@@ -89,7 +89,7 @@ function harness(options: {
     listRunningPreviewWorkspaces: async () => (options.running === false ? [] : [{ projectId: "project-1", workspaceId: "workspace-1" }]),
     saveState,
     resolveCwd: async (t) => t.workspace.cwd,
-    inspect: inspectPreviewCheckout,
+    inspect: (cwd, branch) => inspectPreviewCheckout(cwd, branch),
     runJob,
     restart,
     shortHead: async (cwd) => git(cwd, "rev-parse", "--short", "HEAD"),
@@ -124,6 +124,12 @@ describe("summarizeUpdateFailure", () => {
 });
 
 describe("preview update", () => {
+  it("stops remote inspection before ls-remote when project Git consent is denied", async () => {
+    git(checkout, "remote", "set-url", "origin", path.join(root, "missing.git"));
+    await expect(inspectPreviewCheckout(checkout, "main", async () => {
+      throw new Error("Project GitHub authorization unavailable");
+    })).rejects.toThrow(/Project GitHub authorization unavailable/);
+  });
   it("Update now pulls the new commit on main and restarts the running preview", async () => {
     commitFile(upstream, "index.html", "v2");
     git(upstream, "push", "-q", "origin", "main");
