@@ -1,4 +1,5 @@
 import { settleSlackConversation } from "../slack-conversation-lifecycle.js";
+import { onboardingFirstTaskCompletionAllowed } from "../onboarding-first-task-admission.js";
 import { dismissAutomaticCompletionReviews } from "./automatic-completion-reviews.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-review-participant.js";
 import { conversationNativeDecision, isConversation } from "../agent-conversations.js";
@@ -1189,7 +1190,7 @@ export async function finalizeNativeRun(input: {
       companyId: run.companyId, issueId: authoritativeIssue.id, agentId: run.agentId,
       contextSnapshot: reviewContext, allowResolvedByRunId: run.id,
     }) : null;
-    const proposedDecision = resolveNativeFinalizerStatus({
+    let proposedDecision = resolveNativeFinalizerStatus({
       ...(reviewContext ? { nativeReviewOutcome: nativeReview
         ? nativeReview.interaction.status === "pending" ? "pending" as const : "resolved" as const
         : "stale" as const } : {}),
@@ -1214,6 +1215,12 @@ export async function finalizeNativeRun(input: {
       agentId: run.agentId,
       priorIssueStatus: authoritativeStatus(authoritativeIssue.status),
     });
+    if (proposedDecision.statusAction === "done" && !await onboardingFirstTaskCompletionAllowed(input.db, {
+      companyId: run.companyId, issueId: authoritativeIssue.id, runId: run.id,
+    })) {
+      proposedDecision = { ...proposedDecision, statusAction: "in_review", toStatus: "in_review",
+        reasonCode: "onboarding_first_task_decision_required", unblockDescriptor: null, effects: [{ kind: "release_checkout" }] };
+    }
     const decision = conversationNativeDecision({
       conversation: isConversation(authoritativeIssue), terminalState,
       workspaceFinalizeStatus: input.workspaceFinalizeStatus, hasGovernanceGate: !!governanceGate,

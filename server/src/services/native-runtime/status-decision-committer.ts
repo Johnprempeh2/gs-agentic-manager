@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { onboardingFirstTaskCompletionAllowed } from "../onboarding-first-task-admission.js";
 import type { Db } from "@greatstone/db";
 import type { CreateIssueThreadInteraction } from "@greatstone/shared";
 import {
@@ -1618,6 +1619,9 @@ export async function commitNativeStatusDecision(input: {
     ) {
       throw new NativeStatusRaceError();
     }
+    if (input.decision.statusAction === "done" && !await onboardingFirstTaskCompletionAllowed(tx as unknown as Db, {
+      companyId: input.companyId, issueId: input.issueId, runId: input.runId,
+    })) throw new NativeStatusRaceError();
     if (input.requireExternalChatResponseWaitAuthorization) {
       let authorization;
       try {

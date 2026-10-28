@@ -1,5 +1,6 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
 import { parkedIssueIdsSubquery } from "./issue-tabling.js";
+import { assertOnboardingFirstTaskCreationAllowed } from "./onboarding-first-task-admission.js";
 import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion, wakeMakersOfExpiredCards } from "./closed-card-wake.js";
 import type { IssueThreadInteraction } from "@greatstone/shared";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
@@ -10337,6 +10338,12 @@ export function issueService(db: Db) {
           );
           return withRelations;
         }
+
+        await assertOnboardingFirstTaskCreationAllowed(tx as unknown as Db, {
+          companyId,
+          actorAgentId: issueData.createdByAgentId,
+          actorRunId,
+        });
 
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, companyId);
         let projectWorkspaceId = issueData.projectWorkspaceId ?? null;
