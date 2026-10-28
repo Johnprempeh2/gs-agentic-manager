@@ -1581,6 +1581,17 @@ const BOARD_ONLY_PREFIXES = [
   "/api/instance/",
 ];
 
+const AGENT_RUN_OPERATIONS = new Set([
+  "POST /api/mcp/project-tools",
+  "POST /api/mcp/memory-tools",
+  "POST /api/companies/{companyId}/slack/tasks/{issueId}/tools",
+  "POST /api/agents/me/tool-connections",
+  "GET /api/agents/me/tool-connections/{connectionId}",
+  "PATCH /api/agents/me/tool-connections/{connectionId}",
+  "POST /api/agents/me/tool-connections/{connectionId}/reconnect",
+  "POST /api/agents/me/tool-connections/{connectionId}/installs/{targetAgentId}",
+]);
+
 const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/agents/{id}/project-access",
   "POST /api/agents/{id}/project-access",
@@ -1795,11 +1806,6 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/tool-connections/{connectionId}/test-calls",
   "GET /api/tool-connections/{connectionId}/test-calls/{actionRequestId}",
   "POST /api/agents/me/connections/{connectionId}/start-authorization",
-  "POST /api/agents/me/tool-connections",
-  "GET /api/agents/me/tool-connections/{connectionId}",
-  "PATCH /api/agents/me/tool-connections/{connectionId}",
-  "POST /api/agents/me/tool-connections/{connectionId}/reconnect",
-  "POST /api/agents/me/tool-connections/{connectionId}/installs/{targetAgentId}",
   "POST /api/agents/me/connections/{connectionId}/token",
   "POST /api/tools/oauth/{connectionId}/start",
   "GET /api/tools/oauth/callback",
@@ -2033,7 +2039,7 @@ function resolveOperationAuthLevel(
 ): OpenApiAuthLevel {
   const key = operationKey(method, path);
   if (PUBLIC_OPERATIONS.has(key)) return "public";
-  if (key === "POST /api/mcp/project-tools" || key === "POST /api/mcp/memory-tools" || key === "POST /api/companies/{companyId}/slack/tasks/{issueId}/tools") return "agent_run";
+  if (AGENT_RUN_OPERATIONS.has(key)) return "agent_run";
   if (RUNTIME_TOOLS_OPERATIONS.has(key)) return "runtime_tools";
   if (INSTANCE_ADMIN_OPERATIONS.has(key)) return "instance_admin";
   if (
