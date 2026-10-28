@@ -10,6 +10,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
+import { Agent as HttpAgent, createServer as createHttpServer, request as requestHttp, type IncomingMessage } from "node:http";
+import { Agent as HttpsAgent, request as requestHttps } from "node:https";
+import { getCACertificates } from "node:tls";
+import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -1826,6 +1830,111 @@ class OpenCodeHarnessSession implements HarnessSession {
   }
 }
 
+/** Retain the reusable gateway key in the runner; the harness gets a session-scoped capability. */
+async function startOpenCodeProviderProxy(baseUrl: string, key: string, model: string, environment: NodeJS.ProcessEnv) {
+  const upstreamUrl = new URL(`${baseUrl.replace(/\/+$/, "")}/chat/completions`);
+  const token = randomBytes(32).toString("base64url");
+  // Agent-local settings keep one runtime's transport configuration out of other sessions.
+  const proxyEnv = {
+    HTTP_PROXY: environment.http_proxy ?? environment.HTTP_PROXY ?? environment.all_proxy ?? environment.ALL_PROXY,
+    HTTPS_PROXY: environment.https_proxy ?? environment.HTTPS_PROXY ?? environment.http_proxy ?? environment.HTTP_PROXY ?? environment.all_proxy ?? environment.ALL_PROXY,
+    NO_PROXY: environment.no_proxy ?? environment.NO_PROXY,
+  };
+  const ca = [...getCACertificates("default")];
+  if (environment.SSL_CERT_FILE) ca.push(await readFile(environment.SSL_CERT_FILE, "utf8"));
+  if (environment.SSL_CERT_DIR) {
+    for (const entry of await readdir(environment.SSL_CERT_DIR, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        const certificate = await readFile(join(environment.SSL_CERT_DIR, entry.name), "utf8");
+        if (certificate.includes("-----BEGIN CERTIFICATE-----")) ca.push(certificate);
+      }
+    }
+  }
+  const agent = upstreamUrl.protocol === "https:" ? new HttpsAgent({ proxyEnv, ca }) : new HttpAgent({ proxyEnv });
+  const controllers = new Set<AbortController>();
+  const server = createHttpServer((request, response) => {
+    const controller = new AbortController();
+    controllers.add(controller);
+    response.once("close", () => controller.abort());
+    void (async () => {
+      if (request.headers.authorization !== `Bearer ${token}`) {
+        response.writeHead(401).end();
+        return;
+      }
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        response.writeHead(404).end();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      for await (const chunk of request) {
+        bytes += chunk.length;
+        if (bytes > 16 * 1024 * 1024) {
+          response.writeHead(413).end();
+          return;
+        }
+        chunks.push(Buffer.from(chunk));
+      }
+      const body = Buffer.concat(chunks);
+      let payload: Record<string, unknown>;
+      try { payload = JSON.parse(body.toString("utf8")); }
+      catch { response.writeHead(400).end(); return; }
+      if (!payload || typeof payload !== "object" || payload.model !== model ||
+        ["models", "route", "plugins", "transforms"].some(field => Object.hasOwn(payload, field))) {
+        response.writeHead(400).end();
+        return;
+      }
+      const upstream = await new Promise<IncomingMessage>((resolve, reject) => {
+        const outgoing = (upstreamUrl.protocol === "https:" ? requestHttps : requestHttp)(upstreamUrl, {
+          method: "POST",
+          agent,
+          headers: { "HTTP-Referer": "https://paperclip.ing", "X-Title": "Paperclip", "Content-Type": "application/json", "Content-Length": body.length, ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(600_000)]),
+        }, resolve);
+        outgoing.once("error", reject);
+        outgoing.end(body);
+      });
+      // Never forward authentication to a redirect destination.
+      const status = upstream.statusCode ?? 502;
+      if (status >= 300 && status < 400) {
+        upstream.destroy();
+        throw new Error("Provider redirects are not supported");
+      }
+      const headers: Record<string, string> = {};
+      for (const name of ["content-type", "content-encoding", "cache-control", "retry-after"]) {
+        const value = upstream.headers[name];
+        if (typeof value === "string") headers[name] = value;
+      }
+      response.writeHead(status, headers);
+      await pipeline(upstream, response);
+    })().catch(() => {
+      if (!response.headersSent) response.writeHead(502).end("Provider request failed");
+      else response.destroy();
+    }).finally(() => controllers.delete(controller));
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+  } catch (error) { agent.destroy(); throw error; }
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    agent.destroy();
+    throw new Error("Could not bind OpenCode provider proxy");
+  }
+  return {
+    baseURL: `http://127.0.0.1:${address.port}/v1`,
+    token,
+    close: async () => {
+      for (const controller of controllers) controller.abort();
+      agent.destroy();
+      await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
+    },
+  };
+}
+
 async function startRuntime(input: {
   options: OpenCodeServerDriverOptions;
   root: string;
@@ -1879,17 +1988,27 @@ async function startRuntime(input: {
   const assignedMcp = nativeMcpLaunchBinding(
     input.options.environment ?? process.env,
   );
+  const providerEnvironment = input.options.environment ?? process.env;
+  const upstreamKey = providerEnvironment.OPENROUTER_API_KEY;
   input.trace?.addSensitiveValues([
     password,
     authHeader,
     bridge.secret,
     assignedMcp?.token,
-    input.options.environment?.OPENROUTER_API_KEY,
+    upstreamKey,
   ]);
   const instructionRoot =
     input.options.runtimeContext?.instructions.bundle.rootPath;
   const [modelProvider, ...modelIdParts] = input.options.model.split("/");
   const providerModelId = modelIdParts.join("/");
+  const providerProxy = modelProvider === "openrouter"
+    ? await startOpenCodeProviderProxy("https://openrouter.ai/api/v1", upstreamKey ?? "", providerModelId, providerEnvironment).catch(async error => {
+        await bridge.close().catch(() => {});
+        await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
+        throw error;
+      })
+    : null;
+  input.trace?.addSensitiveValues([providerProxy?.token]);
   const config = {
     $schema: "https://opencode.ai/config.json",
     model: input.options.model,
@@ -1904,6 +2023,7 @@ async function startRuntime(input: {
     // provider instead of silently falling back or rejecting a newer model.
     provider: {
       [modelProvider!]: {
+        ...(providerProxy ? { npm: "@ai-sdk/openai-compatible", name: "OpenRouter", options: { baseURL: providerProxy.baseURL, apiKey: providerProxy.token } } : {}),
         models: {
           [providerModelId]: { name: providerModelId },
         },
@@ -1959,6 +2079,7 @@ async function startRuntime(input: {
       OPENCODE_DISABLE_PROJECT_CONFIG: "true",
       OPENCODE_SERVER_USERNAME: username,
       OPENCODE_SERVER_PASSWORD: password,
+      ...(providerProxy ? { NO_PROXY: [providerEnvironment.no_proxy ?? providerEnvironment.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } : {}),
     },
   );
   const isolateProcessGroup = input.options.isolateProcessGroup ?? true;
@@ -1991,7 +2112,8 @@ async function startRuntime(input: {
     const raw = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     const redactedDiagnostic = redact(raw.toString("utf8"), [
       password,
-      input.options.environment?.OPENROUTER_API_KEY,
+      upstreamKey,
+      providerProxy?.token,
     ]);
     diagnostics = `${diagnostics}${redactedDiagnostic}`.slice(-8_192);
     const frameId = input.trace?.frame({
@@ -2057,10 +2179,12 @@ async function startRuntime(input: {
       trace: input.trace,
       sensitiveValues: [
         password,
-        input.options.environment?.OPENROUTER_API_KEY,
+        upstreamKey,
+        providerProxy?.token,
       ].filter((value): value is string => Boolean(value)),
       close: async (closeInput = {}) => {
         await bridge.close().catch(() => {});
+        await providerProxy?.close();
         if (child.exitCode === null && child.signalCode === null && child.pid) {
           try {
             if (globalThis.process.platform === "win32" || !isolateProcessGroup)
@@ -2093,6 +2217,7 @@ async function startRuntime(input: {
     };
   } catch (error) {
     await bridge.close().catch(() => {});
+    await providerProxy?.close();
     child.kill("SIGKILL");
     await rm(join(configHome, "opencode", "opencode.json"), {
       force: true,
@@ -2469,7 +2594,6 @@ function sanitizedEnvironment(
     "ALL_PROXY",
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
-    "OPENROUTER_API_KEY",
   ];
   const result: NodeJS.ProcessEnv = {};
   for (const key of allowed)
@@ -2490,7 +2614,6 @@ function sanitizedEnvironmentKeys(): string[] {
     "ALL_PROXY",
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
-    "OPENROUTER_API_KEY",
   ];
 }
 

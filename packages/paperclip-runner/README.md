@@ -389,6 +389,8 @@ recorded lab unless `--force` is also supplied.
 | `verify`                                                | Run the complete deterministic Conformance through SDK acceptance sequence.                                                                 |
 | `verify:rootless`                                       | Extract Debian/Ubuntu browser libraries without root, then run `verify`.                                                                    |
 
+For native `openrouter/` sessions, the runner holds the reusable OpenRouter key in a parent proxy. OpenCode receives a session-lived loopback token for the selected model and chat completions endpoint. The token expires when the session closes. The token is still a credential and is redacted from diagnostics. This boundary does not cover every child credential or persisted value.
+
 ## Navigate
 
 - [Architecture and dependency boundary](docs/architecture.md)
