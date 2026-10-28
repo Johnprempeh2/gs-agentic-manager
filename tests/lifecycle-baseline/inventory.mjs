@@ -54,6 +54,8 @@ export const lanes = {
       `${server}native-status-arbiter-corpus.test.ts`,
       `${server}heartbeat-issue-liveness-escalation.test.ts`,
       `${server}heartbeat-retry-scheduling.test.ts`,
+      // GRE-3026: runtime skill tests drain heartbeat writes before truncating their fixture.
+      `${server}heartbeat-runtime-skills.test.ts`,
       `${server}heartbeat-stale-queue-invalidation.test.ts`,
       `${server}issue-monitor-scheduler.test.ts`,
       `${server}question-response-delivery.test.ts`,
