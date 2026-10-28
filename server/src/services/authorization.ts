@@ -404,6 +404,7 @@ async function scopeAllows(
   requestedScope: Record<string, unknown> | null | undefined,
   options: { requireStructuredScope?: boolean; connectionManagement?: boolean } = {},
 ) {
+  if (options.connectionManagement && grantScope !== null && !isPlainRecord(grantScope)) return false;
   if (!grantScope || Object.keys(grantScope).length === 0) return !options.requireStructuredScope;
   if (!requestedScope) return false;
 
@@ -420,12 +421,17 @@ async function scopeAllows(
     // cannot silently turn a narrow grant into an unscoped one.
     if (Object.keys(grantScope).some((key) => !known.has(key))) return false;
     for (const [selector, keys] of Object.entries(selectors)) {
-      const specified = keys.filter((key) => Object.hasOwn(grantScope, key));
-      if (specified.length === 0) continue;
-      const values = specified.flatMap((key) => scopeValueList(grantScope[key]));
-      if (values.length === 0 || specified.some((key) => scopeValueList(grantScope[key]).length === 0)) return false;
       const requested = requestedScope[selector];
-      if (typeof requested !== "string" || !values.includes(requested)) return false;
+      for (const key of keys) {
+        if (!Object.hasOwn(grantScope, key)) continue;
+        const value = grantScope[key];
+        const valid = key === selector
+          ? typeof value === "string" && value.trim().length > 0 && value.trim() === requested
+          : Array.isArray(value) && value.length > 0 && value.every((entry) =>
+            typeof entry === "string" && entry.trim().length > 0
+          ) && value.some((entry) => entry.trim() === requested);
+        if (!valid) return false;
+      }
     }
     return true;
   }

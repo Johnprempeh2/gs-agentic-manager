@@ -2097,6 +2097,23 @@ describeEmbeddedPostgres("authorization service", () => {
       delete missing[key];
       expect((await decide(missing)).reason).toBe("deny_scope");
     }
+    for (const malformed of [
+      { ...scope, provider: "slack", providers: ["github"] },
+      { ...scope, provider: ["github"] },
+      { ...scope, providers: "github" },
+      { ...scope, providers: ["github", 42] },
+      { ...scope, providers: ["github", ""] },
+    ]) {
+      await db.update(principalPermissionGrants).set({ scope: malformed })
+        .where(and(eq(principalPermissionGrants.companyId, company.id), eq(principalPermissionGrants.principalId, agent.id)));
+      expect((await decide(scope)).reason).toBe("deny_scope");
+    }
+    await db.update(principalPermissionGrants).set({ scope: [] as unknown as Record<string, unknown> })
+      .where(and(eq(principalPermissionGrants.companyId, company.id), eq(principalPermissionGrants.principalId, agent.id)));
+    expect((await decide(scope)).reason).toBe("deny_scope");
+    await db.update(principalPermissionGrants).set({ scope: { ...scope, providers: ["github", "slack"] } })
+      .where(and(eq(principalPermissionGrants.companyId, company.id), eq(principalPermissionGrants.principalId, agent.id)));
+    expect((await decide(scope)).allowed).toBe(true);
     await db.update(principalPermissionGrants).set({ scope: { ...scope, futurePermission: "all" } })
       .where(and(eq(principalPermissionGrants.companyId, company.id), eq(principalPermissionGrants.principalId, agent.id)));
     expect((await decide(scope)).reason).toBe("deny_scope");

@@ -130,6 +130,8 @@ describeDb("delegated personal tool connections", () => {
     const fx = await fixture();
     await db.update(principalPermissionGrants).set({ scope: { provider: "slack" } }).where(and(eq(principalPermissionGrants.companyId, fx.company.id), eq(principalPermissionGrants.principalId, fx.agent.id)));
     expect((await fx.get()).status).toBe(403);
+    await db.update(principalPermissionGrants).set({ scope: { provider: "slack", providers: ["github"] } }).where(and(eq(principalPermissionGrants.companyId, fx.company.id), eq(principalPermissionGrants.principalId, fx.agent.id)));
+    expect((await fx.get()).status).toBe(403);
     await db.update(principalPermissionGrants).set({ scope: null }).where(and(eq(principalPermissionGrants.companyId, fx.company.id), eq(principalPermissionGrants.principalId, fx.agent.id)));
     const [other] = await db.insert(toolConnections).values({ companyId: fx.company.id, applicationId: fx.connection.applicationId, name: "Someone else's", uid: `other-${randomUUID()}`, transport: "mcp_remote", credentialPolicy: "per_user", connectionPurpose: "tool", createdByUserId: `other-${randomUUID()}` }).returning();
     expect((await request(fx.app).get(`/api/agents/me/tool-connections/${other.id}`)).status).toBe(403);
