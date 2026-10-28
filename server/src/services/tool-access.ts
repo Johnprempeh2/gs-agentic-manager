@@ -18782,6 +18782,7 @@ export function toolAccessService(
     updateConnection: async (
       connectionId: string,
       input: UpdateToolConnection,
+      options?: { reauthorize?: () => Promise<void> },
     ): Promise<ToolConnection> => {
       const existing = await getConnectionRow(connectionId);
       if (input.enabled === true && !existing.enabled) {
@@ -18818,6 +18819,7 @@ export function toolAccessService(
         ...(input.credentialRefs ?? existing.credentialRefs),
         ...(input.credentialSecretRefs ?? existing.credentialSecretRefs),
       ]);
+      await options?.reauthorize?.();
       const [row] = await db
         .update(toolConnections)
         .set({

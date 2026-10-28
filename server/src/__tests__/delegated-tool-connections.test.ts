@@ -38,15 +38,21 @@ describeDb("delegated personal tool connections", () => {
     const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent.id, status: "running", responsibleUserId: userId, contextSnapshot: { issueId: issue.id } }).returning();
     await db.update(issues).set({ checkoutRunId: run.id }).where(eq(issues.id, issue.id));
     const [application] = await db.insert(toolApplications).values({ companyId: company.id, name: `App ${randomUUID()}`, type: "mcp_http", status: "active" }).returning();
-    const [connection] = await db.insert(toolConnections).values({ companyId: company.id, applicationId: application.id, name: "Personal GitHub", uid: `personal-${randomUUID()}`, transport: "mcp_remote", credentialPolicy: "per_user", connectionPurpose: "tool", createdByUserId: userId, config: { sourceTemplateKey: "github" }, transportConfig: { sourceTemplateKey: "github" } }).returning();
+    const [connection] = await db.insert(toolConnections).values({ companyId: company.id, applicationId: application.id, name: "Personal GitHub", uid: `personal-${randomUUID()}`, transport: "mcp_remote", credentialPolicy: "per_user", connectionPurpose: "tool", createdByUserId: userId, config: { sourceTemplateKey: "github", url: "https://api.githubcopilot.com/mcp" }, transportConfig: { sourceTemplateKey: "github", url: "https://api.githubcopilot.com/mcp" } }).returning();
     const actor = { type: "agent" as const, agentId: agent.id, companyId: company.id, runId: run.id, onBehalfOfUserId: userId, source: "agent_jwt" as const };
+    let revokeOnLookup = false;
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => { req.actor = actor as typeof req.actor; next(); });
-    app.use("/api", delegatedToolConnectionRoutes(db, toolAccessService(db, { remoteHttpEndpointLookup: async () => [{ address: "8.8.8.8", family: 4 }] })));
+    app.use("/api", delegatedToolConnectionRoutes(db, toolAccessService(db, { remoteHttpEndpointLookup: async () => {
+      if (revokeOnLookup) await db.delete(principalPermissionGrants).where(and(
+        eq(principalPermissionGrants.companyId, company.id), eq(principalPermissionGrants.principalId, agent.id),
+      ));
+      return [{ address: "8.8.8.8", family: 4 }];
+    } })));
     app.use(errorHandler);
     const get = () => request(app).get(`/api/agents/me/tool-connections/${connection.id}`);
-    return { company, userId, agent, issue, run, connection, actor, app, get };
+    return { company, userId, agent, issue, run, connection, actor, app, get, revokeOnNextLookup: () => { revokeOnLookup = true; } };
   }
 
   it("allows metadata reads and revokes them with the grant or responsible user", async () => {
@@ -60,6 +66,40 @@ describeDb("delegated personal tool connections", () => {
     await db.insert(principalPermissionGrants).values({ companyId: fx.company.id, principalType: "agent", principalId: fx.agent.id, permissionKey: "tools:manage_connections", scope: null });
     await db.update(companyMemberships).set({ status: "suspended" }).where(and(eq(companyMemberships.companyId, fx.company.id), eq(companyMemberships.principalType, "user"), eq(companyMemberships.principalId, fx.userId)));
     expect((await fx.get()).status).toBe(403);
+  });
+
+  it("renames an owned connection and sends reconnection to the responsible user's retained setup", async () => {
+    const fx = await fixture();
+    const configure = () => request(fx.app).patch(`/api/agents/me/tool-connections/${fx.connection.id}`).send({ name: "Updated personal account" });
+    const reconnect = () => request(fx.app).post(`/api/agents/me/tool-connections/${fx.connection.id}/reconnect`);
+    const changed = await configure();
+    expect(changed.status).toBe(200);
+    expect(changed.body.name).toBe("Updated personal account");
+    expect((await db.select().from(toolConnections).where(eq(toolConnections.id, fx.connection.id)))[0]?.name).toBe("Updated personal account");
+    const draftHandoff = await reconnect();
+    expect(draftHandoff.status).toBe(200);
+    expect(draftHandoff.body.requiredUserAction.setupPath).toBe(`/apps/connect?source=github&resume=${fx.connection.id}&identity=user`);
+    await db.update(toolConnections).set({ status: "active" }).where(eq(toolConnections.id, fx.connection.id));
+    const handoff = await reconnect();
+    expect(handoff.status).toBe(200);
+    expect(handoff.body.requiredUserAction).toEqual({
+      userId: fx.userId,
+      setupPath: `/apps/connect?source=github&reconnect=${fx.connection.id}&identity=user`,
+      reason: "The responsible user must reconnect this personal account.",
+    });
+    await db.update(principalPermissionGrants).set({ scope: { operation: "read" } }).where(and(
+      eq(principalPermissionGrants.companyId, fx.company.id), eq(principalPermissionGrants.principalId, fx.agent.id),
+    ));
+    expect((await configure()).status).toBe(403);
+    expect((await reconnect()).status).toBe(403);
+  });
+
+  it("rechecks the grant after remote endpoint validation and before renaming", async () => {
+    const fx = await fixture();
+    fx.revokeOnNextLookup();
+    const response = await request(fx.app).patch(`/api/agents/me/tool-connections/${fx.connection.id}`).send({ name: "Must not be saved" });
+    expect(response.status).toBe(403);
+    expect((await db.select().from(toolConnections).where(eq(toolConnections.id, fx.connection.id)))[0]?.name).toBe("Personal GitHub");
   });
 
   it("creates only a personal draft and leaves credential entry with the user", async () => {

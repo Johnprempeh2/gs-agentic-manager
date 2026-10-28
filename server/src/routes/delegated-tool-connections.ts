@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { agentApiKeys, agents, authUsers, companyMemberships, connectionGrants, issues, projects, toolConnections } from "@greatstone/db";
-import { delegatedToolConnectionConfigureSchema, delegatedToolConnectionCreateSchema, isRemoteMcpConnectorMethod, isUuidLike, type DelegatedToolConnectionCreate } from "@greatstone/shared";
+import { delegatedToolConnectionConfigureSchema, delegatedToolConnectionCreateSchema, getConnectableAppDefinition, isRemoteMcpConnectorMethod, isUuidLike, type DelegatedToolConnectionCreate } from "@greatstone/shared";
 import { forbidden, notFound } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { authorizationService } from "../services/authorization.js";
@@ -12,6 +12,14 @@ import { logActivity, type toolAccessService } from "../services/index.js";
 import { getActorInfo } from "./authz.js";
 
 type Operation = "create" | "read" | "configure" | "reconnect" | "install";
+
+function userSetupPath(connectionId: string, source: unknown, operation: "create" | "reconnect") {
+  if (typeof source !== "string" || !getConnectableAppDefinition(source)) {
+    return `/apps/${encodeURIComponent(connectionId)}/permissions`;
+  }
+  const params = new URLSearchParams({ source, [operation === "create" ? "resume" : "reconnect"]: connectionId, identity: "user" });
+  return `/apps/connect?${params.toString()}`;
+}
 
 /** This route is deliberately smaller than the board connection wizard. */
 export function delegatedToolConnectionRoutes(db: Db, svc: ReturnType<typeof toolAccessService>) {
@@ -108,7 +116,7 @@ export function delegatedToolConnectionRoutes(db: Db, svc: ReturnType<typeof too
       action: "tool_connection.delegated_created", entityType: "tool_connection", entityId: result.connectionId,
       details: { provider: galleryKey, responsibleUserId: authorized.userId } });
     res.status(201).json({ connectionId: result.connectionId, name: result.connection.name, status: result.connection.status,
-      requiredUserAction: { userId: authorized.userId, setupPath: `/apps/connect?source=${encodeURIComponent(galleryKey)}&resume=${encodeURIComponent(result.connectionId)}`, reason: "The responsible user must finish authentication and credential entry." } });
+      requiredUserAction: { userId: authorized.userId, setupPath: userSetupPath(result.connectionId, galleryKey, "create"), reason: "The responsible user must finish authentication and credential entry." } });
   });
 
   router.get("/agents/me/tool-connections/:connectionId", async (req, res) => {
@@ -120,8 +128,9 @@ export function delegatedToolConnectionRoutes(db: Db, svc: ReturnType<typeof too
   router.patch("/agents/me/tool-connections/:connectionId", validate(delegatedToolConnectionConfigureSchema), async (req, res) => {
     const id = String(req.params.connectionId);
     const authorized = await authorize(req, "configure", { connectionId: id });
-    await authorize(req, "configure", { connectionId: id });
-    const connection = await svc.updateConnection(id, { name: req.body.name });
+    const connection = await svc.updateConnection(id, { name: req.body.name }, {
+      reauthorize: async () => { await authorize(req, "configure", { connectionId: id }); },
+    });
     await logActivity(db, { companyId: authorized.companyId, actorType: "agent", actorId: authorized.agentId,
       action: "tool_connection.delegated_configured", entityType: "tool_connection", entityId: id, details: { name: connection.name } });
     res.json({ id: connection.id, name: connection.name, status: connection.status });
@@ -129,8 +138,8 @@ export function delegatedToolConnectionRoutes(db: Db, svc: ReturnType<typeof too
 
   router.post("/agents/me/tool-connections/:connectionId/reconnect", async (req, res) => {
     const id = String(req.params.connectionId);
-    const { userId } = await authorize(req, "reconnect", { connectionId: id });
-    res.json({ requiredUserAction: { userId, setupPath: `/apps/${encodeURIComponent(id)}/permissions`, reason: "The responsible user must reconnect this personal account." } });
+    const { userId, connection } = await authorize(req, "reconnect", { connectionId: id });
+    res.json({ requiredUserAction: { userId, setupPath: userSetupPath(id, connection!.config.sourceTemplateKey, connection!.status === "draft" ? "create" : "reconnect"), reason: "The responsible user must reconnect this personal account." } });
   });
 
   router.post("/agents/me/tool-connections/:connectionId/installs/:targetAgentId", async (req, res) => {

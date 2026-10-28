@@ -11,7 +11,7 @@ commit is recorded as **partial** in the implementation commit trailer.
 | `POST /api/agents/me/tool-connections` | Save a personal, credential-free remote MCP draft for the current responsible user. The body names a supported gallery method and a credential-free HTTPS `/mcp` URL. The response gives the user an Apps setup path. |
 | `GET /api/agents/me/tool-connections/{connectionId}` | Return name, status, provider and ownership metadata. No credential values or secret references are returned. |
 | `PATCH /api/agents/me/tool-connections/{connectionId}` | Rename an owned or personally granted tool connection. |
-| `POST /api/agents/me/tool-connections/{connectionId}/reconnect` | Return a human action path. The agent cannot enter or rotate the credential. |
+| `POST /api/agents/me/tool-connections/{connectionId}/reconnect` | Return the existing setup wizard for a draft or the retained reconnect wizard for an active connection. The agent cannot enter or rotate the credential. |
 | `POST /api/agents/me/tool-connections/{connectionId}/installs/{targetAgentId}` | Add one named-agent install without replacing other installs. Both the agent and the responsible user need agent-config authority for the target. |
 
 All routes require an explicit agent `tools:manage_connections` grant, a
@@ -26,7 +26,8 @@ and `targetAgentId` selectors. Every specified selector must match. Unknown
 keys and malformed selectors deny access. Creation is checked against provider,
 purpose and operation before an ID exists. The saved connection is checked
 again after creation. Discovery and later operations recheck authority before
-writing. An archived connection recovered by name is checked before reuse.
+writing. Configure rechecks after endpoint validation and before writing. An
+archived connection recovered by name is checked before reuse.
 
 This API cannot create organization grants, install company-wide, delegate
 grants, edit policies, mutate AI or chat connections, change gateways or
