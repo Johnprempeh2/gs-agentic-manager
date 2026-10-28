@@ -309,6 +309,8 @@ import {
   workspaceFileResourceQuerySchema,
   // Tool access
   connectToolAppSchema,
+  delegatedToolConnectionCreateSchema,
+  delegatedToolConnectionConfigureSchema,
   configureRailwaySshSchema,
   createToolApplicationSchema,
   updateToolApplicationSchema,
@@ -1793,6 +1795,11 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/tool-connections/{connectionId}/test-calls",
   "GET /api/tool-connections/{connectionId}/test-calls/{actionRequestId}",
   "POST /api/agents/me/connections/{connectionId}/start-authorization",
+  "POST /api/agents/me/tool-connections",
+  "GET /api/agents/me/tool-connections/{connectionId}",
+  "PATCH /api/agents/me/tool-connections/{connectionId}",
+  "POST /api/agents/me/tool-connections/{connectionId}/reconnect",
+  "POST /api/agents/me/tool-connections/{connectionId}/installs/{targetAgentId}",
   "POST /api/agents/me/connections/{connectionId}/token",
   "POST /api/tools/oauth/{connectionId}/start",
   "GET /api/tools/oauth/callback",
@@ -13932,6 +13939,19 @@ registerCurrentRoute({
 });
 
 // --- Tool access -------------------------------------------------------------
+
+registerCurrentRoute({ method: "post", path: "/api/agents/me/tool-connections", tags: ["tool-access"],
+  summary: "Save a credential-free personal remote MCP draft for the responsible user",
+  body: delegatedToolConnectionCreateSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound } });
+registerCurrentRoute({ method: "get", path: "/api/agents/me/tool-connections/{connectionId}", tags: ["tool-access"],
+  summary: "Read personal tool connection metadata without credentials" });
+registerCurrentRoute({ method: "patch", path: "/api/agents/me/tool-connections/{connectionId}", tags: ["tool-access"],
+  summary: "Rename an authorized personal tool connection", body: delegatedToolConnectionConfigureSchema });
+registerCurrentRoute({ method: "post", path: "/api/agents/me/tool-connections/{connectionId}/reconnect", tags: ["tool-access"],
+  summary: "Request responsible-user reconnection of a personal tool connection" });
+registerCurrentRoute({ method: "post", path: "/api/agents/me/tool-connections/{connectionId}/installs/{targetAgentId}", tags: ["tool-access"],
+  summary: "Install an authorized personal tool connection on one named agent" });
 
 registerCurrentRoute({
   method: "get",

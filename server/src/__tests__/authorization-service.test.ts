@@ -2069,6 +2069,39 @@ describeEmbeddedPostgres("authorization service", () => {
     expect(denied.explanation).toContain("does not cover the requested scope");
   });
 
+  it("fails closed on every connection-management selector and unknown keys", async () => {
+    const company = await createCompany(db, "ConnectionScope");
+    const agent = await createAgent(db, company.id);
+    const connectionId = randomUUID();
+    const targetAgentId = randomUUID();
+    const scope = {
+      connectionId,
+      provider: "github",
+      purpose: "tool",
+      operation: "configure",
+      targetAgentId,
+    };
+    await grantAgentPermission(db, company.id, agent.id, "tools:manage_connections", scope);
+    const decide = (requested: Record<string, unknown>) => authorizationService(db).decidePrincipalGrant({
+      companyId: company.id,
+      principalType: "agent",
+      principalId: agent.id,
+      action: "tools:manage_connections",
+      permissionKey: "tools:manage_connections",
+      scope: requested,
+    });
+    expect((await decide(scope)).allowed).toBe(true);
+    for (const key of Object.keys(scope)) {
+      expect((await decide({ ...scope, [key]: "different" })).reason).toBe("deny_scope");
+      const missing = { ...scope } as Record<string, unknown>;
+      delete missing[key];
+      expect((await decide(missing)).reason).toBe("deny_scope");
+    }
+    await db.update(principalPermissionGrants).set({ scope: { ...scope, futurePermission: "all" } })
+      .where(and(eq(principalPermissionGrants.companyId, company.id), eq(principalPermissionGrants.principalId, agent.id)));
+    expect((await decide(scope)).reason).toBe("deny_scope");
+  });
+
   it("treats unknown grant scope metadata as unconstrained", async () => {
     const company = await createCompany(db, "UnknownScopeMetadata");
     const actorAgent = await createAgent(db, company.id);
