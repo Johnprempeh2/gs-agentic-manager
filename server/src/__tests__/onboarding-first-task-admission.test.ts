@@ -14,15 +14,15 @@ const support = await getEmbeddedPostgresTestSupport();
 if (!support.supported) console.warn(`Skipping first-task admission database tests: ${support.reason}`);
 describe.skipIf(!support.supported)("onboarding first-task execution admission", () => {
   let server: Awaited<ReturnType<typeof startRunnerApiTestServer>>;
-  const originalSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
+  const originalSecret = process.env.GSAM_AGENT_JWT_SECRET;
   beforeAll(async () => {
-    process.env.PAPERCLIP_AGENT_JWT_SECRET = randomUUID();
+    process.env.GSAM_AGENT_JWT_SECRET = randomUUID();
     server = await startRunnerApiTestServer();
   }, 60_000);
   afterAll(async () => {
     await server?.close();
-    if (originalSecret === undefined) delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
-    else process.env.PAPERCLIP_AGENT_JWT_SECRET = originalSecret;
+    if (originalSecret === undefined) delete process.env.GSAM_AGENT_JWT_SECRET;
+    else process.env.GSAM_AGENT_JWT_SECRET = originalSecret;
   });
 
   const fixture = async () => {

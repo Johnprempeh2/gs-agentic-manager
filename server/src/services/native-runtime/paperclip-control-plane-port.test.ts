@@ -1034,6 +1034,89 @@ describe("PaperclipControlPlanePort conformance", () => {
     ]);
   });
 
+  it("commits an undecided onboarding first task as in_review", async () => {
+    const identity = CONTROL_PLANE_CONFORMANCE_OPEN.identity;
+    const firstIssueId = randomUUID();
+    const firstRunId = randomUUID();
+    const firstContractId = randomUUID();
+    const productId = randomUUID();
+    const evidenceRef = `work_product:${productId}`;
+    await db.insert(issues).values({
+      id: firstIssueId,
+      companyId: identity.companyId,
+      title: "Agree the first task",
+      status: "in_progress",
+      originKind: "onboarding_first_task",
+      assigneeAgentId: identity.agentId,
+      workMode: "standard",
+    });
+    await db.insert(completionContracts).values({
+      id: firstContractId,
+      companyId: identity.companyId,
+      issueId: firstIssueId,
+      revision: 1,
+      schemaVersion: "paperclip.completion-contract.v1",
+      policyVersion: "phase6-v1",
+      risk: "standard",
+      completionAuthority: "server_arbiter",
+      incompleteCriteriaPolicy: "preserve_non_terminal",
+      contractJson: { revision: "phase6-v1", objective: "Agree the first task", criteria: [{ id: "objective", requirement: "Propose work" }] },
+      canonicalSha256: "first-task-contract",
+      createdByActorType: "system",
+      createdByActorId: "test",
+    });
+    await db.insert(heartbeatRuns).values({
+      id: firstRunId,
+      companyId: identity.companyId,
+      agentId: identity.agentId,
+      status: "running",
+      runtimeMode: "native",
+      nativeIssueId: firstIssueId,
+      nativeSessionId: firstRunId,
+      runnerInstanceId: firstContractId,
+      completionContractId: firstContractId,
+      completionContractSha256: "first-task-contract",
+      contextSnapshot: { issueId: firstIssueId },
+    });
+    await db.insert(issueWorkProducts).values({
+      id: productId,
+      companyId: identity.companyId,
+      issueId: firstIssueId,
+      type: "artifact",
+      provider: "paperclip",
+      title: "First-task proposal",
+      status: "ready_for_review",
+      reviewState: "approved",
+      createdByRunId: firstRunId,
+    });
+    const port = new PaperclipControlPlanePort(db, {
+      companyId: identity.companyId,
+      issueId: firstIssueId,
+      runId: firstRunId,
+      agentId: identity.agentId,
+      sessionId: firstRunId,
+      completionContractId: firstContractId,
+      completionContractSha256: "first-task-contract",
+      sourceInstanceId: firstContractId,
+      controlPlaneSourceInstanceId: "first-task-control",
+    });
+    await port.openRun({ identity: { ...identity, issueId: firstIssueId, runId: firstRunId, sessionId: firstRunId }, backendKind: "mock", sourceInstanceId: firstContractId });
+    const result = structuredClone(CONTROL_PLANE_CONFORMANCE_RESULT);
+    result.completionClaim.contractRevision = "phase6-v1";
+    result.completionClaim.criteria[0]!.evidenceRefs = [evidenceRef];
+    result.evidence = [{ kind: "work_product", ref: evidenceRef }];
+    result.verification[0]!.artifactRef = evidenceRef;
+    await port.completeRun({ result, terminal: CONTROL_PLANE_CONFORMANCE_TERMINAL, callerResultId: "first-task-result" });
+    await expect(finalizeNativeRun({ db, runId: firstRunId, workspaceFinalizeStatus: "succeeded" }))
+      .resolves.toMatchObject({ phase: "committed" });
+    await expect(db.select().from(issues).where(eq(issues.id, firstIssueId))).resolves.toEqual([
+      expect.objectContaining({ status: "in_review", statusVersion: 1 }),
+    ]);
+    await expect(db.select().from(statusDecisions).where(eq(statusDecisions.issueId, firstIssueId))).resolves.toEqual([
+      expect.objectContaining({ toStatus: "in_review", reasonCode: "onboarding_first_task_decision_required", applicationState: "applied" }),
+    ]);
+  });
+
   it("P6-23 materializes native review through the authorized interaction service", async () => {
     const identity = CONTROL_PLANE_CONFORMANCE_OPEN.identity;
     const issueId = "30000000-0000-4000-8000-000000000024";
