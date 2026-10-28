@@ -1,4 +1,5 @@
 import { validateNativeDeliverableEvidence } from "./native-deliverable-feedback.js";
+import { onboardingFirstTaskCompletionAllowed } from "../onboarding-first-task-admission.js";
 import { findAutomaticCompletionReviews } from "./automatic-completion-reviews.js";
 import { evaluateAgentInvokabilityFromDb } from "../agent-invokability.js";
 import { issueService } from "../issues.js";
@@ -99,6 +100,11 @@ export async function nativeCompletionFeedback(
   }
   if (issue.executionRunId && issue.executionRunId !== runId) {
     return "Report accepted; a newer run owns the task. Do not claim this report changed its status.";
+  }
+  if (result.reportedWorkDisposition === "done" && !await onboardingFirstTaskCompletionAllowed(db, {
+    companyId: run.companyId, issueId: issue.id, runId,
+  })) {
+    throw new Error("First-task proposal requires a persisted human decision before completing onboarding. The opening answer supplies scope, not approval. Present the proposal and keep this task in_review until the human accepts or rejects it; acknowledge a rejection without executing that work.");
   }
   const continuation = run.contextSnapshot?.executionContinuation as { objective?: unknown } | undefined;
   const objective = typeof continuation?.objective === "string"

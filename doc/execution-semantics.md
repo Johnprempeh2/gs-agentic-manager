@@ -19,6 +19,20 @@ GS Agentic Manager separates four concepts that are easy to blur together:
 
 The system works best when those are kept separate.
 
+### Onboarding first-task approval
+
+An authenticated run on the server-created `onboarding_first_task` cannot create
+new tasks through native `create_task` or either REST creation route until a
+human accepts its latest ordinary proposal. The gate uses the run's source task,
+so a different parent or a standalone task cannot bypass it. An opening answer,
+agent-only decision, or tool approval does not grant acceptance. A saved plan
+requires acceptance of its current revision. Existing task replay remains valid.
+
+Native completion also requires a saved human decision on the latest proposal.
+Acceptance or refusal permits closure; refusal never permits new task creation.
+Premature completion stays in review, and the decision is checked again while
+committing the final status.
+
 ## 2. Assignee Semantics
 
 An issue has at most one assignee.
