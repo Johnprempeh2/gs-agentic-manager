@@ -41,6 +41,25 @@ function redactText(input: string, values: string[]) {
   );
 }
 
+// A copied preview deliberately lacks the live encryption key. If a stored
+// redaction value cannot be resolved, no free-text field on that run is safe
+// to return: the value might occur anywhere in it. Keep only trusted run
+// identity/state fields so the list stays usable and marks the loss clearly.
+const UNAVAILABLE_RUN_SAFE_FIELDS = new Set([
+  "id", "companyId", "agentId", "status", "invocationSource",
+  "startedAt", "finishedAt", "createdAt", "updatedAt",
+  "logCompressed", "lastOutputSeq", "processLossRetryCount", "continuationAttempt",
+]);
+
+function unavailableRunProjection<T extends { id: string }>(run: T): T {
+  return {
+    ...Object.fromEntries(Object.entries(run).map(([key, value]) => [
+      key, UNAVAILABLE_RUN_SAFE_FIELDS.has(key) ? value : null,
+    ])),
+    secretRedactionState: "unavailable",
+  } as unknown as T;
+}
+
 export function redactRegisteredSecretValues<T>(input: T, values: string[]): T {
   if (typeof input === "string") return redactText(input, values) as T;
   if (Array.isArray(input)) return input.map((value) => redactRegisteredSecretValues(value, values)) as T;
@@ -127,17 +146,26 @@ export function createRunSecretRedactionRegistry(db: Db) {
       // own registry. Do not retain plaintext secrets across requests.
       const resolved = new Map<string, Promise<string>>();
       const valuesByRun = new Map(await Promise.all(rows.map(async (row) => {
-        const values = await Promise.all(registryEntries(row.contextSnapshot).map((entry) => {
-          let value = resolved.get(entry.fingerprintSha256);
-          if (!value) {
-            value = provider.resolveVersion({ material: entry.material, externalRef: null });
-            resolved.set(entry.fingerprintSha256, value);
-          }
-          return value;
-        }));
-        return [row.id, values.sort((a, b) => b.length - a.length)] as const;
+        try {
+          const values = await Promise.all(registryEntries(row.contextSnapshot).map((entry) => {
+            let value = resolved.get(entry.fingerprintSha256);
+            if (!value) {
+              value = provider.resolveVersion({ material: entry.material, externalRef: null });
+              resolved.set(entry.fingerprintSha256, value);
+            }
+            return value;
+          }));
+          return [row.id, values.sort((a, b) => b.length - a.length)] as const;
+        } catch {
+          return [row.id, null] as const;
+        }
       })));
-      return runs.map((run) => redactRegisteredSecretValues(run, valuesByRun.get(run.id) ?? []));
+      return runs.map((run) => {
+        const values = valuesByRun.get(run.id);
+        return values === null
+          ? unavailableRunProjection(run)
+          : redactRegisteredSecretValues(run, values ?? []);
+      });
     },
     redactForRun: async <T>(companyId: string, runId: string, value: T): Promise<T> =>
       redactRegisteredSecretValues(value, await valuesForRun(companyId, runId)),
