@@ -1888,7 +1888,7 @@ async function startOpenCodeProviderProxy(baseUrl: string, key: string, model: s
         const outgoing = (upstreamUrl.protocol === "https:" ? requestHttps : requestHttp)(upstreamUrl, {
           method: "POST",
           agent,
-          headers: { "HTTP-Referer": "https://paperclip.ing", "X-Title": "Paperclip", "Content-Type": "application/json", "Content-Length": body.length, ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+          headers: { "HTTP-Referer": "https://paperclip.ing", "X-Title": "GS Agentic Manager", "Content-Type": "application/json", "Content-Length": body.length, ...(key ? { Authorization: `Bearer ${key}` } : {}) },
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(600_000)]),
         }, resolve);
         outgoing.once("error", reject);
@@ -2064,161 +2064,163 @@ async function startRuntime(input: {
         : {}),
     },
   };
-  await writeFile(
-    join(configHome, "opencode", "opencode.json"),
-    `${JSON.stringify(config, null, 2)}\n`,
-    { mode: 0o600 },
-  );
-  const environment = sanitizedEnvironment(
-    input.options.environment ?? process.env,
-    {
-      HOME: isolatedHome,
-      XDG_CONFIG_HOME: configHome,
-      XDG_DATA_HOME: dataHome,
-      XDG_CACHE_HOME: cacheHome,
-      OPENCODE_DISABLE_PROJECT_CONFIG: "true",
-      OPENCODE_SERVER_USERNAME: username,
-      OPENCODE_SERVER_PASSWORD: password,
-      ...(providerProxy ? { NO_PROXY: [providerEnvironment.no_proxy ?? providerEnvironment.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } : {}),
-    },
-  );
-  const isolateProcessGroup = input.options.isolateProcessGroup ?? true;
-  const stdio: Array<"ignore" | "pipe" | number> = ["ignore", "ignore", "pipe"];
-  if (input.options.commandFd !== undefined) {
-    while (stdio.length <= input.options.commandFd) stdio.push("ignore");
-    stdio[input.options.commandFd] = input.options.commandFd;
-  }
-  input.options.commandLifecycle?.beforeSpawn();
-  const child = spawn(
-    input.options.command ?? "opencode",
-    ["serve", "--hostname", "127.0.0.1", "--port", String(port)],
-    {
-      cwd: input.cwd,
-      env: environment,
-      stdio,
-      detached: globalThis.process.platform !== "win32" && isolateProcessGroup,
-    },
-  );
-  if (child.pid !== undefined) {
-    try {
-      input.options.commandLifecycle?.afterSpawn();
-    } catch (error) {
-      child.kill("SIGKILL");
-      throw error;
-    }
-  }
-  let diagnostics = "";
-  child.stderr?.on("data", (chunk) => {
-    const raw = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-    const redactedDiagnostic = redact(raw.toString("utf8"), [
-      password,
-      upstreamKey,
-      providerProxy?.token,
-    ]);
-    diagnostics = `${diagnostics}${redactedDiagnostic}`.slice(-8_192);
-    const frameId = input.trace?.frame({
-      direction: "provider_stderr",
-      raw,
-      transport: "process_stderr",
-      nativeMethod: "opencode serve stderr",
-    });
-    if (frameId) {
-      input.trace?.interpretation({
-        frameId,
-        stage: "typescript_opencode_process_transport",
-        ruleId: "opencode.stderr",
-        disposition: "operator_only",
-        reason:
-          "OpenCode stderr is retained only in the restricted trace sidecar",
-      });
-    }
-    input.options.onDiagnostic?.(redactedDiagnostic);
-  });
+  let childToCleanup: ChildProcess | undefined;
   try {
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    if (child.pid)
-      await input.options.onSpawn?.({
-        pid: child.pid,
-        processGroupId:
-          globalThis.process.platform === "win32" || !isolateProcessGroup
-            ? null
-            : child.pid,
-        startedAt: new Date().toISOString(),
-      });
-    const baseUrl = `http://127.0.0.1:${port}`;
-    const health = await waitForHealth(
-      baseUrl,
-      authHeader,
-      input.options.fetch ?? globalThis.fetch,
-      child,
-      () => diagnostics,
-      input.trace,
+    await writeFile(
+      join(configHome, "opencode", "opencode.json"),
+      `${JSON.stringify(config, null, 2)}\n`,
+      { mode: 0o600 },
     );
-    const version = text(record(health).version);
-    if (!/^\d+\.\d+\.\d+$/.test(version))
-      throw new Error("OpenCode health response omitted a semantic version");
-    const qualifiedComparison = compareVersion(
-      version,
-      QUALIFIED_OPENCODE_VERSION,
+    const environment = sanitizedEnvironment(
+      input.options.environment ?? process.env,
+      {
+        HOME: isolatedHome,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
+        XDG_CACHE_HOME: cacheHome,
+        OPENCODE_DISABLE_PROJECT_CONFIG: "true",
+        OPENCODE_SERVER_USERNAME: username,
+        OPENCODE_SERVER_PASSWORD: password,
+        ...(providerProxy ? { NO_PROXY: [providerEnvironment.no_proxy ?? providerEnvironment.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } : {}),
+      },
     );
-    if (qualifiedComparison !== 0) {
-      throw new Error(
-        `OpenCode ${version} is not the question-conformance-qualified ${QUALIFIED_OPENCODE_VERSION}`,
-      );
+    const isolateProcessGroup = input.options.isolateProcessGroup ?? true;
+    const stdio: Array<"ignore" | "pipe" | number> = ["ignore", "ignore", "pipe"];
+    if (input.options.commandFd !== undefined) {
+      while (stdio.length <= input.options.commandFd) stdio.push("ignore");
+      stdio[input.options.commandFd] = input.options.commandFd;
     }
-    return {
-      baseUrl,
-      authHeader,
-      version,
-      permissionMode: input.options.permissionMode ?? "allow",
-      process: child,
-      bridge,
-      trace: input.trace,
-      sensitiveValues: [
+    input.options.commandLifecycle?.beforeSpawn();
+    const child = spawn(
+      input.options.command ?? "opencode",
+      ["serve", "--hostname", "127.0.0.1", "--port", String(port)],
+      {
+        cwd: input.cwd,
+        env: environment,
+        stdio,
+        detached: globalThis.process.platform !== "win32" && isolateProcessGroup,
+      },
+    );
+    childToCleanup = child;
+    if (child.pid !== undefined) {
+      try {
+        input.options.commandLifecycle?.afterSpawn();
+      } catch (error) {
+        child.kill("SIGKILL");
+        throw error;
+      }
+    }
+    let diagnostics = "";
+    child.stderr?.on("data", (chunk) => {
+      const raw = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      const redactedDiagnostic = redact(raw.toString("utf8"), [
         password,
         upstreamKey,
         providerProxy?.token,
-      ].filter((value): value is string => Boolean(value)),
-      close: async (closeInput = {}) => {
-        await bridge.close().catch(() => {});
-        await providerProxy?.close();
-        if (child.exitCode === null && child.signalCode === null && child.pid) {
-          try {
-            if (globalThis.process.platform === "win32" || !isolateProcessGroup)
-              child.kill("SIGTERM");
-            else globalThis.process.kill(-child.pid, "SIGTERM");
-          } catch {
-            child.kill("SIGTERM");
-          }
-        }
-        await waitForExit(child, 2_000);
-        if (child.exitCode === null && child.signalCode === null && child.pid) {
-          try {
-            if (globalThis.process.platform === "win32" || !isolateProcessGroup)
-              child.kill("SIGKILL");
-            else globalThis.process.kill(-child.pid, "SIGKILL");
-          } catch {
-            child.kill("SIGKILL");
-          }
-        }
-        await rm(join(configHome, "opencode", "opencode.json"), {
-          force: true,
-        }).catch(() => undefined);
-        await rm(isolatedHome, { recursive: true, force: true }).catch(
-          () => undefined,
+      ]);
+      diagnostics = `${diagnostics}${redactedDiagnostic}`.slice(-8_192);
+      const frameId = input.trace?.frame({
+        direction: "provider_stderr",
+        raw,
+        transport: "process_stderr",
+        nativeMethod: "opencode serve stderr",
+      });
+      if (frameId) {
+        input.trace?.interpretation({
+          frameId,
+          stage: "typescript_opencode_process_transport",
+          ruleId: "opencode.stderr",
+          disposition: "operator_only",
+          reason:
+            "OpenCode stderr is retained only in the restricted trace sidecar",
+        });
+      }
+      input.options.onDiagnostic?.(redactedDiagnostic);
+    });
+      await new Promise<void>((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+      if (child.pid)
+        await input.options.onSpawn?.({
+          pid: child.pid,
+          processGroupId:
+            globalThis.process.platform === "win32" || !isolateProcessGroup
+              ? null
+              : child.pid,
+          startedAt: new Date().toISOString(),
+        });
+      const baseUrl = `http://127.0.0.1:${port}`;
+      const health = await waitForHealth(
+        baseUrl,
+        authHeader,
+        input.options.fetch ?? globalThis.fetch,
+        child,
+        () => diagnostics,
+        input.trace,
+      );
+      const version = text(record(health).version);
+      if (!/^\d+\.\d+\.\d+$/.test(version))
+        throw new Error("OpenCode health response omitted a semantic version");
+      const qualifiedComparison = compareVersion(
+        version,
+        QUALIFIED_OPENCODE_VERSION,
+      );
+      if (qualifiedComparison !== 0) {
+        throw new Error(
+          `OpenCode ${version} is not the question-conformance-qualified ${QUALIFIED_OPENCODE_VERSION}`,
         );
-        if (closeInput.finalizeTrace !== false) {
-          await input.trace?.finish({ reason: closeInput.reason ?? null });
-        }
-      },
-    };
+      }
+      return {
+        baseUrl,
+        authHeader,
+        version,
+        permissionMode: input.options.permissionMode ?? "allow",
+        process: child,
+        bridge,
+        trace: input.trace,
+        sensitiveValues: [
+          password,
+          upstreamKey,
+          providerProxy?.token,
+        ].filter((value): value is string => Boolean(value)),
+        close: async (closeInput = {}) => {
+          await bridge.close().catch(() => {});
+          await providerProxy?.close();
+          if (child.exitCode === null && child.signalCode === null && child.pid) {
+            try {
+              if (globalThis.process.platform === "win32" || !isolateProcessGroup)
+                child.kill("SIGTERM");
+              else globalThis.process.kill(-child.pid, "SIGTERM");
+            } catch {
+              child.kill("SIGTERM");
+            }
+          }
+          await waitForExit(child, 2_000);
+          if (child.exitCode === null && child.signalCode === null && child.pid) {
+            try {
+              if (globalThis.process.platform === "win32" || !isolateProcessGroup)
+                child.kill("SIGKILL");
+              else globalThis.process.kill(-child.pid, "SIGKILL");
+            } catch {
+              child.kill("SIGKILL");
+            }
+          }
+          await rm(join(configHome, "opencode", "opencode.json"), {
+            force: true,
+          }).catch(() => undefined);
+          await rm(isolatedHome, { recursive: true, force: true }).catch(
+            () => undefined,
+          );
+          if (closeInput.finalizeTrace !== false) {
+            await input.trace?.finish({ reason: closeInput.reason ?? null });
+          }
+        },
+      };
   } catch (error) {
     await bridge.close().catch(() => {});
-    await providerProxy?.close();
-    child.kill("SIGKILL");
+    await providerProxy?.close().catch(() => {});
+    childToCleanup?.kill("SIGKILL");
     await rm(join(configHome, "opencode", "opencode.json"), {
       force: true,
     }).catch(() => undefined);

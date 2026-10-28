@@ -9,6 +9,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer as createHttpServer } from "node:http";
 import { join, resolve } from "node:path";
@@ -852,6 +853,39 @@ describe("OpenCodeServerDriver", () => {
       vi.unstubAllEnvs();
       await new Promise<void>(resolve => { upstream.close(() => resolve()); upstream.closeAllConnections(); });
     }
+  });
+
+  it.each(["beforeSpawn", "afterSpawn"])("closes the temporary provider proxy when %s fails", async hook => {
+    await chmod(fixture, 0o755);
+    const root = await mkdtemp(join(tmpdir(), "paperclip-opencode-proxy-failure-"));
+    roots.push(root);
+    let proxyUrl = "";
+    let proxyToken = "";
+    const fail = () => {
+      const config = JSON.parse(readFileSync(join(root, "failed", "config", "opencode", "opencode.json"), "utf8"));
+      proxyUrl = config.provider.openrouter.options.baseURL;
+      proxyToken = config.provider.openrouter.options.apiKey;
+      throw new Error(`${hook} failed`);
+    };
+    const driver = new OpenCodeServerDriver({
+      model: "openrouter/deepseek/deepseek-v4-flash-0731",
+      runtimeDirectory: root,
+      command: fixture,
+      environment: { PATH: process.env.PATH, OPENROUTER_API_KEY: "synthetic-upstream-key" },
+      commandLifecycle: {
+        beforeSpawn: hook === "beforeSpawn" ? fail : () => {},
+        afterSpawn: hook === "afterSpawn" ? fail : () => {},
+      },
+    });
+    await expect(driver.openSession({ runId: "failed", normalizedSessionId: "failed", workingDirectory: root })).rejects.toThrow(`${hook} failed`);
+    expect(proxyUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+    expect(proxyToken).toBeTruthy();
+    await expect(fetch(`${proxyUrl}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${proxyToken}` },
+      body: JSON.stringify({ model: "deepseek/deepseek-v4-flash-0731", messages: [] }),
+    })).rejects.toThrow();
+    await expect(readFile(join(root, "failed", "config", "opencode", "opencode.json"), "utf8")).rejects.toThrow();
   });
 
   it("maps OpenCode's normal abort error to cancellation without a false provider failure notice", async () => {
