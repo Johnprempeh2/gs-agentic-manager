@@ -117,11 +117,13 @@ describe("batched run secret redaction", () => {
       .toEqual([{ id: "a", text: REDACTED_EVENT_VALUE }]);
   });
 
-  it("does not query for an empty list and fails closed on decryption failure", async () => {
+  it("does not query for an empty list and blanks unsafe fields on decryption failure", async () => {
     const { registry, select } = fixture([{ id: "a", contextSnapshot: { paperclipSecretRedactions: [{ fingerprintSha256: "one", material: {} }] } }]);
     expect(await registry.redactForRuns("company", [])).toEqual([]);
     expect(select).not.toHaveBeenCalled();
     resolveVersion.mockRejectedValueOnce(new Error("unavailable"));
-    await expect(registry.redactForRuns("company", [{ id: "a", text: secret }])).rejects.toThrow("unavailable");
+    expect(await registry.redactForRuns("company", [{ id: "a", text: secret }])).toEqual([
+      { id: "a", text: null, secretRedactionState: "unavailable" },
+    ]);
   });
 });

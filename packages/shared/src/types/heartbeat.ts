@@ -155,6 +155,8 @@ export interface GitWorktreeBranchIncoherenceEvidence {
 
 export interface HeartbeatRun {
   execution?: import("./execution-projection.js").ExecutionProjection | null;
+  /** List responses set this when encrypted redaction material is unavailable. Other non-identity fields are null. */
+  secretRedactionState?: "unavailable";
   id: string;
   companyId: string;
   agentId: string;
