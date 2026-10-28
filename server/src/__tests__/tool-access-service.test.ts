@@ -18030,6 +18030,32 @@ describeEmbeddedPostgres("tool access service", () => {
     );
   });
 
+  it("does not restore a removed app profile when an existing install is saved", async () => {
+    const company = await createCompany(db);
+    const agent = await createAgent(db, company.id);
+    const other = await createAgent(db, company.id);
+    const { connection } = await createRemoteToolFixture(db, company.id);
+    const app = createRouteApp(db);
+    const first = { targetType: "agent" as const, targetId: agent.id };
+    const second = { targetType: "agent" as const, targetId: other.id };
+
+    await request(app).put(`/api/tool-connections/${connection.id}/installs`).send({ installs: [first] }).expect(200);
+    const [profile] = await db.select().from(toolProfiles).where(eq(toolProfiles.profileKey, `app:${connection.id}`));
+    expect(profile).toBeDefined();
+    await db.delete(toolProfileBindings).where(and(
+      eq(toolProfileBindings.profileId, profile!.id),
+      eq(toolProfileBindings.targetType, "agent"),
+      eq(toolProfileBindings.targetId, agent.id),
+    ));
+
+    await request(app).put(`/api/tool-connections/${connection.id}/installs`).send({ installs: [first] }).expect(200);
+    await request(app).put(`/api/tool-connections/${connection.id}/installs`).send({ installs: [first, second] }).expect(200);
+    const bindings = await db.select().from(toolProfileBindings).where(eq(toolProfileBindings.profileId, profile!.id));
+    expect(bindings.map((binding) => binding.targetId)).toEqual([other.id]);
+    const extensions = await db.select().from(activityLog).where(eq(activityLog.action, "tool_connection.install_access_extended"));
+    expect(extensions).toHaveLength(2);
+  });
+
   it("limits connection configuration to the creator or a manager with role defaults", async () => {
     const company = await createCompany(db);
     const creator = boardSessionActor(

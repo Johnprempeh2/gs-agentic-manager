@@ -326,6 +326,10 @@ IDs to an auditable profile, and leaves **Ask first** available for any action.
 The open default changes the initial policy; it does not create a route around a
 policy the operator has applied.
 
+Saving an installation list grants the app profile only to newly added targets.
+An existing target keeps its saved profile assignments, including a removed
+app profile. Removing and reinstalling a target applies the current defaults.
+
 If a destructive provider cannot be safe with those defaults, add a narrowly
 reviewed provider policy with tests. Do not hide a dangerous tool by
 misclassifying it as read, and do not silently change global defaults in a
