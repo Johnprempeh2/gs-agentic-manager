@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Db } from "@greatstone/db";
 import { REDACTED_EVENT_VALUE } from "../../server/src/redaction.js";
 import { createRunSecretRedactionRegistry } from "../../server/src/services/run-secret-redaction.js";
 
@@ -21,7 +20,7 @@ describe("GRE-3062: copied-data preview with a different secrets key", () => {
     ];
     const db = {
       select: () => ({ from: () => ({ where: async () => rows }) }),
-    } as unknown as Db;
+    } as unknown as Parameters<typeof createRunSecretRedactionRegistry>[0];
     const runs = [
       { id: "copied", companyId: "company", agentId: "agent", status: "failed", startedAt: new Date("2026-10-28T06:00:00Z"), error: "copied-with-live-key", contextSnapshot: { issueId: "issue", paperclipSecretRedactions: [{ material: "ciphertext" }] } },
       { id: "readable", companyId: "company", agentId: "agent", status: "succeeded", startedAt: new Date("2026-10-28T06:01:00Z"), error: "preview-secret", contextSnapshot: { issueId: "issue" } },
