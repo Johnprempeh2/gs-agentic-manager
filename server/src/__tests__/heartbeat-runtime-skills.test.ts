@@ -9,6 +9,7 @@ import {
   companies,
   companySkills,
   createDb,
+  heartbeatRuns,
   toolApplications,
   toolConnectionInstalls,
   toolConnections,
@@ -22,6 +23,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { drainHeartbeatRunsToQuiescence } from "./helpers/drain-heartbeat-runs.js";
 import { companySkillService } from "../services/company-skills.ts";
 import { heartbeatService } from "../services/heartbeat.ts";
 import { instanceSettingsService } from "../services/instance-settings.ts";
@@ -112,8 +114,11 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
   });
 
   afterEach(async () => {
+    await drainHeartbeatRunsToQuiescence(db, heartbeatService(db));
+    const runStatuses = await db.select({ status: heartbeatRuns.status }).from(heartbeatRuns);
+    expect(runStatuses.filter((run) => run.status === "queued" || run.status === "running"))
+      .toEqual([]);
     capturedRuns.length = 0;
-    await new Promise((resolve) => setTimeout(resolve, 100));
     await db.execute(sql.raw(`
       TRUNCATE TABLE
         "activity_log",
@@ -134,6 +139,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
   });
 
   afterAll(async () => {
+    if (db) await drainHeartbeatRunsToQuiescence(db, heartbeatService(db));
     unregisterServerAdapter(TEST_ADAPTER_TYPE);
     if (oldPaperclipHome === undefined) delete process.env.GSAM_HOME;
     else process.env.GSAM_HOME = oldPaperclipHome;
