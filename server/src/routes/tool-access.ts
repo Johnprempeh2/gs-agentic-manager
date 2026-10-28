@@ -86,6 +86,7 @@ import { connectionIntentDeliveryService } from "../services/connection-intent-d
 import { connectionAgentCheckService } from "../services/connection-agent-check.js";
 import { logger } from "../middleware/logger.js";
 import type { heartbeatService } from "../services/heartbeat.js";
+import { delegatedToolConnectionRoutes } from "./delegated-tool-connections.js";
 
 const COMPANY_INSTALL_DENIAL_REASON =
   "Only someone who can configure this connection can choose this.";
@@ -250,6 +251,7 @@ export function toolAccessRoutes(
   const svc = toolAccessService(db, options);
   const policySvc = toolAccessPolicyService(db);
   const connectionIntents = connectionIntentService(db);
+  router.use(delegatedToolConnectionRoutes(db, svc));
 
   async function isConnectionIntent(interactionId: string | null | undefined) {
     if (!interactionId) return false;

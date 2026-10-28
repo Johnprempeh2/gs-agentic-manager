@@ -1673,6 +1673,24 @@ harness/model routing and fails closed without ambient credential fallback.
 Legacy agents retain their authentication until validated adoption. See
 [AI Connections](connections/AI-CONNECTIONS.md) for company isolation, compatible
 methods, lifecycle, runtime enforcement, and migration details.
+
+### Delegated personal tool setup
+
+An agent may save a credential-free remote MCP draft only during its current
+standard assigned run. The agent needs an explicit `tools:manage_connections`
+grant. Its responsible user must be active in the same company and hold current
+connection-management authority, even when the general responsible-user check
+runs in shadow mode. The initial agent API accepts only a fixed HTTPS `/mcp`
+endpoint for a supported remote MCP gallery method; the user finishes OAuth or
+credential entry in the existing Apps UI. Agents can read credential-free
+metadata, rename an owned or personally granted tool connection, request a
+human reconnect, and install it on one named agent when both principals may
+configure that agent. The agent API cannot create an organization grant, add a
+company install, rotate credentials, edit policy, or call spending/sending tests.
+Grant scopes for this permission match `connectionId`, `provider`, `purpose`,
+`operation`, and `targetAgentId`; unknown keys fail closed. A draft creation is
+checked before it has an ID and checked again against its saved ID. Existing
+board connection routes keep their current behavior.
 ### Experimental task-bound email
 
 AgentMail channel connections extend the experimental conversation/task pipeline

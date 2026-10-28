@@ -274,6 +274,10 @@ type ActorInfo = {
   actorType?: "agent" | "user" | "system" | "plugin";
   actorId?: string | null;
   sessionId?: string | null;
+  /** Current same-company human for an authorized delegated setup. */
+  responsibleUserId?: string | null;
+  /** Refresh the agent's authority after setup discovery, before persistence. */
+  reauthorize?: (retainedConnectionId?: string) => Promise<void>;
   actorSource?:
     | "local_implicit"
     | "session"
@@ -282,6 +286,12 @@ type ActorInfo = {
     | "agent_jwt"
     | "cloud_tenant";
 };
+
+function connectionActorUserId(actor?: ActorInfo): string | null {
+  if (actor?.actorType === "user") return actor.actorId ?? null;
+  if (actor?.actorType === "agent") return actor.responsibleUserId ?? null;
+  return null;
+}
 
 const ACTIVE_BROKER_RUN_STATUSES = new Set(["running"]);
 const REMOTE_HTTP_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -12751,12 +12761,7 @@ export function toolAccessService(
     // "Just me" needs a named board user to own the consent. An agent actor
     // cannot hold a personal identity, and silently falling back to a shared
     // credential is exactly the mis-scoping the design forbids, so refuse.
-    const personalIdentityUserId =
-      requestedGrantKind === "user"
-        ? actor?.actorType === "user" && actor.actorId
-          ? actor.actorId
-          : null
-        : null;
+    const personalIdentityUserId = requestedGrantKind === "user" ? connectionActorUserId(actor) : null;
     if (requestedGrantKind === "user" && !personalIdentityUserId) {
       throw badRequest(
         "Connecting an app as yourself requires a signed-in user",
@@ -12961,6 +12966,7 @@ export function toolAccessService(
       const safeApplicationDescription =
         galleryEntry?.description ??
         `Connected app at ${remoteUrlCredential?.publicUrl ?? input.link}`;
+      await actor?.reauthorize?.(retainedConnection?.id);
       if (existingApplication) {
         if (existingApplication.status !== "active") {
           [applicationRow] = await db
@@ -13090,8 +13096,7 @@ export function toolAccessService(
             credentialPolicy,
             createdByAgentId:
               actor?.actorType === "agent" ? (actor.actorId ?? null) : null,
-            createdByUserId:
-              actor?.actorType === "user" ? (actor.actorId ?? null) : null,
+            createdByUserId: connectionActorUserId(actor),
           })
           .returning();
       }
@@ -18517,6 +18522,7 @@ export function toolAccessService(
       connectionId: string,
       input: PutToolConnectionInstalls,
       actor?: ActorInfo,
+      options?: { additionsOnly?: boolean },
     ): Promise<ToolConnectionInstallSnapshot> => {
       const connection = await getConnectionRow(connectionId);
       const requested = new Map(
@@ -18554,6 +18560,9 @@ export function toolAccessService(
               eq(toolConnectionInstalls.connectionId, connection.id),
             ),
           );
+        if (options?.additionsOnly) {
+          for (const install of existing) requested.set(`${install.targetType}:${install.targetId}`, install);
+        }
         const existingKeys = new Set(
           existing.map(
             (install) => `${install.targetType}:${install.targetId}`,
@@ -18625,7 +18634,7 @@ export function toolAccessService(
         }
         if (requested.size > 0 && connection.connectionPurpose !== "ai") {
           const profile = await appProfileForConnection(tx, connection);
-          for (const install of requested.values()) {
+          for (const install of options?.additionsOnly ? additions : requested.values()) {
             const [binding] = await tx
               .insert(toolProfileBindings)
               .values({
