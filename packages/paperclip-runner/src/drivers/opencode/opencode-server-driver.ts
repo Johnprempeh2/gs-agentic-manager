@@ -10,6 +10,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
+import { Agent as HttpAgent, createServer as createHttpServer, request as requestHttp, type IncomingMessage } from "node:http";
+import { Agent as HttpsAgent, request as requestHttps } from "node:https";
+import { getCACertificates } from "node:tls";
+import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -1826,6 +1830,111 @@ class OpenCodeHarnessSession implements HarnessSession {
   }
 }
 
+/** Retain the reusable gateway key in the runner; the harness gets a session-scoped capability. */
+async function startOpenCodeProviderProxy(baseUrl: string, key: string, model: string, environment: NodeJS.ProcessEnv) {
+  const upstreamUrl = new URL(`${baseUrl.replace(/\/+$/, "")}/chat/completions`);
+  const token = randomBytes(32).toString("base64url");
+  // Agent-local settings keep one runtime's transport configuration out of other sessions.
+  const proxyEnv = {
+    HTTP_PROXY: environment.http_proxy ?? environment.HTTP_PROXY ?? environment.all_proxy ?? environment.ALL_PROXY,
+    HTTPS_PROXY: environment.https_proxy ?? environment.HTTPS_PROXY ?? environment.http_proxy ?? environment.HTTP_PROXY ?? environment.all_proxy ?? environment.ALL_PROXY,
+    NO_PROXY: environment.no_proxy ?? environment.NO_PROXY,
+  };
+  const ca = [...getCACertificates("default")];
+  if (environment.SSL_CERT_FILE) ca.push(await readFile(environment.SSL_CERT_FILE, "utf8"));
+  if (environment.SSL_CERT_DIR) {
+    for (const entry of await readdir(environment.SSL_CERT_DIR, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        const certificate = await readFile(join(environment.SSL_CERT_DIR, entry.name), "utf8");
+        if (certificate.includes("-----BEGIN CERTIFICATE-----")) ca.push(certificate);
+      }
+    }
+  }
+  const agent = upstreamUrl.protocol === "https:" ? new HttpsAgent({ proxyEnv, ca }) : new HttpAgent({ proxyEnv });
+  const controllers = new Set<AbortController>();
+  const server = createHttpServer((request, response) => {
+    const controller = new AbortController();
+    controllers.add(controller);
+    response.once("close", () => controller.abort());
+    void (async () => {
+      if (request.headers.authorization !== `Bearer ${token}`) {
+        response.writeHead(401).end();
+        return;
+      }
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        response.writeHead(404).end();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      for await (const chunk of request) {
+        bytes += chunk.length;
+        if (bytes > 16 * 1024 * 1024) {
+          response.writeHead(413).end();
+          return;
+        }
+        chunks.push(Buffer.from(chunk));
+      }
+      const body = Buffer.concat(chunks);
+      let payload: Record<string, unknown>;
+      try { payload = JSON.parse(body.toString("utf8")); }
+      catch { response.writeHead(400).end(); return; }
+      if (!payload || typeof payload !== "object" || payload.model !== model ||
+        ["models", "route", "plugins", "transforms"].some(field => Object.hasOwn(payload, field))) {
+        response.writeHead(400).end();
+        return;
+      }
+      const upstream = await new Promise<IncomingMessage>((resolve, reject) => {
+        const outgoing = (upstreamUrl.protocol === "https:" ? requestHttps : requestHttp)(upstreamUrl, {
+          method: "POST",
+          agent,
+          headers: { "HTTP-Referer": "https://paperclip.ing", "X-Title": "GS Agentic Manager", "Content-Type": "application/json", "Content-Length": body.length, ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(600_000)]),
+        }, resolve);
+        outgoing.once("error", reject);
+        outgoing.end(body);
+      });
+      // Never forward authentication to a redirect destination.
+      const status = upstream.statusCode ?? 502;
+      if (status >= 300 && status < 400) {
+        upstream.destroy();
+        throw new Error("Provider redirects are not supported");
+      }
+      const headers: Record<string, string> = {};
+      for (const name of ["content-type", "content-encoding", "cache-control", "retry-after"]) {
+        const value = upstream.headers[name];
+        if (typeof value === "string") headers[name] = value;
+      }
+      response.writeHead(status, headers);
+      await pipeline(upstream, response);
+    })().catch(() => {
+      if (!response.headersSent) response.writeHead(502).end("Provider request failed");
+      else response.destroy();
+    }).finally(() => controllers.delete(controller));
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+  } catch (error) { agent.destroy(); throw error; }
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    agent.destroy();
+    throw new Error("Could not bind OpenCode provider proxy");
+  }
+  return {
+    baseURL: `http://127.0.0.1:${address.port}/v1`,
+    token,
+    close: async () => {
+      for (const controller of controllers) controller.abort();
+      agent.destroy();
+      await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
+    },
+  };
+}
+
 async function startRuntime(input: {
   options: OpenCodeServerDriverOptions;
   root: string;
@@ -1879,17 +1988,27 @@ async function startRuntime(input: {
   const assignedMcp = nativeMcpLaunchBinding(
     input.options.environment ?? process.env,
   );
+  const providerEnvironment = input.options.environment ?? process.env;
+  const upstreamKey = providerEnvironment.OPENROUTER_API_KEY;
   input.trace?.addSensitiveValues([
     password,
     authHeader,
     bridge.secret,
     assignedMcp?.token,
-    input.options.environment?.OPENROUTER_API_KEY,
+    upstreamKey,
   ]);
   const instructionRoot =
     input.options.runtimeContext?.instructions.bundle.rootPath;
   const [modelProvider, ...modelIdParts] = input.options.model.split("/");
   const providerModelId = modelIdParts.join("/");
+  const providerProxy = modelProvider === "openrouter"
+    ? await startOpenCodeProviderProxy("https://openrouter.ai/api/v1", upstreamKey ?? "", providerModelId, providerEnvironment).catch(async error => {
+        await bridge.close().catch(() => {});
+        await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
+        throw error;
+      })
+    : null;
+  input.trace?.addSensitiveValues([providerProxy?.token]);
   const config = {
     $schema: "https://opencode.ai/config.json",
     model: input.options.model,
@@ -1904,6 +2023,7 @@ async function startRuntime(input: {
     // provider instead of silently falling back or rejecting a newer model.
     provider: {
       [modelProvider!]: {
+        ...(providerProxy ? { npm: "@ai-sdk/openai-compatible", name: "OpenRouter", options: { baseURL: providerProxy.baseURL, apiKey: providerProxy.token } } : {}),
         models: {
           [providerModelId]: { name: providerModelId },
         },
@@ -1944,156 +2064,163 @@ async function startRuntime(input: {
         : {}),
     },
   };
-  await writeFile(
-    join(configHome, "opencode", "opencode.json"),
-    `${JSON.stringify(config, null, 2)}\n`,
-    { mode: 0o600 },
-  );
-  const environment = sanitizedEnvironment(
-    input.options.environment ?? process.env,
-    {
-      HOME: isolatedHome,
-      XDG_CONFIG_HOME: configHome,
-      XDG_DATA_HOME: dataHome,
-      XDG_CACHE_HOME: cacheHome,
-      OPENCODE_DISABLE_PROJECT_CONFIG: "true",
-      OPENCODE_SERVER_USERNAME: username,
-      OPENCODE_SERVER_PASSWORD: password,
-    },
-  );
-  const isolateProcessGroup = input.options.isolateProcessGroup ?? true;
-  const stdio: Array<"ignore" | "pipe" | number> = ["ignore", "ignore", "pipe"];
-  if (input.options.commandFd !== undefined) {
-    while (stdio.length <= input.options.commandFd) stdio.push("ignore");
-    stdio[input.options.commandFd] = input.options.commandFd;
-  }
-  input.options.commandLifecycle?.beforeSpawn();
-  const child = spawn(
-    input.options.command ?? "opencode",
-    ["serve", "--hostname", "127.0.0.1", "--port", String(port)],
-    {
-      cwd: input.cwd,
-      env: environment,
-      stdio,
-      detached: globalThis.process.platform !== "win32" && isolateProcessGroup,
-    },
-  );
-  if (child.pid !== undefined) {
-    try {
-      input.options.commandLifecycle?.afterSpawn();
-    } catch (error) {
-      child.kill("SIGKILL");
-      throw error;
-    }
-  }
-  let diagnostics = "";
-  child.stderr?.on("data", (chunk) => {
-    const raw = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-    const redactedDiagnostic = redact(raw.toString("utf8"), [
-      password,
-      input.options.environment?.OPENROUTER_API_KEY,
-    ]);
-    diagnostics = `${diagnostics}${redactedDiagnostic}`.slice(-8_192);
-    const frameId = input.trace?.frame({
-      direction: "provider_stderr",
-      raw,
-      transport: "process_stderr",
-      nativeMethod: "opencode serve stderr",
-    });
-    if (frameId) {
-      input.trace?.interpretation({
-        frameId,
-        stage: "typescript_opencode_process_transport",
-        ruleId: "opencode.stderr",
-        disposition: "operator_only",
-        reason:
-          "OpenCode stderr is retained only in the restricted trace sidecar",
-      });
-    }
-    input.options.onDiagnostic?.(redactedDiagnostic);
-  });
+  let childToCleanup: ChildProcess | undefined;
   try {
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    if (child.pid)
-      await input.options.onSpawn?.({
-        pid: child.pid,
-        processGroupId:
-          globalThis.process.platform === "win32" || !isolateProcessGroup
-            ? null
-            : child.pid,
-        startedAt: new Date().toISOString(),
-      });
-    const baseUrl = `http://127.0.0.1:${port}`;
-    const health = await waitForHealth(
-      baseUrl,
-      authHeader,
-      input.options.fetch ?? globalThis.fetch,
-      child,
-      () => diagnostics,
-      input.trace,
+    await writeFile(
+      join(configHome, "opencode", "opencode.json"),
+      `${JSON.stringify(config, null, 2)}\n`,
+      { mode: 0o600 },
     );
-    const version = text(record(health).version);
-    if (!/^\d+\.\d+\.\d+$/.test(version))
-      throw new Error("OpenCode health response omitted a semantic version");
-    const qualifiedComparison = compareVersion(
-      version,
-      QUALIFIED_OPENCODE_VERSION,
-    );
-    if (qualifiedComparison !== 0) {
-      throw new Error(
-        `OpenCode ${version} is not the question-conformance-qualified ${QUALIFIED_OPENCODE_VERSION}`,
-      );
-    }
-    return {
-      baseUrl,
-      authHeader,
-      version,
-      permissionMode: input.options.permissionMode ?? "allow",
-      process: child,
-      bridge,
-      trace: input.trace,
-      sensitiveValues: [
-        password,
-        input.options.environment?.OPENROUTER_API_KEY,
-      ].filter((value): value is string => Boolean(value)),
-      close: async (closeInput = {}) => {
-        await bridge.close().catch(() => {});
-        if (child.exitCode === null && child.signalCode === null && child.pid) {
-          try {
-            if (globalThis.process.platform === "win32" || !isolateProcessGroup)
-              child.kill("SIGTERM");
-            else globalThis.process.kill(-child.pid, "SIGTERM");
-          } catch {
-            child.kill("SIGTERM");
-          }
-        }
-        await waitForExit(child, 2_000);
-        if (child.exitCode === null && child.signalCode === null && child.pid) {
-          try {
-            if (globalThis.process.platform === "win32" || !isolateProcessGroup)
-              child.kill("SIGKILL");
-            else globalThis.process.kill(-child.pid, "SIGKILL");
-          } catch {
-            child.kill("SIGKILL");
-          }
-        }
-        await rm(join(configHome, "opencode", "opencode.json"), {
-          force: true,
-        }).catch(() => undefined);
-        await rm(isolatedHome, { recursive: true, force: true }).catch(
-          () => undefined,
-        );
-        if (closeInput.finalizeTrace !== false) {
-          await input.trace?.finish({ reason: closeInput.reason ?? null });
-        }
+    const environment = sanitizedEnvironment(
+      input.options.environment ?? process.env,
+      {
+        HOME: isolatedHome,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
+        XDG_CACHE_HOME: cacheHome,
+        OPENCODE_DISABLE_PROJECT_CONFIG: "true",
+        OPENCODE_SERVER_USERNAME: username,
+        OPENCODE_SERVER_PASSWORD: password,
+        ...(providerProxy ? { NO_PROXY: [providerEnvironment.no_proxy ?? providerEnvironment.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } : {}),
       },
-    };
+    );
+    const isolateProcessGroup = input.options.isolateProcessGroup ?? true;
+    const stdio: Array<"ignore" | "pipe" | number> = ["ignore", "ignore", "pipe"];
+    if (input.options.commandFd !== undefined) {
+      while (stdio.length <= input.options.commandFd) stdio.push("ignore");
+      stdio[input.options.commandFd] = input.options.commandFd;
+    }
+    input.options.commandLifecycle?.beforeSpawn();
+    const child = spawn(
+      input.options.command ?? "opencode",
+      ["serve", "--hostname", "127.0.0.1", "--port", String(port)],
+      {
+        cwd: input.cwd,
+        env: environment,
+        stdio,
+        detached: globalThis.process.platform !== "win32" && isolateProcessGroup,
+      },
+    );
+    childToCleanup = child;
+    if (child.pid !== undefined) {
+      try {
+        input.options.commandLifecycle?.afterSpawn();
+      } catch (error) {
+        child.kill("SIGKILL");
+        throw error;
+      }
+    }
+    let diagnostics = "";
+    child.stderr?.on("data", (chunk) => {
+      const raw = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      const redactedDiagnostic = redact(raw.toString("utf8"), [
+        password,
+        upstreamKey,
+        providerProxy?.token,
+      ]);
+      diagnostics = `${diagnostics}${redactedDiagnostic}`.slice(-8_192);
+      const frameId = input.trace?.frame({
+        direction: "provider_stderr",
+        raw,
+        transport: "process_stderr",
+        nativeMethod: "opencode serve stderr",
+      });
+      if (frameId) {
+        input.trace?.interpretation({
+          frameId,
+          stage: "typescript_opencode_process_transport",
+          ruleId: "opencode.stderr",
+          disposition: "operator_only",
+          reason:
+            "OpenCode stderr is retained only in the restricted trace sidecar",
+        });
+      }
+      input.options.onDiagnostic?.(redactedDiagnostic);
+    });
+      await new Promise<void>((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+      if (child.pid)
+        await input.options.onSpawn?.({
+          pid: child.pid,
+          processGroupId:
+            globalThis.process.platform === "win32" || !isolateProcessGroup
+              ? null
+              : child.pid,
+          startedAt: new Date().toISOString(),
+        });
+      const baseUrl = `http://127.0.0.1:${port}`;
+      const health = await waitForHealth(
+        baseUrl,
+        authHeader,
+        input.options.fetch ?? globalThis.fetch,
+        child,
+        () => diagnostics,
+        input.trace,
+      );
+      const version = text(record(health).version);
+      if (!/^\d+\.\d+\.\d+$/.test(version))
+        throw new Error("OpenCode health response omitted a semantic version");
+      const qualifiedComparison = compareVersion(
+        version,
+        QUALIFIED_OPENCODE_VERSION,
+      );
+      if (qualifiedComparison !== 0) {
+        throw new Error(
+          `OpenCode ${version} is not the question-conformance-qualified ${QUALIFIED_OPENCODE_VERSION}`,
+        );
+      }
+      return {
+        baseUrl,
+        authHeader,
+        version,
+        permissionMode: input.options.permissionMode ?? "allow",
+        process: child,
+        bridge,
+        trace: input.trace,
+        sensitiveValues: [
+          password,
+          upstreamKey,
+          providerProxy?.token,
+        ].filter((value): value is string => Boolean(value)),
+        close: async (closeInput = {}) => {
+          await bridge.close().catch(() => {});
+          await providerProxy?.close();
+          if (child.exitCode === null && child.signalCode === null && child.pid) {
+            try {
+              if (globalThis.process.platform === "win32" || !isolateProcessGroup)
+                child.kill("SIGTERM");
+              else globalThis.process.kill(-child.pid, "SIGTERM");
+            } catch {
+              child.kill("SIGTERM");
+            }
+          }
+          await waitForExit(child, 2_000);
+          if (child.exitCode === null && child.signalCode === null && child.pid) {
+            try {
+              if (globalThis.process.platform === "win32" || !isolateProcessGroup)
+                child.kill("SIGKILL");
+              else globalThis.process.kill(-child.pid, "SIGKILL");
+            } catch {
+              child.kill("SIGKILL");
+            }
+          }
+          await rm(join(configHome, "opencode", "opencode.json"), {
+            force: true,
+          }).catch(() => undefined);
+          await rm(isolatedHome, { recursive: true, force: true }).catch(
+            () => undefined,
+          );
+          if (closeInput.finalizeTrace !== false) {
+            await input.trace?.finish({ reason: closeInput.reason ?? null });
+          }
+        },
+      };
   } catch (error) {
     await bridge.close().catch(() => {});
-    child.kill("SIGKILL");
+    await providerProxy?.close().catch(() => {});
+    childToCleanup?.kill("SIGKILL");
     await rm(join(configHome, "opencode", "opencode.json"), {
       force: true,
     }).catch(() => undefined);
@@ -2469,7 +2596,6 @@ function sanitizedEnvironment(
     "ALL_PROXY",
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
-    "OPENROUTER_API_KEY",
   ];
   const result: NodeJS.ProcessEnv = {};
   for (const key of allowed)
@@ -2490,7 +2616,6 @@ function sanitizedEnvironmentKeys(): string[] {
     "ALL_PROXY",
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
-    "OPENROUTER_API_KEY",
   ];
 }
 
