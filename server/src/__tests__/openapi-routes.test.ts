@@ -138,6 +138,7 @@ const apiPrefixes: Record<string, string> = {
   "status-cards.ts": "/api",
   "teams-catalog.ts": "/api",
   "tool-access.ts": "/api",
+  "delegated-tool-connections.ts": "/api",
   "tool-gateway.ts": "/api",
   "user-profiles.ts": "/api",
 };
@@ -347,6 +348,23 @@ function loadSpecRoutes() {
 }
 
 describe("openapi routes", () => {
+  it("documents delegated personal tool connection routes as assigned agent runs", () => {
+    const { spec } = loadSpecRoutes();
+    const operations = [
+      ["post", "/api/agents/me/tool-connections"],
+      ["get", "/api/agents/me/tool-connections/{connectionId}"],
+      ["patch", "/api/agents/me/tool-connections/{connectionId}"],
+      ["post", "/api/agents/me/tool-connections/{connectionId}/reconnect"],
+      ["post", "/api/agents/me/tool-connections/{connectionId}/installs/{targetAgentId}"],
+    ] as const;
+    for (const [method, path] of operations) {
+      const operation = spec.paths[path]?.[method];
+      expect(operation, `${method.toUpperCase()} ${path} is documented`).toBeDefined();
+      expect(operation.security, `${method.toUpperCase()} ${path} requires an agent run`).toEqual([{ AgentRunAuth: [] }]);
+      expect(operation["x-paperclip-authorization"]).toEqual({ actor: "agent", heartbeatBound: true, taskBound: true });
+    }
+  });
+
   it("documents the stalled review decision as board only", () => {
     const { spec } = loadSpecRoutes();
     const operation = spec.paths["/api/issues/{id}/stalled-review-decision"].post;

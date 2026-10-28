@@ -481,6 +481,20 @@ export const connectToolAppSchema = z.object({
 
 export type ConnectToolApp = z.infer<typeof connectToolAppSchema>;
 
+/** Agent setup accepts only credential-free remote MCP drafts. */
+export const delegatedToolConnectionCreateSchema = z.object({
+  galleryKey: z.string().trim().min(1).max(120),
+  connectionMethodKey: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(160).optional(),
+  link: z.url().max(2000),
+}).strict();
+export type DelegatedToolConnectionCreate = z.infer<typeof delegatedToolConnectionCreateSchema>;
+
+export const delegatedToolConnectionConfigureSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+}).strict();
+export type DelegatedToolConnectionConfigure = z.infer<typeof delegatedToolConnectionConfigureSchema>;
+
 export const reconnectToolAppSchema = z.object({
   credentialValues: z.record(z.string().trim().min(1).max(200), z.string().min(1)),
 });

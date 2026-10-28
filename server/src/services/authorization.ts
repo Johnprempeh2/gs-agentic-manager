@@ -402,10 +402,39 @@ async function scopeAllows(
   companyId: string,
   grantScope: Record<string, unknown> | null,
   requestedScope: Record<string, unknown> | null | undefined,
-  options: { requireStructuredScope?: boolean } = {},
+  options: { requireStructuredScope?: boolean; connectionManagement?: boolean } = {},
 ) {
+  if (options.connectionManagement && grantScope !== null && !isPlainRecord(grantScope)) return false;
   if (!grantScope || Object.keys(grantScope).length === 0) return !options.requireStructuredScope;
   if (!requestedScope) return false;
+
+  if (options.connectionManagement) {
+    const selectors: Record<string, string[]> = {
+      connectionId: ["connectionId", "connectionIds"],
+      provider: ["provider", "providers"],
+      purpose: ["purpose", "purposes"],
+      operation: ["operation", "operations"],
+      targetAgentId: ["targetAgentId", "targetAgentIds"],
+    };
+    const known = new Set(Object.values(selectors).flat());
+    // Management grants are security boundaries. Unknown or malformed keys
+    // cannot silently turn a narrow grant into an unscoped one.
+    if (Object.keys(grantScope).some((key) => !known.has(key))) return false;
+    for (const [selector, keys] of Object.entries(selectors)) {
+      const requested = requestedScope[selector];
+      for (const key of keys) {
+        if (!Object.hasOwn(grantScope, key)) continue;
+        const value = grantScope[key];
+        const valid = key === selector
+          ? typeof value === "string" && value.trim().length > 0 && value.trim() === requested
+          : Array.isArray(value) && value.length > 0 && value.every((entry) =>
+            typeof entry === "string" && entry.trim().length > 0
+          ) && value.some((entry) => entry.trim() === requested);
+        if (!valid) return false;
+      }
+    }
+    return true;
+  }
 
   const targetAssigneeAgentId =
     typeof requestedScope.assigneeAgentId === "string"
@@ -781,6 +810,7 @@ export function authorizationService(db: Db | DbTransaction) {
     if (
       !(await scopeAllows(db, input.companyId, grant.scope, input.scope, {
         requireStructuredScope: input.permissionKey === "tasks:assign_scope",
+        connectionManagement: input.permissionKey === "tools:manage_connections",
       }))
     ) {
       return deny({
