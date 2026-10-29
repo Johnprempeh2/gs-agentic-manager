@@ -3,7 +3,7 @@
 import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { captureR1Snapshot, calculateR1 } from "./r1-snapshot.mjs";
+import { captureR1Snapshot, summariseR1 } from "./r1-snapshot.mjs";
 
 const args = process.argv.slice(2);
 const value = (flag) => {
@@ -13,6 +13,8 @@ const value = (flag) => {
 };
 const databaseUrl = value("--database-url");
 const companyId = value("--company");
+const sourceRef = value("--source-ref");
+const sourceCapturedAt = value("--source-captured-at");
 const out = resolve(value("--out"));
 const parsed = new URL(databaseUrl);
 if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(parsed.hostname)) {
@@ -24,12 +26,13 @@ const root = resolve(import.meta.dirname, "../../..");
 const postgres = createRequire(resolve(root, "packages/db/package.json"))("postgres");
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 try {
-  const snapshot = await sql.begin("isolation level repeatable read read only", (tx) => captureR1Snapshot(tx, companyId));
-  const r1 = calculateR1(snapshot, companyId);
-  const result = { schema: "gsam.r1-snapshot/v1", companyId, snapshotAt: new Date(snapshot.snapshotAt).toISOString(), windowDays: 7, r1, snapshot };
+  const result = await sql.begin("isolation level repeatable read read only", async (tx) => {
+    const snapshot = await captureR1Snapshot(tx, companyId, { sourceCapturedAt });
+    return summariseR1(snapshot, companyId, sourceRef);
+  });
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-  console.log(`R1 weekly=${r1.weekly}; total=${r1.total}; snapshotAt=${result.snapshotAt}; saved ${out}`);
+  console.log(`R1 weekly=${result.weekly}; total=${result.total}; sourceCapturedAt=${result.sourceCapturedAt}; saved ${out}`);
 } finally {
   await sql.end();
 }
