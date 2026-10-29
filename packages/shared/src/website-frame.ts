@@ -598,8 +598,10 @@ export type WebsiteFrameSetMotionResult = z.infer<typeof websiteFrameSetMotionRe
  * - `layout` (contract 2): the whole editor (`on: true`) or Edit copy (`on: false`).
  * - `import-live` (contract 2): put the page's live content in the empty draft,
  *   with its block ids, and save it (a normal `save`).
+ * - `viewport` (optional capability): change only the page canvas width; null fills
+ *   the available editor space. It changes no content and never saves.
  */
-export const WEBSITE_EDITOR_COMMANDS = ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"] as const;
+export const WEBSITE_EDITOR_COMMANDS = ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live", "viewport"] as const;
 export type WebsiteEditorCommand = (typeof WEBSITE_EDITOR_COMMANDS)[number];
 
 export function isWebsiteEditorCommand(value: unknown): value is WebsiteEditorCommand {
@@ -607,8 +609,9 @@ export function isWebsiteEditorCommand(value: unknown): value is WebsiteEditorCo
 }
 
 export const websiteFrameEditorCommandSchema = z
-  .object({ command: z.enum(WEBSITE_EDITOR_COMMANDS), on: z.boolean().optional() })
-  .strict();
+  .object({ command: z.enum(WEBSITE_EDITOR_COMMANDS), on: z.boolean().optional(), width: z.union([z.literal(390), z.literal(768), z.literal(1440), z.null()]).optional() })
+  .strict()
+  .refine((value) => value.command === "viewport" ? value.width !== undefined && value.on === undefined : value.width === undefined);
 export type WebsiteFrameEditorCommand = z.infer<typeof websiteFrameEditorCommandSchema>;
 
 /**
