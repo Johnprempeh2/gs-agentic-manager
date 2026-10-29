@@ -82,11 +82,11 @@ The run query has **no time cutoff**. It reads every retained run linked to a cu
 
 ## Operator sequence after source-specific approval
 
-1. John verifies source directory and port, restricted role, coverage, private destination and retention. He records evidence references in the contract and on GRE-3269. He does not share the database password or raw rows with agents.
+1. John verifies source directory and port, restricted role, coverage, private destination and retention. He records evidence references in the contract and on GRE-3269. He checks the reviewed worktree commit with `git -C /Users/johnprempeh/Desktop/Code/gs-clip/.gsam/worktrees/GRE-1781-reviewer-wake-text-does-not-say-how-to-record-a-review-decision-agent-reviewers-strand-stages-with-comment-only rev-parse HEAD` against the capture revision approved on GRE-3269. A different revision requires a fresh capture decision. He does not share the database password or raw rows with agents.
 2. John runs this locally, with `R1_SOURCE_DATABASE_URL` held only in his shell environment and pointing to the approved loopback source:
 
    ```sh
-   node /Users/johnprempeh/Desktop/Code/gs-clip/tests/lifecycle-baseline/metrics/r1-capture.mjs --company 34dad57e-b5ad-4a72-9400-9eba645c99f6 --source-ref "$R1_APPROVED_SOURCE_REF" --contract "$R1_APPROVED_CONTRACT" --out "$R1_APPROVED_OUTPUT_DIR/r1-result.json"
+   node /Users/johnprempeh/Desktop/Code/gs-clip/.gsam/worktrees/GRE-1781-reviewer-wake-text-does-not-say-how-to-record-a-review-decision-agent-reviewers-strand-stages-with-comment-only/tests/lifecycle-baseline/metrics/r1-capture.mjs --company 34dad57e-b5ad-4a72-9400-9eba645c99f6 --source-ref "$R1_APPROVED_SOURCE_REF" --contract "$R1_APPROVED_CONTRACT" --out "$R1_APPROVED_OUTPUT_DIR/r1-result.json"
    ```
 
 3. The collector creates one `0600` JSON result containing only `schema`, `sourceRef`, `companyId`, source transaction `sourceCapturedAt` and `readAt`, `windowStart`, `windowDays`, `weekly`, `total`, `treesWithOpenWork`, and `rootIssueId`/`rootIdentifier` pairs counted in `weekly`. Projected rows stay in process memory. John may transfer only those result fields to Everest through the approved local route. Do not upload or attach the result unless the decision expressly permits that transfer.

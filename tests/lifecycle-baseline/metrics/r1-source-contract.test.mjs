@@ -63,3 +63,18 @@ test("operator preflight covers every manifest column and aborts for absent proo
     /has_database_privilege/, /has_schema_privilege/, /has_table_privilege/, /has_sequence_privilege/, /has_function_privilege/])
     assert.match(sql, probe);
 });
+
+test("operator SQL reads the reviewed public tables regardless of search_path", () => {
+  const sources = ["r1-source-preflight.sql", "r1-snapshot.mjs"].map((file) =>
+    readFileSync(new URL(`./${file}`, import.meta.url), "utf8"));
+  const tables = Object.keys(R1_TABLE_COLUMNS);
+  const check = (source) => {
+    for (const table of tables) {
+      const reads = [...source.matchAll(new RegExp(`\\b(?:FROM|JOIN)\\s+((?:\\w+\\.)?${table})\\b`, "gi"))];
+      for (const read of reads) assert.equal(read[1].toLowerCase(), `public.${table}`);
+    }
+  };
+  for (const source of sources) check(source);
+  assert.throws(() => check(sources[0].replace("FROM public.issues", "FROM issues")), assert.AssertionError);
+  assert.throws(() => check(sources[1].replace("from public.issues", "from other.issues")), assert.AssertionError);
+});

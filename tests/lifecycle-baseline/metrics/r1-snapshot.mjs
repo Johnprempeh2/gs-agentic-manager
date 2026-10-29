@@ -20,36 +20,36 @@ const rowQueries = {
     conversation_user_id as "conversationUserId", conversation_state as "conversationState",
     monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt",
     hidden_at as "hiddenAt", updated_at as "updatedAt", tabled_by_user_id as "tabledByUserId"
-    from issues where company_id = $1`,
+    from public.issues where company_id = $1`,
   backlogParkers: `select distinct on (a.entity_id) a.company_id as "companyId", a.entity_id as "issueId", a.actor_type as "actorType"
-    from activity_log a join issues i on i.id::text = a.entity_id
+    from public.activity_log a join public.issues i on i.id::text = a.entity_id
     where a.company_id = $1 and i.company_id = $1 and a.entity_type = 'issue' and i.status = 'backlog'
       and (a.action = 'issue.tabled' or a.details->>'status' = 'backlog')
     order by a.entity_id, a.created_at desc`,
   runs: `select company_id as "companyId", id, status, context_snapshot->>'issueId' as "issueId",
     context_snapshot->>'taskId' as "taskId", native_issue_id as "nativeIssueId",
     created_at as "createdAt", started_at as "startedAt", last_output_at as "lastOutputAt",
-    finished_at as "finishedAt" from heartbeat_runs r where r.company_id = $1
-    and exists (select 1 from issues i where i.company_id = $1 and i.id::text in
+    finished_at as "finishedAt" from public.heartbeat_runs r where r.company_id = $1
+    and exists (select 1 from public.issues i where i.company_id = $1 and i.id::text in
       (r.context_snapshot->>'issueId', r.context_snapshot->>'taskId', r.native_issue_id::text))`,
   wakeRequests: `select company_id as "companyId", status, payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
     payload->'_paperclipWakeContext'->>'issueId' as "contextIssueId",
     payload->'_paperclipWakeContext'->>'taskId' as "contextTaskId"
-    from agent_wakeup_requests where company_id = $1 and status in ('queued', 'deferred_issue_execution', 'claimed')`,
-  interactions: `select company_id as "companyId", issue_id as "issueId", status from issue_thread_interactions
+    from public.agent_wakeup_requests where company_id = $1 and status in ('queued', 'deferred_issue_execution', 'claimed')`,
+  interactions: `select company_id as "companyId", issue_id as "issueId", status from public.issue_thread_interactions
     where company_id = $1 and status = 'pending'`,
-  approvals: `select ia.company_id as "companyId", ia.issue_id as "issueId", a.status from issue_approvals ia
-    join approvals a on a.id = ia.approval_id
+  approvals: `select ia.company_id as "companyId", ia.issue_id as "issueId", a.status from public.issue_approvals ia
+    join public.approvals a on a.id = ia.approval_id
     where ia.company_id = $1 and a.company_id = $1 and a.status in ('pending', 'revision_requested')`,
   recoveryActions: `select company_id as "companyId", source_issue_id as "sourceIssueId", resolved_at as "resolvedAt", status, cause,
-    evidence->'automaticRecovery'->>'replay' as replay from issue_recovery_actions
+    evidence->'automaticRecovery'->>'replay' as replay from public.issue_recovery_actions
     where company_id = $1 and (resolved_at is null or evidence->'automaticRecovery'->>'replay' = 'blocked')`,
-  treeHolds: `select company_id as "companyId", root_issue_id as "rootIssueId", status from issue_tree_holds
+  treeHolds: `select company_id as "companyId", root_issue_id as "rootIssueId", status from public.issue_tree_holds
     where company_id = $1 and status = 'active'`,
   relations: `select company_id as "companyId", issue_id as "blockerIssueId", related_issue_id as "blockedIssueId"
-    from issue_relations where company_id = $1 and type = 'blocks'`,
+    from public.issue_relations where company_id = $1 and type = 'blocks'`,
   agents: `select company_id as "companyId", id, status, coalesce((runtime_config->'heartbeat'->>'enabled')::boolean, false) as "timerHeartbeat"
-    from agents where company_id = $1`,
+    from public.agents where company_id = $1`,
 };
 
 const references = {
