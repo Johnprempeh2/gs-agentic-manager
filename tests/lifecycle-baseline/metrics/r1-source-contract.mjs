@@ -49,17 +49,29 @@ export async function verifyReadOnlySource(tx, contract) {
     current_setting('transaction_isolation') as "isolation", r.rolsuper as "superuser",
     r.rolcreaterole as "createRole", r.rolcreatedb as "createDb", r.rolreplication as "replication",
     r.rolbypassrls as "bypassRls",
-    exists (select 1 from (values ('issues'), ('activity_log'), ('heartbeat_runs'),
-      ('agent_wakeup_requests'), ('issue_thread_interactions'), ('issue_approvals'),
-      ('approvals'), ('issue_recovery_actions'), ('issue_tree_holds'), ('issue_relations'),
-      ('agents')) as t(name) where has_table_privilege(current_user, t.name,
-      'INSERT') or has_table_privilege(current_user, t.name, 'UPDATE') or
-      has_table_privilege(current_user, t.name, 'DELETE') or
-      has_table_privilege(current_user, t.name, 'TRUNCATE')) as "hasWriteGrant"
+    current_setting('default_transaction_read_only') as "defaultReadOnly",
+    exists (select 1 from pg_db_role_setting s where s.setrole = r.oid
+      and s.setdatabase in (0, (select oid from pg_database where datname = current_database()))
+      and 'default_transaction_read_only=on' = any(s.setconfig)) as "roleReadOnlyDefault",
+    (has_database_privilege(current_user, current_database(), 'CREATE')
+      or has_database_privilege(current_user, current_database(), 'TEMP')
+      or exists (select 1 from pg_namespace n where n.nspname not like 'pg_%'
+        and n.nspname <> 'information_schema' and has_schema_privilege(current_user, n.oid, 'CREATE'))
+      or exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname not like 'pg_%' and n.nspname <> 'information_schema'
+          and c.relkind in ('r','p','v','m','f')
+          and (has_table_privilege(current_user,c.oid,'INSERT') or has_table_privilege(current_user,c.oid,'UPDATE')
+            or has_table_privilege(current_user,c.oid,'DELETE') or has_table_privilege(current_user,c.oid,'TRUNCATE')))
+      or exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname not like 'pg_%' and n.nspname <> 'information_schema' and c.relkind = 'S'
+          and (has_sequence_privilege(current_user,c.oid,'USAGE') or has_sequence_privilege(current_user,c.oid,'UPDATE')))
+      or exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname not like 'pg_%' and n.nspname <> 'information_schema'
+          and p.prosecdef and has_function_privilege(current_user,p.oid,'EXECUTE'))) as "hasWriteGrant"
     from pg_roles r where r.rolname = current_user`);
   const row = rows[0];
   if (!row || row.role !== contract.role || row.database !== contract.database || Number(row.port) !== contract.port)
     throw new Error("R1 connected source identity mismatch");
-  if (row.readOnly !== "on" || row.isolation !== "repeatable read" || row.superuser || row.createRole || row.createDb || row.replication || row.bypassRls || row.hasWriteGrant)
+  if (row.readOnly !== "on" || row.isolation !== "repeatable read" || row.defaultReadOnly !== "on" || row.roleReadOnlyDefault !== true || row.superuser || row.createRole || row.createDb || row.replication || row.bypassRls || row.hasWriteGrant)
     throw new Error("R1 connection is not a restricted read-only snapshot role");
 }

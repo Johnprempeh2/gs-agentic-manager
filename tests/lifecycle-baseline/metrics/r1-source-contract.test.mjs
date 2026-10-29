@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GREATSTONE_COMPANY_ID, validateSourceContract, verifyReadOnlySource } from "./r1-source-contract.mjs";
+import { readFileSync } from "node:fs";
+import { R1_TABLE_COLUMNS } from "./r1-snapshot.mjs";
 
 const contract = () => ({
   schema: "gsam.r1-source-contract/v1", route: "direct-live-read-only", companyId: GREATSTONE_COMPANY_ID,
@@ -34,13 +36,30 @@ test("source contract fails closed on missing identity, transfer and each covera
 
 test("source role probe rejects wrong identity, write grants and a writable transaction", async () => {
   const base = { role: "r1_reader", database: "paperclip", port: 5432, readOnly: "on", isolation: "repeatable read",
-    superuser: false, createRole: false, createDb: false, replication: false, bypassRls: false, hasWriteGrant: false };
+    defaultReadOnly: "on", roleReadOnlyDefault: true, superuser: false, createRole: false, createDb: false,
+    replication: false, bypassRls: false, hasWriteGrant: false };
   const check = (row) => verifyReadOnlySource({ unsafe: async (query) => {
     assert.match(query, /current_user/);
-    assert.match(query, /has_table_privilege/);
+    for (const probe of [/pg_db_role_setting/, /has_database_privilege/, /has_schema_privilege/, /has_table_privilege/, /has_sequence_privilege/, /has_function_privilege/])
+      assert.match(query, probe);
     return [row];
   } }, contract());
   await check(base);
-  for (const row of [{ ...base, port: 5433 }, { ...base, hasWriteGrant: true }, { ...base, readOnly: "off" }, { ...base, superuser: true }])
+  for (const row of [{ ...base, port: 5433 }, { ...base, hasWriteGrant: true }, { ...base, readOnly: "off" },
+    { ...base, defaultReadOnly: "off" }, { ...base, roleReadOnlyDefault: false }, { ...base, superuser: true }])
     await assert.rejects(check(row), /R1/);
+});
+
+test("operator preflight covers every manifest column and aborts for absent proof", () => {
+  const sql = readFileSync(new URL("./r1-source-preflight.sql", import.meta.url), "utf8");
+  const manifest = Object.entries(R1_TABLE_COLUMNS).flatMap(([table, columns]) => columns.map((column) => `${table}.${column}`));
+  const checkManifest = (source) => {
+    const values = [...source.matchAll(/\('([a-z_]+)','([a-z_]+)'\)/g)].map((match) => `${match[1]}.${match[2]}`);
+    assert.deepEqual(values.sort(), manifest.sort());
+  };
+  checkManifest(sql);
+  assert.throws(() => checkManifest(sql.replace("('issues','identifier'),", "")), assert.AssertionError);
+  for (const probe of [/has_column_privilege/, /RAISE EXCEPTION 'R1 missing readable manifest columns/, /default_transaction_read_only=on/,
+    /has_database_privilege/, /has_schema_privilege/, /has_table_privilege/, /has_sequence_privilege/, /has_function_privilege/])
+    assert.match(sql, probe);
 });
