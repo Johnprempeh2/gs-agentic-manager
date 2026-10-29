@@ -299,6 +299,31 @@ describe("WebsiteFullScreenEditor", () => {
     expect(frame()).toBeNull();
   });
 
+  it("keeps the editing shell full width and resizes only the engine canvas without reloading it", async () => {
+    await render();
+    const { sent } = await connect({ editorContract: 2, editorCommands: ["layout", "viewport"] });
+    const original = frame()!;
+    const src = original.src;
+    for (const [label, width] of [["Tablet", 768], ["Phone", 390], ["Laptop", null]] as const) {
+      await act(async () => button(label).click());
+      await flush();
+      expect(frame()).toBe(original);
+      expect(frame()!.src).toBe(src);
+      expect(frame()!.style.width).toBe("");
+      expect(frame()!.dataset.viewport).toBe("editor");
+      expect(sent("editor-command").at(-1)!.payload).toEqual({ command: "viewport", width });
+    }
+    expect(api.savePageContent).not.toHaveBeenCalled();
+  });
+
+  it("does not squeeze an older engine's editor when canvas resizing is unavailable", async () => {
+    await render();
+    await connect({ editorContract: 2, editorCommands: ["layout"] });
+    expect(button("Tablet").disabled).toBe(true);
+    expect(button("Phone").disabled).toBe(true);
+    expect(frame()!.style.width).toBe("");
+  });
+
   it("previews the draft at laptop, tablet and phone widths", async () => {
     await render();
     await act(async () => button("Preview").click());

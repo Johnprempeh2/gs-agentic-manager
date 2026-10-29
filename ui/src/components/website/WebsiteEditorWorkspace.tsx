@@ -609,6 +609,13 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, site.id) });
   };
 
+  useEffect(() => {
+    if (mode !== "edit" || connection.phase !== "ready" || draftLoads === 0) return;
+    const session = sessionRef.current;
+    if (session?.editorCommands.has("viewport")) session.setViewport(device === "laptop" ? null : WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width);
+    else if (device !== "laptop") setDevice("laptop");
+  }, [mode, device, connection.phase, draftLoads]);
+
   if (pagesQuery.isLoading || pagesQuery.error || !page) {
     return (
       <FullScreen>
@@ -668,8 +675,9 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const motionFrozen = isFrozenBackground(page.slug, motionBlockType, motionReady ? session.shownPageData : null);
 
   const deviceWidth = WEBSITE_PREVIEW_DEVICES.find((entry) => entry.value === device)!.width;
-  // Editing at laptop width fills the canvas; tablet and phone show the page at that width.
-  const width = mode === "preview" || device !== "laptop" ? deviceWidth : null;
+  // The outer editor frame includes the tools and inspector. Only Preview scales it.
+  const width = mode === "preview" ? deviceWidth : null;
+
   const editing = mode === "edit";
   const ready = connection.phase === "ready";
   const canUndo = editing && ready && commands.has("undo") && Boolean(editorState?.canUndo);
@@ -742,7 +750,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             <Segmented
               label="Width"
               value={device}
-              options={WEBSITE_PREVIEW_DEVICES.map((entry) => ({ value: entry.value, label: entry.label, title: `${entry.label} ${entry.width}` }))}
+              options={WEBSITE_PREVIEW_DEVICES.map((entry) => ({ value: entry.value, label: entry.label, disabled: editing && entry.value !== "laptop" && !commands.has("viewport"), title: editing && entry.value !== "laptop" && !commands.has("viewport") ? "Use Preview for this width until the website editor is updated." : `${entry.label} ${entry.width}` }))}
               onChange={setDevice}
             />
             {mode === "preview" ? (
@@ -806,6 +814,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             canRedo={canRedo}
             canAddBlock={canAddBlock}
             canOutline={canOutline}
+            canResizeCanvas={commands.has("viewport")}
             outlineOn={outlineOn}
             onMode={() => void switchView({ mode: mode === "preview" ? "edit" : "preview", source: "draft" })}
             onDevice={setDevice}
@@ -1299,6 +1308,7 @@ function MoreMenu({
   canRedo,
   canAddBlock,
   canOutline,
+  canResizeCanvas,
   outlineOn,
   onMode,
   onDevice,
@@ -1320,6 +1330,7 @@ function MoreMenu({
   canRedo: boolean;
   canAddBlock: boolean;
   canOutline: boolean;
+  canResizeCanvas: boolean;
   outlineOn: boolean;
   onMode: () => void;
   onDevice: (device: WebsitePreviewDevice) => void;
@@ -1398,7 +1409,7 @@ function MoreMenu({
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground">Width</DropdownMenuLabel>
         {WEBSITE_PREVIEW_DEVICES.map((entry) => (
-          <DropdownMenuItem key={entry.value} onSelect={() => onDevice(entry.value)}>
+          <DropdownMenuItem key={entry.value} disabled={mode === "edit" && entry.value !== "laptop" && !canResizeCanvas} onSelect={() => onDevice(entry.value)}>
             <entry.icon />
             {`${entry.label} ${entry.width}`}
             {entry.value === device ? <Check className="ml-auto" aria-hidden="true" /> : null}
@@ -1421,7 +1432,7 @@ function Segmented<T extends string>({
   label: string;
   value: T;
   /** `short`: the label below sm, where the top bar is narrow. */
-  options: { value: T; label: string; short?: string; title?: string }[];
+  options: { value: T; label: string; short?: string; title?: string; disabled?: boolean }[];
   onChange: (value: T) => void;
   disabled?: boolean;
   /** The chosen segment takes the primary fill, so the control stands out from Width. */
@@ -1436,7 +1447,7 @@ function Segmented<T extends string>({
           type="button"
           aria-pressed={option.value === value}
           title={option.title}
-          disabled={disabled}
+          disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
           className={cn(
             "inline-flex h-8 items-center px-2.5 text-xs font-medium first:rounded-l-md last:rounded-r-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -1732,7 +1743,7 @@ function EditorFrame({
         allow=""
         onLoad={start}
         testId="website-editor-frame"
-        viewport={mode === "preview" || width ? device : "editor"}
+        viewport={mode === "preview" ? device : "editor"}
       />
     </div>
   );

@@ -384,7 +384,7 @@ export class WebsiteFrameHostSession<Source> {
    */
   command(command: WebsiteEditorCommand, on?: boolean): boolean {
     // Edit mode and import have their own calls; Edit copy adds and moves nothing.
-    if (command === "layout" || command === "import-live") return false;
+    if (command === "layout" || command === "import-live" || command === "viewport") return false;
     if (this.copyMode && COPY_MODE_REFUSED.has(command)) return false;
     return this.sendCommand(command, on);
   }
@@ -439,6 +439,13 @@ export class WebsiteFrameHostSession<Source> {
     if (!this.copySupported || !this.sendCommand("layout", mode === "layout")) return false;
     this.editMode = mode;
     return true;
+  }
+
+  /** Resize only the engine's page canvas, keeping its editing shell full width. */
+  setViewport(width: number | null): boolean {
+    if (width !== null && ![390, 768, 1440].includes(width)) return false;
+    if (this.options.mode !== "editor" || this.connection.phase !== "ready" || this.shownRevisionId === null || !this.commands.has("viewport")) return false;
+    return this.send("editor-command", { command: "viewport", width }) !== null;
   }
 
   /** What the engine said the live site has for this page, or null. */
