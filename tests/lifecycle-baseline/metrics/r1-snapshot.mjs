@@ -105,7 +105,7 @@ export function validateR1Snapshot(snapshot, companyId) {
   return snapshot;
 }
 
-export async function captureR1Snapshot(tx, companyId, { sourceCapturedAt } = {}) {
+export async function captureR1Snapshot(tx, companyId, { sourceCapturedAt, verifySource } = {}) {
   if (!companyId || typeof companyId !== "string") throw new Error("R1 requires a company ID");
   const time = await tx.unsafe("select transaction_timestamp() as \"snapshotAt\"");
   const readAt = time[0]?.snapshotAt;
@@ -113,6 +113,7 @@ export async function captureR1Snapshot(tx, companyId, { sourceCapturedAt } = {}
   if (sourceCapturedAt && (!Number.isFinite(Date.parse(sourceCapturedAt)) || Date.parse(sourceCapturedAt) > Date.parse(readAt))) {
     throw new Error("R1 requires an original source capture timestamp no later than the database read");
   }
+  if (verifySource) await verifySource(tx);
   const snapshot = { snapshotAt: sourceCapturedAt ?? readAt, readAt };
   for (const [key, query] of Object.entries(rowQueries)) snapshot[key] = await tx.unsafe(query, [companyId]);
   return validateR1Snapshot(snapshot, companyId);
