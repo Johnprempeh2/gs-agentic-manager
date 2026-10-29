@@ -1,12 +1,16 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
+export const GREATSTONE_COMPANY_ID = "34dad57e-b5ad-4a72-9400-9eba645c99f6";
+
 const requiredText = (value, name) => {
   if (typeof value !== "string" || !value.trim()) throw new Error(`R1 missing ${name}`);
   return value.trim();
 };
 
 export function validateSourceContract(contract, { companyId, sourceRef, databaseUrl, out }) {
+  if (companyId !== GREATSTONE_COMPANY_ID || contract?.companyId !== GREATSTONE_COMPANY_ID)
+    throw new Error("R1 capture is restricted to the Greatstone company");
   if (!contract || contract.schema !== "gsam.r1-source-contract/v1") throw new Error("R1 missing source contract schema");
   if (contract.route !== "direct-live-read-only") throw new Error("R1 requires the direct live read-only route");
   if (contract.companyId !== companyId) throw new Error("R1 source contract company mismatch");

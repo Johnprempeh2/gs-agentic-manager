@@ -1,5 +1,5 @@
-// Operator-only, prospective R1 capture. Run only after the source-specific
-// approval recorded on GRE-3269; see r1-capture.md. Never run against live.
+// John-operated live R1 capture. Run only after source-specific approval
+// recorded on GRE-3269; see r1-capture.md. Never run inside an agent heartbeat.
 import { createRequire } from "node:module";
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

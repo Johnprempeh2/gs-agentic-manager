@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateSourceContract, verifyReadOnlySource } from "./r1-source-contract.mjs";
+import { GREATSTONE_COMPANY_ID, validateSourceContract, verifyReadOnlySource } from "./r1-source-contract.mjs";
 
 const contract = () => ({
-  schema: "gsam.r1-source-contract/v1", route: "direct-live-read-only", companyId: "c1",
+  schema: "gsam.r1-source-contract/v1", route: "direct-live-read-only", companyId: GREATSTONE_COMPANY_ID,
   sourceRef: "approved-default-2026-10-30", instanceId: "default", dataDirectory: "/operator-confirmed/data",
   operator: "John", approvalRef: "GRE-3269-approved-source", destination: "/approved/results",
   deletionOwner: "John", retentionUntil: "2099-01-01T00:00:00Z", role: "r1_reader",
@@ -13,7 +13,7 @@ const contract = () => ({
     fullSevenDayActivity: "inventory-activity-1", olderRelevantRuns: "inventory-runs-1 without time cutoff",
     runRetentionPolicy: "retention-policy-runs-1", activityRetentionPolicy: "retention-policy-activity-1", complete: true },
 });
-const options = { companyId: "c1", sourceRef: "approved-default-2026-10-30", databaseUrl: "postgres://r1_reader@127.0.0.1:5432/paperclip", out: "/approved/results/r1-result.json" };
+const options = { companyId: GREATSTONE_COMPANY_ID, sourceRef: "approved-default-2026-10-30", databaseUrl: "postgres://r1_reader@127.0.0.1:5432/paperclip", out: "/approved/results/r1-result.json" };
 
 test("source contract fails closed on missing identity, transfer and each coverage proof", () => {
   assert.equal(validateSourceContract(contract(), options).route, "direct-live-read-only");
@@ -27,7 +27,9 @@ test("source contract fails closed on missing identity, transfer and each covera
   }
   assert.throws(() => validateSourceContract(contract(), { ...options, databaseUrl: "postgres://r1_reader@remote:5432/paperclip" }), /loopback/);
   assert.throws(() => validateSourceContract(contract(), { ...options, out: "/approved/results-other/r1-result.json" }), /outside approved/);
-  assert.throws(() => validateSourceContract(contract(), { ...options, companyId: "c2" }), /company mismatch/);
+  assert.throws(() => validateSourceContract(contract(), { ...options, companyId: "c2" }), /Greatstone company/);
+  const wrongCompany = contract(); wrongCompany.companyId = "c2";
+  assert.throws(() => validateSourceContract(wrongCompany, { ...options, companyId: "c2" }), /Greatstone company/);
 });
 
 test("source role probe rejects wrong identity, write grants and a writable transaction", async () => {
