@@ -269,6 +269,7 @@ describeEmbeddedPostgres("heartbeat worktree suppression", () => {
       runtimeEnv: {
         GSAM_IN_WORKTREE: "true",
         GSAM_INSTANCE_ID: "test-worktree",
+        VITEST: "true",
       },
     });
 
@@ -311,7 +312,7 @@ describeEmbeddedPostgres("heartbeat worktree suppression", () => {
       .set({ status: "in_review", updatedAt: new Date() })
       .where(eq(issues.id, issueId));
 
-    const heartbeat = heartbeatService(db, { runtimeEnv: {} });
+    const heartbeat = heartbeatService(db, { runtimeEnv: { VITEST: "true" } });
 
     const run = await heartbeat.wakeup(agentId, {
       source: "assignment",

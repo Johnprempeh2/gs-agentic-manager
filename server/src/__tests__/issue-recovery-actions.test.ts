@@ -1819,7 +1819,7 @@ describeEmbeddedPostgres("issue recovery actions", () => {
       ...fixture,
       previousRunId,
       action: action!,
-      heartbeat: heartbeatService(db, { runtimeEnv: {} }),
+      heartbeat: heartbeatService(db, { runtimeEnv: { VITEST: "true" } }),
     };
   }
 

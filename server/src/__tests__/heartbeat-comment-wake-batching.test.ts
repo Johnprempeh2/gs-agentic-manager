@@ -3792,7 +3792,8 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     // Pin scheduling suppression off with the runtimeEnv test seam. Do not rely
     // on the ambient GSAM_IN_WORKTREE value: startNextQueuedRunForAgent
     // no-ops under suppression and would leave the promoted wake at "queued".
-    const heartbeat = heartbeatService(db, { runtimeEnv: {} });
+    // VITEST also keeps host RAM and disk readings out of this fixture.
+    const heartbeat = heartbeatService(db, { runtimeEnv: { VITEST: "true" } });
 
     await db.insert(companies).values({
       id: companyId,
@@ -4029,7 +4030,8 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     // Pin scheduling suppression off with the runtimeEnv test seam. Do not rely
     // on the ambient GSAM_IN_WORKTREE value: startNextQueuedRunForAgent
     // no-ops under suppression and would leave the promoted wake at "queued".
-    const heartbeat = heartbeatService(db, { runtimeEnv: {} });
+    // VITEST also keeps host RAM and disk readings out of this fixture.
+    const heartbeat = heartbeatService(db, { runtimeEnv: { VITEST: "true" } });
 
     await db.insert(companies).values({
       id: companyId,
