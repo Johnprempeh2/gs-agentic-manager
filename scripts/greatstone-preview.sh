@@ -216,14 +216,18 @@ cmd_status() {
       let started = 0, active = 0;
       for (const company of companies) {
         if (typeof company?.id !== "string" || !company.id) throw new Error("invalid company list");
-        const runs = await get(`/api/companies/${company.id}/heartbeat-runs?limit=200`);
-        const list = Array.isArray(runs) ? runs : (runs?.runs ?? runs?.items);
-        if (!Array.isArray(list) || list.length >= 200) throw new Error("run list is unavailable or truncated");
-        if (list.some((run) => !Number.isFinite(Date.parse(run?.createdAt)) || typeof run?.status !== "string")) {
-          throw new Error("invalid run list");
-        }
-        started += list.filter((r) => new Date(r.createdAt) >= new Date(since)).length;
-        active += list.filter((r) => r.status === "running" || r.status === "queued").length;
+        const path = `/api/companies/${encodeURIComponent(company.id)}/heartbeat-runs?limit=200`;
+        const listRuns = async (filter, matches) => {
+          const runs = await get(`${path}&${filter}`);
+          const list = Array.isArray(runs) ? runs : (runs?.runs ?? runs?.items);
+          if (!Array.isArray(list) || list.length >= 200) throw new Error("run list is unavailable or truncated");
+          if (list.some((run) => !Number.isFinite(Date.parse(run?.createdAt)) || typeof run?.status !== "string" || !matches(run))) {
+            throw new Error("invalid filtered run list");
+          }
+          return list;
+        };
+        started += (await listRuns(`since=${encodeURIComponent(since)}`, (run) => Date.parse(run.createdAt) >= Date.parse(since))).length;
+        active += (await listRuns("status=queued,running", (run) => run.status === "queued" || run.status === "running")).length;
       }
       console.log(`  agent runs: ${started} started since the preview started, ${active} queued or running`);
     } catch (error) {

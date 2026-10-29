@@ -11,10 +11,17 @@ const script = resolve("scripts/greatstone-preview.sh");
 const common = resolve("scripts/greatstone-common.sh");
 const startedAt = "2026-10-29T06:00:00Z";
 
-async function statusWithResponse(status: number, body: unknown) {
+async function statusWithResponse(status: number, body: unknown, runResponse?: (url: URL) => unknown) {
   const server = createServer((req, res) => {
     res.writeHead(req.url === "/api/companies" ? 200 : status, { "content-type": "application/json" });
-    res.end(JSON.stringify(req.url === "/api/companies" ? [{ id: "company-1" }] : body));
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const response = req.url === "/api/companies" ? [{ id: "company-1" }] :
+      runResponse ? runResponse(url) : Array.isArray(body) ? body.filter((run) => {
+        const row = run as { createdAt?: string; status?: string };
+        return (!url.searchParams.has("since") || (row.createdAt ?? "") >= url.searchParams.get("since")!) &&
+          (!url.searchParams.has("status") || url.searchParams.get("status")!.split(",").includes(row.status ?? ""));
+      }) : body;
+    res.end(JSON.stringify(response));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -56,6 +63,24 @@ it("counts successful preview run responses (GRE-3200)", async () => {
   ]);
   expect(result.code).toBe(0);
   expect(result.output).toMatch(/agent runs: 1 started since the preview started, 1 queued or running/);
+});
+
+it("reports zero new and active runs when 200 older runs fill an unfiltered page (GRE-3200)", async () => {
+  const olderRuns = Array.from({ length: 200 }, (_, index) => ({
+    id: String(index), createdAt: "2026-10-29T05:59:00Z", status: "succeeded",
+  }));
+  const requests: URL[] = [];
+  const result = await statusWithResponse(200, olderRuns, (url) => {
+    requests.push(url);
+    return olderRuns.filter((run) =>
+      (!url.searchParams.has("since") || run.createdAt >= url.searchParams.get("since")!) &&
+      (!url.searchParams.has("status") || url.searchParams.get("status")!.split(",").includes(run.status))
+    );
+  });
+  expect(result.code).toBe(0);
+  expect(result.output).toMatch(/agent runs: 0 started since the preview started, 0 queued or running/);
+  expect(requests.some((url) => url.searchParams.get("since") === startedAt)).toBe(true);
+  expect(requests.some((url) => url.searchParams.get("status") === "queued,running")).toBe(true);
 });
 
 it.each([
