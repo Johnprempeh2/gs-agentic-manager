@@ -658,6 +658,19 @@ describe("Edit copy (GRE-2394)", () => {
     expect(t.session.command("add-block")).toBe(false);
   });
 
+  it("viewport resizes are capability-gated and never change copy mode or save a draft", async () => {
+    const t = await ready({}, { editorContract: 2, editorCommands: ["layout", "viewport"] });
+    for (const width of [768, 390, null]) {
+      expect(t.session.setViewport(width)).toBe(true);
+      expect(t.sentOf("editor-command").at(-1)!.message.payload).toEqual({ command: "viewport", width });
+    }
+    expect(t.session.copyMode).toBe(true);
+    expect(t.session.setViewport(200)).toBe(false);
+    expect(t.session.command("viewport")).toBe(false);
+    const old = await ready({}, { editorContract: 2, editorCommands: ["layout"] });
+    expect(old.session.setViewport(768)).toBe(false);
+  });
+
   it("the edit mode commands only go through their own calls", async () => {
     const t = await ready();
     expect(t.session.command("layout", true)).toBe(false);

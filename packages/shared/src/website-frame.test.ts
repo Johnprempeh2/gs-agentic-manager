@@ -378,7 +378,7 @@ describe("full-screen editor messages (GRE-2296)", () => {
   };
 
   it("reads the engine's editor commands from hello-ack, keeping only known ones", () => {
-    expect(WEBSITE_EDITOR_COMMANDS).toEqual(["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"]);
+    expect(WEBSITE_EDITOR_COMMANDS).toEqual(["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live", "viewport"]);
     expect(helloAck({ editorCommands: ["undo", "redo", "save", "teleport"] }).editorCommands).toEqual(["undo", "redo", "save"]);
     expect(helloAck({}).editorCommands).toBeUndefined();
     // A malformed list is dropped, never the handshake.
@@ -432,6 +432,8 @@ describe("full-screen editor messages (GRE-2296)", () => {
     expect(parses({ command: "outline", on: true })).toBe(true);
     expect(parses({ command: "layout", on: false })).toBe(true);
     expect(parses({ command: "import-live" })).toBe(true);
+    for (const width of [null, 390, 768, 1440]) expect(parses({ command: "viewport", width })).toBe(true);
+    for (const payload of [{ command: "viewport" }, { command: "viewport", width: 1 }, { command: "viewport", width: "768" }, { command: "viewport", width: 768, on: true }, { command: "save", width: 768 }]) expect(parses(payload)).toBe(false);
     expect(parses({ command: "publish" })).toBe(false);
     expect(parses({ command: "save", data: {} })).toBe(false);
   });
