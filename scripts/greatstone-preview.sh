@@ -205,16 +205,32 @@ cmd_status() {
   say "  $(preview_migrations)"
   node --input-type=module -e '
     const [base, since] = process.argv.slice(1);
-    const get = async (p) => (await fetch(base + p)).json();
-    let started = 0, active = 0;
-    for (const company of await get("/api/companies")) {
-      const runs = await get(`/api/companies/${company.id}/heartbeat-runs?limit=200`);
-      const list = Array.isArray(runs) ? runs : (runs.runs ?? runs.items ?? []);
-      started += list.filter((r) => new Date(r.createdAt) >= new Date(since)).length;
-      active += list.filter((r) => r.status === "running" || r.status === "queued").length;
+    const get = async (path) => {
+      const response = await fetch(base + path);
+      if (!response.ok) throw new Error(`GET ${path} answered HTTP ${response.status}`);
+      return response.json();
+    };
+    try {
+      const companies = await get("/api/companies");
+      if (!Array.isArray(companies) || !Number.isFinite(Date.parse(since))) throw new Error("invalid preview count input");
+      let started = 0, active = 0;
+      for (const company of companies) {
+        if (typeof company?.id !== "string" || !company.id) throw new Error("invalid company list");
+        const runs = await get(`/api/companies/${company.id}/heartbeat-runs?limit=200`);
+        const list = Array.isArray(runs) ? runs : (runs?.runs ?? runs?.items);
+        if (!Array.isArray(list) || list.length >= 200) throw new Error("run list is unavailable or truncated");
+        if (list.some((run) => !Number.isFinite(Date.parse(run?.createdAt)) || typeof run?.status !== "string")) {
+          throw new Error("invalid run list");
+        }
+        started += list.filter((r) => new Date(r.createdAt) >= new Date(since)).length;
+        active += list.filter((r) => r.status === "running" || r.status === "queued").length;
+      }
+      console.log(`  agent runs: ${started} started since the preview started, ${active} queued or running`);
+    } catch (error) {
+      console.error(`preview run count: ${error.message}`);
+      process.exitCode = 1;
     }
-    console.log(`  agent runs: ${started} started since the preview started, ${active} queued or running`);
-  ' "$PREVIEW_URL" "$started" || say "  agent runs: could not ask the preview"
+  ' "$PREVIEW_URL" "$started" || say "  agent runs: unknown (query failed)"
 }
 
 # The preview is a copy of the live data, so its Experimental switches are the
