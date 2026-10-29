@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, symlinkSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -16,6 +16,22 @@ describe("process kill guard paths", () => {
       serverPid: 1,
     }, "/home/agent");
     expect(protectedPaths).toEqual(["/srv/gsam-guard-test/live"]);
+  });
+
+  it("excludes a symlink to the home directory from live markers", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "killguard-home-"));
+    try {
+      const home = path.join(root, "home");
+      await mkdir(home);
+      const alias = path.join(root, "home-alias");
+      symlinkSync(home, alias);
+      const { protectedPaths } = processKillGuardPaths({
+        protectedPaths: [alias, "/srv/gsam-guard-test/live"], serverPid: 1,
+      }, home);
+      expect(protectedPaths).toEqual(["/srv/gsam-guard-test/live"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("exempts the run's own workspace only when it lies strictly inside a protected directory", () => {

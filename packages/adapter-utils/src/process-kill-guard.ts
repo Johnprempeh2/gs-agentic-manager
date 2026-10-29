@@ -48,9 +48,16 @@ function pathForms(value: string): string[] {
 /** Protected and exempt directories as the wrapper embeds them. */
 export function processKillGuardPaths(guard: ProcessKillGuard, homeDir = os.homedir()) {
   // A root or home directory would protect nearly every process the agent
-  // starts, so it is never used as a marker of live.
-  const protectedPaths = [...new Set(guard.protectedPaths.flatMap(pathForms))]
-    .filter((candidate) => candidate !== path.parse(candidate).root && !isInside(candidate, homeDir));
+  // starts, so it is never used as a marker of live. Reject all forms of a
+  // configured path together, since a symlink alias can point at home.
+  const homeForms = pathForms(homeDir);
+  const protectedPaths = [...new Set(guard.protectedPaths.flatMap((value) => {
+    const forms = pathForms(value);
+    return forms.some((candidate) =>
+      candidate === path.parse(candidate).root ||
+      homeForms.some((home) => isInside(candidate, home))
+    ) ? [] : forms;
+  }))];
   const exemptPaths = [...new Set(guard.ownWorkspace ? pathForms(guard.ownWorkspace) : [])]
     .filter((own) => protectedPaths.some((guarded) => own !== guarded && isInside(guarded, own)))
     .filter((own) => !protectedPaths.some((guarded) => isInside(own, guarded)));
