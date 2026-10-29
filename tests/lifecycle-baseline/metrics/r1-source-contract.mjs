@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export const GREATSTONE_COMPANY_ID = "34dad57e-b5ad-4a72-9400-9eba645c99f6";
 
@@ -26,8 +26,11 @@ export function validateSourceContract(contract, { companyId, sourceRef, databas
   if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost" && url.hostname !== "[::1]") throw new Error("R1 source must be loopback");
   if (Number(url.port || 5432) !== contract.port || decodeURIComponent(url.pathname.slice(1)) !== contract.database || decodeURIComponent(url.username) !== contract.role)
     throw new Error("R1 connection does not match approved source identity");
-  const destination = resolve(contract.destination);
-  if (!out.startsWith(`${destination}/`)) throw new Error("R1 output is outside approved destination");
+  const destination = realpathSync(resolve(contract.destination));
+  const outputParent = realpathSync(dirname(resolve(out)));
+  const pathFromDestination = relative(destination, outputParent);
+  if (pathFromDestination === ".." || pathFromDestination.startsWith(`..${sep}`) || isAbsolute(pathFromDestination))
+    throw new Error("R1 output is outside approved destination");
   const coverage = contract.coverage;
   if (!coverage || coverage.kind !== "source-inventory") throw new Error("R1 missing source coverage proof");
   for (const field of ["checkedAt", "checkedBy", "method", "allCurrentCompanyIssues", "fullSevenDayActivity", "olderRelevantRuns", "runRetentionPolicy", "activityRetentionPolicy"])

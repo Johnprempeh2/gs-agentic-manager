@@ -1,10 +1,10 @@
 // John-operated live R1 capture. Run only after source-specific approval
 // recorded on GRE-3269; see r1-capture.md. Never run inside an agent heartbeat.
 import { createRequire } from "node:module";
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { statSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { captureR1Snapshot, summariseR1 } from "./r1-snapshot.mjs";
-import { readSourceContract, verifyReadOnlySource } from "./r1-source-contract.mjs";
+import { readSourceContract, validateSourceContract, verifyReadOnlySource } from "./r1-source-contract.mjs";
 
 const args = process.argv.slice(2);
 if (process.env.GSAM_API_KEY || process.env.GSAM_RUN_ID) throw new Error("R1 operator capture must not run inside an agent run");
@@ -39,7 +39,7 @@ try {
     const snapshot = await captureR1Snapshot(tx, companyId, { verifySource: (reader) => verifyReadOnlySource(reader, contract) });
     return summariseR1(snapshot, companyId, sourceRef);
   });
-  mkdirSync(dirname(out), { recursive: true });
+  validateSourceContract(contract, { companyId, sourceRef, databaseUrl, out });
   writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   console.log(`R1 weekly=${result.weekly}; total=${result.total}; sourceCapturedAt=${result.sourceCapturedAt}; saved ${out}`);
 } finally {
