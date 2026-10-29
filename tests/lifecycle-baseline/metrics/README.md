@@ -17,6 +17,10 @@ It writes `.lifecycle-baseline/metrics/<stamp>/metrics.{json,md}`, plus
 (`pnpm metrics:budgets --group weekly`). Reports hold identifiers and
 timings only, never titles, comment bodies or run output.
 
+For a prospective, single-company R1-only snapshot with a database-bound
+timestamp, use [r1-capture.md](./r1-capture.md). Its operator command is gated
+by source-specific approval on GRE-3269; do not run it for this preparation task.
+
 ## Definitions
 
 **R1 — stranded task trees per week.** A tree is a root issue plus all its
