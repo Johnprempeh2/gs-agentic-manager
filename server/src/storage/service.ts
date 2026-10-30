@@ -48,7 +48,7 @@ function ensureCompanyPrefix(companyId: string, objectKey: string): void {
   if (!objectKey.startsWith(expectedPrefix)) {
     throw forbidden("Object does not belong to company");
   }
-  if (objectKey.includes("..")) {
+  if (objectKey.includes("\\") || objectKey.split("/").some((segment) => segment === "." || segment === "..")) {
     throw badRequest("Invalid object key");
   }
 }
@@ -94,6 +94,7 @@ export function createStorageService(provider: StorageProvider): StorageService 
     async putFile(input: PutFileInput): Promise<PutFileResult> {
       assertPutFileInput(input);
       const objectKey = buildObjectKey(input.companyId, input.namespace, input.originalFilename);
+      ensureCompanyPrefix(input.companyId, objectKey);
       const byteSize = input.body.length;
       const contentType = input.contentType.trim().toLowerCase();
       await provider.putObject({

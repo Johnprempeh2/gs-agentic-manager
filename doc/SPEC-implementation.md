@@ -443,6 +443,7 @@ Operational policy:
   - `asset_id` uuid fk not null
   - `issue_comment_id` uuid fk null
 - V1 attachment serving contract:
+  - Stored object keys may contain consecutive dots inside filename segments; only `.` or `..` path segments and backslashes are invalid. This keeps existing uploads readable without allowing path traversal.
   - Default upload allowlist includes common images, PDF, plain text/markdown/JSON/CSV/HTML, ZIP, and video artifacts (`video/mp4`, `video/webm`, `video/quicktime`).
   - Attachment reads are company-scoped and expose stable path metadata: `contentPath`/`openPath` for inline-safe viewing and `downloadPath` for forced download.
   - Inline-safe responses use `Content-Disposition: inline`; unsafe types and explicit download requests use `attachment`.
