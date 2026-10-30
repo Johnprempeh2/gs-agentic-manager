@@ -19,6 +19,8 @@ export const lanes = {
       "tests/lifecycle-baseline/preview-run-redaction.test.ts",
       // GRE-3200: failed preview run reads never count as zero agent runs.
       "tests/lifecycle-baseline/preview-status-count.test.ts",
+      // GRE-3340: a stored attachment with consecutive dots remains privately readable.
+      "tests/lifecycle-baseline/attachment-readback.test.ts",
       // GRE-2049 / GRE-2161 / GRE-2164: a review stage stays with its listed participants; a loop raises one notice.
       "tests/lifecycle-baseline/review-round-cap-returns-to-author.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
