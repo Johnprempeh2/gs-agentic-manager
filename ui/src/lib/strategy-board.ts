@@ -55,12 +55,33 @@ export function defaultPackPeriod(input: {
   lastPackEnd: string | null;
   nextMeetingDate: string | null;
   today: string;
+  /** The board period (GRE-3472); when set, a new pack covers it. */
+  boardPeriod?: { start: string; end: string } | null;
 }): { periodStart: string; periodEnd: string; title: string } {
+  if (input.boardPeriod) {
+    const { start, end } = input.boardPeriod;
+    return { periodStart: start, periodEnd: end, title: `${formatCalendarMonth(end)} board pack` };
+  }
   const periodEnd = input.nextMeetingDate ?? input.today;
   const afterLast = input.lastPackEnd ? isoDay(dayNumber(input.lastPackEnd) + 1) : null;
   const periodStart = afterLast && afterLast <= periodEnd ? afterLast : oneMonthBefore(periodEnd);
   const month = formatCalendarMonth(periodEnd);
   return { periodStart, periodEnd, title: `${month} board pack` };
+}
+
+/** The board period line (GRE-3472); null when no period is set. */
+export function boardPeriodText(period: StrategyBoardSummary["period"]): string | null {
+  if (!period) return null;
+  const range = `${formatCalendarDay(period.start)} to ${formatCalendarDay(period.end)}`;
+  return period.ended ? `Board period ${range} has ended. Set the next period.` : `Board period ${range} · readings due by ${formatCalendarDay(period.end)}`;
+}
+
+/** Why the board period cannot be saved as entered; null when it can. Empty start and end clear the period. */
+export function boardPeriodError(start: string, end: string): string | null {
+  if (!start && !end) return null;
+  if (!start || !end) return "Set both the start and the end of the period.";
+  if (start > end) return "The period must start on or before its end.";
+  return null;
 }
 
 /** "Next board meeting: 12 Nov (in 3 days)"; null when none is set or the date has passed. */

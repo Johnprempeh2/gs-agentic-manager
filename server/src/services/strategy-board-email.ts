@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
 import {
   authUsers,
   chatConversations,
@@ -9,7 +9,9 @@ import {
   goalKpiAlerts,
   goalKpiReadings,
   goalWhyRequests,
+  issues,
   strategyBoardEmails,
+  strategyBoardPeriodNotices,
   strategyBoardSettings,
   type Db,
 } from "@greatstone/db";
@@ -32,15 +34,18 @@ import { goalService } from "./goals.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { issueService } from "./issues.js";
 import { strategyBoardService } from "./strategy-board.js";
+import { addDays, periodLabel } from "./strategy-board-period.js";
 
 /**
  * Board email (GRE-1187). Owners rarely log in, so the board secretary's
  * AgentMail inbox sends them the plan: reminders before each board meeting,
- * slippage alerts to the chair and "Why?" requests to the KPI owner.
+ * slippage alerts to the chair, "Why?" requests to the KPI owner and, at the
+ * end of the board period, a reading-due email to each owner (GRE-3472).
  *
  * A sweep builds what is due and logs one `strategy_board_emails` row per
  * email. The row's unique dedupe key is the guard: a reminder once per owner
- * per meeting, an alert once per red spell, a "Why?" request once. Nothing is
+ * per meeting, a slippage alert and a reading-due email once per board period,
+ * a "Why?" request once. Nothing is
  * sent while `enableStrategyBoard` is off, the instance setting turns that
  * kind off, or the company has no secretary inbox.
  */
@@ -80,12 +85,6 @@ export interface BoardEmailSweepResult {
 function toEmail(row: EmailRow): StrategyBoardEmail {
   const { dedupeKey: _dedupeKey, endpointId: _endpointId, ...rest } = row;
   return { ...rest, kind: row.kind as StrategyBoardEmailKind, status: row.status as StrategyBoardEmail["status"] };
-}
-
-function addDays(isoDate: string, days: number): string {
-  const date = new Date(`${isoDate}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }
 
 function round(value: number | null | undefined): string {
@@ -142,17 +141,46 @@ export function renderMeetingReminder(input: {
   return { subject: `Board meeting on ${input.meetingDate}: your readings and actions`, text: lines.join("\n"), kpiCodes };
 }
 
-export function renderSlippageAlert(input: { kpi: GoalWithProgress; gapPercent: number | null; latestValue: number | null; goalUrl: string | null }) {
-  const { kpi } = input;
-  const unit = kpi.unit ? ` ${kpi.unit}` : "";
-  const s = kpi.kpiStatus;
-  const detail = s?.reason === "deadline_missed"
-    ? `The deadline has passed and the target is not met: ${round(input.latestValue ?? s?.latestValue)}${unit} against a target of ${round(kpi.targetValue)}${unit}.`
-    : `${round(input.gapPercent ?? s?.gapPercent)}% behind plan: ${round(input.latestValue ?? s?.latestValue)}${unit} against a plan of ${round(s?.plannedValue)}${unit}${s?.latestDate ? ` on ${s.latestDate}` : ""}.`;
-  const lines = [`${kpi.title} is off course.`, "", detail];
-  if (input.goalUrl) lines.push("", `See the readings and ask the owner "Why?": ${input.goalUrl}`);
-  lines.push("", "You get this email once each time the KPI goes off course.", "", "Board secretary");
-  return { subject: `KPI is off course: ${kpi.title}`, text: lines.join("\n") };
+/** The chair's one slippage email per board period (GRE-3472): every KPI red when it is sent. */
+export function renderSlippageAlert(input: {
+  period: { start: string; end: string };
+  kpis: Array<{ kpi: GoalWithProgress; gapPercent: number | null; latestValue: number | null; goalUrl: string | null }>;
+  boardUrl: string | null;
+}) {
+  const lines = [`These KPIs are off course in the board period ${periodLabel(input.period)}:`, ""];
+  for (const { kpi, gapPercent, latestValue, goalUrl } of input.kpis) {
+    const unit = kpi.unit ? ` ${kpi.unit}` : "";
+    const s = kpi.kpiStatus;
+    const detail = s?.reason === "deadline_missed"
+      ? `deadline passed, ${round(latestValue ?? s?.latestValue)}${unit} against a target of ${round(kpi.targetValue)}${unit}`
+      : `${round(gapPercent ?? s?.gapPercent)}% behind plan, ${round(latestValue ?? s?.latestValue)}${unit} against a plan of ${round(s?.plannedValue)}${unit}${s?.latestDate ? ` on ${s.latestDate}` : ""}`;
+    lines.push(`- ${kpi.title}: ${detail}.${goalUrl ? ` ${goalUrl}` : ""}`);
+  }
+  if (input.boardUrl) lines.push("", `See the readings and ask the owner "Why?": ${input.boardUrl}`);
+  lines.push(
+    "",
+    "You get one of these emails per board period. KPIs that go off course later in the period are added to your task in the app and to the board pack.",
+    "",
+    "Board secretary",
+  );
+  const subject = input.kpis.length === 1 ? `KPI is off course: ${input.kpis[0].kpi.title}` : `${input.kpis.length} KPIs are off course`;
+  return { subject, text: lines.join("\n") };
+}
+
+/** A KPI owner's reading-due email at the end of the board period (GRE-3472). */
+export function renderReadingDue(input: { ownerName: string | null; period: { start: string; end: string }; kpis: GoalWithProgress[]; boardUrl: string | null }) {
+  const lines = [
+    `Hello ${input.ownerName ?? "there"},`,
+    "",
+    `The board period ${periodLabel(input.period)} has ended. These KPIs you own have no reading for it yet:`,
+    "",
+    ...input.kpis.map((kpi) => `- ${kpi.title}${kpi.latestReading ? ` (last reading ${kpi.latestReading.readingDate})` : " (no reading yet)"}`),
+    "",
+    `Please add a reading dated between ${input.period.start} and ${input.period.end} on each KPI page.`,
+  ];
+  if (input.boardUrl) lines.push("", input.boardUrl);
+  lines.push("", "Board secretary");
+  return { subject: `Readings due for ${periodLabel(input.period)}`, text: lines.join("\n") };
 }
 
 export function renderWhyRequest(input: { ownerName: string | null; kpiTitle: string; question: string; goalUrl: string | null }) {
@@ -187,6 +215,9 @@ export function strategyBoardEmailService(db: Db, opts: { sender?: BoardEmailSen
       secretaryEndpointId: row?.secretaryEndpointId ?? null,
       nextMeetingDate: row?.nextMeetingDate ?? null,
       reminderLeadDays: row?.reminderLeadDays ?? 7,
+      periodStart: row?.periodStart ?? null,
+      periodEnd: row?.periodEnd ?? null,
+      periodMonths: row?.periodMonths ?? null,
     };
   }
 
@@ -207,6 +238,9 @@ export function strategyBoardEmailService(db: Db, opts: { sender?: BoardEmailSen
       secretaryEndpointId: patch.secretaryEndpointId !== undefined ? patch.secretaryEndpointId : current.secretaryEndpointId,
       nextMeetingDate: patch.nextMeetingDate !== undefined ? patch.nextMeetingDate : current.nextMeetingDate,
       reminderLeadDays: patch.reminderLeadDays ?? current.reminderLeadDays,
+      periodStart: patch.periodStart !== undefined ? patch.periodStart : current.periodStart,
+      periodEnd: patch.periodEnd !== undefined ? patch.periodEnd : current.periodEnd,
+      periodMonths: patch.periodMonths !== undefined ? patch.periodMonths : current.periodMonths,
       updatedAt: new Date(),
     };
     await db
@@ -236,30 +270,75 @@ export function strategyBoardEmailService(db: Db, opts: { sender?: BoardEmailSen
     return prefix ? `${baseUrl}/${prefix}/strategy-board` : `${baseUrl}/strategy-board`;
   }
 
-  async function slippageDrafts(companyId: string, byId: Map<string, GoalWithProgress>, prefix: string | null): Promise<BoardEmailDraft[]> {
-    const open = await db
-      .select()
-      .from(goalKpiAlerts)
+  /** Open period tasks of one kind, with the notice that made them. */
+  async function openNotices(companyId: string, kind: "reading_due" | "chair_alert") {
+    return db
+      .select({ notice: strategyBoardPeriodNotices })
+      .from(strategyBoardPeriodNotices)
+      .innerJoin(issues, eq(issues.id, strategyBoardPeriodNotices.issueId))
       .where(
         and(
-          eq(goalKpiAlerts.companyId, companyId),
-          isNull(goalKpiAlerts.clearedAt),
-          isNotNull(goalKpiAlerts.recipientUserId),
-          isNotNull(goalKpiAlerts.alertIssueId),
+          eq(strategyBoardPeriodNotices.companyId, companyId),
+          eq(strategyBoardPeriodNotices.kind, kind),
+          notInArray(issues.status, ["done", "cancelled"]),
         ),
       )
-      .orderBy(asc(goalKpiAlerts.openedAt));
-    return open.flatMap((alert) => {
-      const kpi = byId.get(alert.goalId);
-      if (!kpi) return [];
-      const message = renderSlippageAlert({ kpi, gapPercent: alert.gapPercent, latestValue: alert.latestValue, goalUrl: goalUrl(prefix, kpi.id) });
-      return [{
-        kind: "slippage_alert" as const,
-        dedupeKey: `alert:${alert.id}`,
-        recipientUserId: alert.recipientUserId!,
-        parentIssueId: alert.alertIssueId!,
-        alertId: alert.id,
+      .orderBy(asc(strategyBoardPeriodNotices.createdAt))
+      .then((rows) => rows.map((row) => row.notice));
+  }
+
+  /** GRE-3472: one email to the chair per board period, when the period's task is made. */
+  async function slippageDrafts(companyId: string, byId: Map<string, GoalWithProgress>, prefix: string | null): Promise<BoardEmailDraft[]> {
+    const drafts: BoardEmailDraft[] = [];
+    for (const notice of await openNotices(companyId, "chair_alert")) {
+      if (!notice.recipientKey.startsWith("user:")) continue;
+      const spells = await db
+        .select()
+        .from(goalKpiAlerts)
+        .where(and(eq(goalKpiAlerts.companyId, companyId), eq(goalKpiAlerts.alertIssueId, notice.issueId!)))
+        .orderBy(asc(goalKpiAlerts.openedAt));
+      const red = spells.filter((spell) => !spell.clearedAt && byId.has(spell.goalId));
+      if (red.length === 0) continue;
+      const message = renderSlippageAlert({
+        period: { start: notice.periodStart, end: notice.periodEnd },
+        kpis: red.map((spell) => ({
+          kpi: byId.get(spell.goalId)!,
+          gapPercent: spell.gapPercent,
+          latestValue: spell.latestValue,
+          goalUrl: goalUrl(prefix, spell.goalId),
+        })),
+        boardUrl: boardUrl(prefix),
+      });
+      drafts.push({
+        kind: "slippage_alert",
+        dedupeKey: `slippage_alert:${notice.periodEnd}`,
+        recipientUserId: notice.recipientKey.slice("user:".length),
+        parentIssueId: notice.issueId!,
+        alertId: red[0].id,
         ...message,
+      });
+    }
+    return drafts;
+  }
+
+  /** GRE-3472: at most one reading-due email per owner (a person) per board period. */
+  async function readingDueDrafts(
+    companyId: string,
+    byId: Map<string, GoalWithProgress>,
+    names: Map<string, string | null>,
+    prefix: string | null,
+  ): Promise<BoardEmailDraft[]> {
+    return (await openNotices(companyId, "reading_due")).flatMap((notice) => {
+      if (!notice.recipientKey.startsWith("user:")) return [];
+      const userId = notice.recipientKey.slice("user:".length);
+      const kpis = (notice.goalIds ?? []).map((id) => byId.get(id)).filter((kpi): kpi is GoalWithProgress => !!kpi);
+      if (kpis.length === 0) return [];
+      return [{
+        kind: "reading_due" as const,
+        dedupeKey: `reading_due:${notice.periodEnd}:${notice.recipientKey}`,
+        recipientUserId: userId,
+        parentIssueId: notice.issueId!,
+        ...renderReadingDue({ ownerName: names.get(userId) ?? null, period: { start: notice.periodStart, end: notice.periodEnd }, kpis, boardUrl: boardUrl(prefix) }),
       }];
     });
   }
@@ -455,6 +534,8 @@ export function strategyBoardEmailService(db: Db, opts: { sender?: BoardEmailSen
     const drafts: BoardEmailDraft[] = [];
     if (ctx.kinds.slippageAlerts) drafts.push(...(await slippageDrafts(companyId, byId, prefix)));
     if (ctx.kinds.whyRequests) drafts.push(...(await whyDrafts(companyId, byId, names, prefix)));
+    // Reading-due emails are reminders too, so the same instance setting turns them off.
+    if (ctx.kinds.meetingReminders) drafts.push(...(await readingDueDrafts(companyId, byId, names, prefix)));
     if (ctx.kinds.meetingReminders && meetingReminderDue(ctx.today, settings.nextMeetingDate, settings.reminderLeadDays)) {
       drafts.push(...(await reminderDrafts(companyId, companyGoals, names, settings.nextMeetingDate!, prefix)));
     }
@@ -588,7 +669,7 @@ export async function storeBoardEmailReply(
     );
   if (!message || message.direction !== "inbound") return { stored: "nothing", reason: "not_board_thread" };
   const { email } = sent;
-  if (email.kind === "slippage_alert") return { stored: "nothing", reason: "not_stored_kind" };
+  if (email.kind === "slippage_alert" || email.kind === "reading_due") return { stored: "nothing", reason: "not_stored_kind" };
   const note = (body: string) => issueService(db).addComment(sent.threadIssueId, body, {}, { authorType: "system" });
   if (emailAddress(message.envelope.from) !== emailAddress(email.recipientEmail)) {
     await note("Not stored on the plan: this reply did not come from the person the board emailed, so it stays in this email thread only.");

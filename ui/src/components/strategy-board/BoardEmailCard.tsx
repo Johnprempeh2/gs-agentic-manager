@@ -14,6 +14,7 @@ export const BOARD_EMAIL_KIND_LABEL: Record<StrategyBoardEmailKind, string> = {
   meeting_reminder: "Meeting reminder",
   slippage_alert: "Slippage alert",
   why_request: "\"Why?\" request",
+  reading_due: "Reading reminder",
 };
 
 /** One line for the recent board emails list. */

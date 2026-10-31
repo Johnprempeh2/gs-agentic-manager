@@ -1528,6 +1528,7 @@ export type {
   StrategyBoardViewerRights,
   StrategyBoardEmail,
   StrategyBoardEmailKind,
+  StrategyBoardPeriod,
   StrategyBoardSettings,
   Approval,
   ApprovalComment,

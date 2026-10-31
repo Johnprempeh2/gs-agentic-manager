@@ -75,8 +75,40 @@ export const strategyBoardSettings = pgTable("strategy_board_settings", {
   nextMeetingDate: date("next_meeting_date"),
   /** Owners get their reminder this many days before the meeting. */
   reminderLeadDays: integer("reminder_lead_days").notNull().default(7),
+  /** The board period (GRE-3472): readings are due by its end; the chair gets one alert task per period. */
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  /** Length of the next period at rollover; null = no automatic rollover. */
+  periodMonths: integer("period_months"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * One board task per period and recipient (GRE-3472): a KPI owner's
+ * reading-due task or the chair's "KPIs off course" task. The unique key is
+ * the race guard: only the writer that inserts the row creates the task.
+ */
+export const strategyBoardPeriodNotices = pgTable(
+  "strategy_board_period_notices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    /** reading_due | chair_alert */
+    kind: text("kind").notNull(),
+    /** `user:<id>` or `agent:<id>` */
+    recipientKey: text("recipient_key").notNull(),
+    issueId: uuid("issue_id").references(() => issues.id, { onDelete: "set null" }),
+    /** reading_due: the KPI goal ids that had no reading in the period. */
+    goalIds: jsonb("goal_ids").$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    periodIdx: uniqueIndex("strategy_board_period_notices_period_idx").on(table.companyId, table.periodEnd, table.kind, table.recipientKey),
+    kindCheck: check("strategy_board_period_notices_kind_check", sql`${table.kind} in ('reading_due', 'chair_alert')`),
+  }),
+);
 
 /**
  * One board email to one person. `dedupe_key` is unique per company, so the
@@ -88,7 +120,7 @@ export const strategyBoardEmails = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id),
-    /** meeting_reminder | slippage_alert | why_request */
+    /** meeting_reminder | slippage_alert | why_request | reading_due */
     kind: text("kind").notNull(),
     dedupeKey: text("dedupe_key").notNull(),
     recipientUserId: text("recipient_user_id").notNull(),
@@ -110,7 +142,7 @@ export const strategyBoardEmails = pgTable(
   (table) => ({
     dedupeIdx: uniqueIndex("strategy_board_emails_dedupe_idx").on(table.companyId, table.dedupeKey),
     publicationIdx: index("strategy_board_emails_publication_idx").on(table.publicationId),
-    kindCheck: check("strategy_board_emails_kind_check", sql`${table.kind} in ('meeting_reminder', 'slippage_alert', 'why_request')`),
+    kindCheck: check("strategy_board_emails_kind_check", sql`${table.kind} in ('meeting_reminder', 'slippage_alert', 'why_request', 'reading_due')`),
     statusCheck: check("strategy_board_emails_status_check", sql`${table.status} in ('queued', 'failed')`),
   }),
 );

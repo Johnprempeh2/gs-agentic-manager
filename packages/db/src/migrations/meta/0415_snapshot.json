@@ -1,5 +1,5 @@
 {
-  "id": "3ed0771c-c94f-46c0-8449-d83ff89b1e70",
+  "id": "c07a20bf-e6fb-4b23-9de8-2158e6c8185f",
   "prevId": "33def5ae-f9f4-493b-871d-011851b804d9",
   "version": "7",
   "dialect": "postgresql",
@@ -33799,13 +33799,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "kpi_path": {
-          "name": "kpi_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'straight_line'"
-        },
         "amber_threshold_pct": {
           "name": "amber_threshold_pct",
           "type": "double precision",
@@ -60002,7 +59995,7 @@
       "checkConstraints": {
         "strategy_board_emails_kind_check": {
           "name": "strategy_board_emails_kind_check",
-          "value": "\"strategy_board_emails\".\"kind\" in ('meeting_reminder', 'slippage_alert', 'why_request')"
+          "value": "\"strategy_board_emails\".\"kind\" in ('meeting_reminder', 'slippage_alert', 'why_request', 'reading_due')"
         },
         "strategy_board_emails_status_check": {
           "name": "strategy_board_emails_status_check",
@@ -60159,6 +60152,141 @@
       },
       "isRLSEnabled": false
     },
+    "public.strategy_board_period_notices": {
+      "name": "strategy_board_period_notices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_start": {
+          "name": "period_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_end": {
+          "name": "period_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_key": {
+          "name": "recipient_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_id": {
+          "name": "issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "goal_ids": {
+          "name": "goal_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "strategy_board_period_notices_period_idx": {
+          "name": "strategy_board_period_notices_period_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "period_end",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recipient_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "strategy_board_period_notices_company_id_companies_id_fk": {
+          "name": "strategy_board_period_notices_company_id_companies_id_fk",
+          "tableFrom": "strategy_board_period_notices",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "strategy_board_period_notices_issue_id_issues_id_fk": {
+          "name": "strategy_board_period_notices_issue_id_issues_id_fk",
+          "tableFrom": "strategy_board_period_notices",
+          "tableTo": "issues",
+          "columnsFrom": [
+            "issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "strategy_board_period_notices_kind_check": {
+          "name": "strategy_board_period_notices_kind_check",
+          "value": "\"strategy_board_period_notices\".\"kind\" in ('reading_due', 'chair_alert')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.strategy_board_settings": {
       "name": "strategy_board_settings",
       "schema": "",
@@ -60187,6 +60315,24 @@
           "primaryKey": false,
           "notNull": true,
           "default": 7
+        },
+        "period_start": {
+          "name": "period_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "period_end": {
+          "name": "period_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "period_months": {
+          "name": "period_months",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
