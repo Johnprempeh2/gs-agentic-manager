@@ -133,6 +133,8 @@ export interface StrategyBoardSummary {
   hasChair: boolean;
   /** "YYYY-MM-DD" of the next board meeting; null when none is set. The board meets monthly. */
   nextMeetingDate: string | null;
+  /** The board period (GRE-3472); null when none is set. `ended` while it waits for the next period. */
+  period: StrategyBoardPeriod | null;
   /**
    * "Why?" requests answered since the last accepted pack (all answers when
    * there is no pack), newest first, and those still open, oldest first.
@@ -300,7 +302,17 @@ export interface StrategyBoardPack {
 export type StrategyBoardPackListItem = Omit<StrategyBoardPack, "body" | "snapshot">;
 
 /** The board emails that can be sent (GRE-1187). */
-export type StrategyBoardEmailKind = "meeting_reminder" | "slippage_alert" | "why_request";
+export type StrategyBoardEmailKind = "meeting_reminder" | "slippage_alert" | "why_request" | "reading_due";
+
+/** The board period: readings are due by its end; the chair gets one "KPIs off course" task per period. */
+export interface StrategyBoardPeriod {
+  /** "YYYY-MM-DD", inclusive. */
+  start: string;
+  /** "YYYY-MM-DD", inclusive. */
+  end: string;
+  /** True after the end when no automatic rollover is set. */
+  ended: boolean;
+}
 
 /** Per-company board email settings: the next meeting and the secretary's inbox. */
 export interface StrategyBoardSettings {
@@ -311,6 +323,12 @@ export interface StrategyBoardSettings {
   nextMeetingDate: string | null;
   /** Owners get their reminder this many days before the meeting. */
   reminderLeadDays: number;
+  /** "YYYY-MM-DD" first day of the board period; null = no period set. */
+  periodStart: string | null;
+  /** "YYYY-MM-DD" last day of the board period; readings are due by then. */
+  periodEnd: string | null;
+  /** The next period is this many months long; null = no automatic rollover. */
+  periodMonths: number | null;
 }
 
 /** One board email to one person. */

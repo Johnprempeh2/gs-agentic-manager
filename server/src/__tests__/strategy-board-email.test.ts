@@ -20,6 +20,7 @@ import {
   principalPermissionGrants,
   strategyBoardEmails,
   strategyBoardPacks,
+  strategyBoardPeriodNotices,
   strategyBoardSettings,
   toolApplications,
   toolConnections,
@@ -30,6 +31,7 @@ import { goalRoutes } from "../routes/goals.js";
 import { strategyBoardRoutes } from "../routes/strategy-board.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { issueService } from "../services/issues.js";
+import { strategyBoardService } from "../services/strategy-board.js";
 import {
   BOARD_EMAIL_MAX_ATTEMPTS,
   meetingReminderDue,
@@ -79,6 +81,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
       await db.delete(strategyBoardEmails);
       await db.delete(strategyBoardSettings);
       await db.delete(strategyBoardPacks);
+      await db.delete(strategyBoardPeriodNotices);
       await db.delete(goalKpiAlerts);
       await db.delete(goalWhyRequests);
       await db.delete(goalKpiReadings);
@@ -215,7 +218,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
 
   // ---- Slippage alerts to the chair ----
 
-  it("emails the chair once per red spell, not again while it stays red, and again after it recovers", async () => {
+  it("emails the chair once per board period, not again while it stays red, nor when it recovers and turns red again in the period", async () => {
     const { companyId, actor: owner, chair, inbox } = await seedBoardWithChair("Slip");
     const kpi = await seedKpi(companyId, "Revenue", { ownerUserId: (await addPerson(companyId, "operator", "ama")).userId });
     const sender = fakeSender();
@@ -228,7 +231,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
       companyId,
       input: { endpointId: inbox.id, to: [chair.email], subject: "KPI is off course: Revenue", parentIssueId: alert.alertIssueId },
     });
-    expect(sender.sent[0].input.text).toContain(`${alert.gapPercent}% behind plan: 100 k against a plan of 150 k`);
+    expect(sender.sent[0].input.text).toContain(`${alert.gapPercent}% behind plan, 100 k against a plan of 150 k`);
     expect(sender.sent[0].input.text).toContain(`https://board.example.test/`);
 
     // Still red: a new reading and two more sweeps send nothing.
@@ -237,19 +240,64 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
     await sweep(sender);
     expect(sender.sent).toHaveLength(1);
 
-    // Recovers, then red again: a new spell, one more email.
+    // Recovers, then red again in the same period: the task reopens, no more email.
     await postReading(owner, kpi.id, 150);
     await sweep(sender);
-    expect(sender.sent).toHaveLength(1);
     await postReading(owner, kpi.id, 100);
     await sweep(sender);
-    expect(sender.sent).toHaveLength(2);
-    expect(sender.sent[1].input.to).toEqual([chair.email]);
+    expect(sender.sent).toHaveLength(1);
 
     const log = await request(app(owner)).get(`/api/companies/${companyId}/strategy-board/emails`);
     expect(log.status).toBe(200);
-    expect(log.body).toHaveLength(2);
-    expect(log.body.every((row: { kind: string; status: string }) => row.kind === "slippage_alert" && row.status === "queued")).toBe(true);
+    expect(log.body).toHaveLength(1);
+    expect(log.body[0]).toMatchObject({ kind: "slippage_alert", status: "queued" });
+  });
+
+  it("three red KPIs make one chair email that lists all three; a fourth later in the period sends no more (GRE-3472)", async () => {
+    const { companyId, actor: owner, chair } = await seedBoardWithChair("ThreeRed");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const kpis = await Promise.all(["Revenue", "Margin", "Clients"].map((title) => seedKpi(companyId, title, { ownerUserId: ama.userId })));
+    for (const kpi of kpis) await postReading(owner, kpi.id, 100);
+    const sender = fakeSender();
+    await sweep(sender);
+    expect(sender.sent).toHaveLength(1);
+    expect(sender.sent[0].input).toMatchObject({ to: [chair.email], subject: "3 KPIs are off course" });
+    for (const title of ["Revenue", "Margin", "Clients"]) expect(sender.sent[0].input.text).toContain(`- ${title}:`);
+
+    const fourth = await seedKpi(companyId, "Churn", { ownerUserId: ama.userId });
+    await postReading(owner, fourth.id, 100);
+    await sweep(sender);
+    expect(sender.sent).toHaveLength(1);
+  });
+
+  it("emails each owner with KPIs missing a reading once at the end of the board period, never an agent owner (GRE-3472)", async () => {
+    const { companyId, actor: owner } = await seedBoardWithChair("ReadingDue");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const [agent] = await ctx.db
+      .insert(agents)
+      .values({ companyId, name: "Analyst", role: "general", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {} })
+      .returning();
+    await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    await seedKpi(companyId, "Margin", { ownerUserId: ama.userId });
+    await seedKpi(companyId, "Uptime", { ownerAgentId: agent.id });
+    await configure(owner, companyId, { periodStart: dayOffset(-30), periodEnd: TODAY });
+    const board = strategyBoardService(ctx.db);
+    await board.runPeriodSweep(companyId, TODAY);
+
+    const sender = fakeSender();
+    await sweep(sender);
+    const due = sender.sent.filter((email) => email.input.subject.startsWith("Readings due"));
+    expect(due).toHaveLength(1);
+    expect(due[0].input.to).toEqual([ama.email]);
+    expect(due[0].input.text).toContain("- Margin");
+    expect(due[0].input.text).toContain("- Revenue");
+    expect(due[0].input.text).not.toContain("Uptime");
+
+    await board.runPeriodSweep(companyId, TODAY);
+    await sweep(sender);
+    expect(sender.sent.filter((email) => email.input.subject.startsWith("Readings due"))).toHaveLength(1);
+    const rows = await ctx.db.select().from(strategyBoardEmails).where(eq(strategyBoardEmails.kind, "reading_due"));
+    expect(rows).toHaveLength(1);
   });
 
   // ---- "Why?" requests to the owner ----
@@ -419,7 +467,24 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
     expect((await request(app(owner)).patch(`/api/companies/${companyId}/strategy-board/settings`).send({ reminderLeadDays: 99 })).status).toBe(400);
 
     const saved = await configure(owner, companyId, { secretaryEndpointId: inbox.id, nextMeetingDate: "2026-12-01" });
-    expect(saved).toEqual({ companyId, secretaryEndpointId: inbox.id, nextMeetingDate: "2026-12-01", reminderLeadDays: 7 });
+    expect(saved).toEqual({
+      companyId,
+      secretaryEndpointId: inbox.id,
+      nextMeetingDate: "2026-12-01",
+      reminderLeadDays: 7,
+      periodStart: null,
+      periodEnd: null,
+      periodMonths: null,
+    });
+
+    // The board period (GRE-3472): start and end go together, in order.
+    const settingsUrl = `/api/companies/${companyId}/strategy-board/settings`;
+    expect((await request(app(owner)).patch(settingsUrl).send({ periodStart: "2026-11-01" })).status).toBe(400);
+    expect((await request(app(owner)).patch(settingsUrl).send({ periodStart: "2026-11-30", periodEnd: "2026-11-01" })).status).toBe(400);
+    expect((await request(app(owner)).patch(settingsUrl).send({ periodStart: "2026-11-01", periodEnd: "2026-11-30", periodMonths: 0 })).status).toBe(400);
+    const withPeriod = await configure(owner, companyId, { periodStart: "2026-11-01", periodEnd: "2026-11-30", periodMonths: 1 });
+    expect(withPeriod).toMatchObject({ nextMeetingDate: "2026-12-01", periodStart: "2026-11-01", periodEnd: "2026-11-30", periodMonths: 1 });
+    expect(await configure(owner, companyId, { periodMonths: null })).toMatchObject({ periodEnd: "2026-11-30", periodMonths: null });
 
     await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: false });
     expect((await request(app(owner)).get(`/api/companies/${companyId}/strategy-board/settings`)).status).toBe(403);

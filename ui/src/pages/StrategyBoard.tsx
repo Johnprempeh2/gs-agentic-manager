@@ -7,7 +7,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
-import { boardAssurance, boardUpdateText, meetingPackId, nextMeetingText } from "@/lib/strategy-board";
+import { boardAssurance, boardPeriodText, boardUpdateText, meetingPackId, nextMeetingText } from "@/lib/strategy-board";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -23,6 +23,7 @@ import {
 } from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
 import { BoardEmailCard } from "@/components/strategy-board/BoardEmailCard";
+import { BoardPeriodCard } from "@/components/strategy-board/BoardPeriodCard";
 import { FeatureTour } from "@/components/FeatureTour";
 import { STRATEGY_BOARD_TOUR } from "@/lib/feature-tours";
 
@@ -148,6 +149,7 @@ export function StrategyBoard() {
   const rights = board.viewer;
   const meetingPack = packs ? meetingPackId(packs) : null;
   const meetingText = nextMeetingText(board.nextMeetingDate, board.asOf);
+  const periodText = boardPeriodText(board.period);
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -163,6 +165,11 @@ export function StrategyBoard() {
           ) : rights.mayManageMembers ? (
             <p className="mt-1 text-sm text-muted-foreground" data-testid="next-meeting">
               No next board meeting set. <a href="#board-email-heading" className="underline underline-offset-2">Set the date under Board email</a>.
+            </p>
+          ) : null}
+          {periodText ? (
+            <p className={`mt-1 text-sm ${board.period?.ended ? "font-medium text-status-warning" : "text-muted-foreground"}`} data-testid="board-period">
+              {periodText}
             </p>
           ) : null}
         </div>
@@ -277,6 +284,13 @@ export function StrategyBoard() {
       ) : null}
 
       {rights.mayManageMembers ? (
+        <section className="space-y-2" aria-labelledby="board-period-heading">
+          <SectionHeading id="board-period-heading">Board period</SectionHeading>
+          <BoardPeriodCard companyId={selectedCompanyId!} today={board.asOf} />
+        </section>
+      ) : null}
+
+      {rights.mayManageMembers ? (
         <section className="space-y-2" aria-labelledby="board-email-heading">
           <SectionHeading id="board-email-heading">Board email</SectionHeading>
           <BoardEmailCard companyId={selectedCompanyId!} />
@@ -298,6 +312,7 @@ export function StrategyBoard() {
           open={makingPack}
           lastPackEnd={board.lastSnapshot?.periodEnd ?? null}
           nextMeetingDate={board.nextMeetingDate}
+          boardPeriod={board.period}
           today={board.asOf}
           onClose={() => setMakingPack(false)}
           onCreated={(pack) => {

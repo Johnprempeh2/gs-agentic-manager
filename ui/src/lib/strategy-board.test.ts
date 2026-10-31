@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardAssurance, defaultPackPeriod, meetingPackId, nextMeetingText, packFileName, readingAgeText, boardUpdateText } from "./strategy-board";
+import { boardAssurance, boardPeriodError, boardPeriodText, defaultPackPeriod, meetingPackId, nextMeetingText, packFileName, readingAgeText, boardUpdateText } from "./strategy-board";
 
 describe("boardAssurance", () => {
   it("is strong only for a fresh checked or system reading", () => {
@@ -31,6 +31,12 @@ describe("defaultPackPeriod (monthly board)", () => {
       title: "March 2026 board pack",
     });
     expect(defaultPackPeriod({ lastPackEnd: null, nextMeetingDate: "2026-01-15", today: "2026-01-02" }).periodStart).toBe("2025-12-15");
+  });
+
+  it("covers the board period when one is set (GRE-3472)", () => {
+    expect(
+      defaultPackPeriod({ lastPackEnd: "2026-10-12", nextMeetingDate: "2026-11-09", today: "2026-10-20", boardPeriod: { start: "2026-10-01", end: "2026-10-31" } }),
+    ).toEqual({ periodStart: "2026-10-01", periodEnd: "2026-10-31", title: "October 2026 board pack" });
   });
 
   it("falls back to one month when the last pack ends after the meeting", () => {
@@ -97,5 +103,20 @@ describe("boardUpdateText", () => {
       "Overdue actions",
       "• Hire a sales lead: 5 days overdue, Ridge",
     ]);
+  });
+});
+
+describe("board period (GRE-3472)", () => {
+  it("says when readings are due, or that the period has ended", () => {
+    expect(boardPeriodText(null)).toBeNull();
+    expect(boardPeriodText({ start: "2026-10-01", end: "2026-10-31", ended: false })).toBe("Board period 1 Oct to 31 Oct · readings due by 31 Oct");
+    expect(boardPeriodText({ start: "2026-10-01", end: "2026-10-31", ended: true })).toBe("Board period 1 Oct to 31 Oct has ended. Set the next period.");
+  });
+
+  it("asks for both ends of the period, in order; both empty clears it", () => {
+    expect(boardPeriodError("", "")).toBeNull();
+    expect(boardPeriodError("2026-10-01", "")).toBe("Set both the start and the end of the period.");
+    expect(boardPeriodError("2026-10-31", "2026-10-01")).toBe("The period must start on or before its end.");
+    expect(boardPeriodError("2026-10-01", "2026-10-31")).toBeNull();
   });
 });

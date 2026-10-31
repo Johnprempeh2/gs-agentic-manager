@@ -59,6 +59,18 @@ export const updateStrategyBoardSettingsSchema = z
     secretaryEndpointId: z.string().uuid().nullable().optional(),
     nextMeetingDate: calendarDateSchema.nullable().optional(),
     reminderLeadDays: z.number().int().min(0).max(60).optional(),
+    /** Board period (GRE-3472). Set start and end together, or clear both with null. */
+    periodStart: calendarDateSchema.nullable().optional(),
+    periodEnd: calendarDateSchema.nullable().optional(),
+    periodMonths: z.number().int().min(1).max(24).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => (value.periodStart === undefined) === (value.periodEnd === undefined) && (value.periodStart === null) === (value.periodEnd === null), {
+    message: "Set the period start and end together",
+    path: ["periodEnd"],
+  })
+  .refine((value) => !value.periodStart || !value.periodEnd || value.periodStart <= value.periodEnd, {
+    message: "The period must start on or before its end",
+    path: ["periodEnd"],
+  });
 export type UpdateStrategyBoardSettings = z.infer<typeof updateStrategyBoardSettingsSchema>;
