@@ -2885,6 +2885,13 @@
       "when": 1793127979708,
       "tag": "0413_curly_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 414,
+      "version": "7",
+      "when": 1793427610376,
+      "tag": "0414_repair_restored_schema_drift",
+      "breakpoints": true
     }
   ]
 }
