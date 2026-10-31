@@ -1,5 +1,5 @@
 {
-  "id": "005100b3-97e1-4f39-9751-c6b9f6817558",
+  "id": "33def5ae-f9f4-493b-871d-011851b804d9",
   "prevId": "061e6d94-9a44-4276-837c-11c6ad6e55f8",
   "version": "7",
   "dialect": "postgresql",
@@ -33798,13 +33798,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "kpi_path": {
-          "name": "kpi_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'straight_line'"
         },
         "amber_threshold_pct": {
           "name": "amber_threshold_pct",

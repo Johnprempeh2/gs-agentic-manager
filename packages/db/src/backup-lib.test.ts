@@ -625,6 +625,66 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
   );
 
   it(
+    "backs up and restores NULLS NOT DISTINCT on unique constraints (GRE-3437)",
+    async () => {
+      const sourceConnectionString = await createTempDatabase();
+      const restoreConnectionString = await createSiblingDatabase(
+        sourceConnectionString,
+        "paperclip_restore_nulls_not_distinct",
+      );
+      const backupDir = createTempDir("paperclip-db-backup-nulls-not-distinct-");
+      const sourceSql = postgres(sourceConnectionString, { max: 1, onnotice: () => {} });
+      const restoreSql = postgres(restoreConnectionString, { max: 1, onnotice: () => {} });
+
+      try {
+        await sourceSql.unsafe(`
+          CREATE TABLE "public"."unique_test_slots" (
+            "id" serial PRIMARY KEY,
+            "scope_id" text,
+            "slot_key" text NOT NULL,
+            CONSTRAINT "unique_test_slots_scope_slot_uq" UNIQUE NULLS NOT DISTINCT ("scope_id", "slot_key"),
+            CONSTRAINT "unique_test_slots_plain_uq" UNIQUE ("id", "scope_id")
+          );
+          INSERT INTO "public"."unique_test_slots" ("scope_id", "slot_key") VALUES (NULL, 'a'), ('s1', 'a');
+        `);
+
+        const result = await runDatabaseBackup({
+          connectionString: sourceConnectionString,
+          backupDir,
+          retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+          filenamePrefix: "paperclip-test",
+          backupEngine: "javascript",
+        });
+
+        await runDatabaseRestore({
+          connectionString: restoreConnectionString,
+          backupFile: result.backupFile,
+        });
+
+        const constraints = await restoreSql.unsafe<{ conname: string; definition: string }[]>(`
+          SELECT c.conname, pg_get_constraintdef(c.oid) AS definition
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          WHERE t.relname = 'unique_test_slots' AND c.contype = 'u'
+          ORDER BY c.conname
+        `);
+        expect(constraints).toEqual([
+          { conname: "unique_test_slots_plain_uq", definition: "UNIQUE (id, scope_id)" },
+          { conname: "unique_test_slots_scope_slot_uq", definition: "UNIQUE NULLS NOT DISTINCT (scope_id, slot_key)" },
+        ]);
+
+        await expect(restoreSql.unsafe(`
+          INSERT INTO "public"."unique_test_slots" ("scope_id", "slot_key") VALUES (NULL, 'a')
+        `)).rejects.toThrow(/unique_test_slots_scope_slot_uq/);
+      } finally {
+        await sourceSql.end();
+        await restoreSql.end();
+      }
+    },
+    60_000,
+  );
+
+  it(
     "restores legacy public-only backups without migration history",
     async () => {
       const restoreConnectionString = await createTempDatabase();
