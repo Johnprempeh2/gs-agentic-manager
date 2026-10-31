@@ -93,6 +93,7 @@ export function MakeBoardPackDialog({
   open,
   lastPackEnd,
   nextMeetingDate,
+  boardPeriod,
   today,
   onClose,
   onCreated,
@@ -101,6 +102,8 @@ export function MakeBoardPackDialog({
   open: boolean;
   lastPackEnd: string | null;
   nextMeetingDate: string | null;
+  /** The board period (GRE-3472); a new pack covers it when set. */
+  boardPeriod: { start: string; end: string } | null;
   /** "YYYY-MM-DD", the board's as-of day. */
   today: string;
   onClose: () => void;
@@ -108,7 +111,7 @@ export function MakeBoardPackDialog({
 }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
-  const [period] = useState(() => defaultPackPeriod({ lastPackEnd, nextMeetingDate, today }));
+  const [period] = useState(() => defaultPackPeriod({ lastPackEnd, nextMeetingDate, today, boardPeriod }));
   const [periodStart, setPeriodStart] = useState(period.periodStart);
   const [periodEnd, setPeriodEnd] = useState(period.periodEnd);
   const [title, setTitle] = useState(period.title);
