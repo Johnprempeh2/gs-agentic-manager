@@ -118,13 +118,13 @@ describeEmbeddedPostgres("goals API: KPI readings, status and budget (GRE-1133)"
     const [row] = await ctx.db.select().from(goals).where(eq(goals.id, kpi.id));
     expect(row.currentValue).toBe(128);
 
-    // The verified 128 against a plan of 150 is 22% of the planned change behind: red.
+    // The verified 128 is 44% of the progress due by today behind: red.
     const detail = await request(routeApp(ctx.db, actor, goalRoutes)).get(`/api/goals/${kpi.id}`);
     expect((detail.body as GoalDetail).kpiStatus).toMatchObject({
       status: "red",
       reason: "behind_plan",
       plannedValue: 150,
-      gapPercent: 22,
+      gapPercent: 44,
       latestValue: 128,
     });
     expect((detail.body as GoalDetail).latestReading).toMatchObject({ value: 128, source: "agent_verified" });
@@ -202,7 +202,7 @@ describeEmbeddedPostgres("goals API: KPI readings, status and budget (GRE-1133)"
       parentId: objB.id,
     });
     const app = routeApp(ctx.db, actor, goalRoutes);
-    for (const [goal, value] of [[green, 151], [amber, 138], [red, 17]] as const) {
+    for (const [goal, value] of [[green, 151], [amber, 143], [red, 17]] as const) {
       const res = await request(app).post(`/api/goals/${goal.id}/readings`).send({ value, readingDate: TODAY });
       expect(res.status).toBe(201);
     }
@@ -210,8 +210,8 @@ describeEmbeddedPostgres("goals API: KPI readings, status and budget (GRE-1133)"
     const list = await request(app).get(`/api/companies/${companyId}/goals`);
     const byId = new Map((list.body as GoalWithProgress[]).map((goal) => [goal.id, goal]));
     expect(byId.get(green.id)?.kpiStatus?.status).toBe("green");
-    expect(byId.get(amber.id)?.kpiStatus).toMatchObject({ status: "amber", gapPercent: 12 });
-    expect(byId.get(red.id)?.kpiStatus).toMatchObject({ status: "red", gapPercent: 20 });
+    expect(byId.get(amber.id)?.kpiStatus).toMatchObject({ status: "amber", gapPercent: 14 });
+    expect(byId.get(red.id)?.kpiStatus).toMatchObject({ status: "red", gapPercent: 40 });
     expect(byId.get(unread.id)?.kpiStatus).toMatchObject({ status: null, reason: "no_reading" });
     expect(byId.get(objA.id)?.kpiStatus).toBeNull();
     expect(byId.get(objA.id)?.ragRollup).toEqual({ status: "amber", red: 0, amber: 1, green: 1, noStatus: 0 });
@@ -255,11 +255,20 @@ describeEmbeddedPostgres("goals API: KPI readings, status and budget (GRE-1133)"
       targetValue: 0,
       targetDate: dayOffset(300),
       kpiDirection: "down",
+      kpiPath: "target_by_date",
       amberThresholdPct: 5,
       redThresholdPct: 15,
     });
     expect(kpi.status).toBe(201);
-    expect(kpi.body).toMatchObject({ targetValue: 0, kpiDirection: "down", amberThresholdPct: 5, redThresholdPct: 15 });
+    expect(kpi.body).toMatchObject({ targetValue: 0, kpiDirection: "down", kpiPath: "target_by_date", amberThresholdPct: 5, redThresholdPct: 15 });
+
+    await request(app).post(`/api/goals/${kpi.body.id}/readings`).send({ value: 12, readingDate: TODAY });
+    const stepDetail = (await request(app).get(`/api/goals/${kpi.body.id}`)).body as GoalDetail;
+    expect(stepDetail.kpiStatus).toMatchObject({ status: "green", gapPercent: 0 });
+    const changedPath = await request(app).patch(`/api/goals/${kpi.body.id}`).send({ kpiPath: "straight_line" });
+    expect(changedPath.status).toBe(200);
+    expect(changedPath.body.kpiPath).toBe("straight_line");
+    expect(((await request(app).get(`/api/goals/${kpi.body.id}`)).body as GoalDetail).kpiStatus?.status).toBe("red");
 
     const badLines = await request(app).patch(`/api/goals/${kpi.body.id}`).send({ redThresholdPct: 3 });
     expect(badLines.status).toBe(422);

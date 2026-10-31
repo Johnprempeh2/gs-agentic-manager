@@ -44,6 +44,7 @@ export function KpiPlanForm({
   const [targetDate, setTargetDate] = useState(text(goal.targetDate));
   const [unit, setUnit] = useState(text(goal.unit));
   const [direction, setDirection] = useState(goal.kpiDirection ?? "up");
+  const [path, setPath] = useState(goal.kpiPath ?? "straight_line");
   const [amber, setAmber] = useState(text(goal.amberThresholdPct));
   const [red, setRed] = useState(text(goal.redThresholdPct));
 
@@ -61,6 +62,7 @@ export function KpiPlanForm({
       targetDate: targetDate || null,
       unit: unit.trim() || null,
       kpiDirection: direction,
+      kpiPath: path,
       amberThresholdPct: amberPct,
       redThresholdPct: redPct,
     });
@@ -88,6 +90,12 @@ export function KpiPlanForm({
           <NativeSelect id="kpi-direction" value={direction} onChange={(e) => setDirection(e.target.value as "up" | "down")}>
             <option value="up">Up (higher is better)</option>
             <option value="down">Down (lower is better)</option>
+          </NativeSelect>
+        </Field>
+        <Field id="kpi-path" label="Progress path">
+          <NativeSelect id="kpi-path" value={path} onChange={(e) => setPath(e.target.value as "straight_line" | "target_by_date")}>
+            <option value="straight_line">Straight line</option>
+            <option value="target_by_date">Target by date</option>
           </NativeSelect>
         </Field>
         <Field id="kpi-amber" label="Amber at % off plan">
@@ -118,7 +126,7 @@ export function KpiPlanForm({
           Save plan
         </Button>
         <p className="text-xs text-muted-foreground">
-          The plan is a straight line from baseline to target. "% off plan" is a share of the whole planned change.
+          {path === "target_by_date" ? "Progress is due on the target date; no slippage is shown before then." : "Progress follows a straight line. The gap also reflects how much of today's planned progress is missing."}
         </p>
       </div>
     </form>

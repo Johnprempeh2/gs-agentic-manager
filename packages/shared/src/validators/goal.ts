@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GOAL_KINDS, GOAL_LEVELS, GOAL_STATUSES, KPI_DIRECTIONS, KPI_READING_SOURCES } from "../constants.js";
+import { GOAL_KINDS, GOAL_LEVELS, GOAL_STATUSES, KPI_DIRECTIONS, KPI_PATHS, KPI_READING_SOURCES } from "../constants.js";
 import { objectWithoutDefaults } from "./partial.js";
 
 const calendarDateSchema = z
@@ -30,6 +30,7 @@ export const createGoalSchema = z.object({
   baselineValue: z.number().finite().optional().nullable(),
   baselineDate: calendarDateSchema.optional().nullable(),
   kpiDirection: z.enum(KPI_DIRECTIONS).optional().nullable(),
+  kpiPath: z.enum(KPI_PATHS).optional(),
   /** Percent off the planned path. The server checks red is not below amber. */
   amberThresholdPct: thresholdPctSchema.optional().nullable(),
   redThresholdPct: thresholdPctSchema.optional().nullable(),

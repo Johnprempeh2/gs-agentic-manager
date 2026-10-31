@@ -28,33 +28,49 @@ describe("plannedKpiValue", () => {
 describe("computeKpiStatus", () => {
   it("is green when the latest reading is on the planned path", () => {
     const result = computeKpiStatus(plan, reading(148), reading(100, "2026-01-01"), MID_YEAR);
-    expect(result).toMatchObject({ status: "green", reason: "on_track", plannedValue: 150, gapPercent: 2 });
+    expect(result).toMatchObject({ status: "green", reason: "on_track", plannedValue: 150, gapPercent: 4 });
   });
 
   it("is green with no gap when ahead of plan", () => {
     expect(computeKpiStatus(plan, reading(170), null, MID_YEAR)).toMatchObject({ status: "green", gapPercent: 0 });
   });
 
-  it("is amber from 10% off the planned change, red from 20%", () => {
-    // Planned change is 100, so 10 short is 10% and 20 short is 20%.
-    expect(computeKpiStatus(plan, reading(141), null, MID_YEAR)).toMatchObject({ status: "green", gapPercent: 9 });
-    expect(computeKpiStatus(plan, reading(140), null, MID_YEAR)).toMatchObject({ status: "amber", reason: "behind_plan", gapPercent: 10 });
-    expect(computeKpiStatus(plan, reading(131), null, MID_YEAR)).toMatchObject({ status: "amber", gapPercent: 19 });
-    expect(computeKpiStatus(plan, reading(130), null, MID_YEAR)).toMatchObject({ status: "red", reason: "behind_plan", gapPercent: 20 });
+  it("is amber from 10% of progress due, red from 20%", () => {
+    expect(computeKpiStatus(plan, reading(146), null, MID_YEAR)).toMatchObject({ status: "green", gapPercent: 8 });
+    expect(computeKpiStatus(plan, reading(145), null, MID_YEAR)).toMatchObject({ status: "amber", reason: "behind_plan", gapPercent: 10 });
+    expect(computeKpiStatus(plan, reading(141), null, MID_YEAR)).toMatchObject({ status: "amber", gapPercent: 18 });
+    expect(computeKpiStatus(plan, reading(140), null, MID_YEAR)).toMatchObject({ status: "red", reason: "behind_plan", gapPercent: 20 });
   });
 
   it("uses the KPI's own thresholds", () => {
     const strict = { ...plan, amberThresholdPct: 2, redThresholdPct: 5 };
-    expect(computeKpiStatus(strict, reading(147), null, MID_YEAR).status).toBe("amber");
+    expect(computeKpiStatus(strict, reading(149), null, MID_YEAR).status).toBe("amber");
     expect(computeKpiStatus(strict, reading(145), null, MID_YEAR).status).toBe("red");
+  });
+
+  it("keeps a step KPI on course until its target date, then marks an unmet target red", () => {
+    const step = { ...plan, baselineValue: 0, targetValue: 1, kpiPath: "target_by_date" as const };
+    expect(computeKpiStatus(step, reading(0, "2026-10-31"), null, "2026-10-31")).toMatchObject({
+      status: "green", gapPercent: 0,
+    });
+    expect(computeKpiStatus(step, reading(0, "2026-10-31"), null, "2026-12-31")).toMatchObject({
+      status: "red", reason: "deadline_missed",
+    });
+  });
+
+  it("does not call zero delivery green when a large target has progress due", () => {
+    const longRange = { ...plan, baselineValue: 0, targetValue: 1_000_000, targetDate: "2030-12-31" };
+    const result = computeKpiStatus(longRange, reading(0, "2026-10-31"), null, "2026-10-31");
+    expect(result.plannedValue).toBeGreaterThan(0);
+    expect(result).toMatchObject({ status: "red", gapPercent: 100 });
   });
 
   it("treats down as good: above the planned path is behind", () => {
     // Churn from 20% to 10%: mid-year plan is 15.
     const churn = { ...plan, baselineValue: 20, targetValue: 10, kpiDirection: "down" as const };
     expect(computeKpiStatus(churn, reading(14), null, MID_YEAR)).toMatchObject({ status: "green", gapPercent: 0 });
-    expect(computeKpiStatus(churn, reading(16), null, MID_YEAR)).toMatchObject({ status: "amber", gapPercent: 10 });
-    expect(computeKpiStatus(churn, reading(17), null, MID_YEAR)).toMatchObject({ status: "red", gapPercent: 20 });
+    expect(computeKpiStatus(churn, reading(15.5), null, MID_YEAR)).toMatchObject({ status: "amber", gapPercent: 10 });
+    expect(computeKpiStatus(churn, reading(16), null, MID_YEAR)).toMatchObject({ status: "red", gapPercent: 20 });
   });
 
   it("has no status when there is no reading", () => {
@@ -85,7 +101,7 @@ describe("computeKpiStatus", () => {
   it("uses the first reading as the baseline when none is set", () => {
     const noBaseline = { ...plan, baselineValue: null, baselineDate: null };
     const result = computeKpiStatus(noBaseline, reading(140), reading(100, "2026-01-01"), MID_YEAR);
-    expect(result).toMatchObject({ status: "amber", plannedValue: 150 });
+    expect(result).toMatchObject({ status: "red", plannedValue: 150 });
     // One reading only: it is the baseline, so it is on plan.
     expect(computeKpiStatus(noBaseline, reading(140), reading(140), MID_YEAR).status).toBe("green");
   });

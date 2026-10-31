@@ -38,6 +38,7 @@ export const goals = pgTable(
     baselineDate: date("baseline_date"),
     /** "up" or "down" is good; null means up. */
     kpiDirection: text("kpi_direction"),
+    kpiPath: text("kpi_path").notNull().default("straight_line"),
     amberThresholdPct: doublePrecision("amber_threshold_pct"),
     redThresholdPct: doublePrecision("red_threshold_pct"),
     /** Initiative budget in minor units of budgetCurrency. */

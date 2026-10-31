@@ -1,0 +1,1 @@
+ALTER TABLE "goals" ADD COLUMN "kpi_path" text DEFAULT 'straight_line' NOT NULL;
