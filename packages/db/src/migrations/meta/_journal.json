@@ -2892,6 +2892,13 @@
       "when": 1793427610376,
       "tag": "0414_repair_restored_schema_drift",
       "breakpoints": true
+    },
+    {
+      "idx": 415,
+      "version": "7",
+      "when": 1793435313581,
+      "tag": "0415_strategy_board_period_notices",
+      "breakpoints": true
     }
   ]
 }
