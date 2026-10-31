@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   activityLog,
   agents,
@@ -14,6 +14,7 @@ import {
   issues,
   principalPermissionGrants,
   strategyBoardPacks,
+  strategyBoardPeriodNotices,
   strategyBoardSettings,
 } from "@greatstone/db";
 import type { GoalWhyRequest, StrategyBoardMember, StrategyBoardPack, StrategyBoardSummary } from "@greatstone/shared";
@@ -25,7 +26,9 @@ import { goalRoutes } from "../routes/goals.js";
 import { issueRoutes } from "../routes/issues.js";
 import { strategyBoardRoutes } from "../routes/strategy-board.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { runScheduledStrategyBoardAlerts } from "../services/strategy-board.js";
+import { goalService } from "../services/goals.js";
+import { runScheduledStrategyBoardAlerts, strategyBoardService } from "../services/strategy-board.js";
+import { calendarMonthPeriod, periodLabel } from "../services/strategy-board-period.js";
 import {
   describeEmbeddedPostgres,
   resetCompanyIssueFixtures,
@@ -46,6 +49,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
       await db.delete(activityLog);
       await db.delete(strategyBoardPacks);
       await db.delete(strategyBoardSettings);
+      await db.delete(strategyBoardPeriodNotices);
       await db.delete(goalKpiAlerts);
       await db.delete(goalWhyRequests);
       await db.delete(goalKpiReadings);
@@ -143,28 +147,69 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     return ctx.db
       .select()
       .from(issues)
-      .where(and(eq(issues.companyId, companyId), eq(issues.originKind, "strategy_board_kpi_alert")));
+      .where(and(eq(issues.companyId, companyId), eq(issues.originKind, "strategy_board_chair_alert")));
+  }
+
+  async function readingTasks(companyId: string) {
+    return ctx.db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.companyId, companyId), eq(issues.originKind, "strategy_board_reading_due")));
+  }
+
+  /** A red KPI (plan 150 today) owned by `owner`; `title` keeps them apart. */
+  async function seedKpi(companyId: string, title: string, owner: { ownerUserId?: string; ownerAgentId?: string } = {}) {
+    const [kpi] = await ctx.db
+      .insert(goals)
+      .values({
+        companyId,
+        title,
+        kind: "kpi",
+        level: "task",
+        status: "active",
+        unit: "k",
+        baselineValue: 100,
+        baselineDate: dayOffset(-100),
+        targetValue: 200,
+        targetDate: dayOffset(100),
+        ...owner,
+      })
+      .returning();
+    return kpi;
+  }
+
+  /** A reading stored without the route, so no alert check runs yet. */
+  async function storeReading(goal: typeof goals.$inferSelect, value: number, readingDate = TODAY) {
+    await goalService(ctx.db).createReading(goal, { value, readingDate, source: "owner_reported" }, { agentId: null, userId: null });
+  }
+
+  async function setPeriod(companyId: string, periodStart: string, periodEnd: string, periodMonths: number | null = null) {
+    await ctx.db
+      .insert(strategyBoardSettings)
+      .values({ companyId, periodStart, periodEnd, periodMonths })
+      .onConflictDoUpdate({ target: strategyBoardSettings.companyId, set: { periodStart, periodEnd, periodMonths } });
   }
 
   // ---- Slippage alerts: who gets them, and when ----
 
-  it("alerts the chair once when a KPI turns red, not again while it stays red, and again after it recovers", async () => {
+  it("alerts the chair on the period's task when a KPI turns red, not again while it stays red, and reopens the same task in the period", async () => {
     const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Alerts");
     const chair = await addMember(companyId, "viewer", "chair");
     const member = await addMember(companyId, "viewer", "member");
     expect((await setBoard(owner, companyId, [{ userId: chair.userId, chair: true }, { userId: member.userId }])).status).toBe(200);
     const { kpi } = await seedPlan(companyId);
 
-    // Amber (15% behind): no alert.
-    await postReading(owner, kpi.id, 135);
+    // Amber (14% of progress due behind): no alert.
+    await postReading(owner, kpi.id, 143);
     expect(await alertIssues(companyId)).toHaveLength(0);
 
-    // Red (30% behind): one alert task, assigned to the chair only.
+    // Red (30% behind): one alert task, assigned to the chair only. No board period: the calendar month.
     const red = await postReading(owner, kpi.id, 120);
     let tasks = await alertIssues(companyId);
     expect(tasks).toHaveLength(1);
-    expect(tasks[0]).toMatchObject({ assigneeUserId: chair.userId, assigneeAgentId: null, status: "todo", goalId: kpi.id });
-    expect(tasks[0].title).toBe("KPI is off course: Revenue");
+    expect(tasks[0]).toMatchObject({ assigneeUserId: chair.userId, assigneeAgentId: null, status: "todo" });
+    expect(tasks[0].title).toBe(`KPIs off course: ${periodLabel(calendarMonthPeriod(TODAY))}`);
+    expect(tasks[0].description).toContain("Revenue");
     const [spell] = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.goalId, kpi.id));
     expect(spell).toMatchObject({ recipientUserId: chair.userId, readingId: red.id, clearedAt: null, alertIssueId: tasks[0].id });
 
@@ -174,18 +219,187 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     await runScheduledStrategyBoardAlerts(ctx.db, Date.now() + 10 * 3_600_000);
     expect(await alertIssues(companyId)).toHaveLength(1);
 
-    // Back on plan: the spell closes and the alert task is done.
+    // Back on plan: the spell closes and the period task is done.
     await postReading(owner, kpi.id, 150);
     tasks = await alertIssues(companyId);
     expect(tasks[0].status).toBe("done");
+    expect(tasks[0].description).toContain("~~Revenue~~");
     const [closed] = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.goalId, kpi.id));
     expect(closed.clearedAt).not.toBeNull();
 
-    // Red again later: a new spell, a new alert.
+    // Red again in the same period: a new spell on the same task, reopened.
     await postReading(owner, kpi.id, 100);
     tasks = await alertIssues(companyId);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].status).toBe("todo");
+    const spells = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.goalId, kpi.id));
+    expect(spells).toHaveLength(2);
+    expect(spells.every((row) => row.alertIssueId === tasks[0].id)).toBe(true);
+  });
+
+  // ---- One chair task per board period (GRE-3472) ----
+
+  it("three red KPIs in one period make one chair task; a fourth updates it; when all recover it closes", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "ThreeRed");
+    const chair = await addMember(companyId, "viewer", "chair");
+    await setBoard(owner, companyId, [{ userId: chair.userId, chair: true }]);
+    const kpis = await Promise.all(["Revenue", "Margin", "Clients"].map((title) => seedKpi(companyId, title)));
+    for (const kpi of kpis) await postReading(owner, kpi.id, 100);
+
+    let tasks = await alertIssues(companyId);
+    expect(tasks).toHaveLength(1);
+    for (const title of ["Revenue", "Margin", "Clients"]) expect(tasks[0].description).toContain(`[${title}]`);
+    const spells = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.companyId, companyId));
+    expect(spells).toHaveLength(3);
+    expect(spells.every((row) => row.alertIssueId === tasks[0].id)).toBe(true);
+    const commentsBefore = await ctx.db.select().from(issueComments).where(eq(issueComments.issueId, tasks[0].id));
+
+    // A fourth KPI later in the period: the same task, an updated list and one comment.
+    const fourth = await seedKpi(companyId, "Churn");
+    await postReading(owner, fourth.id, 100);
+    tasks = await alertIssues(companyId);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].description).toContain("[Churn]");
+    const commentsAfter = await ctx.db.select().from(issueComments).where(eq(issueComments.issueId, tasks[0].id));
+    expect(commentsAfter.length - commentsBefore.length).toBe(1);
+    expect(commentsAfter.at(-1)?.body).toContain("Churn");
+
+    // A second full sweep makes nothing new.
+    await strategyBoardService(ctx.db).runPeriodSweep(companyId, TODAY);
+    expect(await alertIssues(companyId)).toHaveLength(1);
+
+    // All recover: the period task closes by itself.
+    for (const kpi of [...kpis, fourth]) await postReading(owner, kpi.id, 150);
+    tasks = await alertIssues(companyId);
+    expect(tasks[0].status).toBe("done");
+  });
+
+  it("at rollover a KPI still red goes onto one new chair task for the new period", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Rollover");
+    const chair = await addMember(companyId, "viewer", "chair");
+    await setBoard(owner, companyId, [{ userId: chair.userId, chair: true }]);
+    await setPeriod(companyId, dayOffset(-40), dayOffset(-10), 1);
+    const red = await seedKpi(companyId, "Revenue");
+    const other = await seedKpi(companyId, "Margin");
+    await postReading(owner, red.id, 100);
+    await postReading(owner, other.id, 100);
+    await postReading(owner, other.id, 150);
+    const [oldTask] = await alertIssues(companyId);
+    expect(oldTask.title).toBe(`KPIs off course: ${periodLabel({ start: dayOffset(-40), end: dayOffset(-10) })}`);
+
+    const result = await strategyBoardService(ctx.db).runPeriodSweep(companyId, TODAY);
+    expect(result.rolledOver).toBe(true);
+    const [settings] = await ctx.db.select().from(strategyBoardSettings).where(eq(strategyBoardSettings.companyId, companyId));
+    expect(settings.periodStart).toBe(dayOffset(-9));
+    expect(settings.periodEnd! >= TODAY).toBe(true);
+
+    const tasks = await alertIssues(companyId);
     expect(tasks).toHaveLength(2);
-    expect(tasks.every((task) => task.assigneeUserId === chair.userId)).toBe(true);
+    const newTask = tasks.find((task) => task.id !== oldTask.id)!;
+    expect(newTask.title).toBe(`KPIs off course: ${periodLabel({ start: settings.periodStart!, end: settings.periodEnd! })}`);
+    expect(newTask.description).toContain("[Revenue]");
+    expect(newTask.description).not.toContain("Margin");
+    expect(tasks.find((task) => task.id === oldTask.id)!.status).toBe("done");
+    const [spell] = await ctx.db.select().from(goalKpiAlerts).where(and(eq(goalKpiAlerts.goalId, red.id), isNull(goalKpiAlerts.clearedAt)));
+    expect(spell.alertIssueId).toBe(newTask.id);
+
+    // The next sweep rolls nothing and makes nothing new.
+    expect((await strategyBoardService(ctx.db).runPeriodSweep(companyId, TODAY)).rolledOver).toBe(false);
+    expect(await alertIssues(companyId)).toHaveLength(2);
+  });
+
+  // ---- Reading-due tasks to KPI owners (GRE-3472) ----
+
+  it("an owner missing readings gets one reading task per period; an owner with all readings gets none; it closes when readings come in", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "ReadingDue");
+    const ama = await addMember(companyId, "operator", "ama");
+    const kofi = await addMember(companyId, "operator", "kofi");
+    const agent = await seedAgent(companyId, "Analyst");
+    const revenue = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    const margin = await seedKpi(companyId, "Margin", { ownerUserId: ama.userId });
+    const clients = await seedKpi(companyId, "Clients", { ownerUserId: kofi.userId });
+    const uptime = await seedKpi(companyId, "Uptime", { ownerAgentId: agent.id });
+    await storeReading(clients, 150, dayOffset(-5));
+    await storeReading(revenue, 150, dayOffset(-40));
+    await setPeriod(companyId, dayOffset(-30), TODAY);
+    const board = strategyBoardService(ctx.db);
+
+    // Before the period ends: nothing.
+    await board.runPeriodSweep(companyId, dayOffset(-1));
+    expect(await readingTasks(companyId)).toHaveLength(0);
+
+    await board.runPeriodSweep(companyId, TODAY);
+    let tasks = await readingTasks(companyId);
+    expect(tasks).toHaveLength(2);
+    const amaTask = tasks.find((task) => task.assigneeUserId === ama.userId)!;
+    expect(amaTask.title).toBe(`Readings due for ${periodLabel({ start: dayOffset(-30), end: TODAY })}: 2 KPIs`);
+    expect(amaTask.description).toContain("[Revenue]");
+    expect(amaTask.description).toContain("[Margin]");
+    expect(tasks.find((task) => task.assigneeAgentId === agent.id)!.description).toContain("[Uptime]");
+    expect(tasks.some((task) => task.assigneeUserId === kofi.userId)).toBe(false);
+
+    // A second sweep makes no more.
+    await board.runPeriodSweep(companyId, TODAY);
+    expect(await readingTasks(companyId)).toHaveLength(2);
+
+    // One reading is not enough; both close the task.
+    await storeReading(revenue, 150, dayOffset(-2));
+    await board.runPeriodSweep(companyId, TODAY);
+    expect((await readingTasks(companyId)).find((task) => task.id === amaTask.id)!.status).toBe("todo");
+    await storeReading(margin, 150, TODAY);
+    await board.runPeriodSweep(companyId, TODAY);
+    tasks = await readingTasks(companyId);
+    expect(tasks.find((task) => task.id === amaTask.id)!.status).toBe("done");
+    expect(tasks.find((task) => task.assigneeAgentId === agent.id)!.status).toBe("todo");
+    void uptime;
+  });
+
+  it("with no board period set there are no reading tasks and the chair task covers the calendar month", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "NoPeriod");
+    const chair = await addMember(companyId, "viewer", "chair");
+    await setBoard(owner, companyId, [{ userId: chair.userId, chair: true }]);
+    const ama = await addMember(companyId, "operator", "ama");
+    await seedKpi(companyId, "Margin", { ownerUserId: ama.userId });
+    const kpi = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    await postReading(owner, kpi.id, 100);
+    await strategyBoardService(ctx.db).runPeriodSweep(companyId, TODAY);
+    expect(await readingTasks(companyId)).toHaveLength(0);
+    const tasks = await alertIssues(companyId);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe(`KPIs off course: ${periodLabel(calendarMonthPeriod(TODAY))}`);
+    const [notice] = await ctx.db.select().from(strategyBoardPeriodNotices).where(eq(strategyBoardPeriodNotices.companyId, companyId));
+    expect(notice).toMatchObject({ kind: "chair_alert", periodEnd: calendarMonthPeriod(TODAY).end, recipientKey: `user:${chair.userId}` });
+  });
+
+  it("two sweeps at once roll the period over once and make one task per owner and one chair task", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Race");
+    const chair = await addMember(companyId, "viewer", "chair");
+    await setBoard(owner, companyId, [{ userId: chair.userId, chair: true }]);
+    const ama = await addMember(companyId, "operator", "ama");
+    const kofi = await addMember(companyId, "operator", "kofi");
+    const kpis = [
+      await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId }),
+      await seedKpi(companyId, "Margin", { ownerUserId: ama.userId }),
+      await seedKpi(companyId, "Clients", { ownerUserId: kofi.userId }),
+    ];
+    await setPeriod(companyId, dayOffset(-40), dayOffset(-10), 1);
+    // Red readings dated in the new period, stored without the alert check.
+    for (const kpi of kpis) await storeReading(kpi, 100);
+
+    const board = strategyBoardService(ctx.db);
+    const results = await Promise.all([board.runPeriodSweep(companyId, TODAY), board.runPeriodSweep(companyId, TODAY)]);
+    expect(results.filter((result) => result.rolledOver)).toHaveLength(1);
+    const reading = await readingTasks(companyId);
+    expect(reading).toHaveLength(2);
+    expect(new Set(reading.map((task) => task.assigneeUserId))).toEqual(new Set([ama.userId, kofi.userId]));
+    expect(await alertIssues(companyId)).toHaveLength(1);
+    // A late sweep links any spell the race left behind; still one chair task with all three.
+    await board.runPeriodSweep(companyId, TODAY);
+    const [task] = await alertIssues(companyId);
+    expect(await alertIssues(companyId)).toHaveLength(1);
+    const spells = await ctx.db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.companyId, companyId));
+    expect(spells).toHaveLength(3);
+    expect(spells.every((row) => row.alertIssueId === task.id)).toBe(true);
   });
 
   it("records the red spell but sends nothing when the board has no chair, and the board view says so", async () => {

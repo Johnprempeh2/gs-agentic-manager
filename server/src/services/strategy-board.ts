@@ -11,6 +11,7 @@ import {
   issues,
   principalPermissionGrants,
   strategyBoardPacks,
+  strategyBoardPeriodNotices,
   strategyBoardSettings,
   type Db,
 } from "@greatstone/db";
@@ -48,6 +49,7 @@ import { unprocessable } from "../errors.js";
 import { isEntitled } from "./entitlements.js";
 import { goalService } from "./goals.js";
 import { issueService } from "./issues.js";
+import { boardPeriodView, chairAlertPeriod, nextBoardPeriod, periodLabel, type StoredBoardPeriod } from "./strategy-board-period.js";
 
 /**
  * Board control panel (GRE-1135): the board summary, slippage alerts to the
@@ -60,7 +62,12 @@ export const BOARD_MEMBER_PERMISSION = "strategy:board_member";
 export const BOARD_CHAIR_PERMISSION = "strategy:board_chair";
 const BOARD_PERMISSIONS = [BOARD_MEMBER_PERMISSION, BOARD_CHAIR_PERMISSION];
 
+/** A per-KPI chair task, from before GRE-3472. Open ones still close when their KPI recovers. */
 export const KPI_ALERT_ORIGIN_KIND = "strategy_board_kpi_alert";
+/** The chair's one "KPIs off course" task per board period (GRE-3472). */
+export const CHAIR_ALERT_ORIGIN_KIND = "strategy_board_chair_alert";
+/** A KPI owner's one reading-due task per board period (GRE-3472). */
+export const READING_DUE_ORIGIN_KIND = "strategy_board_reading_due";
 export const WHY_REQUEST_ORIGIN_KIND = "strategy_board_why_request";
 
 /** A person's place on the board, from their membership role and board rights. */
@@ -75,6 +82,8 @@ export interface BoardStanding {
 type WhyRequestRow = typeof goalWhyRequests.$inferSelect;
 type AlertRow = typeof goalKpiAlerts.$inferSelect;
 type PackRow = typeof strategyBoardPacks.$inferSelect;
+type NoticeRow = typeof strategyBoardPeriodNotices.$inferSelect;
+type NoticeKind = "reading_due" | "chair_alert";
 
 function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
@@ -322,7 +331,7 @@ export function strategyBoardService(db: Db) {
 
   async function summary(companyId: string, viewer: StrategyBoardViewerRights): Promise<StrategyBoardSummary> {
     const today = todayIso();
-    const [board, chairUserId, nextMeetingDate] = await Promise.all([
+    const [board, chairUserId, nextMeetingDate, period] = await Promise.all([
       buildBoard(companyId, today),
       findChairUserId(companyId),
       db
@@ -330,6 +339,7 @@ export function strategyBoardService(db: Db) {
         .from(strategyBoardSettings)
         .where(eq(strategyBoardSettings.companyId, companyId))
         .then((rows) => rows[0]?.date ?? null),
+      loadPeriod(companyId),
     ]);
     return {
       companyId,
@@ -352,6 +362,7 @@ export function strategyBoardService(db: Db) {
       unsentAlerts: board.unsentAlerts,
       hasChair: chairUserId != null,
       nextMeetingDate,
+      period: boardPeriodView(period, today),
       whyRequests: buildStrategyBoardWhyDigest({
         requests: board.whyRequests,
         kpis: board.kpis,
@@ -392,13 +403,180 @@ export function strategyBoardService(db: Db) {
     }
   }
 
+  async function loadPeriod(companyId: string): Promise<StoredBoardPeriod> {
+    const row = await db
+      .select({ periodStart: strategyBoardSettings.periodStart, periodEnd: strategyBoardSettings.periodEnd, periodMonths: strategyBoardSettings.periodMonths })
+      .from(strategyBoardSettings)
+      .where(eq(strategyBoardSettings.companyId, companyId))
+      .then((rows) => rows[0] ?? null);
+    return { periodStart: row?.periodStart ?? null, periodEnd: row?.periodEnd ?? null, periodMonths: row?.periodMonths ?? null };
+  }
+
   /**
-   * Opens or clears KPI red spells for the company (or only `goalIds`) and
-   * alerts the chair once per spell. Safe to run often: the open-spell unique
-   * index means one alert per red state, even when two writes race.
+   * Claims the period's notice for one recipient. Only the writer whose insert
+   * wins gets the row back and makes the task, so two sweeps make one task.
    */
-  async function evaluateAlerts(companyId: string, opts: { goalIds?: string[]; readingId?: string | null } = {}) {
+  async function claimNotice(
+    companyId: string,
+    period: { start: string; end: string },
+    kind: NoticeKind,
+    recipientKey: string,
+    goalIds: string[] | null = null,
+  ): Promise<NoticeRow | null> {
+    const [row] = await db
+      .insert(strategyBoardPeriodNotices)
+      .values({ companyId, periodStart: period.start, periodEnd: period.end, kind, recipientKey, goalIds })
+      .onConflictDoNothing()
+      .returning();
+    return row ?? null;
+  }
+
+  function spellLine(spell: AlertRow, kpi: GoalWithProgress | undefined, prefix: string | null): string {
+    const title = kpi?.title ?? "A KPI";
+    if (spell.clearedAt) return `- ~~${title}~~: back on course on ${todayIso(spell.clearedAt)}.`;
+    const s = kpi?.kpiStatus;
+    const unit = kpi?.unit ? ` ${kpi.unit}` : "";
+    const red = s?.status === "red";
+    const gap = red ? s.gapPercent : spell.gapPercent;
+    const latest = red ? s.latestValue : spell.latestValue;
+    const detail =
+      red && s.reason === "deadline_missed"
+        ? `deadline passed, ${latest}${unit} against a target of ${s.plannedValue}${unit}`
+        : `${gap ?? "-"}% behind plan, latest ${latest ?? "-"}${unit}${red && s.latestDate ? ` on ${s.latestDate}` : ""}`;
+    return `- **[${title}](${goalHref(prefix, spell.goalId)})**: ${detail}.`;
+  }
+
+  function chairTaskDescription(period: { start: string; end: string }, spells: AlertRow[], byGoal: Map<string, GoalWithProgress>, prefix: string | null) {
+    const ordered = [...spells].sort((a, b) => a.openedAt.getTime() - b.openedAt.getTime());
+    return [
+      `These KPIs went off course in the board period ${periodLabel(period)}:`,
+      "",
+      ...ordered.map((spell) => spellLine(spell, byGoal.get(spell.goalId), prefix)),
+      "",
+      "Open a KPI to see its readings and their source, or ask the owner \"Why?\" from the board control panel.",
+      "",
+      "This list updates when another KPI turns red or one recovers. The task closes by itself when no KPI on it is red.",
+    ].join("\n");
+  }
+
+  /**
+   * GRE-3472: one chair task per board period lists every red KPI. Links open
+   * spells to the current period's task (new red KPIs, and those still red
+   * when the period rolled over), keeps the list up to date and closes chair
+   * tasks with no red KPI left. Per-KPI tasks from before stay as they are.
+   */
+  async function syncChairTask(companyId: string, byGoal: Map<string, GoalWithProgress>, today: string) {
+    const notices = await db
+      .select()
+      .from(strategyBoardPeriodNotices)
+      .where(and(eq(strategyBoardPeriodNotices.companyId, companyId), eq(strategyBoardPeriodNotices.kind, "chair_alert")));
+    const chairIssueIds = notices.map((notice) => notice.issueId).filter((id): id is string => !!id);
+    const chairUserId = await findChairUserId(companyId);
+    const period = chairAlertPeriod(await loadPeriod(companyId), today);
+    const link = await companyLink(companyId);
+    let taskId: string | null = null;
+    if (chairUserId) {
+      const recipientKey = `user:${chairUserId}`;
+      const current = notices.find((notice) => notice.periodEnd === period.end && notice.recipientKey === recipientKey) ?? null;
+      const waiting = await db
+        .select({ id: goalKpiAlerts.id })
+        .from(goalKpiAlerts)
+        .where(
+          and(
+            eq(goalKpiAlerts.companyId, companyId),
+            isNull(goalKpiAlerts.clearedAt),
+            isNotNull(goalKpiAlerts.recipientUserId),
+            or(isNull(goalKpiAlerts.alertIssueId), chairIssueIds.length ? inArray(goalKpiAlerts.alertIssueId, chairIssueIds) : sql`false`),
+          ),
+        );
+      const pending = waiting.length > 0;
+      let created = false;
+      if (current?.issueId) {
+        taskId = current.issueId;
+      } else if (!current && pending) {
+        const claimed = await claimNotice(companyId, period, "chair_alert", recipientKey);
+        // Another sweep claimed the period first: it makes the task and links these spells.
+        if (claimed) {
+          const issue = await issuesSvc.create(companyId, {
+            title: `KPIs off course: ${periodLabel(period)}`,
+            description: chairTaskDescription(period, [], byGoal, link.prefix),
+            status: "todo",
+            priority: "high",
+            assigneeUserId: chairUserId,
+            originKind: CHAIR_ALERT_ORIGIN_KIND,
+            originId: claimed.id,
+          });
+          await db.update(strategyBoardPeriodNotices).set({ issueId: issue.id }).where(eq(strategyBoardPeriodNotices.id, claimed.id));
+          taskId = issue.id;
+          created = true;
+        }
+      }
+      if (taskId) {
+        // One statement, after the task id is stored: a spell another writer
+        // opened meanwhile is linked here or by that writer's own sync.
+        const otherChairTasks = chairIssueIds.filter((id) => id !== taskId);
+        const linked = await db
+          .update(goalKpiAlerts)
+          .set({ alertIssueId: taskId, recipientUserId: chairUserId })
+          .where(
+            and(
+              eq(goalKpiAlerts.companyId, companyId),
+              isNull(goalKpiAlerts.clearedAt),
+              isNotNull(goalKpiAlerts.recipientUserId),
+              or(isNull(goalKpiAlerts.alertIssueId), otherChairTasks.length ? inArray(goalKpiAlerts.alertIssueId, otherChairTasks) : sql`false`),
+            ),
+          )
+          .returning();
+        const spells = await db.select().from(goalKpiAlerts).where(eq(goalKpiAlerts.alertIssueId, taskId));
+        const task = await issuesSvc.getById(taskId);
+        const description = chairTaskDescription(period, spells, byGoal, link.prefix);
+        const reopen = linked.length > 0 && !created && (task?.status === "done" || task?.status === "cancelled");
+        if (task && (task.description !== description || reopen)) {
+          await issuesSvc.update(taskId, { description, ...(reopen ? { status: "todo" } : {}) });
+        }
+        if (linked.length > 0 && !created) {
+          const titles = linked.map((spell) => byGoal.get(spell.goalId)?.title ?? "A KPI");
+          await issuesSvc
+            .addComment(taskId, `Now also off course: ${titles.join(", ")}. The list above is updated.`, {})
+            .catch((err: unknown) => logger.warn({ err, issueId: taskId }, "strategy board: could not comment on the chair task"));
+        }
+      }
+    }
+    // Close every chair task with no red KPI left on it.
+    const openTasks = await db
+      .select({ id: issues.id })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, companyId),
+          eq(issues.originKind, CHAIR_ALERT_ORIGIN_KIND),
+          notInArray(issues.status, ["done", "cancelled"]),
+        ),
+      );
+    for (const task of openTasks) {
+      const stillRed = await db
+        .select({ id: goalKpiAlerts.id })
+        .from(goalKpiAlerts)
+        .where(and(eq(goalKpiAlerts.alertIssueId, task.id), isNull(goalKpiAlerts.clearedAt)))
+        .limit(1);
+      if (stillRed.length) continue;
+      await closeIssue(
+        task.id,
+        task.id === taskId ? "No KPI on this list is red now." : "This board period has ended. Any KPI still red is on the next period's task.",
+      );
+    }
+  }
+
+  /**
+   * Opens or clears KPI red spells for the company (or only `goalIds`). The
+   * open-spell unique index means one spell per red state, even when two
+   * writes race. Since GRE-3472 a spell makes no task of its own: the chair's
+   * one task for the board period lists every red KPI.
+   */
+  async function evaluateAlerts(companyId: string, opts: { goalIds?: string[]; readingId?: string | null; today?: string } = {}) {
+    const today = opts.today ?? todayIso();
     const companyGoals = await goalsSvc.listWithProgress(companyId);
+    const byGoal = new Map(companyGoals.map((goal) => [goal.id, goal]));
     const kpis = companyGoals.filter(
       (goal) => goal.kind === "kpi" && goal.status !== "cancelled" && (!opts.goalIds || opts.goalIds.includes(goal.id)),
     );
@@ -411,7 +589,6 @@ export function strategyBoardService(db: Db) {
     let opened = 0;
     let cleared = 0;
     let chair: { userId: string | null } | null = null;
-    let link: Awaited<ReturnType<typeof companyLink>> | null = null;
     for (const kpi of kpis) {
       const open = openByGoal.get(kpi.id) ?? null;
       const status = kpi.kpiStatus?.status ?? null;
@@ -430,44 +607,140 @@ export function strategyBoardService(db: Db) {
           })
           .onConflictDoNothing()
           .returning();
-        // Another write opened this spell first: it sends the alert.
+        // Another write opened this spell first.
         if (!row) continue;
         opened += 1;
-        if (!chair.userId) {
-          logger.warn({ companyId, goalId: kpi.id }, "strategy board: KPI turned red but the board has no chair to alert");
-          continue;
-        }
-        link ??= await companyLink(companyId);
-        const s = kpi.kpiStatus!;
-        const unit = kpi.unit ? ` ${kpi.unit}` : "";
-        const issue = await issuesSvc.create(companyId, {
-          title: `KPI is off course: ${kpi.title}`,
-          description: [
-            `**${kpi.title}** is off course.`,
-            "",
-            s.reason === "deadline_missed"
-              ? `The deadline has passed and the target is not met: ${s.latestValue}${unit} against a target of ${s.plannedValue}${unit}.`
-              : `${s.gapPercent}% behind plan: ${s.latestValue}${unit} against a plan of ${Math.round((s.plannedValue ?? 0) * 100) / 100}${unit} on ${s.latestDate}.`,
-            "",
-            `[Open the KPI](${goalHref(link.prefix, kpi.id)}) to see the readings and their source, or ask the owner "Why?" from the board control panel.`,
-            "",
-            "This task closes by itself when the KPI is no longer red.",
-          ].join("\n"),
-          status: "todo",
-          priority: "high",
-          assigneeUserId: chair.userId,
-          goalId: kpi.id,
-          originKind: KPI_ALERT_ORIGIN_KIND,
-          originId: row.id,
-        });
-        await db.update(goalKpiAlerts).set({ alertIssueId: issue.id }).where(eq(goalKpiAlerts.id, row.id));
+        if (!chair.userId) logger.warn({ companyId, goalId: kpi.id }, "strategy board: KPI turned red but the board has no chair to alert");
       } else if (action === "clear" && open) {
         await db.update(goalKpiAlerts).set({ clearedAt: new Date() }).where(eq(goalKpiAlerts.id, open.id));
         cleared += 1;
-        await closeIssue(open.alertIssueId, `The KPI is no longer red (now ${status ?? "without a status"}).`);
+        if (open.alertIssueId) {
+          const task = await db.select({ originKind: issues.originKind }).from(issues).where(eq(issues.id, open.alertIssueId)).then((rows) => rows[0]);
+          if (task?.originKind === KPI_ALERT_ORIGIN_KIND) {
+            await closeIssue(open.alertIssueId, `The KPI is no longer red (now ${status ?? "without a status"}).`);
+          }
+        }
       }
     }
+    // A full sweep syncs even with no change: it carries red KPIs into a new period.
+    if (opened || cleared || !opts.goalIds) await syncChairTask(companyId, byGoal, today);
     return { opened, cleared };
+  }
+
+  function readingTaskDescription(period: { start: string; end: string }, kpis: GoalWithProgress[], prefix: string | null) {
+    return [
+      `The board period ${periodLabel(period)} has ended. These KPIs you own have no reading dated inside it:`,
+      "",
+      ...kpis.map((kpi) => `- [${kpi.title}](${goalHref(prefix, kpi.id)})${kpi.latestReading ? `: last reading ${kpi.latestReading.readingDate}` : ": no reading yet"}`),
+      "",
+      `Add a reading dated between ${period.start} and ${period.end} on each KPI page, or with \`POST /api/goals/<goal id>/readings\` and \`{ "value": ..., "readingDate": "${period.end}" }\`.`,
+      "",
+      "This task closes by itself when every KPI above has a reading for the period.",
+    ].join("\n");
+  }
+
+  /** Goal ids among `goalIds` with a reading dated inside the period. */
+  async function goalsWithReading(companyId: string, goalIds: string[], period: { start: string; end: string }): Promise<Set<string>> {
+    if (goalIds.length === 0) return new Set();
+    const rows = await db
+      .selectDistinct({ goalId: goalKpiReadings.goalId })
+      .from(goalKpiReadings)
+      .where(
+        and(
+          eq(goalKpiReadings.companyId, companyId),
+          inArray(goalKpiReadings.goalId, goalIds),
+          gte(goalKpiReadings.readingDate, period.start),
+          lte(goalKpiReadings.readingDate, period.end),
+        ),
+      );
+    return new Set(rows.map((row) => row.goalId));
+  }
+
+  /**
+   * GRE-3472: from the period's last day until it rolls over, each KPI owner
+   * gets one task listing their live KPIs with no reading in the period. Open
+   * reading tasks close when every listed KPI has a reading.
+   */
+  async function runReadingReminders(companyId: string, stored: StoredBoardPeriod, companyGoals: GoalWithProgress[], today: string) {
+    let created = 0;
+    if (stored.periodStart && stored.periodEnd && today >= stored.periodEnd) {
+      const period = { start: stored.periodStart, end: stored.periodEnd };
+      const live = companyGoals.filter(
+        (goal) => goal.kind === "kpi" && (goal.status === "active" || goal.status === "planned") && (goal.ownerUserId || goal.ownerAgentId),
+      );
+      const read = await goalsWithReading(companyId, live.map((goal) => goal.id), period);
+      const byOwner = new Map<string, GoalWithProgress[]>();
+      for (const goal of live) {
+        if (read.has(goal.id)) continue;
+        const key = goal.ownerUserId ? `user:${goal.ownerUserId}` : `agent:${goal.ownerAgentId}`;
+        byOwner.set(key, [...(byOwner.get(key) ?? []), goal]);
+      }
+      const link = byOwner.size ? await companyLink(companyId) : null;
+      for (const [recipientKey, owned] of byOwner) {
+        owned.sort((a, b) => a.title.localeCompare(b.title));
+        const claimed = await claimNotice(companyId, period, "reading_due", recipientKey, owned.map((goal) => goal.id));
+        if (!claimed) continue;
+        const [ownerKind, ownerId] = recipientKey.split(":") as ["user" | "agent", string];
+        const issue = await issuesSvc.create(companyId, {
+          title: `Readings due for ${periodLabel(period)}: ${owned.length === 1 ? owned[0].title : `${owned.length} KPIs`}`,
+          description: readingTaskDescription(period, owned, link!.prefix),
+          status: "todo",
+          priority: "medium",
+          assigneeUserId: ownerKind === "user" ? ownerId : null,
+          assigneeAgentId: ownerKind === "agent" ? ownerId : null,
+          originKind: READING_DUE_ORIGIN_KIND,
+          originId: claimed.id,
+        });
+        await db.update(strategyBoardPeriodNotices).set({ issueId: issue.id }).where(eq(strategyBoardPeriodNotices.id, claimed.id));
+        created += 1;
+      }
+    }
+    // Close reading tasks whose KPIs all have a reading in their period now.
+    const open = await db
+      .select({ notice: strategyBoardPeriodNotices })
+      .from(strategyBoardPeriodNotices)
+      .innerJoin(issues, eq(issues.id, strategyBoardPeriodNotices.issueId))
+      .where(
+        and(
+          eq(strategyBoardPeriodNotices.companyId, companyId),
+          eq(strategyBoardPeriodNotices.kind, "reading_due"),
+          notInArray(issues.status, ["done", "cancelled"]),
+        ),
+      );
+    const liveIds = new Set(companyGoals.filter((goal) => goal.kind === "kpi" && goal.status !== "cancelled").map((goal) => goal.id));
+    let closed = 0;
+    for (const { notice } of open) {
+      const listed = (notice.goalIds ?? []).filter((id) => liveIds.has(id));
+      const read = await goalsWithReading(companyId, listed, { start: notice.periodStart, end: notice.periodEnd });
+      if (listed.some((id) => !read.has(id))) continue;
+      await closeIssue(notice.issueId, "Every KPI on this list has a reading for the period now.");
+      closed += 1;
+    }
+    return { created, closed };
+  }
+
+  /**
+   * The board's daily period work (GRE-3472), safe to run often: reading
+   * tasks for an ended period, the rollover to the next period (a conditional
+   * update, so two sweeps roll over once), then the KPI alerts, which carry
+   * still-red KPIs into the new period's chair task.
+   */
+  async function runPeriodSweep(companyId: string, today = todayIso()) {
+    const stored = await loadPeriod(companyId);
+    const companyGoals = await goalsSvc.listWithProgress(companyId);
+    const readings = await runReadingReminders(companyId, stored, companyGoals, today);
+    const next = nextBoardPeriod(stored, today);
+    let rolledOver = false;
+    if (next) {
+      const rows = await db
+        .update(strategyBoardSettings)
+        .set({ periodStart: next.start, periodEnd: next.end, updatedAt: new Date() })
+        .where(and(eq(strategyBoardSettings.companyId, companyId), eq(strategyBoardSettings.periodEnd, stored.periodEnd!)))
+        .returning({ companyId: strategyBoardSettings.companyId });
+      rolledOver = rows.length > 0;
+    }
+    const alerts = await evaluateAlerts(companyId, { today });
+    return { ...readings, rolledOver, ...alerts };
   }
 
   async function listAlerts(companyId: string): Promise<GoalKpiAlert[]> {
@@ -757,6 +1030,8 @@ export function strategyBoardService(db: Db) {
     summary,
     kpiView,
     evaluateAlerts,
+    runPeriodSweep,
+    loadPeriod,
     listAlerts,
     createWhyRequest,
     answerWhyRequest,
@@ -810,7 +1085,9 @@ let lastAlertSweepAt = 0;
 
 /**
  * Hourly: a KPI can turn red with no new reading (its deadline passes), so
- * every company's KPIs are checked once an hour while the switch is on.
+ * every company's KPIs are checked once an hour while the switch is on. The
+ * same sweep does the board period work (GRE-3472); it is safe to repeat, so
+ * the daily rollover and reading tasks happen on the first sweep of the day.
  */
 export async function runScheduledStrategyBoardAlerts(db: Db, now = Date.now()) {
   if (now - lastAlertSweepAt < ALERT_SWEEP_INTERVAL_MS) return;
@@ -820,7 +1097,7 @@ export async function runScheduledStrategyBoardAlerts(db: Db, now = Date.now()) 
   const svc = strategyBoardService(db);
   for (const { companyId } of companyRows) {
     try {
-      await svc.evaluateAlerts(companyId);
+      await svc.runPeriodSweep(companyId, new Date(now).toISOString().slice(0, 10));
     } catch (err) {
       logger.error({ err, companyId }, "strategy board: KPI alert sweep failed for a company");
     }
