@@ -940,6 +940,7 @@ export type {
   StrategyBoardViewerRights,
   StrategyBoardEmail,
   StrategyBoardEmailKind,
+  StrategyBoardPeriod,
   StrategyBoardSettings,
 } from "./strategy-board.js";
 export type { Approval, ApprovalComment } from "./approval.js";
