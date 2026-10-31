@@ -2,6 +2,7 @@ import {
   DEFAULT_KPI_AMBER_THRESHOLD_PCT,
   DEFAULT_KPI_RED_THRESHOLD_PCT,
   type KpiDirection,
+  type KpiPath,
   type KpiRagStatus,
 } from "./constants.js";
 
@@ -9,12 +10,12 @@ import {
  * KPI status (GRE-1133): green / amber / red from the latest reading against
  * the planned path to target.
  *
- * - The planned path is a straight line from the baseline (value and date) to
- *   the target (value and deadline). The plan value is read at the date of the
- *   latest reading, so an old reading is judged against the plan at its own date.
- * - The gap is how far the reading is behind that plan value, as a percent of
- *   the whole planned change (target minus baseline). Being ahead is a gap of 0.
- *   When target equals baseline (a "hold" KPI) the gap is a percent of the target.
+ * - Straight line compares the latest reading with the plan at its own date.
+ *   Target by date waits until the deadline before judging slippage.
+ * - The gap is the larger shortfall as a share of the whole change or of the
+ *   progress due by the reading date, with a floor of 10% of the whole change
+ *   on the latter denominator. This catches zero delivery without amplifying
+ *   small shortfalls early in a period.
  * - Gap at or above the red line is red, at or above the amber line is amber,
  *   otherwise green. Defaults: amber 10%, red 20%.
  * - Past the deadline the plan is the target: met is green, not met is red.
@@ -54,6 +55,7 @@ export interface KpiPlan {
   /** The deadline, "YYYY-MM-DD". */
   targetDate: string | null;
   kpiDirection: KpiDirection | null;
+  kpiPath?: KpiPath | null;
   amberThresholdPct: number | null;
   redThresholdPct: number | null;
   createdAt: Date | string;
@@ -117,7 +119,7 @@ export function computeKpiStatus(
     : { value: (first ?? latest).value, readingDate: plan.baselineDate ?? (first ?? latest).readingDate };
 
   const met = meetsTarget(latest.value, target.value, direction);
-  const pastDeadline = dayNumber(today) > dayNumber(target.readingDate);
+  const pastDeadline = dayNumber(today) >= dayNumber(target.readingDate);
   if (met || pastDeadline) {
     return {
       status: met ? "green" : "red",
@@ -129,8 +131,18 @@ export function computeKpiStatus(
     };
   }
 
+  if (plan.kpiPath === "target_by_date") {
+    return {
+      status: "green", reason: "on_track", plannedValue: baseline.value,
+      gapPercent: 0, latestValue: latest.value, latestDate: latest.readingDate,
+    };
+  }
+
   const planned = plannedKpiValue(baseline, target, latest.readingDate);
-  const gap = gapPercent(latest.value, planned, baseline.value, target.value, direction);
+  const gap = Math.max(
+    gapPercent(latest.value, planned, baseline.value, target.value, direction),
+    gapPercent(latest.value, planned, baseline.value, planned, direction, Math.abs(target.value - baseline.value) * 0.1),
+  );
   const amber = plan.amberThresholdPct ?? DEFAULT_KPI_AMBER_THRESHOLD_PCT;
   const red = Math.max(plan.redThresholdPct ?? DEFAULT_KPI_RED_THRESHOLD_PCT, amber);
   const status: KpiRagStatus = gap >= red ? "red" : gap >= amber ? "amber" : "green";
@@ -150,10 +162,11 @@ function gapPercent(
   baseline: number,
   target: number,
   direction: KpiDirection,
+  minimumSpan = 0,
 ): number {
   const shortfall = direction === "down" ? value - planned : planned - value;
   if (shortfall <= 0) return 0;
-  const span = Math.abs(target - baseline) || Math.abs(target) || 1;
+  const span = Math.max(Math.abs(target - baseline), minimumSpan) || Math.abs(target) || 1;
   return Math.round((shortfall / span) * 1000) / 10;
 }
 

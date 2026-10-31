@@ -677,6 +677,8 @@ export type GoalStatus = (typeof GOAL_STATUSES)[number];
 /** Which way is good for a KPI: "up" (revenue) or "down" (churn, cost). */
 export const KPI_DIRECTIONS = ["up", "down"] as const;
 export type KpiDirection = (typeof KPI_DIRECTIONS)[number];
+export const KPI_PATHS = ["straight_line", "target_by_date"] as const;
+export type KpiPath = (typeof KPI_PATHS)[number];
 
 /**
  * Where a KPI reading came from. Owners report their own numbers; an agent

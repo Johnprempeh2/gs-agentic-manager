@@ -578,7 +578,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
       .values({ companyId, title: "Margin", kind: "kpi", level: "task", status: "active", parentId: csf.id, baselineValue: 10, baselineDate: dayOffset(-100), targetValue: 20, targetDate: dayOffset(100) })
       .returning();
     await postReading(owner, kpi.id, 120, dayOffset(-2)); // 30% behind: red
-    await postReading(owner, second.id, 14); // 10% behind: amber
+    await postReading(owner, second.id, 14.4); // 12% of progress due behind: amber
 
     const why = await request(app(owner)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "Why so low?" });
     await request(app(kpiOwner.actor)).post(`/api/why-requests/${why.body.id}/answer`).send({ answer: "A large client left." });
@@ -603,8 +603,8 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect(pack.snapshot.counts).toEqual({ red: 1, amber: 1, green: 0, noStatus: 0 });
     expect(pack.snapshot.readings).toHaveLength(2);
     expect(pack.body).toContain("# Q4 board pack");
-    // Reading two days old: the plan on its date is 149, so 29% behind.
-    expect(pack.body).toContain("| Revenue | Off course | 29% | 120 k | 149 k | Owner reported (2 days old) |");
+    // Reading two days old: the plan on its date is 149, so 59% of progress due is missing.
+    expect(pack.body).toContain("| Revenue | Off course | 59.2% | 120 k | 149 k | Owner reported (2 days old) |");
     expect(pack.body).toContain("> A large client left.");
     expect(pack.body).toContain("2 readings: 0 checked by an agent or taken from a system, 2 reported by the owner.");
 
