@@ -65,6 +65,11 @@ describe("computeKpiStatus", () => {
     expect(result).toMatchObject({ status: "red", gapPercent: 100 });
   });
 
+  it("does not turn a small shortfall red in the first week", () => {
+    const result = computeKpiStatus(plan, reading(101, "2026-01-08"), null, "2026-01-08");
+    expect(result).toMatchObject({ status: "green", gapPercent: 9.2 });
+  });
+
   it("treats down as good: above the planned path is behind", () => {
     // Churn from 20% to 10%: mid-year plan is 15.
     const churn = { ...plan, baselineValue: 20, targetValue: 10, kpiDirection: "down" as const };

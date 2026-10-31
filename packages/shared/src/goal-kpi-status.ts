@@ -13,7 +13,9 @@ import {
  * - Straight line compares the latest reading with the plan at its own date.
  *   Target by date waits until the deadline before judging slippage.
  * - The gap is the larger shortfall as a share of the whole change or of the
- *   progress due by the reading date. This catches zero delivery on a large target.
+ *   progress due by the reading date, with a floor of 10% of the whole change
+ *   on the latter denominator. This catches zero delivery without amplifying
+ *   small shortfalls early in a period.
  * - Gap at or above the red line is red, at or above the amber line is amber,
  *   otherwise green. Defaults: amber 10%, red 20%.
  * - Past the deadline the plan is the target: met is green, not met is red.
@@ -139,7 +141,7 @@ export function computeKpiStatus(
   const planned = plannedKpiValue(baseline, target, latest.readingDate);
   const gap = Math.max(
     gapPercent(latest.value, planned, baseline.value, target.value, direction),
-    gapPercent(latest.value, planned, baseline.value, planned, direction),
+    gapPercent(latest.value, planned, baseline.value, planned, direction, Math.abs(target.value - baseline.value) * 0.1),
   );
   const amber = plan.amberThresholdPct ?? DEFAULT_KPI_AMBER_THRESHOLD_PCT;
   const red = Math.max(plan.redThresholdPct ?? DEFAULT_KPI_RED_THRESHOLD_PCT, amber);
@@ -160,10 +162,11 @@ function gapPercent(
   baseline: number,
   target: number,
   direction: KpiDirection,
+  minimumSpan = 0,
 ): number {
   const shortfall = direction === "down" ? value - planned : planned - value;
   if (shortfall <= 0) return 0;
-  const span = Math.abs(target - baseline) || Math.abs(target) || 1;
+  const span = Math.max(Math.abs(target - baseline), minimumSpan) || Math.abs(target) || 1;
   return Math.round((shortfall / span) * 1000) / 10;
 }
 
