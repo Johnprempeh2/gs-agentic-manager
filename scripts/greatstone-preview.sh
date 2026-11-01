@@ -117,17 +117,65 @@ preview_migrations() {
 # --reporter=silent) to purge node_modules and would wait forever.
 preview_install() {
   local limit="${GSAM_PREVIEW_INSTALL_TIMEOUT:-600}" attempt
-  local -a timer=()
-  command -v timeout >/dev/null 2>&1 && timer=(timeout --kill-after=30 "$limit")
   for attempt in 1 2; do
-    if (cd "$PREVIEW_CODE_DIR" && env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME -u XDG_STATE_HOME \
-      -u COREPACK_HOME HOME="${GS_USER_HOME:-$HOME}" ${timer[@]+"${timer[@]}"} pnpm install --frozen-lockfile --prefer-offline \
-      --config.confirm-modules-purge=false --reporter=silent </dev/null); then
+    if preview_install_once "$limit"; then
+      preview_check_patches "$limit"
       return 0
     fi
     say "preview: pnpm install failed or took over ${limit}s (attempt $attempt of 2)"
   done
   die "pnpm install in $PREVIEW_CODE_DIR did not finish in 2 attempts of ${limit}s; check the network and the account's pnpm store. Nothing was copied (GRE-3515)."
+}
+
+# One `pnpm install` in the preview clone, stopped after <limit> seconds.
+preview_install_once() {
+  local -a timer=()
+  command -v timeout >/dev/null 2>&1 && timer=(timeout --kill-after=30 "$1")
+  (cd "$PREVIEW_CODE_DIR" && env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME -u XDG_STATE_HOME \
+    -u COREPACK_HOME HOME="${GS_USER_HOME:-$HOME}" ${timer[@]+"${timer[@]}"} pnpm install --frozen-lockfile --prefer-offline \
+    --config.confirm-modules-purge=false --reporter=silent </dev/null)
+}
+
+# Prints each folder in the clone's node_modules/.pnpm of a package from the
+# lockfile's patchedDependencies whose files are not patched. pnpm applies a
+# patch in its build step, after it copies the package's files, so an install
+# stopped between the two (a stalled one, GRE-3515) leaves the folder with the
+# patched name but unpatched files. Later installs see the folder and keep it:
+# the build then fails, e.g. TS2353 'spawnEnvironment' from acpx (GRE-3519).
+preview_unpatched_dirs() {
+  local lockfile="$PREVIEW_CODE_DIR/pnpm-lock.yaml" name hash file dir
+  [ -f "$lockfile" ] || return 0
+  command -v patch >/dev/null 2>&1 || { say "preview: no patch command; not checking that the dependency patches are applied" >&2; return 0; }
+  while read -r name hash file; do
+    for dir in "$PREVIEW_CODE_DIR/node_modules/.pnpm/${name//\//+}_patch_hash=$hash"*"/node_modules/${name%@*}"; do
+      [ -d "$dir" ] || continue
+      patch -p1 -R --dry-run -s -f -d "$dir" <"$PREVIEW_CODE_DIR/$file" >/dev/null 2>&1 || printf '%s\n' "$dir"
+    done
+  done < <(perl -ne '
+    if (/^patchedDependencies:/) { $in = 1; next }
+    next unless $in;
+    last if /^\S/;
+    if (/^  \x27?(.+?)\x27?:\s*$/) { ($name, $hash) = ($1, undef) }
+    elsif (/^    hash: (\S+)/) { $hash = $1 }
+    elsif (/^    path: (\S+)/ && defined $hash) { print "$name $hash $1\n" }
+  ' "$lockfile")
+}
+
+# Removes unpatched folders (see preview_unpatched_dirs) so pnpm copies and
+# patches them again, then installs once more. Start fails if one is still
+# unpatched, before any data is copied.
+preview_check_patches() {
+  local bad dir
+  bad="$(preview_unpatched_dirs)"
+  [ -n "$bad" ] || return 0
+  say "preview: these packages are not patched, so they are installed again (GRE-3519):"
+  say "$bad"
+  while IFS= read -r dir; do rm -rf -- "$dir"; done <<<"$bad"
+  if preview_install_once "$1"; then
+    bad="$(preview_unpatched_dirs)"
+    [ -n "$bad" ] || return 0
+  fi
+  die "pnpm install in $PREVIEW_CODE_DIR did not apply the dependency patches (see patches/); still not patched: $(printf '%s' "$bad" | paste -sd ' ' -). Nothing was copied (GRE-3519)."
 }
 
 cmd_start() {
