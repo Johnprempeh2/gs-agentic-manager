@@ -106,6 +106,30 @@ preview_migrations() {
   printf 'migrations applied on start: %s' "$(printf '%s' "${names:-none}" | paste -sd ',' - | sed 's/,/, /g')"
 }
 
+# Installs the preview clone's dependencies. An agent run has a temp HOME and
+# XDG folders, so pnpm used an empty store and corepack cache each time:
+# --prefer-offline had nothing to use, every start downloaded the whole tree,
+# and a slow registry stalled it for 30+ minutes (GRE-3515). The install now
+# uses the account home, so it shares live's pnpm store and corepack cache.
+# Each attempt has a time limit; a stalled attempt is stopped and tried once
+# more (pnpm install is safe to repeat), then start fails and says so.
+# Non-interactive: if the store changes, pnpm asks (hidden by
+# --reporter=silent) to purge node_modules and would wait forever.
+preview_install() {
+  local limit="${GSAM_PREVIEW_INSTALL_TIMEOUT:-600}" attempt
+  local -a timer=()
+  command -v timeout >/dev/null 2>&1 && timer=(timeout --kill-after=30 "$limit")
+  for attempt in 1 2; do
+    if (cd "$PREVIEW_CODE_DIR" && env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME -u XDG_STATE_HOME \
+      -u COREPACK_HOME HOME="${GS_USER_HOME:-$HOME}" ${timer[@]+"${timer[@]}"} pnpm install --frozen-lockfile --prefer-offline \
+      --config.confirm-modules-purge=false --reporter=silent </dev/null); then
+      return 0
+    fi
+    say "preview: pnpm install failed or took over ${limit}s (attempt $attempt of 2)"
+  done
+  die "pnpm install in $PREVIEW_CODE_DIR did not finish in 2 attempts of ${limit}s; check the network and the account's pnpm store. Nothing was copied (GRE-3515)."
+}
+
 cmd_start() {
   local tag="${1:-}"
   [ -n "$tag" ] || die "usage: greatstone-preview.sh start <tag>"
@@ -135,10 +159,7 @@ cmd_start() {
   git -C "$PREVIEW_CODE_DIR" checkout --quiet --force --detach "$commit"
   say "Code: $PREVIEW_CODE_DIR at $(git -C "$PREVIEW_CODE_DIR" rev-parse --short HEAD)"
   say "Installing dependencies..."
-  # Non-interactive: agent runs get a new pnpm store each time, and pnpm then
-  # asks (hidden by --reporter=silent) to purge node_modules and waits forever.
-  (cd "$PREVIEW_CODE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
-    --config.confirm-modules-purge=false --reporter=silent </dev/null)
+  preview_install
 
   # Data: a fresh copy every start. Files are copied read-only from live; the
   # database comes from a read-only backup of the running live database.
