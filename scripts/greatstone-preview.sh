@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Try a version before it goes live (see doc/GREATSTONE-WAY-OF-WORKING.md).
 #
-#   scripts/greatstone-preview.sh start <tag>   run <tag> at http://localhost:3200 on a copy of the live data
-#   scripts/greatstone-preview.sh status        say what the preview runs, which migrations it applied on
-#                                               start, and whether any agent run started
+#   scripts/greatstone-preview.sh start <tag>   run <tag> at http://localhost:3200 on a copy of the live data;
+#                                               returns at once and goes on in the background (8 to 12
+#                                               minutes), logging to ~/GSAM/preview/start.log
+#   scripts/greatstone-preview.sh status        say whether the last start is starting, up or failed, what
+#                                               the preview runs, which migrations it applied on start,
+#                                               and whether any agent run started
 #   scripts/greatstone-preview.sh switch-tests  run the tests of every Experimental switch that is on
 #                                               (the preview has live's values); fails when one fails
 #   scripts/greatstone-preview.sh shot <path> <name>
@@ -21,6 +24,8 @@
 # start, switch-tests and stop run one at a time (the "preview" lock in
 # ~/GSAM/locks); a second one fails and names the run that holds it. While the
 # release queue releases, an agent run's start, switch-tests and stop are refused.
+# A background start holds the lock until it ends. The queue's own start
+# (GSAM_RELEASE_QUEUE_ITEM) runs in the foreground, as the queue waits for it.
 #
 # The preview lives in ~/GSAM/preview: code/ is its own clone at <tag>, data/
 # is a fresh copy of the live data. It only reads ~/GSAM/data and never talks
@@ -51,6 +56,21 @@ PREVIEW_ENV=(
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# A background start (GRE-3502): its pid, tag and log, and where it logs.
+START_STATE_FILE="$PREVIEW_ROOT/start.state"
+START_LOG="$PREVIEW_ROOT/start.log"
+start_state() {
+  [ -f "$START_STATE_FILE" ] || return 0
+  sed -n "s/^$1=//p" "$START_STATE_FILE"
+}
+
+# True while the background start recorded in start.state still runs.
+start_running() {
+  local pid
+  pid="$(start_state pid)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -o command= -p "$pid" | grep -qF -- "_start-detached"
+}
+
 # Writes the state file for a started preview: <tag> <commit> <pid> <source repo>,
 # and the agent run and issue that started it (empty outside an agent run).
 write_preview_state() {
@@ -70,15 +90,21 @@ EOF
 # by run <id> for issue <id>", so a preview left by a run that ended early can
 # be traced (GRE-525). State files written before that have no run or issue.
 preview_origin() {
+  started_by preview_state
+}
+
+# "started 3h ago by run <id> for issue <id>" from the started_at, run_id and
+# issue_id that <reader> (preview_state or start_state) gives.
+started_by() {
   local age
   age="$(perl -MTime::Local -e '
     my ($y, $mo, $d, $h, $mi, $s) = ($ARGV[0] // "") =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/ or exit;
     my $t = time - timegm($s, $mi, $h, $d, $mo - 1, $y);
     $t = 0 if $t < 0;
     print $t < 60 ? "${t}s ago" : $t < 3600 ? int($t / 60) . "m ago" : $t < 86400 ? int($t / 3600) . "h ago" : int($t / 86400) . "d ago";
-  ' "$(preview_state started_at)" 2>/dev/null || true)"
+  ' "$("$1" started_at)" 2>/dev/null || true)"
   printf 'started %s by run %s for issue %s' "${age:-at an unknown time}" \
-    "$(preview_state run_id | grep . || echo unknown)" "$(preview_state issue_id | grep . || echo unknown)"
+    "$("$1" run_id | grep . || echo unknown)" "$("$1" issue_id | grep . || echo unknown)"
 }
 
 # Says which migrations the preview server applied to its data copy when it
@@ -106,8 +132,11 @@ preview_migrations() {
   printf 'migrations applied on start: %s' "$(printf '%s' "${names:-none}" | paste -sd ',' - | sed 's/,/, /g')"
 }
 
-cmd_start() {
-  local tag="${1:-}"
+# The quick checks before a start; sets START_COMMIT and START_SOURCE_URL.
+# A background start runs them before it detaches, so their errors reach the
+# caller, and again in the background.
+start_checks() {
+  local tag="$1"
   [ -n "$tag" ] || die "usage: greatstone-preview.sh start <tag>"
   if preview_running; then
     die "a preview of $(preview_state tag) is already running ($(preview_origin)); run 'greatstone-preview.sh stop' first."
@@ -116,12 +145,15 @@ cmd_start() {
   gs_tools_installed || exit 1
   case "$PREVIEW_ROOT/" in "$LIVE_DIR/"* | "$LIVE_DATA_DIR/"*) die "the preview folder must be outside the live folders." ;; esac
   [ -d "$LIVE_DATA_DIR/instances/$INSTANCE_ID" ] || die "no live data at $LIVE_DATA_DIR"
-  local source_url
-  source_url="$(live_database_url)" \
+  START_SOURCE_URL="$(live_database_url)" \
     || die "the live database is not running. Start live first; the preview copies from the running database and never starts it."
+  START_COMMIT="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$tag^{commit}")" || die "unknown tag $tag"
+}
 
-  local commit
-  commit="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$tag^{commit}")" || die "unknown tag $tag"
+cmd_start() {
+  local tag="${1:-}"
+  start_checks "$tag"
+  local source_url="$START_SOURCE_URL" commit="$START_COMMIT"
   say "Preview $tag ($commit)"
 
   # Code: our own clone, fetched from the local repository so unpushed rc-* tags work.
@@ -187,9 +219,74 @@ cmd_start() {
   die "the preview did not report $tag within 5 minutes; see $PREVIEW_LOG. Stop it with: scripts/greatstone-preview.sh stop"
 }
 
+# True when <pid> is a background start (not yet reaped or reused).
+is_start_worker() { kill -0 "$1" 2>/dev/null && ps -o command= -p "$1" | grep -qF -- "_start-detached"; }
+
+# Starts the preview in the background and returns at once (GRE-3502). A start
+# copies the live data and takes 8 to 12 minutes, longer than an agent run: on
+# 31 Oct and 1 Nov 2026 the end of the run killed the start mid-copy (GRE-3438,
+# GRE-3493). After the quick checks, the preview lock is handed to a copy of
+# this script in a session of its own that ignores hangups and logs to
+# start.log; `status` reads that log.
+cmd_start_background() {
+  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner"
+  start_checks "$tag"
+  mkdir -p "$PREVIEW_ROOT"
+  nohup perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "preview: cannot start a session of its own: $!\n"; exec @ARGV or die "preview: $!\n"' \
+    bash "$GS_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" _start-detached "$tag" </dev/null >"$START_LOG" 2>&1 &
+  pid=$!
+  printf 'pid=%s\ntag=%s\ncommit=%s\nlog=%s\nstarted_at=%s\nrun_id=%s\nissue_id=%s\n' "$pid" "$tag" "$START_COMMIT" "$START_LOG" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')" \
+    "$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')" >"$START_STATE_FILE"
+  # The lock now names the background start, which removes it when it ends.
+  sed "s/^pid=.*/pid=$pid/" "$owner" >"$owner.tmp" && mv "$owner.tmp" "$owner"
+  trap - EXIT
+  sleep 1
+  if ! is_start_worker "$pid" && ! grep -q '^Preview is up: ' "$START_LOG" 2>/dev/null; then
+    tail -n 5 "$START_LOG" >&2
+    die "the background start of $tag ended at once; see $START_LOG"
+  fi
+  say "Starting the preview of $tag ($START_COMMIT) in the background: pid $pid, log $START_LOG"
+  say "It takes 8 to 12 minutes and goes on after this shell or agent run ends."
+  say "Check it with 'scripts/greatstone-preview.sh status' (starting, up or failed). Do not start it again."
+}
+
+# The background start: waits until the preview lock names it, then starts.
+start_detached() {
+  local owner="$GS_ROOT/locks/preview.lock/owner"
+  for _ in $(seq 1 100); do
+    [ "$(sed -n 's/^pid=//p' "$owner" 2>/dev/null)" = "$$" ] && break
+    sleep 0.1
+  done
+  [ "$(sed -n 's/^pid=//p' "$owner" 2>/dev/null)" = "$$" ] \
+    || die "the preview lock was not handed to this background start (pid $$); nothing was changed. Start again."
+  trap "rm -rf '$GS_ROOT/locks/preview.lock'" EXIT
+  cmd_start "$@"
+}
+
+# The last background start, from start.log: "up" once it logged "Preview is
+# up" and the preview runs, "starting" while it runs, else "failed" and why.
+# Prints nothing when there was none since the last stop.
+start_status() {
+  [ -f "$START_STATE_FILE" ] || return 0
+  local log what reason=""
+  log="$(start_state log)"
+  if grep -q '^Preview is up: ' "$log" 2>/dev/null; then
+    if preview_running; then what=up; else what=failed reason="it was up, but the preview server no longer runs; see $PREVIEW_LOG"; fi
+  elif start_running; then
+    what=starting reason="$(tail -n 1 "$log" 2>/dev/null || true)"
+  else
+    what=failed reason="$(grep '^preview: ' "$log" 2>/dev/null | tail -n 1 || true)"
+    [ -n "$reason" ] || reason="it stopped before the preview was up; last line: $(tail -n 1 "$log" 2>/dev/null || true)"
+  fi
+  say "Start:      $what ($(start_state tag), pid $(start_state pid), $(started_by start_state); log: $log)"
+  [ -z "$reason" ] || say "            $reason"
+}
+
 cmd_status() {
+  start_status
   if ! preview_running; then
-    say "No preview is running."
+    start_running || say "No preview is running."
     return 0
   fi
   local commit started
@@ -256,6 +353,7 @@ cmd_switch_tests() {
 }
 
 cmd_stop() {
+  rm -f "$START_STATE_FILE"
   if ! preview_running; then
     say "No preview is running."
     rm -f "$PREVIEW_STATE_FILE"
@@ -408,7 +506,20 @@ queue_guard() {
 }
 
 case "${1:-}" in
-  start) queue_guard; preview_lock "$@"; shift; cmd_start "$@" ;;
+  start)
+    queue_guard
+    if start_running; then
+      die "a start of $(start_state tag) already runs in the background (pid $(start_state pid), $(started_by start_state)); follow it with 'greatstone-preview.sh status' (log: $(start_state log)). Not starting another."
+    fi
+    preview_lock "$@"
+    shift
+    if [ -n "${GSAM_RELEASE_QUEUE_ITEM:-}" ]; then
+      rm -f "$START_STATE_FILE"
+      cmd_start "$@"
+    else
+      cmd_start_background "$@"
+    fi ;;
+  _start-detached) shift; start_detached "$@" ;;
   status) cmd_status ;;
   switch-tests) queue_guard; preview_lock "$@"; cmd_switch_tests ;;
   shot) shift; cmd_shot "$@" ;;

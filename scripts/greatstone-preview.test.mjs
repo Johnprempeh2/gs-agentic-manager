@@ -621,3 +621,157 @@ test("a run takes over its own dead lock once; the second time it fails and says
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// GRE-3502: a start copies the live data and takes 8 to 12 minutes, so the
+// end of an agent run killed it mid-copy (GRE-3438, GRE-3493). A fake GSAM
+// root and checkout in which `start` runs end to end in seconds: live data and
+// a live database pid file, a release repo with tag rc-1, a fake tsx for
+// `greatstone-db.ts seed-preview` that waits for a gate file (then fails with
+// FAKE_SEED_FAIL), and a fake pnpm whose `dev:once` answers /api/health with
+// the checked-out commit on the preview port.
+async function withFakeStart(fn, seedEnv = {}) {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  const clone = mkdtempSync(join(tmpdir(), "gs-preview-clone-"));
+  const repo = mkdtempSync(join(tmpdir(), "gs-preview-repo-"));
+  const bin = join(clone, "bin");
+  const gate = join(clone, "seed-gate");
+  try {
+    mkdirSync(join(clone, "scripts"));
+    for (const f of ["greatstone-preview.sh", "greatstone-common.sh"]) writeFileSync(join(clone, "scripts", f), readFileSync(join(scriptsDir, f)));
+    mkdirSync(join(clone, "cli", "node_modules", "tsx", "dist"), { recursive: true });
+    writeFileSync(join(clone, "cli", "node_modules", "tsx", "dist", "cli.mjs"), [
+      'import { existsSync } from "node:fs";',
+      "const until = Date.now() + 60_000;",
+      "while (!existsSync(process.env.FAKE_SEED_GATE) && Date.now() < until) await new Promise((r) => setTimeout(r, 100));",
+      'if (process.env.FAKE_SEED_FAIL) { console.error("seed-preview: the restore failed"); process.exit(1); }',
+      'console.log("Seeded the preview database");',
+    ].join("\n"));
+    mkdirSync(bin);
+    writeFileSync(join(bin, "pnpm"), [
+      "#!/usr/bin/env bash",
+      '[ "$1" = dev:once ] || exit 0',
+      `exec node -e 'require("http").createServer((q, s) => s.end(JSON.stringify({ status: "ok", commit: process.argv[1] }))).listen(Number(process.env.PORT))' "$(git rev-parse HEAD)" "$@"`,
+    ].join("\n"), { mode: 0o755 });
+    const git = (...args) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
+    git("init", "--quiet");
+    git("commit", "--quiet", "--allow-empty", "-m", "rc");
+    git("tag", "rc-1");
+    const db = join(root, "data", "instances", "default", "db");
+    mkdirSync(db, { recursive: true });
+    writeFileSync(join(root, "data", "instances", "default", "file.txt"), "live\n");
+    writeFileSync(join(db, "postmaster.pid"), `${process.pid}\n${db}\n0\n5432\n`);
+    const port = await new Promise((resolve) => { const s = http.createServer().listen(0, () => { const p = s.address().port; s.close(() => resolve(p)); }); });
+    const env = {
+      PATH: `${bin}:${process.env.PATH}`, HOME: root, GSAM_ROOT: root, GSAM_RELEASE_REPO: repo,
+      GSAM_PREVIEW_PORT: String(port), FAKE_SEED_GATE: gate, ...seedEnv,
+    };
+    const script = join(clone, "scripts", "greatstone-preview.sh");
+    const run = (...args) => {
+      const r = spawnSync("bash", [script, ...args], { encoding: "utf8", env, timeout: 60_000 });
+      return { code: r.status, out: `${r.stdout}${r.stderr}` };
+    };
+    return await fn({ root, env, script, run, port, commit: git("rev-parse", "HEAD"), openGate: () => writeFileSync(gate, "") });
+  } finally {
+    const pidIn = (file) => { try { return Number(readFileSync(file, "utf8").match(/^pid=(\d+)$/m)?.[1]); } catch { return 0; } };
+    for (const pid of [pidIn(join(root, "preview", "start.state")), pidIn(join(root, "preview", "preview.state"))]) {
+      if (pid) try { process.kill(-pid, "SIGKILL"); } catch {}
+    }
+    for (const dir of [root, clone, repo]) {
+      try { execFileSync("chmod", ["-R", "u+w", dir]); } catch {}
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function waitFor(what, check, ms = 30_000) {
+  const until = Date.now() + ms;
+  for (;;) {
+    const got = check();
+    if (got) return got;
+    if (Date.now() > until) assert.fail(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+const health = (port) => new Promise((resolve) => {
+  http.get(`http://127.0.0.1:${port}/api/health`, (res) => { let s = ""; res.on("data", (d) => { s += d; }).on("end", () => resolve(s)); })
+    .on("error", () => resolve(null));
+});
+
+test("start returns at once, and the preview comes up after the calling shell is killed (GRE-3502)", async () => {
+  await withFakeStart(async ({ root, env, script, run, port, commit, openGate }) => {
+    // The caller starts the preview and would go on; then it is killed, as the end of an agent run kills its tool.
+    const out = join(root, "caller.out");
+    const began = Date.now();
+    const caller = spawn("bash", ["-c", `bash ${JSON.stringify(script)} start rc-1 >${JSON.stringify(out)} 2>&1; echo "exit $?" >>${JSON.stringify(out)}; sleep 600`],
+      { env, detached: true, stdio: "ignore" });
+    let said;
+    try {
+      said = await waitFor("start to return", () => existsSync(out) && /^exit \d+$/m.test(readFileSync(out, "utf8")) && readFileSync(out, "utf8"));
+    } finally {
+      process.kill(-caller.pid, "SIGKILL");
+    }
+    assert.ok(Date.now() - began < 30_000, `start returned after ${Date.now() - began} ms`);
+    assert.match(said, /^exit 0$/m, said);
+    assert.match(said, new RegExp(`^Starting the preview of rc-1 \\(${commit}\\) in the background: pid \\d+, log ${join(root, "preview", "start.log")}$`, "m"));
+
+    const starting = run("status");
+    assert.equal(starting.code, 0, starting.out);
+    assert.match(starting.out, /^Start: +starting \(rc-1, pid \d+, started \d+s ago by run unknown for issue unknown; log: \S+start\.log\)$/m);
+    assert.doesNotMatch(starting.out, /No preview is running/);
+
+    // A second start says a start runs and starts no other copy.
+    const first = readFileSync(join(root, "preview", "start.state"), "utf8");
+    const second = run("start", "rc-1");
+    assert.equal(second.code, 1);
+    assert.match(second.out, /^preview: a start of rc-1 already runs in the background \(pid \d+, started \d+s ago by run unknown for issue unknown\); follow it with 'greatstone-preview\.sh status'/m);
+    assert.equal(readFileSync(join(root, "preview", "start.state"), "utf8"), first, "the running start is left alone");
+    assert.equal((readFileSync(join(root, "preview", "start.log"), "utf8").match(/^Preview rc-1 /gm) ?? []).length, 1, "one copy only");
+
+    openGate();
+    const up = await waitFor("status up", () => { const s = run("status").out; return /^Start: +up /m.test(s) && s; });
+    assert.match(up, /^  tag: +rc-1$/m);
+    assert.match(await health(port), new RegExp(`"commit":"${commit}"`));
+    assert.equal(existsSync(join(root, "locks", "preview.lock")), false, "the background start freed the lock");
+
+    const stopped = run("stop");
+    assert.match(stopped.out, /Preview stopped\./, stopped.out);
+    assert.equal(await health(port), null);
+    assert.equal(run("status").out, "No preview is running.\n");
+  });
+});
+
+test("status says failed when the background start fails or is killed (GRE-3502)", async () => {
+  await withFakeStart(async ({ root, run, openGate }) => {
+    assert.equal(run("start", "rc-1").code, 0);
+    assert.match(run("status").out, /^Start: +starting /m);
+    openGate();
+    const failed = await waitFor("status failed", () => { const s = run("status").out; return /^Start: +failed /m.test(s) && s; });
+    assert.match(failed, /^ +it stopped before the preview was up; last line: seed-preview: the restore failed$/m);
+    assert.match(failed, /^No preview is running\.$/m);
+    assert.equal(existsSync(join(root, "locks", "preview.lock")), false, "a failed start frees the lock");
+  }, { FAKE_SEED_FAIL: "1" });
+
+  await withFakeStart(async ({ root, run }) => {
+    assert.equal(run("start", "rc-1").code, 0);
+    const pid = Number(readFileSync(join(root, "preview", "start.state"), "utf8").match(/^pid=(\d+)$/m)[1]);
+    process.kill(-pid, "SIGKILL");
+    const failed = await waitFor("status failed", () => { const s = run("status").out; return /^Start: +failed /m.test(s) && s; });
+    assert.match(failed, /it stopped before the preview was up/);
+    // A killed start leaves its lock; the next start takes it over and runs.
+    const again = run("start", "rc-1");
+    assert.equal(again.code, 0, again.out);
+    assert.match(again.out, /Took over the preview lock/);
+    assert.match(run("status").out, /^Start: +starting /m);
+  });
+});
+
+test("the release queue's own start still runs in the foreground (GRE-3502)", async () => {
+  await withFakeStart(async ({ root, env, script, openGate }) => {
+    openGate();
+    const r = spawnSync("bash", [script, "start", "rc-1"], { encoding: "utf8", env: { ...env, GSAM_RELEASE_QUEUE_ITEM: "rq-1" }, timeout: 60_000 });
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+    assert.match(r.stdout, /^Preview is up: /m);
+    assert.equal(existsSync(join(root, "preview", "start.state")), false);
+  });
+});

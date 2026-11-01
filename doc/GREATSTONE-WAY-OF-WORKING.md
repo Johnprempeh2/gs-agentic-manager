@@ -389,11 +389,15 @@ Merging does not change the live app. A version goes live in these steps.
    Keystone may run the check itself.
 
    ```sh
-   scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200
-   scripts/greatstone-preview.sh status                  # tag, commit, migrations applied, agent runs since start
+   scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200; returns at once, runs on in the background
+   scripts/greatstone-preview.sh status                  # Start: starting, up or failed; tag, commit, migrations, agent runs
    scripts/greatstone-preview.sh switch-tests            # tests of every Experimental switch on in live
    scripts/greatstone-preview.sh script walk.mjs         # your own Playwright walk-through (never in ~/GSAM/live)
    ```
+
+   `start` takes 8 to 12 minutes and goes on after your run ends (log:
+   `~/GSAM/preview/start.log`). Check it on your next wake with `status`;
+   do not start it again while it says "starting".
 
    One preview step at a time: if `start`, `switch-tests` or `stop` says
    "another preview step runs", wait for that run; do not kill it.
