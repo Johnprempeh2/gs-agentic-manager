@@ -397,7 +397,9 @@ Merging does not change the live app. A version goes live in these steps.
 
    `start` takes 8 to 12 minutes and goes on after your run ends (log:
    `~/GSAM/preview/start.log`). Check it on your next wake with `status`;
-   do not start it again while it says "starting".
+   do not start it again while it says "starting". A start that has not
+   ended after 30 minutes stops its step and says "failed" with the last
+   lines of its log.
 
    One preview step at a time: if `start`, `switch-tests` or `stop` says
    "another preview step runs", wait for that run; do not kill it.

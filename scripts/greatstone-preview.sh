@@ -56,23 +56,94 @@ PREVIEW_ENV=(
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
-# A background start (GRE-3502): its pid, tag and log, and where it logs.
+# A background start (GRE-3502): its pid, id, tag and log, and where it logs.
+# start.step names the step that runs now (its process group and what it is).
 START_STATE_FILE="$PREVIEW_ROOT/start.state"
 START_LOG="$PREVIEW_ROOT/start.log"
+START_STEP_FILE="$PREVIEW_ROOT/start.step"
 start_state() {
   [ -f "$START_STATE_FILE" ] || return 0
   sed -n "s/^$1=//p" "$START_STATE_FILE"
 }
 
-# True while the background start recorded in start.state still runs.
-start_running() {
-  local pid
-  pid="$(start_state pid)"
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -o command= -p "$pid" | grep -qF -- "_start-detached"
+# Prints the pid of the background start recorded in start.state while it
+# runs; fails when it does not. The worker is the leader of its own session
+# and group, and its command line ends in "_start-detached <tag> <start id>".
+# The recorded pid comes first; when it is gone or names another process, the
+# worker is looked up by its start id, so a stale pid never makes a running
+# start look failed (GRE-3505).
+start_worker_pid() {
+  local pid id
+  pid="$(start_state pid)" id="$(start_state start_id)"
+  [ -n "$id" ] || return 1
+  id="_start-detached $(start_state tag) $id"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -o args= -p "$pid" | grep -qF -- "$id"; then
+    printf '%s\n' "$pid"
+    return 0
+  fi
+  ps -eo pid=,pgid=,args= | START_ID="$id" awk '$1 == $2 && index($0, ENVIRON["START_ID"]) { print $1; found = 1; exit } END { exit !found }'
+}
+
+start_running() { start_worker_pid >/dev/null; }
+
+# Stops the step a start left running (its process group), if any.
+stop_start_step() {
+  local pgid
+  pgid="$(sed -n '1s/ .*//p' "$START_STEP_FILE" 2>/dev/null || true)"
+  if [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null; then
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    for _ in $(seq 1 10); do kill -0 -- "-$pgid" 2>/dev/null || break; sleep 0.5; done
+    kill -KILL -- "-$pgid" 2>/dev/null || true
+  fi
+  rm -f "$START_STEP_FILE"
+}
+
+# With the preview lock held no start runs, so a step in start.step was left
+# by a start that was stopped by force: say so and stop it (GRE-3505).
+end_left_step() {
+  local step
+  step="$(sed -n '1p' "$START_STEP_FILE" 2>/dev/null || true)"
+  if [ -n "$step" ] && kill -0 -- "-${step%% *}" 2>/dev/null; then
+    say "Stopping '${step#* }', which a stopped start left running (process group ${step%% *})..."
+  fi
+  stop_start_step
+}
+
+# The time limit of one start: every step of it must end within this many
+# seconds of its start, or the start fails and stops that step.
+START_LIMIT_S="${GSAM_PREVIEW_START_LIMIT_S:-1800}"
+start_limit_text() { if [ "$START_LIMIT_S" -ge 120 ]; then echo "$((START_LIMIT_S / 60)) minutes"; else echo "$START_LIMIT_S seconds"; fi; }
+
+# Runs one long step of a start, <what> in <dir>, in a process group of its
+# own, and stops it when the start's time limit passes. On 1 Nov 2026 a
+# `pnpm install` in a background start waited for ever on a Corepack prompt
+# and the start said "starting" for 12 minutes and more (GRE-3505).
+run_step() {
+  local what="$1" dir="$2" pid code=0
+  shift 2
+  [ "$(date +%s)" -lt "$START_DEADLINE" ] || die "no time was left for $what within the start's limit of $(start_limit_text)."
+  set -m
+  (cd "$dir" && exec "$@") </dev/null &
+  pid=$!
+  set +m
+  printf '%s %s\n' "$pid" "$what" >"$START_STEP_FILE"
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$(date +%s)" -ge "$START_DEADLINE" ]; then
+      stop_start_step
+      wait "$pid" 2>/dev/null || true
+      die "$what did not end within the start's limit of $(start_limit_text) and was stopped."
+    fi
+    sleep 1
+  done
+  wait "$pid" || code=$?
+  rm -f "$START_STEP_FILE"
+  [ "$code" -eq 0 ] || die "$what failed (exit $code)."
 }
 
 # Writes the state file for a started preview: <tag> <commit> <pid> <source repo>,
-# and the agent run and issue that started it (empty outside an agent run).
+# and the agent run and issue that started it (empty outside an agent run). A
+# background start has no GSAM_RUN_ID and gets them as GS_PREVIEW_RUN_ID and
+# GS_PREVIEW_ISSUE_ID.
 write_preview_state() {
   cat >"$PREVIEW_STATE_FILE" <<EOF
 tag=$1
@@ -81,8 +152,8 @@ pid=$3
 port=$PREVIEW_PORT
 source_repo=$4
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-run_id=$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')
-issue_id=$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')
+run_id=$(printf '%s' "${GS_PREVIEW_RUN_ID:-${GSAM_RUN_ID:-}}" | tr -d '\r\n')
+issue_id=$(printf '%s' "${GS_PREVIEW_ISSUE_ID:-${GSAM_TASK_ID:-}}" | tr -d '\r\n')
 EOF
 }
 
@@ -154,7 +225,16 @@ cmd_start() {
   local tag="${1:-}"
   start_checks "$tag"
   local source_url="$START_SOURCE_URL" commit="$START_COMMIT"
+  START_DEADLINE=$(( $(date +%s) + START_LIMIT_S ))
+  end_left_step
   say "Preview $tag ($commit)"
+  # Every pnpm step: no Corepack download prompt, which no one can answer
+  # here, and the account's Corepack cache with the pinned pnpm, not the
+  # agent's empty temp HOME, so nothing needs a download (GRE-3505).
+  export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+  if [ -z "${COREPACK_HOME:-}" ] && [ -d "${GS_USER_HOME:-}/.cache/node/corepack" ]; then
+    export COREPACK_HOME="$GS_USER_HOME/.cache/node/corepack"
+  fi
 
   # Code: our own clone, fetched from the local repository so unpushed rc-* tags work.
   mkdir -p "$PREVIEW_ROOT"
@@ -169,8 +249,8 @@ cmd_start() {
   say "Installing dependencies..."
   # Non-interactive: agent runs get a new pnpm store each time, and pnpm then
   # asks (hidden by --reporter=silent) to purge node_modules and waits forever.
-  (cd "$PREVIEW_CODE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
-    --config.confirm-modules-purge=false --reporter=silent </dev/null)
+  run_step "pnpm install" "$PREVIEW_CODE_DIR" pnpm install --frozen-lockfile --prefer-offline \
+    --config.confirm-modules-purge=false --reporter=silent
 
   # Data: a fresh copy every start. Files are copied read-only from live; the
   # database comes from a read-only backup of the running live database.
@@ -179,7 +259,7 @@ cmd_start() {
   [ -d "$PREVIEW_DATA_DIR" ] && chmod -R u+w "$PREVIEW_DATA_DIR"
   rm -rf "$PREVIEW_DATA_DIR" "$PREVIEW_ROOT/seed"
   mkdir -p "$PREVIEW_DATA_DIR" "$PREVIEW_ROOT/seed"
-  rsync -a \
+  run_step "the file copy" "$PREVIEW_ROOT" rsync -a \
     --exclude "/instances/*/db/" \
     --exclude "/instances/*/secrets/" \
     --exclude "/instances/*/locks/" \
@@ -190,7 +270,9 @@ cmd_start() {
     --exclude "/instances/*/.env" \
     "$LIVE_DATA_DIR/" "$PREVIEW_DATA_DIR/"
   say "Files: copied to $PREVIEW_DATA_DIR (without the database, secrets, locks and backups)"
-  PGPASSWORD="$(live_database_password)" gs_db seed-preview \
+  # gs_db's command itself, so that the step's process group leader is node.
+  PGPASSWORD="$(live_database_password)" run_step "the database copy (seed-preview)" "$GS_TOOLS_ROOT" \
+    node cli/node_modules/tsx/dist/cli.mjs scripts/greatstone-db.ts seed-preview \
     --source-url "$source_url" \
     --target-db-dir "$PREVIEW_DATA_DIR/instances/$INSTANCE_ID/db" \
     --work-dir "$PREVIEW_ROOT/seed" \
@@ -219,30 +301,38 @@ cmd_start() {
   die "the preview did not report $tag within 5 minutes; see $PREVIEW_LOG. Stop it with: scripts/greatstone-preview.sh stop"
 }
 
-# True when <pid> is a background start (not yet reaped or reused).
-is_start_worker() { kill -0 "$1" 2>/dev/null && ps -o command= -p "$1" | grep -qF -- "_start-detached"; }
-
 # Starts the preview in the background and returns at once (GRE-3502). A start
 # copies the live data and takes 8 to 12 minutes, longer than an agent run: on
 # 31 Oct and 1 Nov 2026 the end of the run killed the start mid-copy (GRE-3438,
 # GRE-3493). After the quick checks, the preview lock is handed to a copy of
 # this script in a session of its own that ignores hangups and logs to
 # start.log; `status` reads that log.
+#
+# The server stops what a run leaves behind: every process with the run's
+# GSAM_RUN_ID (or PAPERCLIP_RUN_ID) unless its command or folder is in ~/GSAM
+# (server/src/services/run-process-cleanup.ts). On 1 Nov 2026 that stopped the
+# background start, which ran in the worktree, and left its `pnpm install` in
+# ~/GSAM/preview/code running alone (GRE-3505). So the background start runs
+# in ~/GSAM/preview without those variables; it gets the run and issue as
+# GS_PREVIEW_RUN_ID and GS_PREVIEW_ISSUE_ID, and `stop` ends what it leaves.
 cmd_start_background() {
-  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner"
+  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner" start_id run_id issue_id
   start_checks "$tag"
   mkdir -p "$PREVIEW_ROOT"
-  nohup perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "preview: cannot start a session of its own: $!\n"; exec @ARGV or die "preview: $!\n"' \
-    bash "$GS_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" _start-detached "$tag" </dev/null >"$START_LOG" 2>&1 &
+  start_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  run_id="$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')"
+  issue_id="$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')"
+  (cd "$PREVIEW_ROOT" && exec env -u GSAM_RUN_ID -u PAPERCLIP_RUN_ID GS_PREVIEW_RUN_ID="$run_id" GS_PREVIEW_ISSUE_ID="$issue_id" \
+    nohup perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "preview: cannot start a session of its own: $!\n"; exec @ARGV or die "preview: $!\n"' \
+    bash "$GS_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" _start-detached "$tag" "$start_id") </dev/null >"$START_LOG" 2>&1 &
   pid=$!
-  printf 'pid=%s\ntag=%s\ncommit=%s\nlog=%s\nstarted_at=%s\nrun_id=%s\nissue_id=%s\n' "$pid" "$tag" "$START_COMMIT" "$START_LOG" \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')" \
-    "$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')" >"$START_STATE_FILE"
+  printf 'pid=%s\nstart_id=%s\ntag=%s\ncommit=%s\nlog=%s\nstarted_at=%s\nrun_id=%s\nissue_id=%s\n' "$pid" "$start_id" "$tag" "$START_COMMIT" \
+    "$START_LOG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$run_id" "$issue_id" >"$START_STATE_FILE"
   # The lock now names the background start, which removes it when it ends.
   sed "s/^pid=.*/pid=$pid/" "$owner" >"$owner.tmp" && mv "$owner.tmp" "$owner"
   trap - EXIT
   sleep 1
-  if ! is_start_worker "$pid" && ! grep -q '^Preview is up: ' "$START_LOG" 2>/dev/null; then
+  if ! start_running && ! grep -q '^Preview is up: ' "$START_LOG" 2>/dev/null; then
     tail -n 5 "$START_LOG" >&2
     die "the background start of $tag ended at once; see $START_LOG"
   fi
@@ -251,9 +341,10 @@ cmd_start_background() {
   say "Check it with 'scripts/greatstone-preview.sh status' (starting, up or failed). Do not start it again."
 }
 
-# The background start: waits until the preview lock names it, then starts.
+# The background start: waits until the preview lock names it, records its own
+# pid in start.state, then starts. When it is stopped, it stops its step too.
 start_detached() {
-  local owner="$GS_ROOT/locks/preview.lock/owner"
+  local tag="${1:-}" owner="$GS_ROOT/locks/preview.lock/owner"
   for _ in $(seq 1 100); do
     [ "$(sed -n 's/^pid=//p' "$owner" 2>/dev/null)" = "$$" ] && break
     sleep 0.1
@@ -261,7 +352,9 @@ start_detached() {
   [ "$(sed -n 's/^pid=//p' "$owner" 2>/dev/null)" = "$$" ] \
     || die "the preview lock was not handed to this background start (pid $$); nothing was changed. Start again."
   trap "rm -rf '$GS_ROOT/locks/preview.lock'" EXIT
-  cmd_start "$@"
+  trap 'stop_start_step; die "the background start was stopped (SIGTERM)."' TERM
+  sed "s/^pid=.*/pid=$$/" "$START_STATE_FILE" >"$START_STATE_FILE.tmp" && mv "$START_STATE_FILE.tmp" "$START_STATE_FILE"
+  cmd_start "$tag"
 }
 
 # The last background start, from start.log: "up" once it logged "Preview is
@@ -269,18 +362,29 @@ start_detached() {
 # Prints nothing when there was none since the last stop.
 start_status() {
   [ -f "$START_STATE_FILE" ] || return 0
-  local log what reason=""
-  log="$(start_state log)"
+  local log what reason="" pid step="" tail_lines=""
+  log="$(start_state log)" pid="$(start_state pid)"
   if grep -q '^Preview is up: ' "$log" 2>/dev/null; then
     if preview_running; then what=up; else what=failed reason="it was up, but the preview server no longer runs; see $PREVIEW_LOG"; fi
-  elif start_running; then
+  elif pid="$(start_worker_pid)"; then
     what=starting reason="$(tail -n 1 "$log" 2>/dev/null || true)"
   else
+    pid="$(start_state pid)"
     what=failed reason="$(grep '^preview: ' "$log" 2>/dev/null | tail -n 1 || true)"
-    [ -n "$reason" ] || reason="it stopped before the preview was up; last line: $(tail -n 1 "$log" 2>/dev/null || true)"
+    [ -n "$reason" ] || reason="it stopped before the preview was up"
+    tail_lines="$(grep -v '^preview: ' "$log" 2>/dev/null | tail -n 5 || true)"
+    # A start stopped by force leaves its step running; stop ends it.
+    step="$(sed -n '1p' "$START_STEP_FILE" 2>/dev/null || true)"
+    if [ -n "$step" ] && kill -0 -- "-${step%% *}" 2>/dev/null; then
+      step="its step '${step#* }' still runs (process group ${step%% *}); 'greatstone-preview.sh stop' ends it."
+    else
+      step=""
+    fi
   fi
-  say "Start:      $what ($(start_state tag), pid $(start_state pid), $(started_by start_state); log: $log)"
+  say "Start:      $what ($(start_state tag), pid $pid, $(started_by start_state); log: $log)"
   [ -z "$reason" ] || say "            $reason"
+  [ -z "$step" ] || say "            $step"
+  [ -z "$tail_lines" ] || { say "            last lines of the log:"; printf '%s\n' "$tail_lines" | sed 's/^/              /'; }
 }
 
 cmd_status() {
@@ -353,6 +457,7 @@ cmd_switch_tests() {
 }
 
 cmd_stop() {
+  end_left_step
   rm -f "$START_STATE_FILE"
   if ! preview_running; then
     say "No preview is running."
