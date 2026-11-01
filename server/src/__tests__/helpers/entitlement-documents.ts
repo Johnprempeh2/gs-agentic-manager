@@ -6,13 +6,24 @@ import type { EntitlementDocument } from "@greatstone/shared";
 
 export const HUB_KEYS = generateKeyPairSync("ed25519");
 
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * The fixture's "now". Its dates hang off the real clock, so the document
+ * never expires under tests that use the real clock (GRE-3510). Tests with a
+ * fake clock start it here.
+ */
+export const FIXTURE_NOW = new Date();
+export const FIXTURE_ISSUED_AT = new Date(FIXTURE_NOW.getTime() - 8 * DAY).toISOString();
+export const FIXTURE_VALID_UNTIL = new Date(FIXTURE_NOW.getTime() + 23 * DAY).toISOString();
+
 export function documentFor(overrides: Partial<EntitlementDocument> = {}): EntitlementDocument {
   return {
     v: 1,
     client: "acme",
     version: 1,
-    issuedAt: "2026-10-01T00:00:00.000Z",
-    validUntil: "2026-11-01T00:00:00.000Z",
+    issuedAt: FIXTURE_ISSUED_AT,
+    validUntil: FIXTURE_VALID_UNTIL,
     issuedBy: "hub-admin@greatstone",
     reason: "CRM bundle",
     features: { enablePipelines: true, enableWebsiteView: true },
