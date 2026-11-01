@@ -660,7 +660,11 @@ async function withFakeStart(fn, seedEnv = {}) {
       "#!/usr/bin/env bash",
       'if [ "$1" = install ]; then',
       '  printf \'pid=%s\\nprompt=%s\\ncorepack_home=%s\\n\' "$$" "${COREPACK_ENABLE_DOWNLOAD_PROMPT:-}" "${COREPACK_HOME:-}" >"$FAKE_PNPM_INFO"',
+      '  env >"$FAKE_PNPM_INFO.env"',
       '  [ -z "${FAKE_INSTALL_HANG:-}" ] || exec sleep 600',
+      '  if [ -n "${FAKE_INSTALL_GATE:-}" ]; then for _ in $(seq 1 600); do [ -e "$FAKE_INSTALL_GATE" ] && break; sleep 0.1; done; fi',
+      // pnpm keeps its store and temp files there; a real install whose folders were removed waited for ever (GRE-3525).
+      '  for d in "$HOME" "${TMPDIR:-/tmp}" "${XDG_DATA_HOME:-$HOME}"; do [ -d "$d" ] || { echo "pnpm: $d is gone" >&2; exit 1; }; done',
       "fi",
       '[ "$1" = dev:once ] || exit 0',
       `exec node -e 'require("http").createServer((q, s) => s.end(JSON.stringify({ status: "ok", commit: process.argv[1] }))).listen(Number(process.env.PORT))' "$(git rev-parse HEAD)" "$@"`,
@@ -828,6 +832,51 @@ test("the end of the agent run does not stop a background start (GRE-3505)", { s
     const up = await waitFor("status up", () => { const s = run("status").out; return /^Start: +up /m.test(s) && s; });
     assert.match(up, new RegExp(`^  origin: +started \\d+s ago by run ${runId} for issue issue-3505$`, "m"));
   });
+});
+
+// The server removes a run's temp HOME (with the pnpm store in XDG_DATA_HOME)
+// and its scratch TMPDIR when the run ends. On 1 Nov 2026 the background
+// start's `pnpm install` still used them and then waited for ever (GRE-3525).
+test("the background start uses no folder of the agent run, which the run's end removes (GRE-3525)", async () => {
+  const runHome = mkdtempSync(join(tmpdir(), "gs-preview-runhome-"));
+  const runTmp = mkdtempSync(join(tmpdir(), "gs-preview-runtmp-"));
+  const launcher = mkdtempSync(join(tmpdir(), "gs-preview-launcher-"));
+  const gateDir = mkdtempSync(join(tmpdir(), "gs-preview-gate-"));
+  const installGate = join(gateDir, "open");
+  try {
+    await withFakeStart(async ({ root, env, script, run, openGate }) => {
+      const runId = `run-3525-${process.pid}`;
+      const r = spawnSync("bash", [script, "start", "rc-1"], {
+        encoding: "utf8", timeout: 60_000,
+        env: {
+          ...env, PATH: `${launcher}:${env.PATH}`, GSAM_RUN_ID: runId, GSAM_TASK_ID: "issue-3525", HOME: runHome,
+          XDG_DATA_HOME: join(runHome, "data"), XDG_CONFIG_HOME: join(runHome, "config"), CODEX_HOME: join(runHome, "codex"),
+          TMPDIR: runTmp, TMP: runTmp, GSAM_RUN_SCRATCH_DIR: runTmp, [`${"paperclip".toUpperCase()}_SCRATCH_DIR`]: runTmp,
+          GSAM_GITHUB_LAUNCHER_DIR: launcher, BASH_ENV: join(launcher, ".bashrc"), FAKE_INSTALL_GATE: installGate,
+        },
+      });
+      assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+      const envFile = `${env.FAKE_PNPM_INFO}.env`;
+      const installEnv = await waitFor("pnpm install", () => existsSync(envFile) && readFileSync(envFile, "utf8"));
+      // The run ends: its folders go.
+      for (const dir of [runHome, runTmp, launcher]) rmSync(dir, { recursive: true, force: true });
+      writeFileSync(installGate, "");
+      // GSAM_* settings stay (record_release_repo reads the scratch folders); a missing PATH folder is skipped.
+      const inRun = installEnv.split("\n").filter((line) => !/^(GSAM_[A-Z_]+|PATH)=/.test(line)
+        && [runHome, runTmp, launcher].some((dir) => line.includes(dir)));
+      assert.deepEqual(inRun, [], "no variable of pnpm install points into the run's folders");
+      assert.match(installEnv, new RegExp(`^TMPDIR=${join(root, "preview", "tmp")}$`, "m"));
+      assert.match(installEnv, new RegExp(`^HOME=${userInfo().homedir}$`, "m"));
+      assert.match(installEnv, new RegExp(`^GSAM_ROOT=${root}$`, "m"));
+      assert.match(installEnv, new RegExp(`^GSAM_RUN_SCRATCH_DIR=${runTmp}$`, "m"));
+      openGate();
+      const up = await waitFor("status up", () => { const s = run("status").out; return /^Start: +(up|failed) /m.test(s) && s; });
+      assert.match(up, /^Start: +up /m, up);
+      assert.match(up, new RegExp(`^  origin: +started \\d+s ago by run ${runId} for issue issue-3525$`, "m"));
+    });
+  } finally {
+    for (const dir of [runHome, runTmp, launcher, gateDir]) rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("status says starting while the worker runs, even when the pid on record is gone (GRE-3505)", async () => {

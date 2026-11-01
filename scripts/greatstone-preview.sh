@@ -116,8 +116,9 @@ start_limit_text() { if [ "$START_LIMIT_S" -ge 120 ]; then echo "$((START_LIMIT_
 
 # Runs one long step of a start, <what> in <dir>, in a process group of its
 # own, and stops it when the start's time limit passes. On 1 Nov 2026 a
-# `pnpm install` in a background start waited for ever on a Corepack prompt
-# and the start said "starting" for 12 minutes and more (GRE-3505).
+# `pnpm install` in a background start waited for ever, its pnpm store and
+# TMPDIR removed with the agent run that started it, and the start said
+# "starting" for 12 minutes and more (GRE-3505, GRE-3525).
 run_step() {
   local what="$1" dir="$2" pid code=0
   shift 2
@@ -317,22 +318,45 @@ cmd_start() {
 # GS_PREVIEW_RUN_ID and GS_PREVIEW_ISSUE_ID, and `stop` ends what it leaves.
 # The legacy alias is found by its value, as the rebrand guard forbids its name
 # (as in greatstone-test-gate.sh).
+#
+# The server also removes the run's own folders when the run ends: its temp
+# HOME (with the pnpm store in XDG_DATA_HOME), its scratch TMPDIR and its
+# GitHub launcher folder. On 1 Nov 2026 the background `pnpm install` lost its
+# store and temp folder that way and waited for ever (GRE-3525). So the
+# background start gets the account HOME and a TMPDIR in ~/GSAM/preview, and no
+# variable that points into one of the run's folders. The GSAM_* settings stay:
+# these scripts read them (GSAM_RUN_SCRATCH_DIR keeps a scratch clone out of
+# release.conf) and nothing writes into them. PATH stays too: a missing folder
+# in it is skipped.
 cmd_start_background() {
-  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner" start_id run_id issue_id name
-  local run_marker_unsets=(-u GSAM_RUN_ID)
+  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner" start_id run_id issue_id name dir
+  local run_unsets=(-u GSAM_RUN_ID) run_dirs=()
   start_checks "$tag"
-  mkdir -p "$PREVIEW_ROOT"
+  mkdir -p "$PREVIEW_ROOT/tmp"
   start_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   run_id="$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')"
   issue_id="$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')"
   if [ -n "${GSAM_RUN_ID:-}" ]; then
+    for dir in "$HOME" "${TMPDIR:-}" "${GSAM_RUN_SCRATCH_DIR:-}" "${GSAM_TASK_SCRATCH_DIR:-}" "${GSAM_SCRATCH_DIR:-}" \
+      "${GSAM_TMPDIR:-}" "${GSAM_GITHUB_LAUNCHER_DIR:-}"; do
+      dir="${dir%/}"
+      # Never the account home, /tmp, or a folder that holds or lies in the GSAM root.
+      case "$dir" in "" | /tmp | "${GS_USER_HOME:-}" | "$GS_ROOT"/*) continue ;; esac
+      case "$GS_ROOT/" in "$dir"/*) continue ;; esac
+      run_dirs+=("$dir")
+    done
     for name in $(compgen -e); do
       case "$name" in
-        *_RUN_ID) [ "${!name}" = "$GSAM_RUN_ID" ] && run_marker_unsets+=(-u "$name") ;;
+        *_RUN_ID) [ "${!name}" = "$GSAM_RUN_ID" ] && run_unsets+=(-u "$name") ;;
+        PATH | GSAM_*) ;;
+        *) for dir in "${run_dirs[@]+"${run_dirs[@]}"}"; do
+             case "${!name}" in "$dir" | "$dir"/*) run_unsets+=(-u "$name"); break ;; esac
+           done ;;
       esac
     done
   fi
-  (cd "$PREVIEW_ROOT" && exec env "${run_marker_unsets[@]}" GS_PREVIEW_RUN_ID="$run_id" GS_PREVIEW_ISSUE_ID="$issue_id" \
+  (cd "$PREVIEW_ROOT" && exec env "${run_unsets[@]}" HOME="${GS_USER_HOME:-$HOME}" TMPDIR="$PREVIEW_ROOT/tmp" \
+    GS_PREVIEW_RUN_ID="$run_id" GS_PREVIEW_ISSUE_ID="$issue_id" \
     nohup perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "preview: cannot start a session of its own: $!\n"; exec @ARGV or die "preview: $!\n"' \
     bash "$GS_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" _start-detached "$tag" "$start_id") </dev/null >"$START_LOG" 2>&1 &
   pid=$!
