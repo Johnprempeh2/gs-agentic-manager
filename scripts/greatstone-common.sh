@@ -358,7 +358,7 @@ gs_lock() {
     owner_takeovers="$(sed -n 's/^takeovers=//p' "$dir/owner" 2>/dev/null || true)"
     if [ -n "$run_id" ] && [ "$owner_run" = "$run_id" ]; then
       if [ "${owner_takeovers:-0}" -ge 1 ] 2>/dev/null; then
-        say "this run ($run_id) already took over its own $1 lock once, and that step (pid ${pid:-<none>}) was also stopped before it ended, most likely by a tool time limit. Not starting a third time. A preview start takes 8 to 12 minutes: run it in the background and follow it with 'greatstone-preview.sh status', or say on the task why it cannot finish. Check the release queue first: node scripts/greatstone-release-queue.mjs status"
+        say "this run ($run_id) already took over its own $1 lock once, and that step (pid ${pid:-<none>}) was also stopped before it ended, most likely by a tool time limit. Not starting a third time. A preview start runs in the background for 8 to 12 minutes: see why it ended with 'greatstone-preview.sh status' (it reads ~/GSAM/preview/start.log), or say on the task why it cannot finish. Check the release queue first: node scripts/greatstone-release-queue.mjs status"
         return 1
       fi
       takeovers=$(( ${owner_takeovers:-0} + 1 ))
