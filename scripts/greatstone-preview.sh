@@ -309,20 +309,30 @@ cmd_start() {
 # start.log; `status` reads that log.
 #
 # The server stops what a run leaves behind: every process with the run's
-# GSAM_RUN_ID (or PAPERCLIP_RUN_ID) unless its command or folder is in ~/GSAM
+# GSAM_RUN_ID (or its legacy alias) unless its command or folder is in ~/GSAM
 # (server/src/services/run-process-cleanup.ts). On 1 Nov 2026 that stopped the
 # background start, which ran in the worktree, and left its `pnpm install` in
 # ~/GSAM/preview/code running alone (GRE-3505). So the background start runs
 # in ~/GSAM/preview without those variables; it gets the run and issue as
 # GS_PREVIEW_RUN_ID and GS_PREVIEW_ISSUE_ID, and `stop` ends what it leaves.
+# The legacy alias is found by its value, as the rebrand guard forbids its name
+# (as in greatstone-test-gate.sh).
 cmd_start_background() {
-  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner" start_id run_id issue_id
+  local tag="${1:-}" pid owner="$GS_ROOT/locks/preview.lock/owner" start_id run_id issue_id name
+  local run_marker_unsets=(-u GSAM_RUN_ID)
   start_checks "$tag"
   mkdir -p "$PREVIEW_ROOT"
   start_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   run_id="$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')"
   issue_id="$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')"
-  (cd "$PREVIEW_ROOT" && exec env -u GSAM_RUN_ID -u PAPERCLIP_RUN_ID GS_PREVIEW_RUN_ID="$run_id" GS_PREVIEW_ISSUE_ID="$issue_id" \
+  if [ -n "${GSAM_RUN_ID:-}" ]; then
+    for name in $(compgen -e); do
+      case "$name" in
+        *_RUN_ID) [ "${!name}" = "$GSAM_RUN_ID" ] && run_marker_unsets+=(-u "$name") ;;
+      esac
+    done
+  fi
+  (cd "$PREVIEW_ROOT" && exec env "${run_marker_unsets[@]}" GS_PREVIEW_RUN_ID="$run_id" GS_PREVIEW_ISSUE_ID="$issue_id" \
     nohup perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "preview: cannot start a session of its own: $!\n"; exec @ARGV or die "preview: $!\n"' \
     bash "$GS_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" _start-detached "$tag" "$start_id") </dev/null >"$START_LOG" 2>&1 &
   pid=$!

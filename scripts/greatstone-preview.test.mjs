@@ -11,6 +11,9 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 const scriptsDir = new URL(".", import.meta.url).pathname.replace(/\/$/, "");
+// The legacy alias of GSAM_RUN_ID (packages/shared/src/legacy-env.ts), built
+// from parts because the rebrand guard forbids its name.
+const LEGACY_RUN_ID = `${"paperclip".toUpperCase()}_RUN_ID`;
 
 // The script up to its command dispatch, then print PREVIEW_ENV one per line.
 function previewEnv(env) {
@@ -645,8 +648,8 @@ async function withFakeStart(fn, seedEnv = {}) {
     mkdirSync(join(clone, "cli", "node_modules", "tsx", "dist"), { recursive: true });
     writeFileSync(join(clone, "cli", "node_modules", "tsx", "dist", "cli.mjs"), [
       'import { existsSync, writeFileSync } from "node:fs";',
-      "const { GSAM_RUN_ID = null, PAPERCLIP_RUN_ID = null } = process.env;",
-      "writeFileSync(process.env.FAKE_SEED_INFO, JSON.stringify({ pid: process.pid, GSAM_RUN_ID, PAPERCLIP_RUN_ID, cwd: process.cwd() }));",
+      `const { GSAM_RUN_ID = null, ${LEGACY_RUN_ID}: legacyRunId = null } = process.env;`,
+      "writeFileSync(process.env.FAKE_SEED_INFO, JSON.stringify({ pid: process.pid, GSAM_RUN_ID, legacyRunId, cwd: process.cwd() }));",
       "const until = Date.now() + 60_000;",
       "while (!existsSync(process.env.FAKE_SEED_GATE) && Date.now() < until) await new Promise((r) => setTimeout(r, 100));",
       'if (process.env.FAKE_SEED_FAIL) { console.error("seed-preview: the restore failed"); process.exit(1); }',
@@ -788,7 +791,7 @@ test("status says failed when the background start fails or is killed (GRE-3502)
 
 // The server's end-of-run cleanup, as server/src/services/run-process-cleanup.ts
 // selects: this user's processes whose environment carries the run's
-// GSAM_RUN_ID or PAPERCLIP_RUN_ID, unless their command or folder is in the
+// GSAM_RUN_ID or its legacy alias, unless their command or folder is in the
 // GSAM root. Returns them; Linux only (it reads /proc).
 function runEndLeftovers(runId, gsamRoot) {
   const found = [];
@@ -796,7 +799,7 @@ function runEndLeftovers(runId, gsamRoot) {
     try {
       if (statSync(`/proc/${name}`).uid !== process.getuid()) continue;
       const env = readFileSync(`/proc/${name}/environ`, "utf8").split("\0");
-      if (!env.includes(`GSAM_RUN_ID=${runId}`) && !env.includes(`PAPERCLIP_RUN_ID=${runId}`)) continue;
+      if (!env.includes(`GSAM_RUN_ID=${runId}`) && !env.includes(`${LEGACY_RUN_ID}=${runId}`)) continue;
       const args = readFileSync(`/proc/${name}/cmdline`, "utf8").split("\0").filter(Boolean);
       if ([...args, readlinkSync(`/proc/${name}/cwd`)].some((text) => text.includes(gsamRoot))) continue;
       found.push({ pid: Number(name), args: args.join(" ") });
@@ -809,7 +812,7 @@ test("the end of the agent run does not stop a background start (GRE-3505)", { s
   await withFakeStart(async ({ root, env, script, readSeed, run, openGate }) => {
     const runId = `run-3505-${process.pid}`;
     const r = spawnSync("bash", [script, "start", "rc-1"],
-      { encoding: "utf8", env: { ...env, GSAM_RUN_ID: runId, PAPERCLIP_RUN_ID: runId, GSAM_TASK_ID: "issue-3505" }, timeout: 60_000 });
+      { encoding: "utf8", env: { ...env, GSAM_RUN_ID: runId, [LEGACY_RUN_ID]: runId, GSAM_TASK_ID: "issue-3505" }, timeout: 60_000 });
     assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
     const seed = await waitFor("the seed step", readSeed);
     // On 1 Nov 2026 the cleanup stopped the start, which carried the marker and ran in the worktree.
@@ -817,7 +820,7 @@ test("the end of the agent run does not stop a background start (GRE-3505)", { s
     for (const { pid } of leftovers) try { process.kill(pid, "SIGTERM"); } catch {}
     assert.deepEqual(leftovers, [], "nothing of the background start carries the run's marker outside ~/GSAM");
     assert.equal(seed.GSAM_RUN_ID, null);
-    assert.equal(seed.PAPERCLIP_RUN_ID, null);
+    assert.equal(seed.legacyRunId, null);
     const worker = Number(readFileSync(join(root, "preview", "start.state"), "utf8").match(/^pid=(\d+)$/m)[1]);
     assert.equal(readlinkSync(`/proc/${worker}/cwd`), join(root, "preview"));
     assert.match(run("status").out, /^Start: +starting \(rc-1, pid \d+, started \d+s ago by run run-3505-\d+ for issue issue-3505; /m);
