@@ -120,6 +120,12 @@ start_limit_text() { if [ "$START_LIMIT_S" -ge 120 ]; then echo "$((START_LIMIT_
 # TMPDIR removed with the agent run that started it, and the start said
 # "starting" for 12 minutes and more (GRE-3505, GRE-3525).
 run_step() {
+  run_step_code "$@" || die "$1 failed (exit $?)."
+}
+
+# As run_step, but returns the step's exit code when it fails, for a step the
+# caller may try again. It still fails the start at the time limit.
+run_step_code() {
   local what="$1" dir="$2" pid code=0
   shift 2
   [ "$(date +%s)" -lt "$START_DEADLINE" ] || die "no time was left for $what within the start's limit of $(start_limit_text)."
@@ -138,7 +144,7 @@ run_step() {
   done
   wait "$pid" || code=$?
   rm -f "$START_STEP_FILE"
-  [ "$code" -eq 0 ] || die "$what failed (exit $code)."
+  return "$code"
 }
 
 # Writes the state file for a started preview: <tag> <commit> <pid> <source repo>,
@@ -204,6 +210,80 @@ preview_migrations() {
   printf 'migrations applied on start: %s' "$(printf '%s' "${names:-none}" | paste -sd ',' - | sed 's/,/, /g')"
 }
 
+# Installs the preview clone's dependencies. An agent run has a temp HOME and
+# XDG folders, so pnpm used an empty store and corepack cache each time:
+# --prefer-offline had nothing to use, every start downloaded the whole tree,
+# and a slow registry stalled it for 30+ minutes (GRE-3515). The install now
+# uses the account home, so it shares live's pnpm store and corepack cache.
+# Each attempt has a time limit; a stalled attempt is stopped and tried once
+# more (pnpm install is safe to repeat), then start fails and says so.
+# Non-interactive: if the store changes, pnpm asks (hidden by
+# --reporter=silent) to purge node_modules and would wait forever.
+preview_install() {
+  local limit="${GSAM_PREVIEW_INSTALL_TIMEOUT:-600}" attempt
+  for attempt in 1 2; do
+    if preview_install_once "$limit"; then
+      preview_check_patches "$limit"
+      return 0
+    fi
+    say "preview: pnpm install failed or took over ${limit}s (attempt $attempt of 2)"
+  done
+  die "pnpm install in $PREVIEW_CODE_DIR did not finish in 2 attempts of ${limit}s; check the network and the account's pnpm store. Nothing was copied (GRE-3515)."
+}
+
+# One `pnpm install` in the preview clone, stopped after <limit> seconds.
+# It runs as a step of the start (run_step_code), so the start's time limit
+# and 'stop' end it too.
+preview_install_once() {
+  local -a timer=()
+  command -v timeout >/dev/null 2>&1 && timer=(timeout --kill-after=30 "$1")
+  run_step_code "pnpm install" "$PREVIEW_CODE_DIR" env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME -u XDG_STATE_HOME \
+    -u COREPACK_HOME HOME="${GS_USER_HOME:-$HOME}" ${timer[@]+"${timer[@]}"} pnpm install --frozen-lockfile --prefer-offline \
+    --config.confirm-modules-purge=false --reporter=silent
+}
+
+# Prints each folder in the clone's node_modules/.pnpm of a package from the
+# lockfile's patchedDependencies whose files are not patched. pnpm applies a
+# patch in its build step, after it copies the package's files, so an install
+# stopped between the two (a stalled one, GRE-3515) leaves the folder with the
+# patched name but unpatched files. Later installs see the folder and keep it:
+# the build then fails, e.g. TS2353 'spawnEnvironment' from acpx (GRE-3519).
+preview_unpatched_dirs() {
+  local lockfile="$PREVIEW_CODE_DIR/pnpm-lock.yaml" name hash file dir
+  [ -f "$lockfile" ] || return 0
+  command -v patch >/dev/null 2>&1 || { say "preview: no patch command; not checking that the dependency patches are applied" >&2; return 0; }
+  while read -r name hash file; do
+    for dir in "$PREVIEW_CODE_DIR/node_modules/.pnpm/${name//\//+}_patch_hash=$hash"*"/node_modules/${name%@*}"; do
+      [ -d "$dir" ] || continue
+      patch -p1 -R --dry-run -s -f -d "$dir" <"$PREVIEW_CODE_DIR/$file" >/dev/null 2>&1 || printf '%s\n' "$dir"
+    done
+  done < <(perl -ne '
+    if (/^patchedDependencies:/) { $in = 1; next }
+    next unless $in;
+    last if /^\S/;
+    if (/^  \x27?(.+?)\x27?:\s*$/) { ($name, $hash) = ($1, undef) }
+    elsif (/^    hash: (\S+)/) { $hash = $1 }
+    elsif (/^    path: (\S+)/ && defined $hash) { print "$name $hash $1\n" }
+  ' "$lockfile")
+}
+
+# Removes unpatched folders (see preview_unpatched_dirs) so pnpm copies and
+# patches them again, then installs once more. Start fails if one is still
+# unpatched, before any data is copied.
+preview_check_patches() {
+  local bad dir
+  bad="$(preview_unpatched_dirs)"
+  [ -n "$bad" ] || return 0
+  say "preview: these packages are not patched, so they are installed again (GRE-3519):"
+  say "$bad"
+  while IFS= read -r dir; do rm -rf -- "$dir"; done <<<"$bad"
+  if preview_install_once "$1"; then
+    bad="$(preview_unpatched_dirs)"
+    [ -n "$bad" ] || return 0
+  fi
+  die "pnpm install in $PREVIEW_CODE_DIR did not apply the dependency patches (see patches/); still not patched: $(printf '%s' "$bad" | paste -sd ' ' -). Nothing was copied (GRE-3519)."
+}
+
 # The quick checks before a start; sets START_COMMIT and START_SOURCE_URL.
 # A background start runs them before it detaches, so their errors reach the
 # caller, and again in the background.
@@ -248,10 +328,7 @@ cmd_start() {
   git -C "$PREVIEW_CODE_DIR" checkout --quiet --force --detach "$commit"
   say "Code: $PREVIEW_CODE_DIR at $(git -C "$PREVIEW_CODE_DIR" rev-parse --short HEAD)"
   say "Installing dependencies..."
-  # Non-interactive: agent runs get a new pnpm store each time, and pnpm then
-  # asks (hidden by --reporter=silent) to purge node_modules and waits forever.
-  run_step "pnpm install" "$PREVIEW_CODE_DIR" pnpm install --frozen-lockfile --prefer-offline \
-    --config.confirm-modules-purge=false --reporter=silent
+  preview_install
 
   # Data: a fresh copy every start. Files are copied read-only from live; the
   # database comes from a read-only backup of the running live database.

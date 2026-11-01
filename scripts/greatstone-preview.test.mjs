@@ -312,6 +312,114 @@ test("start in a checkout with no dependencies says to run pnpm install, before 
   }
 });
 
+// Runs preview_install against a fake pnpm (<body> is its bash script) on
+// PATH, with an agent-style temp HOME and XDG folders. Returns the exit code,
+// the output and each call's "HOME XDG_DATA_HOME COREPACK_HOME args" line.
+// <code> maps file paths in the clone to their contents; the result's
+// `files` has the contents of each of <readPaths> after the install.
+function runInstall(body, env = {}, code = {}, readPaths = []) {
+  const dir = mkdtempSync(join(tmpdir(), "gs-preview-install-"));
+  try {
+    mkdirSync(join(dir, "bin"));
+    mkdirSync(join(dir, "code"));
+    for (const [path, text] of Object.entries(code)) {
+      mkdirSync(join(dir, "code", path, ".."), { recursive: true });
+      writeFileSync(join(dir, "code", path), text);
+    }
+    writeFileSync(join(dir, "bin", "pnpm"),
+      `#!/usr/bin/env bash\necho "$HOME \${XDG_DATA_HOME-unset} \${COREPACK_HOME-unset} $*" >>${JSON.stringify(join(dir, "calls"))}\n${body}\n`,
+      { mode: 0o755 });
+    const source = readFileSync(join(scriptsDir, "greatstone-preview.sh"), "utf8");
+    const setup = source.slice(0, source.lastIndexOf('case "${1:-}" in'))
+      .replace('"$(dirname "${BASH_SOURCE[0]}")/greatstone-common.sh"', JSON.stringify(join(scriptsDir, "greatstone-common.sh")));
+    // As in cmd_start: the install runs as a step of a start with a time limit.
+    writeFileSync(join(dir, "install.sh"), `${setup}\nPREVIEW_CODE_DIR=${JSON.stringify(join(dir, "code"))}\n`
+      + `START_STEP_FILE=${JSON.stringify(join(dir, "start.step"))}\nSTART_DEADLINE=$(( $(date +%s) + START_LIMIT_S ))\npreview_install\n`);
+    const result = spawnSync("bash", [join(dir, "install.sh")], {
+      encoding: "utf8",
+      env: {
+        PATH: `${join(dir, "bin")}:${process.env.PATH}`, HOME: "/tmp/agent-home",
+        XDG_DATA_HOME: "/tmp/agent-home/data", XDG_CACHE_HOME: "/tmp/agent-home/cache", COREPACK_HOME: "/tmp/agent-home/corepack", ...env,
+      },
+    });
+    const calls = existsSync(join(dir, "calls")) ? readFileSync(join(dir, "calls"), "utf8").trim().split("\n") : [];
+    const files = Object.fromEntries(readPaths.map((path) => [path, readFileSync(join(dir, "code", path), "utf8")]));
+    return { code: result.status, out: `${result.stdout}${result.stderr}`, calls, files };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const hasTimeout = spawnSync("bash", ["-c", "command -v timeout"]).status === 0;
+
+test("start installs with the account home, so pnpm uses live's store and not an empty temp one (GRE-3515)", () => {
+  const result = runInstall("exit 0");
+  assert.equal(result.code, 0, result.out);
+  assert.equal(result.calls.length, 1);
+  const [home, xdgData, corepackHome, ...args] = result.calls[0].split(" ");
+  assert.equal(home, userInfo().homedir);
+  assert.equal(xdgData, "unset");
+  assert.equal(corepackHome, "unset");
+  assert.deepEqual(args, ["install", "--frozen-lockfile", "--prefer-offline", "--config.confirm-modules-purge=false", "--reporter=silent"]);
+});
+
+test("a stalled install is stopped, tried once more, then start fails before copying data (GRE-3515)", { skip: !hasTimeout && "no timeout command" }, () => {
+  const started = Date.now();
+  const result = runInstall("exec sleep 30", { GSAM_PREVIEW_INSTALL_TIMEOUT: "1" });
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 2);
+  assert.match(result.out, /took over 1s \(attempt 1 of 2\)/);
+  assert.match(result.out, /did not finish in 2 attempts of 1s/);
+  assert.ok(Date.now() - started < 20_000, "each attempt is stopped at its time limit");
+});
+
+test("an install that stalls once and then finishes lets start go on (GRE-3515)", { skip: !hasTimeout && "no timeout command" }, () => {
+  const result = runInstall(`[ "$(wc -l <"$(dirname "$0")/../calls")" -gt 1 ] || exec sleep 30`, { GSAM_PREVIEW_INSTALL_TIMEOUT: "1" });
+  assert.equal(result.code, 0, result.out);
+  assert.equal(result.calls.length, 2);
+});
+
+// A clone with one patched dependency, acpx@0.13.1, as pnpm-lock.yaml lists it.
+// The fake pnpm below copies and patches its folder only when the folder is
+// missing, as pnpm does.
+const acpxDir = "node_modules/.pnpm/acpx@0.13.1_patch_hash=ikfco27aeue26z63kex2z5d5ce/node_modules/acpx";
+const patchedClone = {
+  "pnpm-lock.yaml": [
+    "lockfileVersion: '9.0'", "", "patchedDependencies:", "  acpx@0.13.1:", "    hash: ikfco27aeue26z63kex2z5d5ce",
+    "    path: patches/acpx@0.13.1.patch", "", "importers:", "", "  .: {}", "",
+  ].join("\n"),
+  "patches/acpx@0.13.1.patch": [
+    "diff --git a/dist/runtime.d.ts b/dist/runtime.d.ts", "--- a/dist/runtime.d.ts", "+++ b/dist/runtime.d.ts",
+    "@@ -1 +1,2 @@", " type AcpRuntimeOptions = {", "+  spawnEnvironment?: () => Record<string, string>;", "",
+  ].join("\n"),
+};
+const unpatchedRuntime = "type AcpRuntimeOptions = {\n";
+const pnpmThatPatchesMissing = (patched = true) => `d=${JSON.stringify(acpxDir)}
+[ -d "$d" ] || { mkdir -p "$d/dist"; printf '%s' ${JSON.stringify(unpatchedRuntime)} >"$d/dist/runtime.d.ts"; ${patched ? "patch -s -p1 -d \"$d\" <patches/acpx@0.13.1.patch" : ":"}; }`;
+
+test("an install that left a patched package unpatched (stopped mid-install) installs it again (GRE-3519)", () => {
+  const result = runInstall(pnpmThatPatchesMissing(), {}, { ...patchedClone, [`${acpxDir}/dist/runtime.d.ts`]: unpatchedRuntime },
+    [`${acpxDir}/dist/runtime.d.ts`]);
+  assert.equal(result.code, 0, result.out);
+  assert.equal(result.calls.length, 2);
+  assert.match(result.out, /not patched, so they are installed again \(GRE-3519\)/);
+  assert.match(result.files[`${acpxDir}/dist/runtime.d.ts`], /spawnEnvironment/);
+});
+
+test("an install whose patches are applied is not repeated (GRE-3519)", () => {
+  const result = runInstall(pnpmThatPatchesMissing(), {}, patchedClone, [`${acpxDir}/dist/runtime.d.ts`]);
+  assert.equal(result.code, 0, result.out);
+  assert.equal(result.calls.length, 1);
+  assert.match(result.files[`${acpxDir}/dist/runtime.d.ts`], /spawnEnvironment/);
+});
+
+test("start fails before copying data when a patch is still not applied after the second install (GRE-3519)", () => {
+  const result = runInstall(pnpmThatPatchesMissing(false), {}, { ...patchedClone, [`${acpxDir}/dist/runtime.d.ts`]: unpatchedRuntime });
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 2);
+  assert.match(result.out, /did not apply the dependency patches .*acpx@0\.13\.1_patch_hash=.*Nothing was copied \(GRE-3519\)/);
+});
+
 // Shot files as `shot` leaves them: <tag>-<name>-{laptop,phone}.png and a
 // console file in preview-shot.mjs's format. Returns a listing of the folder.
 function writeShots(root, shots) {
