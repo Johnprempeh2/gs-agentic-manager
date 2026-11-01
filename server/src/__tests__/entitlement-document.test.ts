@@ -22,7 +22,14 @@ import {
 } from "../services/entitlement-runtime.js";
 import { FEATURE_ENTITLEMENT_GATES, assertEntitled, isEntitled } from "../services/entitlements.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { HUB_KEYS, documentFor, entitlementTempDir, signedFile } from "./helpers/entitlement-documents.js";
+import {
+  FIXTURE_NOW,
+  FIXTURE_VALID_UNTIL,
+  HUB_KEYS,
+  documentFor,
+  entitlementTempDir,
+  signedFile,
+} from "./helpers/entitlement-documents.js";
 
 // GRE-1078: the instance reads a signed entitlement document from a file and
 // applies it without a restart. Each "done when" case has a test below.
@@ -94,7 +101,7 @@ describe("entitlement runtime", () => {
 
   beforeEach(async () => {
     paths = await entitlementTempDir();
-    clock = new Date("2026-10-09T12:00:00.000Z");
+    clock = new Date(FIXTURE_NOW);
     events = [];
   });
 
@@ -241,12 +248,12 @@ describe("entitlement runtime", () => {
     const rt = runtime();
     await rt.start();
 
-    clock = new Date(Date.parse("2026-11-01T00:00:00.000Z") + 13 * DAY);
+    clock = new Date(Date.parse(FIXTURE_VALID_UNTIL) + 13 * DAY);
     await rt.sync({ trigger: "file_reload" });
     expect(rt.summary().state).toBe("grace");
     expect(rt.entitled().enablePipelines).toBe(true);
 
-    clock = new Date(Date.parse("2026-11-01T00:00:00.000Z") + 14 * DAY + 1);
+    clock = new Date(Date.parse(FIXTURE_VALID_UNTIL) + 14 * DAY + 1);
     // The floor applies from the clock on every read, before any timer tick.
     expect(rt.entitled()).toEqual(ENTITLEMENT_BASE_FLOOR);
     await rt.sync({ trigger: "file_reload" });
