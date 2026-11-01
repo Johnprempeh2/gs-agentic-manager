@@ -35,6 +35,7 @@ import type {
   GoalKpiReading,
   GoalRagRollup,
   KpiDirection,
+  KpiPath,
   KpiRagStatus,
   KpiReadingSource,
   KpiStatus,
@@ -407,7 +408,7 @@ export function goalService(db: Db) {
     const ragById = new Map<string, KpiRagStatus | null>();
     for (const kpi of kpis) {
       const status = computeKpiStatus(
-        { ...kpi, kpiDirection: kpi.kpiDirection as KpiDirection | null, status: kpi.status },
+        { ...kpi, kpiDirection: kpi.kpiDirection as KpiDirection | null, kpiPath: kpi.kpiPath as KpiPath, status: kpi.status },
         latest.get(kpi.id) ?? null,
         first.get(kpi.id) ?? null,
         today,

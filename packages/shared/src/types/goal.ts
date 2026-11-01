@@ -4,6 +4,7 @@ import type {
   GoalStatus,
   IssueStatus,
   KpiDirection,
+  KpiPath,
   KpiReadingSource,
 } from "../constants.js";
 import type { GoalRagRollup, KpiStatus } from "../goal-kpi-status.js";
@@ -33,6 +34,8 @@ export interface Goal {
   baselineDate: string | null;
   /** Which way is good; null means "up". */
   kpiDirection: KpiDirection | null;
+  /** How progress is judged before the target date. */
+  kpiPath: KpiPath;
   /** Percent off the planned path that turns the KPI amber; null means 10. */
   amberThresholdPct: number | null;
   /** Percent off the planned path that turns the KPI red; null means 20. */

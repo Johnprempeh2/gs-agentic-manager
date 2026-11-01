@@ -859,6 +859,8 @@ export {
   type IssueWorkFilter,
   type GoalStatus,
   type KpiDirection,
+  KPI_PATHS,
+  type KpiPath,
   type KpiReadingSource,
   type KpiRagStatus,
   type GoalWhyRequestStatus,

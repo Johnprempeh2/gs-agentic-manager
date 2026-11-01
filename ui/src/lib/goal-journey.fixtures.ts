@@ -21,6 +21,7 @@ export function makeGoal(overrides: Partial<GoalWithProgress> = {}): GoalWithPro
     baselineValue: null,
     baselineDate: null,
     kpiDirection: null,
+    kpiPath: "straight_line",
     amberThresholdPct: null,
     redThresholdPct: null,
     budgetPlannedCents: null,
