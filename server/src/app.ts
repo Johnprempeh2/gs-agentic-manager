@@ -184,6 +184,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { authRoutes } from "./routes/auth.js";
 import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
+import { referenceRoutes } from "./routes/references.js";
 import { generatedImageRoutes } from "./routes/generated-images.js";
 import { generatedVideoRoutes } from "./routes/generated-videos.js";
 import { motionStudyRoutes } from "./routes/motion-studies.js";
@@ -889,6 +890,7 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
+  api.use(referenceRoutes(db));
   api.use(generatedImageRoutes(db, opts.storageService));
   api.use(generatedVideoRoutes(db, opts.storageService));
   api.use(motionStudyRoutes(db, opts.storageService));

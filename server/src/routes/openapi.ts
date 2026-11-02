@@ -1942,6 +1942,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/approvals",
   "POST /api/approvals/{id}/comments",
   "POST /api/companies/{companyId}/assets/images",
+  "POST /api/companies/{companyId}/references",
   "POST /api/companies/{companyId}/logo",
   "POST /api/companies/{companyId}/onboarding-seed",
   "POST /api/cli-auth/challenges",
@@ -10951,6 +10952,43 @@ registry.registerPath({
   summary: "Upload an image asset",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+// The reference studio: labelled images people and agents refer to.
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/references",
+  tags: ["assets"],
+  summary: "List the reference studio's images (optional ?tag=)",
+  request: { params: z.object({ companyId: z.string() }), query: z.object({ tag: z.string().optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/references",
+  tags: ["assets"],
+  summary: "File an uploaded image in the reference studio with a title, notes and tags",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/references/{id}",
+  tags: ["assets"],
+  summary: "Update a reference's title, notes or tags",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/references/{id}",
+  tags: ["assets"],
+  summary: "Archive a reference",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 204: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({

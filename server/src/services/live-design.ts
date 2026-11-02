@@ -610,6 +610,7 @@ function withInstructions(s: Session, event: AgentEvent) {
             ? `John wants ${event.request.label} (the element at request.selector, whose HTML is request.html) and asked: "${event.request.prompt}". Each version is a NEW element to place ${event.request.insert.position} it; nothing is replaced.`
             : `John picked ${event.request.label || event.request.tag} on the page and asked, as ${action}: "${event.request.prompt}".`,
           "First read PRODUCT.md and DESIGN.md at your workspace root and design inside them. If they are missing, write them before your versions (Greatstone brand by default; the client's brand for client work), and tell John in your note.",
+          `The company's reference studio lists approved brand elements and examples with notes on how to use them: GET /api/companies/${s.companyId}/references (optional ?tag=). When John names a reference or gives an /api/assets/.../content path, fetch that image and follow its note.`,
           `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
           ...(s.source?.guidance ? [s.source.guidance] : []),
