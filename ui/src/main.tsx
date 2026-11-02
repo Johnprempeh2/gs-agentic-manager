@@ -4,6 +4,7 @@ import * as ReactDOM from "react-dom";
 import { BrowserRouter } from "@/lib/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { restoreSnapshots } from "./lib/offline-snapshot";
+import { prefetchColdIssueDetail } from "./lib/issueDetailCache";
 import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { SentryGate } from "./components/SentryGate";
@@ -55,6 +56,7 @@ const queryClient = new QueryClient({
 });
 // Open with the lists saved on this device, so there is something to read with no signal.
 restoreSnapshots(queryClient);
+prefetchColdIssueDetail(queryClient, window.location);
 
 function CompanyAwareBreadcrumbProvider({ children }: { children: React.ReactNode }) {
   const { selectedCompany } = useCompany();

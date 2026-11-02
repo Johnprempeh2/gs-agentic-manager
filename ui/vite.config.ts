@@ -7,6 +7,8 @@ import { createApiProxy } from "./src/lib/vite-api-proxy";
 import { serviceWorkerBuildIdPlugin } from "./src/lib/vite-sw-build-id";
 import { buildInfoPlugin, readBrowserBuildCommit } from "./src/lib/vite-build-commit";
 import { precompressAssetsPlugin } from "./src/lib/vite-precompress";
+import { routePreloadPlugin } from "./src/lib/vite-route-preload";
+import { ISSUE_DETAIL_PATH } from "./src/lib/issue-detail-path";
 import { isLoopbackHost, resolveDevServerHost } from "./src/lib/dev-server-host.mjs";
 
 // GSAM_UI_API_TARGET points the dev UI at another server (for example the
@@ -23,9 +25,30 @@ export default defineConfig(({ mode }) => ({
   define: {
     __GSAM_BUILD_COMMIT__: JSON.stringify(buildCommit),
   },
-  plugins: [react(), tailwindcss(), serviceWorkerBuildIdPlugin(), buildInfoPlugin(buildCommit), precompressAssetsPlugin()],
+  plugins: [
+    react(), tailwindcss(), serviceWorkerBuildIdPlugin(), buildInfoPlugin(buildCommit), precompressAssetsPlugin(),
+    routePreloadPlugin([{ page: "/src/pages/IssueDetail.tsx", path: ISSUE_DETAIL_PATH }]),
+  ],
   build: {
     minify: "esbuild",
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              // Left alone, each icon is its own file per set of pages using it:
+              // a cold task URL fetched ~140 icon files of under 4 KB, six at a
+              // time over HTTP/1.1 (GRE-3611). Grouped by the pages that use them,
+              // small groups merged, so a page still loads only its own icons.
+              name: "icons",
+              test: /node_modules[\\/]lucide-react[\\/]/,
+              entriesAware: true,
+              entriesAwareMergeThreshold: 30_000,
+            },
+          ],
+        },
+      },
+    },
   },
   esbuild:
     mode === "production"

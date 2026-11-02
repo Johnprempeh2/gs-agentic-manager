@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Issue, IssueComment } from "@greatstone/shared";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
-import { preloadIssueDetailPage } from "@/lib/issue-detail-page";
+import { issueRefFromPath, preloadIssueDetailPage } from "@/lib/issue-detail-page";
 import { getNextIssueCommentPageParam, ISSUE_COMMENT_PAGE_SIZE } from "@/lib/optimistic-issue-comments";
 
 const ISSUE_DETAIL_QUERY_PREFIX = ["issues", "detail"] as const;
@@ -224,4 +224,30 @@ export function prefetchIssueDetailForNavigation(
       retry: false,
     }),
   ]);
+}
+
+/**
+ * A cold task URL asks for its task, first comments and tree check while the
+ * app boots. Left to the page, they start only after its code arrives and
+ * renders, then queue behind the app's other startup calls (GRE-3611). Same
+ * keys as the page, so it renders from cache; a failed fetch is retried there.
+ */
+export function prefetchColdIssueDetail(
+  queryClient: QueryClient,
+  location: Pick<Location, "pathname" | "search" | "hash">,
+): boolean {
+  const issueRef = issueRefFromPath(location.pathname);
+  if (!issueRef) return false;
+  void prefetchIssueDetail(queryClient, issueRef);
+  void prefetchIssueComments(queryClient, issueRef);
+  // TaskDefaultView asks the tree only for a plain link.
+  if (!location.search && !location.hash) {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.issueTree(issueRef),
+      queryFn: () => issuesApi.getTree(issueRef),
+      staleTime: 30_000,
+      retry: false,
+    });
+  }
+  return true;
 }
