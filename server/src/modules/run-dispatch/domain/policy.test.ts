@@ -399,6 +399,14 @@ describe("decideQueuedRunStaleness", () => {
     }, NOW)).toEqual({ stale: false });
   });
 
+  it("lets a verified ask_agent participant run on a task another agent owns", () => {
+    const facts: QueuedRunFacts = { ...baseStalenessFacts(), issueAssigneeAgentId: "agent-2" };
+    expect(decideQueuedRunStaleness({ ...facts, isAgentQuestionParticipantWake: true }, NOW))
+      .toEqual({ stale: false });
+    expect(decideQueuedRunStaleness(facts, NOW))
+      .toMatchObject({ stale: true, errorCode: "issue_assignee_changed" });
+  });
+
   it("does not cancel a parked continuation summary when the classifier says it does not park the executor", () => {
     const facts: QueuedRunFacts = {
       ...baseStalenessFacts(),
