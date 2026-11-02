@@ -15523,6 +15523,18 @@ export function issueRoutes(
         publishActivity(publication);
       await flushIssuePostCommitActions(postCommitIssueActions);
 
+      if (transition.reviewKeptOnReassignment) {
+        // Say why the assignee did not move (GRE-3724).
+        const body = transition.reviewKeptOnReassignment.workOwner
+          ? "Review step kept: the task stays with its reviewer. The new assignee now owns the work and gets the task back if changes are requested. To take the task out of review, change its status too."
+          : "Review step kept: the task stays with its reviewer. To take the task out of review, change its status too.";
+        try {
+          await svc.addComment(issue.id, body, {}, { authorType: "system" });
+        } catch (err) {
+          logger.warn({ err, issueId: issue.id }, "failed to post the review-kept note");
+        }
+      }
+
       if (enteringBlocked) {
         const blockedIssue = issue;
         let ownerNotifiedAt: Date | null = null;

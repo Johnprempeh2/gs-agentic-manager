@@ -80,6 +80,12 @@ type TransitionResult = {
   skippedStageNote?: string;
   /** Set on the change request that makes an agent review loop (GRE-2164). */
   reviewLoopNotice?: ReviewLoopNotice;
+  /**
+   * Set when the board reassigned an issue away from its pending review and
+   * the review stayed with its reviewer (GRE-3724). `workOwner` is the new
+   * return assignee, or null when the board only unassigned.
+   */
+  reviewKeptOnReassignment?: { workOwner: IssueExecutionStagePrincipal | null };
 };
 
 /**
@@ -965,18 +971,19 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       !principalsEqual(existingState?.currentParticipant ?? null, currentParticipant);
 
     if (input.allowBoardOverride && attemptedStageAdvance) {
-      if (requestedStatus !== undefined && requestedStatus !== "in_review") {
+      // A status the issue already has is not a move out of review: the
+      // route sends one back with a reassignment comment.
+      if (
+        requestedStatus !== undefined &&
+        requestedStatus !== "in_review" &&
+        requestedStatus !== input.issue.status
+      ) {
         patch.executionState = null;
         return { patch };
       }
-      // Assignee-only override: the issue stays in_review, so clearing the
-      // execution state would strand it with no participant or return
-      // assignment. Re-pend the stage when the board's chosen assignee is an
-      // eligible stage participant; otherwise (unassign or a non-participant)
-      // dissolve the review — storing an ineligible participant would be
-      // silently replaced by the stage-membership repair on the next
-      // transition.
-      if (explicitAssignee && stageHasParticipant(activeStage, explicitAssignee)) {
+      const reassigned = requestedAssigneePatchProvided && !principalsEqual(explicitAssignee, currentParticipant);
+      // Reassigning to another of the stage's participants hands them the review.
+      if (reassigned && explicitAssignee && stageHasParticipant(activeStage, explicitAssignee)) {
         buildPendingStagePatch({
           patch,
           previous: existingState,
@@ -988,14 +995,30 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         });
         return { patch };
       }
-      patch.executionState = null;
-      if (input.issue.status === "in_review") {
-        patch.status = "in_progress";
+      // Reassigning to anyone else keeps the review step with its reviewer
+      // (GRE-3724). Clearing it dropped two open pull requests out of
+      // Keystone's review. The new assignee becomes the work owner, who gets
+      // the task back on a change request. Taking the task out of review
+      // needs a status change too.
+      if (reassigned) {
+        buildPendingStagePatch({
+          patch,
+          previous: existingState,
+          policy: input.policy,
+          stage: activeStage,
+          participant: currentParticipant,
+          returnAssignee: explicitAssignee ?? existingState?.returnAssignee ?? currentAssignee ?? actor,
+          reviewRequest: effectiveReviewRequest,
+        });
+        return {
+          patch,
+          workflowControlledAssignment: true,
+          reviewKeptOnReassignment: { workOwner: explicitAssignee },
+        };
       }
-      return { patch };
     }
 
-    if (attemptedStageAdvance && !stageStateDrifted) {
+    if (attemptedStageAdvance && !stageStateDrifted && !input.allowBoardOverride) {
       throw unprocessable("Only the active reviewer or approver can advance the current execution stage");
     }
 

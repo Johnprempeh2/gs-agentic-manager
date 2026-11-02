@@ -951,7 +951,8 @@ describe("issue execution policy routes", () => {
     expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
   });
 
-  it("dissolves the review when a board user reassigns an in_review task to a non-participant", async () => {
+  // GRE-3724: this used to clear the stage and drop the task out of review.
+  it("keeps the review when a board user reassigns an in_review task to a non-participant", async () => {
     const policy = normalizeIssueExecutionPolicy({
       stages: [
         {
@@ -996,9 +997,22 @@ describe("issue execution policy routes", () => {
 
     expect(res.status).toBe(200);
     const updatePatch = mockIssueService.update.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(updatePatch.status).toBe("in_progress");
-    expect(updatePatch.executionState).toBeNull();
-    expect(updatePatch.assigneeAgentId).toBe("55555555-5555-4555-8555-555555555555");
+    expect(updatePatch).not.toHaveProperty("executionPolicy");
+    expect(updatePatch.status).toBe("in_review");
+    expect(updatePatch.assigneeAgentId).toBe("33333333-3333-4333-8333-333333333333");
+    expect(updatePatch.executionState).toMatchObject({
+      status: "pending",
+      currentStageId: "11111111-1111-4111-8111-111111111111",
+      currentStageType: "review",
+      currentParticipant: { type: "agent", agentId: "33333333-3333-4333-8333-333333333333" },
+      returnAssignee: { type: "agent", agentId: "55555555-5555-4555-8555-555555555555" },
+    });
+    expect(mockIssueService.addComment).toHaveBeenCalledWith(
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      expect.stringContaining("Review step kept"),
+      {},
+      { authorType: "system" },
+    );
     expect(mockHeartbeatService.cancelRun).not.toHaveBeenCalled();
   });
 
