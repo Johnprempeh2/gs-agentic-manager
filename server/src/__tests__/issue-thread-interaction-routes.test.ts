@@ -2621,6 +2621,28 @@ describe.sequential("issue thread interaction routes", () => {
       expect(mockIssueHasApprovalEvidence).not.toHaveBeenCalled();
     });
 
+    it("creates a card for an action with nothing attached when only its details name documents (GRE-3726)", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValue(false);
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send({
+          kind: "request_confirmation",
+          idempotencyKey: "confirmation:repo-public-1",
+          payload: {
+            version: 1,
+            prompt:
+              "Do you approve that Everest makes the repository public now?\n\n" +
+              "- Code, database migrations and docs that name the client.\n\n" +
+              "If you accept: Everest makes it public, reruns CI, and reports the result.",
+          },
+        });
+
+      expect(res.status).toBe(201);
+      expect(mockInteractionService.create).toHaveBeenCalled();
+    });
+
     it("does not apply to board users", async () => {
       mockIssueHasApprovalEvidence.mockResolvedValue(false);
       const app = await createApp();
