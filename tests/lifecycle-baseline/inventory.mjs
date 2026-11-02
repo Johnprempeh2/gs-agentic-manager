@@ -82,6 +82,8 @@ export const lanes = {
       `${server}blocker-done-returns-dependent-to-todo.test.ts`,
       // GRE-2813: the weekly website release path stays readable through a scoped staging site and read key.
       `${server}website-data-bridge-routes.test.ts`,
+      // GRE-3646: an ask_agent question to a non-assignee runs instead of being cancelled as a reassignment.
+      `${server}agent-question-non-assignee-wake.test.ts`,
     ],
   },
   grading: {
