@@ -28,6 +28,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import { ProviderQuotaCard } from "../components/ProviderQuotaCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { SubscriptionsCard } from "../components/SubscriptionsCard";
+import { UsageBreakdownCard } from "../components/UsageBreakdownCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useOptionalToastActions } from "../context/ToastContext";
@@ -43,7 +44,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const NO_COMPANY = "__none__";
-export type CostsMainTab = "overview" | "budgets" | "providers" | "billers" | "finance";
+export type CostsMainTab = "overview" | "usage" | "budgets" | "providers" | "billers" | "finance";
 
 export interface CostsProps {
   /** Render inside Audit without a second page-level title or breadcrumb. */
@@ -730,6 +731,7 @@ export function Costs({
         {!lockTab ? (
           <TabsList variant="line" className="justify-start">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="usage">Where it goes</TabsTrigger>
             {!hideBudgetsTab ? <TabsTrigger value="budgets">Budgets</TabsTrigger> : null}
             <TabsTrigger value="providers">AI providers</TabsTrigger>
             <TabsTrigger value="billers">Who bills you</TabsTrigger>
@@ -1220,6 +1222,19 @@ export function Costs({
               </Tabs>
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="usage" className="mt-4 space-y-4">
+          {showCustomPrompt ? (
+            <p className="text-sm text-muted-foreground">Select a start and end date to load data.</p>
+          ) : selectedCompanyId ? (
+            <UsageBreakdownCard
+              companyId={selectedCompanyId}
+              companyPrefix={selectedCompany?.issuePrefix}
+              from={from || undefined}
+              to={to || undefined}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent value="finance" className="mt-4 space-y-4">

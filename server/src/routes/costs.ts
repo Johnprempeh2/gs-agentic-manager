@@ -52,6 +52,7 @@ import { budgetTopUpService, type TopUpActor } from "../services/budget-top-ups.
 import type { BudgetServiceHooks } from "../services/budgets.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
 import { badRequest } from "../errors.js";
+import { usageBreakdown } from "../services/usage-breakdown.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 
 export function parseCostDateRange(query: Record<string, unknown>) {
@@ -588,6 +589,15 @@ export function costRoutes(
     const range = parseCostDateRange(req.query);
     const rows = await costs.byBillingCode(companyId, range);
     res.json(rows);
+  });
+
+  router.get("/companies/:companyId/costs/usage-breakdown", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const range = parseCostDateRange(req.query);
+    const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : null;
+    res.json(await usageBreakdown(db, companyId, range, projectId));
   });
 
   router.get("/companies/:companyId/costs/by-project", async (req, res) => {
