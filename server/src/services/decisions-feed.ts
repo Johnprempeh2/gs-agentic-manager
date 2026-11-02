@@ -1391,7 +1391,7 @@ function buildCard(input: {
     actions.push(requestAction(
       "not_now",
       "Not now",
-      "Set the task aside. It leaves your Decisions and no agent works on it until it comes back on the day you choose.",
+      "Pause the task, not only this card. No agent works on it until it comes back on the day you choose. It also leaves your Decisions.",
       [request("POST", `${issuePath}/table`, { returnAt: null })],
     ));
   } else if (setupCard) {

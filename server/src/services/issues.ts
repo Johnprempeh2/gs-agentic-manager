@@ -110,6 +110,7 @@ import {
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
   STRATEGIC_WORK_GOAL_KINDS,
+  utcCalendarDay,
   type IssueWorkFilter,
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
@@ -4164,6 +4165,7 @@ async function listIssueBlockerAttentionMap(
     .filter((node) => node.status !== "done")
     .map((node) => node.id);
   const explicitWaitingIssueIds = new Set<string>();
+  const datedWaitIssues: Array<{ issueId: string; assigneeAgentId: string }> = [];
   if (explicitWaitCandidateIds.length > 0) {
     for (const chunk of chunkList(
       explicitWaitCandidateIds,
@@ -4228,6 +4230,25 @@ async function listIssueBlockerAttentionMap(
           ),
         );
       for (const row of monitorRows) explicitWaitingIssueIds.add(row.issueId);
+
+      // A blocked task waiting on someone until a date, with an agent owner,
+      // has a wake path with a deadline: the waiting-date sweep wakes its
+      // assignee once the date passes. Until then it is waiting, not stalled
+      // (GRE-3727). The assignee must still be able to run; checked below.
+      const datedWaitRows: Array<{ issueId: string; assigneeAgentId: string }> = await dbOrTx
+        .select({ issueId: issues.id, assigneeAgentId: issues.assigneeAgentId })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.companyId, companyId),
+            inArray(issues.id, chunk),
+            eq(issues.status, "blocked"),
+            isNotNull(issues.assigneeAgentId),
+            sql`${issues.unblockDescriptor}->'owner'->>'agentId' is not null`,
+            sql`${issues.unblockDescriptor}->>'expectedBy' >= ${utcCalendarDay(new Date())}`,
+          ),
+        );
+      datedWaitIssues.push(...datedWaitRows);
     }
 
     // Recovery rows are intentionally company-wide: a liveness escalation for
@@ -4359,6 +4380,12 @@ async function listIssueBlockerAttentionMap(
           )
       : [];
   const agentsById = new Map(agentRows.map((agent) => [agent.id, agent]));
+  for (const wait of datedWaitIssues) {
+    const assignee = agentsById.get(wait.assigneeAgentId);
+    if (assignee && BLOCKER_ATTENTION_INVOKABLE_AGENT_STATUSES.has(assignee.status)) {
+      explicitWaitingIssueIds.add(wait.issueId);
+    }
+  }
 
   type PathClassification = {
     covered: boolean;

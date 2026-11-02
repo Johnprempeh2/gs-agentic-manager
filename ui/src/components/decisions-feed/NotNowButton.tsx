@@ -40,7 +40,8 @@ export interface NotNowButtonProps {
 /**
  * "Not now" (GRE-262/GRE-264): tables the whole task with an optional return
  * date. The task leaves Decisions and Focus and its agents are not woken until
- * it comes back. Replaces the old per-card snooze.
+ * it comes back. Replaces the old per-card snooze. The popover says plainly
+ * that this pauses agent work, not only the card (GRE-3727).
  */
 export function NotNowButton({ companyId, issueId, issueLabel, size = "xs", onTabled }: NotNowButtonProps) {
   const [open, setOpen] = useState(false);
@@ -59,10 +60,10 @@ export function NotNowButton({ companyId, issueId, issueLabel, size = "xs", onTa
       queryClient.invalidateQueries({ queryKey: ["issues", "detail"] });
       pushToast({
         id: `not-now-${issueId}`,
-        title: "Set aside",
+        title: "Task paused",
         body: returnAt
-          ? `${issueLabel ?? "The task"} comes back on ${formatDate(returnAt)}.`
-          : `${issueLabel ?? "The task"} waits in Tabled until you bring it back.`,
+          ? `No agent works on ${issueLabel ?? "the task"} until ${formatDate(returnAt)}.`
+          : `No agent works on ${issueLabel ?? "the task"} until you bring it back from Tabled.`,
         tone: "info",
         ttlMs: 5000,
       });
@@ -75,16 +76,16 @@ export function NotNowButton({ companyId, issueId, issueLabel, size = "xs", onTa
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size={size} aria-label="Not now">
+        <Button type="button" variant="ghost" size={size} aria-label="Not now" title="Pause this task: no agent works on it until it comes back">
           <Clock />
           Not now
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 space-y-3 p-3">
         <div>
-          <p className="text-sm font-medium">Set this task aside</p>
+          <p className="text-sm font-medium">Pause this task?</p>
           <p className="text-xs text-muted-foreground">
-            It leaves Decisions and Focus. No agent works on it until it comes back.
+            This pauses the work, not only this card. No agent works on it until it comes back. It also leaves Decisions and Focus.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -115,7 +116,7 @@ export function NotNowButton({ companyId, issueId, issueLabel, size = "xs", onTa
             onClick={() => table.mutate(returnAtFromDateInput(date))}
           >
             {table.isPending ? <Loader2 className="animate-spin" /> : null}
-            {date ? "Set aside" : "Set aside until I bring it back"}
+            {date ? "Pause until then" : "Pause until I bring it back"}
           </Button>
         </div>
       </PopoverContent>

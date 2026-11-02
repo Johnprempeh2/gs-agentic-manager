@@ -1737,6 +1737,47 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       expect(await stallIds()).toEqual([seeded.stall]);
     });
 
+    it("keeps a blocked task with an agent owner and a future recheck date off the person's list until the date passes (GRE-3727)", async () => {
+      const seeded = await seedKinds();
+      const { stallRecoveryService } = await import("../services/stall-recovery.js");
+      const { attentionService } = await import("../services/attention.js");
+      const day = (offsetDays: number) => new Date(Date.now() + offsetDays * 24 * HOUR).toISOString().slice(0, 10);
+      const [wait, kickoff] = [randomUUID(), randomUUID()];
+      const descriptor = (expectedBy: string) => ({
+        owner: { agentId: seeded.everestId },
+        action: "Check for Gordon's reply by the recheck date.",
+        waitingOn: "client" as const,
+        expectedBy,
+      });
+      await db.insert(issues).values([
+        {
+          id: wait, companyId: seeded.companyId, identifier: "GRE-1825", issueNumber: 1825, title: "Indago: wait for Gordon's kick-off date",
+          status: "blocked", priority: "medium", assigneeAgentId: seeded.everestId, unblockDescriptor: descriptor(day(4)),
+        },
+        { id: kickoff, companyId: seeded.companyId, identifier: "GRE-1238", issueNumber: 1238, title: "North Star kick-off", status: "blocked", priority: "medium", assigneeAgentId: seeded.lintelId },
+      ]);
+      await db.insert(issueRelations).values({ companyId: seeded.companyId, issueId: wait, relatedIssueId: kickoff, type: "blocks" });
+      const stallIds = async () => (await stallRecoveryService(db).stallsOf(seeded.companyId)).map((stall) => stall.id);
+      const onList = async () => (await attentionService(db).list(seeded.companyId, { userId: USER_ID, all: true, allowUnscopedAll: true }))
+        .items.some((item) => item.subject.id === wait);
+
+      // Before the date: Everest owns it and the waiting-date sweep will wake Everest, so nobody else is asked.
+      expect(await stallIds()).toEqual([seeded.stall]);
+      expect(await onList()).toBe(false);
+      // The recheck day itself is still on time.
+      await db.update(issues).set({ unblockDescriptor: descriptor(day(0)) }).where(eq(issues.id, wait));
+      expect(await onList()).toBe(false);
+
+      // After the date: if it is still blocked, it is a stall again and reaches the lead, then the person.
+      await db.update(issues).set({ unblockDescriptor: descriptor(day(-1)) }).where(eq(issues.id, wait));
+      expect(await stallIds()).toEqual([seeded.stall, wait]);
+      expect(await onList()).toBe(true);
+
+      // A future date with no agent owner is not a wake path.
+      await db.update(issues).set({ unblockDescriptor: { ...descriptor(day(4)), owner: "board" as const } }).where(eq(issues.id, wait));
+      expect(await stallIds()).toContain(wait);
+    });
+
     it("does not route the same stall again after its recovery task closes, unless the stall changed (GRE-1868)", async () => {
       const seeded = await seedKinds();
       const { stallRecoveryService } = await import("../services/stall-recovery.js");
