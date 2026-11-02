@@ -1,5 +1,6 @@
 import type { Db } from "@greatstone/db";
 import { createPostgresRunDispatchAdapter } from "./adapters/postgres.js";
+export { isVerifiedAgentQuestionParticipantWake } from "./adapters/postgres.js";
 import {
   createCancelStaleQueuedRun,
   createDispatchResolvedInteractionIfCurrent,
