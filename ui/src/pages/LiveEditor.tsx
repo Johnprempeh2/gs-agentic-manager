@@ -148,14 +148,17 @@ export function LiveEditor() {
         }
       } else if (m.kind === "request" && typeof m.path === "string") {
         const rid = m.rid;
-        const extra = m.extra && typeof m.extra === "object" ? (m.extra as { selector?: unknown }) : {};
+        const extra = m.extra && typeof m.extra === "object" ? (m.extra as { selector?: unknown; position?: unknown }) : {};
         liveDesignApi
           .helper(sessionId, {
             method: m.method === "POST" ? "POST" : "GET",
             path: m.path.slice(0, 2000),
             body: typeof m.body === "string" ? m.body : null,
             ...(typeof m.bodyBase64 === "string" ? { bodyBase64: m.bodyBase64 } : {}),
-            extra: typeof extra.selector === "string" ? { selector: extra.selector.slice(0, 500) } : {},
+            extra: {
+              ...(typeof extra.selector === "string" ? { selector: extra.selector.slice(0, 500) } : {}),
+              ...(extra.position === "before" || extra.position === "after" ? { position: extra.position } : {}),
+            },
           })
           .then((r) => toFrame({ kind: "response", rid, status: r.status, body: r.body, contentType: r.contentType }))
           .catch((err: unknown) =>

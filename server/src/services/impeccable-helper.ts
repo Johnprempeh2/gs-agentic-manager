@@ -142,7 +142,14 @@ const ADAPTER = String.raw`(function () {
     if (typeof body === "string" && url.indexOf(BASE + "events") === 0) {
       try {
         var evt = JSON.parse(body);
-        if (evt.type === "generate") {
+        if (evt.type === "generate" && evt.mode === "insert" && evt.insert) {
+          // Insert: the new element replaces Impeccable's dotted placeholder; the anchor stays.
+          var holder = document.querySelector("[data-impeccable-insert-placeholder]");
+          var anchor = findPicked(evt.insert.anchor);
+          if (holder) picked[evt.id] = holder;
+          if (anchor) extra.selector = selectorOf(anchor);
+          extra.position = evt.insert.position === "before" ? "before" : "after";
+        } else if (evt.type === "generate") {
           var el = findPicked(evt.element);
           if (el) { picked[evt.id] = el; extra.selector = selectorOf(el); }
         }
@@ -206,7 +213,8 @@ const ADAPTER = String.raw`(function () {
     if (!wrapper) return;
     var slot = wrapper.querySelector('[data-impeccable-variant="original"]');
     el.parentNode.replaceChild(wrapper, el);
-    if (slot) slot.appendChild(el);
+    // Insert mode has no original: the placeholder simply gives way.
+    if (slot && wrapper.getAttribute("data-impeccable-mode") !== "insert") slot.appendChild(el);
     delete picked[id];
   }
 
@@ -273,7 +281,7 @@ export interface HelperRequest {
   method: string;
   path: string;
   body: string | null;
-  extra?: { selector?: string };
+  extra?: { selector?: string; position?: "before" | "after" };
   /** For /annotation: the saved screenshot's attachment id, set by the route. */
   screenshotAttachmentId?: string;
 }
@@ -372,11 +380,12 @@ export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest
   return json(404, { error: "not_available_in_gsam" });
 }
 
-function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: { selector?: string }): HelperResponse {
+function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: { selector?: string; position?: "before" | "after" }): HelperResponse {
   const id = str(evt.id, 64) || randomUUID().slice(0, 8);
   switch (evt.type) {
     case "generate": {
-      const el = (evt.element ?? {}) as Record<string, unknown>;
+      const inserting = evt.mode === "insert";
+      const el = ((inserting ? (evt.insert as Record<string, unknown> | undefined)?.anchor : evt.element) ?? {}) as Record<string, unknown>;
       const prompt = str(evt.freeformPrompt, 2000).trim();
       const action = str(evt.action, 40) || "impeccable";
       const tag = str(el.tagName, 40) || "element";
@@ -386,7 +395,7 @@ function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: 
         {
           selector: str(extra.selector, 500) || str(el.anchor, 500) || tag,
           tag,
-          label: text ? `${tag}: “${text.slice(0, 48)}”` : tag,
+          label: (inserting ? `a new element ${extra.position ?? "after"} ` : "") + (text ? `${tag}: “${text.slice(0, 48)}”` : tag),
           text,
           html: str(el.outerHTML, 20_000),
           prompt: prompt || (action === "impeccable" ? "Improve this" : `Apply ${action}`),
@@ -398,6 +407,7 @@ function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: 
             .slice(0, 30),
           // Only a screenshot GSAM itself saved for this Go, never an id the page made up.
           ...(liveDesignMarkupFor(s, id) ? { screenshotAttachmentId: liveDesignMarkupFor(s, id)! } : {}),
+          ...(inserting ? { insert: { position: extra.position ?? "after" } } : {}),
         },
         id,
       );

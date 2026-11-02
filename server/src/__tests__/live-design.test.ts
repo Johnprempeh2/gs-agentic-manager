@@ -189,4 +189,19 @@ describe("live design through Impeccable's page tools", () => {
     expect(viewLiveDesign(s).messages.at(-1)?.text).toMatch(/stopped responding/);
     expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "q1" });
   });
+
+  it("handles Impeccable's Insert: a new element next to an anchor, nothing replaced", async () => {
+    const { session: s } = startLiveDesign(ids);
+    handleImpeccableRequest(s, {
+      ...post({ type: "generate", id: "i1", mode: "insert", freeformPrompt: "Add a testimonial", count: 2, insert: { position: "after", anchor: { tagName: "section", textContent: "Pricing", outerHTML: "<section>Pricing</section>" } } }, "main > section:nth-of-type(2)"),
+      extra: { selector: "main > section:nth-of-type(2)", position: "after" },
+    });
+    const event = await pollLiveDesign(s, 1000);
+    expect(event).toMatchObject({ type: "generate", request: { insert: { position: "after" }, selector: "main > section:nth-of-type(2)" } });
+    expect(String((event as { _instructions: string })._instructions)).toMatch(/NEW element to place after/);
+    replyLiveDesign(s, { requestId: "i1", variants: [{ html: "<section>Quote</section>", css: "", name: "" }] });
+    const html = String(s.frames.at(-1)?.data.gsVariantsHtml);
+    expect(html).toContain('data-impeccable-mode="insert"');
+    expect(html).not.toContain('data-impeccable-variant="original"');
+  });
 });

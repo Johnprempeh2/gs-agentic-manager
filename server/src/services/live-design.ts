@@ -401,7 +401,7 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
     s.status = "ready";
     say(s, "gsam", `${reply.variants.length} version${reply.variants.length === 1 ? "" : "s"} ready. Flick through them on the page, then accept one.`);
     // The editor inserts the wrapper into the page, then hands Impeccable the "done".
-    frame(s, { type: "done", id: reply.requestId, gsVariantsHtml: impeccableVariantsHtml(reply.requestId, reply.variants), message: reply.message ?? null });
+    frame(s, { type: "done", id: reply.requestId, gsVariantsHtml: impeccableVariantsHtml(reply.requestId, reply.variants, !!s.request.insert), message: reply.message ?? null });
     return { ok: true };
   }
   if (s.status === "applying" && reply.appliedAttachmentId) {
@@ -537,7 +537,7 @@ const escapeAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g,
  * original slot is empty: the page moves the live element into it, so its
  * listeners and state survive.
  */
-export function impeccableVariantsHtml(id: string, variants: LiveDesignVariant[]) {
+export function impeccableVariantsHtml(id: string, variants: LiveDesignVariant[], insert = false) {
   const css = variants.map((v) => v.css).filter(Boolean).join("\n").replace(/<\/style/gi, "<\\/style");
   const slots = variants.map((v, i) => {
     const params = v.params?.length ? ` data-impeccable-params='${escapeAttr(JSON.stringify(v.params))}'` : "";
@@ -545,8 +545,8 @@ export function impeccableVariantsHtml(id: string, variants: LiveDesignVariant[]
     return `<div data-impeccable-variant="${i + 1}"${params}${hidden}>${v.html}</div>`;
   });
   return [
-    `<div data-impeccable-variants="${escapeAttr(id)}" data-impeccable-variant-count="${variants.length}" style="display: contents">`,
-    `<div data-impeccable-variant="original"></div>`,
+    `<div data-impeccable-variants="${escapeAttr(id)}" data-impeccable-variant-count="${variants.length}"${insert ? ' data-impeccable-mode="insert"' : ""} style="display: contents">`,
+    insert ? "" : `<div data-impeccable-variant="original"></div>`,
     css ? `<style data-impeccable-css="${escapeAttr(id)}">${css}</style>` : "",
     ...slots,
     "</div>",
@@ -568,7 +568,9 @@ function withInstructions(s: Session, event: AgentEvent) {
       return {
         ...base,
         _instructions: [
-          `John picked ${event.request.label || event.request.tag} on the page and asked, as ${action}: "${event.request.prompt}".`,
+          event.request.insert
+            ? `John wants ${event.request.label} (the element at request.selector, whose HTML is request.html) and asked: "${event.request.prompt}". Each version is a NEW element to place ${event.request.insert.position} it; nothing is replaced.`
+            : `John picked ${event.request.label || event.request.tag} on the page and asked, as ${action}: "${event.request.prompt}".`,
           "First read PRODUCT.md and DESIGN.md at your workspace root and design inside them. If they are missing, write them before your versions (Greatstone brand by default; the client's brand for client work), and tell John in your note.",
           `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
@@ -588,7 +590,9 @@ function withInstructions(s: Session, event: AgentEvent) {
         ...base,
         _instructions: [
           `John accepted version ${event.variant + 1} ("${event.chosen.name}")${event.paramValues ? ` with tune values ${JSON.stringify(event.paramValues)}` : ""}.`,
-          "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
+          event.request.insert
+            ? `Write it into the real page: put chosen.html ${event.request.insert.position} the element at request.selector, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names.`
+            : "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
           `Start from GET /api/attachments/${event.attachmentId}/content (or your workspace copy if it matches it).`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you saved>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If you cannot save it, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<short reason>" } so John knows.`,

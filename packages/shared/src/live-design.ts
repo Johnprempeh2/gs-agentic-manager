@@ -22,6 +22,8 @@ export const liveDesignRequestSchema = z.object({
   notes: z.array(z.string().max(1000)).max(30).default([]),
   /** The marked-up screenshot, saved as an image attachment on the task, when John drew or commented. */
   screenshotAttachmentId: z.string().uuid().optional(),
+  /** Impeccable's Insert: a new element goes before or after the element at `selector`, nothing is replaced. */
+  insert: z.object({ position: z.enum(["before", "after"]) }).optional(),
 });
 export type LiveDesignRequest = z.infer<typeof liveDesignRequestSchema>;
 
@@ -59,7 +61,7 @@ export const liveDesignHelperRequestSchema = z.object({
   body: z.string().max(200_000).nullable(),
   /** A binary body (the annotation screenshot), base64. */
   bodyBase64: z.string().max(9_800_000).optional(),
-  extra: z.object({ selector: z.string().max(500).optional() }).default({}),
+  extra: z.object({ selector: z.string().max(500).optional(), position: z.enum(["before", "after"]).optional() }).default({}),
 });
 export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSchema>;
 
