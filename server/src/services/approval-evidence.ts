@@ -15,12 +15,23 @@ export const MISSING_APPROVAL_EVIDENCE_MESSAGE =
   "This card asks John to approve a design, screen, deck, video or document, but the task has nothing attached. " +
   "John approves what he can see. Attach the real thing first: upload it with " +
   "POST /api/companies/{companyId}/issues/{issueId}/attachments, or register it as a deliverable with " +
-  "POST /api/issues/{issueId}/deliverables. Then post the card again.";
+  "POST /api/issues/{issueId}/deliverables. Then post the card again. " +
+  "This check reads only the prompt's first paragraph. If the card asks to approve an action, not visual work, " +
+  "put the ask alone in the first paragraph and the details below a blank line. Do not do the action without a card.";
 
 type ConfirmationInput = {
   kind?: unknown;
   payload?: { prompt?: unknown; target?: { type?: unknown; key?: unknown } | null } | null;
 };
+
+/**
+ * The ask is the prompt's first paragraph. GRE-3726: details below it ("docs
+ * that name the client", "reports the result") describe an action's effects,
+ * not work to approve, and matching them blocked a card for an irreversible action.
+ */
+function readAsk(prompt: string): string {
+  return prompt.trim().split(/\n\s*\n/, 1)[0] ?? "";
+}
 
 /** True when a request_confirmation's prompt asks to approve visual or document work. */
 export function asksToApproveVisualWork(input: ConfirmationInput): boolean {
@@ -29,8 +40,8 @@ export function asksToApproveVisualWork(input: ConfirmationInput): boolean {
   // Any other document (a pitch, a price sheet) still needs the real thing attached.
   const target = input.payload?.target;
   if (target?.type === "issue_document" && target.key === "plan") return false;
-  const prompt = typeof input.payload?.prompt === "string" ? input.payload.prompt : "";
-  return VISUAL_WORK_WORDS.test(prompt) || UI_WORD.test(prompt);
+  const ask = readAsk(typeof input.payload?.prompt === "string" ? input.payload.prompt : "");
+  return VISUAL_WORK_WORDS.test(ask) || UI_WORD.test(ask);
 }
 
 /** True when the task has at least one attachment. Every deliverable is an attachment too. */
