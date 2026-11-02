@@ -190,9 +190,9 @@ export function PrototypeReview({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-dialog bg-black/60" />
         <DialogPrimitive.Content
-          className="fixed inset-0 z-50 flex flex-col bg-background text-foreground outline-none"
+          className="fixed inset-0 z-dialog flex flex-col bg-background text-foreground outline-none"
           onEscapeKeyDown={(e) => {
             // Escape leaves a tool first, then closes.
             if (tool !== "browse") {
