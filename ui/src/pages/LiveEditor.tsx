@@ -263,7 +263,7 @@ export function LiveEditor() {
             ) : null}
             <ScaledFrame
               key={pageId}
-              src={`/api/attachments/${pageId}/annotate?live=1`}
+              src={live.view?.frameSrc ?? `/api/attachments/${pageId}/annotate?live=1`}
               title={`Live design of ${fileName}`}
               width={WIDTHS[viewport]}
               sandbox={SANDBOX}

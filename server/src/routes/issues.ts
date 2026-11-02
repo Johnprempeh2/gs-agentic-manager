@@ -9,7 +9,9 @@ import {
   recordLiveDesignMarkup,
   restoreLiveDesign,
   setLiveDesignDeliverable,
+  liveDesignAcceptsPage,
   type LiveDesignSession,
+  type LivePageSource,
   touchLiveDesign,
   isLiveDesignAgentConnected,
   LiveDesignConflict,
@@ -21126,6 +21128,54 @@ export function issueRoutes(
 
   const liveDeliverables = deliverableService(db, storage);
 
+  /** A task file as live design's page: shown in the sandbox, read for the agent, saved as a new file. */
+  function attachmentPageSource(issue: { id: string; companyId: string }, fileName: string): LivePageSource {
+    return {
+      kind: "attachment",
+      label: fileName,
+      frameSrc: (id) => `/api/attachments/${id}/annotate?live=1`,
+      read: async (id) => {
+        const file = await svc.getAttachmentById(id);
+        if (!file || file.issueId !== issue.id) throw notFound("Page not found");
+        const object = await storage.getObject(file.companyId, file.objectKey);
+        return (await readStream(object.stream)).toString("utf8");
+      },
+      save: async (html, agentId) => {
+        const stored = await storage.putFile({
+          companyId: issue.companyId,
+          namespace: `issues/${issue.id}`,
+          originalFilename: fileName,
+          contentType: "text/html",
+          body: Buffer.from(html, "utf8"),
+        });
+        const saved = await svc.createAttachment({
+          issueId: issue.id,
+          issueCommentId: null,
+          provider: stored.provider,
+          objectKey: stored.objectKey,
+          contentType: stored.contentType,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+          originalFilename: stored.originalFilename,
+          createdByAgentId: agentId,
+          createdByUserId: null,
+          createdByRunId: null,
+        });
+        return saved.id;
+      },
+    };
+  }
+
+  /** The agent already has a run queued or going: never wake a second one for the same session. */
+  async function agentHasActiveRun(agentId: string) {
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"])))
+      .limit(1);
+    return rows.length > 0;
+  }
+
   /** A live designer for the company (agent metadata `liveDesigner: true`), preferring one not already in a session. */
   async function pickLiveDesigner(companyId: string): Promise<string | null> {
     const rows = await db
@@ -21135,8 +21185,9 @@ export function issueRoutes(
     const designers = rows.filter(
       (a) => (a.metadata as Record<string, unknown> | null)?.liveDesigner === true && !["paused", "terminated", "archived"].includes(a.status),
     );
+    // A designer already in a session is not double-booked: the task's own agent steps in instead.
     const busy = liveDesignBusyAgents();
-    return (designers.find((a) => !busy.has(a.id)) ?? designers[0])?.id ?? null;
+    return designers.find((a) => !busy.has(a.id))?.id ?? null;
   }
 
   /** Files a page as the deliverable's newest version and points the session at it. */
@@ -21156,9 +21207,11 @@ export function issueRoutes(
     const next = await liveDeliverables.register({
       issue: { id: issue.id, companyId: issue.companyId, projectId: issue.projectId ?? null },
       attachment,
-      fields: { key: detail.key, title: detail.title },
+      // Live changes are drafts until John marks the deliverable final.
+      fields: { key: detail.key, title: detail.title, status: "draft" },
       // A restore is John's; a saved change is the agent's.
       createdByAgentId: restoredFrom === null ? session.agentId : null,
+      attributeToAttachment: false,
       createdByRunId: null,
     });
     setLiveDesignDeliverable(session, next.versions[0]?.id ?? next.id);
@@ -21204,6 +21257,12 @@ export function issueRoutes(
     // A flagged live designer runs the session (John, 2 Nov: one UI agent for all live design);
     // without one, the task's own agent does.
     const joining = openLiveDesignFor(issue.id);
+    // A second device joins the open session. Switching it to another page of the task only
+    // while nothing is in flight, so a save never lands on the wrong page or deliverable.
+    if (joining && joining.attachmentId !== pageAttachmentId && !["idle", "waiting_agent"].includes(viewLiveDesign(joining).status)) {
+      res.status(409).json({ error: "Live design is busy on another page of this task. Finish or discard that first." });
+      return;
+    }
     const agentId = joining?.agentId ?? (await pickLiveDesigner(issue.companyId)) ?? issue.assigneeAgentId;
     if (!agentId) {
       res.status(422).json({ error: "No agent can design this page: mark an agent as the live designer, or assign the task to an agent." });
@@ -21215,8 +21274,9 @@ export function issueRoutes(
       issueId: issue.id,
       attachmentId: pageAttachmentId,
       agentId,
+      source: attachmentPageSource(issue, attachment.originalFilename ?? "page.html"),
     });
-    if (deliverableId) setLiveDesignDeliverable(session, deliverableId);
+    setLiveDesignDeliverable(session, deliverableId);
     if (needsWake) await wakeLiveAgent(req, session, onTask ? issue.id : null, attachment.originalFilename ?? "the page");
     await logActivity(db, {
       companyId: issue.companyId,
@@ -21295,7 +21355,7 @@ export function issueRoutes(
     // A request with no agent listening (it stopped, or never joined): wake one again.
     if (body.path.startsWith("/events") || body.path.startsWith("/manual-edit-commit")) {
       const asked = body.path.startsWith("/manual-edit-commit") || /"type"\s*:\s*"(generate|steer)"/.test(body.body ?? "");
-      if (asked && answer.status < 300 && !isLiveDesignAgentConnected(session)) {
+      if (asked && answer.status < 300 && !isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(session.agentId))) {
         const issue = await svc.getById(session.issueId);
         const page = await svc.getAttachmentById(session.attachmentId);
         await wakeLiveAgent(req, session, issue?.assigneeAgentId === session.agentId ? session.issueId : null, page?.originalFilename ?? "the page");
@@ -21335,7 +21395,7 @@ export function issueRoutes(
       if (!sendLiveConflict(res, err)) throw err;
       return;
     }
-    if (!isLiveDesignAgentConnected(session)) {
+    if (!isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(session.agentId))) {
       const issue = await svc.getById(session.issueId);
       const page = await svc.getAttachmentById(session.attachmentId);
       await wakeLiveAgent(req, session, issue?.assigneeAgentId === session.agentId ? session.issueId : null, page?.originalFilename ?? "the page");
@@ -21361,41 +21421,28 @@ export function issueRoutes(
   router.post("/live-design/:sessionId/reply", validate(liveDesignReplySchema), async (req, res) => {
     const session = liveSessionForAgent(req);
     const reply = req.body as LiveDesignReply;
-    // The agent sent the finished page: GSAM files it on the task under the page's name.
-    if (reply.pageHtml && !reply.appliedAttachmentId && !isLiveDesignEnded(session)) {
-      const current = await svc.getAttachmentById(session.attachmentId);
-      const stored = await storage.putFile({
-        companyId: session.companyId,
-        namespace: `issues/${session.issueId}`,
-        originalFilename: current?.originalFilename ?? "page.html",
-        contentType: "text/html",
-        body: Buffer.from(reply.pageHtml, "utf8"),
-      });
-      const saved = await svc.createAttachment({
-        issueId: session.issueId,
-        issueCommentId: null,
-        provider: stored.provider,
-        objectKey: stored.objectKey,
-        contentType: stored.contentType,
-        byteSize: stored.byteSize,
-        sha256: stored.sha256,
-        originalFilename: stored.originalFilename,
-        createdByAgentId: session.agentId,
-        createdByUserId: null,
-        createdByRunId: null,
-      });
-      reply.appliedAttachmentId = saved.id;
-    }
-    // The saved page must be an attachment on this task, or the editor would load someone else's file.
+    // A saved page that names an attachment must be one on this task.
     if (reply.appliedAttachmentId) {
+      if (session.source?.kind !== "attachment") {
+        res.status(422).json({ error: "Send the page as pageHtml." });
+        return;
+      }
       const saved = await svc.getAttachmentById(reply.appliedAttachmentId);
       if (!saved || saved.issueId !== session.issueId) {
         res.status(422).json({ error: "appliedAttachmentId must be an attachment on this task" });
         return;
       }
     }
+    // The agent sent the finished page: check it is still wanted, then save it through the page's source.
+    if (reply.pageHtml && !reply.appliedAttachmentId) {
+      if (!liveDesignAcceptsPage(session, reply.requestId) || !session.source) {
+        res.json({ ok: false, reason: "not_expected" });
+        return;
+      }
+      reply.appliedAttachmentId = await session.source.save(reply.pageHtml, session.agentId);
+    }
     const result = replyLiveDesign(session, reply);
-    // A saved change to a deliverable becomes its next version (John, 2 Nov).
+    // A saved change to a deliverable becomes its next version, as a draft (John, 2 Nov).
     if (result.ok && reply.appliedAttachmentId && session.deliverableId) {
       await fileLiveDeliverableVersion(req, session, reply.appliedAttachmentId, null);
     }
@@ -21404,10 +21451,14 @@ export function issueRoutes(
 
   router.post("/live-design/:sessionId/restore", validate(liveDesignRestoreSchema), async (req, res) => {
     const session = liveSessionForBoard(req);
+    if (session.source?.kind !== "attachment") {
+      res.status(422).json({ error: "Restore a website page from its versions." });
+      return;
+    }
     const attachmentId = req.body.attachmentId as string;
     const attachment = await svc.getAttachmentById(attachmentId);
-    if (!attachment || attachment.issueId !== session.issueId) {
-      res.status(422).json({ error: "That version is not on this task." });
+    if (!attachment || attachment.issueId !== session.issueId || !HTML_CONTENT_TYPES.has(attachment.contentType.split(";")[0]!.trim().toLowerCase())) {
+      res.status(422).json({ error: "That version is not a page on this task." });
       return;
     }
     let version: number | null = null;
@@ -21420,13 +21471,23 @@ export function issueRoutes(
       }
       version = old.version;
     }
-    try {
-      restoreLiveDesign(session, attachmentId, version);
-    } catch (err) {
-      if (!sendLiveConflict(res, err)) throw err;
+    if (!["idle", "waiting_agent"].includes(viewLiveDesign(session).status) || session.staged.length) {
+      res.status(409).json({ error: "Keep or discard the open versions and edits first, then restore." });
       return;
     }
+    // Record the version first, so the page never shows something that is not the newest version.
     if (session.deliverableId) await fileLiveDeliverableVersion(req, session, attachmentId, version);
+    restoreLiveDesign(session, attachmentId, version);
+    await logActivity(db, {
+      companyId: session.companyId,
+      actorType: "user",
+      actorId: getActorInfo(req).actorId,
+      action: "issue.live_design_restored",
+      entityType: "issue",
+      entityId: session.issueId,
+      issueId: session.issueId,
+      details: { sessionId: session.id, attachmentId, version },
+    });
     res.json(viewLiveDesign(session));
   });
 

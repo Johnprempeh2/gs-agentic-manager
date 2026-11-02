@@ -96,4 +96,8 @@ export interface LiveDesignView {
   messages: LiveDesignMessage[];
   /** The deliverable this page is, when live design was opened from one; its latest version id. */
   deliverableId: string | null;
+  /** The editor frame's address for the current version (Impeccable's tools inside). */
+  frameSrc: string | null;
+  /** A task file or a website page. */
+  sourceKind: "attachment" | "website-page";
 }

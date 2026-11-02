@@ -47,6 +47,23 @@ export interface StagedEdit {
   ops: Array<Record<string, unknown>>;
 }
 
+/**
+ * Where the page being designed lives: a task file (an HTML attachment) or a
+ * website page (a page revision). The session's `attachmentId` is the current
+ * version's id in either case.
+ */
+export interface LivePageSource {
+  kind: "attachment" | "website-page";
+  /** The editor frame's address for a version (Impeccable's tools inside). */
+  frameSrc(versionId: string): string;
+  /** The HTML of a version, for the agent. */
+  read(versionId: string): Promise<string>;
+  /** Save the agent's complete page; returns the new version's id. */
+  save(html: string, agentId: string): Promise<string>;
+  /** The page's name, for messages. */
+  label: string;
+}
+
 /** What the page's Impeccable scripts receive, in order, as their helper's event stream. */
 type Frame = { seq: number; data: Record<string, unknown> };
 
@@ -77,6 +94,7 @@ interface Session {
   markups: Map<string, string>;
   /** The deliverable this page is (its latest version id), when opened from Deliverables. */
   deliverableId: string | null;
+  source: LivePageSource | null;
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -127,14 +145,15 @@ function end(s: Session) {
 }
 
 /** A first wake can take minutes; an agent that was polling and went quiet has stopped. */
-const STALL_NEVER_JOINED_MS = 6 * 60_000;
-const STALL_WENT_QUIET_MS = 2 * 60_000;
+// Generous: an agent rewriting a whole page can work for minutes without calling back.
+const STALL_NEVER_JOINED_MS = 8 * 60_000;
+const STALL_WENT_QUIET_MS = { generating: 8 * 60_000, applying: 12 * 60_000 } as const;
 
 /** The agent stopped answering mid-request: say so and free the page instead of spinning forever. */
 function checkStall(s: Session, now: number) {
   if (s.status !== "generating" && s.status !== "applying") return;
   const since = s.request ? Date.parse(s.request.startedAt) : s.touchedAt;
-  const quiet = s.agentSeenAt === 0 ? now - since > STALL_NEVER_JOINED_MS : now - s.agentSeenAt > STALL_WENT_QUIET_MS;
+  const quiet = s.agentSeenAt === 0 ? now - since > STALL_NEVER_JOINED_MS : now - s.agentSeenAt > STALL_WENT_QUIET_MS[s.status];
   if (!quiet) return;
   const id = s.editsRequestId ?? s.request?.id ?? null;
   const editing = !!s.editsRequestId;
@@ -171,6 +190,8 @@ export function viewLiveDesign(s: Session): LiveDesignView {
     error: s.error,
     messages: s.messages,
     deliverableId: s.deliverableId,
+    frameSrc: s.source ? s.source.frameSrc(s.attachmentId) : null,
+    sourceKind: s.source?.kind ?? "attachment",
   };
 }
 
@@ -223,7 +244,7 @@ export function isLiveDesignAgentConnected(s: Session) {
  * The open session for this task and agent, or a new one. `needsWake` is true
  * when no agent run is polling, so the caller wakes the agent.
  */
-export function startLiveDesign(input: { companyId: string; issueId: string; attachmentId: string; agentId: string }) {
+export function startLiveDesign(input: { companyId: string; issueId: string; attachmentId: string; agentId: string; source?: LivePageSource }) {
   sweep();
   let s = [...sessions.values()].find(
     (x) => x.status !== "ended" && x.issueId === input.issueId && x.agentId === input.agentId,
@@ -248,12 +269,16 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
       viewers: 0,
       markups: new Map(),
       deliverableId: null,
+      source: null,
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
+    delete (s as { source?: unknown }).source;
+    s.source = input.source ?? null;
     sessions.set(s.id, s);
   }
   s.attachmentId = input.attachmentId;
+  if (input.source) s.source = input.source;
   s.touchedAt = Date.now();
   s.viewers += 1;
   return { session: s, needsWake: !isConnected(s) };
@@ -378,6 +403,14 @@ export async function pollLiveDesign(s: Session, waitMs: number, gone: () => boo
     : { type: "timeout", sessionId: s.id, _instructions: `Nothing yet. ${pollCall(s.id)} again now.` };
 }
 
+/** Whether a page the agent is about to send would be used: checked before anything is saved, so nothing is orphaned. */
+export function liveDesignAcceptsPage(s: Session, requestId: string) {
+  if (s.status === "ended") return false;
+  if (requestId === LIVE_DESIGN_PAGE_REQUEST) return s.status === "idle" || s.status === "waiting_agent";
+  if (s.editsRequestId === requestId) return true;
+  return s.request?.id === requestId && s.status === "applying";
+}
+
 /** The request id an agent uses for a change to the whole page that John asked for in the chat. */
 export const LIVE_DESIGN_PAGE_REQUEST = "page";
 
@@ -422,7 +455,8 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
 function replyPage(s: Session, reply: LiveDesignReply) {
   if (reply.message) say(s, "agent", reply.message);
   if (!reply.appliedAttachmentId) return { ok: true };
-  if (s.status === "generating" || s.status === "applying") return { ok: false, reason: "busy" as const };
+  // Never under open versions or edits: a later Accept would target a page that changed under it.
+  if (s.status !== "idle" && s.status !== "waiting_agent") return { ok: false, reason: "busy" as const };
   s.attachmentId = reply.appliedAttachmentId;
   s.appliedAttachmentId = reply.appliedAttachmentId;
   s.touchedAt = Date.now();
@@ -556,6 +590,8 @@ export function impeccableVariantsHtml(id: string, variants: LiveDesignVariant[]
 // Agents reach live design through the existing paperclipApiRequest tool, so it needs no new MCP tool.
 const pollCall = (id: string) =>
   `Call paperclipApiRequest with method GET and path /live-design/${id}/poll?waitSeconds=25 (or curl GET /api/live-design/${id}/poll?waitSeconds=25 with your API key)`;
+const pageCall = (id: string) =>
+  `read it with paperclipApiRequest method GET path /live-design/${id}/page (or curl GET /api/live-design/${id}/page with your API key)`;
 const replyCall = (id: string) => `call paperclipApiRequest with method POST, path /live-design/${id}/reply`;
 
 function withInstructions(s: Session, event: AgentEvent) {
@@ -575,7 +611,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
           "Optional tune knobs per version: params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
-          `The element's current HTML is in request.html; for the rest of the page, GET /api/attachments/${event.attachmentId}/content with your API key.`,
+          `The element's current HTML is in request.html; for the whole page, ${pageCall(s.id)}.`,
           ...(event.request.notes.length ? [`John pinned these comments on the page: ${event.request.notes.map((n) => `"${n}"`).join("; ")}.`] : []),
           ...(event.request.screenshotAttachmentId
             ? [`He also marked the page up; open the screenshot at GET /api/attachments/${event.request.screenshotAttachmentId}/content to see where.`]
@@ -593,7 +629,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           event.request.insert
             ? `Write it into the real page: put chosen.html ${event.request.insert.position} the element at request.selector, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names.`
             : "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
-          `Start from GET /api/attachments/${event.attachmentId}/content (or your workspace copy if it matches it).`,
+          `Start from the current page: ${pageCall(s.id)} (or your workspace copy if it matches it).`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you saved>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If you cannot save it, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<short reason>" } so John knows.`,
         ].join("\n"),
@@ -605,7 +641,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
           : [
               `John wrote in the chat: "${event.message}".`,
-              `If he asks for a change to the page, make it to the whole page (start from GET /api/attachments/${s.attachmentId}/content) and ${replyCall(s.id)} and jsonBody { "requestId": "page", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }. GSAM saves it as the next version.`,
+              `If he asks for a change to the page, make it to the whole page (start from ${pageCall(s.id)}) and ${replyCall(s.id)} and jsonBody { "requestId": "page", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }. GSAM saves it as the next version.`,
               `Otherwise answer with jsonBody { "requestId": "page", "message": "<your answer>" }. Then poll again.`,
             ].join("\n"),
       };
@@ -615,7 +651,7 @@ function withInstructions(s: Session, event: AgentEvent) {
         _instructions: [
           `John edited the page directly with Impeccable's pencil and pressed Apply. edits[].ops holds each change: originalText to newText for text (plain text only), or removeElement: true to delete an element. Each op carries a locator (tag, elementId, classes, leaf context, nearbyEditableTexts) to find it.`,
           "Apply exactly these changes and nothing else: no restyling, no rewording beyond newText. Follow the impeccable skill's live.md guidance on applying manual edits.",
-          `Start from GET /api/attachments/${event.attachmentId}/content (or your workspace copy if it matches).`,
+          `Start from the current page: ${pageCall(s.id)} (or your workspace copy if it matches).`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If an edit cannot be applied safely, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<which one and why>" }; the edits stay staged for John.`,
         ].join("\n"),
@@ -625,7 +661,7 @@ function withInstructions(s: Session, event: AgentEvent) {
     case "restored":
       return {
         ...base,
-        _instructions: `John restored an earlier version of the page. The page is now attachment ${event.attachmentId}: GET /api/attachments/${event.attachmentId}/content and make your workspace copy match it before the next change. Reply nothing. Poll again.`,
+        _instructions: `John restored an earlier version of the page. ${pageCall(s.id)} and make your workspace copy match it before the next change. Reply nothing. Poll again.`,
       };
     case "end":
       return {
@@ -636,6 +672,12 @@ function withInstructions(s: Session, event: AgentEvent) {
 }
 
 /** What the agent reads when GSAM wakes it for live design. */
+/** The current page's HTML, for the agent. */
+export async function readLiveDesignPage(s: Session) {
+  if (!s.source) throw new LiveDesignConflict("This live session has no page.");
+  return s.source.read(s.attachmentId);
+}
+
 export function liveDesignWakeMessage(sessionId: string, fileName: string) {
   return [
     `John opened live design on ${fileName} and is watching it now, possibly on his phone. He uses Impeccable's live tools on the page.`,

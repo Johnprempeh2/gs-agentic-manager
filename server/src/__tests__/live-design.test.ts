@@ -3,6 +3,7 @@ import {
   acceptLiveDesign,
   endLiveDesign,
   getLiveDesign,
+  liveDesignAcceptsPage,
   recordLiveDesignMarkup,
   restoreLiveDesign,
   setLiveDesignDeliverable,
@@ -183,7 +184,7 @@ describe("live design through Impeccable's page tools", () => {
     const { session: s } = startLiveDesign(ids);
     await pollLiveDesign(s, 1000); // the agent joins
     handleImpeccableRequest(s, post({ type: "generate", id: "q1", freeformPrompt: "Glow", element: { tagName: "a" } }));
-    s.agentSeenAt = Date.now() - 3 * 60_000; // then stops polling
+    s.agentSeenAt = Date.now() - 9 * 60_000; // then stops polling
     getLiveDesign(s.id);
     expect(viewLiveDesign(s)).toMatchObject({ status: "waiting_agent", request: null });
     expect(viewLiveDesign(s).messages.at(-1)?.text).toMatch(/stopped responding/);
@@ -203,5 +204,18 @@ describe("live design through Impeccable's page tools", () => {
     const html = String(s.frames.at(-1)?.data.gsVariantsHtml);
     expect(html).toContain('data-impeccable-mode="insert"');
     expect(html).not.toContain('data-impeccable-variant="original"');
+  });
+
+  it("only takes a page that is still wanted, and no whole-page change under open versions", async () => {
+    const { session: s } = startLiveDesign(ids);
+    expect(liveDesignAcceptsPage(s, "page")).toBe(true);
+    handleImpeccableRequest(s, post({ type: "generate", id: "w1", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    replyLiveDesign(s, { requestId: "w1", variants: [{ html: "<a>1</a>", css: "", name: "" }] });
+    expect(liveDesignAcceptsPage(s, "page")).toBe(false);
+    expect(liveDesignAcceptsPage(s, "w1")).toBe(false); // versions open, nothing accepted yet
+    expect(replyLiveDesign(s, { requestId: "page", appliedAttachmentId: newAttachment })).toMatchObject({ ok: false, reason: "busy" });
+    acceptLiveDesign(s, "w1", 0);
+    expect(liveDesignAcceptsPage(s, "w1")).toBe(true);
+    expect(liveDesignAcceptsPage(s, "old")).toBe(false);
   });
 });
