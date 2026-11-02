@@ -114,7 +114,7 @@ function taskActions(issueId: string, cardId: string, opts: { retry?: boolean; r
   }, {
     id: "not_now",
     label: "Not now",
-    description: "Set the task aside. It leaves your Decisions and no agent works on it until it comes back on the day you choose.",
+    description: "Pause the task, not only this card. No agent works on it until it comes back on the day you choose. It also leaves your Decisions.",
     type: "request",
     requests: [request("POST", `${path}/table`, { returnAt: null })],
     href: null,

@@ -533,12 +533,19 @@ describe("Ask for clarity", () => {
 });
 
 describe("Not now", () => {
+  it("says plainly that it pauses agent work, not only the card (GRE-3727)", async () => {
+    render(blockedCard());
+    await click(button("Not now"));
+    expect(document.body.textContent).toContain("Pause this task?");
+    expect(document.body.textContent).toContain("This pauses the work, not only this card. No agent works on it until it comes back.");
+  });
+
   it("tables the task until brought back when no date is set", async () => {
     render(blockedCard());
     await click(button("Not now"));
-    await click(button("Set aside until I bring it back"));
+    await click(button("Pause until I bring it back"));
     expect(api.post).toHaveBeenCalledWith("/issues/issue-201/table", { returnAt: null });
-    expect(api.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Set aside" }));
+    expect(api.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Task paused" }));
     expect(onActed).toHaveBeenCalled();
   });
 
@@ -547,7 +554,7 @@ describe("Not now", () => {
     await click(button("Not now"));
     const dateInput = document.querySelector("input[type='date']") as HTMLInputElement;
     typeInto(dateInput, "2026-10-12");
-    await click(button("Set aside"));
+    await click(button("Pause until then"));
     expect(api.post).toHaveBeenCalledWith("/issues/issue-201/table", {
       returnAt: new Date(2026, 9, 12, 9, 0, 0, 0).toISOString(),
     });
