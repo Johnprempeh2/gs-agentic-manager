@@ -1,7 +1,11 @@
 import { injectReviewBridge, renderReviewImage } from "../services/prototype-review.js";
 import {
+  canStoreLiveDesignMarkup,
   endLiveDesign,
   getLiveDesign,
+  isLiveDesignEnded,
+  recordLiveDesignMarkup,
+  touchLiveDesign,
   isLiveDesignAgentConnected,
   LiveDesignConflict,
   liveDesignWakeMessage,
@@ -699,6 +703,7 @@ const DELIVERABLE_WORK_PRODUCT_ROUTE_ERROR =
 
 const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const REVIEWABLE_HTML_LIMIT_BYTES = 8 * 1024 * 1024;
+const LIVE_MARKUP_LIMIT_BYTES = 7 * 1024 * 1024;
 
 /** A malformed id filter is the caller's mistake: a 422 naming it, not a database 500. */
 function uuidQuery(req: Request, ...names: string[]): string | undefined {
@@ -21150,8 +21155,10 @@ export function issueRoutes(
   });
 
   router.get("/live-design/:sessionId", (req, res) => {
+    const session = liveSessionForBoard(req);
+    touchLiveDesign(session);
     res.setHeader("Cache-Control", "no-store");
-    res.json(viewLiveDesign(liveSessionForBoard(req)));
+    res.json(viewLiveDesign(session));
   });
 
   // The page's Impeccable scripts call their helper; the editor relays each call here.
@@ -21161,10 +21168,17 @@ export function issueRoutes(
     let screenshotAttachmentId: string | undefined;
     // John drew or commented before Go: keep Impeccable's screenshot as an image on the task for the agent.
     if (body.path.startsWith("/annotation") && body.bodyBase64) {
+      // One screenshot per Go (Impeccable's eventId), a few per session: the page cannot fill storage.
+      const eventId = new URLSearchParams(body.path.split("?")[1] ?? "").get("eventId")?.slice(0, 64) ?? "";
+      if (!eventId || !canStoreLiveDesignMarkup(session, eventId)) {
+        res.json({ status: 429, body: JSON.stringify({ error: "No more markup screenshots for this session" }) });
+        return;
+      }
       const png = Buffer.from(body.bodyBase64, "base64");
       const isPng = png.length > 8 && png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-      if (!isPng || png.length > REVIEWABLE_HTML_LIMIT_BYTES) {
-        res.json({ status: 422, body: JSON.stringify({ error: "The screenshot must be a PNG up to 8 MB" }) });
+      // 7 MB: the base64 form must fit the 10 MB JSON body limit.
+      if (!isPng || png.length > LIVE_MARKUP_LIMIT_BYTES) {
+        res.json({ status: 422, body: JSON.stringify({ error: "The screenshot must be a PNG up to 7 MB" }) });
         return;
       }
       const actor = getActorInfo(req);
@@ -21198,6 +21212,7 @@ export function issueRoutes(
         details: { attachmentId: attachment.id, originalFilename: attachment.originalFilename, contentType: "image/png", byteSize: attachment.byteSize, source: "live_design_markup" },
       });
       screenshotAttachmentId = attachment.id;
+      recordLiveDesignMarkup(session, eventId, attachment.id);
     }
     res.json(handleImpeccableRequest(session, { ...body, screenshotAttachmentId }));
   });
@@ -21205,7 +21220,12 @@ export function issueRoutes(
   // The helper's event stream for the page, as a long-poll the editor forwards into the frame.
   router.get("/live-design/:sessionId/stream", async (req, res) => {
     const session = liveSessionForBoard(req);
+    touchLiveDesign(session);
     res.setHeader("Cache-Control", "no-store");
+    if (isLiveDesignEnded(session)) {
+      res.json({ cursor: Number(req.query.after ?? 0) || 0, frames: [], ended: true });
+      return;
+    }
     if (req.query.start === "1") {
       // Impeccable expects "connected" first; history before this page load does not replay.
       const last = session.frames[session.frames.length - 1]?.seq ?? 0;
@@ -21217,7 +21237,7 @@ export function issueRoutes(
     }
     const after = Number(req.query.after ?? 0);
     const frames = await pollLiveDesignFrames(session, Number.isFinite(after) ? after : 0, 25_000);
-    res.json({ cursor: frames[frames.length - 1]?.seq ?? after, frames });
+    res.json({ cursor: frames[frames.length - 1]?.seq ?? after, frames, ended: isLiveDesignEnded(session) });
   });
 
   router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), (req, res) => {
@@ -21237,11 +21257,25 @@ export function issueRoutes(
     const session = liveSessionForAgent(req);
     const wait = Number(req.query.waitSeconds ?? 25);
     res.setHeader("Cache-Control", "no-store");
-    res.json(await pollLiveDesign(session, (Number.isFinite(wait) ? wait : 25) * 1000));
+    let gone = false;
+    res.on("close", () => {
+      if (!res.writableFinished) gone = true;
+    });
+    res.json(await pollLiveDesign(session, (Number.isFinite(wait) ? wait : 25) * 1000, () => gone));
   });
 
-  router.post("/live-design/:sessionId/reply", validate(liveDesignReplySchema), (req, res) => {
-    res.json(replyLiveDesign(liveSessionForAgent(req), req.body as LiveDesignReply));
+  router.post("/live-design/:sessionId/reply", validate(liveDesignReplySchema), async (req, res) => {
+    const session = liveSessionForAgent(req);
+    const reply = req.body as LiveDesignReply;
+    // The saved page must be an attachment on this task, or the editor would load someone else's file.
+    if (reply.appliedAttachmentId) {
+      const saved = await svc.getAttachmentById(reply.appliedAttachmentId);
+      if (!saved || saved.issueId !== session.issueId) {
+        res.status(422).json({ error: "appliedAttachmentId must be an attachment on this task" });
+        return;
+      }
+    }
+    res.json(replyLiveDesign(session, reply));
   });
 
   router.get("/attachments/:attachmentId/content", async (req, res, next) => {

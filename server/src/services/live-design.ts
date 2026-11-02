@@ -70,6 +70,10 @@ interface Session {
   designMd: string | null;
   /** Set while the agent writes John's applied edits into the page. */
   editsRequestId: string | null;
+  /** Editors open on this session (laptop and phone share one); it ends when the last one leaves. */
+  viewers: number;
+  /** Markup screenshots GSAM saved for this session, by Impeccable event id. Only these go to the agent. */
+  markups: Map<string, string>;
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -147,6 +151,30 @@ export function getLiveDesign(id: string) {
   return sessions.get(id) ?? null;
 }
 
+/** An open editor keeps its session alive (the idle sweep ends only sessions nobody is looking at). */
+export function touchLiveDesign(s: Session) {
+  if (s.status !== "ended") s.touchedAt = Date.now();
+}
+
+export function isLiveDesignEnded(s: Session) {
+  return s.status === "ended";
+}
+
+/** Impeccable's markup screenshot for one Go, saved once; refuses more than a handful per session. */
+export function recordLiveDesignMarkup(s: Session, eventId: string, attachmentId: string) {
+  s.markups.set(eventId, attachmentId);
+}
+
+export function liveDesignMarkupFor(s: Session, eventId: string) {
+  return s.markups.get(eventId) ?? null;
+}
+
+export const MAX_MARKUPS_PER_SESSION = 20;
+
+export function canStoreLiveDesignMarkup(s: Session, eventId: string) {
+  return s.status !== "ended" && !s.markups.has(eventId) && s.markups.size < MAX_MARKUPS_PER_SESSION;
+}
+
 export function isLiveDesignAgentConnected(s: Session) {
   return isConnected(s);
 }
@@ -177,6 +205,8 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
       staged: [],
       designMd: null,
       editsRequestId: null,
+      viewers: 0,
+      markups: new Map(),
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
@@ -184,6 +214,7 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
   }
   s.attachmentId = input.attachmentId;
   s.touchedAt = Date.now();
+  s.viewers += 1;
   return { session: s, needsWake: !isConnected(s) };
 }
 
@@ -222,7 +253,8 @@ export function discardLiveDesign(s: Session) {
     push(s, { type: "discard", requestId: s.request.id });
     say(s, "gsam", "Discarded. The page is back as it was.");
   }
-  if (s.status !== "ended") s.status = isConnected(s) ? "idle" : "waiting_agent";
+  // While the agent applies edits the session stays "applying"; only the versions go.
+  if (s.status !== "ended" && !s.editsRequestId) s.status = isConnected(s) ? "idle" : "waiting_agent";
   s.request = null;
   s.variants = [];
   s.touchedAt = Date.now();
@@ -242,13 +274,15 @@ export function steerLiveDesign(s: Session, message: string, steerId: string | n
   return s;
 }
 
+/** One editor leaves. The session (and the agent's run) ends when no editor is left. */
 export function endLiveDesign(s: Session) {
-  end(s);
+  s.viewers = Math.max(0, s.viewers - 1);
+  if (s.viewers === 0) end(s);
   return s;
 }
 
 /** The agent's long-poll: the next event, or `{ type: "timeout" }` after the wait. */
-export async function pollLiveDesign(s: Session, waitMs: number) {
+export async function pollLiveDesign(s: Session, waitMs: number, gone: () => boolean = () => false) {
   if (!isConnected(s) && s.status !== "ended") {
     say(s, "gsam", "The agent joined.");
     frame(s, { type: "agent_polling", connected: true });
@@ -270,12 +304,18 @@ export async function pollLiveDesign(s: Session, waitMs: number) {
     }, Math.min(Math.max(waitMs, 1000), MAX_POLL_MS)).unref?.();
   });
   s.agentSeenAt = Date.now();
+  // The agent's run went away mid-poll (cancelled, crashed): keep the event for its next poll.
+  if (event && gone()) {
+    s.queue.unshift(event);
+    return { type: "timeout", sessionId: s.id, _instructions: "" };
+  }
   return event
     ? withInstructions(s, event)
     : { type: "timeout", sessionId: s.id, _instructions: `Nothing yet. ${pollCall(s.id)} again now.` };
 }
 
 export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
+  if (s.status === "ended") return { ok: false, reason: "ended" as const };
   s.agentSeenAt = Date.now();
   if (reply.designMd) s.designMd = reply.designMd;
   if (s.editsRequestId && reply.requestId === s.editsRequestId) return replyEdits(s, reply);
@@ -354,7 +394,9 @@ export function discardLiveDesignEdits(s: Session, ref: string | null) {
 export function applyLiveDesignEdits(s: Session) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
   if (s.editsRequestId) throw new LiveDesignConflict("The agent is already applying your edits.");
-  if (s.status === "generating" || s.status === "applying") throw new LiveDesignConflict("Finish the open request first, then apply your edits.");
+  if (s.status !== "idle" && s.status !== "waiting_agent") {
+    throw new LiveDesignConflict("Keep or discard the open versions first, then apply your edits.");
+  }
   const count = opCount(s);
   if (!count) return { status: "nothing", remainingCount: 0 };
   const id = `edits-${randomUUID().slice(0, 8)}`;
@@ -370,17 +412,19 @@ export function applyLiveDesignEdits(s: Session) {
 function replyEdits(s: Session, reply: LiveDesignReply) {
   if (reply.message) say(s, "agent", reply.message);
   const count = opCount(s);
-  if (reply.error) {
+  const settle = () => {
     s.editsRequestId = null;
-    s.status = "idle";
+    if (s.status === "applying") s.status = "idle";
+  };
+  if (reply.error) {
+    settle();
     say(s, "gsam", `The agent could not apply your edits: ${reply.error}. They are still staged.`);
     frame(s, { type: "manual_edit_commit_failed", error: reply.error });
     return { ok: true };
   }
   if (reply.appliedAttachmentId) {
-    s.editsRequestId = null;
+    settle();
     s.staged = [];
-    s.status = "idle";
     s.appliedAttachmentId = reply.appliedAttachmentId;
     s.attachmentId = reply.appliedAttachmentId;
     say(s, "gsam", "Edits saved into the page as a new version of the file.");

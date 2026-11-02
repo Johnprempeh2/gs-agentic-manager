@@ -5,6 +5,7 @@ import { ArrowLeft, Laptop, Maximize2, Smartphone } from "lucide-react";
 import { Link, useParams } from "@/lib/router";
 import { issuesApi } from "../api/issues";
 import { liveDesignApi } from "../api/liveDesign";
+import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
@@ -57,11 +58,14 @@ export function LiveEditor() {
       let after: number | "start" = "start";
       while (!controller.signal.aborted) {
         try {
-          const { cursor, frames } = await liveDesignApi.stream(sessionId, after, controller.signal);
+          const { cursor, frames, ended } = await liveDesignApi.stream(sessionId, after, controller.signal);
           for (const f of frames) toFrame({ kind: "stream", data: f.data });
           after = cursor;
-        } catch {
+          if (ended) return;
+        } catch (err) {
           if (controller.signal.aborted) return;
+          // The session is gone (ended and cleared): the chat says so; stop asking.
+          if (err instanceof ApiError && err.status === 404) return;
           toFrame({ kind: "stream-error" });
           await new Promise((r) => setTimeout(r, 2000));
         }
@@ -75,6 +79,12 @@ export function LiveEditor() {
         void openStream();
       } else if (m.kind === "voice-start") {
         const vid = m.vid;
+        // The page is untrusted: listen only right after John tapped its mic, and never for long.
+        if (!navigator.userActivation?.isActive) {
+          toFrame({ kind: "voice", vid, event: "error", error: "not-allowed" });
+          toFrame({ kind: "voice", vid, event: "end" });
+          return;
+        }
         const Recognition = getSpeechRecognitionConstructor();
         if (!Recognition) {
           toFrame({ kind: "voice", vid, event: "error", error: "not-supported" });
@@ -97,6 +107,9 @@ export function LiveEditor() {
           toFrame({ kind: "voice", vid, event: "end" });
         };
         voiceRef.current = { vid, rec };
+        setTimeout(() => {
+          if (voiceRef.current?.rec === rec) rec.stop();
+        }, 60_000);
         try {
           rec.start();
           toFrame({ kind: "voice", vid, event: "start" });

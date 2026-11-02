@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  acceptLiveDesign,
   endLiveDesign,
+  recordLiveDesignMarkup,
   impeccableVariantsHtml,
   pollLiveDesign,
   pollLiveDesignFrames,
@@ -100,7 +102,9 @@ describe("live design through Impeccable's page tools", () => {
     expect(handleImpeccableRequest(s, { method: "GET", path: "/nope", body: null }).status).toBe(404);
     expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/design-system.json", body: null }).body)).toEqual({ present: false });
     expect(JSON.parse(handleImpeccableRequest(s, { method: "POST", path: "/annotation?eventId=e1", body: null, screenshotAttachmentId: newAttachment }).body)).toMatchObject({ path: newAttachment });
-    handleImpeccableRequest(s, post({ type: "generate", id: "e1", freeformPrompt: "Fix this", screenshotPath: newAttachment, comments: [{ x: 1, y: 2, text: "too loud" }], element: { tagName: "h1" } }));
+    // Only the screenshot GSAM saved for this Go reaches the agent, not an id the page sends.
+    recordLiveDesignMarkup(s, "e1", newAttachment);
+    handleImpeccableRequest(s, post({ type: "generate", id: "e1", freeformPrompt: "Fix this", screenshotPath: "6f9619ff-0000-4d01-b42d-00cf4fc964ff", comments: [{ x: 1, y: 2, text: "too loud" }], element: { tagName: "h1" } }));
     expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "generate", request: { notes: ["too loud"], screenshotAttachmentId: newAttachment } });
     replyLiveDesign(s, { requestId: "e1", message: "On it.", designMd: "---\ncolors:\n  lime: \"#c8ff00\"\n---\n# Design\nLime on void." });
     expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/design-system.json", body: null }).body)).toMatchObject({
@@ -126,5 +130,37 @@ describe("live design through Impeccable's page tools", () => {
     expect(page).toContain("gs-impeccable");
     expect(page).toContain("__IMPECCABLE_VOCAB__");
     expect(page.indexOf("<script>")).toBeLessThan(page.indexOf("</body>"));
+  });
+
+  it("keeps a session open while another editor has it, and ignores replies after it ends", async () => {
+    const { session: s } = startLiveDesign(ids);
+    startLiveDesign(ids); // the phone joins the laptop's session
+    endLiveDesign(s);
+    expect(viewLiveDesign(s).status).not.toBe("ended");
+    endLiveDesign(s);
+    expect(viewLiveDesign(s).status).toBe("ended");
+    expect(replyLiveDesign(s, { requestId: "x", error: "late" })).toMatchObject({ ok: false, reason: "ended" });
+    expect(viewLiveDesign(s).status).toBe("ended");
+  });
+
+  it("refuses to apply edits while versions are open, and keeps an event whose poll went away", async () => {
+    const { session: s } = startLiveDesign(ids);
+    // The agent's poll has gone (run cancelled) when the Go arrives: the Go waits for its next poll.
+    const lost = pollLiveDesign(s, 5000, () => true);
+    handleImpeccableRequest(s, post({ type: "generate", id: "g1", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    expect(await lost).toMatchObject({ type: "timeout" });
+    expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "generate", requestId: "g1" });
+
+    replyLiveDesign(s, { requestId: "g1", variants: [{ html: "<a>1</a>", css: "", name: "" }] });
+    handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-stash", body: JSON.stringify({ ops: [{ ref: "r1", originalText: "a", newText: "b" }] }) });
+    expect(handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-commit", body: null }).status).toBe(409);
+    expect(() => acceptLiveDesign(s, "g1", 0)).not.toThrow();
+  });
+
+  it("gives a Go with no id a usable request id", async () => {
+    const { session: s } = startLiveDesign(ids);
+    handleImpeccableRequest(s, post({ type: "generate", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    const event = (await pollLiveDesign(s, 1000)) as { requestId: string };
+    expect(event.requestId.length).toBeGreaterThan(0);
   });
 });

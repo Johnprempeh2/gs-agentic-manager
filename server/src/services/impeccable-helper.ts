@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -11,6 +12,7 @@ import {
   liveDesignEditCount,
   stageLiveDesignEdit,
   isLiveDesignAgentConnected,
+  liveDesignMarkupFor,
   LiveDesignConflict,
   requestLiveDesign,
   steerLiveDesign,
@@ -274,7 +276,6 @@ export function designFrontmatter(markdown: string): { frontmatter: Record<strin
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** One call from the page's Impeccable scripts, answered the way Impeccable's helper would. */
 export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest): HelperResponse {
@@ -340,7 +341,7 @@ export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest
 }
 
 function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: { selector?: string }): HelperResponse {
-  const id = str(evt.id, 64);
+  const id = str(evt.id, 64) || randomUUID().slice(0, 8);
   switch (evt.type) {
     case "generate": {
       const el = (evt.element ?? {}) as Record<string, unknown>;
@@ -363,7 +364,8 @@ function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: 
             .map((c) => str((c as { text?: unknown })?.text, 1000).trim())
             .filter(Boolean)
             .slice(0, 30),
-          ...(UUID_RE.test(str(evt.screenshotPath, 64)) ? { screenshotAttachmentId: str(evt.screenshotPath, 64) } : {}),
+          // Only a screenshot GSAM itself saved for this Go, never an id the page made up.
+          ...(liveDesignMarkupFor(s, id) ? { screenshotAttachmentId: liveDesignMarkupFor(s, id)! } : {}),
         },
         id,
       );

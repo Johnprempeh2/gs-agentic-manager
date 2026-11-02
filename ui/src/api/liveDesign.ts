@@ -5,6 +5,8 @@ const session = (id: string) => `/live-design/${encodeURIComponent(id)}`;
 
 export interface LiveDesignFrames {
   cursor: number;
+  /** The session has ended: stop streaming. */
+  ended?: boolean;
   frames: Array<{ seq: number; data: Record<string, unknown> }>;
 }
 

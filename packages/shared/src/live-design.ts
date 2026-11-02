@@ -56,7 +56,7 @@ export const liveDesignHelperRequestSchema = z.object({
   path: z.string().startsWith("/").max(2000),
   body: z.string().max(200_000).nullable(),
   /** A binary body (the annotation screenshot), base64. */
-  bodyBase64: z.string().max(11_000_000).optional(),
+  bodyBase64: z.string().max(9_800_000).optional(),
   extra: z.object({ selector: z.string().max(500).optional() }).default({}),
 });
 export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSchema>;
