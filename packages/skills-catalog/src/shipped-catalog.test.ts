@@ -28,6 +28,11 @@ const EXPECTED_OPTIONAL_KEYS = [
 ];
 
 const MAX_FRONTMATTER_DESCRIPTION_LENGTH = 300;
+// Skills allowed past the cap, each with a reason.
+const LONG_DESCRIPTION_EXCEPTIONS: Record<string, string> = {
+  "skills/impeccable/SKILL.md":
+    "Vendored Impeccable kept with its upstream description so updates stay clean; John approved the longer prompt cost (2 Nov 2026).",
+};
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const SKILL_FRONTMATTER_ROOTS = [
   path.join(REPO_ROOT, ".agents"),
@@ -98,7 +103,7 @@ describe("shipped skills catalog", () => {
       const description = readFrontmatterDescription(readFileSync(skillFile, "utf8"));
       if (!description) {
         violations.push(`${path.relative(REPO_ROOT, skillFile)} is missing a frontmatter description`);
-      } else if (description.length > MAX_FRONTMATTER_DESCRIPTION_LENGTH) {
+      } else if (description.length > MAX_FRONTMATTER_DESCRIPTION_LENGTH && !LONG_DESCRIPTION_EXCEPTIONS[path.relative(REPO_ROOT, skillFile)]) {
         violations.push(`${path.relative(REPO_ROOT, skillFile)} description is ${description.length} chars`);
       }
     }

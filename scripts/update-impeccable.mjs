@@ -24,7 +24,7 @@ if (!args.checkout || !args.token) {
 }
 const port = args.port ?? "8400";
 
-// Apache-2.0 asks that changed files say so. This is the only change GSAM makes to the skill.
+// Apache-2.0 asks that changed files say so. This note is the only change GSAM makes to the skill; its long description is an approved exception in packages/skills-catalog/src/shipped-catalog.test.ts.
 const GSAM_NOTE = `> **In GS Agentic Manager (modified by Greatstone):** the \`scripts/impeccable\` launcher is not installed. Take the "Launcher unavailable" path below: read PRODUCT.md and DESIGN.md at your workspace root directly (write them first if they are missing; Greatstone brand by default, the client's brand for client work). Live mode runs through GSAM's live design editor, which gives you its own instructions; do not run \`impeccable live\`.
 `;
 const out = path.resolve(import.meta.dirname, "../server/src/built-ins/impeccable");

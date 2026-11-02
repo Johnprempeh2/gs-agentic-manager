@@ -10909,6 +10909,28 @@ registry.registerPath({
   responses: { 200: { description: "PNG image" }, 204: { description: "No headless browser on this server" }, 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
 });
 
+// Live design (Impeccable's page tools; GSAM stands in for its helper).
+const liveSession = z.object({ sessionId: z.string() });
+for (const [method, path, summary, extra] of [
+  ["post", "/api/attachments/{attachmentId}/live", "Start (or rejoin) live design on an HTML attachment and wake the task's agent", { 422: r.unprocessable }],
+  ["get", "/api/live-design/{sessionId}", "A live design session: status, chat and versions", {}],
+  ["post", "/api/live-design/{sessionId}/helper", "One call from Impeccable's page scripts to their helper, answered by GSAM", { 400: r.badRequest }],
+  ["get", "/api/live-design/{sessionId}/stream", "Long-poll the helper events for the live page", {}],
+  ["post", "/api/live-design/{sessionId}/steer", "A note from the board to the live design agent", { 400: r.badRequest, 409: r.conflict }],
+  ["post", "/api/live-design/{sessionId}/end", "End live design, which lets the agent's run finish", {}],
+  ["get", "/api/live-design/{sessionId}/poll", "The session's agent: long-poll the next live design event", { 403: r.forbidden }],
+  ["post", "/api/live-design/{sessionId}/reply", "The session's agent: send versions, a note, a saved page or an error", { 400: r.badRequest, 403: r.forbidden }],
+] as const) {
+  registry.registerPath({
+    method,
+    path,
+    tags: ["assets"],
+    summary,
+    request: { params: path.includes("{attachmentId}") ? z.object({ attachmentId: z.string() }) : liveSession },
+    responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound, ...extra },
+  });
+}
+
 registry.registerPath({
   method: "delete",
   path: "/api/attachments/{attachmentId}",

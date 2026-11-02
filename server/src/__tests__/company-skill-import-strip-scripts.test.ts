@@ -123,6 +123,11 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
     expect(updated?.fileInventory.some((entry) => entry.kind === "script")).toBe(false);
   });
 
+  // Every company carries GSAM's bundled impeccable skill; only an imported copy would be a leak.
+  const importedImpeccable = async () =>
+    (await db.select().from(companySkills)).some((row) => row.slug === "impeccable" && row.key !== "paperclipai/paperclip/impeccable");
+
+
   it("still refuses a GitHub skill with scripts when stripScripts is not set, and names the scripts", async () => {
     const companyId = await createCompany();
     stubGitHub(() => "a".repeat(40));
@@ -135,7 +140,7 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
         scriptPaths: expect.arrayContaining(["scripts/impeccable", "scripts/live-browser.js"]),
       },
     });
-    expect((await db.select().from(companySkills)).some((row) => row.slug === "impeccable")).toBe(false);
+    expect(await importedImpeccable()).toBe(false);
   });
 
   describe("scripts outside scripts/ (GRE-776)", () => {
@@ -316,6 +321,6 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
       status: 403,
       details: { code: "skill_workspace_boundary_denied" },
     });
-    expect((await db.select().from(companySkills)).some((row) => row.slug === "impeccable")).toBe(false);
+    expect(await importedImpeccable()).toBe(false);
   });
 });
