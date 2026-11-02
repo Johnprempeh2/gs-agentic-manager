@@ -1,41 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveDesignView } from "@greatstone/shared";
-import { ArrowUp, Check, ChevronLeft, ChevronRight, Expand, Loader2, X } from "lucide-react";
+import { ArrowUp, Loader2 } from "lucide-react";
 import { liveDesignApi } from "../api/liveDesign";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-
-export interface LiveSelection {
-  selector: string;
-  tag: string;
-  text: string;
-  cls: string;
-  role: string;
-  alt: string;
-  looksButton: boolean;
-  html: string;
-  hasParent: boolean;
-}
-
-const KINDS: Record<string, string> = {
-  a: "Link", button: "Button", p: "Paragraph", img: "Image", svg: "Graphic", nav: "Navigation",
-  header: "Header", footer: "Footer", main: "Main page area", section: "Section", article: "Card",
-  aside: "Side panel", ul: "List", ol: "List", li: "List item", form: "Form", input: "Field",
-  textarea: "Field", select: "Field", table: "Table", label: "Label", blockquote: "Quote", figure: "Figure",
-};
-
-/** "Button: “Book the diagnostic”" rather than a.btn.primary. */
-export function liveLabel(s: Pick<LiveSelection, "tag" | "text" | "cls" | "role" | "alt" | "looksButton">) {
-  const kind =
-    s.tag === "button" || s.role === "button" || s.looksButton || /\b(btn|button)\b/i.test(s.cls)
-      ? "Button"
-      : /^h[1-6]$/.test(s.tag)
-        ? "Heading"
-        : KINDS[s.tag] ?? "Block";
-  const words = (s.alt || s.text).trim();
-  return words ? `${kind}: “${words.length > 48 ? `${words.slice(0, 47)}…` : words}”` : kind;
-}
 
 /** The live session for one page: started on open, polled while open, ended on close. */
 export function useLiveDesign(attachmentId: string, active: boolean) {
@@ -88,7 +57,7 @@ export function useLiveDesign(attachmentId: string, active: boolean) {
     }
   }, []);
 
-  return { view, error, end, run };
+  return { view, error, end, run, sessionId: view?.id ?? null };
 }
 
 function useElapsed(since: string | undefined, running: boolean) {
@@ -102,66 +71,25 @@ function useElapsed(since: string | undefined, running: boolean) {
 }
 
 /**
- * The editor's chat column: what John asked, what the agent says and the
- * versions to choose from. The page beside it shows each version in place.
+ * The editor's chat column: what John asked on the page, what the agent says,
+ * and a box for notes to the agent. Picking and versions happen in
+ * Impeccable's own bar on the page.
  */
-export function LiveDesignChat({
-  live,
-  selection,
-  toFrame,
-  onApplied,
-}: {
-  live: ReturnType<typeof useLiveDesign>;
-  selection: LiveSelection | null;
-  toFrame: (message: Record<string, unknown>) => void;
-  onApplied: (attachmentId: string) => void;
-}) {
+export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign> }) {
   const { view, error, run } = live;
-  const [prompt, setPrompt] = useState("");
-  const [index, setIndex] = useState(0);
-  // On a phone the request box hides while John chooses, so the chat keeps its room.
-  const [asking, setAsking] = useState(false);
-  const variants = view?.variants ?? [];
+  const [note, setNote] = useState("");
   const status = view?.status;
-  const choosing = status === "ready" || status === "applying";
-  const busy = status === "generating" || status === "applying";
   const elapsed = useElapsed(view?.request?.startedAt, status === "generating");
   const listRef = useRef<HTMLOListElement>(null);
   const messageCount = view?.messages.length ?? 0;
 
-  // Show the chosen version in the page; the original comes back otherwise.
-  useEffect(() => {
-    toFrame({ type: "live-version", version: choosing ? variants[index] ?? null : null });
-  }, [choosing, variants, index, toFrame]);
-  useEffect(() => {
-    setIndex(0);
-    setAsking(false);
-  }, [view?.request?.id]);
   useEffect(() => {
     listRef.current?.lastElementChild?.scrollIntoView({ block: "end" });
   }, [messageCount, status]);
 
-  const applied = view?.appliedAttachmentId ?? null;
-  const seenApplied = useRef(applied);
-  useEffect(() => {
-    if (applied && applied !== seenApplied.current) {
-      seenApplied.current = applied;
-      onApplied(applied);
-    }
-  }, [applied, onApplied]);
-
   const send = () => {
-    if (!selection || !prompt.trim() || busy) return;
-    void run((id) =>
-      liveDesignApi.request(id, {
-        selector: selection.selector,
-        tag: selection.tag,
-        label: liveLabel(selection),
-        text: selection.text,
-        html: selection.html,
-        prompt: prompt.trim(),
-      }),
-    ).then((ok) => ok && setPrompt(""));
+    if (!note.trim() || !view || status === "ended") return;
+    void run((id) => liveDesignApi.steer(id, note.trim())).then((ok) => ok && setNote(""));
   };
 
   return (
@@ -170,8 +98,9 @@ export function LiveDesignChat({
 
       <ol ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-label="Live design chat" aria-live="polite">
         {messageCount === 0 ? (
-          <li className="text-sm text-muted-foreground">
-            Tap anything on the page, then tell the agent what to change. You will see a few versions in place and keep the one you like.
+          <li className="space-y-2 text-sm text-muted-foreground">
+            <p>Pick anything on the page with the bar at the bottom, type what should change and press Go.</p>
+            <p>The agent's versions appear in place. Flick through them, tune them, then accept one. The agent saves it into the file.</p>
           </li>
         ) : null}
         {view?.messages.map((m, i) =>
@@ -196,87 +125,39 @@ export function LiveDesignChat({
             {view?.agentConnected ? `Making versions… ${elapsed}s` : `Waiting for the agent to join… ${elapsed}s`}
           </li>
         ) : null}
+        {status === "applying" ? (
+          <li className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Saving it into the page…
+          </li>
+        ) : null}
         {error ? <li className="text-sm text-destructive" role="alert">{error}</li> : null}
       </ol>
 
-      {choosing ? (
-        <section className="space-y-3 border-t border-border p-3" aria-label="Versions">
-          <div className="flex items-center justify-between gap-2">
-            <Button type="button" variant="outline" size="icon" aria-label="Previous version" disabled={index === 0 || status === "applying"} onClick={() => setIndex((i) => i - 1)}>
-              <ChevronLeft aria-hidden="true" className="size-4" />
-            </Button>
-            <div className="min-w-0 text-center">
-              <div className="text-sm font-semibold">Version {index + 1} of {variants.length}</div>
-              <div className="truncate text-xs text-muted-foreground">{variants[index]?.name || " "}</div>
-            </div>
-            <Button type="button" variant="outline" size="icon" aria-label="Next version" disabled={index >= variants.length - 1 || status === "applying"} onClick={() => setIndex((i) => i + 1)}>
-              <ChevronRight aria-hidden="true" className="size-4" />
-            </Button>
-          </div>
-          <div className="flex gap-1.5" aria-hidden="true">
-            {variants.map((_, i) => (
-              <span key={i} className={cn("h-1 flex-1 rounded-full bg-muted", i === index && "bg-primary")} />
-            ))}
-          </div>
-          {status === "applying" ? (
-            <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
-              <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Saving it into the page…
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant="outline" onClick={() => void run((id) => liveDesignApi.discard(id))}>
-                <X aria-hidden="true" className="size-4" /> Discard
-              </Button>
-              <Button type="button" onClick={() => view?.request && void run((id) => liveDesignApi.accept(id, view.request!.id, index))}>
-                <Check aria-hidden="true" className="size-4" /> Keep this
-              </Button>
-              {!asking ? (
-                <button type="button" className="col-span-2 text-xs text-muted-foreground underline hover:text-foreground md:hidden" onClick={() => setAsking(true)}>
-                  Ask for something different
-                </button>
-              ) : null}
-            </div>
-          )}
-        </section>
-      ) : null}
-
       <form
-        className={cn("space-y-2 border-t border-border p-3 pb-(--sz-pad-safe-bottom)", choosing && !asking && "hidden md:block")}
+        className="flex items-end gap-2 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
       >
-        {selection ? (
-          <div className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-xs">
-            <span className="min-w-0 flex-1 truncate font-medium" title={liveLabel(selection)}>{liveLabel(selection)}</span>
-            {selection.hasParent && !busy ? (
-              <button type="button" className="inline-flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground" onClick={() => toFrame({ type: "live-parent" })}>
-                <Expand aria-hidden="true" className="size-3.5" /> Bigger
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="flex items-end gap-2">
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            rows={2}
-            className="min-h-0 flex-1 resize-none"
-            placeholder={selection ? "What should change? For example: make it glow" : "Tap something on the page first"}
-            disabled={!selection || busy || status === "ended"}
-            aria-label="Your request"
-          />
-          <Button type="submit" size="icon" aria-label="Send" disabled={!selection || !prompt.trim() || busy || !view || status === "ended"}>
-            <ArrowUp aria-hidden="true" className="size-4" />
-          </Button>
-        </div>
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          rows={2}
+          className="min-h-0 flex-1 resize-none"
+          placeholder="Message the agent, for example: make the second one calmer"
+          disabled={!view || status === "ended"}
+          aria-label="Message the agent"
+        />
+        <Button type="submit" size="icon" aria-label="Send" disabled={!note.trim() || !view || status === "ended"}>
+          <ArrowUp aria-hidden="true" className="size-4" />
+        </Button>
       </form>
     </div>
   );

@@ -1,29 +1,45 @@
 import { randomUUID } from "node:crypto";
-import {
-  LIVE_DESIGN_VARIANT_COUNT,
-  type LiveDesignReply,
-  type LiveDesignRequest,
-  type LiveDesignStatus,
-  type LiveDesignMessage,
-  type LiveDesignVariant,
-  type LiveDesignView,
+import type {
+  LiveDesignReply,
+  LiveDesignRequest,
+  LiveDesignStatus,
+  LiveDesignMessage,
+  LiveDesignVariant,
+  LiveDesignView,
 } from "@greatstone/shared";
 
 /**
- * Live design sessions: John picks an element on an agent's HTML prototype and
- * asks for a change; the agent stays in one run, long-polling GSAM for the next
- * request, and replies with versions that the review page shows in place.
+ * Live design sessions: John uses Impeccable's own page tools on an agent's
+ * HTML prototype; GSAM stands in for Impeccable's local helper. The agent
+ * stays in one run, long-polling GSAM for the next request, and replies with
+ * versions that GSAM wraps in Impeccable's variant markup for the page.
+ * Agents use the two endpoints through paperclipApiRequest (or curl with
+ * their API key), so live design needs no new MCP tool.
  *
  * ponytail: in memory on the one server process. A restart ends open sessions;
- * the page says so and John presses Live again. Move to a table if GSAM ever
+ * the editor says so and John opens it again. Move to a table if GSAM ever
  * runs more than one server process.
  */
 
+type Request = LiveDesignRequest & { id: string; startedAt: string };
+
 type AgentEvent =
   | { type: "generate"; requestId: string; request: LiveDesignRequest; attachmentId: string; count: number }
-  | { type: "accept"; requestId: string; variant: number; chosen: LiveDesignVariant; request: LiveDesignRequest; attachmentId: string }
+  | {
+      type: "accept";
+      requestId: string;
+      variant: number;
+      chosen: LiveDesignVariant;
+      paramValues: Record<string, unknown> | null;
+      request: LiveDesignRequest;
+      attachmentId: string;
+    }
+  | { type: "steer"; requestId: string | null; message: string }
   | { type: "discard"; requestId: string }
   | { type: "end" };
+
+/** What the page's Impeccable scripts receive, in order, as their helper's event stream. */
+type Frame = { seq: number; data: Record<string, unknown> };
 
 interface Session {
   id: string;
@@ -32,13 +48,15 @@ interface Session {
   attachmentId: string;
   agentId: string;
   status: LiveDesignStatus;
-  request: (LiveDesignRequest & { id: string; startedAt: string }) | null;
+  request: Request | null;
   variants: LiveDesignVariant[];
   appliedAttachmentId: string | null;
   error: string | null;
   messages: LiveDesignMessage[];
   queue: AgentEvent[];
   waiter: ((event: AgentEvent | null) => void) | null;
+  frames: Frame[];
+  frameWaiters: Array<() => void>;
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -70,11 +88,20 @@ function push(s: Session, event: AgentEvent) {
   }
 }
 
+function frame(s: Session, data: Record<string, unknown>) {
+  const seq = (s.frames[s.frames.length - 1]?.seq ?? 0) + 1;
+  s.frames.push({ seq, data });
+  if (s.frames.length > 100) s.frames.splice(0, s.frames.length - 100);
+  const waiters = s.frameWaiters.splice(0);
+  for (const wake of waiters) wake();
+}
+
 function end(s: Session) {
   if (s.status === "ended") return;
   s.status = "ended";
   s.queue = [];
   push(s, { type: "end" });
+  frame(s, { type: "agent_polling", connected: false });
   // Keep it briefly so a late poll or page refresh sees "ended", not "not found".
   setTimeout(() => sessions.delete(s.id), 5 * 60_000).unref?.();
 }
@@ -84,6 +111,8 @@ function sweep(now = Date.now()) {
     if (s.status !== "ended" && now - s.touchedAt > IDLE_END_MS) end(s);
   }
 }
+
+export type LiveDesignSession = Session;
 
 export function viewLiveDesign(s: Session): LiveDesignView {
   return {
@@ -103,6 +132,10 @@ export function viewLiveDesign(s: Session): LiveDesignView {
 export function getLiveDesign(id: string) {
   sweep();
   return sessions.get(id) ?? null;
+}
+
+export function isLiveDesignAgentConnected(s: Session) {
+  return isConnected(s);
 }
 
 /**
@@ -126,6 +159,8 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
       messages: [],
       queue: [],
       waiter: null,
+      frames: [],
+      frameWaiters: [],
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
@@ -138,22 +173,23 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
 
 export class LiveDesignConflict extends Error {}
 
-export function requestLiveDesign(s: Session, request: LiveDesignRequest) {
-  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Press Live to start again.");
+/** `id` is Impeccable's session id for this request, so the page and the agent use the same one. */
+export function requestLiveDesign(s: Session, request: LiveDesignRequest, id = randomUUID().slice(0, 8)) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
   if (s.status === "applying") throw new LiveDesignConflict("The agent is still saving the last version.");
   // A new request replaces versions John has not kept.
   if (s.request && s.status === "ready") push(s, { type: "discard", requestId: s.request.id });
-  s.request = { ...request, id: randomUUID().slice(0, 8), startedAt: new Date().toISOString() };
+  s.request = { ...request, id, startedAt: new Date().toISOString() };
   s.variants = [];
   s.error = null;
   s.status = "generating";
   s.touchedAt = Date.now();
-  say(s, "john", request.prompt);
-  push(s, { type: "generate", requestId: s.request.id, request, attachmentId: s.attachmentId, count: LIVE_DESIGN_VARIANT_COUNT });
+  say(s, "john", request.action === "impeccable" ? request.prompt : `${request.action}: ${request.prompt}`);
+  push(s, { type: "generate", requestId: id, request, attachmentId: s.attachmentId, count: request.count });
   return s;
 }
 
-export function acceptLiveDesign(s: Session, requestId: string, variant: number) {
+export function acceptLiveDesign(s: Session, requestId: string, variant: number, paramValues: Record<string, unknown> | null = null) {
   const chosen = s.variants[variant];
   if (!s.request || s.request.id !== requestId || s.status !== "ready" || !chosen) {
     throw new LiveDesignConflict("Those versions are no longer open.");
@@ -161,7 +197,7 @@ export function acceptLiveDesign(s: Session, requestId: string, variant: number)
   s.status = "applying";
   s.touchedAt = Date.now();
   say(s, "gsam", `You kept version ${variant + 1}${chosen.name ? ` (${chosen.name})` : ""}. The agent is saving it into the page.`);
-  push(s, { type: "accept", requestId, variant, chosen, request: s.request, attachmentId: s.attachmentId });
+  push(s, { type: "accept", requestId, variant, chosen, paramValues, request: s.request, attachmentId: s.attachmentId });
   return s;
 }
 
@@ -177,6 +213,17 @@ export function discardLiveDesign(s: Session) {
   return s;
 }
 
+/** A note from John to the agent mid-request ("make the second one calmer"). */
+export function steerLiveDesign(s: Session, message: string) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  const text = message.trim().slice(0, 2000);
+  if (!text) return s;
+  say(s, "john", text);
+  s.touchedAt = Date.now();
+  push(s, { type: "steer", requestId: s.request?.id ?? null, message: text });
+  return s;
+}
+
 export function endLiveDesign(s: Session) {
   end(s);
   return s;
@@ -184,7 +231,10 @@ export function endLiveDesign(s: Session) {
 
 /** The agent's long-poll: the next event, or `{ type: "timeout" }` after the wait. */
 export async function pollLiveDesign(s: Session, waitMs: number) {
-  if (!isConnected(s) && s.status !== "ended") say(s, "gsam", "The agent joined.");
+  if (!isConnected(s) && s.status !== "ended") {
+    say(s, "gsam", "The agent joined.");
+    frame(s, { type: "agent_polling", connected: true });
+  }
   s.agentSeenAt = Date.now();
   if (s.status === "waiting_agent") s.status = "idle";
   const queued = s.queue.shift();
@@ -215,12 +265,15 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
     say(s, "gsam", `The agent could not do that: ${reply.error}`);
     s.error = reply.error;
     s.status = "idle";
+    frame(s, { type: "error", id: reply.requestId, message: reply.error });
     return { ok: true };
   }
   if (s.status === "generating" && reply.variants?.length) {
     s.variants = reply.variants;
     s.status = "ready";
-    say(s, "gsam", `${reply.variants.length} version${reply.variants.length === 1 ? "" : "s"} ready. Flick through them on the page, then keep one or discard.`);
+    say(s, "gsam", `${reply.variants.length} version${reply.variants.length === 1 ? "" : "s"} ready. Flick through them on the page, then accept one.`);
+    // The editor inserts the wrapper into the page, then hands Impeccable the "done".
+    frame(s, { type: "done", id: reply.requestId, gsVariantsHtml: impeccableVariantsHtml(reply.requestId, reply.variants), message: reply.message ?? null });
     return { ok: true };
   }
   if (s.status === "applying" && reply.appliedAttachmentId) {
@@ -230,40 +283,96 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
     s.variants = [];
     s.status = "idle";
     say(s, "gsam", "Saved into the page as a new version of the file.");
+    frame(s, { type: "agent_done", id: reply.requestId, data: { carbonize: false } });
     return { ok: true };
   }
   if (reply.message) return { ok: true };
   return { ok: false, reason: "unexpected_reply" as const };
 }
 
+/** The page's helper event stream from `after`, waiting up to `waitMs` for something new. */
+export async function pollLiveDesignFrames(s: Session, after: number, waitMs: number) {
+  const pending = () => s.frames.filter((f) => f.seq > after);
+  if (!pending().length && s.status !== "ended") {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, Math.min(Math.max(waitMs, 0), MAX_POLL_MS));
+      timer.unref?.();
+      s.frameWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+  return pending();
+}
+
+const escapeAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;");
+
+/**
+ * Impeccable's variant markup (skill/reference/live.md, "DOM contract"). The
+ * original slot is empty: the page moves the live element into it, so its
+ * listeners and state survive.
+ */
+export function impeccableVariantsHtml(id: string, variants: LiveDesignVariant[]) {
+  const css = variants.map((v) => v.css).filter(Boolean).join("\n").replace(/<\/style/gi, "<\\/style");
+  const slots = variants.map((v, i) => {
+    const params = v.params?.length ? ` data-impeccable-params='${escapeAttr(JSON.stringify(v.params))}'` : "";
+    const hidden = i === 0 ? "" : ' style="display: none"';
+    return `<div data-impeccable-variant="${i + 1}"${params}${hidden}>${v.html}</div>`;
+  });
+  return [
+    `<div data-impeccable-variants="${escapeAttr(id)}" data-impeccable-variant-count="${variants.length}" style="display: contents">`,
+    `<div data-impeccable-variant="original"></div>`,
+    css ? `<style data-impeccable-css="${escapeAttr(id)}">${css}</style>` : "",
+    ...slots,
+    "</div>",
+  ].join("");
+}
+
+// Agents reach live design through the existing paperclipApiRequest tool, so it needs no new MCP tool.
+const pollCall = (id: string) =>
+  `Call paperclipApiRequest with method GET and path /live-design/${id}/poll?waitSeconds=25 (or curl GET /api/live-design/${id}/poll?waitSeconds=25 with your API key)`;
+const replyCall = (id: string) => `call paperclipApiRequest with method POST, path /live-design/${id}/reply`;
+
 function withInstructions(s: Session, event: AgentEvent) {
   const base = { sessionId: s.id, ...event };
   switch (event.type) {
-    case "generate":
+    case "generate": {
+      const action = event.request.action === "impeccable"
+        ? "a freeform request"
+        : `Impeccable's "${event.request.action}" command (follow that command's guidance in the impeccable skill's reference folder)`;
       return {
         ...base,
         _instructions: [
-          `John picked ${event.request.label || event.request.tag} on the page and asked: "${event.request.prompt}".`,
-          `Make ${event.count} versions of that element. Each version is ONE element (normally the same tag) that replaces it, plus the CSS it needs.`,
-          "Give each version a different direction, not three shades of one idea. Keep the page's brand, colours and words unless John asked to change them.",
-          "CSS applies to the whole page while that version shows, so target classes you add to your element (for example .lv-glow) rather than shared ones.",
-          "Respect prefers-reduced-motion for anything that moves. Keep text contrast readable.",
-          `John reads a chat beside the page. Send one short note first so he knows what you are trying: ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "message": "<one plain sentence>" }. You can add a "message" to your versions reply too.`,
+          `John picked ${event.request.label || event.request.tag} on the page and asked, as ${action}: "${event.request.prompt}".`,
+          "First read PRODUCT.md and DESIGN.md at your workspace root and design inside them. If they are missing, write them before your versions (Greatstone brand by default; the client's brand for client work), and tell John in your note.",
+          `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
+          "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
+          "Optional tune knobs per version: params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
           `The element's current HTML is in request.html; for the rest of the page, GET /api/attachments/${event.attachmentId}/content with your API key.`,
-          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "variants": [{ "name": "...", "html": "...", "css": "..." }] }. Speed matters: John is watching. Then poll again.`,
+          `John reads a chat beside the page. Send one short note first so he knows what you are trying: ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "message": "<one plain sentence>" }.`,
+          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "variants": [{ "name": "...", "html": "...", "css": "...", "params": [] }] }. Speed matters: John is watching. Then poll again.`,
         ].join("\n"),
       };
+    }
     case "accept":
       return {
         ...base,
         _instructions: [
-          `John kept version ${event.variant + 1} ("${event.chosen.name}").`,
-          "Write it into the real page: replace the element at request.selector with chosen.html, and move chosen.css into the page's own stylesheet with tidy class names.",
+          `John accepted version ${event.variant + 1} ("${event.chosen.name}")${event.paramValues ? ` with tune values ${JSON.stringify(event.paramValues)}` : ""}.`,
+          "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
           `Edit your workspace copy of this page if you have one; otherwise start from GET /api/attachments/${event.attachmentId}/content.`,
           "Upload the updated page as a new attachment on this task with the same file name.",
-          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "appliedAttachmentId": "<new attachment id>" }, and poll again.`,
+          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "appliedAttachmentId": "<new attachment id>", "message": "<what you saved>" }, and poll again.`,
           `If you cannot save it, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<short reason>" } so John knows.`,
         ].join("\n"),
+      };
+    case "steer":
+      return {
+        ...base,
+        _instructions: event.requestId
+          ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
+          : `John wrote: "${event.message}". Answer with a short note; there is no open request, so he will pick an element next.`,
       };
     case "discard":
       return { ...base, _instructions: "John discarded those versions. Change nothing. Poll again." };
@@ -275,19 +384,14 @@ function withInstructions(s: Session, event: AgentEvent) {
   }
 }
 
-// Agents reach live design through the existing paperclipApiRequest tool, so it needs no new MCP tool.
-const pollCall = (id: string) =>
-  `Call paperclipApiRequest with method GET and path /live-design/${id}/poll?waitSeconds=25 (or curl GET /api/live-design/${id}/poll?waitSeconds=25 with your API key)`;
-const replyCall = (id: string) => `call paperclipApiRequest with method POST, path /live-design/${id}/reply`;
-
 /** What the agent reads when GSAM wakes it for live design. */
 export function liveDesignWakeMessage(sessionId: string, fileName: string) {
   return [
-    `John opened live design on ${fileName} and is watching it now, possibly on his phone.`,
+    `John opened live design on ${fileName} and is watching it now, possibly on his phone. He uses Impeccable's live tools on the page.`,
     `Stay in this run as the live designer. ${pollCall(sessionId)} in a loop; each call waits up to 25 seconds.`,
     "Each event carries _instructions: follow them, send the reply they describe, then poll again straight away.",
     "A timeout event just means nothing happened yet; poll again. Stop only when you get an end event.",
-    "Do not post comments or change the task status during live design; John sees your versions on the page.",
+    "Do not post comments or change the task status during live design; John sees your versions and notes in the editor.",
   ].join("\n");
 }
 

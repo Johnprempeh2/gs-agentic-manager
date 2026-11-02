@@ -3320,6 +3320,7 @@ export function accessRoutes(
       skills: [
         { name: "paperclip", path: "/api/skills/paperclip" },
         { name: "ponytail", path: "/api/skills/ponytail" },
+        { name: "impeccable", path: "/api/skills/impeccable" },
         {
           name: "para-memory-files",
           path: "/api/skills/para-memory-files"

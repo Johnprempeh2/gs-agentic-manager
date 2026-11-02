@@ -1,17 +1,18 @@
 import { injectReviewBridge, renderReviewImage } from "../services/prototype-review.js";
 import {
-  acceptLiveDesign,
-  discardLiveDesign,
   endLiveDesign,
   getLiveDesign,
+  isLiveDesignAgentConnected,
   LiveDesignConflict,
   liveDesignWakeMessage,
   pollLiveDesign,
+  pollLiveDesignFrames,
   replyLiveDesign,
-  requestLiveDesign,
   startLiveDesign,
+  steerLiveDesign,
   viewLiveDesign,
 } from "../services/live-design.js";
+import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
@@ -29,7 +30,7 @@ import {
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignAcceptSchema, liveDesignReplySchema, liveDesignRequestSchema, type LiveDesignReply, type LiveDesignRequest, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignSteerSchema, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -21051,7 +21052,8 @@ export function issueRoutes(
     // The same opaque-origin sandbox as the plain attachment; the review
     // script only talks to GSAM by postMessage.
     res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP);
-    res.status(200).send(injectReviewBridge(html));
+    // ?live=1: Impeccable's live tools instead of the review tools (live design editor).
+    res.status(200).send(req.query.live === "1" ? injectImpeccableLive(html) : injectReviewBridge(html));
   });
 
   router.post("/attachments/:attachmentId/annotate/render", validate(prototypeReviewMarkupSchema), async (req, res) => {
@@ -21150,26 +21152,37 @@ export function issueRoutes(
     res.json(viewLiveDesign(liveSessionForBoard(req)));
   });
 
-  router.post("/live-design/:sessionId/request", validate(liveDesignRequestSchema), (req, res) => {
+  // The page's Impeccable scripts call their helper; the editor relays each call here.
+  router.post("/live-design/:sessionId/helper", validate(liveDesignHelperRequestSchema), (req, res) => {
+    const reply = handleImpeccableRequest(liveSessionForBoard(req), req.body);
+    res.json(reply);
+  });
+
+  // The helper's event stream for the page, as a long-poll the editor forwards into the frame.
+  router.get("/live-design/:sessionId/stream", async (req, res) => {
+    const session = liveSessionForBoard(req);
+    res.setHeader("Cache-Control", "no-store");
+    if (req.query.start === "1") {
+      // Impeccable expects "connected" first; history before this page load does not replay.
+      const last = session.frames[session.frames.length - 1]?.seq ?? 0;
+      res.json({
+        cursor: last,
+        frames: [{ seq: last, data: { type: "connected", hideLiveBar: false, hasProjectContext: true, agentPolling: isLiveDesignAgentConnected(session), activeSessions: [] } }],
+      });
+      return;
+    }
+    const after = Number(req.query.after ?? 0);
+    const frames = await pollLiveDesignFrames(session, Number.isFinite(after) ? after : 0, 25_000);
+    res.json({ cursor: frames[frames.length - 1]?.seq ?? after, frames });
+  });
+
+  router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), (req, res) => {
     const session = liveSessionForBoard(req);
     try {
-      res.json(viewLiveDesign(requestLiveDesign(session, req.body as LiveDesignRequest)));
+      res.json(viewLiveDesign(steerLiveDesign(session, req.body.message)));
     } catch (err) {
       if (!sendLiveConflict(res, err)) throw err;
     }
-  });
-
-  router.post("/live-design/:sessionId/accept", validate(liveDesignAcceptSchema), (req, res) => {
-    const session = liveSessionForBoard(req);
-    try {
-      res.json(viewLiveDesign(acceptLiveDesign(session, req.body.requestId, req.body.variant)));
-    } catch (err) {
-      if (!sendLiveConflict(res, err)) throw err;
-    }
-  });
-
-  router.post("/live-design/:sessionId/discard", (req, res) => {
-    res.json(viewLiveDesign(discardLiveDesign(liveSessionForBoard(req))));
   });
 
   router.post("/live-design/:sessionId/end", (req, res) => {

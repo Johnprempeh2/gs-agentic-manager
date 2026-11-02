@@ -15,6 +15,9 @@ export const liveDesignRequestSchema = z.object({
   text: z.string().max(300),
   html: z.string().max(20_000),
   prompt: z.string().trim().min(1).max(2000),
+  /** Impeccable's action for this request ("impeccable" is freeform; others name a design command such as "bolder"). */
+  action: z.string().max(40).default("impeccable"),
+  count: z.number().int().min(1).max(8).default(3),
 });
 export type LiveDesignRequest = z.infer<typeof liveDesignRequestSchema>;
 
@@ -25,6 +28,8 @@ export const liveDesignVariantSchema = z.object({
   css: z.string().max(20_000).default(""),
   /** A few words John reads in the switcher, such as "Soft halo". */
   name: z.string().max(60).default(""),
+  /** Impeccable tune knobs for this version (live.md section 7): [{ id, kind: "range" | "steps" | "toggle", ... }]. */
+  params: z.array(z.record(z.string(), z.unknown())).max(6).optional(),
 });
 export type LiveDesignVariant = z.infer<typeof liveDesignVariantSchema>;
 
@@ -39,10 +44,16 @@ export const liveDesignReplySchema = z.object({
 });
 export type LiveDesignReply = z.infer<typeof liveDesignReplySchema>;
 
-export const liveDesignAcceptSchema = z.object({
-  requestId: z.string().min(1).max(64),
-  variant: z.number().int().min(0).max(3),
+/** One call from Impeccable's page scripts to their helper, relayed by the editor. */
+export const liveDesignHelperRequestSchema = z.object({
+  method: z.enum(["GET", "POST"]),
+  path: z.string().startsWith("/").max(2000),
+  body: z.string().max(200_000).nullable(),
+  extra: z.object({ selector: z.string().max(500).optional() }).default({}),
 });
+export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSchema>;
+
+export const liveDesignSteerSchema = z.object({ message: z.string().trim().min(1).max(2000) });
 
 export type LiveDesignStatus = "waiting_agent" | "idle" | "generating" | "ready" | "applying" | "ended";
 
