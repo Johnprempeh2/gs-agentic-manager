@@ -10,6 +10,7 @@ import {
   restoreLiveDesign,
   setLiveDesignDeliverable,
   liveDesignAcceptsPage,
+  readLiveDesignPage,
   type LiveDesignSession,
   type LivePageSource,
   touchLiveDesign,
@@ -21416,6 +21417,21 @@ export function issueRoutes(
       if (!res.writableFinished) gone = true;
     });
     res.json(await pollLiveDesign(session, (Number.isFinite(wait) ? wait : 25) * 1000, () => gone));
+  });
+
+  // The current page, for the session's agent (or a person on the session): the same for task files and website pages.
+  router.get("/live-design/:sessionId/page", async (req, res) => {
+    const session = req.actor.type === "agent" ? liveSessionForAgent(req) : liveSessionForBoard(req);
+    try {
+      const html = await readLiveDesignPage(session);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP);
+      res.status(200).send(html);
+    } catch (err) {
+      if (!sendLiveConflict(res, err)) throw err;
+    }
   });
 
   router.post("/live-design/:sessionId/reply", validate(liveDesignReplySchema), async (req, res) => {
