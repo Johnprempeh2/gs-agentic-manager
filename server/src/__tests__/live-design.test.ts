@@ -3,6 +3,8 @@ import {
   acceptLiveDesign,
   endLiveDesign,
   recordLiveDesignMarkup,
+  restoreLiveDesign,
+  setLiveDesignDeliverable,
   impeccableVariantsHtml,
   pollLiveDesign,
   pollLiveDesignFrames,
@@ -162,5 +164,17 @@ describe("live design through Impeccable's page tools", () => {
     handleImpeccableRequest(s, post({ type: "generate", freeformPrompt: "Glow", element: { tagName: "a" } }));
     const event = (await pollLiveDesign(s, 1000)) as { requestId: string };
     expect(event.requestId.length).toBeGreaterThan(0);
+  });
+
+  it("restores an earlier version as the page and tells the agent, but not mid-request", async () => {
+    const { session: s } = startLiveDesign(ids);
+    setLiveDesignDeliverable(s, "d-v3");
+    expect(viewLiveDesign(s).deliverableId).toBe("d-v3");
+    restoreLiveDesign(s, newAttachment, 1);
+    expect(viewLiveDesign(s)).toMatchObject({ attachmentId: newAttachment, appliedAttachmentId: newAttachment });
+    expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "restored", attachmentId: newAttachment, version: 1 });
+
+    handleImpeccableRequest(s, post({ type: "generate", id: "g2", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    expect(() => restoreLiveDesign(s, newAttachment, 1)).toThrow(/Keep or discard/);
   });
 });

@@ -63,6 +63,12 @@ export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSche
 
 export const liveDesignSteerSchema = z.object({ message: z.string().trim().min(1).max(2000) });
 
+/** Start live design; with a deliverable, every saved change becomes its next version. */
+export const liveDesignStartSchema = z.object({ deliverableId: z.string().uuid().optional() });
+
+/** Bring back an earlier version: it becomes the newest version, so nothing is lost. */
+export const liveDesignRestoreSchema = z.object({ attachmentId: z.string().uuid() });
+
 export type LiveDesignStatus = "waiting_agent" | "idle" | "generating" | "ready" | "applying" | "ended";
 
 export interface LiveDesignMessage {
@@ -84,4 +90,6 @@ export interface LiveDesignView {
   error: string | null;
   /** The editor's chat: John's requests, the agent's notes and GSAM's status lines. */
   messages: LiveDesignMessage[];
+  /** The deliverable this page is, when live design was opened from one; its latest version id. */
+  deliverableId: string | null;
 }

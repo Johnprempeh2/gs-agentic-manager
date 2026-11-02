@@ -37,6 +37,7 @@ type AgentEvent =
   | { type: "steer"; requestId: string | null; message: string }
   | { type: "edits"; requestId: string; edits: StagedEdit[]; attachmentId: string }
   | { type: "discard"; requestId: string }
+  | { type: "restored"; attachmentId: string; version: number | null }
   | { type: "end" };
 
 /** One batch of John's direct text edits or element removals, staged by Impeccable's pencil until he applies them. */
@@ -74,6 +75,8 @@ interface Session {
   viewers: number;
   /** Markup screenshots GSAM saved for this session, by Impeccable event id. Only these go to the agent. */
   markups: Map<string, string>;
+  /** The deliverable this page is (its latest version id), when opened from Deliverables. */
+  deliverableId: string | null;
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -143,6 +146,7 @@ export function viewLiveDesign(s: Session): LiveDesignView {
     appliedAttachmentId: s.appliedAttachmentId,
     error: s.error,
     messages: s.messages,
+    deliverableId: s.deliverableId,
   };
 }
 
@@ -207,6 +211,7 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
       editsRequestId: null,
       viewers: 0,
       markups: new Map(),
+      deliverableId: null,
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
@@ -271,6 +276,29 @@ export function steerLiveDesign(s: Session, message: string, steerId: string | n
   push(s, { type: "steer", requestId: s.request?.id ?? null, message: text });
   // Impeccable keeps its steer box locked until the helper says the note was taken.
   if (steerId) frame(s, { type: "steer_done", id: steerId, message: "Sent to the agent." });
+  return s;
+}
+
+/** The deliverable's newest version after a save or a restore. */
+export function setLiveDesignDeliverable(s: Session, deliverableId: string | null) {
+  s.deliverableId = deliverableId;
+}
+
+/**
+ * John brings back an earlier version. The caller has already saved it as the
+ * newest version; the page and the agent move to it.
+ */
+export function restoreLiveDesign(s: Session, attachmentId: string, version: number | null) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  if (s.status !== "idle" && s.status !== "waiting_agent") {
+    throw new LiveDesignConflict("Keep or discard the open versions first, then restore.");
+  }
+  if (s.staged.length) throw new LiveDesignConflict("Apply or discard your text edits first, then restore.");
+  s.attachmentId = attachmentId;
+  s.appliedAttachmentId = attachmentId;
+  s.touchedAt = Date.now();
+  say(s, "gsam", version ? `Restored version ${version}. It is now the newest version.` : "Restored an earlier version.");
+  push(s, { type: "restored", attachmentId, version });
   return s;
 }
 
@@ -535,6 +563,11 @@ function withInstructions(s: Session, event: AgentEvent) {
       };
     case "discard":
       return { ...base, _instructions: "John discarded those versions. Change nothing. Poll again." };
+    case "restored":
+      return {
+        ...base,
+        _instructions: `John restored an earlier version of the page. The page is now attachment ${event.attachmentId}: GET /api/attachments/${event.attachmentId}/content and make your workspace copy match it before the next change. Reply nothing. Poll again.`,
+      };
     case "end":
       return {
         ...base,

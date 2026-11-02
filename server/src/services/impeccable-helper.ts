@@ -100,6 +100,16 @@ const ADAPTER = String.raw`(function () {
     return lastClicks[0] || null;
   }
 
+  // Impeccable expects to be the whole page and pulls focus back to its own box whenever it
+  // loses it. Inside GSAM's editor that would steal typing from the chat beside it, so the
+  // page may move focus only while John is working inside the page.
+  window.focus = function () {};
+  var realFocus = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function () {
+    if (!document.hasFocus()) return;
+    return realFocus.apply(this, arguments);
+  };
+
   var realFetch = window.fetch;
   window.fetch = function (input, init) {
     var url = typeof input === "string" ? input : (input && input.url) || "";

@@ -90,6 +90,8 @@ export interface Deliverable {
 export interface DeliverableVersion {
   id: string;
   version: number;
+  /** The stored file of this version; null for a link deliverable. */
+  attachmentId: string | null;
   title: string;
   status: DeliverableStatus;
   contentPath: string;

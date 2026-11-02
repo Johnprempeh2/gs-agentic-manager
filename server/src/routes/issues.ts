@@ -5,6 +5,9 @@ import {
   getLiveDesign,
   isLiveDesignEnded,
   recordLiveDesignMarkup,
+  restoreLiveDesign,
+  setLiveDesignDeliverable,
+  type LiveDesignSession,
   touchLiveDesign,
   isLiveDesignAgentConnected,
   LiveDesignConflict,
@@ -17,6 +20,7 @@ import {
   viewLiveDesign,
 } from "../services/live-design.js";
 import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
+import { deliverableService } from "../services/deliverables.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
@@ -34,7 +38,7 @@ import {
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignSteerSchema, type LiveDesignHelperRequest, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignRestoreSchema, liveDesignStartSchema, liveDesignSteerSchema, type LiveDesignHelperRequest, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -21093,6 +21097,44 @@ export function issueRoutes(
     return session;
   }
 
+  const liveDeliverables = deliverableService(db, storage);
+
+  /** Files a page as the deliverable's newest version and points the session at it. */
+  async function fileLiveDeliverableVersion(
+    req: Request,
+    session: LiveDesignSession,
+    attachmentId: string,
+    restoredFrom: number | null,
+  ) {
+    if (!session.deliverableId) return;
+    const [detail, issue, attachment] = await Promise.all([
+      liveDeliverables.getDetail(session.companyId, session.deliverableId),
+      svc.getById(session.issueId),
+      liveDeliverables.getAttachment(session.companyId, attachmentId),
+    ]);
+    if (!detail || !issue || !attachment) return;
+    const next = await liveDeliverables.register({
+      issue: { id: issue.id, companyId: issue.companyId, projectId: issue.projectId ?? null },
+      attachment,
+      fields: { key: detail.key, title: detail.title },
+      // A restore is John's; a saved change is the agent's.
+      createdByAgentId: restoredFrom === null ? session.agentId : null,
+      createdByRunId: null,
+    });
+    setLiveDesignDeliverable(session, next.versions[0]?.id ?? next.id);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: session.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "issue.deliverable_registered",
+      entityType: "issue",
+      entityId: session.issueId,
+      details: { deliverableId: next.id, key: detail.key, version: next.version, source: restoredFrom === null ? "live_design" : "live_design_restore", restoredFrom },
+    });
+  }
+
   function sendLiveConflict(res: Response, err: unknown) {
     if (err instanceof LiveDesignConflict) {
       res.status(409).json({ error: err.message });
@@ -21101,11 +21143,24 @@ export function issueRoutes(
     return false;
   }
 
-  router.post("/attachments/:attachmentId/live", async (req, res) => {
+  router.post("/attachments/:attachmentId/live", validate(liveDesignStartSchema), async (req, res) => {
     assertBoard(req);
     const found = await loadReviewableAttachment(req, res);
     if (!found) return;
     const { attachment, issue } = found;
+    // Opened from Deliverables: the page must be one of that deliverable's versions on this task.
+    let deliverableId: string | null = null;
+    // A deliverable always opens at its newest version, whichever version the link named.
+    let pageAttachmentId = attachment.id;
+    if (req.body?.deliverableId) {
+      const detail = await liveDeliverables.getDetail(issue.companyId, req.body.deliverableId as string);
+      if (!detail || detail.issue.id !== issue.id || !detail.versions.some((v) => v.attachmentId === attachment.id)) {
+        res.status(422).json({ error: "That file is not a version of this deliverable." });
+        return;
+      }
+      deliverableId = detail.versions[0]?.id ?? detail.id;
+      pageAttachmentId = detail.versions[0]?.attachmentId ?? attachment.id;
+    }
     if (!issue.assigneeAgentId) {
       res.status(422).json({ error: "Assign this task to an agent first, then use Live." });
       return;
@@ -21113,9 +21168,10 @@ export function issueRoutes(
     const { session, needsWake } = startLiveDesign({
       companyId: issue.companyId,
       issueId: issue.id,
-      attachmentId: attachment.id,
+      attachmentId: pageAttachmentId,
       agentId: issue.assigneeAgentId,
     });
+    if (deliverableId) setLiveDesignDeliverable(session, deliverableId);
     if (needsWake) {
       const actor = getActorInfo(req);
       await heartbeat.wakeup(issue.assigneeAgentId, {
@@ -21275,7 +21331,40 @@ export function issueRoutes(
         return;
       }
     }
-    res.json(replyLiveDesign(session, reply));
+    const result = replyLiveDesign(session, reply);
+    // A saved change to a deliverable becomes its next version (John, 2 Nov).
+    if (result.ok && reply.appliedAttachmentId && session.deliverableId) {
+      await fileLiveDeliverableVersion(req, session, reply.appliedAttachmentId, null);
+    }
+    res.json(result);
+  });
+
+  router.post("/live-design/:sessionId/restore", validate(liveDesignRestoreSchema), async (req, res) => {
+    const session = liveSessionForBoard(req);
+    const attachmentId = req.body.attachmentId as string;
+    const attachment = await svc.getAttachmentById(attachmentId);
+    if (!attachment || attachment.issueId !== session.issueId) {
+      res.status(422).json({ error: "That version is not on this task." });
+      return;
+    }
+    let version: number | null = null;
+    if (session.deliverableId) {
+      const detail = await liveDeliverables.getDetail(session.companyId, session.deliverableId);
+      const old = detail?.versions.find((v) => v.attachmentId === attachmentId);
+      if (!detail || !old) {
+        res.status(422).json({ error: "That file is not a version of this deliverable." });
+        return;
+      }
+      version = old.version;
+    }
+    try {
+      restoreLiveDesign(session, attachmentId, version);
+    } catch (err) {
+      if (!sendLiveConflict(res, err)) throw err;
+      return;
+    }
+    if (session.deliverableId) await fileLiveDeliverableVersion(req, session, attachmentId, version);
+    res.json(viewLiveDesign(session));
   });
 
   router.get("/attachments/:attachmentId/content", async (req, res, next) => {

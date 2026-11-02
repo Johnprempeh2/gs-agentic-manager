@@ -435,6 +435,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
         return {
           id: row.id,
           version: metadataNumber(metadata, "version") ?? 1,
+          attachmentId: isExternal(metadata) ? null : metadataString(metadata, "attachmentId") ?? null,
           title: row.title,
           status: readStatus(metadata),
           contentPath: versionContentPath(row, metadata),

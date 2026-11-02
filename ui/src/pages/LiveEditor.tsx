@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS } from "@greatstone/shared";
-import { ArrowLeft, Laptop, Maximize2, Smartphone } from "lucide-react";
-import { Link, useParams } from "@/lib/router";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, type DeliverableVersion } from "@greatstone/shared";
+import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, RotateCcw, Smartphone, Undo2 } from "lucide-react";
+import { Link, useParams, useSearchParams } from "@/lib/router";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { deliverablesApi } from "../api/deliverables";
+import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { liveDesignApi } from "../api/liveDesign";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
-import { cn } from "../lib/utils";
+import { cn, formatDateTime } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
 import { LiveDesignChat, useLiveDesign } from "../components/LiveDesignChat";
 import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
@@ -26,24 +37,32 @@ export function LiveEditor() {
   const { issueId = "", attachmentId = "" } = useParams<{ issueId: string; attachmentId: string }>();
   const queryClient = useQueryClient();
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [pageId, setPageId] = useState(attachmentId);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
-  const live = useLiveDesign(attachmentId, true);
+  // Opened from Deliverables: every saved change becomes the deliverable's next version.
+  const [searchParams] = useSearchParams();
+  const openedDeliverable = searchParams.get("deliverable");
+  const live = useLiveDesign(attachmentId, true, openedDeliverable);
   const sessionId = live.sessionId;
+  // The page shown is the session's: it moves on when the agent saves or you restore a version.
+  const pageId = live.view?.attachmentId ?? attachmentId;
   const { data: attachments } = useQuery({
     queryKey: queryKeys.issues.attachments(issueId),
     queryFn: () => issuesApi.listAttachments(issueId),
     enabled: !!issueId,
   });
   const fileName = attachments?.find((a) => a.id === pageId)?.originalFilename ?? "Page";
+  const { selectedCompanyId } = useCompany();
+  const deliverableId = live.view?.deliverableId ?? null;
+  const { data: deliverable } = useQuery({
+    queryKey: ["live-design-deliverable", selectedCompanyId, deliverableId],
+    queryFn: () => deliverablesApi.get(selectedCompanyId!, deliverableId!),
+    enabled: !!selectedCompanyId && !!deliverableId,
+  });
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, "*");
   }, []);
 
-  // Leaving the editor ends live design, which lets the agent's run finish.
-  const endLive = live.end;
-  useEffect(() => endLive, [endLive]);
 
   // Relay the page's helper calls and its event stream. Everything from the frame is untrusted.
   const streamRef = useRef<AbortController | null>(null);
@@ -147,13 +166,10 @@ export function LiveEditor() {
     };
   }, [sessionId, toFrame]);
 
-  // When the agent saves an accepted version, show the saved file.
-  const applied = live.view?.appliedAttachmentId ?? null;
+  // A new saved page also lists among the task's files.
   useEffect(() => {
-    if (!applied || applied === pageId) return;
-    setPageId(applied);
     void queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId) });
-  }, [applied, pageId, issueId, queryClient]);
+  }, [pageId, issueId, queryClient]);
 
   return (
     <div className="fixed inset-0 z-dialog flex flex-col bg-background text-foreground">
@@ -168,9 +184,19 @@ export function LiveEditor() {
           <ArrowLeft aria-hidden="true" className="size-4" />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold">{fileName}</h1>
-          <p className="truncate text-xs text-muted-foreground">Live design</p>
+          <h1 className="truncate text-sm font-semibold">{deliverable?.title ?? fileName}</h1>
+          <p className="truncate text-xs text-muted-foreground">
+            {deliverable ? `Live design · version ${deliverable.versions[0]?.version ?? 1}` : "Live design"}
+          </p>
         </div>
+        {deliverable ? (
+          <VersionMenu
+            versions={deliverable.versions}
+            currentAttachmentId={pageId}
+            busy={live.view?.status !== "idle" && live.view?.status !== "waiting_agent"}
+            onRestore={(id) => void live.run((sid) => liveDesignApi.restore(sid, id))}
+          />
+        ) : null}
         <div role="group" aria-label="Page width" className="hidden items-center rounded-md border border-border p-0.5 md:inline-flex">
           {([
             ["fit", "Fit", Maximize2],
@@ -197,7 +223,22 @@ export function LiveEditor() {
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/40 md:order-2">
-          {sessionId ? (
+          {!sessionId ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" role="status">
+              {live.error ? (
+                <>
+                  <p className="text-sm font-medium">The page could not open for live design.</p>
+                  <p className="max-w-sm text-sm text-muted-foreground">{live.error}</p>
+                  <Button type="button" size="sm" onClick={live.retry}>Try again</Button>
+                </>
+              ) : (
+                <>
+                  <Loader2 aria-hidden="true" className="size-5 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Opening the page…</p>
+                </>
+              )}
+            </div>
+          ) : (
             <ScaledFrame
               key={pageId}
               src={`/api/attachments/${pageId}/annotate?live=1`}
@@ -207,13 +248,74 @@ export function LiveEditor() {
               frameRef={frameRef}
               viewport={viewport}
             />
-          ) : null}
+          )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
           <LiveDesignChat live={live} />
         </aside>
       </div>
     </div>
+  );
+}
+
+/**
+ * The deliverable's versions. Restoring one makes it the newest version, so
+ * nothing is ever lost and every restore can itself be undone.
+ */
+function VersionMenu({
+  versions,
+  currentAttachmentId,
+  busy,
+  onRestore,
+}: {
+  versions: DeliverableVersion[];
+  currentAttachmentId: string;
+  busy: boolean;
+  onRestore: (attachmentId: string) => void;
+}) {
+  const newest = versions[0];
+  const previous = versions.find((v, i) => i > 0 && v.attachmentId && v.attachmentId !== newest?.attachmentId);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" aria-label="Versions">
+          <History aria-hidden="true" className="size-4" />
+          <span className="hidden sm:inline">Version {newest?.version ?? 1}</span>
+          <ChevronDown aria-hidden="true" className="size-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuItem disabled={busy || !previous} onSelect={() => previous?.attachmentId && onRestore(previous.attachmentId)}>
+          <Undo2 aria-hidden="true" className="size-4" />
+          Undo last change
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Versions</DropdownMenuLabel>
+        {versions.map((v) => {
+          const current = v.attachmentId === currentAttachmentId;
+          return (
+            <DropdownMenuItem
+              key={v.id}
+              disabled={busy || current || !v.attachmentId}
+              onSelect={() => v.attachmentId && onRestore(v.attachmentId)}
+              className="justify-between"
+            >
+              <span className="min-w-0">
+                <span className="font-medium">Version {v.version}</span>
+                <span className="block text-xs text-muted-foreground">{formatDateTime(v.createdAt)}</span>
+              </span>
+              {current ? (
+                <span className="text-xs text-muted-foreground">Showing</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <RotateCcw aria-hidden="true" className="size-3.5" /> Restore
+                </span>
+              )}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
