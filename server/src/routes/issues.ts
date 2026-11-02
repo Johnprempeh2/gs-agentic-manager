@@ -16,6 +16,7 @@ import {
   steerLiveDesign,
   viewLiveDesign,
 } from "../services/live-design.js";
+import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
@@ -21041,11 +21042,19 @@ export function issueRoutes(
     return { attachment, issue };
   }
 
+  async function readAttachmentHtml(attachment: { companyId: string; objectKey: string }) {
+    const object = await storage.getObject(attachment.companyId, attachment.objectKey);
+    return (await readStream(object.stream)).toString("utf8");
+  }
+
   async function loadReviewableHtml(req: Request, res: Response) {
     const found = await loadReviewableAttachment(req, res);
     if (!found) return null;
-    const object = await storage.getObject(found.attachment.companyId, found.attachment.objectKey);
-    return (await readStream(object.stream)).toString("utf8");
+    const html = await readAttachmentHtml(found.attachment);
+    // A website page draft: each <gs-island> shows as the site's labelled placeholder (GRE-3786).
+    if (!hasIslands(html)) return html;
+    const islands = await loadCompanyIslandManifest(db, found.attachment.companyId);
+    return withIslandPlaceholders(html, islands.placeholderCss);
   }
 
   router.get("/attachments/:attachmentId/annotate", async (req, res) => {
@@ -21110,11 +21119,14 @@ export function issueRoutes(
       res.status(422).json({ error: "Assign this task to an agent first, then use Live." });
       return;
     }
+    const html = await readAttachmentHtml(attachment);
+    const islands = hasIslands(html) ? islandsForAgents(await loadCompanyIslandManifest(db, issue.companyId)) : null;
     const { session, needsWake } = startLiveDesign({
       companyId: issue.companyId,
       issueId: issue.id,
       attachmentId: attachment.id,
       agentId: issue.assigneeAgentId,
+      islands,
     });
     if (needsWake) {
       const actor = getActorInfo(req);
