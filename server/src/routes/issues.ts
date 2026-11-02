@@ -21099,6 +21099,31 @@ export function issueRoutes(
     return session;
   }
 
+  /**
+   * Wakes the session's agent. A designer who does not own the task is woken for
+   * the session, not on the task: it reads the page and returns the new one through it.
+   */
+  async function wakeLiveAgent(req: Request, session: LiveDesignSession, onTaskIssueId: string | null, fileName: string) {
+    const actor = getActorInfo(req);
+    await heartbeat.wakeup(session.agentId, {
+      source: "on_demand",
+      triggerDetail: "manual",
+      reason: "live_design",
+      idempotencyKey: `live_design:${session.id}:${Math.floor(Date.now() / 60_000)}`,
+      requestedByActorType: "user",
+      requestedByActorId: actor.actorId,
+      payload: { ...(onTaskIssueId ? { issueId: onTaskIssueId } : {}), liveDesignSessionId: session.id },
+      contextSnapshot: {
+        ...(onTaskIssueId ? { issueId: onTaskIssueId, taskId: onTaskIssueId } : {}),
+        wakeReason: "live_design",
+        source: "issue.live_design",
+        skipIssueComment: true,
+        liveDesignSessionId: session.id,
+        paperclipAgentMessage: { source: "live_design", sessionId: session.id, text: liveDesignWakeMessage(session.id, fileName) },
+      },
+    });
+  }
+
   const liveDeliverables = deliverableService(db, storage);
 
   /** A live designer for the company (agent metadata `liveDesigner: true`), preferring one not already in a session. */
@@ -21192,32 +21217,7 @@ export function issueRoutes(
       agentId,
     });
     if (deliverableId) setLiveDesignDeliverable(session, deliverableId);
-    if (needsWake) {
-      const actor = getActorInfo(req);
-      await heartbeat.wakeup(agentId, {
-        source: "on_demand",
-        triggerDetail: "manual",
-        reason: "live_design",
-        idempotencyKey: `live_design:${session.id}:${Math.floor(Date.now() / 60_000)}`,
-        requestedByActorType: "user",
-        requestedByActorId: actor.actorId,
-        // A designer who does not own the task is woken for the session, not on the task:
-        // it reads the page and returns the new one through the session.
-        payload: { ...(onTask ? { issueId: issue.id } : {}), liveDesignSessionId: session.id },
-        contextSnapshot: {
-          ...(onTask ? { issueId: issue.id, taskId: issue.id } : {}),
-          wakeReason: "live_design",
-          source: "issue.live_design",
-          skipIssueComment: true,
-          liveDesignSessionId: session.id,
-          paperclipAgentMessage: {
-            source: "live_design",
-            sessionId: session.id,
-            text: liveDesignWakeMessage(session.id, attachment.originalFilename ?? "the page"),
-          },
-        },
-      });
-    }
+    if (needsWake) await wakeLiveAgent(req, session, onTask ? issue.id : null, attachment.originalFilename ?? "the page");
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: "user",
@@ -21291,7 +21291,17 @@ export function issueRoutes(
       screenshotAttachmentId = attachment.id;
       recordLiveDesignMarkup(session, eventId, attachment.id);
     }
-    res.json(handleImpeccableRequest(session, { ...body, screenshotAttachmentId }));
+    const answer = handleImpeccableRequest(session, { ...body, screenshotAttachmentId });
+    // A request with no agent listening (it stopped, or never joined): wake one again.
+    if (body.path.startsWith("/events") || body.path.startsWith("/manual-edit-commit")) {
+      const asked = body.path.startsWith("/manual-edit-commit") || /"type"\s*:\s*"(generate|steer)"/.test(body.body ?? "");
+      if (asked && answer.status < 300 && !isLiveDesignAgentConnected(session)) {
+        const issue = await svc.getById(session.issueId);
+        const page = await svc.getAttachmentById(session.attachmentId);
+        await wakeLiveAgent(req, session, issue?.assigneeAgentId === session.agentId ? session.issueId : null, page?.originalFilename ?? "the page");
+      }
+    }
+    res.json(answer);
   });
 
   // The helper's event stream for the page, as a long-poll the editor forwards into the frame.

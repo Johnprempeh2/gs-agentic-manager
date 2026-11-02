@@ -126,9 +126,33 @@ function end(s: Session) {
   setTimeout(() => sessions.delete(s.id), 5 * 60_000).unref?.();
 }
 
+/** A first wake can take minutes; an agent that was polling and went quiet has stopped. */
+const STALL_NEVER_JOINED_MS = 6 * 60_000;
+const STALL_WENT_QUIET_MS = 2 * 60_000;
+
+/** The agent stopped answering mid-request: say so and free the page instead of spinning forever. */
+function checkStall(s: Session, now: number) {
+  if (s.status !== "generating" && s.status !== "applying") return;
+  const since = s.request ? Date.parse(s.request.startedAt) : s.touchedAt;
+  const quiet = s.agentSeenAt === 0 ? now - since > STALL_NEVER_JOINED_MS : now - s.agentSeenAt > STALL_WENT_QUIET_MS;
+  if (!quiet) return;
+  const id = s.editsRequestId ?? s.request?.id ?? null;
+  const editing = !!s.editsRequestId;
+  s.editsRequestId = null;
+  s.request = null;
+  s.variants = [];
+  s.status = "waiting_agent";
+  s.queue = [];
+  say(s, "gsam", editing
+    ? "The agent stopped responding, so your edits were not applied. They are still staged: press Apply again."
+    : "The agent stopped responding. Press Go again; GSAM will wake an agent.");
+  if (id) frame(s, editing ? { type: "manual_edit_commit_failed", error: "agent_stopped" } : { type: "error", id, message: "The agent stopped responding. Press Go again." });
+}
+
 function sweep(now = Date.now()) {
   for (const s of sessions.values()) {
     if (s.status !== "ended" && now - s.touchedAt > IDLE_END_MS) end(s);
+    else checkStall(s, now);
   }
 }
 

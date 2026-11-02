@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   acceptLiveDesign,
   endLiveDesign,
+  getLiveDesign,
   recordLiveDesignMarkup,
   restoreLiveDesign,
   setLiveDesignDeliverable,
@@ -176,5 +177,16 @@ describe("live design through Impeccable's page tools", () => {
 
     handleImpeccableRequest(s, post({ type: "generate", id: "g2", freeformPrompt: "Glow", element: { tagName: "a" } }));
     expect(() => restoreLiveDesign(s, newAttachment, 1)).toThrow(/Keep or discard/);
+  });
+
+  it("frees a request when the agent goes quiet, and tells John to press Go again", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000); // the agent joins
+    handleImpeccableRequest(s, post({ type: "generate", id: "q1", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    s.agentSeenAt = Date.now() - 3 * 60_000; // then stops polling
+    getLiveDesign(s.id);
+    expect(viewLiveDesign(s)).toMatchObject({ status: "waiting_agent", request: null });
+    expect(viewLiveDesign(s).messages.at(-1)?.text).toMatch(/stopped responding/);
+    expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "q1" });
   });
 });
