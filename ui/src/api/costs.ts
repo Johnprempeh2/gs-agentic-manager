@@ -17,6 +17,7 @@ import type {
   FinanceByKind,
   FinanceEvent,
   ProviderQuotaResult,
+  UsageBreakdown,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -37,6 +38,12 @@ export const costsApi = {
     api.get<CostByAgentModel[]>(`/companies/${companyId}/costs/by-agent-model${dateParams(from, to)}`),
   byProject: (companyId: string, from?: string, to?: string) =>
     api.get<CostByProject[]>(`/companies/${companyId}/costs/by-project${dateParams(from, to)}`),
+  usageBreakdown: (companyId: string, from?: string, to?: string, projectId?: string | null) => {
+    const params = new URLSearchParams(dateParams(from, to).slice(1));
+    if (projectId) params.set("projectId", projectId);
+    const qs = params.toString();
+    return api.get<UsageBreakdown>(`/companies/${companyId}/costs/usage-breakdown${qs ? `?${qs}` : ""}`);
+  },
   byBillingCode: (companyId: string, from?: string, to?: string) =>
     api.get<CostByBillingCode[]>(`/companies/${companyId}/costs/by-billing-code${dateParams(from, to)}`),
   byProvider: (companyId: string, from?: string, to?: string) =>

@@ -7614,6 +7614,52 @@ for (const segment of costSummaryPaths) {
   });
 }
 
+const usageBreakdownRowSchema = z.object({
+  key: z.string(),
+  apiEquivalentCents: z.number(),
+  outputTokens: z.number(),
+  runCount: z.number(),
+  runtimeMs: z.number(),
+});
+
+const usageTurnaroundSchema = z.object({
+  count: z.number(),
+  medianHours: z.number().nullable(),
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/usage-breakdown",
+  tags: ["costs"],
+  summary: "Usage by role, kind of work and turnaround",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      from: z.string().optional(),
+      to: z.string().optional(),
+      projectId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: r.ok(z.object({
+      from: z.string().nullable(),
+      to: z.string().nullable(),
+      projectId: z.string().nullable(),
+      total: usageBreakdownRowSchema,
+      byRole: z.array(usageBreakdownRowSchema),
+      byWork: z.array(usageBreakdownRowSchema),
+      daily: z.array(usageBreakdownRowSchema.extend({ day: z.string() })),
+      turnaround: z.object({
+        withAgentReview: usageTurnaroundSchema,
+        withoutAgentReview: usageTurnaroundSchema,
+      }),
+    })),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
 const costLedgerMonthQuery = z.object({
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
 });

@@ -164,6 +164,38 @@ export interface CostByProject {
   outputTokens: number;
 }
 
+/** What a run was spent on, judged from the task it worked on. */
+export type UsageWorkKind = "doing" | "reviewing" | "coordinating" | "routine" | "housekeeping";
+
+export interface UsageBreakdownRow {
+  key: string;
+  /** API list-price value of the tokens: the fair way to compare Claude and ChatGPT usage. */
+  apiEquivalentCents: number;
+  /** Output tokens, which both providers count the same way. */
+  outputTokens: number;
+  runCount: number;
+  runtimeMs: number;
+}
+
+export interface UsageTurnaround {
+  /** Tasks finished in the range. */
+  count: number;
+  medianHours: number | null;
+}
+
+export interface UsageBreakdown {
+  from: string | null;
+  to: string | null;
+  projectId: string | null;
+  total: UsageBreakdownRow;
+  byRole: UsageBreakdownRow[];
+  byWork: UsageBreakdownRow[];
+  /** One row per UTC day and role, for the trend line. */
+  daily: Array<UsageBreakdownRow & { day: string }>;
+  /** Start to done, for tasks with and without agent review stages. */
+  turnaround: { withAgentReview: UsageTurnaround; withoutAgentReview: UsageTurnaround };
+}
+
 /** a model subscription the company pays a flat monthly price for */
 export interface CompanySubscription {
   id: string;
