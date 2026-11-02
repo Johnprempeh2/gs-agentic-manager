@@ -18,6 +18,8 @@ const BRIDGE = String.raw`(function () {
   var state = preset || { pins: [], strokes: [], edits: [] };
   var applied = [];
   var root, svg, hover, catcher, drawing = null, editing = null;
+  // Live design: the picked element, what is showing in its place, and that version's CSS.
+  var picked = null, shown = null, liveStyle = null, selBox;
 
   function post(msg) { msg.source = "gs-review"; window.parent.postMessage(msg, "*"); }
   function size() {
@@ -39,14 +41,75 @@ const BRIDGE = String.raw`(function () {
   function textOf(el) { return ((el && el.innerText) || "").replace(/\s+/g, " ").trim().slice(0, 300); }
   function find(sel) { try { return document.querySelector(sel); } catch (e) { return null; } }
 
-  function box(el, color) {
+  function place(frame, el) {
     var r = el.getBoundingClientRect();
-    hover.style.display = "block";
-    hover.style.left = r.left + window.scrollX + "px";
-    hover.style.top = r.top + window.scrollY + "px";
-    hover.style.width = r.width + "px";
-    hover.style.height = r.height + "px";
+    frame.style.display = "block";
+    frame.style.left = r.left + window.scrollX + "px";
+    frame.style.top = r.top + window.scrollY + "px";
+    frame.style.width = r.width + "px";
+    frame.style.height = r.height + "px";
+  }
+  function box(el, color) {
+    place(hover, el);
     hover.style.borderColor = color;
+  }
+
+  function describe(el) {
+    return {
+      selector: selectorOf(el),
+      tag: el.tagName.toLowerCase(),
+      text: textOf(el),
+      cls: (el.getAttribute("class") || "").slice(0, 200),
+      // A link drawn as a pill or a filled box reads as a button to John.
+      looksButton: (function () {
+        var cs = getComputedStyle(el);
+        return el.tagName === "A" && (cs.backgroundColor !== "rgba(0, 0, 0, 0)" || parseFloat(cs.borderTopWidth) > 0) && parseFloat(cs.paddingLeft) >= 8;
+      })(),
+      role: el.getAttribute("role") || "",
+      alt: (el.getAttribute("alt") || el.getAttribute("aria-label") || "").slice(0, 120),
+      html: el.outerHTML.slice(0, 20000),
+    };
+  }
+  function pick(el) {
+    if (!el || el === document.body || el === document.documentElement || ours(el)) return;
+    showVersion(null);
+    picked = el;
+    shown = el;
+    place(selBox, el);
+    var d = describe(el);
+    d.type = "select";
+    d.hasParent = !!(el.parentElement && el.parentElement !== document.body && el.parentElement !== document.documentElement);
+    post(d);
+  }
+  // Swap a version in for the picked element, or put the original back (null).
+  function showVersion(v) {
+    if (liveStyle) { liveStyle.remove(); liveStyle = null; }
+    if (!picked) return;
+    var next = picked;
+    if (v) {
+      var t = document.createElement("template");
+      t.innerHTML = String(v.html || "").trim();
+      next = t.content.firstElementChild || picked;
+      if (v.css) {
+        liveStyle = document.createElement("style");
+        liveStyle.setAttribute("data-gs-live", "");
+        liveStyle.textContent = String(v.css);
+        document.head.appendChild(liveStyle);
+      }
+    }
+    if (next !== shown && shown && shown.parentNode) shown.parentNode.replaceChild(next, shown);
+    shown = next;
+    requestAnimationFrame(function () {
+      if (!shown || !shown.isConnected) return;
+      if (v) shown.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      place(selBox, shown);
+      setTimeout(function () { if (shown && shown.isConnected) place(selBox, shown); }, 400);
+    });
+  }
+  function clearPick() {
+    showVersion(null);
+    picked = shown = null;
+    selBox.style.display = "none";
   }
 
   function render() {
@@ -92,7 +155,7 @@ const BRIDGE = String.raw`(function () {
     hover.style.display = "none";
     catcher.style.pointerEvents = mode === "draw" ? "auto" : "none";
     catcher.style.cursor = mode === "draw" ? "crosshair" : "";
-    document.documentElement.style.cursor = mode === "comment" ? "crosshair" : mode === "edit" ? "text" : "";
+    document.documentElement.style.cursor = mode === "comment" || mode === "live" ? "crosshair" : mode === "edit" ? "text" : "";
   }
 
   function textTarget(el) {
@@ -114,17 +177,20 @@ const BRIDGE = String.raw`(function () {
     svg.style.cssText = "position:absolute;left:0;top:0;overflow:visible;pointer-events:none";
     hover = document.createElement("div");
     hover.style.cssText = "position:absolute;display:none;border:2px solid #c8ff00;border-radius:3px;pointer-events:none";
+    selBox = document.createElement("div");
+    selBox.style.cssText = "position:absolute;display:none;outline:3px solid #c8ff00;outline-offset:2px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);border-radius:3px;pointer-events:none;transition:all .12s ease";
     catcher = document.createElement("div");
     catcher.style.cssText = "position:absolute;left:0;top:0;pointer-events:none;touch-action:none";
     root.appendChild(svg);
     root.appendChild(hover);
+    root.appendChild(selBox);
     root.appendChild(catcher);
     document.body.appendChild(root);
     render();
     if (preset) return;
 
     document.addEventListener("mousemove", function (e) {
-      if ((mode !== "comment" && mode !== "edit") || ours(e.target)) return;
+      if ((mode !== "comment" && mode !== "edit" && mode !== "live") || ours(e.target)) return;
       var el = mode === "edit" ? textTarget(e.target) : e.target;
       if (el) box(el, mode === "edit" ? "#2a9d8f" : "#c8ff00"); else hover.style.display = "none";
     }, true);
@@ -134,6 +200,11 @@ const BRIDGE = String.raw`(function () {
       if (mode === "edit" && editing && editing.contains(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
+      if (mode === "live") {
+        hover.style.display = "none";
+        pick(e.target);
+        return;
+      }
       if (mode === "comment") {
         var el = e.target;
         post({ type: "pick", x: Math.round(e.pageX), y: Math.round(e.pageY), selector: selectorOf(el), tag: el.tagName.toLowerCase(), text: textOf(el) });
@@ -189,8 +260,15 @@ const BRIDGE = String.raw`(function () {
       if (e.source !== window.parent || !e.data || e.data.source !== "gs-review-host") return;
       if (e.data.type === "mode") setMode(e.data.mode);
       if (e.data.type === "state") { state = e.data.state; render(); }
+      if (e.data.type === "live-parent" && shown && shown.parentElement) pick(shown.parentElement);
+      if (e.data.type === "live-version") showVersion(e.data.version || null);
+      if (e.data.type === "live-clear") clearPick();
     });
-    window.addEventListener("resize", function () { render(); post({ type: "ready", width: window.innerWidth }); });
+    window.addEventListener("resize", function () {
+      render();
+      if (shown && shown.isConnected) place(selBox, shown);
+      post({ type: "ready", width: window.innerWidth });
+    });
     post({ type: "ready", width: window.innerWidth });
   }
 

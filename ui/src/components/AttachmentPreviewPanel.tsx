@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@/lib/router";
-import { ExternalLink, Laptop, Maximize2, MessageSquarePlus, Smartphone, X } from "lucide-react";
+import { ExternalLink, Laptop, Maximize2, MessageSquarePlus, Smartphone, Sparkles, X } from "lucide-react";
 import { PrototypeReview } from "./PrototypeReview";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, type IssueAttachment } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
@@ -130,6 +130,7 @@ export function AttachmentPreviewPanel({
   preview: AttachmentPreviewState | null;
   onClose: () => void;
 }) {
+  const navigate = useNavigate();
   // Keep the last file on screen while the sheet slides out.
   const lastPreviewRef = useRef(preview);
   if (preview) lastPreviewRef.current = preview;
@@ -200,6 +201,12 @@ export function AttachmentPreviewPanel({
                 >
                   <MessageSquarePlus aria-hidden="true" className="size-3.5" />
                   Review
+                </Button>
+              ) : null}
+              {shown.kind === "html" && shown.issueId ? (
+                <Button type="button" size="sm" onClick={() => navigate(`/issues/${shown.issueId}/design/${shown.attachmentId}`)} title="Tap anything and ask the agent to change it, live">
+                  <Sparkles aria-hidden="true" className="size-3.5" />
+                  Edit live
                 </Button>
               ) : null}
               <Button asChild variant="ghost" size="icon-sm">

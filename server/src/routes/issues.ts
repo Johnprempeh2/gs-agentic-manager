@@ -1,4 +1,17 @@
 import { injectReviewBridge, renderReviewImage } from "../services/prototype-review.js";
+import {
+  acceptLiveDesign,
+  discardLiveDesign,
+  endLiveDesign,
+  getLiveDesign,
+  LiveDesignConflict,
+  liveDesignWakeMessage,
+  pollLiveDesign,
+  replyLiveDesign,
+  requestLiveDesign,
+  startLiveDesign,
+  viewLiveDesign,
+} from "../services/live-design.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
@@ -16,7 +29,7 @@ import {
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignAcceptSchema, liveDesignReplySchema, liveDesignRequestSchema, type LiveDesignReply, type LiveDesignRequest, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -20996,7 +21009,7 @@ export function issueRoutes(
   );
 
   /** An HTML attachment with GSAM's review tools inside: pins, drawing and text edits (John, 2 Nov). */
-  async function loadReviewableHtml(req: Request, res: Response) {
+  async function loadReviewableAttachment(req: Request, res: Response) {
     const attachment = await getAccessibleResource(
       req,
       res,
@@ -21019,7 +21032,13 @@ export function issueRoutes(
       res.status(422).json({ error: "Only HTML pages up to 8 MB can be reviewed" });
       return null;
     }
-    const object = await storage.getObject(attachment.companyId, attachment.objectKey);
+    return { attachment, issue };
+  }
+
+  async function loadReviewableHtml(req: Request, res: Response) {
+    const found = await loadReviewableAttachment(req, res);
+    if (!found) return null;
+    const object = await storage.getObject(found.attachment.companyId, found.attachment.objectKey);
     return (await readStream(object.stream)).toString("utf8");
   }
 
@@ -21046,6 +21065,126 @@ export function issueRoutes(
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "no-store");
     res.status(200).end(image);
+  });
+
+  /** Live design (John, 2 Nov): John asks for a change, the agent answers with versions shown in place. */
+  function liveSessionForBoard(req: Request) {
+    assertBoard(req);
+    const session = getLiveDesign(req.params.sessionId as string);
+    if (!session || !hasCompanyAccess(req, session.companyId)) throw notFound("Live session not found");
+    return session;
+  }
+
+  function liveSessionForAgent(req: Request) {
+    const session = getLiveDesign(req.params.sessionId as string);
+    if (!session) throw notFound("Live session not found");
+    if (req.actor.type !== "agent" || req.actor.agentId !== session.agentId) {
+      throw forbidden("Only the agent working this live session can use it");
+    }
+    return session;
+  }
+
+  function sendLiveConflict(res: Response, err: unknown) {
+    if (err instanceof LiveDesignConflict) {
+      res.status(409).json({ error: err.message });
+      return true;
+    }
+    return false;
+  }
+
+  router.post("/attachments/:attachmentId/live", async (req, res) => {
+    assertBoard(req);
+    const found = await loadReviewableAttachment(req, res);
+    if (!found) return;
+    const { attachment, issue } = found;
+    if (!issue.assigneeAgentId) {
+      res.status(422).json({ error: "Assign this task to an agent first, then use Live." });
+      return;
+    }
+    const { session, needsWake } = startLiveDesign({
+      companyId: issue.companyId,
+      issueId: issue.id,
+      attachmentId: attachment.id,
+      agentId: issue.assigneeAgentId,
+    });
+    if (needsWake) {
+      const actor = getActorInfo(req);
+      await heartbeat.wakeup(issue.assigneeAgentId, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "live_design",
+        idempotencyKey: `live_design:${session.id}:${Math.floor(Date.now() / 60_000)}`,
+        requestedByActorType: "user",
+        requestedByActorId: actor.actorId,
+        payload: { issueId: issue.id, liveDesignSessionId: session.id },
+        contextSnapshot: {
+          issueId: issue.id,
+          taskId: issue.id,
+          wakeReason: "live_design",
+          source: "issue.live_design",
+          skipIssueComment: true,
+          liveDesignSessionId: session.id,
+          paperclipAgentMessage: {
+            source: "live_design",
+            sessionId: session.id,
+            text: liveDesignWakeMessage(session.id, attachment.originalFilename ?? "the page"),
+          },
+        },
+      });
+    }
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: "user",
+      actorId: getActorInfo(req).actorId,
+      action: "issue.live_design_started",
+      entityType: "issue",
+      entityId: issue.id,
+      issueId: issue.id,
+      details: { attachmentId: attachment.id, sessionId: session.id, agentId: issue.assigneeAgentId, woke: needsWake },
+    });
+    res.json(viewLiveDesign(session));
+  });
+
+  router.get("/live-design/:sessionId", (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(viewLiveDesign(liveSessionForBoard(req)));
+  });
+
+  router.post("/live-design/:sessionId/request", validate(liveDesignRequestSchema), (req, res) => {
+    const session = liveSessionForBoard(req);
+    try {
+      res.json(viewLiveDesign(requestLiveDesign(session, req.body as LiveDesignRequest)));
+    } catch (err) {
+      if (!sendLiveConflict(res, err)) throw err;
+    }
+  });
+
+  router.post("/live-design/:sessionId/accept", validate(liveDesignAcceptSchema), (req, res) => {
+    const session = liveSessionForBoard(req);
+    try {
+      res.json(viewLiveDesign(acceptLiveDesign(session, req.body.requestId, req.body.variant)));
+    } catch (err) {
+      if (!sendLiveConflict(res, err)) throw err;
+    }
+  });
+
+  router.post("/live-design/:sessionId/discard", (req, res) => {
+    res.json(viewLiveDesign(discardLiveDesign(liveSessionForBoard(req))));
+  });
+
+  router.post("/live-design/:sessionId/end", (req, res) => {
+    res.json(viewLiveDesign(endLiveDesign(liveSessionForBoard(req))));
+  });
+
+  router.get("/live-design/:sessionId/poll", async (req, res) => {
+    const session = liveSessionForAgent(req);
+    const wait = Number(req.query.waitSeconds ?? 25);
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await pollLiveDesign(session, (Number.isFinite(wait) ? wait : 25) * 1000));
+  });
+
+  router.post("/live-design/:sessionId/reply", validate(liveDesignReplySchema), (req, res) => {
+    res.json(replyLiveDesign(liveSessionForAgent(req), req.body as LiveDesignReply));
   });
 
   router.get("/attachments/:attachmentId/content", async (req, res, next) => {
