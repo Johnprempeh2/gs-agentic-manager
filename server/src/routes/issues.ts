@@ -30,7 +30,7 @@ import {
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignSteerSchema, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignSteerSchema, type LiveDesignHelperRequest, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -21051,9 +21051,11 @@ export function issueRoutes(
     res.setHeader("X-Content-Type-Options", "nosniff");
     // The same opaque-origin sandbox as the plain attachment; the review
     // script only talks to GSAM by postMessage.
-    res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP);
-    // ?live=1: Impeccable's live tools instead of the review tools (live design editor).
-    res.status(200).send(req.query.live === "1" ? injectImpeccableLive(html) : injectReviewBridge(html));
+    // ?live=1: Impeccable's live tools instead of the review tools (live design editor). They ask
+    // "Apply 2 edits?" with confirm(), so the live page may open modals; nothing else changes.
+    const live = req.query.live === "1";
+    res.setHeader("Content-Security-Policy", live ? HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals ") : HTML_ATTACHMENT_CSP);
+    res.status(200).send(live ? injectImpeccableLive(html) : injectReviewBridge(html));
   });
 
   router.post("/attachments/:attachmentId/annotate/render", validate(prototypeReviewMarkupSchema), async (req, res) => {
@@ -21153,9 +21155,51 @@ export function issueRoutes(
   });
 
   // The page's Impeccable scripts call their helper; the editor relays each call here.
-  router.post("/live-design/:sessionId/helper", validate(liveDesignHelperRequestSchema), (req, res) => {
-    const reply = handleImpeccableRequest(liveSessionForBoard(req), req.body);
-    res.json(reply);
+  router.post("/live-design/:sessionId/helper", validate(liveDesignHelperRequestSchema), async (req, res) => {
+    const session = liveSessionForBoard(req);
+    const body = req.body as LiveDesignHelperRequest;
+    let screenshotAttachmentId: string | undefined;
+    // John drew or commented before Go: keep Impeccable's screenshot as an image on the task for the agent.
+    if (body.path.startsWith("/annotation") && body.bodyBase64) {
+      const png = Buffer.from(body.bodyBase64, "base64");
+      const isPng = png.length > 8 && png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      if (!isPng || png.length > REVIEWABLE_HTML_LIMIT_BYTES) {
+        res.json({ status: 422, body: JSON.stringify({ error: "The screenshot must be a PNG up to 8 MB" }) });
+        return;
+      }
+      const actor = getActorInfo(req);
+      const stored = await storage.putFile({
+        companyId: session.companyId,
+        namespace: `issues/${session.issueId}`,
+        originalFilename: "live-design-markup.png",
+        contentType: "image/png",
+        body: png,
+      });
+      const attachment = await svc.createAttachment({
+        issueId: session.issueId,
+        issueCommentId: null,
+        provider: stored.provider,
+        objectKey: stored.objectKey,
+        contentType: stored.contentType,
+        byteSize: stored.byteSize,
+        sha256: stored.sha256,
+        originalFilename: stored.originalFilename,
+        createdByAgentId: null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+        createdByRunId: null,
+      });
+      await logActivity(db, {
+        companyId: session.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        action: "issue.attachment_added",
+        entityType: "issue",
+        entityId: session.issueId,
+        details: { attachmentId: attachment.id, originalFilename: attachment.originalFilename, contentType: "image/png", byteSize: attachment.byteSize, source: "live_design_markup" },
+      });
+      screenshotAttachmentId = attachment.id;
+    }
+    res.json(handleImpeccableRequest(session, { ...body, screenshotAttachmentId }));
   });
 
   // The helper's event stream for the page, as a long-poll the editor forwards into the frame.

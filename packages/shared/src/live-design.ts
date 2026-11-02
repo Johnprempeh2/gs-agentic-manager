@@ -18,6 +18,10 @@ export const liveDesignRequestSchema = z.object({
   /** Impeccable's action for this request ("impeccable" is freeform; others name a design command such as "bolder"). */
   action: z.string().max(40).default("impeccable"),
   count: z.number().int().min(1).max(8).default(3),
+  /** Comments John pinned on the page before pressing Go (Impeccable's annotations). */
+  notes: z.array(z.string().max(1000)).max(30).default([]),
+  /** The marked-up screenshot, saved as an image attachment on the task, when John drew or commented. */
+  screenshotAttachmentId: z.string().uuid().optional(),
 });
 export type LiveDesignRequest = z.infer<typeof liveDesignRequestSchema>;
 
@@ -41,6 +45,8 @@ export const liveDesignReplySchema = z.object({
   error: z.string().max(500).optional(),
   /** A short note for John's chat, such as "Trying a halo, a slow pulse and a bloom". Can be sent on its own. */
   message: z.string().max(1000).optional(),
+  /** The project's DESIGN.md, for Impeccable's design panel. Sent once per session. */
+  designMd: z.string().max(100_000).optional(),
 });
 export type LiveDesignReply = z.infer<typeof liveDesignReplySchema>;
 
@@ -49,6 +55,8 @@ export const liveDesignHelperRequestSchema = z.object({
   method: z.enum(["GET", "POST"]),
   path: z.string().startsWith("/").max(2000),
   body: z.string().max(200_000).nullable(),
+  /** A binary body (the annotation screenshot), base64. */
+  bodyBase64: z.string().max(11_000_000).optional(),
   extra: z.object({ selector: z.string().max(500).optional() }).default({}),
 });
 export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSchema>;

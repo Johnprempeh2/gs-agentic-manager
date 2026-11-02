@@ -67,11 +67,47 @@ describe("live design through Impeccable's page tools", () => {
     expect(handleImpeccableRequest(s, post({ type: "generate", id: "x", freeformPrompt: "again", element: {} })).status).toBe(409);
   });
 
-  it("answers the helper calls the page makes and refuses edits GSAM does not support", () => {
+  it("stages pencil edits, undoes one by ref, and has the agent apply the rest", async () => {
+    const { session: s } = startLiveDesign(ids);
+    const stash = (ref: string, from: string, to: string) =>
+      handleImpeccableRequest(s, {
+        method: "POST",
+        path: "/manual-edit-stash?token=gsam",
+        body: JSON.stringify({ id: ref, element: { tagName: "h1" }, ops: [{ ref, tag: "h1", originalText: from, newText: to }] }),
+      });
+    expect(JSON.parse(stash("r1", "Digital", "Lasting").body)).toMatchObject({ pendingCount: 1 });
+    expect(JSON.parse(stash("r2", "Book a call", "Talk to us").body)).toMatchObject({ pendingCount: 2 });
+    const undo = handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-discard?token=gsam&ref=r2", body: null });
+    expect(JSON.parse(undo.body)).toMatchObject({ remainingCount: 1, entries: [{ ops: [{ ref: "r2" }] }] });
+    expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/manual-edit-stash?pageUrl=x", body: null }).body)).toMatchObject({ count: 1 });
+
+    const apply = handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-commit?async=1", body: null });
+    expect(apply.status).toBe(202);
+    const event = (await pollLiveDesign(s, 1000)) as { type: string; requestId: string; edits: Array<{ ops: unknown[] }> };
+    expect(event).toMatchObject({ type: "edits", edits: [{ ops: [{ ref: "r1", newText: "Lasting" }] }] });
+    expect(handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-stash", body: JSON.stringify({ ops: [{ ref: "r3" }] }) }).status).toBe(409);
+
+    const cursor = s.frames.at(-1)?.seq ?? 0;
+    replyLiveDesign(s, { requestId: event.requestId, appliedAttachmentId: newAttachment, message: "Changed the headline." });
+    expect((await pollLiveDesignFrames(s, cursor, 0)).at(-1)?.data).toMatchObject({ type: "manual_edit_commit_done", appliedCount: 1 });
+    expect(viewLiveDesign(s)).toMatchObject({ status: "idle", attachmentId: newAttachment });
+    expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/manual-edit-stash", body: null }).body)).toMatchObject({ count: 0 });
+  });
+
+  it("answers the helper calls the page makes and passes annotations to the agent", async () => {
     const { session: s } = startLiveDesign(ids);
     expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/status?token=gsam", body: null }).body)).toMatchObject({ agentPolling: false });
-    expect(handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-commit", body: "{}" }).status).toBe(501);
     expect(handleImpeccableRequest(s, { method: "GET", path: "/nope", body: null }).status).toBe(404);
+    expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/design-system.json", body: null }).body)).toEqual({ present: false });
+    expect(JSON.parse(handleImpeccableRequest(s, { method: "POST", path: "/annotation?eventId=e1", body: null, screenshotAttachmentId: newAttachment }).body)).toMatchObject({ path: newAttachment });
+    handleImpeccableRequest(s, post({ type: "generate", id: "e1", freeformPrompt: "Fix this", screenshotPath: newAttachment, comments: [{ x: 1, y: 2, text: "too loud" }], element: { tagName: "h1" } }));
+    expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "generate", request: { notes: ["too loud"], screenshotAttachmentId: newAttachment } });
+    replyLiveDesign(s, { requestId: "e1", message: "On it.", designMd: "---\ncolors:\n  lime: \"#c8ff00\"\n---\n# Design\nLime on void." });
+    expect(JSON.parse(handleImpeccableRequest(s, { method: "GET", path: "/design-system.json", body: null }).body)).toMatchObject({
+      present: true,
+      parsed: { frontmatter: { colors: { lime: "#c8ff00" } } },
+    });
+    expect(handleImpeccableRequest(s, { method: "GET", path: "/design-system/raw", body: null }).body).toContain("Lime on void");
   });
 
   it("builds Impeccable's variant markup with tune knobs and safe CSS", () => {

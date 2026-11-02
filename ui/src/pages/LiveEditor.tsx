@@ -9,8 +9,10 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
 import { LiveDesignChat, useLiveDesign } from "../components/LiveDesignChat";
+import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
 
-const SANDBOX = HTML_ATTACHMENT_SANDBOX_TOKENS.join(" ");
+// Impeccable asks "Apply 2 edits?" with confirm(), so the live page may open modals.
+const SANDBOX = [...HTML_ATTACHMENT_SANDBOX_TOKENS, "allow-modals"].join(" ");
 const WIDTHS = { fit: null, laptop: 1440, phone: 390 } as const;
 
 /**
@@ -44,6 +46,8 @@ export function LiveEditor() {
 
   // Relay the page's helper calls and its event stream. Everything from the frame is untrusted.
   const streamRef = useRef<AbortController | null>(null);
+  // Voice for Impeccable's mic buttons: the sandbox has no microphone, so speech runs here.
+  const voiceRef = useRef<{ vid: unknown; rec: BrowserSpeechRecognition } | null>(null);
   useEffect(() => {
     if (!sessionId) return;
     const openStream = async () => {
@@ -69,6 +73,42 @@ export function LiveEditor() {
       if (!m || m.source !== "gs-impeccable") return;
       if (m.kind === "stream-open") {
         void openStream();
+      } else if (m.kind === "voice-start") {
+        const vid = m.vid;
+        const Recognition = getSpeechRecognitionConstructor();
+        if (!Recognition) {
+          toFrame({ kind: "voice", vid, event: "error", error: "not-supported" });
+          toFrame({ kind: "voice", vid, event: "end" });
+          return;
+        }
+        voiceRef.current?.rec.abort();
+        const rec = new Recognition();
+        rec.lang = typeof m.lang === "string" && m.lang ? m.lang.slice(0, 20) : navigator.language;
+        rec.interimResults = m.interim === true;
+        rec.continuous = false;
+        rec.onresult = (event) => {
+          const transcripts = Array.from(event.results, (r) => r[0]?.transcript ?? "");
+          const final = Array.from(event.results).every((r) => r.isFinal);
+          toFrame({ kind: "voice", vid, event: "result", transcripts, final });
+        };
+        rec.onerror = (event) => toFrame({ kind: "voice", vid, event: "error", error: event.error });
+        rec.onend = () => {
+          if (voiceRef.current?.rec === rec) voiceRef.current = null;
+          toFrame({ kind: "voice", vid, event: "end" });
+        };
+        voiceRef.current = { vid, rec };
+        try {
+          rec.start();
+          toFrame({ kind: "voice", vid, event: "start" });
+        } catch {
+          toFrame({ kind: "voice", vid, event: "error", error: "start-failed" });
+        }
+      } else if (m.kind === "voice-stop") {
+        const current = voiceRef.current;
+        if (current && current.vid === m.vid) {
+          if (m.abort === true) current.rec.abort();
+          else current.rec.stop();
+        }
       } else if (m.kind === "request" && typeof m.path === "string") {
         const rid = m.rid;
         const extra = m.extra && typeof m.extra === "object" ? (m.extra as { selector?: unknown }) : {};
@@ -77,6 +117,7 @@ export function LiveEditor() {
             method: m.method === "POST" ? "POST" : "GET",
             path: m.path.slice(0, 2000),
             body: typeof m.body === "string" ? m.body : null,
+            ...(typeof m.bodyBase64 === "string" ? { bodyBase64: m.bodyBase64 } : {}),
             extra: typeof extra.selector === "string" ? { selector: extra.selector.slice(0, 500) } : {},
           })
           .then((r) => toFrame({ kind: "response", rid, status: r.status, body: r.body, contentType: r.contentType }))
@@ -89,6 +130,7 @@ export function LiveEditor() {
     return () => {
       window.removeEventListener("message", onMessage);
       streamRef.current?.abort();
+      voiceRef.current?.rec.abort();
     };
   }, [sessionId, toFrame]);
 

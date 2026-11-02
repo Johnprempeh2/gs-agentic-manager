@@ -5,6 +5,7 @@ import { liveDesignApi } from "../api/liveDesign";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { DictationButton, DictationInterim, useComposerDictation } from "./DictationButton";
 
 /** The live session for one page: started on open, polled while open, ended on close. */
 export function useLiveDesign(attachmentId: string, active: boolean) {
@@ -78,6 +79,7 @@ function useElapsed(since: string | undefined, running: boolean) {
 export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign> }) {
   const { view, error, run } = live;
   const [note, setNote] = useState("");
+  const dictation = useComposerDictation(note, setNote);
   const status = view?.status;
   const elapsed = useElapsed(view?.request?.startedAt, status === "generating");
   const listRef = useRef<HTMLOListElement>(null);
@@ -89,6 +91,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
 
   const send = () => {
     if (!note.trim() || !view || status === "ended") return;
+    dictation.cancel();
     void run((id) => liveDesignApi.steer(id, note.trim())).then((ok) => ok && setNote(""));
   };
 
@@ -134,12 +137,13 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
       </ol>
 
       <form
-        className="flex items-end gap-2 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
+        className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
       >
+        <div className="flex items-end gap-2">
         <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -155,9 +159,12 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           disabled={!view || status === "ended"}
           aria-label="Message the agent"
         />
+        <DictationButton dictation={dictation} disabled={!view || status === "ended"} testId="live-design-dictation" />
         <Button type="submit" size="icon" aria-label="Send" disabled={!note.trim() || !view || status === "ended"}>
           <ArrowUp aria-hidden="true" className="size-4" />
         </Button>
+        </div>
+        <DictationInterim dictation={dictation} />
       </form>
     </div>
   );

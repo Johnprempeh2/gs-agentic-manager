@@ -35,8 +35,16 @@ type AgentEvent =
       attachmentId: string;
     }
   | { type: "steer"; requestId: string | null; message: string }
+  | { type: "edits"; requestId: string; edits: StagedEdit[]; attachmentId: string }
   | { type: "discard"; requestId: string }
   | { type: "end" };
+
+/** One batch of John's direct text edits or element removals, staged by Impeccable's pencil until he applies them. */
+export interface StagedEdit {
+  id: string;
+  element: Record<string, unknown> | null;
+  ops: Array<Record<string, unknown>>;
+}
 
 /** What the page's Impeccable scripts receive, in order, as their helper's event stream. */
 type Frame = { seq: number; data: Record<string, unknown> };
@@ -57,6 +65,11 @@ interface Session {
   waiter: ((event: AgentEvent | null) => void) | null;
   frames: Frame[];
   frameWaiters: Array<() => void>;
+  staged: StagedEdit[];
+  /** The project's DESIGN.md as the agent last sent it, for Impeccable's design panel. */
+  designMd: string | null;
+  /** Set while the agent writes John's applied edits into the page. */
+  editsRequestId: string | null;
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -161,6 +174,9 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
       waiter: null,
       frames: [],
       frameWaiters: [],
+      staged: [],
+      designMd: null,
+      editsRequestId: null,
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
@@ -214,13 +230,15 @@ export function discardLiveDesign(s: Session) {
 }
 
 /** A note from John to the agent mid-request ("make the second one calmer"). */
-export function steerLiveDesign(s: Session, message: string) {
+export function steerLiveDesign(s: Session, message: string, steerId: string | null = null) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
   const text = message.trim().slice(0, 2000);
   if (!text) return s;
   say(s, "john", text);
   s.touchedAt = Date.now();
   push(s, { type: "steer", requestId: s.request?.id ?? null, message: text });
+  // Impeccable keeps its steer box locked until the helper says the note was taken.
+  if (steerId) frame(s, { type: "steer_done", id: steerId, message: "Sent to the agent." });
   return s;
 }
 
@@ -259,6 +277,8 @@ export async function pollLiveDesign(s: Session, waitMs: number) {
 
 export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   s.agentSeenAt = Date.now();
+  if (reply.designMd) s.designMd = reply.designMd;
+  if (s.editsRequestId && reply.requestId === s.editsRequestId) return replyEdits(s, reply);
   if (!s.request || s.request.id !== reply.requestId) return { ok: false, reason: "stale_request" as const };
   if (reply.message) say(s, "agent", reply.message);
   if (reply.error) {
@@ -288,6 +308,86 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   }
   if (reply.message) return { ok: true };
   return { ok: false, reason: "unexpected_reply" as const };
+}
+
+const opCount = (s: Session) => s.staged.reduce((n, e) => n + e.ops.length, 0);
+
+/** Impeccable's pencil saved an edit (or a removal); it waits here until John applies. */
+export function stageLiveDesignEdit(s: Session, edit: StagedEdit) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  if (s.editsRequestId) throw new LiveDesignConflict("The agent is still applying your last edits.");
+  s.staged.push({ ...edit, ops: edit.ops.slice(0, 50) });
+  s.touchedAt = Date.now();
+  for (const op of edit.ops) {
+    if (op.removeElement === true) say(s, "john", `Removed ${String(op.tag ?? "an element")}.`);
+    else if (typeof op.newText === "string") say(s, "john", `Changed “${String(op.originalText ?? "").slice(0, 80)}” to “${op.newText.slice(0, 80)}”.`);
+  }
+  frame(s, { type: "manual_edit_stashed", pendingCount: opCount(s) });
+  return { ok: true, pendingCount: opCount(s) };
+}
+
+export function liveDesignEditCount(s: Session) {
+  return opCount(s);
+}
+
+/** Undo one staged op by its ref, or every staged edit. Returns what was dropped, for Impeccable to restore. */
+export function discardLiveDesignEdits(s: Session, ref: string | null) {
+  if (s.editsRequestId) throw new LiveDesignConflict("The agent is applying these edits now.");
+  const dropped: StagedEdit[] = [];
+  if (ref) {
+    for (const e of s.staged) {
+      const ops = e.ops.filter((op) => op.ref === ref);
+      if (ops.length) dropped.push({ ...e, ops });
+      e.ops = e.ops.filter((op) => op.ref !== ref);
+    }
+    s.staged = s.staged.filter((e) => e.ops.length);
+  } else {
+    dropped.push(...s.staged);
+    s.staged = [];
+  }
+  if (dropped.length) say(s, "gsam", "Edits undone.");
+  frame(s, { type: "manual_edit_discarded", pendingCount: opCount(s) });
+  return { entries: dropped, remainingCount: opCount(s) };
+}
+
+/** "Apply edits": the agent writes the staged edits into its copy of the page and saves it. */
+export function applyLiveDesignEdits(s: Session) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  if (s.editsRequestId) throw new LiveDesignConflict("The agent is already applying your edits.");
+  if (s.status === "generating" || s.status === "applying") throw new LiveDesignConflict("Finish the open request first, then apply your edits.");
+  const count = opCount(s);
+  if (!count) return { status: "nothing", remainingCount: 0 };
+  const id = `edits-${randomUUID().slice(0, 8)}`;
+  s.editsRequestId = id;
+  s.status = "applying";
+  s.touchedAt = Date.now();
+  say(s, "gsam", `Applying ${count} edit${count === 1 ? "" : "s"}. The agent is writing ${count === 1 ? "it" : "them"} into the page.`);
+  frame(s, { type: "manual_edit_commit_started", pendingCount: count });
+  push(s, { type: "edits", requestId: id, edits: s.staged, attachmentId: s.attachmentId });
+  return { status: "started", pendingCount: count };
+}
+
+function replyEdits(s: Session, reply: LiveDesignReply) {
+  if (reply.message) say(s, "agent", reply.message);
+  const count = opCount(s);
+  if (reply.error) {
+    s.editsRequestId = null;
+    s.status = "idle";
+    say(s, "gsam", `The agent could not apply your edits: ${reply.error}. They are still staged.`);
+    frame(s, { type: "manual_edit_commit_failed", error: reply.error });
+    return { ok: true };
+  }
+  if (reply.appliedAttachmentId) {
+    s.editsRequestId = null;
+    s.staged = [];
+    s.status = "idle";
+    s.appliedAttachmentId = reply.appliedAttachmentId;
+    s.attachmentId = reply.appliedAttachmentId;
+    say(s, "gsam", "Edits saved into the page as a new version of the file.");
+    frame(s, { type: "manual_edit_commit_done", appliedCount: count, remainingCount: 0 });
+    return { ok: true };
+  }
+  return reply.message ? { ok: true } : { ok: false, reason: "unexpected_reply" as const };
 }
 
 /** The page's helper event stream from `after`, waiting up to `waitMs` for something new. */
@@ -350,7 +450,11 @@ function withInstructions(s: Session, event: AgentEvent) {
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
           "Optional tune knobs per version: params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
           `The element's current HTML is in request.html; for the rest of the page, GET /api/attachments/${event.attachmentId}/content with your API key.`,
-          `John reads a chat beside the page. Send one short note first so he knows what you are trying: ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "message": "<one plain sentence>" }.`,
+          ...(event.request.notes.length ? [`John pinned these comments on the page: ${event.request.notes.map((n) => `"${n}"`).join("; ")}.`] : []),
+          ...(event.request.screenshotAttachmentId
+            ? [`He also marked the page up; open the screenshot at GET /api/attachments/${event.request.screenshotAttachmentId}/content to see where.`]
+            : []),
+          `John reads a chat beside the page. Send one short note first so he knows what you are trying: ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "message": "<one plain sentence>"${s.designMd ? "" : ', "designMd": "<the full text of DESIGN.md>"'} }.${s.designMd ? "" : " Include designMd this once so his design panel shows the project's design system."}`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "variants": [{ "name": "...", "html": "...", "css": "...", "params": [] }] }. Speed matters: John is watching. Then poll again.`,
         ].join("\n"),
       };
@@ -373,6 +477,17 @@ function withInstructions(s: Session, event: AgentEvent) {
         _instructions: event.requestId
           ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
           : `John wrote: "${event.message}". Answer with a short note; there is no open request, so he will pick an element next.`,
+      };
+    case "edits":
+      return {
+        ...base,
+        _instructions: [
+          `John edited the page directly with Impeccable's pencil and pressed Apply. edits[].ops holds each change: originalText to newText for text (plain text only), or removeElement: true to delete an element. Each op carries a locator (tag, elementId, classes, leaf context, nearbyEditableTexts) to find it.`,
+          "Apply exactly these changes and nothing else: no restyling, no rewording beyond newText. Follow the impeccable skill's live.md guidance on applying manual edits.",
+          `Edit your workspace copy of this page if you have one; otherwise start from GET /api/attachments/${event.attachmentId}/content. Upload the result as a new attachment on this task with the same file name.`,
+          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "appliedAttachmentId": "<new attachment id>", "message": "<what you changed>" }, and poll again.`,
+          `If an edit cannot be applied safely, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<which one and why>" }; the edits stay staged for John.`,
+        ].join("\n"),
       };
     case "discard":
       return { ...base, _instructions: "John discarded those versions. Change nothing. Poll again." };

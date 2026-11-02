@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import { LIVE_DESIGN_VARIANT_COUNT } from "@greatstone/shared";
 import {
   acceptLiveDesign,
+  applyLiveDesignEdits,
   discardLiveDesign,
+  discardLiveDesignEdits,
+  liveDesignEditCount,
+  stageLiveDesignEdit,
   isLiveDesignAgentConnected,
   LiveDesignConflict,
   requestLiveDesign,
@@ -110,16 +115,42 @@ const ADAPTER = String.raw`(function () {
       } catch (e) { /* the helper stand-in rejects bad bodies */ }
     }
     var id = ++rid;
-    return new Promise(function (resolve) {
-      pending[id] = resolve;
-      post({
-        kind: "request", rid: id, method: method,
-        path: url.slice(BASE.length - 1),
-        body: typeof body === "string" ? body.slice(0, 200000) : null,
-        extra: extra,
+    var path = url.slice(BASE.length - 1);
+    // Binary bodies (the annotation screenshot) travel as base64.
+    var encoded = body instanceof Blob
+      ? new Promise(function (done) {
+          var r = new FileReader();
+          r.onload = function () { done(String(r.result).replace(/^data:[^,]*,/, "")); };
+          r.onerror = function () { done(null); };
+          r.readAsDataURL(body);
+        })
+      : Promise.resolve(null);
+    return encoded.then(function (b64) {
+      return new Promise(function (resolve) {
+        pending[id] = resolve;
+        var msg = { kind: "request", rid: id, method: method, path: path, body: typeof body === "string" ? body.slice(0, 200000) : null, extra: extra };
+        if (b64) msg.bodyBase64 = b64;
+        post(msg);
       });
     });
   };
+
+  // Voice: the sandbox has no microphone, so speech runs in the GSAM editor and streams back here.
+  var voices = {}, vid = 0;
+  function RelayedRecognition() {
+    var self = this;
+    self.id = ++vid;
+    self.lang = "en-GB";
+    self.continuous = false;
+    self.interimResults = false;
+    self.maxAlternatives = 1;
+    self.onstart = self.onresult = self.onerror = self.onend = null;
+    voices[self.id] = self;
+    self.start = function () { post({ kind: "voice-start", vid: self.id, lang: String(self.lang || ""), interim: !!self.interimResults }); };
+    self.stop = function () { post({ kind: "voice-stop", vid: self.id }); };
+    self.abort = function () { post({ kind: "voice-stop", vid: self.id, abort: true }); };
+  }
+  window.SpeechRecognition = window.webkitSpeechRecognition = RelayedRecognition;
 
   function FakeEventSource() {
     var self = this;
@@ -165,6 +196,15 @@ const ADAPTER = String.raw`(function () {
         if (s.readyState === 0) { s.readyState = 1; if (s.onopen) s.onopen({}); }
         if (s.onmessage) s.onmessage({ data: JSON.stringify(data) });
       });
+    } else if (m.kind === "voice" && voices[m.vid]) {
+      var rec = voices[m.vid];
+      if (m.event === "start" && rec.onstart) rec.onstart({});
+      if (m.event === "result" && rec.onresult) {
+        var results = (m.transcripts || []).map(function (t) { var alt = [{ transcript: String(t), confidence: 1 }]; alt.isFinal = !!m.final; return alt; });
+        rec.onresult({ results: results, resultIndex: 0 });
+      }
+      if (m.event === "error" && rec.onerror) rec.onerror({ error: String(m.error || "unknown") });
+      if (m.event === "end") { if (rec.onend) rec.onend({}); delete voices[m.vid]; }
     } else if (m.kind === "stream-error") {
       streams.forEach(function (s) { if (s.onerror) s.onerror({}); });
     }
@@ -183,7 +223,8 @@ export function impeccableLiveScript() {
     ...Object.entries(globals).map(([k, v]) => `window.${k} = ${JSON.stringify(v)};`),
     `window.__IMPECCABLE_PROJECT_IGNORES__ = ${JSON.stringify({ ignoreRules: [], ignoreValues: [], ignoreFiles: [], roots: [""], pageFiles: [] })};`,
   ].join("\n");
-  cached = `${ADAPTER.replace("__PORT__", String(FAKE_PORT))}\n${head}\n${readVendor("live-browser.js")}`.replace(/<\/script/gi, "<\\/script");
+  // modern-screenshot (MIT) inline, so Impeccable never tries to load it over the network.
+  cached = `${ADAPTER.replace("__PORT__", String(FAKE_PORT))}\n${readVendor("modern-screenshot.umd.js")}\n${head}\n${readVendor("live-browser.js")}`.replace(/<\/script/gi, "<\\/script");
   return cached;
 }
 
@@ -199,6 +240,8 @@ export interface HelperRequest {
   path: string;
   body: string | null;
   extra?: { selector?: string };
+  /** For /annotation: the saved screenshot's attachment id, set by the route. */
+  screenshotAttachmentId?: string;
 }
 
 export interface HelperResponse {
@@ -209,6 +252,29 @@ export interface HelperResponse {
 
 const json = (status: number, value: unknown): HelperResponse => ({ status, body: JSON.stringify(value) });
 const str = (value: unknown, max: number) => (typeof value === "string" ? value.slice(0, max) : "");
+
+function parseBody(body: string | null): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(body ?? "") as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The YAML frontmatter of a DESIGN.md as Impeccable's panel reads it, or null when there is none or it does not parse. */
+export function designFrontmatter(markdown: string): { frontmatter: Record<string, unknown> } | null {
+  const m = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return null;
+  try {
+    const data = parseYaml(m[1] ?? "", { maxAliasCount: 50 }) as unknown;
+    return data && typeof data === "object" && !Array.isArray(data) ? { frontmatter: data as Record<string, unknown> } : null;
+  } catch {
+    return null;
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** One call from the page's Impeccable scripts, answered the way Impeccable's helper would. */
 export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest): HelperResponse {
@@ -230,12 +296,44 @@ export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest
       throw err;
     }
   }
-  if (route === "/manual-edit-stash" && req.method === "GET") return json(200, { count: 0, pendingCount: 0 });
-  if (route.startsWith("/manual-edit")) {
-    return json(501, { error: "Direct text edits are not in GSAM yet. Ask the agent in the chat instead." });
+  try {
+    if (route === "/manual-edit-stash" && req.method === "GET") {
+      const count = liveDesignEditCount(s);
+      return json(200, { count, pendingCount: count });
+    }
+    if (route === "/manual-edit-stash") {
+      const body = parseBody(req.body);
+      const ops = Array.isArray(body?.ops) ? (body.ops as Array<Record<string, unknown>>) : [];
+      if (!ops.length) return json(400, { error: "no edits" });
+      const element = body?.element && typeof body.element === "object" ? (body.element as Record<string, unknown>) : null;
+      return json(200, stageLiveDesignEdit(s, { id: str(body?.id, 64) || "edit", element, ops }));
+    }
+    if (route === "/manual-edit-discard") {
+      const ref = new URLSearchParams(req.path.split("?")[1] ?? "").get("ref");
+      return json(200, discardLiveDesignEdits(s, ref || null));
+    }
+    if (route === "/manual-edit-commit") {
+      const result = applyLiveDesignEdits(s);
+      return json(result.status === "started" ? 202 : 200, result.status === "started" ? result : { applied: [], cleared: 0, remainingCount: 0 });
+    }
+    if (route === "/manual-edit-repair-decision") {
+      // GSAM never writes the source itself, so there is nothing to roll back: the edits stay staged.
+      return json(200, { ok: true, remainingCount: liveDesignEditCount(s) });
+    }
+  } catch (err) {
+    if (err instanceof LiveDesignConflict) return json(409, { error: err.message });
+    throw err;
   }
-  if (route === "/annotation") return json(200, { ok: true, path: null });
-  if (route === "/design-system.json") return json(200, { present: false });
+  if (route === "/annotation") return json(200, { ok: true, path: req.screenshotAttachmentId ?? null });
+  if (route === "/design-system.json") {
+    if (!s.designMd) return json(200, { present: false });
+    // The DESIGN.md frontmatter tokens drive Impeccable's Visual tab (swatches, type); there is no sidecar in GSAM.
+    const parsed = designFrontmatter(s.designMd);
+    return json(200, { present: true, hasMd: true, hasSidecar: true, parsed, sidecar: null });
+  }
+  if (route === "/design-system/raw") {
+    return s.designMd ? { status: 200, body: s.designMd, contentType: "text/markdown; charset=utf-8" } : json(404, { error: "no DESIGN.md yet" });
+  }
   if (route === "/agent-target-claim") return json(200, { granted: false, pending: false });
   if (route === "/agent-target-result") return json(200, { ok: true });
   return json(404, { error: "not_available_in_gsam" });
@@ -261,6 +359,11 @@ function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: 
           prompt: prompt || (action === "impeccable" ? "Improve this" : `Apply ${action}`),
           action,
           count: Math.min(Math.max(Number(evt.count) || LIVE_DESIGN_VARIANT_COUNT, 1), 8),
+          notes: (Array.isArray(evt.comments) ? evt.comments : [])
+            .map((c) => str((c as { text?: unknown })?.text, 1000).trim())
+            .filter(Boolean)
+            .slice(0, 30),
+          ...(UUID_RE.test(str(evt.screenshotPath, 64)) ? { screenshotAttachmentId: str(evt.screenshotPath, 64) } : {}),
         },
         id,
       );
@@ -276,7 +379,7 @@ function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: 
       if (s.request?.id === id) discardLiveDesign(s);
       return json(200, { ok: true });
     case "steer":
-      steerLiveDesign(s, str(evt.message, 2000));
+      steerLiveDesign(s, str(evt.message, 2000), id || null);
       return json(200, { ok: true });
     default:
       // checkpoint, variant_mounted, variant_mount_failed, exit, prefetch: nothing for GSAM to do.

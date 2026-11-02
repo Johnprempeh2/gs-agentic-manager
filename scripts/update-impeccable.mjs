@@ -49,6 +49,8 @@ const body = served.slice(firstPart);
 writeFileSync(path.join(out, "live-browser.js"), body);
 writeFileSync(path.join(out, "globals.json"), `${JSON.stringify(globals, null, 2)}\n`);
 copyFileSync(path.join(args.checkout, "LICENSE"), path.join(out, "LICENSE"));
+// modern-screenshot (MIT, its licence in modern-screenshot.LICENSE) as Impeccable bundles it, for annotation screenshots.
+copyFileSync(path.join(args.checkout, "skill/scripts/modern-screenshot.umd.js"), path.join(out, "modern-screenshot.umd.js"));
 copyFileSync(path.join(args.checkout, "NOTICE.md"), path.join(out, "NOTICE.md"));
 const commit = execFileSync("git", ["-C", args.checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 const version = JSON.parse(execFileSync("cat", [path.join(args.checkout, "package.json")], { encoding: "utf8" })).version;
