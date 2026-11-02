@@ -1,3 +1,4 @@
+import { injectReviewBridge, renderReviewImage } from "../services/prototype-review.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
@@ -15,7 +16,7 @@ import {
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -683,6 +684,7 @@ const DELIVERABLE_WORK_PRODUCT_ROUTE_ERROR =
   "Deliverables are registered with POST /api/issues/{id}/deliverables, not the work-products routes.";
 
 const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+const REVIEWABLE_HTML_LIMIT_BYTES = 8 * 1024 * 1024;
 
 /** A malformed id filter is the caller's mistake: a 422 naming it, not a database 500. */
 function uuidQuery(req: Request, ...names: string[]): string | undefined {
@@ -20980,6 +20982,59 @@ export function issueRoutes(
       });
     },
   );
+
+  /** An HTML attachment with GSAM's review tools inside: pins, drawing and text edits (John, 2 Nov). */
+  async function loadReviewableHtml(req: Request, res: Response) {
+    const attachment = await getAccessibleResource(
+      req,
+      res,
+      svc.getAttachmentById(req.params.attachmentId as string),
+      "Attachment not found",
+    );
+    if (!attachment) return null;
+    const issue = await svc.getById(attachment.issueId);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return null;
+    }
+    if (!(await assertIssueReadAllowed(req, res, issue))) return null;
+    const contentType = resolveAttachmentResponseContentType({
+      storedContentType: attachment.contentType,
+      objectContentType: null,
+      originalFilename: attachment.originalFilename,
+    });
+    if (!HTML_CONTENT_TYPES.has(contentType) || attachment.byteSize > REVIEWABLE_HTML_LIMIT_BYTES) {
+      res.status(422).json({ error: "Only HTML pages up to 8 MB can be reviewed" });
+      return null;
+    }
+    const object = await storage.getObject(attachment.companyId, attachment.objectKey);
+    return (await readStream(object.stream)).toString("utf8");
+  }
+
+  router.get("/attachments/:attachmentId/annotate", async (req, res) => {
+    const html = await loadReviewableHtml(req, res);
+    if (html === null) return;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    // The same opaque-origin sandbox as the plain attachment; the review
+    // script only talks to GSAM by postMessage.
+    res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP);
+    res.status(200).send(injectReviewBridge(html));
+  });
+
+  router.post("/attachments/:attachmentId/annotate/render", validate(prototypeReviewMarkupSchema), async (req, res) => {
+    const html = await loadReviewableHtml(req, res);
+    if (html === null) return;
+    const image = await renderReviewImage(html, req.body as PrototypeReviewMarkup);
+    if (!image) {
+      res.status(204).end();
+      return;
+    }
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).end(image);
+  });
 
   router.get("/attachments/:attachmentId/content", async (req, res, next) => {
     const attachmentId = req.params.attachmentId as string;
