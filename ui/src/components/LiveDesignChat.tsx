@@ -7,8 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DictationButton, DictationInterim, useComposerDictation } from "./DictationButton";
 
-/** The live session for one page: started on open, polled while open, ended on close. */
-export function useLiveDesign(attachmentId: string, active: boolean, deliverableId: string | null = null) {
+/**
+ * The live session for one page: started on open, polled while open, ended on close.
+ * `start` opens it (a task file, a deliverable or a website page); `key` names that page.
+ */
+export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string, active: boolean) {
+  const startRef = useRef(start);
+  startRef.current = start;
   const [view, setView] = useState<LiveDesignView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idRef = useRef<string | null>(null);
@@ -19,8 +24,8 @@ export function useLiveDesign(attachmentId: string, active: boolean, deliverable
     if (!active) return;
     let cancelled = false;
     setError(null);
-    liveDesignApi
-      .start(attachmentId, deliverableId)
+    startRef
+      .current()
       .then((v) => {
         if (cancelled) {
           void liveDesignApi.end(v.id).catch(() => undefined);
@@ -37,7 +42,7 @@ export function useLiveDesign(attachmentId: string, active: boolean, deliverable
       setView(null);
       if (id) void liveDesignApi.end(id).catch(() => undefined);
     };
-  }, [active, attachmentId, deliverableId, attempt]);
+  }, [active, key, attempt]);
 
   const polling = active && !!view && view.status !== "ended";
   useEffect(() => {

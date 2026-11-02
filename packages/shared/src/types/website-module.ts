@@ -353,6 +353,12 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageRevisionRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/revisions/:revisionId/restore",
   /** GET → `WebsitePageEditorLoad` (website:view; saves need website:edit). 404 until the site's editor frame origin is set and passes C1.1. */
   pageEditor: "/companies/:companyId/website/sites/:siteId/pages/:pageId/editor",
+  /** POST → `LiveDesignView`: open live design on the page (website:edit; plan revision 8). */
+  pageLive: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live",
+  /** GET `?revision=` → HTML: the page with Impeccable's live tools, in the attachment sandbox (website:view). */
+  pageLiveFrame: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-frame",
+  /** POST `{ revisionId }` → `LiveDesignView`: bring an earlier version back as the newest one (website:edit). */
+  pageLiveRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-restore",
   /**
    * GET → `WebsitePageComment[]`, the page's open comments, oldest first (website:view).
    * POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId.

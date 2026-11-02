@@ -34,7 +34,7 @@ import { FeatureTour } from "../components/FeatureTour";
 import { WEBSITE_TOUR } from "../lib/feature-tours";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
-import { Link, useSearchParams } from "@/lib/router";
+import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { cn, formatCalendarDay, formatDateTime, projectRouteRef, relativeTime } from "@/lib/utils";
 import { projectsApi } from "../api/projects";
 import { PageTabBar } from "../components/PageTabBar";
@@ -629,6 +629,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
   const project = projectsQuery.data?.find((entry) => entry.id === property.projectId) ?? null;
   const siteUrl = liveSiteUrl(property.siteUrl);
   const openEditor = useOpenWebsiteEditor();
+  const navigate = useNavigate();
   const openTab = (next: WebsiteTab) => {
     const params = new URLSearchParams(searchParams);
     if (next === WEBSITE_DEFAULT_TAB) params.delete("tab");
@@ -673,7 +674,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       </Tabs>
       {tab === "home" ? <WebsiteHomeTab companyId={companyId} property={property} onOpenTab={openTab} onEditPages={() => openEditor({ propertyId: property.id })} /> : null}
       {tab === "progress" ? <WebsiteProgressTab companyId={companyId} property={property} /> : null}
-      {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} onEditPage={(pageId) => openEditor({ propertyId: property.id, pageId })} /> : null}
+      {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} onEditPage={(siteId, pageId) => navigate(`/website/sites/${siteId}/pages/${pageId}/design`)} /> : null}
       {tab === "editor" ? <WebsitePagesTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
       {tab === "collections" ? <WebsiteCollectionsTab companyId={companyId} property={property} /> : null}
       {tab === "style" ? <WebsiteStyleTab companyId={companyId} property={property} /> : null}

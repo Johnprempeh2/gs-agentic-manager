@@ -1,3 +1,4 @@
+import { isWebsiteHtmlPage } from "@greatstone/shared";
 import { createHash, randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
@@ -460,6 +461,14 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
       badJson.length === 0
         ? { kind: "check", name: "content_json", ok: true }
         : { kind: "check", name: "content_json", ok: false, message: `These items have content that is not valid JSON: ${badJson.join(", ")}.` },
+    );
+    // Live-designed pages are HTML documents (plan revision 8); a site engine on release schema 1
+    // only renders blocks, so they wait for the engine update (S2) instead of breaking the site.
+    const htmlPages = pageFiles.filter((file) => isWebsiteHtmlPage(file.content)).map((file) => file.slug);
+    checks.push(
+      htmlPages.length === 0 || site.releaseSchemaVersion >= 2
+        ? { kind: "check", name: "html_pages", ok: true }
+        : { kind: "check", name: "html_pages", ok: false, message: `${htmlPages.join(", ")} ${htmlPages.length === 1 ? "is a live-designed page" : "are live-designed pages"}; this site's engine cannot show those yet. Publish after the website engine update.` },
     );
     checks.push(
       missingMedia.length === 0
