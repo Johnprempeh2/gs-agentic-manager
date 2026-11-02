@@ -596,6 +596,7 @@ import {
   deriveCommentId,
   allowsIssueInteractionWake,
   isResolvedInteractionContinuationWakeContext,
+  isVerifiedAgentQuestionParticipantWake,
 } from "../modules/run-dispatch/index.js";
 import {
   createWakeQueue,
@@ -18362,8 +18363,40 @@ export function heartbeatService(
       );
       const readiness = dependencyReadiness.get(issueId);
       const unresolvedBlockerCount = readiness?.unresolvedBlockerCount ?? 0;
+      // GRE-3652: a question wake has no comment, so the interaction-wake
+      // exemption never covered it. A run promoted from behind the asker's own
+      // run reaches only this gate, so it gets the bounded mode here.
+      const blockedAgentQuestionWake =
+        unresolvedBlockerCount > 0 &&
+        (await isVerifiedAgentQuestionParticipantWake(db, {
+          companyId: run.companyId,
+          issueId,
+          agentId: run.agentId,
+          contextSnapshot: context,
+        }));
+      if (blockedAgentQuestionWake) {
+        const unresolvedBlockerIssueIds = readiness?.unresolvedBlockerIssueIds ?? [];
+        const boundedContext = {
+          ...context,
+          dependencyBlockedInteraction: true,
+          unresolvedBlockerIssueIds,
+          unresolvedBlockerCount,
+          unresolvedBlockerSummaries: await listUnresolvedBlockerSummaries(
+            db,
+            run.companyId,
+            issueId,
+            unresolvedBlockerIssueIds,
+          ),
+        };
+        await db
+          .update(heartbeatRuns)
+          .set({ contextSnapshot: boundedContext, updatedAt: new Date() })
+          .where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, "queued")));
+        Object.assign(context, boundedContext);
+      }
       if (
         unresolvedBlockerCount > 0 &&
+        !blockedAgentQuestionWake &&
         !allowsIssueInteractionWake(
           context,
           ISSUE_TREE_CONTROL_INTERACTION_WAKE_REASONS,
@@ -30299,13 +30332,21 @@ export function heartbeatService(
           // Blocked descendants should stay idle until the final blocker resolves.
           // Human comment/mention wakes are the exception: they may run in a
           // bounded interaction mode so the assignee can answer or triage.
+          // GRE-3652: so may the verified addressee or asker of an ask_agent
+          // question, whose wake carries no comment.
           const blockedInteractionWake =
             dependencyReadiness &&
             !dependencyReadiness.isDependencyReady &&
-            allowsIssueInteractionWake(
+            (allowsIssueInteractionWake(
               enrichedContextSnapshot,
               ISSUE_TREE_CONTROL_INTERACTION_WAKE_REASONS,
-            );
+            ) ||
+              (await isVerifiedAgentQuestionParticipantWake(tx, {
+                companyId: issue.companyId,
+                issueId: issue.id,
+                agentId,
+                contextSnapshot: enrichedContextSnapshot,
+              })));
 
           if (blockedInteractionWake) {
             enrichedContextSnapshot.dependencyBlockedInteraction = true;

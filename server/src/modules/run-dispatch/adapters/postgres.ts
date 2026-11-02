@@ -125,6 +125,46 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+/**
+ * True when the wake names an ask_agent question on this issue and the stored
+ * row names the woken agent: the addressee while the question is pending, the
+ * asker once it is answered. The snapshot alone is never trusted.
+ */
+export async function isVerifiedAgentQuestionParticipantWake(
+  dbOrTx: Pick<Db, "select">,
+  input: {
+    companyId: string;
+    issueId: string;
+    agentId: string;
+    contextSnapshot: Record<string, unknown> | null | undefined;
+  },
+): Promise<boolean> {
+  const wake = readAgentQuestionWake(input.contextSnapshot);
+  if (!wake) return false;
+  return dbOrTx
+    .select({ id: issueThreadInteractions.id })
+    .from(issueThreadInteractions)
+    .where(
+      and(
+        eq(issueThreadInteractions.id, wake.interactionId),
+        eq(issueThreadInteractions.companyId, input.companyId),
+        eq(issueThreadInteractions.issueId, input.issueId),
+        eq(issueThreadInteractions.kind, "ask_agent"),
+        wake.role === "addressee"
+          ? and(
+              eq(issueThreadInteractions.status, "pending"),
+              eq(issueThreadInteractions.addresseeAgentId, input.agentId),
+            )
+          : and(
+              eq(issueThreadInteractions.status, "answered"),
+              eq(issueThreadInteractions.createdByAgentId, input.agentId),
+            ),
+      ),
+    )
+    .limit(1)
+    .then((rows) => Boolean(rows[0]));
+}
+
 function classifyRetryReasonKind(retryReason: string | null): RetryReasonKind {
   if (retryReason === MAX_TURN_CONTINUATION_RETRY_REASON) return "max_turn_continuation";
   if (retryReason === ISSUE_DISPOSITION_REPAIR_RETRY_REASON) return "disposition_repair";
@@ -594,30 +634,13 @@ export function createPostgresRunDispatchAdapter(
     // exemption never covered it. Excuse the ownership check only for the
     // agent the stored question names: the addressee while it is pending, the
     // asker once it is answered.
-    const agentQuestionWake = issue ? readAgentQuestionWake(context) : null;
-    const isAgentQuestionParticipantWake = agentQuestionWake
-      ? await dbOrTx
-          .select({ id: issueThreadInteractions.id })
-          .from(issueThreadInteractions)
-          .where(
-            and(
-              eq(issueThreadInteractions.id, agentQuestionWake.interactionId),
-              eq(issueThreadInteractions.companyId, input.companyId),
-              eq(issueThreadInteractions.issueId, issueId),
-              eq(issueThreadInteractions.kind, "ask_agent"),
-              agentQuestionWake.role === "addressee"
-                ? and(
-                    eq(issueThreadInteractions.status, "pending"),
-                    eq(issueThreadInteractions.addresseeAgentId, input.agentId),
-                  )
-                : and(
-                    eq(issueThreadInteractions.status, "answered"),
-                    eq(issueThreadInteractions.createdByAgentId, input.agentId),
-                  ),
-            ),
-          )
-          .limit(1)
-          .then((rows) => Boolean(rows[0]))
+    const isAgentQuestionParticipantWake = issue
+      ? await isVerifiedAgentQuestionParticipantWake(dbOrTx, {
+          companyId: input.companyId,
+          issueId,
+          agentId: input.agentId,
+          contextSnapshot: context,
+        })
       : false;
 
     const retryReasonKind = classifyRetryReasonKind(retryReason);
