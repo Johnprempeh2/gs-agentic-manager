@@ -42,6 +42,8 @@ export const liveDesignReplySchema = z.object({
   variants: z.array(liveDesignVariantSchema).min(1).max(4).optional(),
   /** After an accept: the new attachment that holds the updated page. */
   appliedAttachmentId: z.string().uuid().optional(),
+  /** After an accept or applied edits: the complete updated page. GSAM saves it on the task, so the agent uploads nothing. */
+  pageHtml: z.string().min(1).max(8_000_000).optional(),
   error: z.string().max(500).optional(),
   /** A short note for John's chat, such as "Trying a halo, a slow pulse and a bloom". Can be sent on its own. */
   message: z.string().max(1000).optional(),

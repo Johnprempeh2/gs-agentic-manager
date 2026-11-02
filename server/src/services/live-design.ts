@@ -179,6 +179,18 @@ export function canStoreLiveDesignMarkup(s: Session, eventId: string) {
   return s.status !== "ended" && !s.markups.has(eventId) && s.markups.size < MAX_MARKUPS_PER_SESSION;
 }
 
+/** The open session on this task, whichever agent runs it: a second device joins it. */
+export function openLiveDesignFor(issueId: string) {
+  sweep();
+  return [...sessions.values()].find((s) => s.status !== "ended" && s.issueId === issueId) ?? null;
+}
+
+/** Agents already serving an open live session: a busy designer is skipped for the next one. */
+export function liveDesignBusyAgents() {
+  sweep();
+  return new Set([...sessions.values()].filter((s) => s.status !== "ended").map((s) => s.agentId));
+}
+
 export function isLiveDesignAgentConnected(s: Session) {
   return isConnected(s);
 }
@@ -537,9 +549,8 @@ function withInstructions(s: Session, event: AgentEvent) {
         _instructions: [
           `John accepted version ${event.variant + 1} ("${event.chosen.name}")${event.paramValues ? ` with tune values ${JSON.stringify(event.paramValues)}` : ""}.`,
           "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
-          `Edit your workspace copy of this page if you have one; otherwise start from GET /api/attachments/${event.attachmentId}/content.`,
-          "Upload the updated page as a new attachment on this task with the same file name.",
-          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "appliedAttachmentId": "<new attachment id>", "message": "<what you saved>" }, and poll again.`,
+          `Start from GET /api/attachments/${event.attachmentId}/content (or your workspace copy if it matches it).`,
+          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you saved>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If you cannot save it, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<short reason>" } so John knows.`,
         ].join("\n"),
       };
@@ -556,8 +567,8 @@ function withInstructions(s: Session, event: AgentEvent) {
         _instructions: [
           `John edited the page directly with Impeccable's pencil and pressed Apply. edits[].ops holds each change: originalText to newText for text (plain text only), or removeElement: true to delete an element. Each op carries a locator (tag, elementId, classes, leaf context, nearbyEditableTexts) to find it.`,
           "Apply exactly these changes and nothing else: no restyling, no rewording beyond newText. Follow the impeccable skill's live.md guidance on applying manual edits.",
-          `Edit your workspace copy of this page if you have one; otherwise start from GET /api/attachments/${event.attachmentId}/content. Upload the result as a new attachment on this task with the same file name.`,
-          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "appliedAttachmentId": "<new attachment id>", "message": "<what you changed>" }, and poll again.`,
+          `Start from GET /api/attachments/${event.attachmentId}/content (or your workspace copy if it matches).`,
+          `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If an edit cannot be applied safely, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<which one and why>" }; the edits stay staged for John.`,
         ].join("\n"),
       };

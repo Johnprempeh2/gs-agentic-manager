@@ -4,6 +4,8 @@ import {
   endLiveDesign,
   getLiveDesign,
   isLiveDesignEnded,
+  liveDesignBusyAgents,
+  openLiveDesignFor,
   recordLiveDesignMarkup,
   restoreLiveDesign,
   setLiveDesignDeliverable,
@@ -21099,6 +21101,19 @@ export function issueRoutes(
 
   const liveDeliverables = deliverableService(db, storage);
 
+  /** A live designer for the company (agent metadata `liveDesigner: true`), preferring one not already in a session. */
+  async function pickLiveDesigner(companyId: string): Promise<string | null> {
+    const rows = await db
+      .select({ id: agents.id, status: agents.status, metadata: agents.metadata })
+      .from(agents)
+      .where(eq(agents.companyId, companyId));
+    const designers = rows.filter(
+      (a) => (a.metadata as Record<string, unknown> | null)?.liveDesigner === true && !["paused", "terminated", "archived"].includes(a.status),
+    );
+    const busy = liveDesignBusyAgents();
+    return (designers.find((a) => !busy.has(a.id)) ?? designers[0])?.id ?? null;
+  }
+
   /** Files a page as the deliverable's newest version and points the session at it. */
   async function fileLiveDeliverableVersion(
     req: Request,
@@ -21161,30 +21176,36 @@ export function issueRoutes(
       deliverableId = detail.versions[0]?.id ?? detail.id;
       pageAttachmentId = detail.versions[0]?.attachmentId ?? attachment.id;
     }
-    if (!issue.assigneeAgentId) {
-      res.status(422).json({ error: "Assign this task to an agent first, then use Live." });
+    // A flagged live designer runs the session (John, 2 Nov: one UI agent for all live design);
+    // without one, the task's own agent does.
+    const joining = openLiveDesignFor(issue.id);
+    const agentId = joining?.agentId ?? (await pickLiveDesigner(issue.companyId)) ?? issue.assigneeAgentId;
+    if (!agentId) {
+      res.status(422).json({ error: "No agent can design this page: mark an agent as the live designer, or assign the task to an agent." });
       return;
     }
+    const onTask = agentId === issue.assigneeAgentId;
     const { session, needsWake } = startLiveDesign({
       companyId: issue.companyId,
       issueId: issue.id,
       attachmentId: pageAttachmentId,
-      agentId: issue.assigneeAgentId,
+      agentId,
     });
     if (deliverableId) setLiveDesignDeliverable(session, deliverableId);
     if (needsWake) {
       const actor = getActorInfo(req);
-      await heartbeat.wakeup(issue.assigneeAgentId, {
+      await heartbeat.wakeup(agentId, {
         source: "on_demand",
         triggerDetail: "manual",
         reason: "live_design",
         idempotencyKey: `live_design:${session.id}:${Math.floor(Date.now() / 60_000)}`,
         requestedByActorType: "user",
         requestedByActorId: actor.actorId,
-        payload: { issueId: issue.id, liveDesignSessionId: session.id },
+        // A designer who does not own the task is woken for the session, not on the task:
+        // it reads the page and returns the new one through the session.
+        payload: { ...(onTask ? { issueId: issue.id } : {}), liveDesignSessionId: session.id },
         contextSnapshot: {
-          issueId: issue.id,
-          taskId: issue.id,
+          ...(onTask ? { issueId: issue.id, taskId: issue.id } : {}),
           wakeReason: "live_design",
           source: "issue.live_design",
           skipIssueComment: true,
@@ -21205,7 +21226,7 @@ export function issueRoutes(
       entityType: "issue",
       entityId: issue.id,
       issueId: issue.id,
-      details: { attachmentId: attachment.id, sessionId: session.id, agentId: issue.assigneeAgentId, woke: needsWake },
+      details: { attachmentId: attachment.id, sessionId: session.id, agentId, designer: !onTask, woke: needsWake },
     });
     res.json(viewLiveDesign(session));
   });
@@ -21323,6 +21344,31 @@ export function issueRoutes(
   router.post("/live-design/:sessionId/reply", validate(liveDesignReplySchema), async (req, res) => {
     const session = liveSessionForAgent(req);
     const reply = req.body as LiveDesignReply;
+    // The agent sent the finished page: GSAM files it on the task under the page's name.
+    if (reply.pageHtml && !reply.appliedAttachmentId && !isLiveDesignEnded(session)) {
+      const current = await svc.getAttachmentById(session.attachmentId);
+      const stored = await storage.putFile({
+        companyId: session.companyId,
+        namespace: `issues/${session.issueId}`,
+        originalFilename: current?.originalFilename ?? "page.html",
+        contentType: "text/html",
+        body: Buffer.from(reply.pageHtml, "utf8"),
+      });
+      const saved = await svc.createAttachment({
+        issueId: session.issueId,
+        issueCommentId: null,
+        provider: stored.provider,
+        objectKey: stored.objectKey,
+        contentType: stored.contentType,
+        byteSize: stored.byteSize,
+        sha256: stored.sha256,
+        originalFilename: stored.originalFilename,
+        createdByAgentId: session.agentId,
+        createdByUserId: null,
+        createdByRunId: null,
+      });
+      reply.appliedAttachmentId = saved.id;
+    }
     // The saved page must be an attachment on this task, or the editor would load someone else's file.
     if (reply.appliedAttachmentId) {
       const saved = await svc.getAttachmentById(reply.appliedAttachmentId);
