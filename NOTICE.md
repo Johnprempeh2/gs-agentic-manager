@@ -22,6 +22,8 @@ Apache License 2.0. Its licence and notice travel with the code
 `server/src/built-ins/impeccable/VERSION` records the upstream release. GSAM
 runs Impeccable's page scripts unchanged behind its own adapter
 (`server/src/services/impeccable-helper.ts`); the only change to the skill is a
-marked note at the top of `skills/impeccable/SKILL.md`. GS Agentic Manager is not
+marked note at the top of `skills/impeccable/SKILL.md`. The live page also inlines
+[modern-screenshot](https://github.com/qq15725/modern-screenshot) (MIT, licence in
+`server/src/built-ins/impeccable/modern-screenshot.LICENSE`) for markup screenshots. GS Agentic Manager is not
 affiliated with or endorsed by the Impeccable project. Refresh with
 `scripts/update-impeccable.mjs`.
