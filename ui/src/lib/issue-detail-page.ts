@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ISSUE_DETAIL_PATH } from "./issue-detail-path";
 
 type IssueDetailPageModule = typeof import("../pages/IssueDetail");
 
@@ -28,10 +29,19 @@ export function preloadIssueDetailPage(): void {
   });
 }
 
-const ISSUE_DETAIL_PATH = /^(?:\/[^/]+)?\/issues\/[^/]+\/?$/;
-
 export function isIssueDetailPath(pathname: string): boolean {
   return ISSUE_DETAIL_PATH.test(pathname);
+}
+
+/** The `:issueId` of a task URL, as the route will read it; null for any other path. */
+export function issueRefFromPath(pathname: string): string | null {
+  const ref = ISSUE_DETAIL_PATH.exec(pathname)?.[1];
+  if (!ref) return null;
+  try {
+    return decodeURIComponent(ref);
+  } catch {
+    return null;
+  }
 }
 
 /**
