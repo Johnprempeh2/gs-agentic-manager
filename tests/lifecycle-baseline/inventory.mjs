@@ -84,6 +84,8 @@ export const lanes = {
       `${server}website-data-bridge-routes.test.ts`,
       // GRE-3646: an ask_agent question to a non-assignee runs instead of being cancelled as a reassignment.
       `${server}agent-question-non-assignee-wake.test.ts`,
+      // GRE-3652: an ask_agent question on a dependency-blocked task runs in bounded interaction mode.
+      `${server}agent-question-dependency-blocked-wake.test.ts`,
     ],
   },
   grading: {
