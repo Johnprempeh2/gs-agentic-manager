@@ -5,6 +5,7 @@ import {
   extractWakeCommentIds,
   isNonAssigneeWorkspaceBusyRetry,
   isResolvedInteractionContinuationWakeContext,
+  readAgentQuestionWake,
   WORKSPACE_BUSY_RETRY_REASON,
 } from "./wake-context.js";
 
@@ -59,6 +60,15 @@ describe("wake context", () => {
       wakeCommentId: "comment-1",
     }, allowed)).toBe(false);
     expect(allowsIssueInteractionWake({ wakeReason: "issue_commented" }, allowed)).toBe(false);
+  });
+
+  it("reads the ask_agent role an agent-question wake claims", () => {
+    expect(readAgentQuestionWake({ wakeReason: "agent_question", interactionId: "q-1" }))
+      .toEqual({ interactionId: "q-1", role: "addressee" });
+    expect(readAgentQuestionWake({ wakeReason: "agent_question_answered", interactionId: "q-1" }))
+      .toEqual({ interactionId: "q-1", role: "asker" });
+    expect(readAgentQuestionWake({ wakeReason: "agent_question" })).toBeNull();
+    expect(readAgentQuestionWake({ wakeReason: "issue_commented", interactionId: "q-1" })).toBeNull();
   });
 
   it.each(["accepted", "answered", "cancelled", "rejected"])(

@@ -48,6 +48,7 @@ import {
   deriveCommentId,
   isNonAssigneeWorkspaceBusyRetry,
   isResolvedInteractionContinuationWakeContext,
+  readAgentQuestionWake,
 } from "../domain/wake-context.js";
 import type {
   CancelStaleQueuedRunInput,
@@ -589,6 +590,36 @@ export function createPostgresRunDispatchAdapter(
             .then((rows) => Boolean(rows[0]))
         : false;
 
+    // GRE-3646: an ask_agent wake has no comment, so the interaction-wake
+    // exemption never covered it. Excuse the ownership check only for the
+    // agent the stored question names: the addressee while it is pending, the
+    // asker once it is answered.
+    const agentQuestionWake = issue ? readAgentQuestionWake(context) : null;
+    const isAgentQuestionParticipantWake = agentQuestionWake
+      ? await dbOrTx
+          .select({ id: issueThreadInteractions.id })
+          .from(issueThreadInteractions)
+          .where(
+            and(
+              eq(issueThreadInteractions.id, agentQuestionWake.interactionId),
+              eq(issueThreadInteractions.companyId, input.companyId),
+              eq(issueThreadInteractions.issueId, issueId),
+              eq(issueThreadInteractions.kind, "ask_agent"),
+              agentQuestionWake.role === "addressee"
+                ? and(
+                    eq(issueThreadInteractions.status, "pending"),
+                    eq(issueThreadInteractions.addresseeAgentId, input.agentId),
+                  )
+                : and(
+                    eq(issueThreadInteractions.status, "answered"),
+                    eq(issueThreadInteractions.createdByAgentId, input.agentId),
+                  ),
+            ),
+          )
+          .limit(1)
+          .then((rows) => Boolean(rows[0]))
+      : false;
+
     const retryReasonKind = classifyRetryReasonKind(retryReason);
     // Dependency edges can change after scheduled promotion without changing
     // the displayed status. Read them again under the queued/final issue lock.
@@ -613,6 +644,7 @@ export function createPostgresRunDispatchAdapter(
       isConnectionContinuation: (isResolvedInteractionContinuation && context.interactionKind === "connection_intent")
         || context.source === "connection_tools.refreshed",
       isInteractionWake,
+      isAgentQuestionParticipantWake,
       isAuthorizedSourceScopedRecovery,
       isNonAssigneeWorkspaceBusyRetry: isNonAssigneeWorkspaceBusyRetry(retryReason, context),
       resumeIntent,

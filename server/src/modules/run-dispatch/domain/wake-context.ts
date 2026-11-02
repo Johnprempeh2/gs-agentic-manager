@@ -89,6 +89,26 @@ export function allowsIssueInteractionWake(
   return Boolean(deriveCommentId(contextSnapshot));
 }
 
+export const AGENT_QUESTION_WAKE_REASON = "agent_question";
+export const AGENT_QUESTION_ANSWERED_WAKE_REASON = "agent_question_answered";
+
+/**
+ * Reads the ask_agent interaction an `agent_question` (addressee) or
+ * `agent_question_answered` (asker) wake names. The caller must still check
+ * the interaction row: the snapshot only says which row to read and which
+ * role the woken agent must hold on it.
+ */
+export function readAgentQuestionWake(
+  contextSnapshot: Record<string, unknown> | null | undefined,
+): { interactionId: string; role: "addressee" | "asker" } | null {
+  const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
+  const interactionId = readNonEmptyString(contextSnapshot?.interactionId);
+  if (!interactionId) return null;
+  if (wakeReason === AGENT_QUESTION_WAKE_REASON) return { interactionId, role: "addressee" };
+  if (wakeReason === AGENT_QUESTION_ANSWERED_WAKE_REASON) return { interactionId, role: "asker" };
+  return null;
+}
+
 export function isResolvedInteractionContinuationWakeContext(contextSnapshot: unknown): boolean {
   const context = parseObject(contextSnapshot);
   const interactionId = readNonEmptyString(context.interactionId);
