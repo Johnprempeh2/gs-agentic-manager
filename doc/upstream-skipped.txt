@@ -2,6 +2,10 @@
 # Read by scripts/upstream-pending.sh. Add a line when the daily check or a
 # sync skips a commit; the reason must say why (see the Upstream log on GRE-82).
 # Format: <upstream sha> <reason>
+7751fc310 #18543 volume-free controller admission and file recovery is scoped entirely to upstream's remote warm controller contract (Daytona/Codex, gated on `target.kind === "remote"`); our fork is volume-backed with no such contract and no separable part. Revisit only if we adopt remote warm controllers (GRE-3620).
+c0550e701 #18552 session preservation and deferred busy-overlap recovery builds on the same remote warm controller contract as #18543; no narrow part applies to our volume-backed deployment (GRE-3620).
+1a6017d64 #18554 resume-after-controller-replacement is gated on `target?.kind !== "remote"` throughout; depends on the same remote warm controller contract we do not have (GRE-3620).
+8ea240218 #18378 Refine-v2 agent-page redesign rewrites `ui/src/pages/AgentDetail.tsx` wholesale (2,658 added lines across 40 files); our AgentDetail.tsx has diverged and this would replace our layout and design tokens rather than apply a narrow fix (GRE-3620).
 813e808af #16963 removes filesystem-history auth from the #15749 task-workspace model (deferred, GRE-1505); our tree never had the gate. Revisit together with #15749.
 30f402f5f restore-point capture starts the storage and retention stack excluded by Beacon on GRE-2034; keep out of the 26 Oct sync
 12bb7e197 restore-point ledger and retention depends on the excluded stack; migration 0372 also clashes with ours (GRE-2034)
