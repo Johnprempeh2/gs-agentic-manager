@@ -210,7 +210,8 @@ test_gate_check() {
 # The release gate (GRE: release on GitHub's tests). Passes when Fork CI's full
 # test matrix is green on GitHub for <commit>, or for the pull request run that
 # tested the same files (scripts/greatstone-github-gate.mjs). While it runs, it
-# waits up to GSAM_GITHUB_GATE_WAIT_SECONDS (default 1200). When GitHub cannot
+# waits up to GSAM_GITHUB_GATE_WAIT_SECONDS (default 3000; a main run takes
+# about 36 minutes, see .github/workflows/fork-ci.yml). When GitHub cannot
 # be asked, or with GSAM_RELEASE_GATE=pc (greatstone-release.sh --pc-gate), the
 # PC test gate's pass marker decides instead (test_gate_check). Prints the
 # verdict; a note about the fallback goes to stderr.
@@ -220,14 +221,14 @@ release_gate_check() {
     test_gate_check "$1" "$2"
     return
   fi
-  out="$(node "$GS_SCRIPT_DIR/greatstone-github-gate.mjs" "$1" --wait "${GSAM_GITHUB_GATE_WAIT_SECONDS:-1200}" 2>&1)" && code=0 || code=$?
+  out="$(node "$GS_SCRIPT_DIR/greatstone-github-gate.mjs" "$1" --wait "${GSAM_GITHUB_GATE_WAIT_SECONDS:-3000}" 2>&1)" && code=0 || code=$?
   case "$code" in
     0) say "$out"; return 0 ;;
     3)
       say "$out; using the PC test gate instead." >&2
       test_gate_check "$1" "$2"
       return ;;
-    2) say "$out after $(( ${GSAM_GITHUB_GATE_WAIT_SECONDS:-1200} / 60 )) min of waiting. Release again when Fork CI has finished on GitHub. Nothing was changed." ;;
+    2) say "$out after $(( ${GSAM_GITHUB_GATE_WAIT_SECONDS:-3000} / 60 )) min of waiting. Release again when Fork CI has finished on GitHub. Nothing was changed." ;;
     *) say "$out. Fix it on main first. Only in an emergency: greatstone-release.sh --skip-test-gate \"<reason>\" $2 (logged in $TEST_GATE_DIR/overrides.log). Nothing was changed." ;;
   esac
   return 1

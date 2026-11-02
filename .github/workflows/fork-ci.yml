@@ -36,6 +36,9 @@
 # a pull request cancels its older run (the concurrency group below). The
 # runner's Rust tests stay manual. Every push to main gets the full matrix too
 # (main runs are never cancelled), so each merge is tested on its exact commit.
+# On main the matrix runs at most 6 shards at a time (about 36 minutes instead
+# of 18), so merges that land close together leave job slots for pull
+# requests (GRE-3725, see the test job).
 # The PC's test gate (scripts/greatstone-test-gate.sh) is only the fallback
 # when GitHub cannot be asked.
 #
@@ -257,6 +260,16 @@ jobs:
       # scripts/serialized-shard-durations.json, so any count balances.
       # One server shard also builds the runner with cargo (the native runner
       # suite), which is why the server shards get the Rust toolchain.
+      #
+      # Pushes to main run at most 6 shards at a time; pull requests and manual
+      # runs are not capped (256 is GitHub's matrix limit). On 26 Oct merges close
+      # together each queued the whole run (about 18 jobs) and a pull request
+      # waited over an hour behind them for the 20 job limit. With the cap a main
+      # run holds at most 11 slots for its first 6 minutes (the 5 other lanes)
+      # and 6 after that, so two main runs at once leave 8 slots free and three
+      # leave 2. The shards hold about 170 minutes of work, so a main run takes
+      # about 36 minutes instead of 18 (GSAM_GITHUB_GATE_WAIT_SECONDS allows 50).
+      max-parallel: ${{ github.event_name == 'push' && 6 || 256 }}
       matrix:
         include:
           - { label: "server 1/6", mode: general, group: general-server-without-chat, shard_index: 0, shard_count: 6, rust: true }

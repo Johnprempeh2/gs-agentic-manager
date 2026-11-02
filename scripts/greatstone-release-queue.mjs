@@ -82,7 +82,7 @@ export function config() {
     drainStopMs: num("GSAM_RELEASE_DRAIN_STOP_SECONDS", 180) * 1000,
     previewGraceMs: num("GSAM_RELEASE_QUEUE_PREVIEW_GRACE_SECONDS", 120) * 1000,
     stepWaitMs: num("GSAM_RELEASE_QUEUE_STEP_WAIT_SECONDS", 3600) * 1000,
-    githubWaitMs: num("GSAM_GITHUB_GATE_WAIT_SECONDS", 1800) * 1000,
+    githubWaitMs: num("GSAM_GITHUB_GATE_WAIT_SECONDS", 3000) * 1000,
     nice: num("GSAM_RELEASE_QUEUE_NICE", 15),
   };
 }

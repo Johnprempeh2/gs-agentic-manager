@@ -120,8 +120,9 @@ to it.
   blocks the merge like any other lane: fix the test or the code (never skip
   a test); if you think it is a flake, rerun the job once and say so on the
   issue. Only the runner's Rust tests stay manual. Every push to main runs the
-  same matrix on the merged commit, and that GitHub run is the release gate
-  (step 3).
+  same matrix on the merged commit (at most 6 shards at a time, about 36
+  minutes, so merges close together leave job slots for pull requests), and
+  that GitHub run is the release gate (step 3).
   Run the tests your change touches before you open the pull request, and
   name them under "Tests run".
 
@@ -316,7 +317,7 @@ Merging does not change the live app. A version goes live in these steps.
      main is such a commit, so it needs no second run.
 
    While Fork CI still runs on the commit, it waits (at most
-   `GSAM_GITHUB_GATE_WAIT_SECONDS`, 30 minutes). A red job refuses the release
+   `GSAM_GITHUB_GATE_WAIT_SECONDS`, 50 minutes). A red job refuses the release
    and names the failing jobs; fix it on `main` (root cause: fix the code, or
    the test if it asserts stale behaviour; never skip or delete a test to go
    green). A test that fails only sometimes is a flake: fix its timing, and
@@ -631,7 +632,7 @@ tests, the database backup before the switch, and the rollback command.
    it); the others show "Released with another". A request whose commit live
    already runs ends as "Nothing to release".
 2. **Gate (tests on GitHub):** `greatstone-github-gate.mjs` on the commit
-   (step 3). Green: on at once. Still running: it waits, at most 30 minutes.
+   (step 3). Green: on at once. Still running: it waits, at most 50 minutes.
    Red: the request ends with the failing jobs. GitHub out of reach, or a
    request made with `--pc-gate`: the PC gate runs instead (and the release
    uses `--pc-gate`). With nothing queued the worker runs no tests; it only
