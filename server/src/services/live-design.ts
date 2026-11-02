@@ -378,9 +378,13 @@ export async function pollLiveDesign(s: Session, waitMs: number, gone: () => boo
     : { type: "timeout", sessionId: s.id, _instructions: `Nothing yet. ${pollCall(s.id)} again now.` };
 }
 
+/** The request id an agent uses for a change to the whole page that John asked for in the chat. */
+export const LIVE_DESIGN_PAGE_REQUEST = "page";
+
 export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   if (s.status === "ended") return { ok: false, reason: "ended" as const };
   s.agentSeenAt = Date.now();
+  if (reply.requestId === LIVE_DESIGN_PAGE_REQUEST) return replyPage(s, reply);
   if (reply.designMd) s.designMd = reply.designMd;
   if (s.editsRequestId && reply.requestId === s.editsRequestId) return replyEdits(s, reply);
   if (!s.request || s.request.id !== reply.requestId) return { ok: false, reason: "stale_request" as const };
@@ -412,6 +416,18 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   }
   if (reply.message) return { ok: true };
   return { ok: false, reason: "unexpected_reply" as const };
+}
+
+/** A whole-page change from the chat: saved straight away as the next version, no versions to pick. */
+function replyPage(s: Session, reply: LiveDesignReply) {
+  if (reply.message) say(s, "agent", reply.message);
+  if (!reply.appliedAttachmentId) return { ok: true };
+  if (s.status === "generating" || s.status === "applying") return { ok: false, reason: "busy" as const };
+  s.attachmentId = reply.appliedAttachmentId;
+  s.appliedAttachmentId = reply.appliedAttachmentId;
+  s.touchedAt = Date.now();
+  say(s, "gsam", "Page updated and saved as a new version. Use Versions to undo.");
+  return { ok: true };
 }
 
 const opCount = (s: Session) => s.staged.reduce((n, e) => n + e.ops.length, 0);
@@ -583,7 +599,11 @@ function withInstructions(s: Session, event: AgentEvent) {
         ...base,
         _instructions: event.requestId
           ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
-          : `John wrote: "${event.message}". Answer with a short note; there is no open request, so he will pick an element next.`,
+          : [
+              `John wrote in the chat: "${event.message}".`,
+              `If he asks for a change to the page, make it to the whole page (start from GET /api/attachments/${s.attachmentId}/content) and ${replyCall(s.id)} and jsonBody { "requestId": "page", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }. GSAM saves it as the next version.`,
+              `Otherwise answer with jsonBody { "requestId": "page", "message": "<your answer>" }. Then poll again.`,
+            ].join("\n"),
       };
     case "edits":
       return {

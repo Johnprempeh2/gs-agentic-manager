@@ -110,6 +110,28 @@ const ADAPTER = String.raw`(function () {
     return realFocus.apply(this, arguments);
   };
 
+  // Tell the editor whether the page shows anything. A page that pulls its code or styles from
+  // the internet stays blank or bare in the sandbox (no network), and John should know why.
+  function pageHealth() {
+    var ours = function (n) { return n.closest && n.closest("[id^='impeccable'], [data-impeccable-ui]"); };
+    var visible = 0;
+    var all = document.body ? document.body.querySelectorAll("*") : [];
+    for (var i = 0; i < all.length && visible < 3; i++) {
+      var n = all[i];
+      if (ours(n) || /^(SCRIPT|STYLE|LINK|META|NOSCRIPT|TEMPLATE)$/.test(n.tagName)) continue;
+      var r = n.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) continue;
+      var hasText = Array.prototype.some.call(n.childNodes, function (c) { return c.nodeType === 3 && c.textContent.trim(); });
+      if (hasText || /^(IMG|SVG|CANVAS|VIDEO|svg)$/.test(n.tagName)) visible++;
+    }
+    var remote = function (sel, attr) {
+      return Array.prototype.filter.call(document.querySelectorAll(sel), function (n) { return /^(https?:)?\/\//i.test(n.getAttribute(attr) || ""); })
+        .map(function (n) { try { return new URL(n.getAttribute(attr), "https://x").host; } catch (e) { return ""; } });
+    };
+    post({ kind: "page-health", blank: visible === 0, scripts: remote("script[src]", "src").slice(0, 5), styles: remote("link[rel~=stylesheet][href]", "href").slice(0, 5) });
+  }
+  window.addEventListener("load", function () { setTimeout(pageHealth, 1200); });
+
   var realFetch = window.fetch;
   window.fetch = function (input, init) {
     var url = typeof input === "string" ? input : (input && input.url) || "";

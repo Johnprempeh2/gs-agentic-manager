@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, type DeliverableVersion } from "@greatstone/shared";
-import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, RotateCcw, Smartphone, Undo2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useParams, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +38,8 @@ export function LiveEditor() {
   const queryClient = useQueryClient();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
+  // What the page reported about itself: blank, or pulling code and styles from the internet.
+  const [health, setHealth] = useState<{ blank: boolean; scripts: string[]; styles: string[] } | null>(null);
   // Opened from Deliverables: every saved change becomes the deliverable's next version.
   const [searchParams] = useSearchParams();
   const openedDeliverable = searchParams.get("deliverable");
@@ -94,7 +96,10 @@ export function LiveEditor() {
       if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
       const m = e.data as Record<string, unknown> | null;
       if (!m || m.source !== "gs-impeccable") return;
-      if (m.kind === "stream-open") {
+      if (m.kind === "page-health") {
+        const hosts = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 5) : []);
+        setHealth({ blank: m.blank === true, scripts: hosts(m.scripts), styles: hosts(m.styles) });
+      } else if (m.kind === "stream-open") {
         void openStream();
       } else if (m.kind === "voice-start") {
         const vid = m.vid;
@@ -239,6 +244,20 @@ export function LiveEditor() {
               )}
             </div>
           ) : (
+            <>
+            {health && (health.blank || health.scripts.length > 0 || health.styles.length > 0) ? (
+              <PageHealthNotice
+                health={health}
+                onFix={() =>
+                  void live.run((id) =>
+                    liveDesignApi.steer(
+                      id,
+                      "Make this page self-contained so it shows in GSAM's safe preview: put the CSS, scripts and fonts it loads from the internet into the page itself (or use the site's own fonts), keep the design the same, and save it.",
+                    ),
+                  )
+                }
+              />
+            ) : null}
             <ScaledFrame
               key={pageId}
               src={`/api/attachments/${pageId}/annotate?live=1`}
@@ -248,6 +267,7 @@ export function LiveEditor() {
               frameRef={frameRef}
               viewport={viewport}
             />
+            </>
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
@@ -316,6 +336,33 @@ function VersionMenu({
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The safe preview has no internet, so a page that loads its code or styles from
+ * outside shows blank or bare. Say why, and let the agent fix it in one press.
+ */
+function PageHealthNotice({
+  health,
+  onFix,
+}: {
+  health: { blank: boolean; scripts: string[]; styles: string[] };
+  onFix: () => void;
+}) {
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  const hosts = [...new Set([...health.scripts, ...health.styles])].filter(Boolean);
+  return (
+    <div className="absolute inset-x-3 top-3 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="status">
+      <TriangleAlert aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+      <p className="min-w-0 flex-1">
+        {health.blank ? "This page shows nothing in the safe preview" : "Some of this page's look is missing in the safe preview"}
+        {hosts.length ? `: it loads code or styles from ${hosts.join(", ")}, and the preview has no internet.` : "."}
+      </p>
+      <Button type="button" size="sm" onClick={onFix}>Ask the agent to fix it</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setHidden(true)}>Dismiss</Button>
+    </div>
   );
 }
 

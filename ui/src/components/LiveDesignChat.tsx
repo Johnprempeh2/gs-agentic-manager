@@ -109,6 +109,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           <li className="space-y-2 text-sm text-muted-foreground">
             <p>Pick anything on the page with the bar at the bottom, type what should change and press Go.</p>
             <p>The agent's versions appear in place. Flick through them, tune them, then accept one. The agent saves it into the file.</p>
+            <p>Or ask here for a change to the whole page. Every saved change is a new version you can undo.</p>
           </li>
         ) : null}
         {view?.messages.map((m, i) =>
@@ -160,7 +161,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           }}
           rows={2}
           className="min-h-0 flex-1 resize-none"
-          placeholder="Message the agent, for example: make the second one calmer"
+          placeholder="Ask for a change, for example: tighten the spacing on the whole page"
           disabled={!view || status === "ended"}
           aria-label="Message the agent"
         />

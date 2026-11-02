@@ -21327,13 +21327,20 @@ export function issueRoutes(
     res.json({ cursor: frames[frames.length - 1]?.seq ?? after, frames, ended: isLiveDesignEnded(session) });
   });
 
-  router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), (req, res) => {
+  router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), async (req, res) => {
     const session = liveSessionForBoard(req);
     try {
-      res.json(viewLiveDesign(steerLiveDesign(session, req.body.message)));
+      steerLiveDesign(session, req.body.message);
     } catch (err) {
       if (!sendLiveConflict(res, err)) throw err;
+      return;
     }
+    if (!isLiveDesignAgentConnected(session)) {
+      const issue = await svc.getById(session.issueId);
+      const page = await svc.getAttachmentById(session.attachmentId);
+      await wakeLiveAgent(req, session, issue?.assigneeAgentId === session.agentId ? session.issueId : null, page?.originalFilename ?? "the page");
+    }
+    res.json(viewLiveDesign(session));
   });
 
   router.post("/live-design/:sessionId/end", (req, res) => {
