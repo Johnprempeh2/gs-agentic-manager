@@ -16504,6 +16504,31 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
+  path: `${siteParams}/pages/{pageId}/live`,
+  tags: ["website"],
+  summary: "Open live design on a page (plan revision 8 on GRE-1831): the live designer, else the website lead, works it; every kept change is a new revision (website:edit)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}/live-frame`,
+  tags: ["website"],
+  summary: "The page at ?revision= as HTML with Impeccable's live tools, served sandboxed for the live editor",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/live-restore`,
+  tags: ["website"],
+  summary: "Restore an earlier revision in the open live session; it becomes the newest revision (website:edit)",
+  body: z.object({ revisionId: z.string().uuid() }),
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
   path: `${siteParams}/pages/{pageId}/archive`,
   tags: ["website"],
   summary: "Archive a page (never deleted); its sub-pages move up to its parent (website:edit). 409 when the site is disconnected",
