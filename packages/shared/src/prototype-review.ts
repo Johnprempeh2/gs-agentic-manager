@@ -8,6 +8,9 @@ import { z } from "zod";
 const point = z.tuple([z.number().finite(), z.number().finite()]);
 const shortText = (max: number) => z.string().max(max);
 
+/** The pen colour for review drawings; the server redraws strokes in it. */
+export const PROTOTYPE_REVIEW_STROKE_COLOR = "#ff4d4d";
+
 export const prototypeReviewMarkupSchema = z.object({
   width: z.number().int().min(280).max(2560),
   pins: z.array(z.object({

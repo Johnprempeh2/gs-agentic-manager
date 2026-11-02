@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS, prototypeReviewMarkdown, prototypeReviewMarkupSchema, type PrototypeReviewMarkup } from "@greatstone/shared";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, PROTOTYPE_REVIEW_STROKE_COLOR, prototypeReviewMarkdown, prototypeReviewMarkupSchema, type PrototypeReviewMarkup } from "@greatstone/shared";
 import { Laptop, Maximize2, MessageSquarePlus, MousePointer2, Pencil, Send, Smartphone, Trash2, Type, Undo2, X } from "lucide-react";
 import { issuesApi } from "../api/issues";
 import { useOptionalToastActions } from "../context/ToastContext";
@@ -15,7 +15,6 @@ type Tool = "browse" | "comment" | "draw" | "edit";
 type Markup = Omit<PrototypeReviewMarkup, "width" | "note">;
 type Change = { kind: "pin" | "stroke" | "edit" };
 
-const STROKE_COLOUR = "#ff4d4d";
 const SANDBOX = HTML_ATTACHMENT_SANDBOX_TOKENS.join(" ");
 const WIDTHS = { fit: null, laptop: 1440, phone: 390 } as const;
 const EMPTY: Markup = { pins: [], strokes: [], edits: [] };
@@ -115,7 +114,7 @@ export function PrototypeReview({
           .filter((p): p is [number, number] => Array.isArray(p) && p.length === 2)
           .slice(0, 2000)
           .map((p) => [num(p[0]), num(p[1])] as [number, number]);
-        if (points.length >= 2) update("stroke", (m) => ({ ...m, strokes: [...m.strokes, { color: STROKE_COLOUR, points }].slice(0, 200) }));
+        if (points.length >= 2) update("stroke", (m) => ({ ...m, strokes: [...m.strokes, { color: PROTOTYPE_REVIEW_STROKE_COLOR, points }].slice(0, 200) }));
       } else if (data.type === "edit") {
         const selector = str(data.selector, 500);
         const before = str(data.before, 4000);
@@ -207,7 +206,7 @@ export function PrototypeReview({
             Pin comments, draw and edit text on the prototype, then send your review to the agent.
           </DialogPrimitive.Description>
 
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 pt-[max(0.5rem,var(--sz-safe-top))]">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 pt-(--prototype-review-bar-pt)">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">{fileName}</div>
               <div className="truncate text-xs text-muted-foreground">{activeHint}</div>
@@ -263,11 +262,11 @@ export function PrototypeReview({
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-            <div className="relative min-h-[50dvh] flex-1 overflow-hidden bg-muted/40">
+            <div className="relative min-h-(--prototype-review-frame-min-h) flex-1 overflow-hidden bg-muted/40">
               <ScaledFrame src={src} title={`Review of ${fileName}`} width={WIDTHS[viewport]} sandbox={SANDBOX} frameRef={frameRef} viewport={viewport} />
             </div>
 
-            <aside className="flex max-h-[45dvh] w-full flex-col border-t border-border md:max-h-none md:w-80 md:border-l md:border-t-0">
+            <aside className="flex max-h-(--prototype-review-panel-max-h) w-full flex-col border-t border-border md:max-h-none md:w-80 md:border-l md:border-t-0">
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
                 <label className="block space-y-1.5">
                   <span className="text-xs text-muted-foreground">Overall note (optional)</span>
@@ -292,7 +291,7 @@ export function PrototypeReview({
                       {markup.pins.map((pin, i) => (
                         <li key={`${pin.x}-${pin.y}-${i}`} className="space-y-1.5">
                           <div className="flex items-start gap-2">
-                            <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                            <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-(length:--text-micro) font-bold text-primary-foreground">
                               {i + 1}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={pin.text}>
@@ -363,7 +362,7 @@ export function PrototypeReview({
                   </div>
                 ) : null}
               </div>
-              <div className="border-t border-border p-3 pb-[max(0.75rem,var(--sz-safe-bottom))]">
+              <div className="border-t border-border p-3 pb-(--prototype-review-footer-pb)">
                 <Button type="button" className="w-full" disabled={sending || (count === 0 && !note.trim())} onClick={() => void send()}>
                   <Send aria-hidden="true" className="size-4" />
                   {sending ? "Sending…" : "Send to the agent"}
