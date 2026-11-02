@@ -3154,6 +3154,10 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-calc-15: calc(100vw - 16px); /* Extracted from ui/src/components/MarkdownEditor.tsx (max-w-[calc(100vw-16px)]). */
   --sz-66px: 66px; /* Extracted from ui/src/components/MembershipAction.tsx (w-[66px]). */
   --sz-safe-bottom: env(safe-area-inset-bottom); /* Extracted from ui/src/components/MobileBottomNav.tsx (pb-[env(safe-area-inset-bottom)]). */
+  --prototype-review-bar-pt: max(0.5rem, var(--sz-safe-top)); /* prototype review toolbar: py-2, or the notch inset when larger */
+  --prototype-review-footer-pb: max(0.75rem, var(--sz-safe-bottom)); /* prototype review send bar: p-3, or the home-bar inset when larger */
+  --prototype-review-frame-min-h: 50dvh; /* phone: the prototype keeps at least half the screen */
+  --prototype-review-panel-max-h: 45dvh; /* phone: the notes panel under it stays below half the screen */
   --text-input-touch: 16px; /* iOS does not zoom into fields at 16px or more */
   --mobile-page-fill: calc(100dvh - var(--sz-safe-top) - var(--sz-60px) - 4rem - var(--sz-safe-bottom)); /* phone: a full-height page between the sticky header and the tab bar (h-16) */
   --mobile-ptr-top: calc(var(--sz-safe-top) + var(--sz-60px)); /* phone pull-to-refresh sits just under the sticky header */

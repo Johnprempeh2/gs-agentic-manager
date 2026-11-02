@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@/lib/router";
-import { ExternalLink, Laptop, Maximize2, Smartphone, X } from "lucide-react";
+import { ExternalLink, Laptop, Maximize2, MessageSquarePlus, Smartphone, X } from "lucide-react";
+import { PrototypeReview } from "./PrototypeReview";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, type IssueAttachment } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -69,6 +70,7 @@ export function useAttachmentPreview(attachments: readonly IssueAttachment[] | u
         name,
         kind,
         pathname: current.pathname,
+        ...(meta ? { issueId: meta.issueId, companyId: meta.companyId } : {}),
       };
       const baseState = withoutAttachmentPreviewState(current.state);
       // Swapping one preview for another does not stack history entries.
@@ -133,9 +135,13 @@ export function AttachmentPreviewPanel({
   if (preview) lastPreviewRef.current = preview;
   const shown = preview ?? lastPreviewRef.current;
   const [viewport, setViewport] = useState<HtmlViewport>("fit");
+  const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
-    if (!preview) setViewport("fit");
+    if (!preview) {
+      setViewport("fit");
+      setReviewing(false);
+    }
   }, [preview]);
 
   const src = shown ? attachmentContentPath(shown.attachmentId) : "";
@@ -184,6 +190,18 @@ export function AttachmentPreviewPanel({
                   ))}
                 </div>
               ) : null}
+              {shown.kind === "html" && shown.issueId && shown.companyId ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setReviewing(true)}
+                  title="Pin comments, draw and edit text, then send it to the agent"
+                >
+                  <MessageSquarePlus aria-hidden="true" className="size-3.5" />
+                  Review
+                </Button>
+              ) : null}
               <Button asChild variant="ghost" size="icon-sm">
                 <a
                   href={src}
@@ -210,6 +228,16 @@ export function AttachmentPreviewPanel({
             <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/40">
               <PreviewBody preview={shown} src={src} viewport={viewport} />
             </div>
+            {reviewing && shown.issueId && shown.companyId ? (
+              <PrototypeReview
+                attachmentId={shown.attachmentId}
+                issueId={shown.issueId}
+                companyId={shown.companyId}
+                name={shown.name}
+                open={reviewing}
+                onOpenChange={setReviewing}
+              />
+            ) : null}
           </>
         ) : null}
       </SheetContent>

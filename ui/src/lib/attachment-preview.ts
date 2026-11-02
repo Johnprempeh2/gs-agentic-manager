@@ -20,6 +20,9 @@ export interface AttachmentPreviewState {
   kind: AttachmentPreviewKind;
   /** The page the panel was opened on, so the state never follows a link. */
   pathname: string;
+  /** The task the file belongs to, so a review can post back to it. */
+  issueId?: string;
+  companyId?: string;
 }
 
 export const ATTACHMENT_PREVIEW_STATE_KEY = "attachmentPreview";

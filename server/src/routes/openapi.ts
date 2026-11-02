@@ -10892,6 +10892,24 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/attachments/{attachmentId}/annotate",
+  tags: ["assets"],
+  summary: "An HTML attachment with the review tools (pins, drawing, text edits) inside its sandbox",
+  request: { params: z.object({ attachmentId: z.string() }) },
+  responses: { 200: { description: "HTML page" }, 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/attachments/{attachmentId}/annotate/render",
+  tags: ["assets"],
+  summary: "Render an HTML attachment with review markup drawn on it, as a PNG",
+  request: { params: z.object({ attachmentId: z.string() }) },
+  responses: { 200: { description: "PNG image" }, 204: { description: "No headless browser on this server" }, 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
   method: "delete",
   path: "/api/attachments/{attachmentId}",
   tags: ["assets"],

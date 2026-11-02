@@ -66,14 +66,20 @@ type Route = { request(): { url(): string }; abort(): Promise<void>; continue():
 type Page = {
   route(pattern: string, handler: (route: Route) => Promise<void>): Promise<void>;
   goto(url: string, options: { waitUntil: "load"; timeout: number }): Promise<unknown>;
+  setContent(html: string, options: { waitUntil: "load"; timeout: number }): Promise<void>;
+  evaluate<T>(fn: () => T): Promise<T>;
   waitForTimeout(ms: number): Promise<void>;
-  screenshot(options: { type: "jpeg"; quality: number }): Promise<Buffer>;
+  screenshot(
+    options:
+      | { type: "jpeg"; quality: number }
+      | { type: "png"; fullPage?: boolean; clip?: { x: number; y: number; width: number; height: number } },
+  ): Promise<Buffer>;
 };
 type Browser = {
   newContext(options: Record<string, unknown>): Promise<{ newPage(): Promise<Page> }>;
   close(): Promise<void>;
 };
-type Chromium = { launch(options: { headless: boolean; args?: string[] }): Promise<Browser> };
+type Chromium = { launch(options: { headless: boolean; args?: string[]; channel?: string }): Promise<Browser> };
 
 let chromiumLoader: Promise<Chromium | null> | null = null;
 
@@ -83,7 +89,7 @@ let chromiumLoader: Promise<Chromium | null> | null = null;
  * without it, or without the browser binary, gets null and cards fall back to
  * the placeholder.
  */
-function loadChromium(): Promise<Chromium | null> {
+export function loadChromium(): Promise<Chromium | null> {
   chromiumLoader ??= (async () => {
     for (const name of ["playwright", "playwright-core", "@playwright/test"]) {
       try {
