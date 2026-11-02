@@ -153,6 +153,16 @@ describe("legacy adapter skill selection", () => {
     ).toEqual([GSAM_OPERATIONAL_SKILL_KEY, ponytailEntry.key]);
   });
 
+  it("mounts impeccable on every agent when the library has it", () => {
+    const impeccableEntry = { key: "paperclipai/paperclip/impeccable", runtimeName: "impeccable" };
+    expect(
+      resolveLegacyPaperclipDesiredSkillNames(
+        { paperclipSkillSync: { desiredSkills: [] } },
+        [operationalEntry, impeccableEntry, optionalEntry],
+      ),
+    ).toEqual([GSAM_OPERATIONAL_SKILL_KEY, impeccableEntry.key]);
+  });
+
   it("leaves the configurable resolver available for native runners", () => {
     expect(resolvePaperclipDesiredSkillNames({}, [operationalEntry])).toEqual(
       [],

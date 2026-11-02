@@ -4405,6 +4405,8 @@ export function normalizePaperclipRunnerAdapterConfig(
 export const GSAM_BUILT_IN_SKILL_KEYS = [
   GSAM_OPERATIONAL_SKILL_KEY,
   "paperclipai/paperclip/ponytail",
+  // Impeccable's design guidance (Apache-2.0, vendored by scripts/update-impeccable.mjs): every prototype and live design.
+  "paperclipai/paperclip/impeccable",
 ];
 
 /**

@@ -175,6 +175,7 @@ const IssueDetail = lazyPage(loadIssueDetailPage, "IssueDetail", loadedIssueDeta
 // A cold task URL needs this page before anything shows; start it with the app.
 if (typeof window !== "undefined" && isIssueDetailPath(window.location.pathname)) preloadIssueDetailPage();
 const TaskTree = lazyPage(() => import("./pages/TaskTree"), "TaskTree");
+const LiveEditor = lazyPage(() => import("./pages/LiveEditor"), "LiveEditor");
 const ProjectTree = lazyPage(() => import("./pages/ProjectTree"), "ProjectTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
 const WhatNeedsMe = lazyPage(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
@@ -350,6 +351,7 @@ function boardRoutes() {
       <Route path="issues/new" element={<NewTaskRoute />} />
       <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} loadTask={loadIssueDetailPage} taskLoaded={isIssueDetailPageLoaded} />} />
       <Route path="issues/:issueId/tree" element={<TaskTree />} />
+      <Route path="issues/:issueId/design/:attachmentId" element={<LiveEditor />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
       ) : null}

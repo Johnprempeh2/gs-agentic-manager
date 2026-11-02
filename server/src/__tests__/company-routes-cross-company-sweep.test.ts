@@ -29,6 +29,7 @@ import type { ToolGatewayService } from "../services/tool-gateway.js";
 import { ensureHumanRoleDefaultGrants } from "../services/principal-access-compatibility.js";
 import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
 import { createStorageService } from "../storage/service.js";
+import { startLiveDesign } from "../services/live-design.js";
 import { describeEmbeddedPostgres, useEmbeddedPostgres } from "./helpers/route-test-harness.js";
 
 /**
@@ -541,6 +542,8 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/secrets/:id": secretId, "/api/secret-provider-configs/:id": providerConfigId,
       "/api/labels/:labelId": labelId, "/api/assets/:assetId": assetId,
       "/api/attachments/:attachmentId": attachmentId, "/api/work-products/:id": workProductId,
+      // Live design sessions are in memory: one for company A's task is enough.
+      "/api/live-design/:sessionId": startLiveDesign({ companyId: companyAId, issueId, attachmentId, agentId }).session.id,
       "/api/workspace-operations/:operationId": operationId, "/api/environment-leases/:leaseId": leaseId,
       "/api/tool-profile-entries/:entryId": profileEntryId, "/api/connection-intents/:interactionId": intentId,
       "/api/feedback-traces/:traceId": traceId, "/api/decision-training/:id": trainingId,

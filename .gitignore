@@ -40,6 +40,8 @@ cli/package.dev.json
 
 # Build artifacts in src directories
 server/src/**/*.js
+# Vendored Impeccable page scripts (scripts/update-impeccable.mjs).
+!server/src/built-ins/impeccable/*.js
 server/src/**/*.js.map
 server/src/**/*.d.ts
 server/src/**/*.d.ts.map

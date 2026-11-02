@@ -3131,6 +3131,10 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-70vh: 70vh; /* Extracted from ui/src/components/IssueChatThread.test.tsx (max-h-[70vh]). */
   --sz-calc-7: calc(100% - 0.5rem); /* Extracted from ui/src/components/IssueChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
   --sz-28dvh: 28dvh; /* Extracted from ui/src/components/IssueChatThread.test.tsx (max-h-[28dvh]). */
+  --sz-42dvh: 42dvh; /* Live design: the chat under the page on a phone. */
+  --sz-bubble-max: 85%; /* Chat bubbles leave room to see who is speaking. */
+  --sz-pad-safe-top: max(0.5rem, var(--sz-safe-top)); /* A full-screen header clears the notch. */
+  --sz-pad-safe-bottom: max(0.75rem, var(--sz-safe-bottom)); /* A full-screen footer clears the home bar. */
   --sz-35dvh: 35dvh; /* GS Studio settings panel on a phone, so the docked composer leaves room for the page. */
   --sz-72px: 72px; /* Extracted from ui/src/components/IssueChatThread.test.tsx (min-h-[72px]). */
   --sz-15px: 15px; /* Extracted from ui/src/components/IssueChatThread.test.tsx (p-[15px]). */

@@ -28,7 +28,7 @@ describe("claude local skill sync", () => {
     cleanupDirs.clear();
   });
 
-  it("keeps the built-in skills (operational, ponytail) configured when no explicit selection exists", async () => {
+  it("keeps the built-in skills (operational, ponytail, impeccable) configured when no explicit selection exists", async () => {
     const snapshot = await listClaudeSkills({
       agentId: "agent-1",
       companyId: "company-1",
@@ -38,7 +38,7 @@ describe("claude local skill sync", () => {
 
     expect(snapshot.mode).toBe("ephemeral");
     expect(snapshot.supported).toBe(true);
-    expect(snapshot.desiredSkills).toEqual([paperclipKey, "paperclipai/paperclip/ponytail"]);
+    expect(snapshot.desiredSkills).toEqual(["paperclipai/paperclip/impeccable", paperclipKey, "paperclipai/paperclip/ponytail"]);
     expect(snapshot.entries.find((entry) => entry.key === paperclipKey)?.state).toBe("configured");
     expect(snapshot.entries.find((entry) => entry.key === "paperclipai/paperclip/ponytail")?.state).toBe("configured");
     expect(snapshot.entries.find((entry) => entry.key === createAgentKey)?.state).toBe("available");
