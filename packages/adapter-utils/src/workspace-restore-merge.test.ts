@@ -125,6 +125,73 @@ describe("workspace restore merge", () => {
     }
   });
 
+  it("omits a file removed between listing and inspection", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
+    cleanupDirs.push(rootDir);
+    const removed = path.join(rootDir, "removed.txt");
+    await writeFile(removed, "temporary");
+    await writeFile(path.join(rootDir, "kept.txt"), "kept");
+    const lstatSpy = vi.spyOn(fsPromises, "lstat").mockImplementation(async (target, ...rest) => {
+      if (target === removed) await rm(removed);
+      return lstat(target, ...rest);
+    });
+    try {
+      const snapshot = await captureDirectorySnapshot(rootDir, { exclude: [] });
+      expect(snapshot.entries.has("removed.txt")).toBe(false);
+      expect(snapshot.entries.get("kept.txt")).toMatchObject({ kind: "file" });
+    } finally {
+      lstatSpy.mockRestore();
+    }
+  });
+
+  it("fails if the capture root is missing", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
+    cleanupDirs.push(rootDir);
+    await expect(captureDirectorySnapshot(path.join(rootDir, "missing"), { exclude: [] }))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("omits a file removed before hashing and a directory removed before reading", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
+    cleanupDirs.push(rootDir);
+    const removedFile = path.join(rootDir, "removed.txt");
+    const removedDir = path.join(rootDir, "removed-dir");
+    await writeFile(removedFile, "temporary");
+    await mkdir(removedDir);
+    await writeFile(path.join(removedDir, "child.txt"), "child");
+    const lstatSpy = vi.spyOn(fsPromises, "lstat").mockImplementation(async (target, ...rest) => {
+      const stats = await lstat(target, ...rest);
+      if (target === removedFile || target === removedDir) {
+        await rm(String(target), { recursive: true, force: true });
+      }
+      return stats;
+    });
+    try {
+      const snapshot = await captureDirectorySnapshot(rootDir, { exclude: [] });
+      expect(snapshot.entries.has("removed.txt")).toBe(false);
+      expect(snapshot.entries.has("removed-dir/child.txt")).toBe(false);
+    } finally {
+      lstatSpy.mockRestore();
+    }
+  });
+
+  it("still fails for an inspection error other than a missing entry", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-restore-merge-"));
+    cleanupDirs.push(rootDir);
+    const unreadable = path.join(rootDir, "unreadable.txt");
+    await writeFile(unreadable, "private");
+    const lstatSpy = vi.spyOn(fsPromises, "lstat").mockImplementation(async (target, ...rest) => {
+      if (target === unreadable) throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      return lstat(target, ...rest);
+    });
+    try {
+      await expect(captureDirectorySnapshot(rootDir, { exclude: [] }))
+        .rejects.toMatchObject({ code: "EACCES" });
+    } finally {
+      lstatSpy.mockRestore();
+    }
+  });
+
   describe("classifyWorkspaceRestoreFailure", () => {
     it.each([
       "Daytona syncOut refusing tarball with an unparseable entry listing: private listing",

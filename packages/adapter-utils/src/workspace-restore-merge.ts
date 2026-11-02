@@ -106,6 +106,10 @@ async function hashFile(filePath: string): Promise<string> {
   });
 }
 
+function isMissingEntry(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
+}
+
 async function walkDirectory(
   root: string,
   exclude: readonly string[],
@@ -113,7 +117,10 @@ async function walkDirectory(
   out: Map<string, SnapshotEntry> = new Map(),
 ): Promise<Map<string, SnapshotEntry>> {
   const current = relative ? path.join(root, relative) : root;
-  const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => []);
+  const entries = await fs.readdir(current, { withFileTypes: true }).catch((error: unknown) => {
+    if (relative && isMissingEntry(error)) return [];
+    throw error;
+  });
   entries.sort((left, right) => left.name.localeCompare(right.name));
 
   for (const entry of entries) {
@@ -121,30 +128,21 @@ async function walkDirectory(
     if (shouldExcludePath(nextRelative, exclude)) continue;
 
     const fullPath = path.join(root, nextRelative);
-    const stats = await fs.lstat(fullPath);
-    if (!stats.isDirectory() && !stats.isSymbolicLink() && !stats.isFile()) {
-      continue;
-    }
+    try {
+      const stats = await fs.lstat(fullPath);
+      if (!stats.isDirectory() && !stats.isSymbolicLink() && !stats.isFile()) continue;
 
-    if (stats.isDirectory()) {
-      out.set(nextRelative, { kind: "dir" });
-      await walkDirectory(root, exclude, nextRelative, out);
-      continue;
+      if (stats.isDirectory()) {
+        out.set(nextRelative, { kind: "dir" });
+        await walkDirectory(root, exclude, nextRelative, out);
+      } else if (stats.isSymbolicLink()) {
+        out.set(nextRelative, { kind: "symlink", target: await fs.readlink(fullPath) });
+      } else {
+        out.set(nextRelative, { kind: "file", mode: stats.mode, hash: await hashFile(fullPath) });
+      }
+    } catch (error) {
+      if (!isMissingEntry(error)) throw error;
     }
-
-    if (stats.isSymbolicLink()) {
-      out.set(nextRelative, {
-        kind: "symlink",
-        target: await fs.readlink(fullPath),
-      });
-      continue;
-    }
-
-    out.set(nextRelative, {
-      kind: "file",
-      mode: stats.mode,
-      hash: await hashFile(fullPath),
-    });
   }
 
   return out;
