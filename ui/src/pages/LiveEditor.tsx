@@ -109,6 +109,8 @@ export function WebsitePageLiveEditor() {
     queryFn: () => websiteModuleApi.pages(companyId, siteId),
     enabled: !!companyId,
   });
+  // The current page stays listed even when it is still a planned sitemap page (opened from the Sitemap tab).
+  const builtPages = (pages ?? []).filter((p) => !p.archivedAt && (p.status !== "planned" || p.id === pageId));
   const { data: revisions } = useQuery({
     queryKey: ["website-live-revisions", companyId, siteId, pageId, current],
     queryFn: () => websiteModuleApi.revisions(companyId, siteId, pageId),
@@ -122,14 +124,15 @@ export function WebsitePageLiveEditor() {
       backTo="/website"
       backLabel="Back to the website"
       switcher={
-        pages && pages.length > 1 ? (
+        builtPages.length > 1 ? (
           <NativeSelect
             aria-label="Page"
             value={pageId}
             onChange={(e) => navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`)}
             className="h-8 max-w-48"
           >
-            {pages.filter((p) => !p.archivedAt).map((p) => (
+            {/* Only pages that exist on the site; planned sitemap pages are built from the Sitemap tab. */}
+            {builtPages.map((p) => (
               <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
             ))}
           </NativeSelect>
@@ -217,10 +220,18 @@ function LiveEditorShell({
   const sayHello = useCallback(() => {
     const win = frameRef.current?.contentWindow;
     if (!engine || !engineOrigin || !win) return;
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    engineNonce.current = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    // One nonce per frame load: the frame binds to the first hello it sees and ignores a different
+    // nonce after that, so a repeated hello (load and live-waiting both send one) must repeat it.
+    if (!engineNonce.current) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      engineNonce.current = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
     win.postMessage({ gs: "website-frame", id: crypto.randomUUID(), type: "hello", payload: { nonce: engineNonce.current, protocols: [1], siteId: engine.siteId } }, engineOrigin);
   }, [engine, engineOrigin]);
+  // A new page or version is a new frame load, so it gets a fresh nonce.
+  useEffect(() => {
+    engineNonce.current = null;
+  }, [frameSrc, pageId]);
   useEffect(() => {
     if (!engineOrigin) return;
     const onEngine = (e: MessageEvent) => {
