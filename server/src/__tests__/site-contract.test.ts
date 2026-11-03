@@ -111,9 +111,14 @@ describe("GSAM and website contract (GRE-2633)", () => {
     it("asks each site's live address and editor host once", async () => {
       const { siteOrigins } = await gate();
       expect(siteOrigins([
-        { domain: "WWW.Site.test", editorFrameOrigin: "https://editor.site.test/" },
-        { domain: "www.site.test", editorFrameOrigin: null },
+        { domain: "WWW.Site.test", editorFrameOrigin: "https://editor.site.test/", liveReleaseId: "r1" },
+        { domain: "www.site.test", editorFrameOrigin: null, liveReleaseId: "r1" },
       ])).toEqual(["https://editor.site.test", "https://www.site.test"]);
+    });
+
+    it("skips a site's public domain until GSAM has a release live there (before cutover the old build serves it)", async () => {
+      const { siteOrigins } = await gate();
+      expect(siteOrigins([{ domain: "www.site.test", editorFrameOrigin: "https://editor.site.test/", liveReleaseId: null }])).toEqual(["https://editor.site.test"]);
     });
 
     it("passes when every site speaks the release's minimum, and refuses an old or silent one", async () => {
