@@ -51,9 +51,16 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # The nightly full run on main: the safety net now that a merge whose files a
+  # pull request run already tested skips its own run (the dedupe job).
+  schedule:
+    - cron: "30 2 * * *"
 
 permissions:
   contents: read
+  # The dedupe job reads earlier runs, their logs and the merged pull request.
+  actions: read
+  pull-requests: read
 
 # One group per pull request (a newer push cancels the older run), and one
 # per main commit: a group keeps only one waiting run, so a shared main group
@@ -63,8 +70,37 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # A push to main whose files a passed pull request run already tested (the
+  # release gate's own rule 2, scripts/greatstone-github-gate.mjs) skips the
+  # matrix: the same files would run the same tests again, 35 to 49 minutes,
+  # and hold job slots that pull requests need. Anything else runs in full;
+  # if GitHub cannot be asked, it runs in full.
+  dedupe:
+    name: Already tested
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+        with:
+          sparse-checkout: scripts
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GSAM_GITHUB_REPO: ${{ github.repository }}
+        run: |
+          if [ "${{ github.event_name }}" = push ] && node scripts/greatstone-github-gate.mjs "${{ github.sha }}"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   guard:
     name: Rebrand and workflow guard
+    needs: dedupe
+    if: needs.dedupe.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -108,6 +144,8 @@ jobs:
 
   typecheck:
     name: Typecheck
+    needs: dedupe
+    if: needs.dedupe.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -139,6 +177,8 @@ jobs:
 
   build:
     name: Build
+    needs: dedupe
+    if: needs.dedupe.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -160,7 +200,7 @@ jobs:
         with:
           workspaces: packages/paperclip-runner/runner -> target
           shared-key: fork-runner
-          save-if: ${{ github.event_name == 'push' }}
+          save-if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
 
       - name: Build every workspace
         run: pnpm build
@@ -199,7 +239,8 @@ jobs:
   # pull request that adds it. The rest of the server suite stays manual.
   server-security:
     name: Tests (server security)
-    if: github.event_name != 'workflow_dispatch'
+    needs: dedupe
+    if: github.event_name != 'workflow_dispatch' && needs.dedupe.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -221,6 +262,8 @@ jobs:
   # switch, through the built UI against a throwaway local_trusted instance.
   journeys:
     name: Core journeys (e2e)
+    needs: dedupe
+    if: needs.dedupe.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -250,6 +293,8 @@ jobs:
 
   test:
     name: Tests (${{ matrix.label }})
+    needs: dedupe
+    if: needs.dedupe.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -321,7 +366,7 @@ jobs:
   result:
     name: Fork CI
     if: always()
-    needs: [guard, typecheck, build, server-security, journeys, runner, test]
+    needs: [dedupe, guard, typecheck, build, server-security, journeys, runner, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
