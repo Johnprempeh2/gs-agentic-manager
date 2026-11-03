@@ -82,6 +82,8 @@ interface Session {
   error: string | null;
   messages: LiveDesignMessage[];
   queue: AgentEvent[];
+  /** John's last chat note, until the agent answers it with versions (so a discard cannot lose it). */
+  lastSteer?: { requestId: string | null; message: string } | null;
   waiter: ((event: AgentEvent | null) => void) | null;
   frames: Frame[];
   frameWaiters: Array<() => void>;
@@ -332,6 +334,10 @@ export function discardLiveDesign(s: Session) {
   if (s.request && (s.status === "ready" || s.status === "generating")) {
     push(s, { type: "discard", requestId: s.request.id });
     say(s, "gsam", "Discarded. The page is back as it was.");
+    // A note John sent about those versions is not dropped with them: it goes on as a request for the page.
+    const notes = s.queue.filter((e) => e.type === "steer" && e.requestId === s.request!.id) as Array<{ message: string }>;
+    for (const note of notes) push(s, { type: "steer", requestId: null, message: note.message });
+    if (!notes.length && s.lastSteer?.requestId === s.request.id) push(s, { type: "steer", requestId: null, message: s.lastSteer.message });
   }
   // While the agent applies edits the session stays "applying"; only the versions go.
   if (s.status !== "ended" && !s.editsRequestId) s.status = isConnected(s) ? "idle" : "waiting_agent";
@@ -349,6 +355,7 @@ export function steerLiveDesign(s: Session, message: string, steerId: string | n
   say(s, "john", text);
   s.touchedAt = Date.now();
   push(s, { type: "steer", requestId: s.request?.id ?? null, message: text });
+  s.lastSteer = { requestId: s.request?.id ?? null, message: text };
   // Impeccable keeps its steer box locked until the helper says the note was taken.
   if (steerId) frame(s, { type: "steer_done", id: steerId, message: "Sent to the agent." });
   return s;
@@ -443,6 +450,8 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
     frame(s, { type: "error", id: reply.requestId, message: reply.error });
     return { ok: true };
   }
+  // Versions answer John's last note; discarding them must not send it again.
+  if (reply.variants?.length) s.lastSteer = null;
   if (s.status === "generating" && reply.variants?.length) {
     s.variants = reply.variants;
     s.status = "ready";

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acceptLiveDesign,
+  discardLiveDesign,
+  steerLiveDesign,
   endLiveDesign,
   getLiveDesign,
   liveDesignAcceptsPage,
@@ -71,6 +73,34 @@ describe("live design through Impeccable's page tools", () => {
     endLiveDesign(s);
     expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "end" });
     expect(handleImpeccableRequest(s, post({ type: "generate", id: "x", freeformPrompt: "again", element: {} })).status).toBe(409);
+  });
+
+  it("keeps a note John sent about versions he then discards: it reaches the agent as a page request", async () => {
+    const { session: s } = startLiveDesign(ids);
+    handleImpeccableRequest(s, post({ type: "generate", id: "imp22222", action: "impeccable", freeformPrompt: "Fix the logos", count: 3,
+      element: { tagName: "ul", textContent: "", outerHTML: "<ul></ul>", anchor: "ul" } }, "ul"));
+    expect(await pollLiveDesign(s, 0)).toMatchObject({ type: "generate", requestId: "imp22222" });
+    replyLiveDesign(s, { requestId: "imp22222", variants: [{ html: "<ul></ul>", css: "", name: "A", params: [] }] });
+
+    steerLiveDesign(s, "we need to see the colour of the logos");
+    discardLiveDesign(s);
+    const events = [await pollLiveDesign(s, 0), await pollLiveDesign(s, 0), await pollLiveDesign(s, 0)];
+    expect(events.map((e) => e?.type)).toEqual(["steer", "discard", "steer"]);
+    expect(events[2]).toMatchObject({ requestId: null, message: "we need to see the colour of the logos" });
+  });
+
+  it("does not resend a note the agent already answered with versions", async () => {
+    const { session: s } = startLiveDesign(ids);
+    handleImpeccableRequest(s, post({ type: "generate", id: "imp33333", action: "impeccable", freeformPrompt: "Calmer", count: 2,
+      element: { tagName: "a", textContent: "", outerHTML: "<a></a>", anchor: "a" } }, "a"));
+    await pollLiveDesign(s, 0);
+    replyLiveDesign(s, { requestId: "imp33333", variants: [{ html: "<a></a>", css: "", name: "A", params: [] }] });
+    steerLiveDesign(s, "calmer still");
+    await pollLiveDesign(s, 0);
+    replyLiveDesign(s, { requestId: "imp33333", variants: [{ html: "<a></a>", css: "", name: "B", params: [] }] });
+    discardLiveDesign(s);
+    expect(await pollLiveDesign(s, 0)).toMatchObject({ type: "discard" });
+    expect(await pollLiveDesign(s, 0)).toMatchObject({ type: "timeout" });
   });
 
   it("stages pencil edits, undoes one by ref, and has the agent apply the rest", async () => {
