@@ -45,7 +45,7 @@ describe("Sitemap Menus and Journeys status", () => {
     const items = [...container.querySelectorAll("li")].map((item) => item.textContent);
     expect(items).toEqual([
       "HomeLive",
-      "ToolsPlannedTools is planned, so it stays out of this menu until it is live.",
+      "ToolsTo buildTools is planned, so it stays out of this menu until it is live.",
     ]);
   });
 
@@ -54,7 +54,7 @@ describe("Sitemap Menus and Journeys status", () => {
     const steps = container.querySelector("ol")!.textContent;
     expect(steps).toContain("Home");
     expect(steps).toContain("Live");
-    expect(steps).toContain("Planned");
+    expect(steps).toContain("To build");
     const gaps = container.querySelector("[aria-label='Steps visitors cannot take yet']")!;
     expect(gaps.textContent).toBe("Tools is planned, not live. Visitors cannot take this step yet.");
   });

@@ -1,4 +1,4 @@
-import { isWebsiteHtmlPage } from "@greatstone/shared";
+import { isWebsiteHtmlPage, WEBSITE_CHROME_COLLECTION, WEBSITE_CHROME_KEYS } from "@greatstone/shared";
 import { createHash, randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
@@ -91,6 +91,8 @@ const DEFAULT_TIMING: PublishTiming = {
 
 /** The release file schema GSAM writes (task 0.3 contract). */
 export const WEBSITE_RELEASE_SCHEMA = 1;
+/** Release schema 2 (greatstone-website GRE-3776): pages carry `{ html, css }`, with shared chrome and one site stylesheet. */
+export const WEBSITE_HTML_RELEASE_SCHEMA = 2;
 const CURRENT_KEY = "current";
 const RELEASE_HEADER = "x-gsam-release";
 const RELEASE_META_RE = /<meta[^>]+name=["']gsam-release["'][^>]*content=["']([^"']+)["']/i;
@@ -411,8 +413,14 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     const collections: Record<string, unknown[]> = {};
     const redirects: unknown[] = [];
     const mediaAssetIds: string[] = [];
+    // Schema 2's shared parts are entries of the reserved _chrome collection, not a collection the site lists.
+    const chromeParts = new Map<string, Record<string, unknown>>();
     for (const { entry, revisionId } of releasedEntries) {
       const fields = parse(revisionId, `${entry.collection}/${entry.entryKey}`);
+      if (entry.collection === WEBSITE_CHROME_COLLECTION) {
+        if (fields && typeof fields === "object") chromeParts.set(entry.entryKey, fields as Record<string, unknown>);
+        continue;
+      }
       const item = { id: entry.id, key: entry.entryKey, orgId: entry.orgId, sortOrder: entry.sortOrder, fields };
       const releaseKey = websiteCollectionDefinition(entry.collection)?.releaseKey ?? entry.collection;
       (collections[releaseKey] ??= []).push(item);
@@ -447,10 +455,13 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
     // Hard checks before anything is uploaded. Broken links, SEO, accessibility
     // and voice checks join this list in Phase 3.6.
+    // Every page HTML: schema 2. Any block page left: schema 1, which cannot carry HTML pages.
+    const htmlPageCount = pageFiles.filter((file) => isWebsiteHtmlPage(file.content)).length;
+    const schema = pageFiles.length > 0 && htmlPageCount === pageFiles.length ? WEBSITE_HTML_RELEASE_SCHEMA : WEBSITE_RELEASE_SCHEMA;
     checks.push(
-      site.releaseSchemaVersion === WEBSITE_RELEASE_SCHEMA
+      site.releaseSchemaVersion >= schema
         ? { kind: "check", name: "release_schema", ok: true }
-        : { kind: "check", name: "release_schema", ok: false, message: `GSAM writes release schema ${WEBSITE_RELEASE_SCHEMA}; this site's engine expects ${site.releaseSchemaVersion}.` },
+        : { kind: "check", name: "release_schema", ok: false, message: `This release needs release schema ${schema}; this site's engine reads ${site.releaseSchemaVersion}. Update the site's engine first.` },
     );
     checks.push(
       pageFiles.length > 0
@@ -464,12 +475,19 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     );
     // Live-designed pages are HTML documents (plan revision 8); a site engine on release schema 1
     // only renders blocks, so they wait for the engine update (S2) instead of breaking the site.
-    const htmlPages = pageFiles.filter((file) => isWebsiteHtmlPage(file.content)).map((file) => file.slug);
+    const blockPages = pageFiles.filter((file) => !isWebsiteHtmlPage(file.content)).map((file) => file.slug);
     checks.push(
-      htmlPages.length === 0 || site.releaseSchemaVersion >= 2
+      htmlPageCount === 0 || blockPages.length === 0
         ? { kind: "check", name: "html_pages", ok: true }
-        : { kind: "check", name: "html_pages", ok: false, message: `${htmlPages.join(", ")} ${htmlPages.length === 1 ? "is a live-designed page" : "are live-designed pages"}; this site's engine cannot show those yet. Publish after the website engine update.` },
+        : { kind: "check", name: "html_pages", ok: false, message: `Some pages are HTML and ${blockPages.join(", ")} ${blockPages.length === 1 ? "is" : "are"} still in the block format. A release is all one or the other: import or rebuild ${blockPages.length === 1 ? "it" : "them"} as HTML first.` },
     );
+    if (schema === WEBSITE_HTML_RELEASE_SCHEMA) {
+      checks.push(
+        typeof chromeParts.get("stylesheet")?.css === "string"
+          ? { kind: "check", name: "site_chrome", ok: true }
+          : { kind: "check", name: "site_chrome", ok: false, message: "The site's shared header, footer and stylesheet are not approved yet. Approve them in Collections (_chrome) first." },
+      );
+    }
     checks.push(
       missingMedia.length === 0
         ? { kind: "check", name: "media_assets", ok: true }
@@ -495,13 +513,26 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     );
 
     const theme = site.theme ?? {};
+    const text = (value: unknown) => (typeof value === "string" ? value : "");
     const file = stableJson({
-      schema: WEBSITE_RELEASE_SCHEMA,
+      schema,
       siteId: site.id,
       orgId: null,
       release: number,
       theme,
-      pages: pageFiles,
+      ...(schema === WEBSITE_HTML_RELEASE_SCHEMA
+        ? {
+            stylesheet: text(chromeParts.get("stylesheet")?.css),
+            chrome: Object.fromEntries(WEBSITE_CHROME_KEYS.map((key) => [key, { html: text(chromeParts.get(key)?.html), css: text(chromeParts.get(key)?.css) }])),
+          }
+        : {}),
+      pages:
+        schema === WEBSITE_HTML_RELEASE_SCHEMA
+          ? pageFiles.map(({ content, ...rest }) => {
+              const page = content as { html: string; css?: string };
+              return { ...rest, html: page.html, css: page.css ?? "" };
+            })
+          : pageFiles,
       collections,
       redirects,
       media,

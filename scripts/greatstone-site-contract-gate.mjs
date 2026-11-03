@@ -22,7 +22,9 @@ const CALL_TIMEOUT_MS = 10_000;
 export function siteOrigins(sites) {
   const origins = new Set();
   for (const site of sites) {
-    if (typeof site?.domain === "string" && site.domain.trim()) origins.add(`https://${site.domain.trim().toLowerCase()}`);
+    // Before cutover a site's public domain is not served by GSAM releases (the old build is), so only
+    // the editor host can speak the contract. Once GSAM has published a release, the domain is checked too.
+    if (site?.liveReleaseId && typeof site?.domain === "string" && site.domain.trim()) origins.add(`https://${site.domain.trim().toLowerCase()}`);
     if (typeof site?.editorFrameOrigin === "string" && site.editorFrameOrigin.trim()) {
       try {
         origins.add(new URL(site.editorFrameOrigin.trim()).origin);

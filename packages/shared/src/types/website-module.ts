@@ -366,6 +366,10 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageLiveFrame: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-frame",
   /** POST `{ revisionId }` → `LiveDesignView`: bring an earlier version back as the newest one (website:edit). */
   pageLiveRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-restore",
+  /** GET → text/css: the site stylesheet for schema 2 pages, for agents (website:view). */
+  siteStylesheet: "/companies/:companyId/website/sites/:siteId/stylesheet",
+  /** POST a schema 2 release file → `{ updated, created, unchanged, chrome }`: import the site's pages as HTML drafts (people, website:edit). */
+  importHtml: "/companies/:companyId/website/sites/:siteId/import-html",
   /**
    * GET → `WebsitePageComment[]`, the page's open comments, oldest first (website:view).
    * POST `CreateWebsiteChangeRequest` → 201 `WebsiteChangeRequestResult` (website:edit). One task for the website agent; 200 with the same task on a repeated requestId.

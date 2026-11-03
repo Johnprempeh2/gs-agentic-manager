@@ -72,7 +72,7 @@ import { websiteEnquiryService, type WebsiteEnquiryCopy, type WebsiteEnquiryRead
 import { websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
-import { HTML_ATTACHMENT_CSP, type LiveDesignView } from "@greatstone/shared";
+import { HTML_ATTACHMENT_CSP, WEBSITE_CHROME_COLLECTION, type LiveDesignView } from "@greatstone/shared";
 import {
   LiveDesignConflict,
   openLiveDesignFor,
@@ -82,8 +82,9 @@ import {
 } from "../services/live-design.js";
 import { pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
 import { injectImpeccableLive } from "../services/impeccable-helper.js";
-import { islandsForAgents, loadCompanyIslandManifest } from "../services/website/islands.js";
-import { websitePageSource } from "../services/website/live-page.js";
+import { islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
+import { siteAssetOrigin, websitePageFrame, websitePageSource } from "../services/website/live-page.js";
+import { importHtmlRelease, loadWebsiteChrome, type HtmlReleaseImport } from "../services/website/chrome.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
@@ -100,6 +101,26 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const unitInterval = z.number().min(0).max(1);
 /** A website `media` entry's content. `width` and `height` are kept when an import stored them. */
+const htmlDocSchema = z.object({ html: z.string().max(500_000).default(""), css: z.string().max(500_000).default("") });
+/** A schema 2 release file from greatstone-website's export (GRE-3778); only what the import uses. */
+const htmlReleaseImportSchema = z.object({
+  schema: z.literal(2),
+  stylesheet: z.string().max(1_500_000),
+  chrome: z.object({ header: htmlDocSchema.optional(), nav: htmlDocSchema.optional(), footer: htmlDocSchema.optional() }),
+  pages: z.array(z.object({
+    slug: z.string().regex(/^\/[a-z0-9\-/]*$/),
+    title: z.string().min(1).max(300),
+    html: z.string().min(1).max(1_500_000),
+    css: z.string().max(500_000).default(""),
+    seo: z.record(z.string(), z.unknown()).optional(),
+    menu: z.enum(["header", "footer", "none"]).optional(),
+    menuOrder: z.number().int().nullable().optional(),
+    navOrder: z.number().int().nullable().optional(),
+  })).min(1).max(500),
+  /** Live path to sitemap path for pages the approved sitemap moves; each gets a draft 301 redirect. */
+  paths: z.record(z.string().regex(/^\/[a-z0-9\-/]*$/), z.string().regex(/^\/[a-z0-9\-/]*$/)).default({}),
+});
+
 const mediaContentSchema = z
   .object({
     assetId: z.string().regex(UUID_RE, "must be an asset id"),
@@ -192,6 +213,13 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   /** The entry's fields: `media` by its own check, every other collection by the release schema. */
   async function assertEntryFields(companyId: string, collection: string, content: unknown) {
     if (collection === "media") return assertMediaFields(companyId, content);
+    // The shared header, nav, footer and stylesheet of HTML pages (release schema 2): html and css strings only.
+    if (collection === WEBSITE_CHROME_COLLECTION) {
+      if (!htmlDocSchema.strict().safeParse(content).success) {
+        throw unprocessable("A shared part holds only html and css text", { code: "website_collection_fields_invalid" });
+      }
+      return;
+    }
     assertCollectionFields(collection, content);
   }
 
@@ -699,7 +727,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       issueId: liveKey(page.id),
       attachmentId: joining?.attachmentId ?? doc.latestRevisionId,
       agentId,
-      source: websitePageSource(service.store, page),
+      source: websitePageSource(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId)),
       // Website pages may place the site's islands (GRE-3786), so the agent always gets the list.
       islands: islandsForAgents(await loadCompanyIslandManifest(db, page.companyId)),
     });
@@ -713,12 +741,14 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   router.get(WEBSITE_MODULE_API_ROUTES.pageLiveFrame, async (req, res) => {
     const found = await sitePageFor(req, res, "website:view");
     if (!found) return;
-    const { page } = found;
+    const { site, page } = found;
     const revisionId = typeof req.query.revision === "string" ? req.query.revision : "";
-    const source = websitePageSource(service.store, page);
+    // The page as the build shows it: shared header and footer, the site stylesheet, the site's images and fonts.
+    const assetOrigin = siteAssetOrigin(site.devPreviewUrl ?? site.livePreviewUrl);
     let html: string;
     try {
-      html = await source.read(revisionId);
+      html = await websitePageFrame(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId, assetOrigin);
+      html = withIslandPlaceholders(html, (await loadCompanyIslandManifest(db, page.companyId)).placeholderCss);
     } catch (err) {
       if (err instanceof LiveDesignConflict) {
         res.status(404).json({ error: NOT_FOUND });
@@ -730,8 +760,36 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     // The attachment sandbox, plus modals for Impeccable's confirm prompts.
-    res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals "));
+    let csp = HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals ");
+    if (assetOrigin) csp = csp.replace("font-src data:", `font-src data: ${assetOrigin}`).replace("img-src data: blob:", `img-src data: blob: ${assetOrigin}`).replace("media-src data: blob:", `media-src data: blob: ${assetOrigin}`);
+    res.setHeader("Content-Security-Policy", csp);
     res.status(200).send(injectImpeccableLive(html));
+  });
+
+  // The site stylesheet as plain CSS, so an agent can read the classes and tokens a page may use.
+  router.get(WEBSITE_MODULE_API_ROUTES.siteStylesheet, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const chrome = await loadWebsiteChrome(db, service, site.companyId, site.id);
+    if (!chrome) {
+      res.status(404).json({ error: "This site has no stylesheet yet. Import its HTML pages first." });
+      return;
+    }
+    res.setHeader("Content-Type", "text/css; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).send(chrome.stylesheet);
+  });
+
+  // One-time import of the site's pages as HTML (GRE-3778 export): new draft revisions, nothing published. People only.
+  router.post(WEBSITE_MODULE_API_ROUTES.importHtml, validate(htmlReleaseImportSchema), async (req, res) => {
+    assertBoard(req);
+    const site = await writableSiteFor(req, res);
+    if (!site) return;
+    const actor = getActorInfo(req);
+    const body = req.body as HtmlReleaseImport & { paths: Record<string, string> };
+    const result = await importHtmlRelease(db, service, site, body, { agentId: null, userId: actor.actorType === "user" ? actor.actorId : null }, body.paths);
+    await log(req, site.companyId, "website.html_imported", "website_site", site.id, { ...result });
+    res.json(result);
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.pageLiveRestore, validate(z.object({ revisionId: z.string().uuid() })), async (req, res) => {
