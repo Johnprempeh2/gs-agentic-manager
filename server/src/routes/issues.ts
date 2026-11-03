@@ -4,7 +4,6 @@ import {
   endLiveDesign,
   getLiveDesign,
   isLiveDesignEnded,
-  liveDesignBusyAgents,
   openLiveDesignFor,
   recordLiveDesignMarkup,
   restoreLiveDesign,
@@ -27,6 +26,7 @@ import {
 import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
 import { deliverableService } from "../services/deliverables.js";
+import { agentHasActiveRun, pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
 import { quietClientsService } from "../services/quiet-clients.js";
@@ -21111,29 +21111,14 @@ export function issueRoutes(
     return session;
   }
 
-  /**
-   * Wakes the session's agent. A designer who does not own the task is woken for
-   * the session, not on the task: it reads the page and returns the new one through it.
-   */
-  async function wakeLiveAgent(req: Request, session: LiveDesignSession, onTaskIssueId: string | null, fileName: string) {
-    const actor = getActorInfo(req);
-    await heartbeat.wakeup(session.agentId, {
-      source: "on_demand",
-      triggerDetail: "manual",
-      reason: "live_design",
-      idempotencyKey: `live_design:${session.id}:${Math.floor(Date.now() / 60_000)}`,
-      requestedByActorType: "user",
-      requestedByActorId: actor.actorId,
-      payload: { ...(onTaskIssueId ? { issueId: onTaskIssueId } : {}), liveDesignSessionId: session.id },
-      contextSnapshot: {
-        ...(onTaskIssueId ? { issueId: onTaskIssueId, taskId: onTaskIssueId } : {}),
-        wakeReason: "live_design",
-        source: "issue.live_design",
-        skipIssueComment: true,
-        liveDesignSessionId: session.id,
-        paperclipAgentMessage: { source: "live_design", sessionId: session.id, text: liveDesignWakeMessage(session.id, fileName) },
-      },
-    });
+  /** Wakes the session's agent again; on its own task only for a task file the agent owns. */
+  async function rewakeLiveAgent(req: Request, session: LiveDesignSession) {
+    let onTaskIssueId: string | null = null;
+    if (session.source?.kind !== "website-page") {
+      const issue = await svc.getById(session.issueId);
+      if (issue?.assigneeAgentId === session.agentId) onTaskIssueId = issue.id;
+    }
+    await wakeLiveDesignAgent(heartbeat, { session, onTaskIssueId, fileName: session.source?.label ?? "the page", actorId: getActorInfo(req).actorId });
   }
 
   const liveDeliverables = deliverableService(db, storage);
@@ -21176,29 +21161,7 @@ export function issueRoutes(
     };
   }
 
-  /** The agent already has a run queued or going: never wake a second one for the same session. */
-  async function agentHasActiveRun(agentId: string) {
-    const rows = await db
-      .select({ id: heartbeatRuns.id })
-      .from(heartbeatRuns)
-      .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"])))
-      .limit(1);
-    return rows.length > 0;
-  }
 
-  /** A live designer for the company (agent metadata `liveDesigner: true`), preferring one not already in a session. */
-  async function pickLiveDesigner(companyId: string): Promise<string | null> {
-    const rows = await db
-      .select({ id: agents.id, status: agents.status, metadata: agents.metadata })
-      .from(agents)
-      .where(eq(agents.companyId, companyId));
-    const designers = rows.filter(
-      (a) => (a.metadata as Record<string, unknown> | null)?.liveDesigner === true && !["paused", "terminated", "archived"].includes(a.status),
-    );
-    // A designer already in a session is not double-booked: the task's own agent steps in instead.
-    const busy = liveDesignBusyAgents();
-    return designers.find((a) => !busy.has(a.id))?.id ?? null;
-  }
 
   /** Files a page as the deliverable's newest version and points the session at it. */
   async function fileLiveDeliverableVersion(
@@ -21273,7 +21236,7 @@ export function issueRoutes(
       res.status(409).json({ error: "Live design is busy on another page of this task. Finish or discard that first." });
       return;
     }
-    const agentId = joining?.agentId ?? (await pickLiveDesigner(issue.companyId)) ?? issue.assigneeAgentId;
+    const agentId = joining?.agentId ?? (await pickLiveDesigner(db, issue.companyId)) ?? issue.assigneeAgentId;
     if (!agentId) {
       res.status(422).json({ error: "No agent can design this page: mark an agent as the live designer, or assign the task to an agent." });
       return;
@@ -21290,7 +21253,7 @@ export function issueRoutes(
       source: attachmentPageSource(issue, attachment.originalFilename ?? "page.html"),
     });
     setLiveDesignDeliverable(session, deliverableId);
-    if (needsWake) await wakeLiveAgent(req, session, onTask ? issue.id : null, attachment.originalFilename ?? "the page");
+    if (needsWake) await wakeLiveDesignAgent(heartbeat, { session, onTaskIssueId: onTask ? issue.id : null, fileName: attachment.originalFilename ?? "the page", actorId: getActorInfo(req).actorId });
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: "user",
@@ -21317,7 +21280,8 @@ export function issueRoutes(
     const body = req.body as LiveDesignHelperRequest;
     let screenshotAttachmentId: string | undefined;
     // John drew or commented before Go: keep Impeccable's screenshot as an image on the task for the agent.
-    if (body.path.startsWith("/annotation") && body.bodyBase64) {
+    // Markup screenshots are kept as task images; a website page has no task, so its comments go as notes only.
+    if (body.path.startsWith("/annotation") && body.bodyBase64 && session.source?.kind !== "website-page") {
       // One screenshot per Go (Impeccable's eventId), a few per session: the page cannot fill storage.
       const eventId = new URLSearchParams(body.path.split("?")[1] ?? "").get("eventId")?.slice(0, 64) ?? "";
       if (!eventId || !canStoreLiveDesignMarkup(session, eventId)) {
@@ -21368,10 +21332,8 @@ export function issueRoutes(
     // A request with no agent listening (it stopped, or never joined): wake one again.
     if (body.path.startsWith("/events") || body.path.startsWith("/manual-edit-commit")) {
       const asked = body.path.startsWith("/manual-edit-commit") || /"type"\s*:\s*"(generate|steer)"/.test(body.body ?? "");
-      if (asked && answer.status < 300 && !isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(session.agentId))) {
-        const issue = await svc.getById(session.issueId);
-        const page = await svc.getAttachmentById(session.attachmentId);
-        await wakeLiveAgent(req, session, issue?.assigneeAgentId === session.agentId ? session.issueId : null, page?.originalFilename ?? "the page");
+      if (asked && answer.status < 300 && !isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(db, session.agentId))) {
+        await rewakeLiveAgent(req, session);
       }
     }
     res.json(answer);
@@ -21408,10 +21370,8 @@ export function issueRoutes(
       if (!sendLiveConflict(res, err)) throw err;
       return;
     }
-    if (!isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(session.agentId))) {
-      const issue = await svc.getById(session.issueId);
-      const page = await svc.getAttachmentById(session.attachmentId);
-      await wakeLiveAgent(req, session, issue?.assigneeAgentId === session.agentId ? session.issueId : null, page?.originalFilename ?? "the page");
+    if (!isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(db, session.agentId))) {
+      await rewakeLiveAgent(req, session);
     }
     res.json(viewLiveDesign(session));
   });
@@ -21467,7 +21427,13 @@ export function issueRoutes(
         res.json({ ok: false, reason: "not_expected" });
         return;
       }
-      reply.appliedAttachmentId = await session.source.save(reply.pageHtml, session.agentId);
+      try {
+        reply.appliedAttachmentId = await session.source.save(reply.pageHtml, session.agentId);
+      } catch (err) {
+        if (!(err instanceof LiveDesignConflict)) throw err;
+        res.json({ ok: false, reason: "save_failed", message: err.message });
+        return;
+      }
     }
     const result = replyLiveDesign(session, reply);
     // A saved change to a deliverable becomes its next version, as a draft (John, 2 Nov).

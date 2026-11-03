@@ -62,6 +62,8 @@ export interface LivePageSource {
   save(html: string, agentId: string): Promise<string>;
   /** The page's name, for messages. */
   label: string;
+  /** Extra rules for the agent about this kind of page (a website page's size, media and shared parts). */
+  guidance?: string;
 }
 
 /** What the page's Impeccable scripts receive, in order, as their helper's event stream. */
@@ -620,8 +622,10 @@ function withInstructions(s: Session, event: AgentEvent) {
             ? `John wants ${event.request.label} (the element at request.selector, whose HTML is request.html) and asked: "${event.request.prompt}". Each version is a NEW element to place ${event.request.insert.position} it; nothing is replaced.`
             : `John picked ${event.request.label || event.request.tag} on the page and asked, as ${action}: "${event.request.prompt}".`,
           "First read PRODUCT.md and DESIGN.md at your workspace root and design inside them. If they are missing, write them before your versions (Greatstone brand by default; the client's brand for client work), and tell John in your note.",
+          `The company's reference studio lists approved brand elements and examples with notes on how to use them: GET /api/companies/${s.companyId}/references (optional ?tag=). When John names a reference or gives an /api/assets/.../content path, fetch that image and follow its note.`,
           `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
+          ...(s.source?.guidance ? [s.source.guidance] : []),
           "Optional tune knobs per version: params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
           `The element's current HTML is in request.html; for the whole page, ${pageCall(s.id)}.`,
           ...(s.islands ? [s.islands] : []),
@@ -643,6 +647,7 @@ function withInstructions(s: Session, event: AgentEvent) {
             ? `Write it into the real page: put chosen.html ${event.request.insert.position} the element at request.selector, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names.`
             : "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
           `Start from the current page: ${pageCall(s.id)} (or your workspace copy if it matches it).`,
+          ...(s.source?.guidance ? [s.source.guidance] : []),
           ...(s.islands ? [s.islands] : []),
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you saved>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If you cannot save it, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<short reason>" } so John knows.`,
@@ -655,6 +660,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
           : [
               `John wrote in the chat: "${event.message}".`,
+              ...(s.source?.guidance ? [s.source.guidance] : []),
               `If he asks for a change to the page, make it to the whole page (start from ${pageCall(s.id)}) and ${replyCall(s.id)} and jsonBody { "requestId": "page", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }. GSAM saves it as the next version.`,
               `Otherwise answer with jsonBody { "requestId": "page", "message": "<your answer>" }. Then poll again.`,
             ].join("\n"),
@@ -667,6 +673,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           "Apply exactly these changes and nothing else: no restyling, no rewording beyond newText. Follow the impeccable skill's live.md guidance on applying manual edits.",
           ...(s.islands ? [s.islands] : []),
           `Start from the current page: ${pageCall(s.id)} (or your workspace copy if it matches).`,
+          ...(s.source?.guidance ? [s.source.guidance] : []),
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If an edit cannot be applied safely, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<which one and why>" }; the edits stay staged for John.`,
         ].join("\n"),

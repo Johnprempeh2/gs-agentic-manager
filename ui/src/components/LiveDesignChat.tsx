@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveDesignView } from "@greatstone/shared";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Library, Loader2 } from "lucide-react";
 import { liveDesignApi } from "../api/liveDesign";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { referenceInstruction } from "../api/references";
+import { useCompany } from "../context/CompanyContext";
+import { ReferencePickerList } from "./ReferenceStudio";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DictationButton, DictationInterim, useComposerDictation } from "./DictationButton";
 
-/** The live session for one page: started on open, polled while open, ended on close. */
-export function useLiveDesign(attachmentId: string, active: boolean, deliverableId: string | null = null) {
+/**
+ * The live session for one page: started on open, polled while open, ended on close.
+ * `start` opens it (a task file, a deliverable or a website page); `key` names that page.
+ */
+export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string, active: boolean) {
+  const startRef = useRef(start);
+  startRef.current = start;
   const [view, setView] = useState<LiveDesignView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idRef = useRef<string | null>(null);
@@ -19,8 +28,8 @@ export function useLiveDesign(attachmentId: string, active: boolean, deliverable
     if (!active) return;
     let cancelled = false;
     setError(null);
-    liveDesignApi
-      .start(attachmentId, deliverableId)
+    startRef
+      .current()
       .then((v) => {
         if (cancelled) {
           void liveDesignApi.end(v.id).catch(() => undefined);
@@ -37,7 +46,7 @@ export function useLiveDesign(attachmentId: string, active: boolean, deliverable
       setView(null);
       if (id) void liveDesignApi.end(id).catch(() => undefined);
     };
-  }, [active, attachmentId, deliverableId, attempt]);
+  }, [active, key, attempt]);
 
   const polling = active && !!view && view.status !== "ended";
   useEffect(() => {
@@ -85,6 +94,8 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
   const { view, error, run } = live;
   const [note, setNote] = useState("");
   const dictation = useComposerDictation(note, setNote);
+  const { selectedCompanyId } = useCompany();
+  const [picking, setPicking] = useState(false);
   const status = view?.status;
   const elapsed = useElapsed(view?.request?.startedAt, status === "generating");
   const listRef = useRef<HTMLOListElement>(null);
@@ -165,6 +176,24 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           disabled={!view || status === "ended"}
           aria-label="Message the agent"
         />
+        {selectedCompanyId ? (
+          <Popover open={picking} onOpenChange={setPicking}>
+            <PopoverTrigger asChild>
+              <Button type="button" size="icon" variant="ghost" aria-label="Add a reference" title="Add a reference" disabled={!view || status === "ended"}>
+                <Library aria-hidden="true" className="size-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" side="top" className="w-80 p-2">
+              <ReferencePickerList
+                companyId={selectedCompanyId}
+                onPick={(item) => {
+                  setNote((current) => `${current.trim() ? `${current.trim()} ` : ""}${referenceInstruction(item)} `);
+                  setPicking(false);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        ) : null}
         <DictationButton dictation={dictation} disabled={!view || status === "ended"} testId="live-design-dictation" />
         <Button type="submit" size="icon" aria-label="Send" disabled={!note.trim() || !view || status === "ended"}>
           <ArrowUp aria-hidden="true" className="size-4" />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS, type DeliverableVersion } from "@greatstone/shared";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView } from "@greatstone/shared";
 import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useParams, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { deliverablesApi } from "../api/deliverables";
+import { websiteModuleApi } from "../api/website";
 import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { liveDesignApi } from "../api/liveDesign";
@@ -36,15 +37,14 @@ const WIDTHS = { fit: null, laptop: 1440, phone: 390 } as const;
 export function LiveEditor() {
   const { issueId = "", attachmentId = "" } = useParams<{ issueId: string; attachmentId: string }>();
   const queryClient = useQueryClient();
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
-  // What the page reported about itself: blank, or pulling code and styles from the internet.
-  const [health, setHealth] = useState<{ blank: boolean; scripts: string[]; styles: string[] } | null>(null);
   // Opened from Deliverables: every saved change becomes the deliverable's next version.
   const [searchParams] = useSearchParams();
   const openedDeliverable = searchParams.get("deliverable");
-  const live = useLiveDesign(attachmentId, true, openedDeliverable);
-  const sessionId = live.sessionId;
+  const live = useLiveDesign(
+    () => liveDesignApi.start(attachmentId, openedDeliverable),
+    `${attachmentId}:${openedDeliverable ?? ""}`,
+    true,
+  );
   // The page shown is the session's: it moves on when the agent saves or you restore a version.
   const pageId = live.view?.attachmentId ?? attachmentId;
   const { data: attachments } = useQuery({
@@ -60,6 +60,108 @@ export function LiveEditor() {
     queryFn: () => deliverablesApi.get(selectedCompanyId!, deliverableId!),
     enabled: !!selectedCompanyId && !!deliverableId,
   });
+  // A new saved page also lists among the task's files.
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId) });
+  }, [pageId, issueId, queryClient]);
+
+  return (
+    <LiveEditorShell
+      live={live}
+      title={deliverable?.title ?? fileName}
+      subtitle={deliverable ? `Live design · version ${deliverable.versions[0]?.version ?? 1}` : "Live design"}
+      backTo={`/issues/${issueId}`}
+      backLabel="Back to the task"
+      fallbackSrc={`/api/attachments/${pageId}/annotate?live=1`}
+      versions={deliverable?.versions.map((v) => ({
+        id: v.id,
+        version: v.version,
+        createdAt: v.createdAt,
+        restoreId: v.attachmentId,
+        current: v.attachmentId === pageId,
+      }))}
+      onRestore={(id) => void live.run((sid) => liveDesignApi.restore(sid, id))}
+    />
+  );
+}
+
+/** A website page in live design (plan revision 8 on GRE-1831): every kept change is a new page version. */
+export function WebsitePageLiveEditor() {
+  const { siteId = "", pageId = "" } = useParams<{ siteId: string; pageId: string }>();
+  const { selectedCompanyId } = useCompany();
+  const companyId = selectedCompanyId ?? "";
+  const live = useLiveDesign(() => websiteModuleApi.liveStart(companyId, siteId, pageId), `${siteId}:${pageId}`, !!companyId);
+  const current = live.view?.attachmentId ?? null;
+  const { data: page } = useQuery({
+    queryKey: ["website-live-page", companyId, siteId, pageId],
+    queryFn: () => websiteModuleApi.page(companyId, siteId, pageId),
+    enabled: !!companyId,
+  });
+  const { data: revisions } = useQuery({
+    queryKey: ["website-live-revisions", companyId, siteId, pageId, current],
+    queryFn: () => websiteModuleApi.revisions(companyId, siteId, pageId),
+    enabled: !!companyId && !!current,
+  });
+  return (
+    <LiveEditorShell
+      live={live}
+      title={page?.title ?? "Page"}
+      subtitle={`Live design · ${page?.slug ?? ""}${revisions?.[0] ? ` · version ${revisions[0].revisionNumber}` : ""}`}
+      backTo="/website"
+      backLabel="Back to the website"
+      versions={revisions?.map((r) => ({
+        id: r.id,
+        version: r.revisionNumber,
+        createdAt: r.createdAt,
+        restoreId: r.id,
+        current: r.id === current,
+      }))}
+      onRestore={(revisionId) => void live.run(() => websiteModuleApi.liveRestore(companyId, siteId, pageId, revisionId))}
+    />
+  );
+}
+
+interface VersionItem {
+  id: string;
+  version: number;
+  createdAt: string;
+  /** What Restore brings back; null when it cannot be restored. */
+  restoreId: string | null;
+  current: boolean;
+}
+
+/**
+ * The full-screen live editor: the chat with the agent on the left, the page on
+ * the right (stacked on a phone). The page runs Impeccable's own live tools; this
+ * relays their helper calls to GSAM, which stands in for Impeccable's local helper,
+ * so it works from any device.
+ */
+function LiveEditorShell({
+  live,
+  title,
+  subtitle,
+  backTo,
+  backLabel,
+  fallbackSrc,
+  versions,
+  onRestore,
+}: {
+  live: ReturnType<typeof useLiveDesign>;
+  title: string;
+  subtitle: string;
+  backTo: string;
+  backLabel: string;
+  fallbackSrc?: string;
+  versions?: VersionItem[];
+  onRestore: (restoreId: string) => void;
+}) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
+  // What the page reported about itself: blank, or pulling code and styles from the internet.
+  const [health, setHealth] = useState<{ blank: boolean; scripts: string[]; styles: string[] } | null>(null);
+  const sessionId = live.sessionId;
+  const pageId = live.view?.attachmentId ?? "";
+  const frameSrc = live.view?.frameSrc ?? fallbackSrc ?? "";
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, "*");
@@ -174,35 +276,27 @@ export function LiveEditor() {
     };
   }, [sessionId, toFrame]);
 
-  // A new saved page also lists among the task's files.
-  useEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId) });
-  }, [pageId, issueId, queryClient]);
-
   return (
     <div className="fixed inset-0 z-dialog flex flex-col bg-background text-foreground">
       <header className="flex items-center gap-2 border-b border-border px-3 py-2 pt-(--sz-pad-safe-top)">
         <Link
-          to={`/issues/${issueId}`}
+          to={backTo}
           disableIssueQuicklook
           className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Back to the task"
-          title="Back to the task"
+          aria-label={backLabel}
+          title={backLabel}
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold">{deliverable?.title ?? fileName}</h1>
-          <p className="truncate text-xs text-muted-foreground">
-            {deliverable ? `Live design · version ${deliverable.versions[0]?.version ?? 1}` : "Live design"}
-          </p>
+          <h1 className="truncate text-sm font-semibold">{title}</h1>
+          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
-        {deliverable ? (
+        {versions?.length ? (
           <VersionMenu
-            versions={deliverable.versions}
-            currentAttachmentId={pageId}
+            versions={versions}
             busy={live.view?.status !== "idle" && live.view?.status !== "waiting_agent"}
-            onRestore={(id) => void live.run((sid) => liveDesignApi.restore(sid, id))}
+            onRestore={onRestore}
           />
         ) : null}
         <div role="group" aria-label="Page width" className="hidden items-center rounded-md border border-border p-0.5 md:inline-flex">
@@ -263,8 +357,8 @@ export function LiveEditor() {
             ) : null}
             <ScaledFrame
               key={pageId}
-              src={live.view?.frameSrc ?? `/api/attachments/${pageId}/annotate?live=1`}
-              title={`Live design of ${fileName}`}
+              src={frameSrc}
+              title={`Live design of ${title}`}
               width={WIDTHS[viewport]}
               sandbox={SANDBOX}
               frameRef={frameRef}
@@ -282,22 +376,20 @@ export function LiveEditor() {
 }
 
 /**
- * The deliverable's versions. Restoring one makes it the newest version, so
- * nothing is ever lost and every restore can itself be undone.
+ * The page's versions. Restoring one makes it the newest version, so nothing is
+ * ever lost and every restore can itself be undone.
  */
 function VersionMenu({
   versions,
-  currentAttachmentId,
   busy,
   onRestore,
 }: {
-  versions: DeliverableVersion[];
-  currentAttachmentId: string;
+  versions: VersionItem[];
   busy: boolean;
-  onRestore: (attachmentId: string) => void;
+  onRestore: (restoreId: string) => void;
 }) {
   const newest = versions[0];
-  const previous = versions.find((v, i) => i > 0 && v.attachmentId && v.attachmentId !== newest?.attachmentId);
+  const previous = versions.find((v, i) => i > 0 && v.restoreId);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -308,35 +400,32 @@ function VersionMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem disabled={busy || !previous} onSelect={() => previous?.attachmentId && onRestore(previous.attachmentId)}>
+        <DropdownMenuItem disabled={busy || !previous} onSelect={() => previous?.restoreId && onRestore(previous.restoreId)}>
           <Undo2 aria-hidden="true" className="size-4" />
           Undo last change
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground">Versions</DropdownMenuLabel>
-        {versions.map((v) => {
-          const current = v.attachmentId === currentAttachmentId;
-          return (
-            <DropdownMenuItem
-              key={v.id}
-              disabled={busy || current || !v.attachmentId}
-              onSelect={() => v.attachmentId && onRestore(v.attachmentId)}
-              className="justify-between"
-            >
-              <span className="min-w-0">
-                <span className="font-medium">Version {v.version}</span>
-                <span className="block text-xs text-muted-foreground">{formatDateTime(v.createdAt)}</span>
+        {versions.map((v) => (
+          <DropdownMenuItem
+            key={v.id}
+            disabled={busy || v.current || !v.restoreId}
+            onSelect={() => v.restoreId && onRestore(v.restoreId)}
+            className="justify-between"
+          >
+            <span className="min-w-0">
+              <span className="font-medium">Version {v.version}</span>
+              <span className="block text-xs text-muted-foreground">{formatDateTime(v.createdAt)}</span>
+            </span>
+            {v.current ? (
+              <span className="text-xs text-muted-foreground">Showing</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <RotateCcw aria-hidden="true" className="size-3.5" /> Restore
               </span>
-              {current ? (
-                <span className="text-xs text-muted-foreground">Showing</span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <RotateCcw aria-hidden="true" className="size-3.5" /> Restore
-                </span>
-              )}
-            </DropdownMenuItem>
-          );
-        })}
+            )}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

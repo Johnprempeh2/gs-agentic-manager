@@ -1942,6 +1942,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/approvals",
   "POST /api/approvals/{id}/comments",
   "POST /api/companies/{companyId}/assets/images",
+  "POST /api/companies/{companyId}/references",
   "POST /api/companies/{companyId}/logo",
   "POST /api/companies/{companyId}/onboarding-seed",
   "POST /api/cli-auth/challenges",
@@ -10953,6 +10954,43 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
+// The reference studio: labelled images people and agents refer to.
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/references",
+  tags: ["assets"],
+  summary: "List the reference studio's images (optional ?tag=)",
+  request: { params: z.object({ companyId: z.string() }), query: z.object({ tag: z.string().optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/references",
+  tags: ["assets"],
+  summary: "File an uploaded image in the reference studio with a title, notes and tags",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/references/{id}",
+  tags: ["assets"],
+  summary: "Update a reference's title, notes or tags",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/references/{id}",
+  tags: ["assets"],
+  summary: "Archive a reference",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 204: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
 registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/logo",
@@ -16500,6 +16538,31 @@ registerCurrentRoute({
   summary: "Save a page revision from baseRevisionId: 200 saved, 409 conflict (a newer revision exists, or the site is disconnected; nothing written) or 422 failed (website:edit)",
   body: saveWebsiteContentSchema,
   responses: websiteSaveResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/live`,
+  tags: ["website"],
+  summary: "Open live design on a page (plan revision 8 on GRE-1831): the live designer, else the website lead, works it; every kept change is a new revision (website:edit)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/pages/{pageId}/live-frame`,
+  tags: ["website"],
+  summary: "The page at ?revision= as HTML with Impeccable's live tools, served sandboxed for the live editor",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/pages/{pageId}/live-restore`,
+  tags: ["website"],
+  summary: "Restore an earlier revision in the open live session; it becomes the newest revision (website:edit)",
+  body: z.object({ revisionId: z.string().uuid() }),
+  responses: { ...websiteModuleResponses, 409: r.conflict },
 });
 
 registerCurrentRoute({

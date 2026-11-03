@@ -101,3 +101,18 @@ export interface LiveDesignView {
   /** A task file or a website page. */
   sourceKind: "attachment" | "website-page";
 }
+
+/**
+ * A website page edited with live design (plan revision 8 on GRE-1831): the page
+ * is one HTML document, stored as the page's revision content instead of Puck blocks.
+ */
+export const WEBSITE_HTML_PAGE_FORMAT = "gs-html";
+export const websiteHtmlPageContentSchema = z.object({
+  format: z.literal(WEBSITE_HTML_PAGE_FORMAT),
+  html: z.string().min(1),
+});
+export type WebsiteHtmlPageContent = z.infer<typeof websiteHtmlPageContentSchema>;
+
+export function isWebsiteHtmlPage(content: unknown): content is WebsiteHtmlPageContent {
+  return websiteHtmlPageContentSchema.safeParse(content).success;
+}

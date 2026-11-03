@@ -72,6 +72,19 @@ import { websiteEnquiryService, type WebsiteEnquiryCopy, type WebsiteEnquiryRead
 import { websiteEnquiryPipedriveCopy } from "../services/website/enquiry-pipedrive.js";
 import { toWebsiteSitemapOption, websiteSitemapService } from "../services/website/sitemap.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { HTML_ATTACHMENT_CSP, type LiveDesignView } from "@greatstone/shared";
+import {
+  LiveDesignConflict,
+  openLiveDesignFor,
+  restoreLiveDesign,
+  startLiveDesign,
+  viewLiveDesign,
+} from "../services/live-design.js";
+import { pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
+import { injectImpeccableLive } from "../services/impeccable-helper.js";
+import { islandsForAgents, loadCompanyIslandManifest } from "../services/website/islands.js";
+import { websitePageSource } from "../services/website/live-page.js";
+import { websiteTeamAgent } from "../services/website/pending-alert.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
 
@@ -652,6 +665,109 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       return;
     }
     res.json(load);
+  });
+
+  // Live design on a website page (plan revision 8 on GRE-1831): Impeccable's tools on the page,
+  // the agent's versions in place, every kept change a new page revision.
+  const liveKey = (pageId: string) => `website-page:${pageId}`;
+
+  router.post(WEBSITE_MODULE_API_ROUTES.pageLive, async (req, res) => {
+    assertBoard(req);
+    const found = await sitePageFor(req, res, "website:edit");
+    if (!found) return;
+    const { site, page } = found;
+    if (page.archivedAt) {
+      res.status(422).json({ error: "This page is archived. Restore it before editing." });
+      return;
+    }
+    const doc = await service.store.readDocument(page.companyId, page.documentId);
+    if (!doc?.latestRevisionId) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    const joining = openLiveDesignFor(liveKey(page.id));
+    const agentId =
+      joining?.agentId ??
+      (await pickLiveDesigner(db, page.companyId)) ??
+      (await websiteTeamAgent(db, page.companyId, site.propertyId ?? null)).id;
+    if (!agentId) {
+      res.status(422).json({ error: "No agent can design this page: mark an agent as the live designer first." });
+      return;
+    }
+    const { session, needsWake } = startLiveDesign({
+      companyId: page.companyId,
+      issueId: liveKey(page.id),
+      attachmentId: joining?.attachmentId ?? doc.latestRevisionId,
+      agentId,
+      source: websitePageSource(service.store, page),
+      // Website pages may place the site's islands (GRE-3786), so the agent always gets the list.
+      islands: islandsForAgents(await loadCompanyIslandManifest(db, page.companyId)),
+    });
+    if (needsWake && options.heartbeat) {
+      await wakeLiveDesignAgent(options.heartbeat, { session, onTaskIssueId: null, fileName: `${page.title} (${page.slug})`, actorId: getActorInfo(req).actorId });
+    }
+    await log(req, page.companyId, "website.live_design_started", "website_page", page.id, { siteId: site.id, sessionId: session.id, agentId, woke: needsWake });
+    res.json(viewLiveDesign(session) satisfies LiveDesignView);
+  });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.pageLiveFrame, async (req, res) => {
+    const found = await sitePageFor(req, res, "website:view");
+    if (!found) return;
+    const { page } = found;
+    const revisionId = typeof req.query.revision === "string" ? req.query.revision : "";
+    const source = websitePageSource(service.store, page);
+    let html: string;
+    try {
+      html = await source.read(revisionId);
+    } catch (err) {
+      if (err instanceof LiveDesignConflict) {
+        res.status(404).json({ error: NOT_FOUND });
+        return;
+      }
+      throw err;
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    // The attachment sandbox, plus modals for Impeccable's confirm prompts.
+    res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals "));
+    res.status(200).send(injectImpeccableLive(html));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.pageLiveRestore, validate(z.object({ revisionId: z.string().uuid() })), async (req, res) => {
+    assertBoard(req);
+    const found = await sitePageFor(req, res, "website:edit");
+    if (!found) return;
+    const { site, page } = found;
+    const session = openLiveDesignFor(liveKey(page.id));
+    if (!session || session.companyId !== page.companyId) {
+      res.status(409).json({ error: "Open the page in live design first." });
+      return;
+    }
+    const status = viewLiveDesign(session).status;
+    if ((status !== "idle" && status !== "waiting_agent") || session.staged.length) {
+      res.status(409).json({ error: "Keep or discard the open versions and edits first, then restore." });
+      return;
+    }
+    const doc = await service.store.readDocument(page.companyId, page.documentId);
+    const old = await service.pageRevision(page, req.body.revisionId as string);
+    if (!doc?.latestRevisionId || !old) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    const result = await service.restorePageRevision(page, req.body.revisionId as string, doc.latestRevisionId, actorOf(req));
+    if (!result || result.state !== "saved") {
+      res.status(409).json({ error: result && "message" in result ? result.message : "The restore did not complete." });
+      return;
+    }
+    restoreLiveDesign(session, result.revisionId, old.revision.revisionNumber);
+    await log(req, page.companyId, "website.page_restored", "website_page", page.id, {
+      siteId: site.id,
+      restoredRevisionId: req.body.revisionId,
+      revisionNumber: result.revisionNumber,
+      via: "live_design",
+    });
+    res.json(viewLiveDesign(session));
   });
 
   // Ask an agent (GRE-2350): the page's open comments, for anyone who can see the page.

@@ -176,6 +176,7 @@ const IssueDetail = lazyPage(loadIssueDetailPage, "IssueDetail", loadedIssueDeta
 if (typeof window !== "undefined" && isIssueDetailPath(window.location.pathname)) preloadIssueDetailPage();
 const TaskTree = lazyPage(() => import("./pages/TaskTree"), "TaskTree");
 const LiveEditor = lazyPage(() => import("./pages/LiveEditor"), "LiveEditor");
+const WebsitePageLiveEditor = lazyPage(() => import("./pages/LiveEditor"), "WebsitePageLiveEditor");
 const ProjectTree = lazyPage(() => import("./pages/ProjectTree"), "ProjectTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
 const WhatNeedsMe = lazyPage(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
@@ -492,6 +493,7 @@ function boardRoutes() {
       <Route path="website" element={<Website />} />
       {/* The full-screen website editor (GRE-2296): it covers the shell, so it has no sidebar or header. */}
       <Route path="website/edit" element={<WebsiteEditorPage />} />
+      <Route path="website/sites/:siteId/pages/:pageId/design" element={<WebsitePageLiveEditor />} />
       <Route path="website/sites/:siteId/features/:featureId" element={<WebsiteFeaturePage />} />
       {/* Commerce (GRE-2383): the website's quotes, orders, invoices and licences, read only. Greatstone only. */}
       <Route path="commerce" element={<CommercePage />} />

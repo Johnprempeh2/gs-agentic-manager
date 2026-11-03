@@ -309,7 +309,8 @@ export function WebsiteSitemapTab({
 }: {
   companyId: string;
   property: WebsiteProperty;
-  onEditPage?: (pageId: string) => void;
+  /** Edit page: live design of that page (plan revision 8 on GRE-1831). */
+  onEditPage?: (siteId: string, pageId: string) => void;
 }) {
   const { site, isLoading: siteLoading } = useWebsiteSite(companyId, property.id);
   const { options, pages } = useSitemapData(companyId, site?.id ?? null);
@@ -324,7 +325,7 @@ export function WebsiteSitemapTab({
   }
   if (site && optionList.length > 0) {
     // Board users who are not viewers can edit; the server checks website:edit on every save.
-    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit onEditPage={site.editorFrameOrigin ? onEditPage : undefined} />;
+    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />;
   }
   // A site with pages but no option yet: start from its pages. No pages: the attached sitemap file stays.
   if (site && pageList.length > 0) return <StartSitemap companyId={companyId} site={site} pages={pageList} />;

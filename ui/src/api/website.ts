@@ -1,3 +1,4 @@
+import type { LiveDesignView } from "@greatstone/shared";
 import { api, ApiError, plainHttpErrorMessage } from "./client";
 import {
   WEBSITE_NOT_ENTITLED_CODE,
@@ -123,6 +124,12 @@ export const websiteModuleApi = {
       `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}`,
     ),
   /** Request publish: draft to review. A person with Publish rights approves it; nothing goes live here. */
+  /** Live design on the page (plan revision 8): opens or joins the session. */
+  liveStart: (companyId: string, siteId: string, pageId: string) =>
+    api.post<LiveDesignView>(`${pagePath(companyId, siteId, pageId)}/live`, {}),
+  /** Brings an earlier version back as the newest one, in the open live session. */
+  liveRestore: (companyId: string, siteId: string, pageId: string, revisionId: string) =>
+    api.post<LiveDesignView>(`${pagePath(companyId, siteId, pageId)}/live-restore`, { revisionId }),
   submitPage: (companyId: string, siteId: string, pageId: string) =>
     api.post<WebsitePage>(`${pagePath(companyId, siteId, pageId)}/submit`, {}),
   restoreRevision: (companyId: string, siteId: string, pageId: string, revisionId: string, baseRevisionId: string) =>
