@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView } from "@greatstone/shared";
-import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useParams, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import {
@@ -162,6 +162,9 @@ function LiveEditorShell({
   const sessionId = live.sessionId;
   const pageId = live.view?.attachmentId ?? "";
   const frameSrc = live.view?.frameSrc ?? fallbackSrc ?? "";
+  // Editing off lets clicks reach the page (change slides, open menus); a new version reloads with editing on.
+  const [editing, setEditing] = useState(true);
+  useEffect(() => setEditing(true), [pageId]);
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, "*");
@@ -292,6 +295,22 @@ function LiveEditorShell({
           <h1 className="truncate text-sm font-semibold">{title}</h1>
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
+        <Button
+          type="button"
+          size="sm"
+          variant={editing ? "secondary" : "outline"}
+          aria-pressed={editing}
+          disabled={!sessionId}
+          title={editing ? "Turn editing off to click through the page (slides, menus)" : "Turn editing back on"}
+          onClick={() => {
+            const next = !editing;
+            setEditing(next);
+            toFrame({ kind: "editing", on: next });
+          }}
+        >
+          {editing ? <PenLine aria-hidden="true" className="size-4" /> : <MousePointerClick aria-hidden="true" className="size-4" />}
+          <span className="hidden sm:inline">{editing ? "Editing on" : "Editing off"}</span>
+        </Button>
         {versions?.length ? (
           <VersionMenu
             versions={versions}

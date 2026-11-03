@@ -218,6 +218,29 @@ const ADAPTER = String.raw`(function () {
     delete picked[id];
   }
 
+  // Editing off: Impeccable stops picking and its chrome hides, so the page takes clicks
+  // (slides, menus, forms). On: the chrome returns and picking resumes.
+  function toggleBtn(id, want) {
+    var btn = document.getElementById("impeccable-live-" + id + "-toggle");
+    if (btn && (btn.dataset.active === "true") !== want) btn.click();
+  }
+  function setEditing(on) {
+    var style = document.getElementById("gs-editing-off");
+    if (on) {
+      if (style) style.remove();
+      toggleBtn("pick", true);
+    } else {
+      toggleBtn("pick", false);
+      toggleBtn("insert", false);
+      if (!style) {
+        style = document.createElement("style");
+        style.id = "gs-editing-off";
+        style.textContent = '[id^="impeccable-live"]{display:none!important}';
+        document.head.appendChild(style);
+      }
+    }
+  }
+
   window.addEventListener("message", function (e) {
     if (e.source !== window.parent || !e.data || e.data.source !== "gs-impeccable-host") return;
     var m = e.data;
@@ -249,6 +272,8 @@ const ADAPTER = String.raw`(function () {
       if (m.event === "end") { if (rec.onend) rec.onend({}); delete voices[m.vid]; }
     } else if (m.kind === "stream-error") {
       streams.forEach(function (s) { if (s.onerror) s.onerror({}); });
+    } else if (m.kind === "editing") {
+      setEditing(m.on !== false);
     }
   });
 })();`;
