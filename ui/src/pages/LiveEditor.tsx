@@ -129,9 +129,17 @@ export function WebsitePageLiveEditor() {
             onChange={(e) => navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`)}
             className="h-8 max-w-48"
           >
-            {pages.filter((p) => !p.archivedAt).map((p) => (
-              <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
-            ))}
+            {/* Built pages first; the sitemap's planned pages are suggestions, not the build. */}
+            <optgroup label="Built">
+              {pages.filter((p) => !p.archivedAt && p.status !== "planned").map((p) => (
+                <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
+              ))}
+            </optgroup>
+            <optgroup label="To build (sitemap)">
+              {pages.filter((p) => !p.archivedAt && p.status === "planned").map((p) => (
+                <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
+              ))}
+            </optgroup>
           </NativeSelect>
         ) : null
       }
