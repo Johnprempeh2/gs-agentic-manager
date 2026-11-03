@@ -357,7 +357,7 @@ function PageHealthNotice({
   if (hidden) return null;
   const hosts = [...new Set([...health.scripts, ...health.styles])].filter(Boolean);
   return (
-    <div className="absolute inset-x-3 top-3 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="status">
+    <div className="absolute inset-x-3 top-3 z-raised flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="status">
       <TriangleAlert aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
       <p className="min-w-0 flex-1">
         {health.blank ? "This page shows nothing in the safe preview" : "Some of this page's look is missing in the safe preview"}
