@@ -12,7 +12,7 @@ import type {
   WebsiteReleaseKind,
   WebsiteReleaseStatus,
 } from "@greatstone/shared";
-import { websiteCollectionDefinition } from "@greatstone/shared";
+import { websiteCollectionDefinition, websitePageSeoSchema } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { getStorageService } from "../../storage/index.js";
@@ -465,6 +465,18 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
       missingMedia.length === 0
         ? { kind: "check", name: "media_assets", ok: true }
         : { kind: "check", name: "media_assets", ok: false, message: `${missingMedia.length} image(s) are not in this company's files.` },
+    );
+    // Page SEO the engine would refuse (for example a malformed `faq`) fails here, before upload.
+    const badSeo = releasedPages.flatMap(({ page }) => {
+      const result = websitePageSeoSchema.safeParse(page.seo ?? {});
+      if (result.success) return [];
+      const issue = result.error.issues[0]!;
+      return [`${page.slug} (seo.${issue.path.join(".")}: ${issue.message})`];
+    });
+    checks.push(
+      badSeo.length === 0
+        ? { kind: "check", name: "page_seo", ok: true }
+        : { kind: "check", name: "page_seo", ok: false, message: `These pages have SEO the site cannot use: ${badSeo.join(", ")}.` },
     );
     const badPaths = site.checkPaths.filter((p) => typeof p !== "string" || !p.startsWith("/"));
     checks.push(
