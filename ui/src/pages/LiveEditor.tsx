@@ -109,6 +109,8 @@ export function WebsitePageLiveEditor() {
     queryFn: () => websiteModuleApi.pages(companyId, siteId),
     enabled: !!companyId,
   });
+  // The current page stays listed even when it is still a planned sitemap page (opened from the Sitemap tab).
+  const builtPages = (pages ?? []).filter((p) => !p.archivedAt && (p.status !== "planned" || p.id === pageId));
   const { data: revisions } = useQuery({
     queryKey: ["website-live-revisions", companyId, siteId, pageId, current],
     queryFn: () => websiteModuleApi.revisions(companyId, siteId, pageId),
@@ -122,24 +124,17 @@ export function WebsitePageLiveEditor() {
       backTo="/website"
       backLabel="Back to the website"
       switcher={
-        pages && pages.length > 1 ? (
+        builtPages.length > 1 ? (
           <NativeSelect
             aria-label="Page"
             value={pageId}
             onChange={(e) => navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`)}
             className="h-8 max-w-48"
           >
-            {/* Built pages first; the sitemap's planned pages are suggestions, not the build. */}
-            <optgroup label="Built">
-              {pages.filter((p) => !p.archivedAt && p.status !== "planned").map((p) => (
-                <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
-              ))}
-            </optgroup>
-            <optgroup label="To build (sitemap)">
-              {pages.filter((p) => !p.archivedAt && p.status === "planned").map((p) => (
-                <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
-              ))}
-            </optgroup>
+            {/* Only pages that exist on the site; planned sitemap pages are built from the Sitemap tab. */}
+            {builtPages.map((p) => (
+              <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
+            ))}
           </NativeSelect>
         ) : null
       }
