@@ -217,10 +217,18 @@ function LiveEditorShell({
   const sayHello = useCallback(() => {
     const win = frameRef.current?.contentWindow;
     if (!engine || !engineOrigin || !win) return;
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    engineNonce.current = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    // One nonce per frame load: the frame binds to the first hello it sees and ignores a different
+    // nonce after that, so a repeated hello (load and live-waiting both send one) must repeat it.
+    if (!engineNonce.current) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      engineNonce.current = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
     win.postMessage({ gs: "website-frame", id: crypto.randomUUID(), type: "hello", payload: { nonce: engineNonce.current, protocols: [1], siteId: engine.siteId } }, engineOrigin);
   }, [engine, engineOrigin]);
+  // A new page or version is a new frame load, so it gets a fresh nonce.
+  useEffect(() => {
+    engineNonce.current = null;
+  }, [frameSrc, pageId]);
   useEffect(() => {
     if (!engineOrigin) return;
     const onEngine = (e: MessageEvent) => {
