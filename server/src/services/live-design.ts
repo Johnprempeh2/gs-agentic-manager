@@ -95,6 +95,8 @@ interface Session {
   /** The deliverable this page is (its latest version id), when opened from Deliverables. */
   deliverableId: string | null;
   source: LivePageSource | null;
+  /** For a website page: the islands it may use, as agent instructions (GRE-3786). Null for other pages. */
+  islands: string | null;
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -244,7 +246,15 @@ export function isLiveDesignAgentConnected(s: Session) {
  * The open session for this task and agent, or a new one. `needsWake` is true
  * when no agent run is polling, so the caller wakes the agent.
  */
-export function startLiveDesign(input: { companyId: string; issueId: string; attachmentId: string; agentId: string; source?: LivePageSource }) {
+export function startLiveDesign(input: {
+  companyId: string;
+  issueId: string;
+  attachmentId: string;
+  agentId: string;
+  source?: LivePageSource;
+  islands?: string | null;
+}) {
+  const { islands = null, ...ids } = input;
   sweep();
   let s = [...sessions.values()].find(
     (x) => x.status !== "ended" && x.issueId === input.issueId && x.agentId === input.agentId,
@@ -252,7 +262,7 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
   if (!s) {
     s = {
       id: randomUUID(),
-      ...input,
+      ...ids,
       status: "waiting_agent",
       request: null,
       variants: [],
@@ -270,6 +280,7 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
       markups: new Map(),
       deliverableId: null,
       source: null,
+      islands,
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
@@ -279,6 +290,7 @@ export function startLiveDesign(input: { companyId: string; issueId: string; att
   }
   s.attachmentId = input.attachmentId;
   if (input.source) s.source = input.source;
+  s.islands = islands;
   s.touchedAt = Date.now();
   s.viewers += 1;
   return { session: s, needsWake: !isConnected(s) };
@@ -612,6 +624,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
           "Optional tune knobs per version: params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
           `The element's current HTML is in request.html; for the whole page, ${pageCall(s.id)}.`,
+          ...(s.islands ? [s.islands] : []),
           ...(event.request.notes.length ? [`John pinned these comments on the page: ${event.request.notes.map((n) => `"${n}"`).join("; ")}.`] : []),
           ...(event.request.screenshotAttachmentId
             ? [`He also marked the page up; open the screenshot at GET /api/attachments/${event.request.screenshotAttachmentId}/content to see where.`]
@@ -630,6 +643,7 @@ function withInstructions(s: Session, event: AgentEvent) {
             ? `Write it into the real page: put chosen.html ${event.request.insert.position} the element at request.selector, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names.`
             : "Write it into the real page: replace the element at request.selector with chosen.html, bake any tune values in, and move chosen.css into the page's own stylesheet with tidy class names (Impeccable's carbonize step).",
           `Start from the current page: ${pageCall(s.id)} (or your workspace copy if it matches it).`,
+          ...(s.islands ? [s.islands] : []),
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you saved>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If you cannot save it, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<short reason>" } so John knows.`,
         ].join("\n"),
@@ -651,6 +665,7 @@ function withInstructions(s: Session, event: AgentEvent) {
         _instructions: [
           `John edited the page directly with Impeccable's pencil and pressed Apply. edits[].ops holds each change: originalText to newText for text (plain text only), or removeElement: true to delete an element. Each op carries a locator (tag, elementId, classes, leaf context, nearbyEditableTexts) to find it.`,
           "Apply exactly these changes and nothing else: no restyling, no rewording beyond newText. Follow the impeccable skill's live.md guidance on applying manual edits.",
+          ...(s.islands ? [s.islands] : []),
           `Start from the current page: ${pageCall(s.id)} (or your workspace copy if it matches).`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }; GSAM saves it on the task as the next version. Poll again.`,
           `If an edit cannot be applied safely, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<which one and why>" }; the edits stay staged for John.`,

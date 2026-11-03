@@ -70,6 +70,13 @@ export interface WebsitePageSeo {
   canonical?: string;
   ogImageAssetId?: string;
   noindex?: boolean;
+  /** FAQ items the site engine writes as FAQPage JSON-LD (up to 50; q up to 500, a up to 4000 characters). */
+  faq?: WebsitePageFaqItem[];
+}
+
+export interface WebsitePageFaqItem {
+  q: string;
+  a: string;
 }
 
 interface WebsiteContentRow {
