@@ -124,6 +124,9 @@ export const websiteModuleApi = {
       `${pagePath(companyId, siteId, pageId)}/revisions/${encodeURIComponent(revisionId)}`,
     ),
   /** Request publish: draft to review. A person with Publish rights approves it; nothing goes live here. */
+  /** The draft the site's /live-design route renders: the page's own part, its shared parts and the stylesheet. */
+  liveDraft: (companyId: string, siteId: string, pageId: string, revisionId: string) =>
+    api.get<Record<string, unknown>>(`${pagePath(companyId, siteId, pageId)}/live-draft?revision=${encodeURIComponent(revisionId)}`, { cache: "no-store" }),
   /** Live design on the page (plan revision 8): opens or joins the session. */
   liveStart: (companyId: string, siteId: string, pageId: string) =>
     api.post<LiveDesignView>(`${pagePath(companyId, siteId, pageId)}/live`, {}),

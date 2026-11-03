@@ -83,7 +83,7 @@ import {
 import { pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
 import { injectImpeccableLive } from "../services/impeccable-helper.js";
 import { islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
-import { siteAssetOrigin, websitePageFrame, websitePageSource } from "../services/website/live-page.js";
+import { siteAssetOrigin, websitePageDraft, websitePageFrame, websitePageSource } from "../services/website/live-page.js";
 import { importHtmlRelease, loadWebsiteChrome, type HtmlReleaseImport } from "../services/website/chrome.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
 
@@ -727,7 +727,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       issueId: liveKey(page.id),
       attachmentId: joining?.attachmentId ?? doc.latestRevisionId,
       agentId,
-      source: websitePageSource(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId)),
+      // The real engine draws the page on the site's editor host when it has one (it runs every island).
+      source: websitePageSource(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), siteAssetOrigin(site.editorFrameOrigin)),
       // Website pages may place the site's islands (GRE-3786), so the agent always gets the list.
       islands: islandsForAgents(await loadCompanyIslandManifest(db, page.companyId)),
     });
@@ -764,6 +765,24 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     if (assetOrigin) csp = csp.replace("font-src data:", `font-src data: ${assetOrigin}`).replace("img-src data: blob:", `img-src data: blob: ${assetOrigin}`).replace("media-src data: blob:", `media-src data: blob: ${assetOrigin}`);
     res.setHeader("Content-Security-Policy", csp);
     res.status(200).send(injectImpeccableLive(html));
+  });
+
+  // The draft for the site's /live-design route, sent into that frame by GSAM's page (frame protocol).
+  router.get(WEBSITE_MODULE_API_ROUTES.pageLiveDraft, async (req, res) => {
+    const found = await sitePageFor(req, res, "website:view");
+    if (!found) return;
+    const { page } = found;
+    const revisionId = typeof req.query.revision === "string" ? req.query.revision : "";
+    try {
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await websitePageDraft(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId));
+    } catch (err) {
+      if (err instanceof LiveDesignConflict) {
+        res.status(404).json({ error: NOT_FOUND });
+        return;
+      }
+      throw err;
+    }
   });
 
   // The site stylesheet as plain CSS, so an agent can read the classes and tokens a page may use.

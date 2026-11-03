@@ -16558,6 +16558,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/pages/{pageId}/live-draft`,
+  tags: ["website"],
+  summary: "The page at ?revision= as { page, chrome, stylesheet }, for the site's /live-design route that the live editor frames (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/stylesheet`,
   tags: ["website"],
   summary: "The site stylesheet for HTML pages (release schema 2), as CSS, so agents can use its classes and tokens (website:view)",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView } from "@greatstone/shared";
 import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
@@ -28,6 +28,7 @@ import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "
 // Impeccable asks "Apply 2 edits?" with confirm(), so the live page may open modals.
 const SANDBOX = [...HTML_ATTACHMENT_SANDBOX_TOKENS, "allow-modals"].join(" ");
 const WIDTHS = { fit: null, laptop: 1440, phone: 390 } as const;
+const ENGINE_SANDBOX = "allow-scripts allow-same-origin allow-modals allow-popups allow-forms";
 
 /**
  * Live design, full screen (John, 2 Nov): the chat with the agent on the left,
@@ -99,6 +100,10 @@ export function WebsitePageLiveEditor() {
     enabled: !!companyId,
   });
   const navigate = useNavigate();
+  const engine = useMemo(
+    () => ({ siteId, draft: (revisionId: string) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId) }),
+    [companyId, siteId, pageId],
+  );
   const { data: pages } = useQuery({
     queryKey: ["website-live-pages", companyId, siteId],
     queryFn: () => websiteModuleApi.pages(companyId, siteId),
@@ -138,6 +143,7 @@ export function WebsitePageLiveEditor() {
         current: r.id === current,
       }))}
       onRestore={(revisionId) => void live.run(() => websiteModuleApi.liveRestore(companyId, siteId, pageId, revisionId))}
+      engine={engine}
     />
   );
 }
@@ -167,6 +173,7 @@ function LiveEditorShell({
   versions,
   onRestore,
   switcher,
+  engine,
 }: {
   live: ReturnType<typeof useLiveDesign>;
   title: string;
@@ -178,6 +185,8 @@ function LiveEditorShell({
   onRestore: (restoreId: string) => void;
   /** Moves to another page of the same site. */
   switcher?: ReactNode;
+  /** A website page drawn by the site's own engine (its /live-design route): who to greet and where the draft comes from. */
+  engine?: { siteId: string; draft: (revisionId: string) => Promise<Record<string, unknown>> };
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
@@ -186,13 +195,44 @@ function LiveEditorShell({
   const sessionId = live.sessionId;
   const pageId = live.view?.attachmentId ?? "";
   const frameSrc = live.view?.frameSrc ?? fallbackSrc ?? "";
+  // The site's engine draws the page on its own https origin; GSAM's sandbox frames are same-site paths.
+  const engineOrigin = engine && frameSrc.startsWith("https://") ? new URL(frameSrc).origin : null;
   // Editing off lets clicks reach the page (change slides, open menus); a new version reloads with editing on.
   const [editing, setEditing] = useState(true);
   useEffect(() => setEditing(true), [pageId]);
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
-    frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, "*");
-  }, []);
+    frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, engineOrigin ?? "*");
+  }, [engineOrigin]);
+
+  // The engine frame's handshake (the site's frame protocol): hello with a fresh nonce, then the draft.
+  const engineNonce = useRef<string | null>(null);
+  const sendDraft = useCallback(async () => {
+    const win = frameRef.current?.contentWindow;
+    if (!engine || !engineOrigin || !win || !engineNonce.current || !pageId) return;
+    const payload = await engine.draft(pageId).catch(() => null);
+    if (!payload || engineNonce.current === null) return;
+    win.postMessage({ gs: "website-frame", id: crypto.randomUUID(), type: "live-draft", payload, protocol: 1, session: engineNonce.current }, engineOrigin);
+  }, [engine, engineOrigin, pageId]);
+  const sayHello = useCallback(() => {
+    const win = frameRef.current?.contentWindow;
+    if (!engine || !engineOrigin || !win) return;
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    engineNonce.current = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    win.postMessage({ gs: "website-frame", id: crypto.randomUUID(), type: "hello", payload: { nonce: engineNonce.current, protocols: [1], siteId: engine.siteId } }, engineOrigin);
+  }, [engine, engineOrigin]);
+  useEffect(() => {
+    if (!engineOrigin) return;
+    const onEngine = (e: MessageEvent) => {
+      if (e.origin !== engineOrigin || !frameRef.current || e.source !== frameRef.current.contentWindow) return;
+      const m = e.data as { gs?: unknown; type?: unknown; session?: unknown } | null;
+      if (!m || m.gs !== "website-frame") return;
+      if (m.type === "live-waiting") sayHello();
+      else if (m.type === "live-ready" && m.session === engineNonce.current) void sendDraft();
+    };
+    window.addEventListener("message", onEngine);
+    return () => window.removeEventListener("message", onEngine);
+  }, [engineOrigin, sayHello, sendDraft]);
 
 
   // Relay the page's helper calls and its event stream. Everything from the frame is untrusted.
@@ -399,15 +439,23 @@ function LiveEditorShell({
                 }
               />
             ) : null}
-            <ScaledFrame
-              key={pageId}
-              src={frameSrc}
-              title={`Live design of ${title}`}
-              width={WIDTHS[viewport]}
-              sandbox={SANDBOX}
-              frameRef={frameRef}
-              viewport={viewport}
-            />
+            {frameSrc ? (
+              <ScaledFrame
+                key={pageId}
+                src={frameSrc}
+                title={`Live design of ${title}`}
+                width={WIDTHS[viewport]}
+                // The engine runs on the site's own origin (never GSAM's), so it keeps its origin to run.
+                sandbox={engineOrigin ? ENGINE_SANDBOX : SANDBOX}
+                frameRef={frameRef}
+                viewport={viewport}
+                onLoad={engineOrigin ? sayHello : undefined}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
+                <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Opening the page…
+              </div>
+            )}
             </>
           )}
         </div>
