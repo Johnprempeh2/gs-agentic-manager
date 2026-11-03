@@ -353,14 +353,17 @@ const CLI_SECRET_FLAG_RE = new RegExp(
   String.raw`^-{1,2}${SECRET_FIELD_NAME_PATTERN}$`,
   "i",
 );
+// Start name scans only where no name character precedes them, so a long
+// letter/digit run (for example base64) is scanned once, not once per position.
+const SECRET_FIELD_NAME_START = String.raw`(?<![A-Za-z0-9_-])`;
 const JSON_SECRET_FIELD_TEXT_RE = new RegExp(
-  String.raw`((?:"|')?${SECRET_FIELD_NAME_PATTERN}(?:"|')?\s*:\s*(?:"|'))[^"'` +
+  String.raw`((?:"|')?${SECRET_FIELD_NAME_START}${SECRET_FIELD_NAME_PATTERN}(?:"|')?\s*:\s*(?:"|'))[^"'` +
     "`" +
     String.raw`\r\n]+((?:"|'))`,
   "gi",
 );
 const ESCAPED_JSON_SECRET_FIELD_TEXT_RE = new RegExp(
-  String.raw`((?:\\")?${SECRET_FIELD_NAME_PATTERN}(?:\\")?\s*:\s*(?:\\"))[^\\\r\n]+((?:\\"))`,
+  String.raw`((?:\\")?${SECRET_FIELD_NAME_START}${SECRET_FIELD_NAME_PATTERN}(?:\\")?\s*:\s*(?:\\"))[^\\\r\n]+((?:\\"))`,
   "gi",
 );
 const SECRET_TEXT_HINTS = [
@@ -651,7 +654,7 @@ function authorizationCredentialRange(
 function redactAuthorizationCredentials(input: string): string {
   // Include compound diagnostic labels such as proxyAuthorization while the
   // value parser still requires a Basic/Bearer scheme before redacting.
-  const authorizationWord = /\b[A-Za-z0-9_-]*Authorization[A-Za-z0-9_-]*\b/gi;
+  const authorizationWord = /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*Authorization[A-Za-z0-9_-]*\b/gi;
   const parts: string[] = [];
   let copiedThrough = 0;
   let match: RegExpExecArray | null;
