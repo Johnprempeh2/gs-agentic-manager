@@ -15,8 +15,8 @@ export const referencesQueryKey = (companyId: string) => ["references", companyI
 
 /** A checkerboard behind previews, so a light logo and a dark one both stay visible. */
 const PREVIEW_BG = {
-  backgroundColor: "#8a8a8a",
-  backgroundImage: "conic-gradient(#6f6f6f 25%, transparent 0 50%, #6f6f6f 0 75%, transparent 0)",
+  backgroundColor: "color-mix(in oklab, var(--foreground) 45%, var(--background))",
+  backgroundImage: "conic-gradient(color-mix(in oklab, var(--foreground) 60%, var(--background)) 25%, transparent 0 50%, color-mix(in oklab, var(--foreground) 60%, var(--background)) 0 75%, transparent 0)",
   backgroundSize: "16px 16px",
 };
 
@@ -211,7 +211,7 @@ export function ReferencePickerList({ companyId, onPick }: { companyId: string; 
           <button
             type="button"
             onClick={() => onPick(item)}
-            className="w-full overflow-hidden rounded-md border border-border text-left hover:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+            className="w-full overflow-hidden rounded-md border border-border text-left hover:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
           >
             <div className="flex aspect-video items-center justify-center" style={PREVIEW_BG}>
               <img src={item.contentPath} alt="" loading="lazy" className="max-h-full max-w-full object-contain" />
