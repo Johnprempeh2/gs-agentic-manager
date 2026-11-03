@@ -82,6 +82,7 @@ import {
 } from "../services/live-design.js";
 import { pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
 import { injectImpeccableLive } from "../services/impeccable-helper.js";
+import { islandsForAgents, loadCompanyIslandManifest } from "../services/website/islands.js";
 import { websitePageSource } from "../services/website/live-page.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
 
@@ -699,6 +700,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       attachmentId: joining?.attachmentId ?? doc.latestRevisionId,
       agentId,
       source: websitePageSource(service.store, page),
+      // Website pages may place the site's islands (GRE-3786), so the agent always gets the list.
+      islands: islandsForAgents(await loadCompanyIslandManifest(db, page.companyId)),
     });
     if (needsWake && options.heartbeat) {
       await wakeLiveDesignAgent(options.heartbeat, { session, onTaskIssueId: null, fileName: `${page.title} (${page.slug})`, actorId: getActorInfo(req).actorId });
