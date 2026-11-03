@@ -8,26 +8,36 @@ import { Textarea } from "@/components/ui/textarea";
 import { DictationButton, DictationInterim, useComposerDictation } from "./DictationButton";
 
 /** The live session for one page: started on open, polled while open, ended on close. */
-export function useLiveDesign(attachmentId: string, active: boolean) {
+export function useLiveDesign(attachmentId: string, active: boolean, deliverableId: string | null = null) {
   const [view, setView] = useState<LiveDesignView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idRef = useRef<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
+  // One place starts and ends the session, so a reload or a slow start can never leave it half open.
   useEffect(() => {
-    if (!active || idRef.current) return;
+    if (!active) return;
     let cancelled = false;
+    setError(null);
     liveDesignApi
-      .start(attachmentId)
+      .start(attachmentId, deliverableId)
       .then((v) => {
-        if (cancelled) return;
+        if (cancelled) {
+          void liveDesignApi.end(v.id).catch(() => undefined);
+          return;
+        }
         idRef.current = v.id;
         setView(v);
       })
       .catch((err: unknown) => !cancelled && setError(err instanceof Error ? err.message : "Live design could not start"));
     return () => {
       cancelled = true;
+      const id = idRef.current;
+      idRef.current = null;
+      setView(null);
+      if (id) void liveDesignApi.end(id).catch(() => undefined);
     };
-  }, [active, attachmentId]);
+  }, [active, attachmentId, deliverableId, attempt]);
 
   const polling = active && !!view && view.status !== "ended";
   useEffect(() => {
@@ -39,12 +49,7 @@ export function useLiveDesign(attachmentId: string, active: boolean) {
     return () => clearInterval(timer);
   }, [polling]);
 
-  const end = useCallback(() => {
-    const id = idRef.current;
-    idRef.current = null;
-    setView(null);
-    if (id) void liveDesignApi.end(id).catch(() => undefined);
-  }, []);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   const run = useCallback(async (fn: (id: string) => Promise<LiveDesignView>) => {
     if (!idRef.current) return false;
@@ -58,7 +63,7 @@ export function useLiveDesign(attachmentId: string, active: boolean) {
     }
   }, []);
 
-  return { view, error, end, run, sessionId: view?.id ?? null };
+  return { view, error, retry, run, sessionId: view?.id ?? null };
 }
 
 function useElapsed(since: string | undefined, running: boolean) {
@@ -104,6 +109,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           <li className="space-y-2 text-sm text-muted-foreground">
             <p>Pick anything on the page with the bar at the bottom, type what should change and press Go.</p>
             <p>The agent's versions appear in place. Flick through them, tune them, then accept one. The agent saves it into the file.</p>
+            <p>Or ask here for a change to the whole page. Every saved change is a new version you can undo.</p>
           </li>
         ) : null}
         {view?.messages.map((m, i) =>
@@ -155,7 +161,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           }}
           rows={2}
           className="min-h-0 flex-1 resize-none"
-          placeholder="Message the agent, for example: make the second one calmer"
+          placeholder="Ask for a change, for example: tighten the spacing on the whole page"
           disabled={!view || status === "ended"}
           aria-label="Message the agent"
         />

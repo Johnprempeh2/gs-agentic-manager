@@ -435,6 +435,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
         return {
           id: row.id,
           version: metadataNumber(metadata, "version") ?? 1,
+          attachmentId: isExternal(metadata) ? null : metadataString(metadata, "attachmentId") ?? null,
           title: row.title,
           status: readStatus(metadata),
           contentPath: versionContentPath(row, metadata),
@@ -491,6 +492,8 @@ export function deliverableService(db: Db, storage?: StorageService) {
       fields: Omit<CreateDeliverable, "attachmentId" | "url">;
       createdByAgentId: string | null;
       createdByRunId: string | null;
+      /** False when a person made this version (a live design restore): no fallback to the file's creator. */
+      attributeToAttachment?: boolean;
     }): Promise<DeliverableDetail> => {
       const { issue, fields } = input;
       const attachment = input.attachment ?? null;
@@ -501,7 +504,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
       }
       const key = fields.key ?? deliverableKeyFromTitle(fields.title);
       const searchText = attachment ? await readSearchText(attachment) : null;
-      const createdByAgentId = input.createdByAgentId ?? attachment?.createdByAgentId ?? null;
+      const createdByAgentId = input.createdByAgentId ?? (input.attributeToAttachment === false ? null : attachment?.createdByAgentId ?? null);
       const createdByRunId = input.createdByRunId
         ? await db
           .select({ id: heartbeatRuns.id })

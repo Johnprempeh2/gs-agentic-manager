@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, MessageSquarePlus, X } from "lucide-react";
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, MessageSquarePlus, Sparkles, X } from "lucide-react";
 import { deliverablesApi, type Deliverable, type DeliverableConfidentiality } from "@/api/deliverables";
 import { Checkbox } from "@/components/ui/checkbox";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -13,7 +13,7 @@ import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { DeliverableCommentsPanel, DeliverableReviewFrame, useDeliverableReview } from "./DeliverableComments";
-import { DeliverableDocumentView, isHtmlDeliverable } from "./DeliverableDocument";
+import { DeliverableDocumentView, isHtmlDeliverable, liveEditPath } from "./DeliverableDocument";
 import { DELIVERABLE_KIND_LABELS } from "./DeliverableCard";
 import { CONFIDENTIALITY_LABELS, ConfidentialityBadge, LinkStatusBadges, siteDomain } from "./DeliverableBadges";
 
@@ -157,6 +157,13 @@ export function DeliverableQuickLook({
             <span className="hidden text-xs text-muted-foreground sm:inline">
               {index + 1} of {items.length}
             </span>
+            {liveEditPath(shown) ? (
+              <Button asChild variant="default" size="sm">
+                <Link to={liveEditPath(shown)!} disableIssueQuicklook data-testid="deliverable-edit-live-top">
+                  <Sparkles /> Edit live
+                </Link>
+              </Button>
+            ) : null}
             {canComment ? (
               <Button
                 variant={reviewing ? "secondary" : "ghost"}
@@ -198,6 +205,13 @@ export function DeliverableQuickLook({
           </div>
 
           <div className="flex flex-col gap-2">
+            {liveEditPath(shown) ? (
+              <Button asChild variant="default" size="sm" className="justify-start">
+                <Link to={liveEditPath(shown)!} disableIssueQuicklook data-testid="deliverable-edit-live">
+                  <Sparkles /> Edit live
+                </Link>
+              </Button>
+            ) : null}
             {shown.external && shown.url ? (
               <>
                 <Button asChild variant="default" size="sm" className="justify-start">
@@ -217,7 +231,7 @@ export function DeliverableQuickLook({
               </>
             ) : (
               <>
-                <Button asChild variant="default" size="sm" className="justify-start">
+                <Button asChild variant={liveEditPath(shown) ? "outline" : "default"} size="sm" className="justify-start">
                   <a href={shown.downloadPath} download>
                     <Download /> Download
                   </a>

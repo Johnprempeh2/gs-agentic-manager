@@ -11,7 +11,9 @@ export interface LiveDesignFrames {
 }
 
 export const liveDesignApi = {
-  start: (attachmentId: string) => api.post<LiveDesignView>(`/attachments/${encodeURIComponent(attachmentId)}/live`, {}),
+  start: (attachmentId: string, deliverableId?: string | null) =>
+    api.post<LiveDesignView>(`/attachments/${encodeURIComponent(attachmentId)}/live`, deliverableId ? { deliverableId } : {}),
+  restore: (id: string, attachmentId: string) => api.post<LiveDesignView>(`${session(id)}/restore`, { attachmentId }),
   get: (id: string) => api.get<LiveDesignView>(session(id), { cache: "no-store" }),
   steer: (id: string, message: string) => api.post<LiveDesignView>(`${session(id)}/steer`, { message }),
   end: (id: string) => api.post<LiveDesignView>(`${session(id)}/end`, {}),

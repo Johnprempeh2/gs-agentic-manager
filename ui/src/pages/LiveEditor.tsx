@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS } from "@greatstone/shared";
-import { ArrowLeft, Laptop, Maximize2, Smartphone } from "lucide-react";
-import { Link, useParams } from "@/lib/router";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, type DeliverableVersion } from "@greatstone/shared";
+import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
+import { Link, useParams, useSearchParams } from "@/lib/router";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { deliverablesApi } from "../api/deliverables";
+import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { liveDesignApi } from "../api/liveDesign";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
-import { cn } from "../lib/utils";
+import { cn, formatDateTime } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
 import { LiveDesignChat, useLiveDesign } from "../components/LiveDesignChat";
 import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
@@ -26,24 +37,34 @@ export function LiveEditor() {
   const { issueId = "", attachmentId = "" } = useParams<{ issueId: string; attachmentId: string }>();
   const queryClient = useQueryClient();
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [pageId, setPageId] = useState(attachmentId);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
-  const live = useLiveDesign(attachmentId, true);
+  // What the page reported about itself: blank, or pulling code and styles from the internet.
+  const [health, setHealth] = useState<{ blank: boolean; scripts: string[]; styles: string[] } | null>(null);
+  // Opened from Deliverables: every saved change becomes the deliverable's next version.
+  const [searchParams] = useSearchParams();
+  const openedDeliverable = searchParams.get("deliverable");
+  const live = useLiveDesign(attachmentId, true, openedDeliverable);
   const sessionId = live.sessionId;
+  // The page shown is the session's: it moves on when the agent saves or you restore a version.
+  const pageId = live.view?.attachmentId ?? attachmentId;
   const { data: attachments } = useQuery({
     queryKey: queryKeys.issues.attachments(issueId),
     queryFn: () => issuesApi.listAttachments(issueId),
     enabled: !!issueId,
   });
   const fileName = attachments?.find((a) => a.id === pageId)?.originalFilename ?? "Page";
+  const { selectedCompanyId } = useCompany();
+  const deliverableId = live.view?.deliverableId ?? null;
+  const { data: deliverable } = useQuery({
+    queryKey: ["live-design-deliverable", selectedCompanyId, deliverableId],
+    queryFn: () => deliverablesApi.get(selectedCompanyId!, deliverableId!),
+    enabled: !!selectedCompanyId && !!deliverableId,
+  });
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, "*");
   }, []);
 
-  // Leaving the editor ends live design, which lets the agent's run finish.
-  const endLive = live.end;
-  useEffect(() => endLive, [endLive]);
 
   // Relay the page's helper calls and its event stream. Everything from the frame is untrusted.
   const streamRef = useRef<AbortController | null>(null);
@@ -75,7 +96,10 @@ export function LiveEditor() {
       if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
       const m = e.data as Record<string, unknown> | null;
       if (!m || m.source !== "gs-impeccable") return;
-      if (m.kind === "stream-open") {
+      if (m.kind === "page-health") {
+        const hosts = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 5) : []);
+        setHealth({ blank: m.blank === true, scripts: hosts(m.scripts), styles: hosts(m.styles) });
+      } else if (m.kind === "stream-open") {
         void openStream();
       } else if (m.kind === "voice-start") {
         const vid = m.vid;
@@ -124,14 +148,17 @@ export function LiveEditor() {
         }
       } else if (m.kind === "request" && typeof m.path === "string") {
         const rid = m.rid;
-        const extra = m.extra && typeof m.extra === "object" ? (m.extra as { selector?: unknown }) : {};
+        const extra = m.extra && typeof m.extra === "object" ? (m.extra as { selector?: unknown; position?: unknown }) : {};
         liveDesignApi
           .helper(sessionId, {
             method: m.method === "POST" ? "POST" : "GET",
             path: m.path.slice(0, 2000),
             body: typeof m.body === "string" ? m.body : null,
             ...(typeof m.bodyBase64 === "string" ? { bodyBase64: m.bodyBase64 } : {}),
-            extra: typeof extra.selector === "string" ? { selector: extra.selector.slice(0, 500) } : {},
+            extra: {
+              ...(typeof extra.selector === "string" ? { selector: extra.selector.slice(0, 500) } : {}),
+              ...(extra.position === "before" || extra.position === "after" ? { position: extra.position } : {}),
+            },
           })
           .then((r) => toFrame({ kind: "response", rid, status: r.status, body: r.body, contentType: r.contentType }))
           .catch((err: unknown) =>
@@ -147,13 +174,10 @@ export function LiveEditor() {
     };
   }, [sessionId, toFrame]);
 
-  // When the agent saves an accepted version, show the saved file.
-  const applied = live.view?.appliedAttachmentId ?? null;
+  // A new saved page also lists among the task's files.
   useEffect(() => {
-    if (!applied || applied === pageId) return;
-    setPageId(applied);
     void queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId) });
-  }, [applied, pageId, issueId, queryClient]);
+  }, [pageId, issueId, queryClient]);
 
   return (
     <div className="fixed inset-0 z-dialog flex flex-col bg-background text-foreground">
@@ -168,9 +192,19 @@ export function LiveEditor() {
           <ArrowLeft aria-hidden="true" className="size-4" />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold">{fileName}</h1>
-          <p className="truncate text-xs text-muted-foreground">Live design</p>
+          <h1 className="truncate text-sm font-semibold">{deliverable?.title ?? fileName}</h1>
+          <p className="truncate text-xs text-muted-foreground">
+            {deliverable ? `Live design · version ${deliverable.versions[0]?.version ?? 1}` : "Live design"}
+          </p>
         </div>
+        {deliverable ? (
+          <VersionMenu
+            versions={deliverable.versions}
+            currentAttachmentId={pageId}
+            busy={live.view?.status !== "idle" && live.view?.status !== "waiting_agent"}
+            onRestore={(id) => void live.run((sid) => liveDesignApi.restore(sid, id))}
+          />
+        ) : null}
         <div role="group" aria-label="Page width" className="hidden items-center rounded-md border border-border p-0.5 md:inline-flex">
           {([
             ["fit", "Fit", Maximize2],
@@ -197,22 +231,140 @@ export function LiveEditor() {
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/40 md:order-2">
-          {sessionId ? (
+          {!sessionId ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" role="status">
+              {live.error ? (
+                <>
+                  <p className="text-sm font-medium">The page could not open for live design.</p>
+                  <p className="max-w-sm text-sm text-muted-foreground">{live.error}</p>
+                  <Button type="button" size="sm" onClick={live.retry}>Try again</Button>
+                </>
+              ) : (
+                <>
+                  <Loader2 aria-hidden="true" className="size-5 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Opening the page…</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+            {health && (health.blank || health.scripts.length > 0 || health.styles.length > 0) ? (
+              <PageHealthNotice
+                health={health}
+                onFix={() =>
+                  void live.run((id) =>
+                    liveDesignApi.steer(
+                      id,
+                      "Make this page self-contained so it shows in GSAM's safe preview: put the CSS, scripts and fonts it loads from the internet into the page itself (or use the site's own fonts), keep the design the same, and save it.",
+                    ),
+                  )
+                }
+              />
+            ) : null}
             <ScaledFrame
               key={pageId}
-              src={`/api/attachments/${pageId}/annotate?live=1`}
+              src={live.view?.frameSrc ?? `/api/attachments/${pageId}/annotate?live=1`}
               title={`Live design of ${fileName}`}
               width={WIDTHS[viewport]}
               sandbox={SANDBOX}
               frameRef={frameRef}
               viewport={viewport}
             />
-          ) : null}
+            </>
+          )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
           <LiveDesignChat live={live} />
         </aside>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The deliverable's versions. Restoring one makes it the newest version, so
+ * nothing is ever lost and every restore can itself be undone.
+ */
+function VersionMenu({
+  versions,
+  currentAttachmentId,
+  busy,
+  onRestore,
+}: {
+  versions: DeliverableVersion[];
+  currentAttachmentId: string;
+  busy: boolean;
+  onRestore: (attachmentId: string) => void;
+}) {
+  const newest = versions[0];
+  const previous = versions.find((v, i) => i > 0 && v.attachmentId && v.attachmentId !== newest?.attachmentId);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" aria-label="Versions">
+          <History aria-hidden="true" className="size-4" />
+          <span className="hidden sm:inline">Version {newest?.version ?? 1}</span>
+          <ChevronDown aria-hidden="true" className="size-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuItem disabled={busy || !previous} onSelect={() => previous?.attachmentId && onRestore(previous.attachmentId)}>
+          <Undo2 aria-hidden="true" className="size-4" />
+          Undo last change
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Versions</DropdownMenuLabel>
+        {versions.map((v) => {
+          const current = v.attachmentId === currentAttachmentId;
+          return (
+            <DropdownMenuItem
+              key={v.id}
+              disabled={busy || current || !v.attachmentId}
+              onSelect={() => v.attachmentId && onRestore(v.attachmentId)}
+              className="justify-between"
+            >
+              <span className="min-w-0">
+                <span className="font-medium">Version {v.version}</span>
+                <span className="block text-xs text-muted-foreground">{formatDateTime(v.createdAt)}</span>
+              </span>
+              {current ? (
+                <span className="text-xs text-muted-foreground">Showing</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <RotateCcw aria-hidden="true" className="size-3.5" /> Restore
+                </span>
+              )}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * The safe preview has no internet, so a page that loads its code or styles from
+ * outside shows blank or bare. Say why, and let the agent fix it in one press.
+ */
+function PageHealthNotice({
+  health,
+  onFix,
+}: {
+  health: { blank: boolean; scripts: string[]; styles: string[] };
+  onFix: () => void;
+}) {
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  const hosts = [...new Set([...health.scripts, ...health.styles])].filter(Boolean);
+  return (
+    <div className="absolute inset-x-3 top-3 z-raised flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="status">
+      <TriangleAlert aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+      <p className="min-w-0 flex-1">
+        {health.blank ? "This page shows nothing in the safe preview" : "Some of this page's look is missing in the safe preview"}
+        {hosts.length ? `: it loads code or styles from ${hosts.join(", ")}, and the preview has no internet.` : "."}
+      </p>
+      <Button type="button" size="sm" onClick={onFix}>Ask the agent to fix it</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setHidden(true)}>Dismiss</Button>
     </div>
   );
 }

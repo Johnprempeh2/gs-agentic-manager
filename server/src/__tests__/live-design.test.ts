@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   acceptLiveDesign,
   endLiveDesign,
+  getLiveDesign,
+  liveDesignAcceptsPage,
   recordLiveDesignMarkup,
+  restoreLiveDesign,
+  setLiveDesignDeliverable,
   impeccableVariantsHtml,
   pollLiveDesign,
   pollLiveDesignFrames,
@@ -162,5 +166,56 @@ describe("live design through Impeccable's page tools", () => {
     handleImpeccableRequest(s, post({ type: "generate", freeformPrompt: "Glow", element: { tagName: "a" } }));
     const event = (await pollLiveDesign(s, 1000)) as { requestId: string };
     expect(event.requestId.length).toBeGreaterThan(0);
+  });
+
+  it("restores an earlier version as the page and tells the agent, but not mid-request", async () => {
+    const { session: s } = startLiveDesign(ids);
+    setLiveDesignDeliverable(s, "d-v3");
+    expect(viewLiveDesign(s).deliverableId).toBe("d-v3");
+    restoreLiveDesign(s, newAttachment, 1);
+    expect(viewLiveDesign(s)).toMatchObject({ attachmentId: newAttachment, appliedAttachmentId: newAttachment });
+    expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "restored", attachmentId: newAttachment, version: 1 });
+
+    handleImpeccableRequest(s, post({ type: "generate", id: "g2", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    expect(() => restoreLiveDesign(s, newAttachment, 1)).toThrow(/Keep or discard/);
+  });
+
+  it("frees a request when the agent goes quiet, and tells John to press Go again", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000); // the agent joins
+    handleImpeccableRequest(s, post({ type: "generate", id: "q1", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    s.agentSeenAt = Date.now() - 9 * 60_000; // then stops polling
+    getLiveDesign(s.id);
+    expect(viewLiveDesign(s)).toMatchObject({ status: "waiting_agent", request: null });
+    expect(viewLiveDesign(s).messages.at(-1)?.text).toMatch(/stopped responding/);
+    expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "q1" });
+  });
+
+  it("handles Impeccable's Insert: a new element next to an anchor, nothing replaced", async () => {
+    const { session: s } = startLiveDesign(ids);
+    handleImpeccableRequest(s, {
+      ...post({ type: "generate", id: "i1", mode: "insert", freeformPrompt: "Add a testimonial", count: 2, insert: { position: "after", anchor: { tagName: "section", textContent: "Pricing", outerHTML: "<section>Pricing</section>" } } }, "main > section:nth-of-type(2)"),
+      extra: { selector: "main > section:nth-of-type(2)", position: "after" },
+    });
+    const event = await pollLiveDesign(s, 1000);
+    expect(event).toMatchObject({ type: "generate", request: { insert: { position: "after" }, selector: "main > section:nth-of-type(2)" } });
+    expect(String((event as { _instructions: string })._instructions)).toMatch(/NEW element to place after/);
+    replyLiveDesign(s, { requestId: "i1", variants: [{ html: "<section>Quote</section>", css: "", name: "" }] });
+    const html = String(s.frames.at(-1)?.data.gsVariantsHtml);
+    expect(html).toContain('data-impeccable-mode="insert"');
+    expect(html).not.toContain('data-impeccable-variant="original"');
+  });
+
+  it("only takes a page that is still wanted, and no whole-page change under open versions", async () => {
+    const { session: s } = startLiveDesign(ids);
+    expect(liveDesignAcceptsPage(s, "page")).toBe(true);
+    handleImpeccableRequest(s, post({ type: "generate", id: "w1", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    replyLiveDesign(s, { requestId: "w1", variants: [{ html: "<a>1</a>", css: "", name: "" }] });
+    expect(liveDesignAcceptsPage(s, "page")).toBe(false);
+    expect(liveDesignAcceptsPage(s, "w1")).toBe(false); // versions open, nothing accepted yet
+    expect(replyLiveDesign(s, { requestId: "page", appliedAttachmentId: newAttachment })).toMatchObject({ ok: false, reason: "busy" });
+    acceptLiveDesign(s, "w1", 0);
+    expect(liveDesignAcceptsPage(s, "w1")).toBe(true);
+    expect(liveDesignAcceptsPage(s, "old")).toBe(false);
   });
 });

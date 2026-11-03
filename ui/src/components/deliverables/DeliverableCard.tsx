@@ -1,4 +1,4 @@
-import { Briefcase, ChevronDown, Download, ExternalLink, Eye, FolderOpen, History, Link2 } from "lucide-react";
+import { Briefcase, ChevronDown, Download, ExternalLink, Eye, FolderOpen, History, Link2, Sparkles } from "lucide-react";
 import type { Deliverable, DeliverableKind } from "@/api/deliverables";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
-import { DeliverableThumbnail } from "./DeliverableDocument";
+import { DeliverableThumbnail, liveEditPath } from "./DeliverableDocument";
 import { ConfidentialityBadge, LinkStatusBadges } from "./DeliverableBadges";
 
 export const DELIVERABLE_KIND_LABELS: Record<DeliverableKind, string> = {
@@ -156,6 +156,17 @@ export function DeliverableCard({
         <QuickAction label="Preview" onClick={onPreview}>
           <Eye className="h-3.5 w-3.5" />
         </QuickAction>
+        {liveEditPath(deliverable) ? (
+          <Link
+            to={liveEditPath(deliverable)!}
+            disableIssueQuicklook
+            title="Edit live"
+            aria-label="Edit live"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+          </Link>
+        ) : null}
         {deliverable.external && deliverable.url ? (
           <QuickAction label="Open site" href={deliverable.url}>
             <ExternalLink className="h-3.5 w-3.5" />

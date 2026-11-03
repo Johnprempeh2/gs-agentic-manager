@@ -10918,7 +10918,9 @@ for (const [method, path, summary, extra] of [
   ["get", "/api/live-design/{sessionId}/stream", "Long-poll the helper events for the live page", {}],
   ["post", "/api/live-design/{sessionId}/steer", "A note from the board to the live design agent", { 400: r.badRequest, 409: r.conflict }],
   ["post", "/api/live-design/{sessionId}/end", "End live design, which lets the agent's run finish", {}],
+  ["post", "/api/live-design/{sessionId}/restore", "Bring back an earlier version of the page as its newest version", { 400: r.badRequest, 409: r.conflict, 422: r.unprocessable }],
   ["get", "/api/live-design/{sessionId}/poll", "The session's agent: long-poll the next live design event", { 403: r.forbidden }],
+  ["get", "/api/live-design/{sessionId}/page", "The page being designed, as HTML, for the session's agent or a person on it", { 403: r.forbidden, 409: r.conflict }],
   ["post", "/api/live-design/{sessionId}/reply", "The session's agent: send versions, a note, a saved page or an error", { 400: r.badRequest, 403: r.forbidden }],
 ] as const) {
   registry.registerPath({

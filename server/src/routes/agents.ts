@@ -5532,6 +5532,17 @@ export function agentRoutes(
       return;
     }
 
+    // The live designer flag lets an agent run live design on any task's page (GRE live design):
+    // only a person sets it, never an agent (itself or another).
+    if (req.actor.type === "agent" && hasOwn(req.body as object, "metadata")) {
+      const next = asRecord((req.body as Record<string, unknown>).metadata)?.liveDesigner;
+      const current = asRecord(existing.metadata)?.liveDesigner;
+      if (next !== current) {
+        res.status(403).json({ error: "Only a person can choose the live designer." });
+        return;
+      }
+    }
+
     const patchData = { ...(req.body as Record<string, unknown>) };
     const replaceAdapterConfig = patchData.replaceAdapterConfig === true;
     delete patchData.replaceAdapterConfig;

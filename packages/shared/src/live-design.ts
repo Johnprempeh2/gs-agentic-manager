@@ -22,6 +22,8 @@ export const liveDesignRequestSchema = z.object({
   notes: z.array(z.string().max(1000)).max(30).default([]),
   /** The marked-up screenshot, saved as an image attachment on the task, when John drew or commented. */
   screenshotAttachmentId: z.string().uuid().optional(),
+  /** Impeccable's Insert: a new element goes before or after the element at `selector`, nothing is replaced. */
+  insert: z.object({ position: z.enum(["before", "after"]) }).optional(),
 });
 export type LiveDesignRequest = z.infer<typeof liveDesignRequestSchema>;
 
@@ -42,6 +44,8 @@ export const liveDesignReplySchema = z.object({
   variants: z.array(liveDesignVariantSchema).min(1).max(4).optional(),
   /** After an accept: the new attachment that holds the updated page. */
   appliedAttachmentId: z.string().uuid().optional(),
+  /** After an accept or applied edits: the complete updated page. GSAM saves it on the task, so the agent uploads nothing. */
+  pageHtml: z.string().min(1).max(8_000_000).optional(),
   error: z.string().max(500).optional(),
   /** A short note for John's chat, such as "Trying a halo, a slow pulse and a bloom". Can be sent on its own. */
   message: z.string().max(1000).optional(),
@@ -57,11 +61,17 @@ export const liveDesignHelperRequestSchema = z.object({
   body: z.string().max(200_000).nullable(),
   /** A binary body (the annotation screenshot), base64. */
   bodyBase64: z.string().max(9_800_000).optional(),
-  extra: z.object({ selector: z.string().max(500).optional() }).default({}),
+  extra: z.object({ selector: z.string().max(500).optional(), position: z.enum(["before", "after"]).optional() }).default({}),
 });
 export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSchema>;
 
 export const liveDesignSteerSchema = z.object({ message: z.string().trim().min(1).max(2000) });
+
+/** Start live design; with a deliverable, every saved change becomes its next version. */
+export const liveDesignStartSchema = z.object({ deliverableId: z.string().uuid().optional() });
+
+/** Bring back an earlier version: it becomes the newest version, so nothing is lost. */
+export const liveDesignRestoreSchema = z.object({ attachmentId: z.string().uuid() });
 
 export type LiveDesignStatus = "waiting_agent" | "idle" | "generating" | "ready" | "applying" | "ended";
 
@@ -84,4 +94,10 @@ export interface LiveDesignView {
   error: string | null;
   /** The editor's chat: John's requests, the agent's notes and GSAM's status lines. */
   messages: LiveDesignMessage[];
+  /** The deliverable this page is, when live design was opened from one; its latest version id. */
+  deliverableId: string | null;
+  /** The editor frame's address for the current version (Impeccable's tools inside). */
+  frameSrc: string | null;
+  /** A task file or a website page. */
+  sourceKind: "attachment" | "website-page";
 }

@@ -29,6 +29,12 @@ export function isHtmlDeliverable(source: Pick<Deliverable, "contentType">) {
   return type === "text/html" || type === "application/xhtml+xml";
 }
 
+/** Live design on an HTML deliverable; each kept change becomes its next version. Null when it cannot be edited. */
+export function liveEditPath(source: Pick<Deliverable, "id" | "contentType" | "attachmentId" | "external" | "issue">) {
+  if (source.external || !source.attachmentId || !isHtmlDeliverable(source)) return null;
+  return `/issues/${source.issue.id}/design/${source.attachmentId}?deliverable=${source.id}`;
+}
+
 export function isImageDeliverable(source: Pick<Deliverable, "contentType">) {
   return normalizedType(source.contentType).startsWith("image/");
 }
