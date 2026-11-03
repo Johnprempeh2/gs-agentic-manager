@@ -32,7 +32,7 @@ export const HTML_ATTACHMENT_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
-export const deliverableKindSchema = z.enum(["report", "brief", "plan", "deck", "other"]);
+export const deliverableKindSchema = z.enum(["report", "brief", "plan", "deck", "proposal", "email", "mockup", "other"]);
 export const deliverableStatusSchema = z.enum(["draft", "final"]);
 export const deliverableSortSchema = z.enum(["newest", "recently_opened", "title"]);
 /**

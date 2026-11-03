@@ -815,3 +815,7 @@ POST /api/issues/{issueId}/interactions
 - Human-only, wakes you by default. Done: `result.secret` is `{ secretId, secretName,
   linkedAgentIds }` (plus `linkingNeedsOwner` when an owner must link it). "I can't do this":
   `result.reason` says why; find another way and say what you will do.
+
+**Deliverable kinds and live design.**
+
+Register every finished document as a deliverable with the closest `kind`: `report`, `brief`, `plan`, `deck`, `proposal`, `email` (an email template), `mockup` (a UI screen for GSAM or a client) or `other`. Make decks, proposals, email templates, reports and mockups as one self-contained HTML file in the Greatstone brand (the `greatstone-brand` skill) unless the task names another brand, and check the reference library (`GET /api/companies/{companyId}/references`) for the real logo and brand elements first. An HTML deliverable gets "Edit live" in Deliverables and on its Decisions card, so John can change it with the live designer and every kept change becomes its next version.

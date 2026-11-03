@@ -49,7 +49,7 @@ const FACET_SCAN_LIMIT = 2_000;
 const TITLE_MAX_LENGTH = 200;
 const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 
-const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "other"]);
+const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "proposal", "email", "mockup", "other"]);
 const CONFIDENTIALITY = new Set<DeliverableConfidentiality>(["internal", "client", "public"]);
 /** Link deliverables carry this content type: a URL, not a stored file. */
 const LINK_CONTENT_TYPE = "text/uri-list";

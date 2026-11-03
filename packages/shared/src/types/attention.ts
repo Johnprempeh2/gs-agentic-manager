@@ -112,6 +112,9 @@ export interface AttentionDetailDeliverable {
   contentType: string;
   contentPath: string;
   originalFilename?: string | null;
+  /** For Edit live from the card. */
+  issueId?: string;
+  attachmentId?: string;
 }
 
 export interface AttentionItemDismissal {

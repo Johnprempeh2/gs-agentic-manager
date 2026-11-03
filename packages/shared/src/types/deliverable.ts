@@ -3,7 +3,7 @@
 // points at a stored attachment. Registering the same key on the same issue
 // again creates the next version.
 
-export type DeliverableKind = "report" | "brief" | "plan" | "deck" | "other";
+export type DeliverableKind = "report" | "brief" | "plan" | "deck" | "proposal" | "email" | "mockup" | "other";
 
 export type DeliverableStatus = "draft" | "final";
 

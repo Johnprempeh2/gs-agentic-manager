@@ -26,6 +26,7 @@ import {
 import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
 import { deliverableService } from "../services/deliverables.js";
+import { LIVE_KIND_GUIDANCE } from "../services/live-design-kinds.js";
 import { agentHasActiveRun, pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { assertCanSaveStepsSecret, buildStepsAgentMessage, saveStepsSecret } from "../services/request-steps.js";
@@ -44,7 +45,8 @@ import {
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { blankScreenshotWarning } from "../services/screenshot-blank-check.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignRestoreSchema, liveDesignStartSchema, liveDesignSteerSchema, type LiveDesignHelperRequest, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, prototypeReviewMarkupSchema, type PrototypeReviewMarkup, liveDesignHelperRequestSchema, liveDesignReplySchema, liveDesignRestoreSchema, liveDesignStartSchema, liveDesignSteerSchema, type LiveDesignHelperRequest, type LiveDesignReply, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter, type DeliverableKind
+} from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -21124,10 +21126,11 @@ export function issueRoutes(
   const liveDeliverables = deliverableService(db, storage);
 
   /** A task file as live design's page: shown in the sandbox, read for the agent, saved as a new file. */
-  function attachmentPageSource(issue: { id: string; companyId: string }, fileName: string): LivePageSource {
+  function attachmentPageSource(issue: { id: string; companyId: string }, fileName: string, deliverableKind?: DeliverableKind): LivePageSource {
     return {
       kind: "attachment",
       label: fileName,
+      guidance: deliverableKind ? LIVE_KIND_GUIDANCE[deliverableKind] : undefined,
       frameSrc: (id) => `/api/attachments/${id}/annotate?live=1`,
       read: async (id) => {
         const file = await svc.getAttachmentById(id);
@@ -21218,6 +21221,7 @@ export function issueRoutes(
     let deliverableId: string | null = null;
     // A deliverable always opens at its newest version, whichever version the link named.
     let pageAttachmentId = attachment.id;
+    let deliverableKind: DeliverableKind | undefined;
     if (req.body?.deliverableId) {
       const detail = await liveDeliverables.getDetail(issue.companyId, req.body.deliverableId as string);
       if (!detail || detail.issue.id !== issue.id || !detail.versions.some((v) => v.attachmentId === attachment.id)) {
@@ -21226,6 +21230,7 @@ export function issueRoutes(
       }
       deliverableId = detail.versions[0]?.id ?? detail.id;
       pageAttachmentId = detail.versions[0]?.attachmentId ?? attachment.id;
+      deliverableKind = detail.kind;
     }
     // A flagged live designer runs the session (John, 2 Nov: one UI agent for all live design);
     // without one, the task's own agent does.
@@ -21250,7 +21255,7 @@ export function issueRoutes(
       attachmentId: pageAttachmentId,
       agentId,
       islands,
-      source: attachmentPageSource(issue, attachment.originalFilename ?? "page.html"),
+      source: attachmentPageSource(issue, attachment.originalFilename ?? "page.html", deliverableKind),
     });
     setLiveDesignDeliverable(session, deliverableId);
     if (needsWake) await wakeLiveDesignAgent(heartbeat, { session, onTaskIssueId: onTask ? issue.id : null, fileName: attachment.originalFilename ?? "the page", actorId: getActorInfo(req).actorId });

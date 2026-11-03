@@ -379,7 +379,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--url <url>", "A live https link instead of a file")
       .option("--key <key>", "Version key; reuse it to publish the next version")
       .option("--summary <text>", "One line on what it is (280 characters at most)")
-      .option("--kind <kind>", "report, brief, plan, deck or other")
+      .option("--kind <kind>", "report, brief, plan, deck, proposal, email, mockup or other")
       .option("--status <status>", "draft or final")
       .option("--confidentiality <level>", "internal, client or public")
       .action(async (issueId: string, opts: IssueDeliverableOptions) => {

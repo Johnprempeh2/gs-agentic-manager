@@ -118,7 +118,7 @@ export const pipelineStageTemplateSchema = z.object({
 export const pipelineStageExpectedDeliverableSchema = z.object({
   key: z.string().trim().min(1).max(64),
   title: z.string().trim().min(1).max(200),
-  kind: z.enum(["report", "brief", "plan", "deck", "other"]).optional().nullable(),
+  kind: z.enum(["report", "brief", "plan", "deck", "proposal", "email", "mockup", "other"]).optional().nullable(),
 });
 
 /**
