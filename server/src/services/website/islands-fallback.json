@@ -1,0 +1,162 @@
+{
+  "islandContract": 1,
+  "islands": [
+    {
+      "name": "enquiry-form",
+      "label": "Enquiry form",
+      "placeholder": "Name, email and message. Sends an enquiry to the team.",
+      "height": 520,
+      "inline": false,
+      "attributes": {
+        "data-form": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        }
+      }
+    },
+    {
+      "name": "ai-baseline-survey",
+      "label": "AI baseline survey",
+      "placeholder": "The AI baseline survey and its results.",
+      "height": 560,
+      "inline": false,
+      "attributes": {
+        "data-form": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        }
+      }
+    },
+    {
+      "name": "ai-cost-calculator",
+      "label": "AI cost calculator",
+      "placeholder": "The AI cost calculator and its results.",
+      "height": 560,
+      "inline": false,
+      "attributes": {
+        "data-form": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        }
+      }
+    },
+    {
+      "name": "cookie-settings",
+      "label": "Cookie settings",
+      "placeholder": "Opens the cookie settings.",
+      "height": 32,
+      "inline": true,
+      "attributes": {}
+    },
+    {
+      "name": "quote",
+      "label": "Quote",
+      "placeholder": "Adds a service to the basket and sends the quote request.",
+      "height": 96,
+      "inline": false,
+      "attributes": {
+        "data-service": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,119}$"
+        },
+        "data-service-name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 &,.'()+/-]{0,79}$"
+        }
+      }
+    },
+    {
+      "name": "account-entry",
+      "label": "Account entry",
+      "placeholder": "Sign in, or My account when signed in.",
+      "height": 48,
+      "inline": true,
+      "attributes": {
+        "data-style": {
+          "values": [
+            "button",
+            "link"
+          ]
+        }
+      }
+    },
+    {
+      "name": "product-list",
+      "label": "Product list",
+      "placeholder": "Products from the catalogue collection.",
+      "height": 360,
+      "inline": false,
+      "attributes": {
+        "data-vendor": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,119}$"
+        },
+        "data-category": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,119}$"
+        },
+        "data-limit": {
+          "pattern": "^(?:[1-9]|1[0-9]|2[0-4])$"
+        },
+        "data-sort": {
+          "values": [
+            "featured",
+            "az",
+            "price",
+            "price-desc"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stone-3d",
+      "label": "3D stone",
+      "placeholder": "The 3D Greatstone stone. A still image on phones and with reduced motion.",
+      "height": 420,
+      "inline": false,
+      "attributes": {
+        "data-size": {
+          "values": [
+            "hero",
+            "accent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "animation",
+      "label": "Animation",
+      "placeholder": "A decorative background animation. Still with reduced motion.",
+      "height": 320,
+      "inline": false,
+      "attributes": {
+        "data-effect": {
+          "values": [
+            "waves",
+            "stone",
+            "haze",
+            "bedrock",
+            "ascent",
+            "datum",
+            "meridian",
+            "veil",
+            "orbit"
+          ]
+        },
+        "data-intensity": {
+          "values": [
+            "subtle",
+            "full"
+          ]
+        },
+        "data-speed": {
+          "values": [
+            "still",
+            "slow",
+            "normal"
+          ]
+        },
+        "data-colour": {
+          "values": [
+            "emerald",
+            "teal"
+          ]
+        }
+      }
+    }
+  ],
+  "placeholderCss": "gs-island{display:flex;flex-direction:column;justify-content:center;gap:6px;box-sizing:border-box;margin:16px 0;padding:20px 24px;border:1px dashed rgba(200,255,0,.55);border-radius:14px;background:repeating-linear-gradient(135deg,rgba(200,255,0,.05) 0 12px,transparent 12px 24px);color:#f5f5f5;font:600 15px/1.4 system-ui,sans-serif;text-align:left}gs-island::before{color:#c8ff00;font-size:12px;letter-spacing:.12em;text-transform:uppercase}gs-island::after{color:#c4c8c1;font-weight:400}gs-island[name=\"enquiry-form\"]{min-height:520px}gs-island[name=\"enquiry-form\"]::before{content:\"Island: Enquiry form\"}gs-island[name=\"enquiry-form\"]::after{content:\"Name, email and message. Sends an enquiry to the team.\"}gs-island[name=\"ai-baseline-survey\"]{min-height:560px}gs-island[name=\"ai-baseline-survey\"]::before{content:\"Island: AI baseline survey\"}gs-island[name=\"ai-baseline-survey\"]::after{content:\"The AI baseline survey and its results.\"}gs-island[name=\"ai-cost-calculator\"]{min-height:560px}gs-island[name=\"ai-cost-calculator\"]::before{content:\"Island: AI cost calculator\"}gs-island[name=\"ai-cost-calculator\"]::after{content:\"The AI cost calculator and its results.\"}gs-island[name=\"cookie-settings\"]{min-height:32px;display:inline-flex;margin:0;padding:6px 12px}gs-island[name=\"cookie-settings\"]::before{content:\"Island: Cookie settings\"}gs-island[name=\"cookie-settings\"]::after{content:\"Opens the cookie settings.\"}gs-island[name=\"quote\"]{min-height:96px}gs-island[name=\"quote\"]::before{content:\"Island: Quote\"}gs-island[name=\"quote\"]::after{content:\"Adds a service to the basket and sends the quote request.\"}gs-island[name=\"account-entry\"]{min-height:48px;display:inline-flex;margin:0;padding:6px 12px}gs-island[name=\"account-entry\"]::before{content:\"Island: Account entry\"}gs-island[name=\"account-entry\"]::after{content:\"Sign in, or My account when signed in.\"}gs-island[name=\"product-list\"]{min-height:360px}gs-island[name=\"product-list\"]::before{content:\"Island: Product list\"}gs-island[name=\"product-list\"]::after{content:\"Products from the catalogue collection.\"}gs-island[name=\"stone-3d\"]{min-height:420px}gs-island[name=\"stone-3d\"]::before{content:\"Island: 3D stone\"}gs-island[name=\"stone-3d\"]::after{content:\"The 3D Greatstone stone. A still image on phones and with reduced motion.\"}gs-island[name=\"animation\"]{min-height:320px}gs-island[name=\"animation\"]::before{content:\"Island: Animation\"}gs-island[name=\"animation\"]::after{content:\"A decorative background animation. Still with reduced motion.\"}"
+}
