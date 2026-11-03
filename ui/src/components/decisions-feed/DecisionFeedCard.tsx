@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageCircleQuestion } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageCircleQuestion, Sparkles } from "lucide-react";
 import type {
   Agent,
   AttentionDetailDeliverable,
@@ -29,7 +29,7 @@ import { NotNowButton } from "./NotNowButton";
 import { AtDeskPanel } from "./AtDeskPanel";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
-import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
+import { DeliverableDocumentView, isHtmlDeliverable } from "../deliverables/DeliverableDocument";
 import { ReviewWorkEvidence, reviewDetailOf } from "../ReviewDecisionSummary";
 import { useToastActions } from "../../context/ToastContext";
 
@@ -933,6 +933,13 @@ function DecisionCardDeliverables({ card }: { card: DecisionCard }) {
         ) : (
           <p className="min-w-0 flex-1 truncate text-sm font-medium">{shown.title}</p>
         )}
+        {shown.issueId && shown.attachmentId && isHtmlDeliverable(shown) ? (
+          <Button asChild size="xs" variant="secondary">
+            <Link to={`/issues/${shown.issueId}/design/${shown.attachmentId}?deliverable=${shown.id}`} disableIssueQuicklook data-decision-edit-live>
+              <Sparkles /> Edit live
+            </Link>
+          </Button>
+        ) : null}
         <Button asChild size="xs" variant="ghost">
           <a href={shown.contentPath} target="_blank" rel="noreferrer">
             Open full size

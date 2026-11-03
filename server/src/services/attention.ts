@@ -1008,6 +1008,8 @@ async function issueDeliverableMap(db: Db, companyId: string, issueIds: Array<st
       title: row.title,
       contentType: typeof metadata.contentType === "string" ? metadata.contentType : "application/octet-stream",
       contentPath: `/api/attachments/${attachmentId}/content`,
+      issueId: row.issueId,
+      attachmentId,
       originalFilename: typeof metadata.originalFilename === "string" ? metadata.originalFilename : null,
     });
     map.set(row.issueId, deliverables);
