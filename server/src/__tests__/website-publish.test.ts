@@ -602,6 +602,72 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(siteRow!.publishLeaseId).toBeNull();
   });
 
+  // ---- page SEO FAQ (GRE-3791) ----
+
+  const servicesFaq = Array.from({ length: 6 }, (_, i) => ({
+    q: `Question ${i + 1}: what does "the service" include?`,
+    a: `Answer ${i + 1}.\nIt keeps  spacing, quotes "like this" and <b>angle</b> text exactly.`,
+  }));
+
+  it("keeps seo.faq from import through an edit to the release, deep-equal", async () => {
+    const { base } = await seedSite();
+    const seo = { title: "Services | Greatstone", description: "What we do", faq: servicesFaq };
+    const imported = (await request(app())
+      .post(`${base}/pages`)
+      .send({ slug: "/services", title: "Services", seo, content: { root: { props: { title: "Services v1" } }, content: [] } })
+      .expect(201)).body as WebsitePageDetail;
+    expect(imported.seo.faq).toEqual(servicesFaq);
+
+    // Edit other fields: the title, then the content as a new revision.
+    await request(app()).patch(`${base}/pages/${imported.id}`).send({ title: "Our services" }).expect(200);
+    await saveAndApprove(base, imported.id, "Services v2");
+    const read = (await request(app()).get(`${base}/pages/${imported.id}`).expect(200)).body as WebsitePageDetail;
+    expect(read.seo).toEqual(seo);
+
+    const release = await publish(base);
+    expect(release.status).toBe("live");
+    const file = JSON.parse(netlify.blobs.get("releases/1.json")!.body);
+    const services = file.pages.find((p: { slug: string }) => p.slug === "/services");
+    expect(services.content.root.props.title).toBe("Services v2");
+    expect(services.seo).toEqual(seo);
+    expect(services.seo.faq).toEqual(servicesFaq);
+  });
+
+  it("refuses a malformed seo.faq on import and edit with a clear error", async () => {
+    const { page, base } = await seedSite();
+    const item = { q: "Q", a: "A" };
+    const cases: Array<[unknown, string]> = [
+      [Array.from({ length: 51 }, () => item), "A page can have up to 50 FAQ items"],
+      [[{ q: "x".repeat(501), a: "A" }], "An FAQ question can be up to 500 characters"],
+      [[{ q: "Q", a: "x".repeat(4001) }], "An FAQ answer can be up to 4000 characters"],
+      [[{ q: 42, a: "A" }], "FAQ questions and answers must be plain text"],
+      [[{ q: "Q", a: "A", html: "<p>A</p>" }], "Unrecognized key"],
+    ];
+    for (const [faq, message] of cases) {
+      const created = await request(app()).post(`${base}/pages`).send({ slug: "/services", title: "Services", seo: { faq } }).expect(400);
+      expect(created.body.details[0].path).toEqual(expect.arrayContaining(["seo", "faq"]));
+      expect(created.body.details[0].message).toContain(message);
+      const edited = await request(app()).patch(`${base}/pages/${page.id}`).send({ seo: { faq } }).expect(400);
+      expect(edited.body.details[0].message).toContain(message);
+    }
+    // The limits themselves are allowed.
+    const atLimit = [...Array.from({ length: 49 }, () => item), { q: "x".repeat(500), a: "y".repeat(4000) }];
+    await request(app()).patch(`${base}/pages/${page.id}`).send({ seo: { faq: atLimit } }).expect(200);
+  });
+
+  it("a malformed seo.faq already stored fails the release checks and uploads nothing", async () => {
+    const { page, base } = await seedSite();
+    await approveLatest(page.id);
+    await db.update(websitePage).set({ seo: { faq: [{ q: "x".repeat(501), a: "A" }] } }).where(eq(websitePage.id, page.id));
+    const release = await publish(base);
+    expect(release.status).toBe("checks_failed");
+    const check = (release.checks as Array<{ name: string; ok: boolean; message?: string }>).find((c) => c.name === "page_seo");
+    expect(check).toMatchObject({ ok: false });
+    expect(check!.message).toContain("/ (seo.faq.0.q: An FAQ question can be up to 500 characters)");
+    expect(netlify.blobs.size).toBe(0);
+    expect(netlify.state.builds).toBe(0);
+  });
+
   // ---- Pending and Retry ----
 
   it("Pending case A: the build worked but the pages are stale; Retry checks again for free", async () => {

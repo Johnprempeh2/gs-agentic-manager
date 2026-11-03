@@ -54,13 +54,33 @@ export function isPrivatePagePath(path: string): boolean {
   return path.split("/").some((segment) => segment.startsWith(":"));
 }
 
-const seoSchema = z
+/** The site engine's limits for `seo.faq` (GRE-3789); a bad value fails here, not at release. */
+export const WEBSITE_PAGE_FAQ_MAX_ITEMS = 50;
+export const WEBSITE_PAGE_FAQ_MAX_QUESTION = 500;
+export const WEBSITE_PAGE_FAQ_MAX_ANSWER = 4000;
+
+const FAQ_PLAIN_TEXT = "FAQ questions and answers must be plain text";
+
+/** The page's FAQ, which the engine writes as FAQPage JSON-LD. Plain text, kept exactly as sent. */
+const websitePageFaqSchema = z
+  .array(
+    z
+      .object({
+        q: z.string({ error: FAQ_PLAIN_TEXT }).min(1, "Each FAQ question needs text").max(WEBSITE_PAGE_FAQ_MAX_QUESTION, `An FAQ question can be up to ${WEBSITE_PAGE_FAQ_MAX_QUESTION} characters`),
+        a: z.string({ error: FAQ_PLAIN_TEXT }).min(1, "Each FAQ answer needs text").max(WEBSITE_PAGE_FAQ_MAX_ANSWER, `An FAQ answer can be up to ${WEBSITE_PAGE_FAQ_MAX_ANSWER} characters`),
+      })
+      .strict(),
+  )
+  .max(WEBSITE_PAGE_FAQ_MAX_ITEMS, `A page can have up to ${WEBSITE_PAGE_FAQ_MAX_ITEMS} FAQ items`);
+
+export const websitePageSeoSchema = z
   .object({
     title: z.string().trim().max(200).optional(),
     description: z.string().trim().max(500).optional(),
     canonical: z.string().trim().max(500).optional(),
     ogImageAssetId: z.string().uuid().optional(),
     noindex: z.boolean().optional(),
+    faq: websitePageFaqSchema.optional(),
   })
   .strict();
 
@@ -128,7 +148,7 @@ export const createWebsitePageSchema = z
     slug: websitePagePathSchema,
     title: z.string().trim().min(1).max(200),
     status: z.enum(["planned", "draft"]).optional(),
-    seo: seoSchema.optional(),
+    seo: websitePageSeoSchema.optional(),
     /** The page's Puck JSON. Defaults to an empty page. */
     content: z.unknown().optional(),
     ...sitemapFields,
@@ -141,7 +161,7 @@ export const updateWebsitePageSchema = z
     slug: websitePagePathSchema.optional(),
     title: z.string().trim().min(1).max(200).optional(),
     status: z.enum(WEBSITE_PAGE_STATUSES).exclude(["approved", "published"]).optional(),
-    seo: seoSchema.optional(),
+    seo: websitePageSeoSchema.optional(),
     /** `false` restores an archived page at the top level. Archive with the archive route. */
     archived: z.literal(false).optional(),
     ...sitemapFields,
