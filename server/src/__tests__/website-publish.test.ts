@@ -602,6 +602,72 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(siteRow!.publishLeaseId).toBeNull();
   });
 
+  // ---- the switch to HTML pages (plan revision 8, release schema 2) ----
+
+  const htmlExport = {
+    schema: 2,
+    stylesheet: ".gs-hero{color:var(--gs-lime)}",
+    chrome: { header: { html: "<header><a href=\"/\">Greatstone</a></header>", css: "" }, nav: { html: "", css: "" }, footer: { html: "<footer>Footer</footer>", css: "" } },
+    pages: [
+      { slug: "/", title: "Home", html: "<section class=\"gs-hero\"><h1>Home</h1></section>", css: ".p-home{margin:0}" },
+      { slug: "/about", title: "About", html: "<section><h1>About</h1></section>", menu: "header", menuOrder: 1 },
+    ],
+  };
+
+  async function approveChrome(base: string) {
+    const entries = (await request(app()).get(`${base}/entries?collection=_chrome`).expect(200)).body as WebsiteEntryDetail[];
+    for (const entry of entries) {
+      await request(app()).post(`${base}/entries/${entry.id}/submit`).send({}).expect(200);
+      await request(app()).post(`${base}/entries/${entry.id}/approve`).send({}).expect(200);
+    }
+    return entries.length;
+  }
+
+  it("imports HTML pages as drafts, then publishes release schema 2 only on an engine that reads it", async () => {
+    const { site, base } = await seedSite();
+    const imported = (await request(app()).post(`${base}/import-html`).send(htmlExport).expect(200)).body;
+    expect(imported).toMatchObject({ updated: ["/"], created: ["/about"], chrome: ["header", "nav", "footer", "stylesheet"] });
+    // The same file again changes nothing.
+    expect((await request(app()).post(`${base}/import-html`).send(htmlExport).expect(200)).body).toMatchObject({ updated: [], created: [], unchanged: ["/", "/about"], chrome: [] });
+
+    const pages = (await request(app()).get(`${base}/pages`).expect(200)).body as WebsitePageDetail[];
+    for (const page of pages) await approveLatest(page.id);
+    expect(await approveChrome(base)).toBe(4);
+
+    const refused = await publish(base);
+    expect(refused.status).toBe("checks_failed");
+    expect((refused.checks as Array<{ name: string; ok: boolean }>).find((c) => c.name === "release_schema")?.ok).toBe(false);
+    expect(netlify.blobs.size).toBe(0);
+
+    await db.update(websiteSite).set({ releaseSchemaVersion: 2 }).where(eq(websiteSite.id, site.id));
+    const live = await publish(base);
+    expect(live.status).toBe("live");
+    const file = JSON.parse(netlify.blobs.get(`releases/${live.number}.json`)!.body);
+    expect(file.schema).toBe(2);
+    expect(file.stylesheet).toBe(htmlExport.stylesheet);
+    expect(file.chrome.header.html).toBe(htmlExport.chrome.header.html);
+    expect(file.collections._chrome).toBeUndefined();
+    const home = file.pages.find((p: { slug: string }) => p.slug === "/");
+    expect(home).toMatchObject({ html: htmlExport.pages[0]!.html, css: ".p-home{margin:0}" });
+    expect(home.content).toBeUndefined();
+  });
+
+  it("refuses a release that mixes HTML pages and block pages", async () => {
+    const { site, page, base } = await seedSite();
+    await db.update(websiteSite).set({ releaseSchemaVersion: 2 }).where(eq(websiteSite.id, site.id));
+    await request(app()).post(`${base}/import-html`).send({ ...htmlExport, pages: [htmlExport.pages[1]] }).expect(200);
+    const pages = (await request(app()).get(`${base}/pages`).expect(200)).body as WebsitePageDetail[];
+    for (const p of pages) await approveLatest(p.id);
+    await approveChrome(base);
+    const release = await publish(base);
+    expect(release.status).toBe("checks_failed");
+    const check = (release.checks as Array<{ name: string; ok: boolean; message?: string }>).find((c) => c.name === "html_pages");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("/");
+    expect(page.slug).toBe("/");
+    expect(netlify.blobs.size).toBe(0);
+  });
+
   // ---- page SEO FAQ (GRE-3791) ----
 
   const servicesFaq = Array.from({ length: 6 }, (_, i) => ({

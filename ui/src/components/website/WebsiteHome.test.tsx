@@ -199,7 +199,7 @@ describe("WebsiteHomeTab", () => {
     }
     const button = (label: string) => Array.from(container.querySelectorAll("button")).find((el) => el.textContent?.trim() === label)!;
     await act(async () => { button("Edit pages").click(); });
-    expect(onOpenTab).toHaveBeenLastCalledWith("editor");
+    expect(onOpenTab).toHaveBeenLastCalledWith("sitemap");
     await act(async () => { button("Publish").click(); });
     expect(onOpenTab).toHaveBeenLastCalledWith("releases");
   });

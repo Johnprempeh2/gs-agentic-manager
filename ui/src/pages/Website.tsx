@@ -672,7 +672,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       <Tabs value={tab} onValueChange={(value) => openTab(value as WebsiteTab)} className="mb-4">
         <PageTabBar items={WEBSITE_TABS} value={tab} onValueChange={(value) => openTab(value as WebsiteTab)} align="start" ariaLabel="Website section" />
       </Tabs>
-      {tab === "home" ? <WebsiteHomeTab companyId={companyId} property={property} onOpenTab={openTab} onEditPages={() => openEditor({ propertyId: property.id })} /> : null}
+      {tab === "home" ? <WebsiteHomeTab companyId={companyId} property={property} onOpenTab={openTab} onEditPages={(siteId, pageId) => (pageId ? navigate(`/website/sites/${siteId}/pages/${pageId}/design`) : openTab("sitemap"))} /> : null}
       {tab === "progress" ? <WebsiteProgressTab companyId={companyId} property={property} /> : null}
       {tab === "sitemap" ? <WebsiteSitemapTab companyId={companyId} property={property} onEditPage={(siteId, pageId) => navigate(`/website/sites/${siteId}/pages/${pageId}/design`)} /> : null}
       {tab === "editor" ? <WebsitePagesTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}

@@ -103,14 +103,26 @@ export interface LiveDesignView {
 }
 
 /**
- * A website page edited with live design (plan revision 8 on GRE-1831): the page
- * is one HTML document, stored as the page's revision content instead of Puck blocks.
+ * A website page edited with live design (plan revision 8 on GRE-1831): the page's own
+ * HTML (what goes inside the site's shared header, nav and footer) and its page CSS,
+ * stored as the page's revision content instead of Puck blocks. This is what a release
+ * schema 2 page carries (greatstone-website GRE-3776).
  */
 export const WEBSITE_HTML_PAGE_FORMAT = "gs-html";
 export const websiteHtmlPageContentSchema = z.object({
   format: z.literal(WEBSITE_HTML_PAGE_FORMAT),
   html: z.string().min(1),
+  css: z.string().default(""),
 });
+
+/** The site's shared parts for schema 2: header, nav and footer documents and one site stylesheet. */
+export const WEBSITE_CHROME_COLLECTION = "_chrome";
+export const WEBSITE_CHROME_KEYS = ["header", "nav", "footer"] as const;
+export type WebsiteChromeKey = (typeof WEBSITE_CHROME_KEYS)[number];
+export interface WebsiteChrome {
+  chrome: Record<WebsiteChromeKey, { html: string; css: string }>;
+  stylesheet: string;
+}
 export type WebsiteHtmlPageContent = z.infer<typeof websiteHtmlPageContentSchema>;
 
 export function isWebsiteHtmlPage(content: unknown): content is WebsiteHtmlPageContent {

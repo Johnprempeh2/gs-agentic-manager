@@ -307,6 +307,7 @@ function Hero({
   onOpenTab: (tab: WebsiteTab) => void;
   onEditPages?: () => void;
 }) {
+  const editPages = () => (onEditPages ? onEditPages() : onOpenTab("sitemap"));
   const live = site ? `https://${site.domain}/` : liveSiteUrl(property.siteUrl);
   // The Live view frames the exact copy of the live deploy when one is set.
   const liveView = site ? websitePreviewAddresses(site).live : live;
@@ -368,7 +369,7 @@ function Hero({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => (onEditPages ? onEditPages() : onOpenTab("editor"))}>
+          <Button type="button" onClick={editPages}>
             <PenLine />
             Edit pages
           </Button>
@@ -743,11 +744,16 @@ export function WebsiteHomeTab({
   companyId: string;
   property: WebsiteProperty;
   onOpenTab: (tab: WebsiteTab) => void;
-  /** Edit pages: the full-screen editor (GRE-2296). Without it, the Pages tab. */
-  onEditPages?: () => void;
+  /** Edit pages: live design on the home page (plan revision 8), or the sitemap when the site has no home page yet. */
+  onEditPages?: (siteId: string, homePageId: string | null) => void;
 }) {
   const projectId = property.projectId;
   const { site } = useWebsiteSite(companyId, property.id);
+  // Edit pages opens live design on the home page; without one, the sitemap.
+  const openHomeDesign = async (siteId: string) => {
+    const pages = await websiteModuleApi.pages(companyId, siteId).catch(() => []);
+    onEditPages?.(siteId, pages.find((p) => p.slug === "/" && !p.archivedAt)?.id ?? null);
+  };
   const { canPublish } = useCanPublishWebsite(companyId, site?.id ?? null, !!site);
   const homeQuery = useQuery({
     queryKey: queryKeys.website.home(companyId, site?.id ?? ""),
@@ -773,7 +779,7 @@ export function WebsiteHomeTab({
 
   return (
     <div className="space-y-6" data-testid="website-home">
-      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site?.editorFrameOrigin ? onEditPages : undefined} />
+      <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site && onEditPages ? () => void openHomeDesign(site.id) : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
       {home ? <TrainAndLaunch train={home.train ?? null} launch={home.launch ?? null} /> : null}
       <WebsiteFeaturesSection companyId={companyId} site={site} canChange={canPublish} />

@@ -16557,6 +16557,22 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/stylesheet`,
+  tags: ["website"],
+  summary: "The site stylesheet for HTML pages (release schema 2), as CSS, so agents can use its classes and tokens (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/import-html`,
+  tags: ["website"],
+  summary: "Import the site's pages, shared header, nav, footer and stylesheet from a release schema 2 export as draft revisions; nothing is published (people, website:edit)",
+  responses: { ...websiteModuleResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
   method: "post",
   path: `${siteParams}/pages/{pageId}/live-restore`,
   tags: ["website"],

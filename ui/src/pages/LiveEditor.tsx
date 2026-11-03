@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView } from "@greatstone/shared";
 import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
-import { Link, useParams, useSearchParams } from "@/lib/router";
+import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -97,6 +98,12 @@ export function WebsitePageLiveEditor() {
     queryFn: () => websiteModuleApi.page(companyId, siteId, pageId),
     enabled: !!companyId,
   });
+  const navigate = useNavigate();
+  const { data: pages } = useQuery({
+    queryKey: ["website-live-pages", companyId, siteId],
+    queryFn: () => websiteModuleApi.pages(companyId, siteId),
+    enabled: !!companyId,
+  });
   const { data: revisions } = useQuery({
     queryKey: ["website-live-revisions", companyId, siteId, pageId, current],
     queryFn: () => websiteModuleApi.revisions(companyId, siteId, pageId),
@@ -109,6 +116,20 @@ export function WebsitePageLiveEditor() {
       subtitle={`Live design · ${page?.slug ?? ""}${revisions?.[0] ? ` · version ${revisions[0].revisionNumber}` : ""}`}
       backTo="/website"
       backLabel="Back to the website"
+      switcher={
+        pages && pages.length > 1 ? (
+          <NativeSelect
+            aria-label="Page"
+            value={pageId}
+            onChange={(e) => navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`)}
+            className="h-8 max-w-48"
+          >
+            {pages.filter((p) => !p.archivedAt).map((p) => (
+              <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
+            ))}
+          </NativeSelect>
+        ) : null
+      }
       versions={revisions?.map((r) => ({
         id: r.id,
         version: r.revisionNumber,
@@ -145,6 +166,7 @@ function LiveEditorShell({
   fallbackSrc,
   versions,
   onRestore,
+  switcher,
 }: {
   live: ReturnType<typeof useLiveDesign>;
   title: string;
@@ -154,6 +176,8 @@ function LiveEditorShell({
   fallbackSrc?: string;
   versions?: VersionItem[];
   onRestore: (restoreId: string) => void;
+  /** Moves to another page of the same site. */
+  switcher?: ReactNode;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
@@ -295,6 +319,7 @@ function LiveEditorShell({
           <h1 className="truncate text-sm font-semibold">{title}</h1>
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
+        {switcher}
         <Button
           type="button"
           size="sm"

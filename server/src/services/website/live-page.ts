@@ -1,9 +1,15 @@
-import { isWebsiteHtmlPage, WEBSITE_HTML_PAGE_FORMAT } from "@greatstone/shared";
+import { isWebsiteHtmlPage, WEBSITE_HTML_PAGE_FORMAT, type WebsiteChrome } from "@greatstone/shared";
 import { LiveDesignConflict, type LivePageSource } from "../live-design.js";
 
 /**
- * A website page as live design's page (plan revision 8 on GRE-1831): its
- * revisions are the versions, a save is a new revision of `{ format: "gs-html", html }`.
+ * A website page as live design's page (plan revision 8 on GRE-1831). A revision holds
+ * `{ format: "gs-html", html, css }`: the page's own part, which the site renders inside
+ * its shared header, nav and footer with one site stylesheet (release schema 2).
+ *
+ * The agent edits a light document: the page CSS in `<style id="gs-page-css">`, the page
+ * HTML in `<main id="gs-page">`, the shared parts marked data-gs-shared and the site
+ * stylesheet left out (it is large; the agent reads it from its own route). The editor
+ * frame shows the same page with the real stylesheet, so it looks like the build.
  */
 
 interface PageLike {
@@ -28,49 +34,108 @@ interface Store {
   }): Promise<{ state: "saved"; revisionId: string } | { state: "conflict" | "failed"; message: string }>;
 }
 
+/** The site's shared parts, or null before they are imported. */
+export type ChromeLoader = () => Promise<WebsiteChrome | null>;
+
 const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// CSS lives inside <style>; a closing tag in it would end the element early.
+const safeCss = (css: string) => css.replace(/<\/style/gi, "<\\/style");
 
-const STARTER_STYLE =
-  "body{margin:0;font-family:Montserrat,system-ui,sans-serif;background:#121212;color:#f5f5f5}" +
-  "main{max-width:1100px;margin:0 auto;padding:96px 24px}h1{font-size:48px;font-weight:800;margin:0 0 16px;letter-spacing:-.01em}" +
-  "p{color:#b0b0b0;max-width:60ch;line-height:1.7;font-size:17px}";
+const STARTER_CSS =
+  ".gs-starter{max-width:1100px;margin:0 auto;padding:96px 24px}.gs-starter h1{font-size:48px;font-weight:800;margin:0 0 16px}" +
+  ".gs-starter p{max-width:60ch;line-height:1.7;font-size:17px}";
 
-/** What an empty or block-built page shows until the agent builds its HTML version. */
+/** What an empty or block-built page shows until it has its HTML version. */
 export function websiteStarterPage(page: Pick<PageLike, "title" | "slug">, blocks: unknown) {
   const hasBlocks = blocks !== null && blocks !== undefined;
   const note = hasBlocks
-    ? "This page was built with blocks. Ask in the chat to rebuild it as an editable page, for example: \u201cRebuild this page from its blocks, same look\u201d."
+    ? "This page is still in the old block format. Ask in the chat to rebuild it as an editable page, for example: \u201cRebuild this page from its blocks, same look\u201d."
     : "This page has not been designed yet. Ask in the chat to build it, for example: \u201cBuild this page in the Greatstone style\u201d.";
   // The blocks ride along as inert JSON so the agent can rebuild from them; nothing runs it.
   const data = hasBlocks
     ? `<script type="application/json" id="gs-page-blocks">${JSON.stringify(blocks).replace(/</g, "\\u003c")}</script>`
     : "";
-  return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(page.title)}</title><style>${STARTER_STYLE}</style></head><body><main><h1>${escapeHtml(page.title)}</h1><p>${note}</p></main>${data}</body></html>`;
+  return { html: `<section class="gs-starter"><h1>${escapeHtml(page.title)}</h1><p>${note}</p></section>${data}`, css: STARTER_CSS };
 }
 
-export function websitePageSource(store: Store, page: PageLike): LivePageSource {
+/** The page's own part of a revision: HTML pages as they are, anything else as a starter. */
+export function pagePart(page: Pick<PageLike, "title" | "slug">, content: unknown) {
+  if (isWebsiteHtmlPage(content)) return { html: content.html, css: content.css ?? "" };
+  return websiteStarterPage(page, isEmptyContent(content) ? null : content);
+}
+
+/**
+ * The page as one document. `stylesheet` is the site stylesheet for the frame, or null for
+ * the agent's copy (a link stands in for it).
+ */
+export function pageDocument(
+  page: Pick<PageLike, "title" | "slug" | "companyId" | "siteId">,
+  part: { html: string; css: string },
+  chrome: WebsiteChrome | null,
+  stylesheet: string | null,
+) {
+  const shared = (key: "header" | "nav" | "footer", tag: string) => {
+    const doc = chrome?.chrome[key];
+    if (!doc || (!doc.html.trim() && !doc.css.trim())) return "";
+    const css = doc.css.trim() ? `<style data-gs-shared="${key}">${safeCss(doc.css)}</style>` : "";
+    return `${css}<${tag} data-gs-shared="${key}">${doc.html}</${tag}>`;
+  };
+  const siteCss =
+    stylesheet !== null
+      ? `<style data-gs-shared="stylesheet">${safeCss(stylesheet)}</style>`
+      : chrome
+        ? `<link rel="stylesheet" data-gs-shared="stylesheet" href="/api/companies/${page.companyId}/website/sites/${page.siteId}/stylesheet">`
+        : "";
+  return [
+    `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`,
+    `<title>${escapeHtml(page.title)}</title>${siteCss}<style id="gs-page-css">${safeCss(part.css)}</style></head><body>`,
+    shared("header", "div"),
+    shared("nav", "div"),
+    `<main id="gs-page">${part.html}</main>`,
+    shared("footer", "div"),
+    `</body></html>`,
+  ].join("");
+}
+
+/** Takes the page's own part back out of the agent's document. */
+export function splitPageDocument(html: string) {
+  const open = html.match(/<main\b[^>]*\bid\s*=\s*["']gs-page["'][^>]*>/i);
+  const close = html.toLowerCase().lastIndexOf("</main>");
+  if (!open || open.index === undefined || close < open.index) {
+    throw new LiveDesignConflict('Keep the page inside <main id="gs-page"> … </main>; only that part is saved.');
+  }
+  const body = html.slice(open.index + open[0].length, close).trim();
+  if (!body) throw new LiveDesignConflict("The page came back empty, so nothing was saved.");
+  const css = html.match(/<style\b[^>]*\bid\s*=\s*["']gs-page-css["'][^>]*>([\s\S]*?)<\/style\s*>/i)?.[1] ?? "";
+  return { html: body, css: css.trim() };
+}
+
+export function websitePageSource(store: Store, page: PageLike, loadChrome: ChromeLoader): LivePageSource {
+  const part = async (revisionId: string) => {
+    const found = await store.readRevision(page.companyId, page.documentId, revisionId);
+    if (!found) throw new LiveDesignConflict("That version of the page is gone.");
+    return pagePart(page, found.content);
+  };
   return {
     kind: "website-page",
     label: `${page.title} (${page.slug})`,
     guidance: [
-      `This is the website page ${page.slug} ("${page.title}"). Save the complete page as one HTML document under 2 MB.`,
-      "Use the site's look from DESIGN.md (Greatstone brand unless told otherwise), images from the site's media library rather than embedded data, and nothing loaded from the internet.",
-      "Keep any element marked data-gs-shared (header, footer, navigation) exactly as it is. If the page is a starter with a gs-page-blocks script, rebuild the page from those blocks with the same words and order, then drop that script.",
+      `This is the website page ${page.slug} ("${page.title}"). Only what is inside <main id="gs-page"> and the CSS in <style id="gs-page-css"> is saved: that is the page. Return the whole document with those two kept, under 2 MB.`,
+      "The header, nav and footer (data-gs-shared) and the site stylesheet are shared by every page: never change or copy them into the page. Use the site's existing classes and tokens from the stylesheet (its link is in the head) and DESIGN.md before adding page CSS, and keep page CSS scoped to classes on this page.",
+      "No scripts, no inline event handlers, no style attributes, no outside frames and nothing loaded from the internet: the site's sanitiser removes them. Working parts (forms, quotes, account entry, product lists, the 3D stone, animations) are islands placed with <gs-island>. Images come from the site's media library.",
+      "If the page is a starter with a gs-page-blocks script, rebuild it from those blocks with the same words and order, then drop that script.",
     ].join(" "),
     frameSrc: (revisionId) =>
       `/api/companies/${page.companyId}/website/sites/${page.siteId}/pages/${page.id}/live-frame?revision=${encodeURIComponent(revisionId)}`,
-    read: async (revisionId) => {
-      const found = await store.readRevision(page.companyId, page.documentId, revisionId);
-      if (!found) throw new LiveDesignConflict("That version of the page is gone.");
-      return isWebsiteHtmlPage(found.content) ? found.content.html : websiteStarterPage(page, isEmptyContent(found.content) ? null : found.content);
-    },
+    read: async (revisionId) => pageDocument(page, await part(revisionId), await loadChrome(), null),
     save: async (html, agentId) => {
+      const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
       const doc = await store.readDocument(page.companyId, page.documentId);
       if (!doc?.latestRevisionId) throw new LiveDesignConflict("The page is gone.");
       const result = await store.saveRevision({
         companyId: page.companyId,
         documentId: page.documentId,
-        content: { format: WEBSITE_HTML_PAGE_FORMAT, html },
+        content,
         baseRevisionId: doc.latestRevisionId,
         changeSummary: "Live design",
         actor: { agentId, userId: null },
@@ -79,6 +144,30 @@ export function websitePageSource(store: Store, page: PageLike): LivePageSource 
       return result.revisionId;
     },
   };
+}
+
+/**
+ * The frame's document for a revision: the page with the real site stylesheet, as the build
+ * shows it. `assetOrigin` (the site's preview address) serves the site's own images and fonts,
+ * whose paths the page keeps site-relative; only the frame's copy points them there.
+ */
+export async function websitePageFrame(store: Store, page: PageLike, loadChrome: ChromeLoader, revisionId: string, assetOrigin: string | null) {
+  const found = await store.readRevision(page.companyId, page.documentId, revisionId);
+  if (!found) throw new LiveDesignConflict("That version of the page is gone.");
+  const chrome = await loadChrome();
+  const doc = pageDocument(page, pagePart(page, found.content), chrome, chrome?.stylesheet ?? "");
+  return assetOrigin ? doc.replace(/(["'(\s,])\/(assets|fonts|motion|media)\//g, `$1${assetOrigin}/$2/`) : doc;
+}
+
+/** The origin of a site address, or null when there is none or it is not https. */
+export function siteAssetOrigin(url: string | null | undefined) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" ? u.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A page created from the sitemap starts with empty content: no blocks to rebuild from. */
