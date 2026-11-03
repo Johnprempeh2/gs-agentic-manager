@@ -62,6 +62,8 @@ export interface HtmlReleaseImport {
 }
 
 export interface HtmlImportResult {
+  /** Live paths that moved to their sitemap path, each with a draft 301 redirect. */
+  redirects: Array<{ from: string; to: string }>;
   updated: string[];
   created: string[];
   unchanged: string[];
@@ -73,8 +75,16 @@ export interface HtmlImportResult {
  * when the path is new) and each shared part. Pages go back to draft for review; nothing is
  * published. Running it again with the same file changes nothing.
  */
-export async function importHtmlRelease(db: Db, service: Service, site: { companyId: string; id: string }, file: HtmlReleaseImport, actor: { agentId: string | null; userId: string | null }): Promise<HtmlImportResult> {
-  const result: HtmlImportResult = { updated: [], created: [], unchanged: [], chrome: [] };
+export async function importHtmlRelease(
+  db: Db,
+  service: Service,
+  site: { companyId: string; id: string },
+  file: HtmlReleaseImport,
+  actor: { agentId: string | null; userId: string | null },
+  /** Live path to sitemap path, for pages the approved sitemap moves (e.g. /dx-consultancy to /consultancy). */
+  paths: Record<string, string> = {},
+): Promise<HtmlImportResult> {
+  const result: HtmlImportResult = { redirects: [], updated: [], created: [], unchanged: [], chrome: [] };
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
   const saveNew = async (row: { companyId: string; documentId: string }, content: unknown, label: string) => {
@@ -95,12 +105,27 @@ export async function importHtmlRelease(db: Db, service: Service, site: { compan
   };
 
   const pages = await service.listPages(site.companyId, site.id);
+  const redirects = await service.listEntries(site.companyId, site.id, "redirect");
   for (const page of file.pages) {
     const content = { format: WEBSITE_HTML_PAGE_FORMAT, html: page.html, css: page.css ?? "" };
-    const existing = pages.find((p) => p.slug === page.slug);
+    const slug = paths[page.slug] ?? page.slug;
+    if (slug !== page.slug) {
+      // The old address keeps working: a 301 to the sitemap path, reviewed and published with the pages.
+      const key = `import${page.slug.replace(/\//g, "-")}`;
+      if (!redirects.some((r) => r.entryKey === key)) {
+        await service.createEntry(site.companyId, site.id, { collection: "redirect", entryKey: key, content: { id: key, from: page.slug, to: slug, status: 301 } } as never, actor);
+      }
+      result.redirects.push({ from: page.slug, to: slug });
+    }
+    const existing = pages.find((p) => p.slug === slug && !p.archivedAt);
     if (!existing) {
+      // A new page sits under its nearest existing parent path in the sitemap.
+      const parent = pages
+        .filter((p) => !p.archivedAt && p.slug !== "/" && slug.startsWith(`${p.slug}/`))
+        .sort((a, b) => b.slug.length - a.slug.length)[0];
       await service.createPage(site.companyId, site.id, {
-        slug: page.slug,
+        slug,
+        parentPageId: parent?.id ?? null,
         title: page.title,
         seo: page.seo ?? {},
         menu: (page.menu as "header" | "footer" | "none" | undefined) ?? "none",
@@ -108,16 +133,16 @@ export async function importHtmlRelease(db: Db, service: Service, site: { compan
         navOrder: page.navOrder ?? null,
         content,
       } as never, actor);
-      result.created.push(page.slug);
+      result.created.push(slug);
       continue;
     }
     const row = await service.getPageRow(site.companyId, site.id, existing.id);
     if (!row) continue;
-    if (await saveNew(row, content, page.slug)) {
+    if (await saveNew(row, content, slug)) {
       // The new revision needs review before it can be published.
       await db.update(websitePage).set({ status: "draft", updatedAt: new Date() }).where(and(eq(websitePage.companyId, row.companyId), eq(websitePage.id, row.id)));
-      result.updated.push(page.slug);
-    } else result.unchanged.push(page.slug);
+      result.updated.push(slug);
+    } else result.unchanged.push(slug);
   }
 
   const parts: Array<[string, Record<string, string>]> = [

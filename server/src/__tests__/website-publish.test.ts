@@ -652,6 +652,24 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(home.content).toBeUndefined();
   });
 
+  it("maps live paths onto sitemap paths with a draft 301 from the old address, once", async () => {
+    const { base } = await seedSite();
+    const http = request(app());
+    await http.post(`${base}/pages`).send({ slug: "/consultancy", title: "DX Consultancy", status: "planned" }).expect(201);
+    const file = { ...htmlExport, pages: [{ slug: "/dx-consultancy", title: "Old title", html: "<section><h1>DX</h1></section>" }, { slug: "/transformation-services", title: "Transformation", html: "<p>T</p>" }], paths: { "/dx-consultancy": "/consultancy", "/transformation-services": "/consultancy/transformation-services" } };
+    const result = (await http.post(`${base}/import-html`).send(file).expect(200)).body;
+    expect(result).toMatchObject({ updated: ["/consultancy"], created: ["/consultancy/transformation-services"], redirects: [{ from: "/dx-consultancy", to: "/consultancy" }, { from: "/transformation-services", to: "/consultancy/transformation-services" }] });
+    const pages = (await http.get(`${base}/pages`).expect(200)).body as WebsitePageDetail[];
+    expect(pages.find((p) => p.slug === "/dx-consultancy")).toBeUndefined();
+    const consultancy = pages.find((p) => p.slug === "/consultancy")!;
+    expect(consultancy).toMatchObject({ title: "DX Consultancy", status: "draft" });
+    expect(pages.find((p) => p.slug === "/consultancy/transformation-services")?.parentPageId).toBe(consultancy.id);
+    const redirects = (await http.get(`${base}/entries?collection=redirect`).expect(200)).body as WebsiteEntryDetail[];
+    expect(redirects).toHaveLength(2);
+    await http.post(`${base}/import-html`).send(file).expect(200);
+    expect(((await http.get(`${base}/entries?collection=redirect`).expect(200)).body as WebsiteEntryDetail[])).toHaveLength(2);
+  });
+
   it("refuses a release that mixes HTML pages and block pages", async () => {
     const { site, page, base } = await seedSite();
     await db.update(websiteSite).set({ releaseSchemaVersion: 2 }).where(eq(websiteSite.id, site.id));

@@ -117,6 +117,8 @@ const htmlReleaseImportSchema = z.object({
     menuOrder: z.number().int().nullable().optional(),
     navOrder: z.number().int().nullable().optional(),
   })).min(1).max(500),
+  /** Live path to sitemap path for pages the approved sitemap moves; each gets a draft 301 redirect. */
+  paths: z.record(z.string().regex(/^\/[a-z0-9\-/]*$/), z.string().regex(/^\/[a-z0-9\-/]*$/)).default({}),
 });
 
 const mediaContentSchema = z
@@ -784,7 +786,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const site = await writableSiteFor(req, res);
     if (!site) return;
     const actor = getActorInfo(req);
-    const result = await importHtmlRelease(db, service, site, req.body as HtmlReleaseImport, { agentId: null, userId: actor.actorType === "user" ? actor.actorId : null });
+    const body = req.body as HtmlReleaseImport & { paths: Record<string, string> };
+    const result = await importHtmlRelease(db, service, site, body, { agentId: null, userId: actor.actorType === "user" ? actor.actorId : null }, body.paths);
     await log(req, site.companyId, "website.html_imported", "website_site", site.id, { ...result });
     res.json(result);
   });
