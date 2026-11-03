@@ -110,7 +110,13 @@ export function splitPageDocument(html: string) {
   return { html: body, css: css.trim() };
 }
 
-export function websitePageSource(store: Store, page: PageLike, loadChrome: ChromeLoader): LivePageSource {
+/**
+ * `engineOrigin`: the site's editor host (its development deploy). When set, the editor frames the
+ * site's own /live-design route there, so the real engine renders the draft with every island
+ * running; GSAM hands it the draft (GET …/live-draft) through the frame protocol. Without it, GSAM
+ * renders the page itself in its sandbox.
+ */
+export function websitePageSource(store: Store, page: PageLike, loadChrome: ChromeLoader, engineOrigin: string | null = null): LivePageSource {
   const part = async (revisionId: string) => {
     const found = await store.readRevision(page.companyId, page.documentId, revisionId);
     if (!found) throw new LiveDesignConflict("That version of the page is gone.");
@@ -126,7 +132,9 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
       "If the page is a starter with a gs-page-blocks script, rebuild it from those blocks with the same words and order, then drop that script.",
     ].join(" "),
     frameSrc: (revisionId) =>
-      `/api/companies/${page.companyId}/website/sites/${page.siteId}/pages/${page.id}/live-frame?revision=${encodeURIComponent(revisionId)}`,
+      engineOrigin
+        ? `${engineOrigin}/live-design#revision=${encodeURIComponent(revisionId)}`
+        : `/api/companies/${page.companyId}/website/sites/${page.siteId}/pages/${page.id}/live-frame?revision=${encodeURIComponent(revisionId)}`,
     read: async (revisionId) => pageDocument(page, await part(revisionId), await loadChrome(), null),
     save: async (html, agentId) => {
       const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
@@ -157,6 +165,18 @@ export async function websitePageFrame(store: Store, page: PageLike, loadChrome:
   const chrome = await loadChrome();
   const doc = pageDocument(page, pagePart(page, found.content), chrome, chrome?.stylesheet ?? "");
   return assetOrigin ? doc.replace(/(["'(\s,])\/(assets|fonts|motion|media)\//g, `$1${assetOrigin}/$2/`) : doc;
+}
+
+/** The draft the site's /live-design route renders: the page's own part, its shared parts and the stylesheet. */
+export async function websitePageDraft(store: Store, page: PageLike, loadChrome: ChromeLoader, revisionId: string) {
+  const found = await store.readRevision(page.companyId, page.documentId, revisionId);
+  if (!found) throw new LiveDesignConflict("That version of the page is gone.");
+  const chrome = await loadChrome();
+  return {
+    page: { ...pagePart(page, found.content), slug: page.slug, path: page.slug, title: page.title },
+    chrome: chrome?.chrome ?? null,
+    stylesheet: chrome?.stylesheet ?? null,
+  };
 }
 
 /** The origin of a site address, or null when there is none or it is not https. */
