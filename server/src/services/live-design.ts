@@ -669,6 +669,7 @@ function withInstructions(s: Session, event: AgentEvent) {
           ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
           : [
               `John wrote in the chat: "${event.message}".`,
+              `If it needs more than a quick answer, first ${replyCall(s.id)} and jsonBody { "requestId": "page", "message": "<one plain sentence: what you are about to do>" } so he knows you are on it, then do the work.`,
               ...(s.source?.guidance ? [s.source.guidance] : []),
               `If he asks for a change to the page, make it to the whole page (start from ${pageCall(s.id)}) and ${replyCall(s.id)} and jsonBody { "requestId": "page", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }. GSAM saves it as the next version.`,
               `Otherwise answer with jsonBody { "requestId": "page", "message": "<your answer>" }. Then poll again.`,
