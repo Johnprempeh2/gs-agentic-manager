@@ -7,6 +7,7 @@ import {
   Globe,
   Lock,
   MousePointerClick,
+  Plus,
   Search,
   Target,
   TrendingUp,
@@ -693,6 +694,7 @@ export function Website() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const notice = useGoogleReturnNotice();
   const [propertyId, setPropertyId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { canManage, isLoading: accessLoading } = useCanManageWebsite(selectedCompanyId ?? "");
 
@@ -755,6 +757,8 @@ export function Website() {
   const selected = properties.find((property) => property.id === propertyId) ?? properties[0]!;
   return (
     <div className="space-y-4">
+      {properties.length > 1 || canManage ? (
+        <div className="flex flex-wrap items-center gap-2">
       {properties.length > 1 ? (
         <div className="flex flex-wrap gap-2" role="group" aria-label="Website">
           {properties.map((property) => {
@@ -777,6 +781,28 @@ export function Website() {
             );
           })}
         </div>
+      ) : null}
+          {canManage && !adding ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add another website
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {adding ? (
+        <WebsiteSetupForm
+          companyId={selectedCompanyId}
+          onCancel={() => setAdding(false)}
+          onCreated={(created) => {
+            // The new website opens on Releases, where its Netlify site is connected.
+            setAdding(false);
+            setPropertyId(created.id);
+            const next = new URLSearchParams(searchParams);
+            next.set("tab", "releases");
+            setSearchParams(next, { replace: true });
+          }}
+        />
       ) : null}
       <PropertyHub
         key={selected.id}
