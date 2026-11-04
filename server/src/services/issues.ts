@@ -11208,6 +11208,23 @@ export function issueService(db: Db) {
         patch.tabledByUserId = null;
         patch.tabledFromStatus = null;
       }
+      // GRE-4023: a board user's move to backlog is a pause, so record it as
+      // "Not now" (no return date). Without this, agent comments kept waking
+      // the assignee, which moved the task out and back, and the last move to
+      // backlog became the agent's. An agent's own move to backlog is not
+      // tabled.
+      if (
+        actorUserId &&
+        !actorAgentId &&
+        issueData.status === "backlog" &&
+        existing.status !== "backlog" &&
+        !existing.tabledAt
+      ) {
+        patch.tabledAt = patch.updatedAt;
+        patch.tabledUntil = null;
+        patch.tabledByUserId = actorUserId;
+        patch.tabledFromStatus = existing.status;
+      }
       // Tidy desk: a "looks finished" flag stays on a closed task (it marks
       // what Reopen undoes). Moving it to another open status settles it, and
       // the check waits for new work before flagging it again.

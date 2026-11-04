@@ -50,6 +50,7 @@ export {
 } from "./issue-review-policy.js";
 export { issueTreeControlService } from "./issue-tree-control.js";
 export {
+  activeRunIdsForIssue,
   bringBackTabledIssue,
   issueTablingService,
   returnDueTabledIssues,

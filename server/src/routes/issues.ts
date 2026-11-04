@@ -203,6 +203,7 @@ import { validate, validateIssueMutationBody } from "../middleware/validate.js";
 import * as serviceIndex from "../services/index.js";
 import {
   accessService,
+  activeRunIdsForIssue,
   agentService,
   agentTeamService,
   budgetService,
@@ -15643,6 +15644,42 @@ export function issueRoutes(
             issueId: existing.id,
             details: { source: "issue_status_cancelled", issueId: existing.id },
           });
+        }
+      }
+
+      // GRE-4023: a board user's move to backlog tabled the task (Not now).
+      // Log it like Not now and stop what is already running; the wake gates
+      // stop anything new.
+      if (issue.tabledAt && !existing.tabledAt) {
+        const tabledRunIds = await activeRunIdsForIssue(db, existing);
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          agentApiKeyId: actor.agentApiKeyId,
+          action: "issue.tabled",
+          entityType: "issue",
+          entityId: issue.id,
+          issueId: issue.id,
+          details: {
+            source: "status_backlog",
+            tabledUntil: null,
+            tabledFromStatus: issue.tabledFromStatus,
+            retabled: false,
+            interruptedRunIds: tabledRunIds,
+          },
+        });
+        for (const runId of tabledRunIds) {
+          if (runId === interruptedRunId || runId === cancelledStatusRunId) continue;
+          try {
+            await heartbeat.cancelRun(runId, "Cancelled because the task was moved to backlog (Not now)", {
+              resultJson: { cancelledByActorType: "user", cancelledByUserId: actor.actorId },
+            });
+          } catch (err) {
+            logger.warn({ err, runId, issueId: existing.id }, "failed to cancel run on tabled issue");
+          }
         }
       }
 

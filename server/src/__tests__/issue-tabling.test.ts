@@ -487,4 +487,92 @@ describeEmbeddedPostgres("issue tabling (Not now)", () => {
     await issueService(db).update(issueId, { status: "todo" });
     expect(await readIssue(issueId)).toMatchObject({ status: "todo", tabledAt: null, tabledFromStatus: null });
   });
+
+  // GRE-4023: a person's move to backlog was not a real pause. Agent comments
+  // kept waking the assignee, which moved the task out and back, so the last
+  // move to backlog became the agent's and R1 counted the tree as stranded
+  // (GRE-2745, GRE-2614 via GRE-2944). A board move to backlog now tables it.
+  it("a board user's move to backlog tables the task, logs it, and stops its queued run", async () => {
+    const { companyId, agentId, issueId } = await seed({ status: "todo" });
+    const runId = randomUUID();
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId,
+      agentId,
+      invocationSource: "assignment",
+      triggerDetail: "system",
+      status: "queued",
+      contextSnapshot: { issueId, wakeReason: "issue_assigned" },
+    });
+
+    const res = await request(issuesApp(companyId)).patch(`/api/issues/${issueId}`)
+      .send({ status: "backlog" });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ status: "backlog", tabledByUserId: BOARD_USER, tabledFromStatus: "todo", tabledUntil: null });
+    expect(res.body.tabledAt).toBeTruthy();
+
+    const logged = await db.select().from(activityLog)
+      .where(and(eq(activityLog.entityId, issueId), eq(activityLog.action, "issue.tabled")));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.details).toMatchObject({ source: "status_backlog", tabledFromStatus: "todo" });
+    const run = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId)).then((rows) => rows[0]!);
+    expect(run.status).toBe("cancelled");
+
+    // Bring back returns it to where the person took it from.
+    await bringBackTabledIssue(db, { heartbeat }, issueId, { reason: "manual", actorType: "user", actorId: BOARD_USER });
+    expect(await readIssue(issueId)).toMatchObject({ status: "todo", tabledAt: null });
+  });
+
+  it("an agent comment on a task a board user moved to backlog does not wake the assignee", async () => {
+    const { companyId, agentId, issueId } = await seed({ status: "in_progress" });
+    await request(issuesApp(companyId)).patch(`/api/issues/${issueId}`).send({ status: "backlog" }).expect(200);
+    const commenterId = randomUUID();
+    await db.insert(agents).values({
+      id: commenterId,
+      companyId,
+      name: "Reviewer",
+      role: "qa",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    const commentId = randomUUID();
+    await db.insert(issueComments).values({
+      id: commentId,
+      companyId,
+      issueId,
+      authorAgentId: commenterId,
+      body: "@Builder any update here?",
+    });
+
+    for (const reason of ["issue_commented", "issue_comment_mentioned"]) {
+      const run = await heartbeat.wakeup(agentId, {
+        source: "automation", triggerDetail: "system", reason,
+        payload: { issueId, commentId }, requestedByActorType: "agent", requestedByActorId: commenterId,
+        contextSnapshot: { issueId, commentId, wakeCommentId: commentId, wakeReason: reason, source: "issue.comment" },
+      });
+      expect(run, `wake ${reason} should be dropped`).toBeNull();
+    }
+
+    expect((await readIssue(issueId)).tabledAt).not.toBeNull();
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
+    expect(runs).toHaveLength(0);
+    const wakes = await db.select({ status: agentWakeupRequests.status, reason: agentWakeupRequests.reason })
+      .from(agentWakeupRequests).where(eq(agentWakeupRequests.agentId, agentId));
+    expect(wakes.length).toBeGreaterThanOrEqual(2);
+    expect(wakes.every((row) => row.status === "skipped" && row.reason === "issue_tabled")).toBe(true);
+    expect(mockAdapterExecute).not.toHaveBeenCalled();
+  });
+
+  it("an agent's own move to backlog is not tabled", async () => {
+    const { agentId, issueId } = await seed({ status: "todo" });
+    await issueService(db).update(issueId, { status: "backlog", actorAgentId: agentId });
+    expect(await readIssue(issueId)).toMatchObject({ status: "backlog", tabledAt: null, tabledByUserId: null, tabledFromStatus: null });
+
+    // A board user saving a task that is already in backlog does not table it either.
+    await issueService(db).update(issueId, { status: "backlog", actorUserId: BOARD_USER });
+    expect((await readIssue(issueId)).tabledAt).toBeNull();
+  });
 });
