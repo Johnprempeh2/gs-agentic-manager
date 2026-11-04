@@ -234,6 +234,54 @@ export function describeAgentSecretShieldWarning(status: AgentSecretShieldStatus
   return `Agent secret sandbox is OFF: ${status.reason}. Local agent runs start unwrapped and can read ${status.hiddenPaths.join(", ")}.`;
 }
 
+// GRE-4026: a wrapped run must end the way the agent did. bwrap has no
+// SIGTERM handler, so a group Stop killed it while the agent was still
+// exiting, and a graceful exit 0 read as `signal SIGTERM`. And bwrap's PID 1
+// keeps stdio open until every process inside exits, so a leftover
+// `setsid ... &` held the run's pipes open and the run never closed.
+//
+// So `passExitStatus` spawns `sh` with this launcher: it ignores HUP, INT and
+// TERM for itself and bwrap, gives bwrap /dev/null as stdio, and hands the
+// run's stdio in on fds 3-5. PID 1 closes fds above 2; the init below keeps
+// them for the agent. Ignored signals survive exec, and bwrap does not reset
+// them, so only a fresh spawn can give the agent default signals: the init
+// does that. When the agent dies by a signal, the init writes its name to fd
+// 8 and the launcher kills itself with it, so the server sees that signal
+// and not 128+N. bwrap's own error text goes to fd 6 and is copied to stderr.
+const SHIELD_NODE_OPTIONS_ENV = "GSAM_SECRET_SHIELD_NODE_OPTIONS";
+const SHIELD_LAUNCHER = [
+  "trap '' HUP INT TERM",
+  `if [ "\${NODE_OPTIONS+set}" = set ]; then ${SHIELD_NODE_OPTIONS_ENV}=$NODE_OPTIONS; export ${SHIELD_NODE_OPTIONS_ENV}; unset NODE_OPTIONS; fi`,
+  'dir=$(mktemp -d) && exec 6>"$dir/err" 7<"$dir/err" 8>"$dir/status" 9<"$dir/status" && rm -rf "$dir" ||',
+  "  exec 6>/dev/null 7</dev/null 8>/dev/null 9</dev/null",
+  '"$0" "$@" 3<&0 4>&1 5>&2 </dev/null >/dev/null 2>&6 6>&- 7<&- 9<&-',
+  "status=$?",
+  "exec 6>&- 8>&-",
+  'while IFS= read -r line || [ -n "$line" ]; do printf \'%s\\n\' "$line"; done <&7 >&2',
+  'IFS= read -r signal <&9 || [ -n "$signal" ]',
+  'if [ -n "$signal" ]; then trap - HUP INT TERM; kill -s "$signal" "$$"; fi',
+  'exit "$status"',
+].join("\n");
+const SHIELD_INIT = [
+  'const { spawn } = require("node:child_process");',
+  'const fs = require("node:fs");',
+  'const { constants } = require("node:os");',
+  'for (const name of ["SIGHUP", "SIGINT", "SIGTERM"]) process.on(name, () => {});',
+  // A close-on-exec copy, so the agent does not inherit fd 8.
+  'const statusFd = fs.openSync("/proc/self/fd/8", "w");',
+  "fs.closeSync(8);",
+  "const env = { ...process.env };",
+  `if (env.${SHIELD_NODE_OPTIONS_ENV} !== undefined) env.NODE_OPTIONS = env.${SHIELD_NODE_OPTIONS_ENV};`,
+  `delete env.${SHIELD_NODE_OPTIONS_ENV};`,
+  "const [command, ...args] = process.argv.slice(1);",
+  "const child = spawn(command, args, { stdio: [3, 4, 5], env });",
+  'child.on("error", (error) => { fs.writeSync(5, `agent secret shield: ${error.message}\\n`); process.exit(127); });',
+  'child.on("exit", (code, signal) => {',
+  '  if (signal) fs.writeSync(statusFd, signal.replace(/^SIG/, ""));',
+  "  process.exit(code ?? 128 + (constants.signals[signal] ?? 0));",
+  "});",
+].join("\n");
+
 export interface AgentSecretShieldWrap {
   command: string;
   args: string[];
@@ -243,11 +291,15 @@ export interface AgentSecretShieldWrap {
 /**
  * Wrap one local agent spawn. Returns the original command and args when the
  * shield is disabled or unavailable; the unavailable case logs one warning.
+ * `passExitStatus` is for children stopped by a process-group signal: the run
+ * then exits with the agent's own code or signal (see SHIELD_LAUNCHER). Leave
+ * it off when only the direct child is signalled, as it ignores SIGTERM.
  */
 export async function wrapWithAgentSecretShield(input: {
   command: string;
   args: string[];
   dieWithParent: boolean;
+  passExitStatus?: boolean;
   env?: NodeJS.ProcessEnv;
   warn?: (message: string) => void;
 }): Promise<AgentSecretShieldWrap> {
@@ -258,11 +310,15 @@ export async function wrapWithAgentSecretShield(input: {
     return { command: input.command, args: input.args, status };
   }
   const hidden = await existingHiddenPaths(status.hiddenPaths);
-  return {
-    command: status.command,
-    args: [...buildAgentSecretShieldArgs({ hiddenPaths: hidden, dieWithParent: input.dieWithParent }), input.command, ...input.args],
-    status,
-  };
+  const shieldArgs = buildAgentSecretShieldArgs({ hiddenPaths: hidden, dieWithParent: input.dieWithParent });
+  if (input.passExitStatus) {
+    return {
+      command: "/bin/sh",
+      args: ["-c", SHIELD_LAUNCHER, status.command, ...shieldArgs, process.execPath, "-e", SHIELD_INIT, "--", input.command, ...input.args],
+      status,
+    };
+  }
+  return { command: status.command, args: [...shieldArgs, input.command, ...input.args], status };
 }
 
 function normalizeAbsolutePath(candidate: string, label: string): string {

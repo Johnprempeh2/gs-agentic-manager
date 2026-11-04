@@ -316,13 +316,6 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
         expect(finished?.status).toBe("succeeded");
         await heartbeat.drainActiveRunExecutions();
 
-        const leftoverPid = Number((await readFile(pidPath, "utf8")).trim());
-        rememberIfOurs(leftoverPid, queued!.id);
-        for (let i = 0; i < 100 && processAlive(leftoverPid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(processAlive(leftoverPid)).toBe(false);
-
         const events = await db
           .select()
           .from(heartbeatRunEvents)
@@ -331,12 +324,24 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
           (event) => (event.payload as Record<string, unknown> | null)?.kind === "run_leftover_processes",
         );
         expect(cleanup?.eventType).toBe("lifecycle");
-        expect(cleanup?.payload).toMatchObject({
-          terminated: 1,
-          killed: 0,
-          failed: 0,
-          processes: [{ pid: leftoverPid, command: "sleep 600", outcome: "terminated" }],
-        });
+        // The event has the host PID. Under the agent secret shield the `$$`
+        // the agent wrote is a PID-namespace PID (GRE-4026).
+        const processes = (cleanup?.payload as { processes?: Array<{ pid: number; command: string }> } | undefined)
+          ?.processes ?? [];
+        const leftoverPid = processes.find((proc) => proc.command === "sleep 600")?.pid ?? -1;
+        expect(leftoverPid).toBeGreaterThan(0);
+        rememberIfOurs(leftoverPid, queued!.id);
+        for (let i = 0; i < 100 && processAlive(leftoverPid); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(processAlive(leftoverPid)).toBe(false);
+        // Under the shield, bwrap's PID 1 stays up for the leftover and
+        // carries the marker too, so it is stopped with it.
+        const shieldInit = processes.filter((proc) => proc.command !== "sleep 600");
+        expect(shieldInit.length).toBeLessThanOrEqual(1);
+        expect(shieldInit.every((proc) => proc.command.includes("--unshare-pid"))).toBe(true);
+        expect(cleanup?.payload).toMatchObject({ terminated: processes.length, killed: 0, failed: 0 });
+        expect(processes).toContainEqual({ pid: leftoverPid, command: "sleep 600", outcome: "terminated" });
       } finally {
         await rm(tempDir, { recursive: true, force: true });
       }
