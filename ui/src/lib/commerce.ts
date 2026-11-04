@@ -172,3 +172,23 @@ export function organisationFor<T extends CommerceOrganisationRef>(customer: Com
   if (!customer) return null;
   return organisations.find((organisation) => websiteCustomerFor(organisation, [customer]) !== null) ?? null;
 }
+
+/** The longest activation steps the site takes (WEBSITE_ACTIVATION_STEPS_MAX). */
+export const ACTIVATION_STEPS_MAX = 20_000;
+
+/**
+ * The body for a vendor's activation steps (GRE-3982): the trimmed text, or null to clear when it is empty, and the
+ * vendor's row version as last read. Null when the text is over the limit, so the screen can say so before sending.
+ */
+export function activationStepsInput(steps: string, expectedRowVersion: number):
+  { activationSteps: string | null; expectedRowVersion: number } | null {
+  const trimmed = steps.trim();
+  if (trimmed.length > ACTIVATION_STEPS_MAX) return null;
+  return { activationSteps: trimmed || null, expectedRowVersion };
+}
+
+/** "Shows on 12 licences": how far the steps reach. */
+export function licencesInRangeLabel(count: number): string {
+  if (count === 0) return "Shows on no licences yet";
+  return `Shows on ${count} licence${count === 1 ? "" : "s"}`;
+}

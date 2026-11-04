@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { WebsiteFeature } from "@greatstone/shared";
 import {
+  ACTIVATION_STEPS_MAX,
   GREATSTONE_COMPANY_ID,
+  activationStepsInput,
+  licencesInRangeLabel,
   commerceFeatureOf,
   formatMinor,
   maskedLicenceKey,
@@ -82,5 +85,20 @@ describe("the link between an organisation and a website customer", () => {
     const organisations = [{ id: "o9", name: "Unrelated" }, { id: "o1", name: "Acme", domain: "acme.co.uk" }];
     expect(organisationFor(customers[0], organisations)?.id).toBe("o1");
     expect(organisationFor(null, organisations)).toBeNull();
+  });
+});
+
+describe("activation steps (GRE-3982)", () => {
+  it("trims the text, clears it when empty, and refuses it over the limit", () => {
+    expect(activationStepsInput("  1. Download\n2. Open  ", 3)).toEqual({ activationSteps: "1. Download\n2. Open", expectedRowVersion: 3 });
+    expect(activationStepsInput("   ", 4)).toEqual({ activationSteps: null, expectedRowVersion: 4 });
+    expect(activationStepsInput("x".repeat(ACTIVATION_STEPS_MAX), 1)?.activationSteps).toHaveLength(ACTIVATION_STEPS_MAX);
+    expect(activationStepsInput("x".repeat(ACTIVATION_STEPS_MAX + 1), 1)).toBeNull();
+  });
+
+  it("says how many licences the steps show on", () => {
+    expect(licencesInRangeLabel(0)).toBe("Shows on no licences yet");
+    expect(licencesInRangeLabel(1)).toBe("Shows on 1 licence");
+    expect(licencesInRangeLabel(12)).toBe("Shows on 12 licences");
   });
 });
