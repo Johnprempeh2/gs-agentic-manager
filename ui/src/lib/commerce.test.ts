@@ -5,6 +5,7 @@ import {
   GREATSTONE_COMPANY_ID,
   activationStepsInput,
   licencesInRangeLabel,
+  vendorForLicence,
   commerceFeatureOf,
   formatMinor,
   maskedLicenceKey,
@@ -100,5 +101,25 @@ describe("activation steps (GRE-3982)", () => {
     expect(licencesInRangeLabel(0)).toBe("Shows on no licences yet");
     expect(licencesInRangeLabel(1)).toBe("Shows on 1 licence");
     expect(licencesInRangeLabel(12)).toBe("Shows on 12 licences");
+  });
+});
+
+describe("the vendor a licence takes its activation steps from (GRE-3983)", () => {
+  const vendors = [
+    { id: "v-iron", name: "Iron Software", activation_instructions: null },
+    { id: "v-iris", name: "I.R.I.S.", activation_instructions: "Open IRIS" },
+    { id: "v-aspose", name: "Aspose", activation_instructions: null },
+    { id: "v-aspose-2", name: "Aspose", activation_instructions: "Paste the licence file" },
+  ];
+
+  it("matches as the website does: dot-stripped name, or a token that extends the first word", () => {
+    expect(vendorForLicence("ReadIRIS Pro 17", vendors)?.id).toBe("v-iris");
+    expect(vendorForLicence("IronPDF Lite", vendors)?.id).toBe("v-iron");
+    expect(vendorForLicence("Iron gates", vendors)).toBeNull();
+    expect(vendorForLicence("", vendors)).toBeNull();
+  });
+
+  it("prefers a matching vendor that already has steps, as the site shows that one", () => {
+    expect(vendorForLicence("Aspose.Total for .NET", vendors)?.id).toBe("v-aspose-2");
   });
 });
