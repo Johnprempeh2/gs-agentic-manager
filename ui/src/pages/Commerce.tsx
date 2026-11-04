@@ -11,7 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { CatalogueList, CatalogueRecord, type CatalogueResource } from "@/components/commerce/CommerceCatalogue";
+import { CommerceCurrency } from "@/components/commerce/CommerceCurrency";
+import { CommerceImportJob, CommerceImports } from "@/components/commerce/CommerceImports";
+import { CommercePayments } from "@/components/commerce/CommercePayments";
+import { DraftInvoiceActions, QuoteActions, RefundRequest, isDraftInvoice } from "@/components/commerce/CommerceSalesActions";
 import { useCommerceCustomers, useCommerceSite } from "@/hooks/useCommerceSite";
+import { CATALOGUE_COPY } from "@/lib/commerce-catalogue";
 import {
   COMMERCE_COPY,
   COMMERCE_RESOURCES,
@@ -34,11 +40,45 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "@/lib/r
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 
 // The Commerce area (GRE-2383, Phase A of GRE-2326): the website's quotes, orders, invoices and licences, read
-// through the admin bridge. Read only: there is no button here that changes the site, moves money or calls Stripe.
+// through the admin bridge. Phase C (GRE-3972) adds the catalogue, currency, price-book import and the payment
+// report, and the changes the bridge allows: drafts for anyone with Commerce rights, the rest for a person. Nothing
+// here moves money or calls Stripe; a refund is a request a person decides on a card.
 
 const PAGE_SIZE = 50;
 const RECORD_LINK = "inline-flex w-fit items-center gap-1 rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const TABS = COMMERCE_RESOURCES.map((value) => ({ value, label: COMMERCE_COPY[value].label }));
+
+const CATALOGUE_SECTIONS = ["offerings", "vendors", "categories", "pricing-rules", "customer-tiers", "currency", "imports"] as const;
+type CatalogueSection = (typeof CATALOGUE_SECTIONS)[number];
+type CommerceSection = CommerceResource | "payments" | CatalogueSection;
+type CommerceArea = "sales" | "catalogue";
+
+const SECTION_LABEL: Record<CommerceSection, string> = {
+  ...Object.fromEntries(COMMERCE_RESOURCES.map((value) => [value, COMMERCE_COPY[value].label])) as Record<CommerceResource, string>,
+  payments: "Payments",
+  offerings: CATALOGUE_COPY.offerings.label,
+  vendors: CATALOGUE_COPY.vendors.label,
+  categories: CATALOGUE_COPY.categories.label,
+  "pricing-rules": CATALOGUE_COPY["pricing-rules"].label,
+  "customer-tiers": CATALOGUE_COPY["customer-tiers"].label,
+  currency: "Currency",
+  imports: "Price-book import",
+};
+const AREA_SECTIONS: Record<CommerceArea, readonly CommerceSection[]> = {
+  sales: [...COMMERCE_RESOURCES, "payments"],
+  catalogue: CATALOGUE_SECTIONS,
+};
+const AREA_TABS = [{ value: "sales", label: "Sales" }, { value: "catalogue", label: "Catalogue" }];
+const AREA_COPY: Record<CommerceArea, string> = {
+  sales: "The website's quotes, orders, invoices, licences and Stripe payments",
+  catalogue: "The website's offerings, vendors, categories, pricing, currency and price-book imports",
+};
+
+function sectionOf(value: string | undefined): CommerceSection | null {
+  return value && value in SECTION_LABEL ? (value as CommerceSection) : null;
+}
+const areaOf = (section: CommerceSection): CommerceArea => ((CATALOGUE_SECTIONS as readonly string[]).includes(section) ? "catalogue" : "sales");
+const isCatalogueResource = (section: CommerceSection): section is CatalogueResource =>
+  ["offerings", "vendors", "categories", "pricing-rules", "customer-tiers"].includes(section);
 
 function StatusPill({ status }: { status: unknown }) {
   const value = text(status);
@@ -317,6 +357,12 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
 
       <LineItems record={record} />
 
+      {resource === "quotes" ? <QuoteActions companyId={companyId} siteId={siteId} quote={record} /> : null}
+      {resource === "orders" && isDraftInvoice(record) ? <DraftInvoiceActions companyId={companyId} siteId={siteId} order={record} /> : null}
+      {resource === "orders" && !isDraftInvoice(record) && Number(record.total_minor ?? 0) > 0 ? (
+        <RefundRequest companyId={companyId} siteId={siteId} order={record} />
+      ) : null}
+
       <section className="space-y-2" aria-label="Customer">
         <h2 className="text-sm font-semibold">Customer</h2>
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-sm sm:flex-row sm:items-center sm:gap-4">
@@ -361,14 +407,21 @@ export function CommercePage() {
   const { resource: param, recordId } = useParams<{ resource?: string; recordId?: string }>();
   const companyId = selectedCompanyId ?? "";
   const { commerce, isLoading } = useCommerceSite(companyId);
+  const section = sectionOf(param);
   const resource = isCommerceResource(param) ? param : null;
 
   useEffect(() => {
     const crumbs: { label: string; href?: string }[] = [{ label: "Commerce", href: "/commerce" }];
-    if (resource) crumbs.push({ label: COMMERCE_COPY[resource].label, href: recordId ? `/commerce/${resource}` : undefined });
-    if (recordId) crumbs.push({ label: resource ? COMMERCE_COPY[resource].singular : "Record" });
+    if (section) crumbs.push({ label: SECTION_LABEL[section], href: recordId ? `/commerce/${section}` : undefined });
+    if (recordId) {
+      crumbs.push({
+        label: resource ? COMMERCE_COPY[resource].singular
+          : section && isCatalogueResource(section) ? (recordId === "new" ? "New" : CATALOGUE_COPY[section].singular)
+            : section === "imports" ? "Import" : "Record",
+      });
+    }
     setBreadcrumbs(crumbs);
-  }, [setBreadcrumbs, resource, recordId]);
+  }, [setBreadcrumbs, section, resource, recordId]);
 
   if (!selectedCompanyId) return <EmptyState icon={ShoppingBag} message="Choose an organisation to see its Commerce area." />;
   if (isLoading) return <PageSkeleton variant="list" />;
@@ -381,32 +434,54 @@ export function CommercePage() {
       />
     );
   }
-  if (!resource) return <Navigate to={`/commerce/quotes${searchParams.toString() ? `?${searchParams}` : ""}`} replace />;
+  if (!section) return <Navigate to={`/commerce/quotes${searchParams.toString() ? `?${searchParams}` : ""}`} replace />;
 
+  const siteId = commerce.site.id;
+  const area = areaOf(section);
   const customer = searchParams.get("customer");
-  const openTab = (next: string) => navigate(`/commerce/${next}${customer ? `?customer=${encodeURIComponent(customer)}` : ""}`);
+  const openSection = (next: string) => navigate(`/commerce/${next}${customer && isCommerceResource(next) ? `?customer=${encodeURIComponent(customer)}` : ""}`);
+  const openArea = (next: string) => navigate(`/commerce/${AREA_SECTIONS[next as CommerceArea][0]}`);
+  const tabs = AREA_SECTIONS[area].map((value) => ({ value, label: SECTION_LABEL[value] }));
+
+  let body: ReactNode;
+  if (resource) {
+    body = recordId
+      ? <CommerceRecordView key={`${resource}:${recordId}`} companyId={companyId} siteId={siteId} resource={resource} recordId={recordId} />
+      : <CommerceList key={resource} companyId={companyId} siteId={siteId} resource={resource} />;
+  } else if (isCatalogueResource(section)) {
+    body = recordId && section !== "customer-tiers"
+      ? <CatalogueRecord key={`${section}:${recordId}`} companyId={companyId} siteId={siteId} resource={section} recordId={recordId} />
+      : <CatalogueList key={section} companyId={companyId} siteId={siteId} resource={section} />;
+  } else if (section === "imports") {
+    body = recordId
+      ? <CommerceImportJob key={recordId} companyId={companyId} siteId={siteId} jobId={recordId} />
+      : <CommerceImports companyId={companyId} siteId={siteId} />;
+  } else if (section === "currency") {
+    body = <CommerceCurrency companyId={companyId} siteId={siteId} />;
+  } else {
+    body = <CommercePayments companyId={companyId} siteId={siteId} />;
+  }
 
   return (
     <div className="w-full max-w-5xl space-y-6" data-testid="commerce-page">
-      <header className="space-y-1">
-        <h1 className="flex items-center gap-2 text-xl font-bold">
-          <ShoppingBag className="size-5 text-muted-foreground" aria-hidden="true" />
-          Commerce
-        </h1>
-        {recordId ? null : (
-          <p className="text-sm text-muted-foreground">
-            The website's quotes, orders, invoices and licences, read from {commerce.site.domain}. Read only: changes are still made on the site.
-          </p>
-        )}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h1 className="flex items-center gap-2 text-xl font-bold">
+            <ShoppingBag className="size-5 text-muted-foreground" aria-hidden="true" />
+            Commerce
+          </h1>
+          {recordId ? null : (
+            <p className="text-sm text-muted-foreground">{AREA_COPY[area]}, from {commerce.site.domain}.</p>
+          )}
+        </div>
+        <Tabs value={area} onValueChange={openArea}>
+          <PageTabBar items={AREA_TABS} value={area} onValueChange={openArea} align="start" ariaLabel="Commerce area" mobileLabel="Area" />
+        </Tabs>
       </header>
-      <Tabs value={resource} onValueChange={openTab}>
-        <PageTabBar items={TABS} value={resource} onValueChange={openTab} align="start" ariaLabel="Commerce records" />
+      <Tabs value={section} onValueChange={openSection}>
+        <PageTabBar items={tabs} value={section} onValueChange={openSection} align="start" ariaLabel="Commerce records" mobileLabel="Section" />
       </Tabs>
-      {recordId ? (
-        <CommerceRecordView key={`${resource}:${recordId}`} companyId={companyId} siteId={commerce.site.id} resource={resource} recordId={recordId} />
-      ) : (
-        <CommerceList key={resource} companyId={companyId} siteId={commerce.site.id} resource={resource} />
-      )}
+      {body}
     </div>
   );
 }
