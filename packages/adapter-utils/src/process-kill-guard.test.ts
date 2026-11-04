@@ -135,14 +135,17 @@ async function fixture() {
   const sleeper = path.join(root, "bin", marker);
   const liveSleeper = path.join(live, "bin", marker);
   const shell = path.join(root, "shell", marker);
-  for (const [from, to] of [["/bin/sleep", sleeper], ["/bin/sleep", liveSleeper], ["/bin/sh", shell]] as const) {
-    await copyFile(await realpath(from), to);
+  // The sleepers are shells too. Ubuntu 26.04 ships uutils, where /bin/sleep
+  // is one multicall binary that picks its tool from argv[0]; the tests set
+  // argv[0], so a copy of it exits at once. The shell waits instead on a FIFO
+  // that nothing ever opens for writing.
+  for (const to of [sleeper, liveSleeper, shell]) {
+    await copyFile(await realpath("/bin/sh"), to);
     await chmod(to, 0o755);
   }
-  // Ubuntu 26.04 ships uutils, where /bin/sleep is one multicall binary that
-  // picks its tool from its own name. Renamed to the marker it exits at once,
-  // unless the tool name comes first. GNU sleep rejects that form.
-  const sleepArgs = spawnSync(sleeper, ["0"]).status === 0 ? ["600"] : ["sleep", "600"];
+  const fifo = path.join(root, "never-written");
+  expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+  const sleepArgs = ["-c", `read _ < ${shellQuote(fifo)}`];
 
   const start = async (label: string, file: string, argv0: string, cwd = root): Promise<Dummy> => {
     const child: ChildProcess = spawn(file, sleepArgs, { argv0, cwd, stdio: "ignore" });
