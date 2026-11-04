@@ -143,6 +143,12 @@ async function sandbox(t, { running = () => 0, liveRuns = null, issues = {} } = 
       return fake.issues[m[1]] ? send({ id: m[1], ...fake.issues[m[1]] }) : send({ error: "not found" }, 404);
     }
     if ((m = /^\/api\/issues\/([^/]+)\/comments$/.exec(req.url)) && req.method === "POST") {
+      // As live: `resume: true` only on a status that can resume (isExplicitResumeCapableStatus).
+      const status = fake.issues[m[1]]?.status;
+      if (body?.resume === true && status && !["done", "cancelled", "blocked", "todo", "in_progress"].includes(status)) {
+        record("comment-refused", { issueId: m[1], body });
+        return send({ error: "Issue is not resumable through comment follow-up intent" }, 409);
+      }
       record("comment", { issueId: m[1], body });
       return send({ id: `comment-${fake.calls.length}` }, 201);
     }
@@ -457,6 +463,30 @@ test("drain: with runs that keep arriving and runs that never finish, it still r
   assert.equal(resumed("i4").length, 0);
   assert.ok(item.paused.every((p) => p.resumedAt), JSON.stringify(item.paused));
   assert.ok(calls.filter((c) => c.what === "comment" || c.what === "wake").length === 5, JSON.stringify(calls));
+});
+
+// GRE-3870 (3 Nov) and GRE-2518 (25 Oct): a review stage makes the reviewer the
+// assignee. The queue stopped Keystone's review run, then sent `resume: true` on
+// an in_review task; live refused it (409) five times and no one woke Keystone.
+test("drain: a stopped review run whose reviewer is the assignee is woken again on an in_review task", async (t) => {
+  const box = await sandbox(t, {
+    issues: { i1: { identifier: "GRE-3870", status: "in_review", assigneeAgentId: "keystone" } },
+    liveRuns: () => [{ id: "review", status: "running", agentId: "keystone", agentName: "Keystone", issueId: "i1" }],
+  });
+  box.merge("change");
+  enqueue(box, "main", "Change");
+  const { code, out } = await box.worker({ GSAM_RELEASE_DRAIN_GRACE_SECONDS: "0", GSAM_RELEASE_DRAIN_STOP_SECONDS: "0" }).done;
+  assert.equal(code, 0, out);
+  const after = box.fake.calls.filter((c) => !c.draining);
+  assert.deepEqual(after.filter((c) => c.what === "comment-refused"), [], "no comment the live app refuses");
+  assert.deepEqual(after.filter((c) => c.what === "comment" && c.issueId === "i1").map((c) => c.body), [{ body: "Paused for release live-2026-10-18.9; resuming." }]);
+  const wakes = after.filter((c) => c.what === "wake");
+  assert.deepEqual(wakes.map((w) => [w.agentId, w.body.payload, w.body.idempotencyKey]), [
+    ["keystone", { issueId: "i1", taskId: "i1", resumeIntent: true, interruptedRunId: "review" }, "release-resume:review"],
+  ]);
+  const [paused] = box.state().items[0].paused;
+  assert.ok(paused.resumedAt, JSON.stringify(paused));
+  assert.equal(paused.attempts, 1);
 });
 
 test("drain: a request cancelled while it drains lifts the pause and still wakes the task it stopped", async (t) => {
