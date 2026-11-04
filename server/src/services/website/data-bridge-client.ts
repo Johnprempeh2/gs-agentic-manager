@@ -180,11 +180,12 @@ export const bridgeItemSchema = z.object({ item: z.record(z.string(), z.unknown(
 /** `imports/:id`: the job, and a page of its rows. */
 export const bridgeImportItemSchema = bridgeItemSchema.extend({ rows: z.array(z.record(z.string(), z.unknown())), nextCursor: z.string().nullable() });
 /**
- * A Stripe object id (`pi_…`, `ch_…`: a prefix, then 14+ letters and digits with at least one digit) or a Stripe key
- * (`sk_test_…`, `rk_live_…`, `whsec_…`). The payment report must never carry one (GRE-2354 section 7). Snake-case
- * values such as `in_progress` do not match: they have an underscore and no digit.
+ * A Stripe object id (`pi_…`, `ch_…`: a prefix, then 14+ letters and digits with at least one digit; or a prefix, a
+ * mode and 8+ with a digit, as a Checkout Session's `cs_test_…`) or a Stripe key (`sk_test_…`, `rk_live_…`, `whsec_…`).
+ * The payment report must never carry one (GRE-2354 section 7, GRE-2580). Snake-case values such as `in_progress` or
+ * `cs_test_pending` do not match: they have no digit.
  */
-const STRIPE_ID_RE = /\b(?:(?:pi|ch|re|py|in|ii|cus|sub|txn|po|pm|acct|evt|cs|seti|src|tok|card|ba)_(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{14,}|(?:sk|rk|pk)_(?:test|live)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{16,})\b/;
+const STRIPE_ID_RE = /\b(?:(?:pi|ch|re|py|in|ii|cus|sub|txn|po|pm|acct|evt|cs|seti|src|tok|card|ba)_(?:(?:test|live)_(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,}|(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{14,})|(?:sk|rk|pk)_(?:test|live)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{16,})\b/;
 /** The site's own answer (greatstone-website `bridgePayments`): no envelope, no `from`/`to`. GSAM wraps it. */
 export const bridgePaymentReportSchema = z.object({
   stripeMode: z.enum(["test", "live", "unset"]),

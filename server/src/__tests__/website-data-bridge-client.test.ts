@@ -190,14 +190,17 @@ describe("website bridge client", () => {
   });
 
   it("refuses a payment report that carries a Stripe id or key, or no Stripe mode", async () => {
-    for (const leak of ["pi_3PqRsTuVwXyZ1234", "sk_test_51AbCdEfGhIjKl", "ch_1AbCdEfGhIjKlMn"]) {
+    // A Checkout Session id has a mode segment (`cs_test_…`), which the old pattern missed (GRE-2580).
+    for (const leak of ["pi_3PqRsTuVwXyZ1234", "sk_test_51AbCdEfGhIjKl", "ch_1AbCdEfGhIjKlMn",
+      "cs_test_b12m73nUSDL5XPmw7X246HdYW13Fw", "cs_live_a1B2c3D4e5F6g7H8"]) {
       const { c } = client([json(200, { stripeMode: "test", items: [{ id: "o1", reference: leak }], nextCursor: null })]);
       await expect(c.payments({}, ACTOR), leak).rejects.toMatchObject({ code: "bad_response", status: 502 });
     }
     const unset = client([json(200, { items: [], nextCursor: null })]);
     await expect(unset.c.payments({}, ACTOR)).rejects.toMatchObject({ code: "bad_response" });
     const boolean = client([json(200, { stripeMode: "unset", totals: [], refundRequests: [], nextCursor: null,
-      items: [{ id: "8c1d7c2e-4f0a-4a51-9f4e-0d9c2b7a1e33", paid_by_stripe: true, refund_requests: [{ status: "in_progress_with_stripe" }] }] })]);
+      items: [{ id: "8c1d7c2e-4f0a-4a51-9f4e-0d9c2b7a1e33", reference: null, paid_by_stripe: true, note: "cs_test_pending in_live_reviewed",
+        refund_requests: [{ status: "in_progress_with_stripe" }] }] })]);
     await expect(boolean.c.payments({}, ACTOR)).resolves.toMatchObject({ report: { from: null, to: null, stripeMode: "unset" } });
   });
 
