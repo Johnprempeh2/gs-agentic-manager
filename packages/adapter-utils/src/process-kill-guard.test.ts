@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, symlinkSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
@@ -139,9 +139,13 @@ async function fixture() {
     await copyFile(await realpath(from), to);
     await chmod(to, 0o755);
   }
+  // Ubuntu 26.04 ships uutils, where /bin/sleep is one multicall binary that
+  // picks its tool from its own name. Renamed to the marker it exits at once,
+  // unless the tool name comes first. GNU sleep rejects that form.
+  const sleepArgs = spawnSync(sleeper, ["0"]).status === 0 ? ["600"] : ["sleep", "600"];
 
   const start = async (label: string, file: string, argv0: string, cwd = root): Promise<Dummy> => {
-    const child: ChildProcess = spawn(file, ["600"], { argv0, cwd, stdio: "ignore" });
+    const child: ChildProcess = spawn(file, sleepArgs, { argv0, cwd, stdio: "ignore" });
     const exit = new Promise<NodeJS.Signals | null>((resolve) => child.once("exit", (_code, signal) => resolve(signal)));
     const pid = child.pid!;
     started.push({ pid, marker });
@@ -152,7 +156,7 @@ async function fixture() {
   // A shell named after the marker that starts a sleeper; the sleeper stands
   // in for the live server and the shell for the runner above it.
   const startServerTree = async () => {
-    const parent = spawn(shell, ["-c", `${shellQuote(sleeper)} 600 & echo $!; wait`], {
+    const parent = spawn(shell, ["-c", `${[sleeper, ...sleepArgs].map(shellQuote).join(" ")} & echo $!; wait`], {
       argv0: marker, cwd: root, stdio: ["ignore", "pipe", "ignore"],
     });
     started.push({ pid: parent.pid!, marker });
