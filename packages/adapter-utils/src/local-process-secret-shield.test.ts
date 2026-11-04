@@ -60,6 +60,9 @@ let savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   savedEnv = Object.fromEntries(SHIELD_ENV_KEYS.map((key) => [key, process.env[key]]));
+  // scripts/run-vitest-stable.mjs turns the shield off for the rest of the
+  // suite. These tests need its real default.
+  delete process.env[AGENT_SECRET_SHIELD_ENV];
   resetAgentSecretShieldCacheForTests();
 });
 

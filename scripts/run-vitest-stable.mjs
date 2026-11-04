@@ -331,6 +331,12 @@ function runVitest(args, label, testShard = null) {
     GSAM_CONFIG: path.join(testRoot, "h", "config.json"),
     GSAM_INSTANCE_ID: `vt-${process.pid}-${invocationIndex}`,
     TMPDIR: path.join(testRoot, "t"),
+    // On Linux every local spawn is wrapped in bwrap when it is on PATH. Most
+    // suites assert plain child-process behaviour (exit codes, signals,
+    // background children), and bwrap changes all three. The shield has its
+    // own tests in local-process-secret-shield.test.ts. Set this to "on" to
+    // run the whole suite under the shield.
+    GSAM_AGENT_SECRET_SHIELD: process.env.GSAM_AGENT_SECRET_SHIELD || "off",
   };
   mkdirSync(env.GSAM_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
