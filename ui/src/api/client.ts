@@ -75,10 +75,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   let res: Response;
   try {
+    // init first: its own headers are already merged into `headers` above.
     res = await fetch(`${BASE}${path}`, {
+      ...init,
       headers,
       credentials: "include",
-      ...init,
     });
   } catch (error) {
     // The browser's own wording ("Failed to fetch", "Load failed") reaches
@@ -229,12 +230,22 @@ export const api = {
       headers: { "Content-Type": "application/octet-stream", ...(options?.headers ?? {}) },
     }),
   patch: <T>(path: string, body: unknown, options?: RequestOptions) =>
-    request<T>(path, { method: "PATCH", body: JSON.stringify(body), signal: options?.signal }),
+    request<T>(path, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      signal: options?.signal,
+      ...(options?.headers ? { headers: options.headers } : {}),
+    }),
   delete: <T>(path: string, bodyOrOptions?: unknown, options?: RequestOptions) => {
     const requestOptions = isRequestOptions(bodyOrOptions) ? bodyOrOptions : options;
     const body = bodyOrOptions === undefined || isRequestOptions(bodyOrOptions) ? undefined : JSON.stringify(bodyOrOptions);
     return request<T>(path, { method: "DELETE", ...(body === undefined ? {} : { body }), signal: requestOptions?.signal });
   },
   deleteWithBody: <T>(path: string, body: unknown, options?: RequestOptions) =>
-    request<T>(path, { method: "DELETE", body: JSON.stringify(body), signal: options?.signal }),
+    request<T>(path, {
+      method: "DELETE",
+      body: JSON.stringify(body),
+      signal: options?.signal,
+      ...(options?.headers ? { headers: options.headers } : {}),
+    }),
 };

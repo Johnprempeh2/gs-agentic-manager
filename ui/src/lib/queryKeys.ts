@@ -720,6 +720,11 @@ export const queryKeys = {
     /** Records read through the bridge (Commerce, GRE-2383). */
     data: (companyId: string, siteId: string, resource: string, ...rest: string[]) =>
       ["website", companyId, "data", siteId, resource, ...rest] as const,
+    /** Every bridge read of one site: a commerce change (GRE-3972) refreshes them all. */
+    siteData: (companyId: string, siteId: string) => ["website", companyId, "data", siteId] as const,
+    /** Commerce reads through the bridge (GRE-2354): catalogue, FX, imports, payments. */
+    commerce: (companyId: string, siteId: string, resource: string, ...rest: string[]) =>
+      ["website", companyId, "data", siteId, "commerce", resource, ...rest] as const,
     /** Website features (GRE-2325): the registry, the Home cards and one feature page. */
     features: (companyId: string, siteId: string) => ["website", companyId, "features", siteId] as const,
     featureCards: (companyId: string, siteId: string) => ["website", companyId, "features", siteId, "cards"] as const,

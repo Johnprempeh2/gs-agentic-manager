@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   features: vi.fn(),
   bridge: { list: vi.fn(), get: vi.fn(), status: vi.fn(), createKey: vi.fn() },
   organisations: vi.fn(),
+  commerce: { list: vi.fn(), get: vi.fn(), fx: vi.fn(), payments: vi.fn(), write: vi.fn(), requestRefund: vi.fn() },
+  access: vi.fn(),
+  approvals: vi.fn(),
 }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: mocks.companyId }) }));
 vi.mock("@/context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
@@ -23,6 +26,9 @@ vi.mock("@/api/website", () => ({ websiteModuleApi: { sites: mocks.sites } }));
 vi.mock("@/api/website-features", () => ({ websiteFeaturesApi: { list: mocks.features } }));
 vi.mock("@/api/website-data-bridge", () => ({ websiteDataBridgeApi: mocks.bridge }));
 vi.mock("@/api/organisations", () => ({ organisationsApi: { list: mocks.organisations } }));
+vi.mock("@/api/website-commerce", () => ({ websiteCommerceApi: mocks.commerce }));
+vi.mock("@/api/access", () => ({ accessApi: { getCurrentBoardAccess: mocks.access } }));
+vi.mock("@/api/approvals", () => ({ approvalsApi: { list: mocks.approvals } }));
 
 import { CommercePage } from "./Commerce";
 
@@ -57,6 +63,9 @@ describe("CommercePage", () => {
     mocks.sites.mockResolvedValue([site]);
     mocks.features.mockResolvedValue([{ id: "f-public", key: "public-site", enabled: true }, shop]);
     mocks.organisations.mockResolvedValue([{ id: "org-1", name: "Acme", domain: "acme.co.uk", website: null }]);
+    mocks.access.mockRejectedValue(new Error("Board access required"));
+    mocks.approvals.mockResolvedValue([]);
+    mocks.commerce.list.mockResolvedValue({ items: [], nextCursor: null });
     mocks.bridge.list.mockImplementation((_company: string, _site: string, resource: string) => Promise.resolve({
       items: resource === "customers" ? customers : resource === "quotes" ? quotes : [],
       nextCursor: null,
@@ -96,11 +105,11 @@ describe("CommercePage", () => {
     expect(container.querySelectorAll("[data-testid=commerce-list] button")).toHaveLength(0);
   });
 
-  it("shows the four record tabs", async () => {
+  it("shows the Sales and Catalogue areas, with the sales records and payments under Sales", async () => {
     render("/commerce");
     await flush();
     const tabs = [...container.querySelectorAll("[role=tab]")].map((tab) => tab.textContent);
-    expect(tabs).toEqual(["Quotes", "Orders", "Invoices", "Licences"]);
+    expect(tabs).toEqual(["Sales", "Catalogue", "Quotes", "Orders", "Invoices", "Licences", "Payments"]);
   });
 
   it("filters a list by customer", async () => {
@@ -125,14 +134,14 @@ describe("CommercePage", () => {
   it("keeps the area description on lists but not on a record, and does not repeat the reference as a field", async () => {
     render("/commerce/quotes");
     await flush();
-    expect(container.textContent).toContain("read from stg.greatstone.example");
+    expect(container.textContent).toContain("from stg.greatstone.example");
 
     act(() => root.unmount());
     root = createRoot(container);
     mocks.bridge.get.mockResolvedValue({ item: { ...quotes[1], contact_name: "Ada" } });
     render("/commerce/quotes/q-new");
     await flush();
-    expect(container.textContent).not.toContain("read from stg.greatstone.example");
+    expect(container.textContent).not.toContain("from stg.greatstone.example");
     expect(container.querySelector("h2")?.textContent).toContain("Q-002");
     const labels = [...container.querySelectorAll("dt")].map((dt) => dt.textContent);
     expect(labels).not.toContain("Reference");
