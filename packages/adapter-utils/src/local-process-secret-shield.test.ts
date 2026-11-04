@@ -327,8 +327,17 @@ describe("agent secret shield", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("from-stdin\n");
       expect(result.stdout).toContain("opts=--no-warnings");
-      // The shell's own fds plus the one `ls` reads through.
-      expect(result.stdout).toMatch(/^0 1 2 (\d+ )?SigIgn:/m);
+      // A host can leak high fds into every child, shielded or not (the
+      // ubuntu-26.04 runner passes 142 and 145). Drop those; the launcher's
+      // own fds 3-9 must still not get through.
+      const hostFds = new Set(
+        execFileSync("sh", ["-c", "ls /proc/$$/fd"], { encoding: "utf8" })
+          .split(/\s+/)
+          .filter((fd) => Number(fd) > 9),
+      );
+      const fdLine = result.stdout.match(/^([\d ]*)SigIgn:/m)?.[1] ?? "";
+      const agentFds = fdLine.split(" ").filter((fd) => fd && !hostFds.has(fd));
+      expect(agentFds).toEqual(["0", "1", "2"]);
       expect(result.stdout).toMatch(/SigIgn:\s+0+\n/);
     });
 
