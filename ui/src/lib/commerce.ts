@@ -110,6 +110,16 @@ const STATUS_TONES: Record<string, string> = {
   declined: "bg-status-neutral-soft text-status-neutral-foreground",
   revoked: "bg-status-danger-soft text-status-danger-foreground",
   failed: "bg-status-danger-soft text-status-danger-foreground",
+  // the catalogue, imports and refund requests (GRE-3972)
+  published: "bg-status-success-soft text-status-success-foreground",
+  archived: "bg-status-neutral-soft text-status-neutral-foreground",
+  validated: "bg-status-info-soft text-status-info-foreground",
+  applied: "bg-status-success-soft text-status-success-foreground",
+  rolled_back: "bg-status-warning-soft text-status-warning-foreground",
+  approved: "bg-status-success-soft text-status-success-foreground",
+  rejected: "bg-status-neutral-soft text-status-neutral-foreground",
+  done: "bg-status-success-soft text-status-success-foreground",
+  confirmed: "bg-status-success-soft text-status-success-foreground",
 };
 
 export function statusTone(status: string): string {
