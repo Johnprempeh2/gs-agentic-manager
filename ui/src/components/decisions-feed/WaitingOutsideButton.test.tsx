@@ -22,6 +22,14 @@ function render(node: ReactNode) {
   act(() => root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>));
 }
 
+// The date input has min=tomorrow, so a fixed date expires; build one relative to now.
+function daysFromToday(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function typeInto(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   act(() => {
@@ -55,12 +63,13 @@ describe("Waiting on someone outside", () => {
     const [who, date] = [...document.querySelectorAll<HTMLInputElement>("input")];
     typeInto(who!, "Acme's office manager");
     expect(submit.disabled).toBe(true);
-    typeInto(date!, "2026-11-04");
+    const nextWeek = daysFromToday(7);
+    typeInto(date!, nextWeek);
     expect(submit.disabled).toBe(false);
 
     await act(async () => submit.click());
     expect(api.post).toHaveBeenCalledWith("/issues/issue-7/table", {
-      returnAt: returnAtFromDateInput("2026-11-04"),
+      returnAt: returnAtFromDateInput(nextWeek),
       waitingOn: "Acme's office manager",
     });
     expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Waiting on someone outside" }));
