@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   features: vi.fn(),
   bridge: { list: vi.fn(), get: vi.fn() },
   organisations: vi.fn(),
-  commerce: { list: vi.fn(), get: vi.fn(), fx: vi.fn(), payments: vi.fn(), write: vi.fn(), requestRefund: vi.fn() },
+  commerce: { list: vi.fn(), get: vi.fn(), fx: vi.fn(), payments: vi.fn(), write: vi.fn(), requestRefund: vi.fn(), putActivationSteps: vi.fn() },
   access: vi.fn(),
   approvals: vi.fn(),
 }));
@@ -48,6 +48,14 @@ const order = {
   refunded_minor: "0", invoice_number: "INV-0042", row_version: 2, items: [], created_at: "2026-10-01T00:00:00Z",
 };
 const draftOrder = { ...order, status: "pending", invoice_number: null };
+const LICENCE_ID = "0e0e0e0e-0000-4000-8000-000000000001";
+const VENDOR_ID = "0a0a0a0a-0000-4000-8000-000000000001";
+// the bridge sends a licence with its last 4 only; the full key never reaches GSAM
+const licence = { id: LICENCE_ID, offering_name: "Aspose.Total for .NET", licence_key_last4: "7Q2X", status: "delivered", created_at: "2026-10-01T00:00:00Z" };
+const vendor = { id: VENDOR_ID, name: "Aspose", slug: "aspose", status: "published", activation_instructions: "1. Download the file", row_version: 3 };
+const otherVendor = { id: "0a0a0a0a-0000-4000-8000-000000000002", name: "JetBrains", slug: "jetbrains", status: "draft", activation_instructions: null, row_version: 1 };
+const vendorsList = (rows: Record<string, unknown>[]) => (_c: string, _s: string, resource: string) =>
+  Promise.resolve({ items: resource === "vendors" ? rows : [], nextCursor: null });
 
 async function flush() {
   for (let i = 0; i < 8; i += 1) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
@@ -299,5 +307,118 @@ describe("Commerce write screens", () => {
     expect(byTestId("commerce-stripe-mode")?.textContent).toBe("Test mode");
     const buttons = [...container.querySelectorAll("[data-testid=commerce-payments] button")].map((b) => b.textContent?.trim());
     expect(buttons).toEqual(["Show"]);
+  });
+
+  describe("activation steps on a licence (GRE-3983)", () => {
+    beforeEach(() => {
+      mocks.bridge.get.mockResolvedValue({ item: licence });
+      mocks.commerce.list.mockImplementation(vendorsList([otherVendor, vendor]));
+    });
+
+    it("shows the masked key and the matched vendor's steps, and saves with expectedRowVersion and an Idempotency-Key", async () => {
+      person();
+      mocks.commerce.putActivationSteps
+        .mockRejectedValueOnce(new ApiError("The website's data bridge had an error. Try again later.", 502, { error: "x" }))
+        .mockResolvedValueOnce({ item: { vendorId: VENDOR_ID, vendorName: "Aspose", status: "published",
+          activationSteps: "1. Download the file\n2. Open it", rowVersion: 4, updatedAt: "2026-11-04T10:00:00Z", licencesInRange: 12 } });
+      render(`/commerce/licences/${LICENCE_ID}`);
+      await flush();
+      const section = byTestId("commerce-activation-steps")!;
+      expect(byTestId("commerce-activation-key")?.textContent).toBe("•••• 7Q2X");
+      expect(container.querySelector<HTMLSelectElement>("#activation-vendor")!.value).toBe(VENDOR_ID);
+      expect(byTestId("commerce-activation-current")?.textContent).toBe("1. Download the file");
+
+      act(() => (byTestId("commerce-activation-edit") as HTMLButtonElement).click());
+      const steps = container.querySelector<HTMLTextAreaElement>("#activation-steps")!;
+      expect(steps.value).toBe("1. Download the file");
+      type(steps, "  1. Download the file\n2. Open it  ");
+      submitForm(steps);
+      await flush();
+      const [company, site, vendorId, input, key] = mocks.commerce.putActivationSteps.mock.calls[0]!;
+      expect([company, site, vendorId]).toEqual([GREATSTONE, "site-1", VENDOR_ID]);
+      expect(input).toEqual({ activationSteps: "1. Download the file\n2. Open it", expectedRowVersion: 3 });
+      expect(key).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(byTestId("commerce-write-error")?.textContent).toContain("Try again later");
+
+      // the refetch after the save reads the site as it is now
+      mocks.commerce.list.mockImplementation(vendorsList([otherVendor, { ...vendor, activation_instructions: "1. Download the file\n2. Open it", row_version: 4 }]));
+      submitForm(container.querySelector("#activation-steps")!);
+      await flush();
+      expect(mocks.commerce.putActivationSteps.mock.calls[1]![4]).toBe(key);
+      expect(byTestId("commerce-activation-saved")?.textContent).toBe("Saved Aspose's steps. Shows on 12 licences.");
+      expect(byTestId("commerce-activation-current")?.textContent).toBe("1. Download the file\n2. Open it");
+      expect(section.textContent).not.toMatch(/licence_key(?!_last4)/);
+    });
+
+    it("hides the change from an agent on a published vendor, and lets an agent change a draft one", async () => {
+      render(`/commerce/licences/${LICENCE_ID}`);
+      await flush();
+      expect(byTestId("commerce-activation-edit")).toBeNull();
+      expect(byTestId("commerce-people-only-note")?.textContent).toContain("a person changes its steps");
+
+      const select = container.querySelector<HTMLSelectElement>("#activation-vendor")!;
+      act(() => { select.value = otherVendor.id; select.dispatchEvent(new Event("change", { bubbles: true })); });
+      expect(byTestId("commerce-activation-empty")?.textContent).toContain("JetBrains has no activation steps yet");
+      expect(byTestId("commerce-activation-edit")?.textContent).toBe("Add steps");
+      expect(container.textContent).toContain("The website matches this licence to Aspose");
+    });
+
+    it("says when the website refuses steps that hold a licence key, without repeating the text", async () => {
+      person();
+      mocks.commerce.putActivationSteps.mockRejectedValueOnce(new ApiError("The activation steps hold a licence key.", 400,
+        { error: "The activation steps hold a licence key.", code: "website_bridge_licence_key_in_text" }));
+      render(`/commerce/licences/${LICENCE_ID}`);
+      await flush();
+      act(() => (byTestId("commerce-activation-edit") as HTMLButtonElement).click());
+      const steps = container.querySelector<HTMLTextAreaElement>("#activation-steps")!;
+      type(steps, "Paste TEST-KEY-ABCD-1234 into the box");
+      submitForm(steps);
+      await flush();
+      const refusal = byTestId("commerce-licence-key-in-text");
+      expect(refusal?.textContent).toContain("The steps hold a full licence key");
+      expect(refusal?.textContent).not.toContain("TEST-KEY");
+      expect(byTestId("commerce-activation-saved")).toBeNull();
+    });
+
+    it("on a conflict, starts again from the vendor's steps as they are now", async () => {
+      person();
+      mocks.commerce.putActivationSteps.mockRejectedValueOnce(conflict({ vendorId: VENDOR_ID, vendorName: "Aspose", status: "published",
+        activationSteps: "Steps someone else saved", rowVersion: 5, updatedAt: "2026-11-04T11:00:00Z", licencesInRange: 12 }));
+      render(`/commerce/licences/${LICENCE_ID}`);
+      await flush();
+      act(() => (byTestId("commerce-activation-edit") as HTMLButtonElement).click());
+      type(container.querySelector<HTMLTextAreaElement>("#activation-steps")!, "My steps");
+      submitForm(container.querySelector("#activation-steps")!);
+      await flush();
+      expect(byTestId("commerce-conflict")).not.toBeNull();
+      act(() => buttonNamed("Use the current version")!.click());
+      await flush();
+      expect(byTestId("commerce-conflict")).toBeNull();
+      expect(container.querySelector<HTMLTextAreaElement>("#activation-steps")!.value).toBe("Steps someone else saved");
+
+      mocks.commerce.putActivationSteps.mockResolvedValueOnce({ item: { vendorId: VENDOR_ID, vendorName: "Aspose", status: "published",
+        activationSteps: "Steps someone else saved", rowVersion: 6, updatedAt: "2026-11-04T11:05:00Z", licencesInRange: 12 } });
+      submitForm(container.querySelector("#activation-steps")!);
+      await flush();
+      expect(mocks.commerce.putActivationSteps.mock.calls[1]![3]).toEqual({ activationSteps: "Steps someone else saved", expectedRowVersion: 5 });
+    });
+
+    it("clears the steps after asking", async () => {
+      person();
+      mocks.commerce.putActivationSteps.mockResolvedValueOnce({ item: { vendorId: VENDOR_ID, vendorName: "Aspose", status: "published",
+        activationSteps: null, rowVersion: 4, updatedAt: "2026-11-04T10:00:00Z", licencesInRange: 12 } });
+      render(`/commerce/licences/${LICENCE_ID}`);
+      await flush();
+      act(() => (byTestId("commerce-activation-edit") as HTMLButtonElement).click());
+      act(() => (byTestId("commerce-activation-clear") as HTMLButtonElement).click());
+      await flush();
+      expect(mocks.commerce.putActivationSteps).not.toHaveBeenCalled();
+      mocks.commerce.list.mockImplementation(vendorsList([otherVendor, { ...vendor, activation_instructions: null, row_version: 4 }]));
+      act(() => [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Clear")!.click());
+      await flush();
+      expect(mocks.commerce.putActivationSteps.mock.calls[0]![3]).toEqual({ activationSteps: null, expectedRowVersion: 3 });
+      expect(byTestId("commerce-activation-saved")?.textContent).toContain("Cleared Aspose's steps");
+      expect(byTestId("commerce-activation-empty")).not.toBeNull();
+    });
   });
 });

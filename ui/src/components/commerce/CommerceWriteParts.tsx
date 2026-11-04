@@ -78,6 +78,18 @@ export function CommerceWriteError({ error, onUseCurrent, className }: {
       </div>
     );
   }
+  if (failure.kind === "licence_key_in_text") {
+    // never echo the refused text: it holds a full key
+    return (
+      <div role="alert" className={cn(NOTICE, "border-destructive/40 bg-destructive/10 text-foreground", className)} data-testid="commerce-licence-key-in-text">
+        <KeyRound className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium">The steps hold a full licence key.</p>
+          <p>The website refused them and kept the steps it had. Take the key out, then save again.</p>
+        </div>
+      </div>
+    );
+  }
   if (failure.kind === "conflict") {
     const facts = failure.current ? currentFacts(failure.current) : [];
     return (

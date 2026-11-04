@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { LicenceActivationSteps } from "@/components/commerce/CommerceActivationSteps";
 import { CatalogueList, CatalogueRecord, type CatalogueResource } from "@/components/commerce/CommerceCatalogue";
 import { CommerceCurrency } from "@/components/commerce/CommerceCurrency";
 import { CommerceImportJob, CommerceImports } from "@/components/commerce/CommerceImports";
@@ -357,6 +358,7 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
 
       <LineItems record={record} />
 
+      {resource === "licences" ? <LicenceActivationSteps companyId={companyId} siteId={siteId} licence={record} /> : null}
       {resource === "quotes" ? <QuoteActions companyId={companyId} siteId={siteId} quote={record} /> : null}
       {resource === "orders" && isDraftInvoice(record) ? <DraftInvoiceActions companyId={companyId} siteId={siteId} order={record} /> : null}
       {resource === "orders" && !isDraftInvoice(record) && Number(record.total_minor ?? 0) > 0 ? (
