@@ -24462,6 +24462,8 @@ export function heartbeatService(
         context.aiConnection = { ...managedAiRuntime.attribution, identity: managedAiRuntime.identity };
         await db.update(heartbeatRuns).set({ contextSnapshot: sql`coalesce(${heartbeatRuns.contextSnapshot}, '{}'::jsonb) || ${JSON.stringify({ aiConnection: context.aiConnection })}::jsonb` }).where(eq(heartbeatRuns.id, run.id));
       }
+      // Live design: John is watching, so editor runs answer at low effort; the agent's own setting covers its tasks.
+      if (context.liveDesignSessionId && agent.adapterType === "claude_local") resolvedConfig.effort = "low";
       if (secretManifest.length > 0) {
         context.paperclipSecrets = {
           manifest: secretManifest,
