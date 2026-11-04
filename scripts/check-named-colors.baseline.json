@@ -529,7 +529,6 @@
     "text-amber-800": 3
   },
   "ui/src/components/IssueFiltersPopover.tsx": {
-    "bg-blue-600": 1,
     "text-blue-400": 1,
     "text-blue-600": 1
   },

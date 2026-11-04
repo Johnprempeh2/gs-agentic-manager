@@ -18,7 +18,7 @@ import {
 } from "@/lib/commerce-import";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link, useNavigate } from "@/lib/router";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatNumber } from "@/lib/utils";
 import { CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
 
 // Price-book import (GRE-3972 slice 3). A dry run makes an import job on the website: the rows as GSAM planned
@@ -90,7 +90,7 @@ function NewDryRun({ companyId, siteId }: { companyId: string; siteId: string })
     const objects = csvToObjects(await chosen.text());
     if (!objects.length) return setProblem("That file has no rows under its header.");
     if (!("sku" in objects[0]!)) return setProblem("The file needs a sku column. Use the columns listed below.");
-    if (objects.length > MAX_IMPORT_ROWS) return setProblem(`The website takes ${MAX_IMPORT_ROWS.toLocaleString("en-GB")} rows at most in one import.`);
+    if (objects.length > MAX_IMPORT_ROWS) return setProblem(`The website takes ${formatNumber(MAX_IMPORT_ROWS)} rows at most in one import.`);
     setProblem(null);
     setFile({ name: chosen.name.slice(0, 200), objects });
   };

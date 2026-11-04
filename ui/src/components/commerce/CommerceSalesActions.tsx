@@ -316,13 +316,13 @@ export function RefundRequest({ companyId, siteId, order }: { companyId: string;
       {refundable <= 0 ? <p className="text-sm text-muted-foreground">Nothing is left to refund on this order.</p> : null}
       {open ? (
         <form className="space-y-3" onSubmit={submit} noValidate>
-          <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="refund-amount" className="text-sm font-medium">Amount{currency ? ` (${currency.toUpperCase()})` : ""}</label>
               <Input id="refund-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="tabular-nums" />
               <p className="text-xs text-muted-foreground">Up to {formatMinor(refundable, currency)}</p>
             </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
               <label htmlFor="refund-reason" className="text-sm font-medium">Reason</label>
               <Textarea id="refund-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000} />
             </div>
