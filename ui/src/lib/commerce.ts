@@ -192,3 +192,21 @@ export function licencesInRangeLabel(count: number): string {
   if (count === 0) return "Shows on no licences yet";
   return `Shows on ${count} licence${count === 1 ? "" : "s"}`;
 }
+
+/**
+ * The vendor whose activation steps a licence shows (GRE-3983). A licence has no vendor id, so the site matches its
+ * product name to a vendor by token (`activationInstructionsFor` in the website's `src/lib/activation-match.mjs`):
+ * a token holds the vendor's dot-stripped name, or strictly extends its first 3+ letter token. The site skips vendors
+ * with no steps, so a vendor with steps wins; with none, the first match is the one to give steps to.
+ */
+export function vendorForLicence<T extends CommerceRecord>(offeringName: unknown, vendors: readonly T[]): T | null {
+  const tokens = String(offeringName ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (!tokens.length) return null;
+  const matches = vendors.filter((vendor) => {
+    const name = String(vendor.name ?? "").toLowerCase();
+    const dotless = name.replace(/[^a-z0-9]+/g, "");
+    const first = name.split(/[^a-z0-9]+/).find((token) => token.length >= 3) ?? "";
+    return tokens.some((token) => (dotless.length >= 3 && token.includes(dotless)) || (first && token.startsWith(first) && token.length > first.length));
+  });
+  return matches.find((vendor) => text(vendor.activation_instructions)) ?? matches[0] ?? null;
+}
