@@ -3795,7 +3795,7 @@ async function resolveSpawnTarget(
   if (process.platform === "linux" && options.secretShield !== false && resolved) {
     // No --die-with-parent: it would kill the run when the server restarts,
     // and adoption needs it alive. Stops signal the whole process group.
-    const wrapped = await wrapWithAgentSecretShield({ command: executable, args, dieWithParent: false });
+    const wrapped = await wrapWithAgentSecretShield({ command: executable, args, dieWithParent: false, passExitStatus: true });
     return { command: wrapped.command, args: wrapped.args };
   }
 
