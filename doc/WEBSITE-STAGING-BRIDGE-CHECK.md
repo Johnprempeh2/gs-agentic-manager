@@ -4,9 +4,18 @@ The GSAM Website registry uses a separate site row and read key for each Netlify
 
 ## One-time setup by a person with Website Publish rights
 
-1. In the Greatstone company, connect a new Website site. Use the staging name, the bare domain `gre1795-website-db-staging.netlify.app`, and the Netlify site ID above. A Netlify publish token is not required for these bridge reads. Do not change the public site's row or key. Record the new GSAM `siteId` from the response or `GET /api/companies/{companyId}/website/sites`.
-2. On **that staging site only**, create a data bridge key with `POST /api/companies/{companyId}/website/sites/{stagingSiteId}/data-bridge/key` and body `{"environment":"stg","capability":"read"}`. GSAM stores the private key in its vault and returns only the public `keysEntry`. A person adds that entry to the staging Netlify site's `GSAM_BRIDGE_KEYS` and deploys it through the normal website release path. Never put the private key, a database credential, or a write key in Flint's agent settings or an issue comment.
-3. Give Flint `website:view` scoped to the new staging `siteId`. This grant is separate from any access to the public site. Only a board user can change an agent's Website permissions. The existing QA login is not a substitute for an agent grant unless Flint has a working sign-in path.
+Each step is a button in the app (GRE-3992, GRE-3993). Paths are relative to the GSAM address, for example `http://localhost:3100`.
+
+1. **Add the staging website and connect its Netlify site.**
+   - Open **Website** (`/website`). Click **Add a website** (next to the website chips at the top). Site name: the staging name. Site address: `https://gre1795-website-db-staging.netlify.app/`. Click **Add website**.
+   - The new website opens on its **Releases** tab (`/website?tab=releases`). Use the website chips at the top of the page to switch between the public site and the staging copy. In **Site connection**, click **Connect a site**. Live address: `gre1795-website-db-staging.netlify.app`. Netlify site ID: the ID above. A Netlify publish token is not required for these bridge reads. Click **Connect site**.
+   - Do not change the public site's row or key. The new site appears in `GET /api/companies/{companyId}/website/sites`; its `siteId` is the staging `siteId` used below.
+2. **Make the staging read key, on that staging site only.**
+   - On the staging website's **Releases** tab, in **Site connection**, find **Website data**. On the **Read key** line click **Make key**, set **Site** to **Staging**, then click **Make read key**. This calls `POST /api/companies/{companyId}/website/sites/{stagingSiteId}/data-bridge/key` with `{"environment":"stg","capability":"read"}`.
+   - GSAM stores the private key in its vault and shows only the public entry. Click **Copy**. A person adds that entry to the staging Netlify site's `GSAM_BRIDGE_KEYS` and deploys it through the normal website release path. Never put the private key, a database credential, or a write key in Flint's agent settings or an issue comment.
+3. **Give Flint `website:view` on the staging site only.**
+   - Open **Agents**, then Flint, then the **Permissions / Trust** tab (`/agents/{flint}/permissions`). On the **Website access** line, set the site picker to the staging site first, then set the level to **View**. The hint reads "Sees the website pages and drafts on {staging name}."
+   - To remove it, set the level back to **None**. This grant is separate from any access to the public site. Only a board user who may manage permissions can change it; an agent, even the CEO, gets 403. The existing QA login is not a substitute for an agent grant unless Flint has a working sign-in path.
 
 ## Flint's GET calls after both changes ship
 

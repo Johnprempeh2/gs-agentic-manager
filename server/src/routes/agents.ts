@@ -18,7 +18,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "@greatstone/db";
 import type { ChatChannelService } from "../services/chat-channels.js";
-import { activityLog, agents as agentsTable, approvals as approvalsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@greatstone/db";
+import { activityLog, agents as agentsTable, approvals as approvalsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable, websiteSite } from "@greatstone/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { sha256Digest } from "../services/feedback-redaction.js";
 import { rankDirectory } from "../services/agent-directory.js";
@@ -5162,6 +5162,7 @@ export function agentRoutes(
       canApproveMemory,
       pipelineAccess,
       websiteAccess,
+      websiteSiteId,
       ...permissionFlags
     } = req.body;
     // Pipeline access levels (GRE-1072) and website access (GRE-2239) are
@@ -5181,6 +5182,15 @@ export function agentRoutes(
         resource: { type: "company", companyId: existing.companyId },
       });
       if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
+    }
+    // A site-limited grant names a site of this agent's company (GRE-3992).
+    if (websiteSiteId) {
+      const site = await db
+        .select({ id: websiteSite.id })
+        .from(websiteSite)
+        .where(and(eq(websiteSite.companyId, existing.companyId), eq(websiteSite.id, websiteSiteId)))
+        .then((rows) => rows[0] ?? null);
+      if (!site) throw unprocessable("Website site not found in this company");
     }
     // Memory rights have one writer: the owner-only grant service (G3,
     // GRE-933). This route cannot write them, so it must not answer 200 for
@@ -5230,6 +5240,7 @@ export function agentRoutes(
           companyId: agent.companyId,
           agentId: agent.id,
           level: websiteAccess,
+          siteId: websiteSiteId ?? null,
           grantedByUserId,
         })
       : null;

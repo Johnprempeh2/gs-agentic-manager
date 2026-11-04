@@ -38,6 +38,7 @@ import { getAdapterDisplay, getAdapterLabel } from "../adapters/adapter-display-
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { AgentWebsiteAccessSelect } from "@/components/AgentWebsiteAccessSelect";
+import { websiteModuleApi } from "../api/website";
 import { AgentMemoryRightsToggles } from "@/components/AgentMemoryRightsToggles";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
 import { redactCommandText as redactCommandSecretText } from "@greatstone/adapter-utils";
@@ -2125,6 +2126,15 @@ export function ConfigurationTab({
     enabled: Boolean(companyId && lowTrustSelected) && content === "permissions",
   });
 
+  // Sites the Website access row can limit a grant to (GRE-3992). A company
+  // without the Website module answers an error; the row then offers all sites only.
+  const { data: websiteSites } = useQuery({
+    queryKey: companyId ? queryKeys.website.sites(companyId) : ["website", "__none", "sites"],
+    queryFn: () => websiteModuleApi.sites(companyId!),
+    enabled: Boolean(companyId) && content === "permissions",
+    retry: false,
+  });
+
   const updateAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) => agentsApi.update(agent.id, data, companyId),
     onMutate: () => {
@@ -2309,13 +2319,15 @@ export function ConfigurationTab({
           </div>
           <AgentWebsiteAccessSelect
             grants={agent.access?.grants ?? []}
+            sites={(websiteSites ?? []).filter((site) => !site.archivedAt)}
             disabled={updatePermissions.isPending}
-            onChange={(websiteAccess) =>
+            onChange={(websiteAccess, websiteSiteId) =>
               updatePermissions.mutate({
                 canCreateAgents,
                 canCreateSkills,
                 canAssignTasks,
                 websiteAccess,
+                websiteSiteId,
               })
             }
           />

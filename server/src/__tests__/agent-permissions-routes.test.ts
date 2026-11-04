@@ -222,13 +222,13 @@ function registerModuleMocks() {
   }));
 }
 
-function createDbStub(options: { requireBoardApprovalForNewAgents?: boolean } = {}) {
+function createDbStub(options: { requireBoardApprovalForNewAgents?: boolean; selectRows?: unknown[] } = {}) {
   return {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
           then: vi.fn((resolve) =>
-            Promise.resolve(resolve([{
+            Promise.resolve(resolve(options.selectRows ?? [{
               id: companyId,
               name: "GS Agentic Manager",
               requireBoardApprovalForNewAgents: options.requireBoardApprovalForNewAgents ?? false,
@@ -276,7 +276,7 @@ describe.sequential("agent permission routes", () => {
     return { errorHandler, agentRoutes };
   });
 
-  function createApp(actor: Record<string, unknown>, dbOptions: { requireBoardApprovalForNewAgents?: boolean } = {}) {
+  function createApp(actor: Record<string, unknown>, dbOptions: { requireBoardApprovalForNewAgents?: boolean; selectRows?: unknown[] } = {}) {
     const { errorHandler, agentRoutes } = routeModules.value;
     const app = express();
     app.use(express.json());
@@ -1914,8 +1914,63 @@ describe.sequential("agent permission routes", () => {
         expect(touchedKeys).not.toContain("website:publish");
       }
       expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
-        companyId, "agent", agentId, "website:view", false, "board-user",
+        companyId, "agent", agentId, "website:view", false, "board-user", null,
       );
+    });
+
+    const siteId = "33333333-3333-4333-8333-333333333333";
+
+    it("limits the grants to one site of the company when websiteSiteId is sent (GRE-3992)", async () => {
+      const app = await createApp(boardActor);
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess: "view", websiteSiteId: siteId }));
+      expect(res.status).toBe(200);
+      expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+        companyId, "agent", agentId, "website:view", true, "board-user", { siteIds: [siteId] },
+      );
+      expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+        companyId, "agent", agentId, "website:edit", false, "board-user", { siteIds: [siteId] },
+      );
+    });
+
+    it("refuses a site that is not in the agent's company before anything is written", async () => {
+      const app = await createApp(boardActor, { selectRows: [] });
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess: "view", websiteSiteId: siteId }));
+      expect(res.status).toBe(422);
+      expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+
+    it("refuses websiteSiteId without websiteAccess", async () => {
+      const app = await createApp(boardActor);
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, websiteSiteId: siteId }));
+      expect(res.status).toBe(400);
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+
+    it("refuses agent callers who send a site-limited grant, even a CEO", async () => {
+      mockAgentService.getById.mockImplementation(async (id: string) =>
+        id === "ceo-agent" ? { ...baseAgent, id: "ceo-agent", role: "ceo" } : baseAgent);
+      const app = await createApp({
+        type: "agent",
+        agentId: "ceo-agent",
+        companyId,
+        runId: "run-1",
+        source: "agent_key",
+      });
+      for (const websiteAccess of ["view", "none"] as const) {
+        const res = await requestApp(app, (baseUrl) => request(baseUrl)
+          .patch(`/api/agents/${agentId}/permissions`)
+          .send({ canCreateAgents: false, canAssignTasks: true, websiteAccess, websiteSiteId: websiteAccess === "view" ? siteId : null }));
+        expect(res.status).toBe(403);
+      }
+      expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
     });
 
     it("leaves website grants alone when websiteAccess is not sent", async () => {

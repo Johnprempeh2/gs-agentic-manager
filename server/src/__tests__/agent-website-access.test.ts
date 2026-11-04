@@ -74,17 +74,17 @@ describeEmbeddedPostgres("agent website access (GRE-2239)", () => {
         .filter((grant) => !grant.permissionKey.startsWith("website:"));
 
     expect(await setAgentWebsiteAccess(access, { companyId, agentId, level: "view", grantedByUserId: "board-user" }))
-      .toEqual({ before: "none", after: "view" });
+      .toEqual({ before: { level: "none", siteIds: null }, after: { level: "view", siteIds: null } });
     expect(await websiteKeys()).toEqual(["website:view"]);
     expect(await nonWebsite()).toEqual(otherGrants);
 
     expect(await setAgentWebsiteAccess(access, { companyId, agentId, level: "edit", grantedByUserId: "board-user" }))
-      .toEqual({ before: "view", after: "edit" });
+      .toEqual({ before: { level: "view", siteIds: null }, after: { level: "edit", siteIds: null } });
     expect(await websiteKeys()).toEqual(["website:edit", "website:view"]);
     expect(await nonWebsite()).toEqual(otherGrants);
 
     expect(await setAgentWebsiteAccess(access, { companyId, agentId, level: "none", grantedByUserId: "board-user" }))
-      .toEqual({ before: "edit", after: "none" });
+      .toEqual({ before: { level: "edit", siteIds: null }, after: { level: "none", siteIds: null } });
     expect(await websiteKeys()).toEqual([]);
     expect(await nonWebsite()).toEqual(otherGrants);
   });
@@ -103,5 +103,27 @@ describeEmbeddedPostgres("agent website access (GRE-2239)", () => {
     ).rejects.toMatchObject({ status: 422 });
     const keys = (await access.listPrincipalGrants(companyId, "agent", agentId)).map((grant) => grant.permissionKey);
     expect(keys).not.toContain("website:publish");
+  });
+
+  it("limits view to one chosen site, then removes it (GRE-3992)", async () => {
+    const { access, companyId, agentId } = await seedAgentWithOtherGrants();
+    const siteId = "33333333-3333-4333-8333-333333333333";
+    const otherSiteId = "44444444-4444-4444-8444-444444444444";
+
+    expect(await setAgentWebsiteAccess(access, { companyId, agentId, level: "view", siteId, grantedByUserId: "board-user" }))
+      .toEqual({ before: { level: "none", siteIds: null }, after: { level: "view", siteIds: [siteId] } });
+    const decide = (site: string | null) =>
+      access.decide({
+        actor: { type: "agent", agentId, companyId, source: "agent_key" },
+        action: "website:view",
+        resource: { type: "company", companyId },
+        scope: site ? { siteId: site } : null,
+      });
+    expect((await decide(siteId)).allowed).toBe(true);
+    expect((await decide(otherSiteId)).allowed).toBe(false);
+
+    expect(await setAgentWebsiteAccess(access, { companyId, agentId, level: "none", grantedByUserId: "board-user" }))
+      .toEqual({ before: { level: "view", siteIds: [siteId] }, after: { level: "none", siteIds: null } });
+    expect((await decide(siteId)).allowed).toBe(false);
   });
 });
