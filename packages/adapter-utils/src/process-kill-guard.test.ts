@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, symlinkSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
@@ -135,13 +135,20 @@ async function fixture() {
   const sleeper = path.join(root, "bin", marker);
   const liveSleeper = path.join(live, "bin", marker);
   const shell = path.join(root, "shell", marker);
-  for (const [from, to] of [["/bin/sleep", sleeper], ["/bin/sleep", liveSleeper], ["/bin/sh", shell]] as const) {
-    await copyFile(await realpath(from), to);
+  // The sleepers are shells too. Ubuntu 26.04 ships uutils, where /bin/sleep
+  // is one multicall binary that picks its tool from argv[0]; the tests set
+  // argv[0], so a copy of it exits at once. The shell waits instead on a FIFO
+  // that nothing ever opens for writing.
+  for (const to of [sleeper, liveSleeper, shell]) {
+    await copyFile(await realpath("/bin/sh"), to);
     await chmod(to, 0o755);
   }
+  const fifo = path.join(root, "never-written");
+  expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+  const sleepArgs = ["-c", `read _ < ${shellQuote(fifo)}`];
 
   const start = async (label: string, file: string, argv0: string, cwd = root): Promise<Dummy> => {
-    const child: ChildProcess = spawn(file, ["600"], { argv0, cwd, stdio: "ignore" });
+    const child: ChildProcess = spawn(file, sleepArgs, { argv0, cwd, stdio: "ignore" });
     const exit = new Promise<NodeJS.Signals | null>((resolve) => child.once("exit", (_code, signal) => resolve(signal)));
     const pid = child.pid!;
     started.push({ pid, marker });
@@ -152,7 +159,7 @@ async function fixture() {
   // A shell named after the marker that starts a sleeper; the sleeper stands
   // in for the live server and the shell for the runner above it.
   const startServerTree = async () => {
-    const parent = spawn(shell, ["-c", `${shellQuote(sleeper)} 600 & echo $!; wait`], {
+    const parent = spawn(shell, ["-c", `${[sleeper, ...sleepArgs].map(shellQuote).join(" ")} & echo $!; wait`], {
       argv0: marker, cwd: root, stdio: ["ignore", "pipe", "ignore"],
     });
     started.push({ pid: parent.pid!, marker });

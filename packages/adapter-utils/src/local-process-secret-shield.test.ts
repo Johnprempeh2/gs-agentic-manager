@@ -60,6 +60,9 @@ let savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   savedEnv = Object.fromEntries(SHIELD_ENV_KEYS.map((key) => [key, process.env[key]]));
+  // scripts/run-vitest-stable.mjs turns the shield off for the rest of the
+  // suite. These tests need its real default.
+  delete process.env[AGENT_SECRET_SHIELD_ENV];
   resetAgentSecretShieldCacheForTests();
 });
 
@@ -270,6 +273,92 @@ describe("agent secret shield", () => {
       await resultPromise;
       expect(await waitForNoPids(token, 3_000)).toEqual([]);
     });
+
+    // GRE-4026: bwrap died by the Stop signal before the agent inside it did,
+    // so a graceful exit read as a kill. A wrapped run must report what the
+    // agent itself did.
+    async function stopAfterReady(runId: string, agentScript: string, signal: NodeJS.Signals) {
+      let observed = "";
+      const resultPromise = runChildProcess(runId, process.execPath, ["-e", agentScript], {
+        cwd: os.tmpdir(), env: {}, timeoutSec: 20, graceSec: 5,
+        onLog: async (_stream, chunk) => { observed += chunk; },
+      });
+      const deadline = Date.now() + 5_000;
+      while (!observed.includes("ready") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+      signalRunningProcess(runningProcesses.get(runId)!, signal);
+      return resultPromise;
+    }
+
+    it.each(["SIGTERM", "SIGINT"] as const)("a graceful %s Stop reports the agent's own exit code", async (signal) => {
+      const result = await stopAfterReady(
+        `secret-shield-graceful-${signal}-${Date.now()}`,
+        `process.on('${signal}', () => process.exit(0)); console.log('ready'); setInterval(() => {}, 1000);`,
+        signal,
+      );
+      expect(result).toMatchObject({ exitCode: 0, signal: null });
+    });
+
+    it("an agent that does not trap Stop reports the signal, and an exit of 130 stays an exit", async () => {
+      const killed = await stopAfterReady(
+        `secret-shield-killed-${Date.now()}`,
+        "console.log('ready'); setInterval(() => {}, 1000);",
+        "SIGTERM",
+      );
+      expect(killed).toMatchObject({ exitCode: null, signal: "SIGTERM" });
+
+      const exited = await stopAfterReady(
+        `secret-shield-exit-130-${Date.now()}`,
+        "process.on('SIGINT', () => process.exit(130)); console.log('ready'); setInterval(() => {}, 1000);",
+        "SIGINT",
+      );
+      expect(exited).toMatchObject({ exitCode: 130, signal: null });
+    });
+
+    it("passes stdin, NODE_OPTIONS and only fds 0-2 through to the agent", async () => {
+      const result = await runChildProcess(
+        `secret-shield-stdio-${Date.now()}`,
+        "sh",
+        ["-c", 'cat; echo "opts=$NODE_OPTIONS"; ls /proc/$$/fd | tr "\\n" " "; grep SigIgn /proc/$$/status'],
+        {
+          cwd: os.tmpdir(), env: { NODE_OPTIONS: "--no-warnings" }, timeoutSec: 20, graceSec: 1,
+          stdin: "from-stdin\n", onLog: async () => {},
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("from-stdin\n");
+      expect(result.stdout).toContain("opts=--no-warnings");
+      // A host can leak high fds into every child, shielded or not (the
+      // ubuntu-26.04 runner passes 142 and 145). Drop those; the launcher's
+      // own fds 3-9 must still not get through.
+      const hostFds = new Set(
+        execFileSync("sh", ["-c", "ls /proc/$$/fd"], { encoding: "utf8" })
+          .split(/\s+/)
+          .filter((fd) => Number(fd) > 9),
+      );
+      const fdLine = result.stdout.match(/^([\d ]*)SigIgn:/m)?.[1] ?? "";
+      const agentFds = fdLine.split(" ").filter((fd) => fd && !hostFds.has(fd));
+      expect(agentFds).toEqual(["0", "1", "2"]);
+      expect(result.stdout).toMatch(/SigIgn:\s+0+\n/);
+    });
+
+    it("a background child the agent left behind does not hold the run open", async () => {
+      const token = `gsam-shield-leftover-${process.pid}-${Date.now()}`;
+      const startedAt = Date.now();
+      try {
+        const result = await runChildProcess(
+          `secret-shield-leftover-${Date.now()}`,
+          "sh",
+          ["-c", `setsid sh -c 'sleep 30' ${token} </dev/null >/dev/null 2>&1 & sleep 0.2`],
+          { cwd: os.tmpdir(), env: {}, timeoutSec: 10, graceSec: 1, onLog: async () => {} },
+        );
+        expect(result).toMatchObject({ exitCode: 0, signal: null, timedOut: false });
+        expect(Date.now() - startedAt).toBeLessThan(5_000);
+        // The leftover lives on for the run-end cleanup to stop.
+        expect((await hostPidsWithToken(token)).length).toBeGreaterThan(0);
+      } finally {
+        for (const pid of await hostPidsWithToken(token)) process.kill(pid, "SIGKILL");
+      }
+    }, 20_000);
 
     it("prefixes local ACP agent commands so acpx still sees the agent binary", async () => {
       const wrapped = await wrapLocalAcpAgentCommand("/opt/bin/claude-agent-acp");
