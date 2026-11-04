@@ -85,6 +85,8 @@ export interface AgentPermissionUpdate {
   canChangeSkills?: boolean;
   pipelineAccess?: PipelineAccess;
   websiteAccess?: AgentWebsiteAccessLevel;
+  /** Limits websiteAccess to one site; null for every site (GRE-3992). */
+  websiteSiteId?: string | null;
   trustPreset?: AgentPermissions["trustPreset"];
   authorizationPolicy?: AgentPermissions["authorizationPolicy"];
 }
