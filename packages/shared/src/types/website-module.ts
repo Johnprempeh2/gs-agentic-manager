@@ -33,6 +33,16 @@ export interface WebsiteAccess {
   publish: boolean;
 }
 
+/** What `importHtml` did: paths by outcome. Every change is a draft; nothing is published. */
+export interface WebsiteHtmlImportResult {
+  /** Live paths that moved to their sitemap path, each with a draft 301 redirect. */
+  redirects: Array<{ from: string; to: string }>;
+  updated: string[];
+  created: string[];
+  unchanged: string[];
+  chrome: string[];
+}
+
 export interface WebsiteSite {
   id: string;
   companyId: string;

@@ -755,13 +755,32 @@ export function Website() {
   }
 
   const selected = properties.find((property) => property.id === propertyId) ?? properties[0]!;
+  if (adding && canManage) {
+    return (
+      <div className="w-full max-w-7xl space-y-6">
+        <header className="space-y-1">
+          <h1 className="text-xl font-bold">Website</h1>
+        </header>
+        <WebsiteSetupForm
+          companyId={selectedCompanyId}
+          onCancel={() => setAdding(false)}
+          onCreated={(created) => {
+            // The new website opens on Releases, where its site is connected.
+            setAdding(false);
+            setPropertyId(created.id);
+            const next = new URLSearchParams(searchParams);
+            next.set("tab", "releases");
+            setSearchParams(next, { replace: true });
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       {properties.length > 1 || canManage ? (
-        <div className="flex flex-wrap items-center gap-2">
-      {properties.length > 1 ? (
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Website">
-          {properties.map((property) => {
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Website">
+          {properties.length > 1 ? properties.map((property) => {
             const active = property.id === selected.id;
             return (
               <button
@@ -779,30 +798,14 @@ export function Website() {
                 <span className="truncate">{property.name}</span>
               </button>
             );
-          })}
-        </div>
-      ) : null}
-          {canManage && !adding ? (
+          }) : null}
+          {canManage ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Add another website
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Add a website
             </Button>
           ) : null}
         </div>
-      ) : null}
-      {adding ? (
-        <WebsiteSetupForm
-          companyId={selectedCompanyId}
-          onCancel={() => setAdding(false)}
-          onCreated={(created) => {
-            // The new website opens on Releases, where its Netlify site is connected.
-            setAdding(false);
-            setPropertyId(created.id);
-            const next = new URLSearchParams(searchParams);
-            next.set("tab", "releases");
-            setSearchParams(next, { replace: true });
-          }}
-        />
       ) : null}
       <PropertyHub
         key={selected.id}

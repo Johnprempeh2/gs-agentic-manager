@@ -6,6 +6,7 @@ import {
   WEBSITE_HTML_PAGE_FORMAT,
   type WebsiteChrome,
   type WebsiteChromeKey,
+  type WebsiteHtmlImportResult,
 } from "@greatstone/shared";
 import type { websiteModuleService } from "./module.js";
 
@@ -61,14 +62,7 @@ export interface HtmlReleaseImport {
   }>;
 }
 
-export interface HtmlImportResult {
-  /** Live paths that moved to their sitemap path, each with a draft 301 redirect. */
-  redirects: Array<{ from: string; to: string }>;
-  updated: string[];
-  created: string[];
-  unchanged: string[];
-  chrome: string[];
-}
+export type HtmlImportResult = WebsiteHtmlImportResult;
 
 /**
  * Brings an exported schema 2 release in as new revisions: each page by its path (a new page

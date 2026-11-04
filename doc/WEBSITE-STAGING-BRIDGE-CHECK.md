@@ -4,10 +4,10 @@ The GSAM Website registry uses a separate site row and read key for each Netlify
 
 ## One-time setup by a person with Website Publish rights
 
-Each step is a button in the app (GRE-3992). Paths are relative to the GSAM address, for example `http://localhost:3100`.
+Each step is a button in the app (GRE-3992, GRE-3993). Paths are relative to the GSAM address, for example `http://localhost:3100`.
 
 1. **Add the staging website and connect its Netlify site.**
-   - Open **Website** (`/website`). Click **Add another website**. Name: the staging name. Site address: `https://gre1795-website-db-staging.netlify.app/`. Click **Add website**.
+   - Open **Website** (`/website`). Click **Add a website** (next to the website chips at the top). Site name: the staging name. Site address: `https://gre1795-website-db-staging.netlify.app/`. Click **Add website**.
    - The new website opens on its **Releases** tab (`/website?tab=releases`). Use the website chips at the top of the page to switch between the public site and the staging copy. In **Site connection**, click **Connect a site**. Live address: `gre1795-website-db-staging.netlify.app`. Netlify site ID: the ID above. A Netlify publish token is not required for these bridge reads. Click **Connect site**.
    - Do not change the public site's row or key. The new site appears in `GET /api/companies/{companyId}/website/sites`; its `siteId` is the staging `siteId` used below.
 2. **Make the staging read key, on that staging site only.**

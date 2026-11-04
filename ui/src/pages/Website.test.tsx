@@ -19,11 +19,6 @@ const websiteApiMock = vi.hoisted(() => ({
   create: vi.fn(),
   hub: vi.fn(),
 }));
-const websiteModuleApiMock = vi.hoisted(() => ({
-  sites: vi.fn(async () => []),
-  access: vi.fn(async () => ({ view: true, edit: true, publish: true })),
-  tokenSecrets: vi.fn(async () => []),
-}));
 const accessMock = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
 vi.mock("../api/access", () => ({ accessApi: accessMock }));
 const projectsMock = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), getTree: vi.fn() }));
@@ -32,7 +27,7 @@ const settingsMock = vi.hoisted(() => ({ getExperimental: vi.fn() }));
 
 vi.mock("../api/website", async () => {
   const actual = await vi.importActual<typeof import("../api/website")>("../api/website");
-  return { ...actual, websiteApi: websiteApiMock, websiteModuleApi: websiteModuleApiMock };
+  return { ...actual, websiteApi: websiteApiMock };
 });
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: settingsMock }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-1" }) }));
@@ -226,46 +221,60 @@ describe("Website page", () => {
     expect(location).toBe("/website");
   });
 
-  it("adds another website when one exists and opens it on Releases to connect its site (GRE-3992)", async () => {
-    const staging = property({ id: "prop-2", name: "Staging copy", siteUrl: "https://staging.example/", ga4PropertyId: null, connectionStatus: "not_connected" });
-    websiteApiMock.overview.mockResolvedValueOnce(overview()).mockResolvedValue(overview({ properties: [property(), staging] }));
+  it("adds a second website next to the first and opens it on Releases to connect its site", async () => {
+    const live = property();
+    const staging = property({ id: "prop-2", name: "Greatstone staging", siteUrl: "https://staging.greatstone.example/", ga4PropertyId: null, connectionStatus: "not_connected" });
+    websiteApiMock.overview.mockResolvedValueOnce(overview({ properties: [live] })).mockResolvedValue(overview({ properties: [live, staging] }));
     websiteApiMock.create.mockResolvedValue(staging);
     await render("/website?tab=traffic");
-    await waitForText("Add another website");
-    expect(container.querySelector('[data-testid="website-setup"]')).toBeNull();
-    const open = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Add another website")!;
-    await act(async () => { open.click(); });
-    expect(container.querySelector("#website-setup-title")?.textContent).toBe("Add another website");
-    const setValue = (selector: string, value: string) => {
-      const el = container.querySelector(selector) as HTMLInputElement;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    };
+    await waitForText("Visitors per day");
+    const add = await vi.waitFor(() => {
+      const button = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Add a website");
+      expect(button).toBeDefined();
+      return button!;
+    });
+    await act(async () => { add.click(); });
+    expect(text()).toContain("Your other websites stay as they are.");
     await act(async () => {
-      setValue("#website-setup-name", "Staging copy");
-      setValue("#website-setup-url", "https://staging.example/");
+      for (const [selector, value] of [["#website-setup-name", "Greatstone staging"], ["#website-setup-url", "https://staging.greatstone.example/"]] as const) {
+        const el = container.querySelector(selector) as HTMLInputElement;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     });
     const submit = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Add website")!;
     await act(async () => { submit.click(); });
     await vi.waitFor(() =>
-      expect(websiteApiMock.create).toHaveBeenCalledWith("co-1", { name: "Staging copy", siteUrl: "https://staging.example/" }),
+      expect(websiteApiMock.create).toHaveBeenCalledWith("co-1", { name: "Greatstone staging", siteUrl: "https://staging.greatstone.example/" }),
     );
     await vi.waitFor(() => expect(location).toBe("/website?tab=releases"));
-    await waitForText("Connect a site");
-    expect(container.querySelector('[data-testid="website-setup"]')).toBeNull();
-    const chosen = container.querySelector('[role="group"][aria-label="Website"] [aria-pressed="true"]');
-    expect(chosen?.textContent).toBe("Staging copy");
+    await vi.waitFor(() => {
+      const switcher = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Website"] button[aria-pressed]'));
+      expect(switcher.map((el) => [el.textContent, el.getAttribute("aria-pressed")])).toEqual([["Greatstone", "false"], ["Greatstone staging", "true"]]);
+    });
+    expect(websiteApiMock.update).not.toHaveBeenCalled();
   });
 
-  it("does not offer another website to people who are not owners or admins", async () => {
+  it("cancels adding a website and does not offer it to people who are not owners or admins", async () => {
+    await render("/website?tab=traffic");
+    await waitForText("Visitors per day");
+    const add = await vi.waitFor(() => Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Add a website")!);
+    await act(async () => { add.click(); });
+    const cancel = Array.from(container.querySelectorAll("button")).find((el) => el.textContent === "Cancel")!;
+    await act(async () => { cancel.click(); });
+    await waitForText("Visitors per day");
+    expect(websiteApiMock.create).not.toHaveBeenCalled();
+
+    act(() => root.unmount());
+    root = createRoot(container);
     accessMock.getCurrentBoardAccess.mockResolvedValue({
       source: "session",
       isInstanceAdmin: false,
       memberships: [{ companyId: "co-1", membershipRole: "operator", status: "active" }],
     });
-    await render();
-    await waitForText("Greatstone");
-    expect(text()).not.toContain("Add another website");
+    await render("/website?tab=traffic");
+    await waitForText("Visitors per day");
+    expect(Array.from(container.querySelectorAll("button")).some((el) => el.textContent === "Add a website")).toBe(false);
   });
 
   it("says plainly that Google Analytics is not linked and lets an owner add it", async () => {

@@ -39,13 +39,14 @@ function Field({ id, label, help, children }: { id: string; label: string; help?
 
 /**
  * Setup on the Website page: site name, address, optional GA4 id and the project that builds it.
- * First-time setup, or another website (for example a staging copy) when `onCancel` is given (GRE-3992).
+ * First-time setup, or (with `onCancel`) adding another website next to the ones that exist (GRE-3993).
  */
 export function WebsiteSetupForm({ companyId, onCreated, onCancel }: {
   companyId: string;
   onCreated: (property: WebsiteProperty) => void;
   onCancel?: () => void;
 }) {
+  const adding = Boolean(onCancel);
   const queryClient = useQueryClient();
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects.list(companyId),
@@ -84,10 +85,10 @@ export function WebsiteSetupForm({ companyId, onCreated, onCancel }: {
       }}
     >
       <div className="space-y-0.5">
-        <h2 id="website-setup-title" className="text-lg font-semibold">{onCancel ? "Add another website" : "Set up your website"}</h2>
+        <h2 id="website-setup-title" className="text-lg font-semibold">{adding ? "Add a website" : "Set up your website"}</h2>
         <p className="text-xs text-muted-foreground">
-          {onCancel
-            ? "For example a staging copy. It gets its own tabs; connect its Netlify site on its Releases tab."
+          {adding
+            ? "For example a staging copy of your site. Your other websites stay as they are. After this, connect its site on the Releases tab."
             : "Progress, the sitemap and previews work straight away. Google Analytics is optional and can be added later."}
         </p>
       </div>
@@ -152,7 +153,7 @@ export function WebsiteSetupForm({ companyId, onCreated, onCancel }: {
           <Button type="button" variant="ghost" onClick={onCancel} disabled={create.isPending}>Cancel</Button>
         ) : null}
         <Button type="submit" disabled={create.isPending || !name.trim() || !siteUrl.trim()}>
-          {create.isPending ? "Setting up" : onCancel ? "Add website" : "Set up website"}
+          {create.isPending ? (adding ? "Adding" : "Setting up") : adding ? "Add website" : "Set up website"}
         </Button>
       </div>
     </form>

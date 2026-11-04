@@ -26,6 +26,7 @@ import {
   principalPermissionGrants,
   websiteEntry,
   websitePage,
+  websiteProperties,
   websiteRelease,
   websiteSite,
 } from "@greatstone/db";
@@ -34,6 +35,7 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import { errorHandler } from "../middleware/error-handler.js";
 import { approvalRoutes } from "../routes/approvals.js";
 import { websiteModuleRoutes } from "../routes/website-module.js";
+import { websiteRoutes } from "../routes/website.js";
 import { instanceSettingsService } from "../services/index.js";
 import type { NetlifyDeploy, WebsiteNetlifyClient } from "../services/website/netlify-publish-client.js";
 import { registerWebsitePublishStarter } from "../services/website/publish-approval.js";
@@ -222,6 +224,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     await db.delete(websiteEntry);
     await db.delete(websitePage);
     await db.delete(websiteSite);
+    await db.delete(websiteProperties);
     await db.delete(documentRevisions);
     await db.delete(documents);
     await db.delete(principalPermissionGrants);
@@ -683,6 +686,50 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(check?.ok).toBe(false);
     expect(check?.message).toContain("/");
     expect(page.slug).toBe("/");
+    expect(netlify.blobs.size).toBe(0);
+  });
+
+  it("adds a second website and site next to the live one, and import-html writes drafts only to the chosen site (GRE-3993)", async () => {
+    const { company, site: live, page: liveHome } = await seedSite();
+    const [liveDocBefore] = await db.select().from(documents).where(eq(documents.id, (await db.select().from(websitePage).where(eq(websitePage.id, liveHome.id)))[0]!.documentId));
+    const people = express();
+    people.use(express.json());
+    people.use((req, _res, next) => {
+      req.actor = localBoard;
+      next();
+    });
+    people.use("/api", websiteRoutes(db));
+    people.use(errorHandler);
+    const property = (await request(people)
+      .post(`/api/companies/${company.id}/website/properties`)
+      .send({ name: "Greatstone staging", siteUrl: "https://staging.greatstone.test/" })
+      .expect(201)).body as { id: string };
+    const staging = (await request(app())
+      .post(`/api/companies/${company.id}/website/sites`)
+      .send({ name: "Staging", domain: "staging.greatstone.test", netlifySiteId: "netlify-staging", netlifyToken: "nfp_test_token_value_456", propertyId: property.id })
+      .expect(201)).body as WebsiteSite;
+    expect(staging.propertyId).toBe(property.id);
+
+    // An agent cannot import, even with an edit grant.
+    const agent = await seedAgent(company.id, ["website:edit", "website:publish"]);
+    await request(app(agent)).post(`/api/companies/${company.id}/website/sites/${staging.id}/import-html`).send(htmlExport).expect(403);
+
+    const result = (await request(app())
+      .post(`/api/companies/${company.id}/website/sites/${staging.id}/import-html`)
+      .send(htmlExport)
+      .expect(200)).body;
+    expect(result).toMatchObject({ created: ["/", "/about"], updated: [] });
+
+    const stagingPages = await db.select().from(websitePage).where(eq(websitePage.siteId, staging.id));
+    expect(stagingPages.map((p) => [p.slug, p.status]).sort()).toEqual([["/", "draft"], ["/about", "draft"]]);
+    // The live site is as it was: one page, same latest revision, no chrome, no release.
+    const livePages = await db.select().from(websitePage).where(eq(websitePage.siteId, live.id));
+    expect(livePages.map((p) => p.slug)).toEqual(["/"]);
+    const [liveDocAfter] = await db.select().from(documents).where(eq(documents.id, livePages[0]!.documentId));
+    expect(liveDocAfter!.latestRevisionId).toBe(liveDocBefore!.latestRevisionId);
+    expect(await db.select().from(websiteEntry).where(eq(websiteEntry.siteId, live.id))).toEqual([]);
+    expect(await releaseCount(live.id)).toBe(0);
+    expect(await releaseCount(staging.id)).toBe(0);
     expect(netlify.blobs.size).toBe(0);
   });
 
