@@ -30,6 +30,8 @@ export type CommerceWriteFailure =
   | { kind: "no_key"; capability: "write" | "refund_request"; message: string }
   | { kind: "people_only"; message: string }
   | { kind: "conflict"; message: string; current: CommerceRow | null }
+  /** Activation steps that hold a full licence key (GRE-3982): the site refused them and kept the old text. */
+  | { kind: "licence_key_in_text"; message: string }
   | { kind: "other"; message: string };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -48,6 +50,7 @@ export function commerceWriteFailure(error: unknown): CommerceWriteFailure {
     return { kind: "no_key", capability, message };
   }
   if (error.status === 403 && code === "website_commerce_people_only") return { kind: "people_only", message };
+  if (error.status === 400 && code === "website_bridge_licence_key_in_text") return { kind: "licence_key_in_text", message };
   if (error.status === 409 && code === "website_bridge_conflict") {
     return { kind: "conflict", message, current: record(details?.current ?? body?.current) };
   }

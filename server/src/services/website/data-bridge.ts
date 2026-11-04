@@ -11,6 +11,7 @@ import type {
   WebsiteCommerceListQuery,
   WebsiteDataListQuery,
   WebsiteCommerceRefundRequestInput,
+  WebsiteVendorActivationStepsInput,
   WebsiteCommerceWriteMethod,
   WebsiteCommerceResource,
   WebsiteDataBridgeCapability,
@@ -227,6 +228,11 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     async write(site: BridgeSite, method: WebsiteCommerceWriteMethod, path: string, body: Record<string, unknown> | undefined,
       actor: WebsiteBridgeActor, idempotencyKey?: string) {
       return (await commerceClient(site, "write")).write(method, path, body, actor, idempotencyKey);
+    },
+    /** One vendor's licence activation steps (GRE-3982), on the write key. */
+    async putActivationSteps(site: BridgeSite, vendorId: string, input: WebsiteVendorActivationStepsInput, actor: WebsiteBridgeActor,
+      idempotencyKey?: string) {
+      return (await commerceClient(site, "write")).putActivationSteps(vendorId, input, actor, idempotencyKey);
     },
     /** Records a refund request on the refund_request key. Moves no money. */
     async requestRefund(site: BridgeSite, input: WebsiteCommerceRefundRequestInput, actor: WebsiteBridgeActor, idempotencyKey?: string) {

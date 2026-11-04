@@ -5,6 +5,8 @@ import type {
   WebsiteCommerceWriteMethod,
   WebsitePaymentReport,
   WebsitePaymentReportQuery,
+  WebsiteVendorActivationSteps,
+  WebsiteVendorActivationStepsInput,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -55,6 +57,12 @@ export const websiteCommerceApi = {
     if (change.method === "PATCH") return api.patch<{ item: CommerceRow }>(path, body, options);
     return api.deleteWithBody<{ item: CommerceRow }>(path, body, options);
   },
+  /** Sets or clears one vendor's licence activation steps (GRE-3982). The answer never holds a licence key. */
+  putActivationSteps: (companyId: string, siteId: string, vendorId: string, input: WebsiteVendorActivationStepsInput,
+    idempotencyKey: string) =>
+    api.put<{ item: WebsiteVendorActivationSteps }>(
+      `${commercePath(companyId, siteId)}/vendors/${encodeURIComponent(vendorId)}/activation-steps`, input,
+      { headers: writeHeaders(idempotencyKey) }),
   /** Records a refund request on the site and opens a card for a person. Moves no money. */
   requestRefund: (companyId: string, siteId: string, input: WebsiteCommerceRefundRequestInput, idempotencyKey: string) =>
     api.post<{ approval: Approval; request: CommerceRow | null }>(`${commercePath(companyId, siteId)}/refund-requests`, input,

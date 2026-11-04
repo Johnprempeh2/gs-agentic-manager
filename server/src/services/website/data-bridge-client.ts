@@ -20,7 +20,9 @@ export type WebsiteBridgeErrorCode =
   | "not_configured" | "unreachable" | "timeout" | "unauthorized" | "clock_skew" | "replay"
   | "forbidden" | "not_found" | "bad_request" | "bad_response" | "server_error"
   // writes and refund requests (GRE-2354 2c(b))
-  | "conflict" | "denied" | "idempotency_mismatch" | "over_refundable";
+  | "conflict" | "denied" | "idempotency_mismatch" | "over_refundable"
+  // activation steps (GRE-3982)
+  | "licence_key_in_text";
 
 const MESSAGES: Record<WebsiteBridgeErrorCode, string> = {
   not_configured: "The website data bridge is not set up for this site. A person with Publish rights makes a read key under Website > Releases > Site connection.",
@@ -38,12 +40,13 @@ const MESSAGES: Record<WebsiteBridgeErrorCode, string> = {
   denied: "The website refused this change: only a person can do it.",
   idempotency_mismatch: "The website already has a different change under this request's key. Nothing was written.",
   over_refundable: "The refund is more than is left to refund on this order.",
+  licence_key_in_text: "The website refused the text: it holds a full licence key. Take the key out; customers see their own key beside the steps.",
 };
 
 const RETRY_STATUSES = new Set([502, 503, 504]);
 /** What GSAM answers its own caller. Anything not listed is the site's problem: 502. */
 const GSAM_STATUS: Partial<Record<WebsiteBridgeErrorCode, number>> = {
-  not_configured: 409, not_found: 404, bad_request: 400,
+  not_configured: 409, not_found: 404, bad_request: 400, licence_key_in_text: 400,
   conflict: 409, denied: 403, idempotency_mismatch: 409, over_refundable: 409,
 };
 
@@ -195,6 +198,16 @@ export const bridgePaymentReportSchema = z.object({
 export const bridgeSyncAckSchema = z.object({ ok: z.literal(true), tenantId: z.string() });
 /** A write's answer: the row as it is after the change (`imports/:id/apply` adds the apply result). */
 export const bridgeWriteSchema = z.object({ item: z.record(z.string(), z.unknown()), result: z.unknown().optional() });
+/**
+ * A vendor's activation steps (GRE-3981 contract). Only these fields come through: anything else the site might add
+ * (a key, a last 4) is dropped, so GSAM never passes it on.
+ */
+export const bridgeActivationStepsSchema = z.object({
+  item: z.object({
+    vendorId: z.string().min(1), vendorName: z.string(), status: z.string(), activationSteps: z.string().nullable(),
+    rowVersion: z.number().int(), updatedAt: z.string(), licencesInRange: z.number().int().nonnegative(),
+  }),
+});
 /** A refund request row, as `bridge_request_refund` and `bridge_refund_decision` return it. */
 export const bridgeRefundRequestSchema = z.object({
   item: z.object({ id: z.string().min(1), status: z.string() }).passthrough(),
@@ -216,7 +229,7 @@ function codeFor(status: number, siteCode: string | undefined): WebsiteBridgeErr
     return siteCode === "idempotency_mismatch" || siteCode === "over_refundable" ? siteCode : "conflict";
   }
   if (status === 404) return "not_found";
-  if (status === 400) return "bad_request";
+  if (status === 400) return siteCode === "licence_key_in_text" ? siteCode : "bad_request";
   return status >= 500 ? "server_error" : "bad_response";
 }
 
@@ -285,7 +298,7 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
   const get = <T>(path: string, query: Record<string, string | undefined>, actor: WebsiteBridgeActor, schema: z.ZodType<T>) =>
     call("GET", path, query, undefined, actor, schema);
   /** A v2 write: one idempotency key per logical call (or the caller's, so a later call can replay it). No query. */
-  const send = <T>(method: WriteMethod, path: string, body: Record<string, unknown> | undefined, actor: WebsiteBridgeActor,
+  const send = <T>(method: WriteMethod | "PUT", path: string, body: Record<string, unknown> | undefined, actor: WebsiteBridgeActor,
     schema: z.ZodType<T>, idempotencyKey = newBridgeIdempotencyKey()) =>
     call(method, `/api/admin/v1/${path.replace(/^\/+/, "")}`, {}, body === undefined ? "" : JSON.stringify(body), actor, schema,
       idempotencyKey);
@@ -330,6 +343,15 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
       get(`/api/admin/v1/interview/${path.replace(/^\/+/, "")}`, query, actor, z.record(z.string(), z.unknown())),
     interviewWrite: (path: string, body: Record<string, unknown>, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
       send("POST", `interview/${path.replace(/^\/+/, "")}`, body, actor, z.record(z.string(), z.unknown()), idempotencyKey),
+    /**
+     * Sets or clears one vendor's licence activation steps (GRE-3982) on the `write` key, signed v2. A PUT replaces
+     * the steps, and one idempotency key covers every try, so the site writes it at most once.
+     */
+    putActivationSteps: (vendorId: string, input: { activationSteps: string | null; expectedRowVersion: number }, actor: WebsiteBridgeActor,
+      idempotencyKey?: string) =>
+      send("PUT", `vendors/${encodeURIComponent(vendorId)}/activation-steps`,
+        { activationSteps: input.activationSteps, expectedRowVersion: input.expectedRowVersion }, actor, bridgeActivationStepsSchema,
+        idempotencyKey),
     /** Records a refund request on the `refund_request` key. Moves no money. */
     requestRefund: (input: { orderId: string; amountMinor: number; reason: string }, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
       send("POST", "refund-requests", { orderId: input.orderId, amountMinor: input.amountMinor, reason: input.reason }, actor,

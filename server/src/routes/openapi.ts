@@ -469,6 +469,7 @@ import {
   createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
   websiteCommerceRefundRequestSchema,
+  websiteVendorActivationStepsSchema,
   setWebsiteBridgeSiteKeySchema,
   websiteDocumentRequestAnswerSchema,
   updateWebsiteFeatureSchema,
@@ -17057,6 +17058,20 @@ for (const method of ["post", "patch", "delete"] as const) {
     responses: commerceWriteResponses,
   });
 }
+
+registerCurrentRoute({
+  method: "put",
+  path: `${siteParams}/commerce/vendors/{vendorId}/activation-steps`,
+  tags: ["website"],
+  summary: "Set or clear one vendor's licence activation steps on the site, through the signed admin bridge's write key "
+    + "(website:commerce; GRE-3982). Body: activationSteps (1 to 20000 characters, or null to clear) and expectedRowVersion. The "
+    + "answer is the vendor's steps, rowVersion and licencesInRange; never a licence key. Optional Idempotency-Key header. "
+    + "400 website_bridge_licence_key_in_text when the text holds a full licence key; 403 website_bridge_denied for an agent on "
+    + "a published vendor; 409 website_bridge_conflict with details.current on a stale expectedRowVersion; 409 "
+    + "capability_not_configured when the site has no write key",
+  body: websiteVendorActivationStepsSchema,
+  responses: { ...commerceWriteResponses, 400: r.badRequest },
+});
 
 registerCurrentRoute({
   method: "post",

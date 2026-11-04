@@ -300,6 +300,111 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
     expect(seen).toHaveLength(calls + 1);
   });
 
+  describe("licence activation steps (GRE-3982)", () => {
+    const VENDOR = "c0ffee00-0000-4000-8000-0000000000aa";
+    // Joined at runtime so no key-shaped string is committed.
+    const fakeKey = ["ASPOSE", "-", "TESTkeyCANARY", "-", "0000000000000000"].join("");
+    const steps = (vendorId: string, text: string | null, rowVersion: number) => ({
+      vendorId, vendorName: "Aspose", status: "published", activationSteps: text, rowVersion, updatedAt: "2026-11-04T10:00:00Z", licencesInRange: 12,
+    });
+
+    it("sends a signed v2 PUT on the write key in the person's name and returns only the vendor's steps", async () => {
+      const { base, companyId } = await seedSite();
+      const write = await makeKey(base, "write");
+      answer = (_m, _p, body) => {
+        const b = body as { activationSteps: string | null };
+        // a site that put more in the answer than the contract says: GSAM drops it
+        return { status: 200, body: { item: { ...steps(VENDOR, b.activationSteps, 4), licence_key: fakeKey, licence_key_last4: "0000" } } };
+      };
+      const { actor, userId } = await seedUser(companyId, "admin");
+      const res = await request(app(actor)).put(`${base}/commerce/vendors/${VENDOR}/activation-steps`)
+        .set("Idempotency-Key", "UFFSU1RVVldYWVpbXF1eXw").send({ activationSteps: "  1. Download the file  ", expectedRowVersion: 3 }).expect(200);
+      expect(res.body).toEqual({ item: steps(VENDOR, "1. Download the file", 4) });
+      expect(JSON.stringify(res.body)).not.toMatch(/licence_key|0000"/);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ method: "PUT", path: `vendors/${VENDOR}/activation-steps`, verified: true });
+      expect(JSON.parse(seen[0]!.body)).toEqual({ activationSteps: "1. Download the file", expectedRowVersion: 3 });
+      expect(seen[0]!.headers).toMatchObject({ "x-gs-bridge-key": write.keyId, "x-gs-bridge-actor": `user:${userId}`,
+        "x-gs-bridge-idempotency-key": "UFFSU1RVVldYWVpbXF1eXw" });
+
+      // clearing sends null
+      answer = () => ({ status: 200, body: { item: steps(VENDOR, null, 5) } });
+      await request(app(actor)).put(`${base}/commerce/vendors/${VENDOR}/activation-steps`).send({ activationSteps: null, expectedRowVersion: 4 }).expect(200);
+      expect(JSON.parse(seen.at(-1)!.body)).toEqual({ activationSteps: null, expectedRowVersion: 4 });
+
+      const logged = (await db.select().from(activityLog)).filter((e) => e.action === "website.commerce_changed");
+      expect(logged.map((e) => e.details)).toEqual([
+        expect.objectContaining({ operation: "vendors.activation_steps", rowId: VENDOR, cleared: false, rowVersion: 4 }),
+        expect.objectContaining({ operation: "vendors.activation_steps", rowId: VENDOR, cleared: true, rowVersion: 5 }),
+      ]);
+      expect(JSON.stringify(logged)).not.toContain("Download");
+    });
+
+    it("passes an agent's id and run to the site, and the site's people-only refusal back as 403", async () => {
+      const { base, companyId } = await seedSite();
+      await makeKey(base, "write");
+      const { actor, agentId } = await seedAgent(companyId, ["website:view", "website:commerce"]);
+      answer = () => ({ status: 200, body: { item: { ...steps(VENDOR, "1. Open", 2), status: "draft" } } });
+      await request(app(actor)).put(`${base}/commerce/vendors/${VENDOR}/activation-steps`).send({ activationSteps: "1. Open", expectedRowVersion: 1 }).expect(200);
+      expect(seen.at(-1)!.headers["x-gs-bridge-actor"]).toBe(`agent:${agentId}`);
+      expect(seen.at(-1)!.headers["x-gs-bridge-run"]).toBe((actor as { runId: string }).runId);
+
+      answer = () => ({ status: 403, body: { error: { code: "denied" } } });
+      const denied = await request(app(actor)).put(`${base}/commerce/vendors/${VENDOR}/activation-steps`).send({ activationSteps: "1. Open", expectedRowVersion: 2 }).expect(403);
+      expect(denied.body.code).toBe("website_bridge_denied");
+    });
+
+    it("maps the site's refusals, and never echoes the text", async () => {
+      const { base } = await seedSite();
+      await makeKey(base, "write");
+      const http = request(app());
+      const put = (body: unknown) => http.put(`${base}/commerce/vendors/${VENDOR}/activation-steps`).send(body as object);
+
+      answer = () => ({ status: 400, body: { error: { code: "licence_key_in_text" } } });
+      const keyed = await put({ activationSteps: `1. Enter ${fakeKey}`, expectedRowVersion: 1 }).expect(400);
+      expect(keyed.body.code).toBe("website_bridge_licence_key_in_text");
+      expect(JSON.stringify(keyed.body)).not.toContain(fakeKey);
+
+      answer = () => ({ status: 409, body: { error: { code: "conflict" }, current: steps(VENDOR, "old", 9) } });
+      const stale = await put({ activationSteps: "new", expectedRowVersion: 1 }).expect(409);
+      expect(stale.body).toMatchObject({ code: "website_bridge_conflict", details: { current: { rowVersion: 9 } } });
+
+      answer = () => ({ status: 404, body: { error: { code: "not_found" } } });
+      expect((await put({ activationSteps: "x", expectedRowVersion: 1 }).expect(404)).body.code).toBe("website_bridge_not_found");
+      answer = () => ({ status: 400, body: { error: { code: "bad_request" } } });
+      expect((await put({ activationSteps: "x", expectedRowVersion: 1 }).expect(400)).body.code).toBe("website_bridge_bad_request");
+      answer = () => ({ status: 503, body: { error: { code: "unavailable" } } });
+      expect((await put({ activationSteps: "x", expectedRowVersion: 1 }).expect(502)).body.code).toBe("website_bridge_server_error");
+
+      // an answer outside the contract is not passed on
+      answer = () => ({ status: 200, body: { item: { vendorId: VENDOR } } });
+      expect((await put({ activationSteps: "x", expectedRowVersion: 1 }).expect(502)).body.code).toBe("website_bridge_bad_response");
+      expect(JSON.stringify(await db.select().from(activityLog))).not.toContain(fakeKey);
+    });
+
+    it("checks access and the body before any call to the site", async () => {
+      const { base, companyId } = await seedSite();
+      const put = (actor: Actor, body: unknown, vendor = VENDOR) =>
+        request(app(actor)).put(`${base}/commerce/vendors/${vendor}/activation-steps`).send(body as object);
+      // no write key: fail closed
+      expect((await put(board, { activationSteps: "x", expectedRowVersion: 1 }).expect(409)).body.code).toBe("capability_not_configured");
+      await makeKey(base, "write");
+      const { actor: viewer } = await seedAgent(companyId, ["website:view", "website:edit"]);
+      await put(viewer, { activationSteps: "x", expectedRowVersion: 1 }).expect(403);
+      const { actor: operator } = await seedUser(companyId, "operator");
+      await put(operator, { activationSteps: "x", expectedRowVersion: 1 }).expect(403);
+      for (const body of [{ activationSteps: "x" }, { activationSteps: "", expectedRowVersion: 1 }, { activationSteps: "x".repeat(20_001), expectedRowVersion: 1 },
+        { activationSteps: "x", expectedRowVersion: 1, licenceId: ROW }, { expectedRowVersion: 1 }]) {
+        const bad = await put(board, body).expect(422);
+        expect(bad.body.code).toBe("website_commerce_activation_steps_invalid");
+        expect(JSON.stringify(bad.body)).not.toContain("xxxx");
+      }
+      await put(board, { activationSteps: "x", expectedRowVersion: 1 }, "not-a-uuid").expect(404);
+      await request(app()).put(`${base}/commerce/vendors/${VENDOR}/activation-steps?x=1`).send({ activationSteps: "x", expectedRowVersion: 1 }).expect(422);
+      expect(seen).toHaveLength(0);
+    });
+  });
+
   describe("refund requests (commerce_refund_request)", () => {
     async function refundWorld() {
       const world = await seedSite();

@@ -92,6 +92,9 @@ export function isSecretSensitiveHttpRequest(
 const MEMORY_CONTENT_HTTP_PATHS = [
   /^\/api\/companies\/[^/]+\/memory\/(?:records|recall)\/?$/i,
   /^\/api\/mcp\/memory-tools\/?$/i,
+  // Licence activation steps (GRE-3982) are free text the site refuses when it holds a licence key: the refused
+  // body is the key. Both ways to write them (the PUT and a vendor PATCH) are left out.
+  /^\/api\/companies\/[^/]+\/website\/sites\/[^/]+\/commerce\/vendors\/[^/]+(?:\/activation-steps)?\/?$/i,
 ];
 
 /**

@@ -50,6 +50,8 @@ describe("commerce writes", () => {
       .toMatchObject({ kind: "no_key", capability: "refund_request" });
     expect(commerceWriteFailure(new ApiError("people", 403, { error: "people", code: "website_commerce_people_only" })))
       .toEqual({ kind: "people_only", message: "people" });
+    expect(commerceWriteFailure(new ApiError("key", 400, { error: "key", code: "website_bridge_licence_key_in_text" })))
+      .toEqual({ kind: "licence_key_in_text", message: "key" });
     expect(commerceWriteFailure(new ApiError("changed", 409, { error: "changed", code: "website_bridge_conflict", details: { current: { row_version: 9 } } })))
       .toEqual({ kind: "conflict", message: "changed", current: { row_version: 9 } });
     expect(commerceWriteFailure(new ApiError("other", 409, { error: "other", code: "website_bridge_idempotency_mismatch" })).kind).toBe("other");

@@ -59,6 +59,13 @@ export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
    */
   commerceRefundRequests: "/companies/:companyId/website/sites/:siteId/commerce/refund-requests",
   /**
+   * PUT `WebsiteVendorActivationStepsInput` → `{ item: WebsiteVendorActivationSteps }` (website:commerce; GRE-3982).
+   * Sets or clears the licence activation steps a vendor's licences show, on the write key. The site refuses an agent
+   * on a published vendor (403 website_bridge_denied) and any text with a full licence key (400
+   * website_bridge_licence_key_in_text). Registered before `commerceWrite`.
+   */
+  commerceActivationSteps: "/companies/:companyId/website/sites/:siteId/commerce/vendors/:vendorId/activation-steps",
+  /**
    * POST, PATCH or DELETE → the site's `{ item }` (website:commerce): one typed write, `*path` as in
    * `websiteCommerceWriteOperation`. Registered after `commerceRefundRequests`.
    */
@@ -137,6 +144,31 @@ export const websiteCommerceRefundRequestSchema = z.object({
   reason: z.string().trim().min(1).max(2000),
 }).strict();
 export type WebsiteCommerceRefundRequestInput = z.infer<typeof websiteCommerceRefundRequestSchema>;
+
+/** The longest activation steps the site takes (GRE-3981 contract). */
+export const WEBSITE_ACTIVATION_STEPS_MAX = 20_000;
+
+/**
+ * Licence activation steps for one vendor (GRE-3981 contract): the text, or null to clear it, and the vendor's
+ * `rowVersion` as last read. The text must never hold a licence key; the site checks and refuses it.
+ */
+export const websiteVendorActivationStepsSchema = z.object({
+  activationSteps: z.string().trim().min(1).max(WEBSITE_ACTIVATION_STEPS_MAX).nullable(),
+  expectedRowVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+export type WebsiteVendorActivationStepsInput = z.infer<typeof websiteVendorActivationStepsSchema>;
+
+/** The site's answer. No licence key and no last 4: the steps are per vendor, not per licence. */
+export interface WebsiteVendorActivationSteps {
+  vendorId: string;
+  vendorName: string;
+  status: string;
+  activationSteps: string | null;
+  rowVersion: number;
+  updatedAt: string;
+  /** Live licences the steps show beside, matched as the site's account page matches them. */
+  licencesInRange: number;
+}
 
 export const COMMERCE_REFUND_REQUEST_APPROVAL_TYPE = "commerce_refund_request";
 
