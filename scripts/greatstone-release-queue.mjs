@@ -99,6 +99,8 @@ const LIVE_TAG_LINE = /^Tagged \S+ as (live-\S+?):/m;
 const STOP_CONFIRM_MS = 60_000;
 /** How many times a paused task is tried before the worker leaves it in the log. */
 const RESUME_ATTEMPTS = 5;
+/** Statuses on which a stopped assignee is woken by a `resume: true` comment; on any other it is woken directly. */
+const COMMENT_RESUME_STATUSES = new Set(["todo", "in_progress"]);
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -705,8 +707,12 @@ function createWorker(cfg) {
     }
     const name = issue?.identifier ?? issueId;
     const isAssignee = (p) => issue?.assigneeAgentId === p.agentId;
+    // Live takes `resume: true` only on these statuses and refuses it (409) on
+    // others. On in_review the reviewer is the assignee (GRE-3870, GRE-2518):
+    // that run is woken directly, like a reviewer that is not the assignee.
+    const commentWakes = (p) => isAssignee(p) && COMMENT_RESUME_STATUSES.has(issue.status);
     if (issue && entries.some((p) => p.how === "stopped" || isAssignee(p)) && !entries.some((p) => p.commentedAt)) {
-      const wake = entries.some((p) => p.how === "stopped" && isAssignee(p));
+      const wake = entries.some((p) => p.how === "stopped" && commentWakes(p));
       const c = await liveJson(cfg, "POST", `/api/issues/${encodeURIComponent(issueId)}/comments`, { body: `Paused for release ${label}; resuming.`, ...(wake ? { resume: true } : {}) });
       if (!c.ok) return all(false, `the comment on ${name} failed (${c.status})`);
       for (const p of entries) p.commentedAt = nowIso();
@@ -714,7 +720,7 @@ function createWorker(cfg) {
     const out = [];
     for (const p of entries) {
       if (p.how === "held") out.push({ ok: true, note: isAssignee(p) ? `commented on ${name}; the held run starts now` : "the held run starts on its own" });
-      else if (isAssignee(p)) out.push({ ok: true, note: `commented on ${name}; ${p.agentName ?? "its agent"} is woken` });
+      else if (commentWakes(p)) out.push({ ok: true, note: `commented on ${name}; ${p.agentName ?? "its agent"} is woken` });
       else {
         const w = await liveJson(cfg, "POST", `/api/agents/${encodeURIComponent(p.agentId)}/wakeup`, {
           source: "automation",
