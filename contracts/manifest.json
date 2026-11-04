@@ -82,7 +82,7 @@
     "site-contract/fixtures/document-request-answer.json": "7ea0101d728462ec2a4d8792b5180a41826d7ac4b2a67100115a107ac3b24269",
     "site-contract/fixtures/editor-hello-ack.json": "41882c0173b9e43fcee824f084386a8b840f421af6ce1d64dbabcee9d8962e23",
     "site-contract/fixtures/release-answer.json": "f6dc3cdc4555d22f37fd9dc4e4268253bd9ae648cabfca6fec437bea7c600d65",
-    "site-contract/schemas/bridge-error.schema.json": "82423e96de61b7d123d0a8480486781c2d2d1d5a89813691b32ddfbd6954cc26",
+    "site-contract/schemas/bridge-error.schema.json": "3580c5f5640dfe7b14222234162af5ded24e04ebee48840613aac4d527ed5287",
     "site-contract/schemas/bridge-health.schema.json": "9e86eeea6422b5a7758c57c20fdc60f3d1284c7398338ccb436785a9f1d0b546",
     "site-contract/schemas/contract-file.schema.json": "5ab97032c17bf348ebddaa4100657d1245ad74c3f52a19e157c9aeda79050070",
     "site-contract/schemas/deep-dive-sync-ack.schema.json": "55392e3ff4023ebcbe7724ace741325244a903131c699bbfd1af1d2b7eb50915",
@@ -91,5 +91,5 @@
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "b2080ebcd93e455e4e8dbe48ca640c6ed73d18f2215adcc8ac949580a1161194"
+  "contentHash": "dfc7de28365b96f1e185c8a189c63c4ef6ef3b8a1d62735cdbe951e73f5779e3"
 }

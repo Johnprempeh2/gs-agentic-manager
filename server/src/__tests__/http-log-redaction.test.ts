@@ -361,6 +361,39 @@ describe("HTTP logger redaction", () => {
     },
   );
 
+  it.each([
+    { method: "put" as const, path: "/api/companies/company-1/website/sites/site-1/commerce/vendors/vendor-1/activation-steps" },
+    { method: "patch" as const, path: "/api/companies/company-1/website/sites/site-1/commerce/vendors/vendor-1" },
+  ])(
+    "keeps refused activation steps out of $method $path failure logs",
+    async ({ method, path }) => {
+      // GRE-3982: a 400 licence_key_in_text refusal carries the licence key in free text.
+      const fakeKey = ["LIC", "-", "SYNTHETICactivationLOGcanary0000"].join("");
+      const chunks: string[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(chunk.toString());
+          callback();
+        },
+      });
+      const app = express();
+      app.use(express.json());
+      app.use(createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream)));
+      const router = express.Router();
+      router[method](path.replace(/^\/api/, ""), (_req, res) => {
+        res.status(400).json({ code: "website_bridge_licence_key_in_text" });
+      });
+      app.use("/api", router);
+      await request(app)[method](path)
+        .send({ activationSteps: `1. Enter ${fakeKey}`, activationInstructions: `Use ${fakeKey}`, expectedRowVersion: 1 })
+        .expect(400);
+      const line = chunks.join("");
+      expect(line).toContain("400");
+      expect(line).not.toContain(fakeKey);
+      expect(JSON.parse(line.trim()).reqBody).toBe("[REDACTED]");
+    },
+  );
+
   it("defines the HTTP auth and cookie header paths that must be redacted", () => {
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.authorization");
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.cookie");

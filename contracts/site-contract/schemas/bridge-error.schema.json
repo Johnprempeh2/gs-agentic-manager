@@ -11,7 +11,7 @@
       "properties": {
         "code": {
           "enum": ["bad_key", "expired", "bad_signature", "replay", "capability_denied", "ip_denied", "not_found", "bad_request", "unavailable",
-            "conflict", "denied", "idempotency_mismatch", "over_refundable"]
+            "conflict", "denied", "idempotency_mismatch", "over_refundable", "licence_key_in_text"]
         }
       }
     }

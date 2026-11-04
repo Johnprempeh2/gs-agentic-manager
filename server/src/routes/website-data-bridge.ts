@@ -13,6 +13,7 @@ import {
   websiteCommerceRefundRequestSchema,
   websiteCommerceWriteOperation,
   websitePaymentReportQuerySchema,
+  websiteVendorActivationStepsSchema,
   type PermissionKey,
   type WebsiteCommerceWriteMethod,
   type WebsiteCommerceResource,
@@ -272,6 +273,34 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     });
     // 202: the card is open, but the site's answer was lost; deciding the card records the request first.
     res.status(result.confirmed ? 201 : 202).json({ approval: result.approval, request: result.request });
+  });
+
+  // Licence activation steps (GRE-3982), per vendor. The text is customer-facing and must never hold a licence key:
+  // the site refuses one (400 licence_key_in_text). Neither the text nor the site's answer goes to the activity log,
+  // and the HTTP log leaves this route's body out (http-log-policy).
+  router.put(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceActivationSteps, async (req, res) => {
+    const site = await siteFor(req, res, "website:commerce");
+    if (!site) return;
+    const vendorId = req.params.vendorId as string;
+    if (!UUID_RE.test(vendorId)) {
+      res.status(404).json({ error: "The website has no such record.", code: "website_bridge_not_found" });
+      return;
+    }
+    queryOf(NO_QUERY, req);
+    const input = websiteVendorActivationStepsSchema.safeParse(req.body);
+    if (!input.success) {
+      throw unprocessable(`The activation steps are not valid: ${input.error.issues[0]?.path.join(".") || "body"}`,
+        { code: "website_commerce_activation_steps_invalid" });
+    }
+    const result = await bridge.commerce.putActivationSteps(site, vendorId, input.data, actorOf(req), idempotencyKeyOf(req));
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.commerce_changed",
+      entityType: "website_site", entityId: site.id, agentId: actor.agentId, runId: actor.runId,
+      details: { operation: "vendors.activation_steps", path: `vendors/${vendorId}/activation-steps`, rowId: result.item.vendorId,
+        cleared: result.item.activationSteps === null, rowVersion: result.item.rowVersion },
+    });
+    res.json(result);
   });
 
   async function commerceWrite(req: Request, res: Response, method: WebsiteCommerceWriteMethod) {
