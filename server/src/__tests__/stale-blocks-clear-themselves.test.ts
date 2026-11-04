@@ -85,7 +85,7 @@ describeEmbeddedPostgres("GRE-2286: stale blocks clear themselves", () => {
 
   async function seedFixture() {
     const nonce = randomUUID().slice(0, 8);
-    const prefix = `SB${nonce.slice(0, 4).toUpperCase()}`;
+    const prefix = `SB${nonce.toUpperCase()}`;
     const [company] = await db.insert(companies).values({
       name: `Stale blocks ${nonce}`,
       issuePrefix: prefix,
