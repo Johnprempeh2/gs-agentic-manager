@@ -334,8 +334,14 @@ export const updateAgentPermissionsSchema = z.object({
   // Website access (GRE-2239): board users with users:manage_permissions
   // only. No publish level; website:publish is for people only.
   websiteAccess: z.enum(AGENT_WEBSITE_ACCESS_LEVELS).optional(),
+  // Limits websiteAccess to one site of this company (GRE-3992). Null or
+  // absent: every site. Sent only together with websiteAccess.
+  websiteSiteId: z.string().uuid().nullable().optional(),
   trustPreset: trustPresetSchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
+}).refine((body) => !body.websiteSiteId || body.websiteAccess, {
+  message: "websiteSiteId needs websiteAccess",
+  path: ["websiteSiteId"],
 });
 
 export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;
