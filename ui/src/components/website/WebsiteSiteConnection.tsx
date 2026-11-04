@@ -10,6 +10,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { RadioCardGroup } from "@/components/ui/radio-card";
 import { errorStateMessage } from "../ErrorState";
 import { WebsiteDataBridgeRow } from "./WebsiteDataBridgeRow";
+import { WebsiteHtmlImport } from "./WebsiteHtmlImport";
 
 // Connect a site (GRE-2105): the website module's site row for this website
 // property. The Netlify token goes into the company's secrets; the page only
@@ -373,6 +374,7 @@ export function WebsiteSiteConnection({ companyId, property }: { companyId: stri
             <Detail label="In development">{site.devPreviewUrl ? <span className="font-mono">{site.devPreviewUrl}</span> : site.editorFrameOrigin ? "The editor address" : "Not set"}</Detail>
             <Detail label="Site version">{site.engineVersion ? <span className="font-mono">{site.engineVersion}</span> : "Not checked yet. Saving a token checks it."}</Detail>
           </dl>
+          {canManage && !site.archivedAt ? <WebsiteHtmlImport companyId={companyId} site={site} /> : null}
         </div>
       ) : (
         <div className="space-y-3">

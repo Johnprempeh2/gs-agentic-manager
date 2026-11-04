@@ -31,6 +31,7 @@ import {
   type WebsiteSite,
   type WebsiteTokenSecretOption,
   type WebsiteAccess,
+  type WebsiteHtmlImportResult,
   type WebsiteGoogleConnectStart,
   type WebsiteHub,
   type WebsiteOverview,
@@ -159,6 +160,9 @@ export const websiteModuleApi = {
   media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
   entries: (companyId: string, siteId: string, collection: string) =>
     api.get<WebsiteEntry[]>(`${sitePath(companyId, siteId)}/entries?collection=${encodeURIComponent(collection)}`),
+  /** Import a schema 2 release file as HTML drafts (people, website:edit). Nothing is published. */
+  importHtml: (companyId: string, siteId: string, file: unknown) =>
+    api.post<WebsiteHtmlImportResult>(`${sitePath(companyId, siteId)}/import-html`, file),
   importPublicDrafts: (companyId: string, siteId: string) =>
     api.post<{ imported: number; skipped: number; capturedAt: string }>(`${sitePath(companyId, siteId)}/entries/import-public-drafts`, {}),
   entry: (companyId: string, siteId: string, entryId: string) =>
