@@ -5,6 +5,9 @@ import {
   type CreateWebsiteSitemapOption,
   type UpdateWebsiteSitemapOption,
   type WebsiteSitemapApproveResult,
+  type ApproveWebsiteReview,
+  type WebsiteReviewApproveResult,
+  type WebsiteReviewQueue,
   type WebsiteSitemapOption,
   type CreateWebsiteProperty,
   type CreateWebsiteSite,
@@ -177,6 +180,11 @@ export const websiteModuleApi = {
     api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/submit`, {}),
   approveEntry: (companyId: string, siteId: string, entryId: string) =>
     api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/approve`, {}),
+  /** Every page and entry in review (GRE-4078). */
+  review: (companyId: string, siteId: string) => api.get<WebsiteReviewQueue>(`${sitePath(companyId, siteId)}/review`),
+  /** Approve every item in review, or the chosen ids (website:publish, people only). Nothing is published. */
+  approveReview: (companyId: string, siteId: string, input: ApproveWebsiteReview = {}) =>
+    api.post<WebsiteReviewApproveResult>(`${sitePath(companyId, siteId)}/review/approve`, input),
   archiveEntry: (companyId: string, siteId: string, entryId: string) =>
     api.post<WebsiteEntry>(`${entryPath(companyId, siteId, entryId)}/archive`, {}),
   entryRevisions: (companyId: string, siteId: string, entryId: string) =>

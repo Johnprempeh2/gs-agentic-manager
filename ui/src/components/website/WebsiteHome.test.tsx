@@ -10,7 +10,7 @@ import type { DecisionCard, WebsiteHomeSummary, WebsiteProperty, WebsiteSite } f
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const websiteApiMock = vi.hoisted(() => ({ hub: vi.fn(), report: vi.fn(), update: vi.fn() }));
-const moduleApiMock = vi.hoisted(() => ({ sites: vi.fn(), home: vi.fn() }));
+const moduleApiMock = vi.hoisted(() => ({ sites: vi.fn(), home: vi.fn(), review: vi.fn().mockResolvedValue({ pages: [], entries: [] }) }));
 const projectsMock = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), getTree: vi.fn() }));
 const feedMock = vi.hoisted(() => ({ cards: [] as DecisionCard[] }));
 const motionMock = vi.hoisted(() => ({ reduced: false }));

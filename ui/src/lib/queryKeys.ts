@@ -695,6 +695,7 @@ export const queryKeys = {
     tokenSecrets: (companyId: string) => ["website", companyId, "token-secrets"] as const,
     access: (companyId: string, siteId: string | null) => ["website", companyId, "access", siteId] as const,
     pages: (companyId: string, siteId: string) => ["website", companyId, "pages", siteId] as const,
+    review: (companyId: string, siteId: string) => ["website", companyId, "review", siteId] as const,
     revisions: (companyId: string, siteId: string, pageId: string) =>
       ["website", companyId, "revisions", siteId, pageId] as const,
     media: (companyId: string, siteId: string) => ["website", companyId, "media", siteId] as const,
