@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { DEEP_DIVE_SYNC_API_ROUTES, WEBSITE_API_ROUTES, WEBSITE_BRIDGE_INBOUND_ROUTES, WEBSITE_DATA_BRIDGE_API_ROUTES, WEBSITE_FEATURES_API_ROUTES, WEBSITE_MODULE_API_ROUTES, WEBSITE_SITEMAP_API_ROUTES } from "@greatstone/shared";
+import { DEEP_DIVE_SYNC_API_ROUTES, WEBSITE_ACCESS_API_ROUTES, WEBSITE_API_ROUTES, WEBSITE_BRIDGE_INBOUND_ROUTES, WEBSITE_DATA_BRIDGE_API_ROUTES, WEBSITE_FEATURES_API_ROUTES, WEBSITE_MODULE_API_ROUTES, WEBSITE_SITEMAP_API_ROUTES } from "@greatstone/shared";
 import { COMPANY_IMPORT_TRANSFERS_ROUTE_PATH } from "@greatstone/shared/company-import-transfer";
 import { errorHandler } from "../middleware/index.js";
 import { buildOpenApiSpec, openApiRoutes } from "../routes/openapi.js";
@@ -228,6 +228,9 @@ const routePathIdentifiers: Record<string, string> = {
       `WEBSITE_DATA_BRIDGE_API_ROUTES.${key}`,
       value,
     ]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(WEBSITE_ACCESS_API_ROUTES).map(([key, value]) => [`WEBSITE_ACCESS_API_ROUTES.${key}`, value]),
   ),
   ...Object.fromEntries(
     Object.entries(DEEP_DIVE_SYNC_API_ROUTES).map(([key, value]) => [`DEEP_DIVE_SYNC_API_ROUTES.${key}`, value]),

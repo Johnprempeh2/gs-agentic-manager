@@ -851,6 +851,9 @@ export const APPROVAL_TYPES = [
   // An agent asks to publish or archive a catalogue record; a person with website:commerce approves it and GSAM
   // publishes it in their name. A change to the record after the ask voids the card (GRE-4089).
   "commerce_publish_request",
+  // An agent asks to change a website's staff role, portal approver or client member; a person with website:publish
+  // approves it and GSAM makes the change in their name. A change to the row after the ask voids the card (GRE-4085).
+  "website_access_change",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

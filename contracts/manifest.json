@@ -71,7 +71,7 @@
   "files": {
     "README.md": "f25b3eab94a4393fd4665db18432126fd5bfbafc8d8cdc3d47eec5c2d8391897",
     "check.mjs": "6b4600cf8d64d530ecf0fed884d836193601313f6353593c33f0a5a9d0f51e89",
-    "gs-bridge-v1/README.md": "0e1d8494920376d79d9bc879509d63c9027ffba4f68f9450243cb36096e613c8",
+    "gs-bridge-v1/README.md": "f3d8c7ccc6ef576b4ff3e99d7a73e1aa9545d1a71e4f6138cf856199f322650f",
     "gs-bridge-v1/vectors.json": "632412d9c99fff90d93b4a32715382a08d1d2983f02feaf1f3bf702594475cd7",
     "gs-interview-v1/README.md": "caaaae40633578e29f722179b27ae5491b8d43922ff610c93b96dcdf45f0e302",
     "site-contract/fixtures/bridge-error.json": "e9d147cce082b3d75f821f171efc2f7e5d76416c0bcb5f2632f8591d800689a7",
@@ -91,5 +91,5 @@
     "site-contract/schemas/editor-hello-ack.schema.json": "7b5e160b5136c1ae4d086706a0abf19d6869c409fc5eee4476d3cb421b347a32",
     "site-contract/schemas/release-answer.schema.json": "1badda7c288be3c048ca19ede76f029b38b8ca59d6f552d0b44d79b8b1b99c5b"
   },
-  "contentHash": "dfc7de28365b96f1e185c8a189c63c4ef6ef3b8a1d62735cdbe951e73f5779e3"
+  "contentHash": "ccfda1e1e3fde7c48304218a1937d283e04605080e4294780dcbd52240cf947b"
 }

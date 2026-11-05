@@ -8,6 +8,7 @@ import {
   WEBSITE_PUBLISH_APPROVAL_TYPE,
   COMMERCE_REFUND_REQUEST_APPROVAL_TYPE,
   COMMERCE_PUBLISH_REQUEST_APPROVAL_TYPE,
+  WEBSITE_ACCESS_CHANGE_APPROVAL_TYPE,
   addApprovalCommentSchema,
   createApprovalSchema,
   requestApprovalRevisionSchema,
@@ -49,6 +50,7 @@ import { REVIEW_PATH_RECOVERY_INSTRUCTION } from "../services/recovery/review-pa
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
 import { commercePublishApprovals, type TellRequester } from "../services/website/commerce-publish-approval.js";
+import { websiteAccessService } from "../services/website/access.js";
 import type { WebsiteDataBridgeOptions } from "../services/website/data-bridge.js";
 
 function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
@@ -89,8 +91,8 @@ export function approvalRoutes(
   });
   const websitePublish = websitePublishApprovals(db);
   const commerceRefunds = commerceRefundApprovals(db, options.websiteDataBridge);
-  // GRE-4089: a rejected or void publish request is told to the asker, on its task and with a wake.
-  const tellPublishRequester: TellRequester = async (approval, message, outcome, userId) => {
+  // GRE-4089, GRE-4085: a rejected or void ask (publish, access change) is told to the asker, on its task and with a wake.
+  const tellRequester = (kind: string): TellRequester => async (approval, message, outcome, userId) => {
     const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
     for (const issue of linkedIssues) await issuesSvc.addComment(issue.id, message, { userId });
     if (!approval.requestedByAgentId) return;
@@ -101,17 +103,18 @@ export function approvalRoutes(
         source: "automation",
         triggerDetail: "system",
         reason: wakeReason,
-        idempotencyKey: `commerce-publish-request:${approval.id}:${outcome}`,
+        idempotencyKey: `${kind}:${approval.id}:${outcome}`,
         payload: { approvalId: approval.id, approvalStatus: outcome, issueId, message },
         requestedByActorType: "user",
         requestedByActorId: userId,
         contextSnapshot: { source: `approval.${outcome}`, approvalId: approval.id, approvalStatus: outcome, issueId, taskId: issueId, wakeReason },
       });
     } catch (err) {
-      logger.warn({ err, approvalId: approval.id, requestedByAgentId: approval.requestedByAgentId }, "failed to wake the publish requester");
+      logger.warn({ err, approvalId: approval.id, requestedByAgentId: approval.requestedByAgentId }, "failed to wake the requester");
     }
   };
-  const commercePublish = commercePublishApprovals(db, options.websiteDataBridge, tellPublishRequester);
+  const commercePublish = commercePublishApprovals(db, options.websiteDataBridge, tellRequester("commerce-publish-request"));
+  const websiteAccess = websiteAccessService(db, options.websiteDataBridge, tellRequester("website-access-change"));
   const strictSecretsMode = process.env.GSAM_SECRETS_STRICT_MODE === "true";
 
   async function lostReviewPathIssueIds(
@@ -348,6 +351,10 @@ export function approvalRoutes(
     if (approvalInput.type === COMMERCE_PUBLISH_REQUEST_APPROVAL_TYPE) {
       throw unprocessable("Ask to publish with POST /api/companies/:companyId/website/sites/:siteId/commerce/publish-requests");
     }
+    // GRE-4085: the card holds the row as the site gave it, never a caller's copy.
+    if (approvalInput.type === WEBSITE_ACCESS_CHANGE_APPROVAL_TYPE) {
+      throw unprocessable("Ask for an access change with POST /api/companies/:companyId/website/sites/:siteId/access/change-requests");
+    }
     const normalizedPayload =
       approvalInput.type === "hire_agent"
         ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
@@ -415,6 +422,7 @@ export function approvalRoutes(
     await websitePublish.assertCanStart(existing);
     await commerceRefunds.assertCanDecide(req.actor, existing);
     await commercePublish.assertCanDecide(req.actor, existing);
+    await websiteAccess.assertCanDecide(req.actor, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const resolved = await svc.approve(id, decidedByUserId, req.body.decisionNote);
     const { applied } = resolved;
@@ -424,6 +432,8 @@ export function approvalRoutes(
     if (applied) approval = await commerceRefunds.applyDecision(approval, "approved", decidedByUserId);
     // GRE-4089: the catalogue change is published in the approver's name, once; a changed record voids the card.
     if (applied) approval = await commercePublish.applyApproval(approval, decidedByUserId);
+    // GRE-4085: the access change is made in the approver's name, once; a changed row voids the card.
+    if (applied) approval = await websiteAccess.applyApproval(approval, decidedByUserId);
     // Applied after the card: the budget sweep settles it if the server stops in between.
     if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
@@ -546,11 +556,13 @@ export function approvalRoutes(
     await websitePublish.assertCanDecide(req.actor, existing);
     await commerceRefunds.assertCanDecide(req.actor, existing);
     await commercePublish.assertCanDecide(req.actor, existing);
+    await websiteAccess.assertCanDecide(req.actor, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const rejected = await svc.reject(id, decidedByUserId, req.body.decisionNote);
     const { applied } = rejected;
     const approval = applied ? await commerceRefunds.applyDecision(rejected.approval, "rejected", decidedByUserId) : rejected.approval;
     if (applied) await commercePublish.applyRejection(approval, decidedByUserId, req.body.decisionNote);
+    if (applied) await websiteAccess.applyRejection(approval, decidedByUserId, req.body.decisionNote);
     if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
     if (applied) {
@@ -601,6 +613,9 @@ export function approvalRoutes(
       if (existing.type === COMMERCE_PUBLISH_REQUEST_APPROVAL_TYPE) {
         throw unprocessable("A publish request can only be approved or rejected");
       }
+      if (existing.type === WEBSITE_ACCESS_CHANGE_APPROVAL_TYPE) {
+        throw unprocessable("An access change can only be approved or rejected");
+      }
       await assertCanDecideSpendingApproval(req, existing);
       await websitePublish.assertCanDecide(req.actor, existing);
       const decidedByUserId = req.actor.userId ?? "board";
@@ -632,6 +647,9 @@ export function approvalRoutes(
     }
     if (existing.type === WEBSITE_PUBLISH_APPROVAL_TYPE && req.body.payload) {
       throw unprocessable("A Publish proposal is built by the server. Propose again with POST /api/companies/:companyId/website/sites/:siteId/publish-proposals");
+    }
+    if (existing.type === WEBSITE_ACCESS_CHANGE_APPROVAL_TYPE) {
+      throw unprocessable("An access change is not resubmitted. Ask again with POST /api/companies/:companyId/website/sites/:siteId/access/change-requests");
     }
     if (existing.type === COMMERCE_PUBLISH_REQUEST_APPROVAL_TYPE) {
       throw unprocessable("A publish request is not resubmitted. Ask again with POST /api/companies/:companyId/website/sites/:siteId/commerce/publish-requests");

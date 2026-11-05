@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createHttpLogger } from "../middleware/logger.js";
 import {
   isMcpSseStreamRefusal,
+  isMemoryContentHttpRequest,
   isPrivateWebhookHttpRequest,
   isSecretSensitiveHttpRequest,
   shouldSilenceHttpSuccessLog,
@@ -232,5 +233,15 @@ describe("shouldSilenceHttpSuccessLog", () => {
         404,
       ),
     ).toBe(false);
+  });
+});
+
+describe("isMemoryContentHttpRequest: website access (GRE-4085)", () => {
+  it("leaves a client member's email and name out of failure logs", () => {
+    const site = "/api/companies/c1/website/sites/s1/access";
+    expect(isMemoryContentHttpRequest("POST", `${site}/clients/k1/members`)).toBe(true);
+    expect(isMemoryContentHttpRequest("POST", `${site}/change-requests`)).toBe(true);
+    expect(isMemoryContentHttpRequest("GET", `${site}/clients/k1/members`)).toBe(false);
+    expect(isMemoryContentHttpRequest("PATCH", `${site}/staff/x`)).toBe(false);
   });
 });
