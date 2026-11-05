@@ -113,7 +113,8 @@ const htmlReleaseImportSchema = z.object({
     html: z.string().min(1).max(1_500_000),
     css: z.string().max(500_000).default(""),
     seo: z.record(z.string(), z.unknown()).optional(),
-    menu: z.enum(["header", "footer", "none"]).optional(),
+    /** The export writes null for a page in no menu; the import stores it as "none". */
+    menu: z.enum(["header", "footer", "none"]).nullable().optional(),
     menuOrder: z.number().int().nullable().optional(),
     navOrder: z.number().int().nullable().optional(),
   })).min(1).max(500),
