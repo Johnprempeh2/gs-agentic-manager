@@ -248,4 +248,18 @@ describe("live design through Impeccable's page tools", () => {
     expect(liveDesignAcceptsPage(s, "w1")).toBe(true);
     expect(liveDesignAcceptsPage(s, "old")).toBe(false);
   });
+
+  it("a comment on one version brings back a revised set the page swaps in", async () => {
+    const { session: s } = startLiveDesign(ids);
+    void pollLiveDesign(s, 10);
+    handleImpeccableRequest(s, post({ type: "generate", id: "imp77", action: "impeccable", freeformPrompt: "Logo carousel", count: 2,
+      element: { tagName: "section", textContent: "", outerHTML: "<section></section>", anchor: "section" } }, "section"));
+    replyLiveDesign(s, { requestId: "imp77", variants: [{ html: "<div>a</div>", css: "", name: "Paged" }, { html: "<div>b</div>", css: "", name: "Ticker" }] });
+    steerLiveDesign(s, 'About version 2 ("Ticker"): slower');
+    const cursor = s.frames.length;
+    expect(replyLiveDesign(s, { requestId: "imp77", variants: [{ html: "<div>a</div>", css: "", name: "Paged" }, { html: "<div>slow</div>", css: "", name: "Ticker" }] })).toEqual({ ok: true });
+    expect(s.status).toBe("ready");
+    expect(s.variants[1].html).toBe("<div>slow</div>");
+    expect(s.frames.slice(cursor).some((f) => f.data.type === "done" && String(f.data.gsVariantsHtml).includes("slow"))).toBe(true);
+  });
 });

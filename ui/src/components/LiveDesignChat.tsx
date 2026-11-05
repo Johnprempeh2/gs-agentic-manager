@@ -97,6 +97,10 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
   const { selectedCompanyId } = useCompany();
   const [picking, setPicking] = useState(false);
   const status = view?.status;
+  // While versions are on the page, a comment can be about one of them.
+  const versions = status === "ready" ? view?.variants ?? [] : [];
+  const [about, setAbout] = useState<number | null>(null);
+  useEffect(() => setAbout(null), [view?.request?.id]);
   const elapsed = useElapsed(view?.request?.startedAt, status === "generating");
   const listRef = useRef<HTMLOListElement>(null);
   const messageCount = view?.messages.length ?? 0;
@@ -108,7 +112,8 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
   const send = () => {
     if (!note.trim() || !view || status === "ended") return;
     dictation.cancel();
-    void run((id) => liveDesignApi.steer(id, note.trim())).then((ok) => ok && setNote(""));
+    const target = about !== null && versions[about] ? `About version ${about + 1} ("${versions[about].name}"): ` : "";
+    void run((id) => liveDesignApi.steer(id, target + note.trim())).then((ok) => ok && setNote(""));
   };
 
   return (
@@ -160,6 +165,24 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           send();
         }}
       >
+        {versions.length ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Comment on">
+            <span className="text-xs text-muted-foreground">Comment on</span>
+            {[null, ...versions.map((_, i) => i)].map((i) => (
+              <Button
+                key={i ?? "all"}
+                type="button"
+                size="sm"
+                variant={about === i ? "secondary" : "ghost"}
+                aria-pressed={about === i}
+                className="h-7 px-2 text-xs"
+                onClick={() => setAbout(i)}
+              >
+                {i === null ? "All" : `${i + 1} ${versions[i].name}`}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
         <Textarea
           value={note}
@@ -172,7 +195,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           }}
           rows={2}
           className="min-h-0 flex-1 resize-none"
-          placeholder="Ask for a change, for example: tighten the spacing on the whole page"
+          placeholder={about !== null ? `Your comment on version ${about + 1}` : "Ask for a change, for example: tighten the spacing on the whole page"}
           disabled={!view || status === "ended"}
           aria-label="Message the agent"
         />
