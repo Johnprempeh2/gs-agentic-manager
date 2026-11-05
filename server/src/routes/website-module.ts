@@ -25,6 +25,7 @@ import {
   restoreWebsiteRevisionSchema,
   saveWebsiteContentSchema,
   sendBackWebsiteContentSchema,
+  approveWebsiteReviewSchema,
   updateWebsiteEntrySchema,
   updateWebsitePageSchema,
   updateWebsiteSiteSchema,
@@ -34,6 +35,7 @@ import {
   type PermissionKey,
   type WebsiteAccess,
   type WebsiteChangeImage,
+  type WebsiteReviewApproveResult,
   type WebsiteSaveResult,
 } from "@greatstone/shared";
 import { HttpError, conflict, unprocessable } from "../errors.js";
@@ -1003,6 +1005,60 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     await log(req, page.companyId, "website.page_sent_back", "website_page", page.id, { siteId: page.siteId, note: req.body.note });
     const { doc } = await service.withDoc(updated);
     res.json(toWebsitePage(updated, doc));
+  });
+
+  // ---- bulk approve (GRE-4078): every item in review, or the chosen ones, in one click; nothing is published ----
+
+  router.get(WEBSITE_MODULE_API_ROUTES.review, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await service.listInReview(site.companyId, site.id));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.reviewApprove, validate(approveWebsiteReviewSchema), async (req, res) => {
+    const site = await siteFor(req, res, "website:publish", APPROVER);
+    if (!site) return;
+    const rows = await service.reviewRows(site.companyId, site.id, req.body);
+    const result: WebsiteReviewApproveResult = { approvedPageIds: [], approvedEntryIds: [], skipped: [] };
+    const NOT_IN_REVIEW = WEBSITE_MESSAGES["review.approve_not_in_review"];
+    /** A refusal one approve would give (422) skips that item; anything else stops the run. */
+    async function attempt(kind: "page" | "entry", id: string, title: string, work: () => Promise<boolean>) {
+      try {
+        if (!(await work())) result.skipped.push({ kind, id, title, reason: NOT_IN_REVIEW });
+      } catch (err) {
+        if (!(err instanceof HttpError) || err.status !== 422) throw err;
+        result.skipped.push({ kind, id, title, reason: err.message });
+      }
+    }
+    for (const page of rows.pages) {
+      await attempt("page", page.id, page.title, async () => {
+        const updated = await service.approvePageInReview(page);
+        if (!updated) return false;
+        // The same record a single approve makes.
+        await log(req, page.companyId, "website.page_approved", "website_page", page.id, { siteId: page.siteId, revisionId: updated.approvedRevisionId });
+        result.approvedPageIds.push(page.id);
+        return true;
+      });
+    }
+    for (const entry of rows.entries) {
+      await attempt("entry", entry.id, `${entry.collection}/${entry.entryKey}`, async () => {
+        if (entry.status === "review") {
+          const detail = await service.entryDetail(entry);
+          await assertEntryFields(entry.companyId, entry.collection, detail?.content);
+        }
+        const updated = await service.approveEntryInReview(entry);
+        if (!updated) return false;
+        await log(req, entry.companyId, "website.entry_approved", "website_entry", entry.id, { siteId: entry.siteId, revisionId: updated.approvedRevisionId });
+        result.approvedEntryIds.push(entry.id);
+        return true;
+      });
+    }
+    await log(req, site.companyId, "website.review_bulk_approved", "website_site", site.id, {
+      pages: result.approvedPageIds.length,
+      entries: result.approvedEntryIds.length,
+      skipped: result.skipped.length,
+    });
+    res.json(result);
   });
 
   // ---- entries ----

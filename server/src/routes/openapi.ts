@@ -463,6 +463,7 @@ import {
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
   sendBackWebsiteContentSchema,
+  approveWebsiteReviewSchema,
   createWebsiteSitemapOptionSchema,
   importWebsiteSitemapOptionSchema,
   updateWebsiteSitemapOptionSchema,
@@ -16844,6 +16845,24 @@ for (const kind of ["pages", "entries"] as const) {
     responses: websiteReviewResponses,
   });
 }
+
+// Bulk approve (GRE-4078): one click for every page and entry in review.
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/review`,
+  tags: ["website"],
+  summary: "Every page and entry in review on the site (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/review/approve`,
+  tags: ["website"],
+  summary: "Approve every page and entry in review, or only the given ids, with the same record a single approve makes (website:publish, people only; an agent gets 403). Items not in review are not changed. Nothing is published",
+  body: approveWebsiteReviewSchema,
+  responses: websiteReviewResponses,
+});
 
 registerCurrentRoute({
   method: "post",
