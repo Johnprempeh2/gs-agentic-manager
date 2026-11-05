@@ -205,6 +205,24 @@ const ADAPTER = String.raw`(function () {
 
   // Versions arrive as Impeccable's own wrapper; the live element moves into the "original" slot.
   function insertVariants(id, html) {
+    var t0 = document.createElement("template");
+    t0.innerHTML = String(html);
+    var next = t0.content.firstElementChild;
+    // Revised versions (John commented on one): swap them into the open wrapper, keeping which one shows.
+    var open = next && Array.prototype.find.call(document.querySelectorAll("[data-impeccable-variants]"), function (w) { return w.getAttribute("data-impeccable-variants") === String(id); });
+    if (open) {
+      var olds = open.querySelectorAll(':scope > [data-impeccable-variant]:not([data-impeccable-variant="original"]), :scope > style[data-impeccable-css]');
+      var shown = {};
+      Array.prototype.forEach.call(olds, function (o) { if (o.hasAttribute("data-impeccable-variant")) shown[o.getAttribute("data-impeccable-variant")] = o.style.display; o.remove(); });
+      Array.prototype.slice.call(next.children).forEach(function (c) {
+        if (c.getAttribute("data-impeccable-variant") === "original") return;
+        var n = c.getAttribute("data-impeccable-variant");
+        if (n && n in shown) c.style.display = shown[n];
+        open.appendChild(c);
+      });
+      open.setAttribute("data-impeccable-variant-count", next.getAttribute("data-impeccable-variant-count") || "");
+      return;
+    }
     var el = picked[id];
     if (!el || !el.isConnected) return;
     var t = document.createElement("template");

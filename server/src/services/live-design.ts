@@ -452,10 +452,12 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   }
   // Versions answer John's last note; discarding them must not send it again.
   if (reply.variants?.length) s.lastSteer = null;
-  if (s.status === "generating" && reply.variants?.length) {
+  // "ready" too: after a comment on a version, the agent sends the revised set for the same request.
+  if ((s.status === "generating" || s.status === "ready") && reply.variants?.length) {
+    const revised = s.status === "ready";
     s.variants = reply.variants;
     s.status = "ready";
-    say(s, "gsam", `${reply.variants.length} version${reply.variants.length === 1 ? "" : "s"} ready. Flick through them on the page, then accept one.`);
+    say(s, "gsam", revised ? "Versions updated on the page." : `${reply.variants.length} version${reply.variants.length === 1 ? "" : "s"} ready. Flick through them on the page, then accept one.`);
     // The editor inserts the wrapper into the page, then hands Impeccable the "done".
     frame(s, { type: "done", id: reply.requestId, gsVariantsHtml: impeccableVariantsHtml(reply.requestId, reply.variants, !!s.request.insert), message: reply.message ?? null });
     return { ok: true };
@@ -666,7 +668,7 @@ function withInstructions(s: Session, event: AgentEvent) {
       return {
         ...base,
         _instructions: event.requestId
-          ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. Answer him with a short "message" reply.`
+          ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. If the note starts "About version N", it is about that version: revise it and send all versions again in the same order, the others unchanged. Answer him with a short "message" reply.`
           : [
               `John wrote in the chat: "${event.message}".`,
               `If it needs more than a quick answer, first ${replyCall(s.id)} and jsonBody { "requestId": "page", "message": "<one plain sentence: what you are about to do>" } so he knows you are on it, then do the work.`,
