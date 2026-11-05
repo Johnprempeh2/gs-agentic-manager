@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import type { Db } from "@greatstone/db";
+import { and, eq } from "drizzle-orm";
+import { issues, type Db } from "@greatstone/db";
 import {
   WEBSITE_COMMERCE_RESOURCES,
   WEBSITE_DATA_BRIDGE_API_ROUTES,
@@ -11,6 +12,7 @@ import {
   websiteDataListQuerySchema,
   websiteActivityEventsQuerySchema,
   websiteCommerceRefundRequestSchema,
+  websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
   websitePaymentReportQuerySchema,
   websiteVendorActivationStepsSchema,
@@ -21,12 +23,13 @@ import {
 } from "@greatstone/shared";
 import { HttpError, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { accessService, logActivity } from "../services/index.js";
+import { accessService, issueApprovalService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { websiteModuleService, type SiteRow } from "../services/website/module.js";
 import { WEBSITE_MESSAGES } from "../services/website/messages.js";
 import { websiteDataBridgeService, type WebsiteDataBridgeOptions } from "../services/website/data-bridge.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
+import { commercePublishApprovals } from "../services/website/commerce-publish-approval.js";
 import { websiteActivityService } from "../services/website/activity.js";
 import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -46,6 +49,8 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   const access = accessService(db);
   const bridge = websiteDataBridgeService(db, options);
   const refunds = commerceRefundApprovals(db, options);
+  const publishRequests = commercePublishApprovals(db, options);
+  const issueApprovals = issueApprovalService(db);
   const activity = websiteActivityService(db, { read: async () => { throw new Error("Activity reads cannot pull the website"); } });
 
   router.use("/companies/:companyId/website/sites/:siteId/data-bridge", requireEntitlement(db, "enableWebsiteView"));
@@ -273,6 +278,44 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     });
     // 202: the card is open, but the site's answer was lost; deciding the card records the request first.
     res.status(result.confirmed ? 201 : 202).json({ approval: result.approval, request: result.request });
+  });
+
+  // Publish requests (GRE-4089): an agent asks; a person approves on the card and GSAM publishes in their name. This
+  // route makes no write call, so direct publish stays people only (website_commerce_people_only).
+  router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.commercePublishRequests, async (req, res) => {
+    const site = await siteFor(req, res, "website:commerce");
+    if (!site) return;
+    const input = websiteCommercePublishRequestSchema.safeParse(req.body);
+    if (!input.success) {
+      throw unprocessable(`The publish request is not valid: ${input.error.issues[0]?.path.join(".") || "body"}`, { code: "website_commerce_publish_request_invalid" });
+    }
+    if (input.data.issueId) {
+      const [issue] = await db.select({ id: issues.id }).from(issues)
+        .where(and(eq(issues.id, input.data.issueId), eq(issues.companyId, site.companyId))).limit(1);
+      if (!issue) throw unprocessable("No such task in this company", { code: "website_commerce_publish_request_invalid" });
+    }
+    const actor = getActorInfo(req);
+    const result = await publishRequests.request(site, input.data, {
+      agentId: actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+      bridge: actorOf(req),
+    });
+    if (input.data.issueId) {
+      await issueApprovals.linkManyForApproval(result.approval.id, [input.data.issueId], {
+        agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    }
+    if (result.replayed) {
+      res.status(200).json({ approval: result.approval });
+      return;
+    }
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.commerce_publish_requested",
+      entityType: "approval", entityId: result.approval.id, agentId: actor.agentId, runId: actor.runId,
+      details: { siteId: site.id, resource: input.data.resource, itemId: input.data.id, action: input.data.action,
+        issueId: input.data.issueId ?? null },
+    });
+    res.status(201).json({ approval: result.approval });
   });
 
   // Licence activation steps (GRE-3982), per vendor. The text is customer-facing and must never hold a licence key:

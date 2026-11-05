@@ -848,6 +848,9 @@ export const APPROVAL_TYPES = [
   // An agent or a person asks for a refund on a website order; the site records the request and a person with
   // website:commerce decides it on the card, in their own name. GSAM moves no money (GRE-2354 2c(b)).
   "commerce_refund_request",
+  // An agent asks to publish or archive a catalogue record; a person with website:commerce approves it and GSAM
+  // publishes it in their name. A change to the record after the ask voids the card (GRE-4089).
+  "commerce_publish_request",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

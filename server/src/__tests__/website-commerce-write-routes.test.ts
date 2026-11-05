@@ -5,7 +5,7 @@ import { createHash, createPublicKey, randomUUID, verify } from "node:crypto";
 import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   activityLog,
   agentWakeupRequests,
@@ -20,6 +20,8 @@ import {
   heartbeatRuns,
   instanceSettings,
   issueApprovals,
+  issueComments,
+  issues,
   principalPermissionGrants,
   secretAccessEvents,
   websiteSite,
@@ -33,6 +35,19 @@ import { websiteDataBridgeRoutes } from "../routes/website-data-bridge.js";
 import { instanceSettingsService } from "../services/index.js";
 import { createWebsiteBridgeClient, parseBridgeCredential, bridgeCanonicalQuery, bridgeCanonicalString } from "../services/website/data-bridge-client.js";
 import { bridgeUrlOf, type WebsiteDataBridgeOptions } from "../services/website/data-bridge.js";
+
+// A decided card wakes its asker; record the wake instead of starting an agent run in the test database.
+const wakeups = vi.hoisted(() => [] as Array<{ agentId: string; opts: Record<string, unknown> }>);
+vi.mock("../services/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/index.js")>();
+  return {
+    ...actual,
+    heartbeatService: (...args: Parameters<typeof actual.heartbeatService>) => ({
+      ...actual.heartbeatService(...args),
+      wakeup: async (agentId: string, opts: Record<string, unknown>) => { wakeups.push({ agentId, opts }); return null; },
+    }),
+  };
+});
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -70,7 +85,8 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
     const canonical = bridgeCanonicalString({ method: String(init.method), host: url.host, path: url.pathname,
       query: bridgeCanonicalQuery(url.searchParams), time: Number(headers["x-gs-bridge-time"]), nonce: headers["x-gs-bridge-nonce"]!,
       actor: headers["x-gs-bridge-actor"]!, run: headers["x-gs-bridge-run"] ?? null, bodySha256: bodySha, idempotencyKey });
-    const verified = Boolean(pub) && Boolean(idempotencyKey) && canonical.startsWith("gs-bridge-v2\n")
+    // writes are v2 with an idempotency key; a read (the publish request's look at the record) is a v1 GET
+    const verified = Boolean(pub) && (idempotencyKey ? canonical.startsWith("gs-bridge-v2\n") : String(init.method) === "GET")
       && verify(null, Buffer.from(canonical), createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: pub! }, format: "jwk" }),
         Buffer.from(headers["x-gs-bridge-signature"]!, "base64url"));
     const pathName = url.pathname.replace("/api/admin/v1/", "");
@@ -85,6 +101,7 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
     const out = answer(String(init.method), pathName, body ? JSON.parse(body) : undefined);
     const landed = out === "network" ? { status: 200, body: { item: { id: "lost" } } } : out;
     // a 5xx rolls the site's transaction back, so its key is not claimed
+    if (!idempotencyKey) return Response.json((out as { body: unknown }).body, { status: (out as { status: number }).status });
     if (landed.status < 500) stored.set(`${headers["x-gs-bridge-key"]}:${idempotencyKey}`, { bodySha, answer: landed });
     if (out === "network" || (lose > 0 && out.status < 300)) { if (out !== "network") lose -= 1; throw new TypeError("fetch failed"); }
     return Response.json(out.body, { status: out.status });
@@ -108,11 +125,14 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
     await db.delete(activityLog);
     await db.delete(secretAccessEvents);
     await db.delete(issueApprovals);
+    await db.delete(issueComments);
+    await db.delete(issues);
     await db.delete(approvalComments);
     await db.delete(approvals);
     await db.delete(websiteSite);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
+    wakeups.length = 0;
     await db.delete(agentWakeupRequests);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
@@ -524,6 +544,168 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
       const [card] = await db.select().from(approvals);
       expect(card).toMatchObject({ status: "cancelled" });
       expect(card!.decisionNote).toMatch(/could not take this decision/);
+    });
+  });
+  // GRE-4089 (John, 5 Nov: "agents can publish anything but request approval to do so"): an agent asks, a person
+  // approves on the card, and GSAM publishes in that person's name, once. A changed record voids the card.
+  describe("publish requests (commerce_publish_request)", () => {
+    let row: Record<string, unknown>;
+    async function publishWorld() {
+      const world = await seedSite();
+      await makeKey(world.base, "read");
+      await makeKey(world.base, "write");
+      const agent = await seedAgent(world.companyId, ["website:view", "website:commerce"]);
+      const owner = await seedUser(world.companyId, "owner");
+      const issueId = randomUUID();
+      await db.insert(issues).values({ id: issueId, companyId: world.companyId, identifier: "C-1", title: "Add the offering",
+        status: "in_progress", priority: "medium", assigneeAgentId: agent.agentId });
+      row = { id: ROW, name: "Words", slug: "words", status: "draft", row_version: 3, variants: [{ id: ORDER, name: "V" }] };
+      // the site: the record, and a publish or archive at the expected row version
+      answer = (method, p, body) => {
+        if (method === "GET" && p === `offerings/${ROW}`) return { status: 200, body: { item: row } };
+        const action = /^offerings\/[^/]+\/(publish|archive)$/.exec(p)?.[1];
+        if (method === "POST" && action) {
+          if ((body as { expectedRowVersion?: number }).expectedRowVersion !== row.row_version) {
+            return { status: 409, body: { error: { code: "conflict" }, current: row } };
+          }
+          row = { ...row, status: action === "publish" ? "published" : "archived", row_version: (row.row_version as number) + 1 };
+          return { status: 200, body: { item: row } };
+        }
+        return { status: 404, body: { error: { code: "not_found" } } };
+      };
+      return { ...world, agent, owner, issueId };
+    }
+    const writes = () => seen.filter((s) => s.method !== "GET");
+    const ask = (world: { base: string; agent: { actor: Actor }; issueId: string }, extra: Record<string, unknown> = {}) =>
+      request(app(world.agent.actor)).post(`${world.base}/commerce/publish-requests`)
+        .send({ resource: "offerings", id: ROW, action: "publish", note: "Priced and checked", issueId: world.issueId, ...extra });
+
+    it("an agent's ask opens one card on its task with before and after, and publishes nothing", async () => {
+      const world = await publishWorld();
+      const res = await ask(world).expect(201);
+      expect(writes()).toHaveLength(0);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ method: "GET", path: `offerings/${ROW}`, verified: true });
+      expect(seen[0]!.headers["x-gs-bridge-actor"]).toBe(`agent:${world.agent.agentId}`);
+      expect(row.status).toBe("draft");
+      const cards = await db.select().from(approvals);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ id: res.body.approval.id, type: "commerce_publish_request", status: "pending", requestedByAgentId: world.agent.agentId });
+      expect(cards[0]!.payload).toMatchObject({
+        resource: "offerings", itemId: ROW, itemName: "Words", action: "publish", requestedBy: "Lintel", note: "Priced and checked",
+        before: { status: "draft", rowVersion: 3 }, after: { status: "published" }, item: { name: "Words", slug: "words" },
+        title: 'Publish offering "Words"',
+      });
+      const links = await db.select().from(issueApprovals);
+      expect(links.map((l) => [l.issueId, l.approvalId])).toEqual([[world.issueId, cards[0]!.id]]);
+      const logged = (await db.select().from(activityLog)).filter((e) => e.action === "website.commerce_publish_requested");
+      expect(logged).toHaveLength(1);
+
+      // the same ask again is the same card
+      const again = await ask(world).expect(200);
+      expect(again.body.approval.id).toBe(cards[0]!.id);
+      expect(await db.select().from(approvals)).toHaveLength(1);
+      // already in that state, a task in another company, and a hand-made card are refused
+      await request(app(world.agent.actor)).post(`${world.base}/commerce/publish-requests`)
+        .send({ resource: "offerings", id: ROW, action: "publish", issueId: randomUUID() }).expect(422);
+      await request(app(world.owner.actor)).post(`/api/companies/${world.companyId}/approvals`)
+        .send({ type: "commerce_publish_request", payload: { siteId: world.siteId } }).expect(422);
+      await request(app(world.agent.actor)).post(`/api/approvals/${cards[0]!.id}/resubmit`).send({}).expect(422);
+      expect(writes()).toHaveLength(0);
+    });
+
+    it("direct publish still refuses an agent with 403, and only a signed-in person with Commerce rights decides", async () => {
+      const world = await publishWorld();
+      const direct = await request(app(world.agent.actor)).post(`${world.base}/commerce/offerings/${ROW}/publish`).send({ expectedRowVersion: 3 }).expect(403);
+      expect(direct.body.code).toBe("website_commerce_people_only");
+      const card = (await ask(world).expect(201)).body.approval;
+      const approveAs = (actor: Actor) => request(app(actor)).post(`/api/approvals/${card.id}/approve`).send({});
+      await approveAs(world.agent.actor).expect(403);
+      await approveAs((await seedUser(world.companyId, "owner", "board_key")).actor).expect(403);
+      await approveAs((await seedUser(world.companyId, "operator")).actor).expect(403);
+      await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/request-revision`).send({ decisionNote: "x" }).expect(422);
+      expect(writes()).toHaveLength(0);
+      expect((await db.select().from(approvals))[0]).toMatchObject({ status: "pending" });
+    });
+
+    it("approving publishes once, in the approver's name, and logs the approver", async () => {
+      const world = await publishWorld();
+      const card = (await ask(world).expect(201)).body.approval;
+      const approved = await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(200);
+      expect(approved.body).toMatchObject({ status: "approved", decidedByUserId: world.owner.userId, payload: { result: { status: "published", rowVersion: 4 } } });
+      expect(writes()).toHaveLength(1);
+      expect(writes()[0]).toMatchObject({ method: "POST", path: `offerings/${ROW}/publish`, verified: true });
+      expect(JSON.parse(writes()[0]!.body)).toEqual({ expectedRowVersion: 3 });
+      expect(writes()[0]!.headers["x-gs-bridge-actor"]).toBe(`user:${world.owner.userId}`);
+      expect(writes()[0]!.headers["x-gs-bridge-key"]).toMatch(/^stg-write-/);
+      expect(row).toMatchObject({ status: "published", row_version: 4 });
+      const changed = (await db.select().from(activityLog)).filter((e) => e.action === "website.commerce_changed");
+      expect(changed).toHaveLength(1);
+      expect(changed[0]).toMatchObject({ actorType: "user", actorId: world.owner.userId,
+        details: { operation: "offerings.publish", approvalId: card.id, approvedByUserId: world.owner.userId, requestedByAgentId: world.agent.agentId } });
+
+      // a second click changes nothing on the site
+      const calls = seen.length;
+      await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(200);
+      expect(seen).toHaveLength(calls);
+      expect((await db.select().from(activityLog)).filter((e) => e.action === "website.commerce_changed")).toHaveLength(1);
+    });
+
+    it("a lost answer keeps the card open; the next click replays the same key and publishes once", async () => {
+      const world = await publishWorld();
+      const card = (await ask(world).expect(201)).body.approval;
+      lose = 3;
+      await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(502);
+      expect((await db.select().from(approvals))[0]).toMatchObject({ status: "pending", decidedByUserId: null });
+      expect(row.status).toBe("published");
+      // the record moved because the publish landed: the retry does not void the card, it replays
+      lose = 0;
+      const approved = await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(200);
+      expect(approved.body).toMatchObject({ status: "approved", payload: { result: { status: "published", rowVersion: 4 } } });
+      expect(new Set(writes().map((s) => s.headers["x-gs-bridge-idempotency-key"])).size).toBe(1);
+      expect(writes().filter((s) => !s.replayed)).toHaveLength(1);
+      expect(row.row_version).toBe(4);
+    });
+
+    it("rejecting publishes nothing, and the agent hears why on its task", async () => {
+      const world = await publishWorld();
+      const card = (await ask(world).expect(201)).body.approval;
+      await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/reject`).send({ decisionNote: "The price is wrong" }).expect(200);
+      expect(writes()).toHaveLength(0);
+      expect(row.status).toBe("draft");
+      expect((await db.select().from(approvals))[0]).toMatchObject({ status: "rejected" });
+      const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, world.issueId));
+      expect(comments.map((c) => c.body)).toEqual([expect.stringMatching(/Not approved: Publish offering "Words"\. Nothing was published\. Reason: The price is wrong/)]);
+      expect(wakeups).toEqual([expect.objectContaining({ agentId: world.agent.agentId,
+        opts: expect.objectContaining({ reason: "approval_rejected", payload: expect.objectContaining({ approvalId: card.id, issueId: world.issueId }) }) })]);
+    });
+
+    it("a change to the record after the ask voids the card: nothing is published and the agent must ask again", async () => {
+      const world = await publishWorld();
+      const card = (await ask(world).expect(201)).body.approval;
+      row = { ...row, name: "Words Pro", row_version: 4 };
+      const voided = await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(409);
+      expect(voided.body.code).toBe("commerce_publish_request_void");
+      expect(writes()).toHaveLength(0);
+      const [closed] = await db.select().from(approvals);
+      expect(closed).toMatchObject({ status: "cancelled" });
+      expect(closed!.decisionNote).toMatch(/changed after the request \(row version 3 → 4\)/);
+      const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, world.issueId));
+      expect(comments[0]!.body).toMatch(/Ask again/);
+      expect(wakeups.map((w) => w.opts.reason)).toEqual(["approval_cancelled"]);
+      await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(422);
+
+      // a child row changed with no new row version voids it too
+      const second = (await ask(world).expect(201)).body.approval;
+      row = { ...row, variants: [{ id: ORDER, name: "V2" }] };
+      await request(app(world.owner.actor)).post(`/api/approvals/${second.id}/approve`).send({}).expect(409);
+      // and so does a change that lands between the check and the publish (the site's row version check)
+      const third = (await ask(world).expect(201)).body.approval;
+      const site = answer;
+      answer = (method, p, body) => (method === "POST" ? { status: 409, body: { error: { code: "conflict" }, current: row } } : site(method, p, body));
+      await request(app(world.owner.actor)).post(`/api/approvals/${third.id}/approve`).send({}).expect(409);
+      expect((await db.select().from(approvals).where(eq(approvals.id, third.id)))[0]).toMatchObject({ status: "cancelled" });
+      expect(row.status).toBe("draft");
     });
   });
 });

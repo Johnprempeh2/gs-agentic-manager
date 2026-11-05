@@ -469,6 +469,7 @@ import {
   createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
   websiteCommerceRefundRequestSchema,
+  websiteCommercePublishRequestSchema,
   websiteVendorActivationStepsSchema,
   setWebsiteBridgeSiteKeySchema,
   websiteDocumentRequestAnswerSchema,
@@ -17083,6 +17084,18 @@ registerCurrentRoute({
     + "is open but the site's answer was lost (deciding records it first, once); 409 capability_not_configured, over_refundable",
   body: websiteCommerceRefundRequestSchema,
   responses: { ...commerceWriteResponses, 202: { description: "The card is open; the site's answer was lost" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/commerce/publish-requests`,
+  tags: ["website"],
+  summary: "Ask a person to publish or archive one catalogue record (website:commerce; agents may; GRE-4089). Reads the record and opens a "
+    + "commerce_publish_request approval with it; publishes nothing. A person with website:commerce approves with POST /api/approvals/{id}/approve, "
+    + "which publishes it on the write key in their name, once; a record changed since the ask voids the card (409 commerce_publish_request_void). "
+    + "201 a new card; 200 the same open card for the same record, action and row version; 409 capability_not_configured; 422 already in that state",
+  body: websiteCommercePublishRequestSchema,
+  responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
 });
 
 // ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────
