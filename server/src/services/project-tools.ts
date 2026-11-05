@@ -7,6 +7,7 @@ import {
   createIssueSchema,
   mcpToolHints,
   websiteCommerceRefundRequestSchema,
+  websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
   type McpToolHints,
 } from "@greatstone/shared";
@@ -32,6 +33,8 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   commerce_convert_quote: mcpToolHints("write", { idempotent: true }),
   commerce_import_dry_run: mcpToolHints("write", { idempotent: true }),
   commerce_request_refund: mcpToolHints("write", { idempotent: true }),
+  // GRE-4089: opens a card only; the same open ask returns the same card.
+  commerce_request_publish: mcpToolHints("write", { idempotent: true }),
   interview_round_get: mcpToolHints("read"),
   interview_synthesis_get: mcpToolHints("read"),
   interview_set_draft: mcpToolHints("write"),
@@ -121,7 +124,8 @@ const WEBSITE_STYLE_TOOL = {
  * GSAM's commerce routes (website:commerce, which a person must grant), signed with the site's write or refund key,
  * and the site's audit names this agent and run. No tool can publish, archive, change FX, apply an import, issue an
  * invoice or decide a refund: those are people only, and the route refuses an agent before any call to the site.
- * Catalogue rows an agent makes stay draft until a person publishes them.
+ * Catalogue rows an agent makes stay draft until a person publishes them. GRE-4089 (John, 5 Nov): an agent may ask to
+ * publish or archive one with commerce_request_publish, which opens a card; a person's approval publishes it.
  */
 const COMMERCE_CHILDREN = ["variants", "specs", "media", "targets"] as const;
 const COMMERCE_EDIT_RESOURCES = [...WEBSITE_COMMERCE_CATALOGUE_RESOURCES, "quotes", "invoices"] as const;
@@ -236,6 +240,23 @@ const WEBSITE_COMMERCE_TOOLS = [
         idempotencyKey: idempotencyKeyProperty,
       },
       required: ["siteId", "orderId", "amountMinor", "reason", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_request_publish",
+    description: "Ask a person to publish or archive one catalogue record on a connected website (a vendor, category, offering or pricing rule). This publishes nothing: it opens an approval card on your task with the record as it is now. A person with Commerce rights approves it and GSAM publishes it in their name. If the record changes before they decide, the card is void and you must ask again. Asking twice for the same record and version returns the same card. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_request_publish,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: siteIdProperty,
+        resource: { type: "string", enum: [...WEBSITE_COMMERCE_CATALOGUE_RESOURCES] },
+        id: { type: "string" },
+        action: { type: "string", enum: ["publish", "archive"] },
+        note: { type: "string", minLength: 1, maxLength: 2000, description: "Why, for the person who decides." },
+      },
+      required: ["siteId", "resource", "id", "action"],
       additionalProperties: false,
     },
   },
@@ -361,7 +382,8 @@ function commerceKey(agentId: string, tool: string, key: string) {
 }
 
 /** A commerce draft, through GSAM's commerce route, so the permission, people-only and fail-closed checks apply. */
-async function commerceToolCall(input: { apiUrl: string; token: string; companyId: string; agentId: string; name: string; args: Record<string, unknown> }) {
+async function commerceToolCall(input: { apiUrl: string; token: string; companyId: string; agentId: string; issueId: string | null;
+  name: string; args: Record<string, unknown> }) {
   const uuid = z.string().uuid();
   const common = { siteId: uuid, idempotencyKey: z.string().min(1).max(200) };
   const fields = z.record(z.string(), z.unknown());
@@ -375,6 +397,14 @@ async function commerceToolCall(input: { apiUrl: string; token: string; companyI
     const args = z.object({ ...common, orderId: uuid, amountMinor: z.number().int().positive(), reason: z.string() }).strict().parse(input.args);
     const refund = websiteCommerceRefundRequestSchema.parse({ orderId: args.orderId, amountMinor: args.amountMinor, reason: args.reason });
     return apiSend(input.apiUrl, input.token, "POST", `${site(args.siteId)}/refund-requests`, refund, commerceKey(input.agentId, input.name, args.idempotencyKey));
+  }
+  if (input.name === "commerce_request_publish") {
+    const args = z.object({ siteId: uuid, resource: z.enum(WEBSITE_COMMERCE_CATALOGUE_RESOURCES), id: uuid,
+      action: z.enum(["publish", "archive"]), note: z.string().optional() }).strict().parse(input.args);
+    const ask = websiteCommercePublishRequestSchema.parse({ resource: args.resource, id: args.id, action: args.action,
+      ...(args.note ? { note: args.note } : {}), ...(input.issueId && uuid.safeParse(input.issueId).success ? { issueId: input.issueId } : {}) });
+    return apiSend(input.apiUrl, input.token, "POST", `${site(args.siteId)}/publish-requests`, ask,
+      commerceKey(input.agentId, input.name, `${args.resource}:${args.id}:${args.action}`));
   }
   if (input.name === "commerce_draft_create") {
     const args = z.object({ ...common, resource: z.enum(WEBSITE_COMMERCE_CATALOGUE_RESOURCES), parentId: uuid.optional(),
@@ -474,7 +504,8 @@ export async function callProjectTool(input: {
     return readWebsiteData({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });
   }
   if (COMMERCE_TOOL_NAMES.has(input.name)) {
-    return commerceToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId, name: input.name, args });
+    return commerceToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId,
+      issueId: input.conversation ? null : input.issueId, name: input.name, args });
   }
   if (INTERVIEW_TOOL_NAMES.has(input.name)) {
     return interviewToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });

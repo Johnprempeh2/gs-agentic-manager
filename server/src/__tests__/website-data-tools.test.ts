@@ -94,8 +94,27 @@ describe("website commerce tools: drafts", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     const names = projectToolDefinitions("standard").map((tool) => tool.name).filter((name) => name.startsWith("commerce_"));
     expect(names).toEqual(["commerce_draft_create", "commerce_draft_edit", "commerce_draft_delete", "commerce_convert_quote",
-      "commerce_import_dry_run", "commerce_request_refund"]);
-    expect(names.some((name) => /publish|archive|fx|apply|issue|decide/.test(name))).toBe(false);
+      "commerce_import_dry_run", "commerce_request_refund", "commerce_request_publish"]);
+    // only asks: no tool publishes, archives or decides
+    expect(names.filter((name) => !name.startsWith("commerce_request_")).some((name) => /publish|archive|fx|apply|issue|decide/.test(name))).toBe(false);
+  });
+
+  // GRE-4089: the agent asks; the route opens a card on its task and publishes nothing.
+  it("asks to publish through the publish-requests route, linked to the agent's task, never the write route", async () => {
+    const ISSUE = "1550e000-0000-4000-8000-000000000001";
+    const fetchMock = vi.fn(async () => Response.json({ approval: { id: "a" } }, { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await callProjectTool({ name: "commerce_request_publish", arguments: { siteId: SITE, resource: "offerings", id: ROW, action: "publish", note: "Ready" },
+      apiUrl: "http://gsam.test/api", token: "t", companyId: "c1", issueId: ISSUE, agentId: "a1", conversation: false });
+    await call("commerce_request_publish", { resource: "vendors", id: ROW, action: "archive" });
+    const sent = fetchMock.mock.calls.map(([url, init]) => [(init as RequestInit).method, String(url).replace(BASE, ""), JSON.parse(String((init as RequestInit).body))]);
+    expect(sent).toEqual([
+      ["POST", "/commerce/publish-requests", { resource: "offerings", id: ROW, action: "publish", note: "Ready", issueId: ISSUE }],
+      ["POST", "/commerce/publish-requests", { resource: "vendors", id: ROW, action: "archive" }],
+    ]);
+    await expect(call("commerce_request_publish", { resource: "fx", id: ROW, action: "publish" })).rejects.toThrow();
+    await expect(call("commerce_request_publish", { resource: "offerings", id: ROW, action: "delete" })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("passes a stale row's current version back to the agent", async () => {
