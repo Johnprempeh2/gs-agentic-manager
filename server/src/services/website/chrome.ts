@@ -56,7 +56,7 @@ export interface HtmlReleaseImport {
     html: string;
     css?: string;
     seo?: Record<string, unknown>;
-    menu?: string;
+    menu?: string | null;
     menuOrder?: number | null;
     navOrder?: number | null;
   }>;
@@ -122,7 +122,7 @@ export async function importHtmlRelease(
         parentPageId: parent?.id ?? null,
         title: page.title,
         seo: page.seo ?? {},
-        menu: (page.menu as "header" | "footer" | "none" | undefined) ?? "none",
+        menu: (page.menu as "header" | "footer" | "none" | null | undefined) ?? "none",
         menuOrder: page.menuOrder ?? null,
         navOrder: page.navOrder ?? null,
         content,

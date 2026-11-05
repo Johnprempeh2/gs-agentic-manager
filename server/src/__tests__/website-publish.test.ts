@@ -673,6 +673,15 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(((await http.get(`${base}/entries?collection=redirect`).expect(200)).body as WebsiteEntryDetail[])).toHaveLength(2);
   });
 
+  it("imports a page the export left out of every menu (menu: null) with menu none (GRE-4076)", async () => {
+    const { base } = await seedSite();
+    const http = request(app());
+    const file = { ...htmlExport, pages: [{ slug: "/privacy", title: "Privacy", html: "<section><h1>Privacy</h1></section>", menu: null, menuOrder: null, navOrder: null }] };
+    expect((await http.post(`${base}/import-html`).send(file).expect(200)).body).toMatchObject({ created: ["/privacy"] });
+    const pages = (await http.get(`${base}/pages`).expect(200)).body as WebsitePageDetail[];
+    expect(pages.find((p) => p.slug === "/privacy")).toMatchObject({ menu: "none", menuOrder: null });
+  });
+
   it("refuses a release that mixes HTML pages and block pages", async () => {
     const { site, page, base } = await seedSite();
     await db.update(websiteSite).set({ releaseSchemaVersion: 2 }).where(eq(websiteSite.id, site.id));
