@@ -210,6 +210,7 @@ export type CompanyUserDirectoryEntry = {
   principalId: string;
   /** Only a retired legacy local-board is listed as `suspended`, for names in history. */
   status: "active" | "suspended";
+  membershipRole: string | null;
   user: { id: string; email: string | null; name: string | null; image: string | null } | null;
 };
 
