@@ -123,6 +123,27 @@ export interface WebsiteEntry extends WebsiteContentRow {
   sortOrder: number | null;
 }
 
+/** The pages and entries waiting for a person with Publish rights (GRE-4078). */
+export interface WebsiteReviewQueue {
+  pages: WebsitePage[];
+  entries: WebsiteEntry[];
+}
+
+/** One item the bulk approve did not approve, and why. */
+export interface WebsiteReviewSkipped {
+  kind: "page" | "entry";
+  id: string;
+  title: string;
+  reason: string;
+}
+
+/** The answer to a bulk approve: what was approved, and what was left in review. */
+export interface WebsiteReviewApproveResult {
+  approvedPageIds: string[];
+  approvedEntryIds: string[];
+  skipped: WebsiteReviewSkipped[];
+}
+
 /** A page or entry with its latest content (parsed JSON). */
 export type WebsitePageDetail = WebsitePage & { content: unknown };
 export type WebsiteEntryDetail = WebsiteEntry & { content: unknown };
@@ -400,6 +421,13 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageApprove: "/companies/:companyId/website/sites/:siteId/pages/:pageId/approve",
   /** POST `{ note }` → `WebsitePage` (website:publish, people only). Back to draft. */
   pageSendBack: "/companies/:companyId/website/sites/:siteId/pages/:pageId/send-back",
+  /** GET → `WebsiteReviewQueue` (website:view): every page and entry in review. */
+  review: "/companies/:companyId/website/sites/:siteId/review",
+  /**
+   * POST `ApproveWebsiteReview` → `WebsiteReviewApproveResult` (website:publish, people only).
+   * Approves every page and entry in review, or the chosen ones; items not in review are left as they are.
+   */
+  reviewApprove: "/companies/:companyId/website/sites/:siteId/review/approve",
   /** GET → `WebsiteEntry[]` (`?collection=product`). POST `CreateWebsiteEntry` → 201 `WebsiteEntryDetail`. */
   entries: "/companies/:companyId/website/sites/:siteId/entries",
   /** POST → imported draft counts from the dated public snapshot. */

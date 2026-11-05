@@ -36,6 +36,7 @@ import { ErrorState } from "../ErrorState";
 import { pickLivePreviewService } from "../LivePreviewCard";
 import { RELEASE_STATUS_COPY, isReleaseActive, releaseDate, releaseTime } from "./WebsiteReleases";
 import { useCanPublishWebsite, useWebsiteSite } from "./WebsiteSiteConnection";
+import { WebsiteReviewQueue } from "./WebsiteReviewQueue";
 import { WebsiteFeaturesSection } from "./features/WebsiteFeatureCards";
 import { TrainAndLaunch } from "./WebsiteTrainAndLaunch";
 import {
@@ -89,6 +90,7 @@ const ACTIVITY_VERBS: Record<string, string> = {
   "website.entry_approved": "approved",
   "website.entry_sent_back": "sent back",
   "website.public_drafts_imported": "imported drafts from the live site",
+  "website.review_bulk_approved": "approved everything in review on",
   "website.publish_started": "started a Publish:",
   "website.release_retried": "retried",
   "website.rollback_started": "started a roll back:",
@@ -781,6 +783,7 @@ export function WebsiteHomeTab({
     <div className="space-y-6" data-testid="website-home">
       <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site && onEditPages ? () => void openHomeDesign(site.id) : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
+      {site ? <WebsiteReviewQueue companyId={companyId} siteId={site.id} /> : null}
       {home ? <TrainAndLaunch train={home.train ?? null} launch={home.launch ?? null} /> : null}
       <WebsiteFeaturesSection companyId={companyId} site={site} canChange={canPublish} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />

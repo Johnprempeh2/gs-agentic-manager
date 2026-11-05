@@ -27,6 +27,8 @@ export const WEBSITE_MESSAGES = {
   "review.planned": "This page is planned only. Add content and save a draft before you send it for review.",
   // new: send back a page or entry that is not in review.
   "review.not_in_review": "Only a change that is in review can be sent back.",
+  // new (GRE-4078): a bulk approve leaves an item that is not in review as it is.
+  "review.approve_not_in_review": "This is not in review, so it was not approved.",
   "review.archived": "This is archived. Restore it before you send it for review.",
 } as const;
 

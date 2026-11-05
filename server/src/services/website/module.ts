@@ -690,6 +690,73 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
     return setEntryReview(row, { status: "draft" });
   }
 
+  // ---- bulk approve (GRE-4078): the same approval as one click, only for what is still in review ----
+
+  /** Every page and entry in review on the site, as the review list shows them. */
+  async function listInReview(companyId: string, siteId: string) {
+    const pages = await db
+      .select(pageWithDoc)
+      .from(websitePage)
+      .innerJoin(documents, eq(documents.id, websitePage.documentId))
+      .where(and(eq(websitePage.companyId, companyId), eq(websitePage.siteId, siteId), eq(websitePage.status, "review"), isNull(websitePage.archivedAt)))
+      .orderBy(asc(websitePage.slug));
+    const entries = await db
+      .select({ entry: websiteEntry, latestRevisionId: documents.latestRevisionId, latestRevisionNumber: documents.latestRevisionNumber })
+      .from(websiteEntry)
+      .innerJoin(documents, eq(documents.id, websiteEntry.documentId))
+      .where(and(eq(websiteEntry.companyId, companyId), eq(websiteEntry.siteId, siteId), eq(websiteEntry.status, "review"), isNull(websiteEntry.archivedAt)))
+      .orderBy(asc(websiteEntry.collection), asc(websiteEntry.entryKey));
+    return {
+      pages: pages.map((row) => toWebsitePage(row.page, row)),
+      entries: entries.map((row) => toWebsiteEntry(row.entry, row)),
+    };
+  }
+
+  /**
+   * The rows a bulk approve looks at: the given ids on this site whatever their status
+   * (so the caller can say which were skipped), or every row in review when no ids are given.
+   */
+  async function reviewRows(companyId: string, siteId: string, ids: { pageIds?: string[]; entryIds?: string[] }) {
+    const chosen = ids.pageIds !== undefined || ids.entryIds !== undefined;
+    const pageFilter = chosen ? (ids.pageIds?.length ? inArray(websitePage.id, ids.pageIds) : null) : eq(websitePage.status, "review");
+    const entryFilter = chosen ? (ids.entryIds?.length ? inArray(websiteEntry.id, ids.entryIds) : null) : eq(websiteEntry.status, "review");
+    const pages = pageFilter
+      ? await db.select().from(websitePage)
+        .where(and(eq(websitePage.companyId, companyId), eq(websitePage.siteId, siteId), pageFilter))
+        .orderBy(asc(websitePage.slug))
+      : [];
+    const entries = entryFilter
+      ? await db.select().from(websiteEntry)
+        .where(and(eq(websiteEntry.companyId, companyId), eq(websiteEntry.siteId, siteId), entryFilter))
+        .orderBy(asc(websiteEntry.collection), asc(websiteEntry.entryKey))
+      : [];
+    return { pages, entries };
+  }
+
+  /** Approve a page only while it is in review; null when it moved on since it was read. */
+  async function approvePageInReview(row: PageRow) {
+    assertReviewable(row);
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.approve_not_in_review"], { code: "website_review_not_in_review" });
+    const [updated] = await db
+      .update(websitePage)
+      .set({ status: "approved", approvedRevisionId: await latestRevisionId(row), updatedAt: new Date() })
+      .where(and(eq(websitePage.companyId, row.companyId), eq(websitePage.id, row.id), eq(websitePage.status, "review")))
+      .returning();
+    return updated ?? null;
+  }
+
+  /** Approve an entry only while it is in review; null when it moved on since it was read. */
+  async function approveEntryInReview(row: EntryRow) {
+    assertReviewable(row);
+    if (row.status !== "review") throw unprocessable(WEBSITE_MESSAGES["review.approve_not_in_review"], { code: "website_review_not_in_review" });
+    const [updated] = await db
+      .update(websiteEntry)
+      .set({ status: "approved", approvedRevisionId: await latestRevisionId(row), updatedAt: new Date() })
+      .where(and(eq(websiteEntry.companyId, row.companyId), eq(websiteEntry.id, row.id), eq(websiteEntry.status, "review")))
+      .returning();
+    return updated ?? null;
+  }
+
   async function withDoc<T extends PageRow | EntryRow>(row: T) {
     const doc = await store.readDocument(row.companyId, row.documentId);
     return { row, doc: doc ?? { latestRevisionId: null, latestRevisionNumber: 0 } };
@@ -921,6 +988,10 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
     submitPage,
     approvePage,
     sendBackPage,
+    listInReview,
+    reviewRows,
+    approvePageInReview,
+    approveEntryInReview,
     withDoc,
     listEntries,
     getEntryRow,

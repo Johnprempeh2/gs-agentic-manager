@@ -407,6 +407,141 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(changed.body).toMatchObject({ status: "draft", approvedRevisionId: null });
   });
 
+  describe("bulk approve (GRE-4078)", () => {
+    /** Alpha with two more pages: home and /about in review, /draft left as a draft, and the entry in review. */
+    async function seedReview() {
+      const world = await seedWorld("Bulk", "bulk.test");
+      const http = request(app());
+      const base = `/api/companies/${world.company.id}/website/sites/${world.site.id}`;
+      const about = (await http.post(`${base}/pages`).send({ slug: "/about", title: "About" }).expect(201)).body as WebsitePageDetail;
+      const draft = (await http.post(`${base}/pages`).send({ slug: "/draft", title: "Draft" }).expect(201)).body as WebsitePageDetail;
+      await http.post(`${base}/pages/${world.page.id}/submit`).send({}).expect(200);
+      await http.post(`${base}/pages/${about.id}/submit`).send({}).expect(200);
+      await http.post(`${base}/entries/${world.entry.id}/submit`).send({}).expect(200);
+      return { ...world, base, about, draft };
+    }
+
+    async function statusOf(table: typeof websitePage | typeof websiteEntry, id: string) {
+      const [row] = await db.select({ status: table.status, approvedRevisionId: table.approvedRevisionId }).from(table).where(eq(table.id, id));
+      return row!;
+    }
+
+    it("a person with Publish rights approves every item in review in one call, with the single-approve record", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const world = await seedReview();
+      const owner = await seedUser(world.company.id, "owner");
+      const http = request(app(owner));
+
+      const queue = (await http.get(`${world.base}/review`).expect(200)).body;
+      expect(queue.pages.map((page: { slug: string }) => page.slug)).toEqual(["/", "/about"]);
+      expect(queue.entries.map((entry: { id: string }) => entry.id)).toEqual([world.entry.id]);
+
+      const res = await http.post(`${world.base}/review/approve`).send({}).expect(200);
+      expect(new Set(res.body.approvedPageIds)).toEqual(new Set([world.page.id, world.about.id]));
+      expect(res.body.approvedEntryIds).toEqual([world.entry.id]);
+      expect(res.body.skipped).toEqual([]);
+
+      expect(await statusOf(websitePage, world.page.id)).toEqual({ status: "approved", approvedRevisionId: world.page.latestRevisionId });
+      expect(await statusOf(websitePage, world.about.id)).toEqual({ status: "approved", approvedRevisionId: world.about.latestRevisionId });
+      expect(await statusOf(websiteEntry, world.entry.id)).toEqual({ status: "approved", approvedRevisionId: world.entry.latestRevisionId });
+      // Not in review: not changed.
+      expect(await statusOf(websitePage, world.draft.id)).toEqual({ status: "draft", approvedRevisionId: null });
+      // Approving does not publish.
+      expect(await db.select().from(websiteRelease).where(eq(websiteRelease.siteId, world.site.id))).toHaveLength(0);
+
+      // Each item has the record a single approve writes: same action, actor and details.
+      const logged = await db.select().from(activityLog).where(eq(activityLog.companyId, world.company.id));
+      const approvals = logged.filter((row) => row.action === "website.page_approved" || row.action === "website.entry_approved");
+      expect(approvals).toHaveLength(3);
+      for (const row of approvals) {
+        expect(row).toMatchObject({ actorType: "user", actorId: owner.type === "board" ? owner.userId : null });
+        expect(Object.keys(row.details ?? {}).sort()).toEqual(["revisionId", "siteId"]);
+      }
+      expect(logged.find((row) => row.action === "website.review_bulk_approved")?.details).toEqual({ pages: 2, entries: 1, skipped: 0 });
+
+      // Nothing left in review.
+      expect((await http.get(`${world.base}/review`).expect(200)).body).toEqual({ pages: [], entries: [] });
+    });
+
+    it("approves only the chosen ids and skips the ones not in review, with the reason", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const world = await seedReview();
+      const http = request(app());
+      const res = await http.post(`${world.base}/review/approve`).send({ pageIds: [world.about.id, world.draft.id], entryIds: [] }).expect(200);
+      expect(res.body.approvedPageIds).toEqual([world.about.id]);
+      expect(res.body.approvedEntryIds).toEqual([]);
+      expect(res.body.skipped).toEqual([
+        { kind: "page", id: world.draft.id, title: "Draft", reason: "This is not in review, so it was not approved." },
+      ]);
+      // The ones not chosen stay in review; the draft stays a draft.
+      expect((await statusOf(websitePage, world.page.id)).status).toBe("review");
+      expect((await statusOf(websiteEntry, world.entry.id)).status).toBe("review");
+      expect((await statusOf(websitePage, world.draft.id)).status).toBe("draft");
+    });
+
+    it("mixed states: an archived item and an entry with incomplete fields are skipped, the rest approved", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const world = await seedReview();
+      const http = request(app());
+      await http.post(`${world.base}/pages/${world.about.id}/archive`).send({}).expect(200);
+      // An entry in review whose saved fields no longer pass the schema (as an old import could leave it).
+      await db.update(documents).set({ latestBody: JSON.stringify({ data: { name: "Incomplete" } }) }).where(eq(documents.id, world.entry.documentId));
+
+      const res = await http.post(`${world.base}/review/approve`).send({}).expect(200);
+      expect(res.body.approvedPageIds).toEqual([world.page.id]);
+      expect(res.body.approvedEntryIds).toEqual([]);
+      expect(res.body.skipped.map((item: { kind: string; id: string }) => [item.kind, item.id])).toEqual([
+        ["page", world.about.id],
+        ["entry", world.entry.id],
+      ]);
+      expect((await statusOf(websitePage, world.about.id)).status).toBe("review");
+      expect((await statusOf(websiteEntry, world.entry.id)).status).toBe("review");
+      expect((await statusOf(websitePage, world.draft.id)).status).toBe("draft");
+    });
+
+    it("a person or agent without Publish rights gets 403 and nothing changes", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const world = await seedReview();
+      const operator = await seedUser(world.company.id, "operator");
+      const { actor: agent } = await seedAgent(world.company.id, ["website:view", "website:edit", "website:publish"]);
+
+      // Both may see the list.
+      await request(app(operator)).get(`${world.base}/review`).expect(200);
+      await request(app(agent)).get(`${world.base}/review`).expect(200);
+
+      const person = await request(app(operator)).post(`${world.base}/review/approve`).send({}).expect(403);
+      expect(person.body.details).toMatchObject({ code: "website_permission_missing", permission: "website:publish" });
+      const byAgent = await request(app(agent)).post(`${world.base}/review/approve`).send({}).expect(403);
+      expect(byAgent.body.details).toMatchObject({ code: "website_publish_agent_refused" });
+
+      expect((await statusOf(websitePage, world.page.id)).status).toBe("review");
+      expect((await statusOf(websiteEntry, world.entry.id)).status).toBe("review");
+    });
+
+    it("another company's ids and a scoped grant on another site change nothing", async () => {
+      await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+      const world = await seedReview();
+      const other = await seedWorld("Other", "other.test");
+      await request(app()).post(`/api/companies/${other.company.id}/website/sites/${other.site.id}/pages/${other.page.id}/submit`).send({}).expect(200);
+
+      // Company B's page id, sent to company A's site: not on this site, so not touched.
+      const res = await request(app()).post(`${world.base}/review/approve`).send({ pageIds: [other.page.id] }).expect(200);
+      expect(res.body).toEqual({ approvedPageIds: [], approvedEntryIds: [], skipped: [] });
+      expect((await statusOf(websitePage, other.page.id)).status).toBe("review");
+
+      // A person of A calling under B's company id.
+      const owner = await seedUser(world.company.id, "owner");
+      await request(app(owner)).post(`/api/companies/${other.company.id}/website/sites/${other.site.id}/review/approve`).send({}).expect(403);
+
+      // Publish rights scoped to another site of A: not found.
+      const second = (await request(app()).post(`/api/companies/${world.company.id}/website/sites`)
+        .send({ name: "Second", domain: "second.bulk.test", netlifySiteId: "n2" }).expect(201)).body as WebsiteSite;
+      const scoped = await seedUser(world.company.id, "operator", [{ key: "website:publish", scope: { siteIds: [second.id] } }]);
+      await request(app(scoped)).post(`${world.base}/review/approve`).send({}).expect(404);
+      expect((await statusOf(websitePage, world.page.id)).status).toBe("review");
+    });
+  });
+
   it("imports the dated public snapshot once as drafts", async () => {
     await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
     const { company, site } = await seedWorld("Import", "import.test");

@@ -331,6 +331,21 @@ export const sendBackWebsiteContentSchema = z
   .strict();
 export type SendBackWebsiteContent = z.infer<typeof sendBackWebsiteContentSchema>;
 
+/** The most items one bulk approve takes (GRE-4078): production has about 270 in review at cutover. */
+export const WEBSITE_REVIEW_APPROVE_MAX = 1000;
+
+/**
+ * Bulk approve (GRE-4078). With no ids, every page and entry in review is approved.
+ * With ids, only those, and only when they are still in review.
+ */
+export const approveWebsiteReviewSchema = z
+  .object({
+    pageIds: z.array(z.string().uuid()).max(WEBSITE_REVIEW_APPROVE_MAX).optional(),
+    entryIds: z.array(z.string().uuid()).max(WEBSITE_REVIEW_APPROVE_MAX).optional(),
+  })
+  .strict();
+export type ApproveWebsiteReview = z.infer<typeof approveWebsiteReviewSchema>;
+
 const collectionSchema = z.string().trim().regex(/^[a-z][a-z0-9_-]{0,39}$/, "Use a lower-case collection key");
 
 export const createWebsiteEntrySchema = z
