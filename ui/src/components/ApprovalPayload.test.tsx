@@ -299,3 +299,34 @@ describe("website_publish approvals", () => {
     container.remove();
   });
 });
+
+describe("commerce_publish_request approvals (GRE-4089)", () => {
+  it("names the record, the change and who asked, and says a changed record voids it", () => {
+    expect(approvalActionLabels("commerce_publish_request")).toMatchObject({ approve: "Approve and publish", reject: "Reject" });
+    expect(approvalLabel("commerce_publish_request", { title: 'Publish offering "Words"' })).toBe('Catalogue publish request: Publish offering "Words"');
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <ApprovalPayloadRenderer
+            type="commerce_publish_request"
+            payload={{
+              siteName: "Example site", resource: "offerings", itemName: "Words", requestedBy: "Lintel", note: "Priced and checked",
+              before: { status: "draft", rowVersion: 3 }, after: { status: "published" }, item: { name: "Words", slug: "words" },
+            }}
+          />
+        </ThemeProvider>,
+      );
+    });
+    expect(container.textContent).toContain("offerings Words");
+    expect(container.textContent).toContain("draft → published");
+    expect(container.textContent).toContain("Lintel");
+    expect(container.textContent).toContain("Priced and checked");
+    expect(container.textContent).toContain("the card is void and nothing is published");
+    act(() => root.unmount());
+    container.remove();
+  });
+});
