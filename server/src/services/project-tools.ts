@@ -3,12 +3,15 @@ import {
   WEBSITE_COMMERCE_CATALOGUE_RESOURCES,
   WEBSITE_COMMERCE_RESOURCES,
   WEBSITE_DATA_RESOURCES,
+  WEBSITE_CLIENT_MEMBER_ROLES,
+  WEBSITE_STAFF_ROLES,
   createProjectSchema,
   createIssueSchema,
   mcpToolHints,
   websiteCommerceRefundRequestSchema,
   websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
+  websiteAccessChangeRequestSchema,
   type McpToolHints,
 } from "@greatstone/shared";
 import { z } from "zod";
@@ -35,6 +38,9 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   commerce_request_refund: mcpToolHints("write", { idempotent: true }),
   // GRE-4089: opens a card only; the same open ask returns the same card.
   commerce_request_publish: mcpToolHints("write", { idempotent: true }),
+  // GRE-4085: people and access. Reads are open; a change is only ever an ask (a card), and the same ask returns it.
+  website_access_list: mcpToolHints("read"),
+  website_access_request_change: mcpToolHints("write", { idempotent: true }),
   interview_round_get: mcpToolHints("read"),
   interview_synthesis_get: mcpToolHints("read"),
   interview_set_draft: mcpToolHints("write"),
@@ -263,6 +269,75 @@ const WEBSITE_COMMERCE_TOOLS = [
 ];
 
 /**
+ * People and access (GRE-4085): a connected site's staff roles, portal approvers and client company members. John
+ * (5 Nov): "a person approves every access change". So an agent reads, and asks: website_access_request_change opens
+ * a card on its task and changes nothing; a person with Publish rights approves it and GSAM makes the change in their
+ * name. No tool calls a change route; those routes refuse an agent with 403 website_access_people_only.
+ */
+const WEBSITE_ACCESS_LISTS = ["staff", "portal-approvers", "client-members"] as const;
+const WEBSITE_ACCESS_KINDS = ["staff_role", "approver_set", "approver_remove", "member_add", "member_role", "member_remove"] as const;
+const WEBSITE_ACCESS_TOOLS = [
+  {
+    name: "website_access_list",
+    description: "Read who has access on a connected website: `staff` (each staff member's role, whether they can sign in, whether they are a portal approver), `portal-approvers` (who may approve portal documents, with their label), or `client-members` (the people of one client company, by its customer id, with their role). Read only.",
+    annotations: PROJECT_TOOL_HINTS.website_access_list,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: { type: "string", description: "The website site id (list_website_features shows them)." },
+        list: { type: "string", enum: [...WEBSITE_ACCESS_LISTS] },
+        customerId: { type: "string", description: "client-members only: the client company's customer id (website_data_list customers shows them)." },
+      },
+      required: ["siteId", "list"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "website_access_request_change",
+    description: "Ask a person to change access on a connected website. This changes nothing: it opens an approval card on your task with the person's access as it is now. A person with Publish rights approves it and GSAM makes the change in their name. If that person's access changes before they decide, the card is void and you must ask again. Asking twice for the same change returns the same card. Kinds: staff_role (staffId, role), approver_set (staffId, label), approver_remove (staffId), member_add (customerId, email, name, role), member_role (customerId, membershipId, role), member_remove (customerId, membershipId). The site keeps one active owner.",
+    annotations: PROJECT_TOOL_HINTS.website_access_request_change,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: { type: "string", description: "The website site id (list_website_features shows them)." },
+        kind: { type: "string", enum: [...WEBSITE_ACCESS_KINDS] },
+        staffId: { type: "string", description: "staff_role, approver_set, approver_remove: the staff id from website_access_list staff." },
+        customerId: { type: "string", description: "member_*: the client company's customer id." },
+        membershipId: { type: "string", description: "member_role, member_remove: from website_access_list client-members." },
+        role: { type: "string", enum: [...new Set([...WEBSITE_STAFF_ROLES, ...WEBSITE_CLIENT_MEMBER_ROLES])],
+          description: "staff_role: owner, admin, editor, sales or viewer. member_add, member_role: admin or member." },
+        label: { type: "string", minLength: 1, maxLength: 100, description: "approver_set: how the approver is shown, e.g. \"Finance lead\"." },
+        email: { type: "string", description: "member_add: the person's email. They sign in from the email the website sends." },
+        name: { type: "string", minLength: 1, maxLength: 200, description: "member_add: the person's name." },
+        note: { type: "string", minLength: 1, maxLength: 2000, description: "Why, for the person who decides." },
+      },
+      required: ["siteId", "kind"],
+      additionalProperties: false,
+    },
+  },
+];
+
+/** Reads through GSAM's access routes (website:view); an ask through change-requests. Never a change route. */
+async function accessToolCall(input: { apiUrl: string; token: string; companyId: string; agentId: string; issueId: string | null;
+  name: string; args: Record<string, unknown> }) {
+  const uuid = z.string().uuid();
+  const site = (siteId: string) => `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(siteId)}/access`;
+  if (input.name === "website_access_list") {
+    const args = z.object({ siteId: uuid, list: z.enum(WEBSITE_ACCESS_LISTS), customerId: uuid.optional() }).strict().parse(input.args);
+    if ((args.list === "client-members") !== Boolean(args.customerId)) throw badRequest("customerId goes with client-members, and only with it");
+    return apiGet(input.apiUrl, input.token, args.list === "client-members"
+      ? `${site(args.siteId)}/clients/${encodeURIComponent(args.customerId!)}/members` : `${site(args.siteId)}/${args.list}`);
+  }
+  const { siteId, note, ...change } = z.object({ siteId: uuid, note: z.string().optional() }).passthrough().parse(input.args);
+  const ask = websiteAccessChangeRequestSchema.parse({ change, ...(note ? { note } : {}),
+    ...(input.issueId && uuid.safeParse(input.issueId).success ? { issueId: input.issueId } : {}) });
+  return apiSend(input.apiUrl, input.token, "POST", `${site(siteId)}/change-requests`, ask,
+    commerceKey(input.agentId, input.name, createHash("sha256").update(JSON.stringify(ask.change)).digest("hex")));
+}
+
+const ACCESS_TOOL_NAMES = new Set(WEBSITE_ACCESS_TOOLS.map((tool) => tool.name));
+
+/**
  * Parallel Interview (GRE-2667): agents read a round's status and synthesis, and draft question sets for a person to
  * approve. No tool approves a set, decides a proposal, releases or withdraws: those routes answer an agent with 403,
  * and these tools never call them.
@@ -308,7 +383,7 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...INTERVIEW_TOOLS];
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...WEBSITE_ACCESS_TOOLS, ...INTERVIEW_TOOLS];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -505,6 +580,10 @@ export async function callProjectTool(input: {
   }
   if (COMMERCE_TOOL_NAMES.has(input.name)) {
     return commerceToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId,
+      issueId: input.conversation ? null : input.issueId, name: input.name, args });
+  }
+  if (ACCESS_TOOL_NAMES.has(input.name)) {
+    return accessToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId,
       issueId: input.conversation ? null : input.issueId, name: input.name, args });
   }
   if (INTERVIEW_TOOL_NAMES.has(input.name)) {

@@ -26,6 +26,8 @@ describe("our own MCP tools declare effect hints", () => {
     expect(effects.website_data_list).toMatchObject({ readOnlyHint: true });
     expect(effects.website_data_get).toMatchObject({ readOnlyHint: true });
     expect(effects.website_style_get).toMatchObject({ readOnlyHint: true });
+    expect(effects.website_access_list).toMatchObject({ readOnlyHint: true });
+    expect(effects.website_access_request_change).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
     expect(effects.create_project).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
     expect(effects.create_task).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
     // GRE-2354 2c(b): commerce drafts write, each with an idempotency key; a delete is destructive
