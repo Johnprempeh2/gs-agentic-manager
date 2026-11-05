@@ -330,3 +330,31 @@ describe("commerce_publish_request approvals (GRE-4089)", () => {
     container.remove();
   });
 });
+
+describe("website_access_change approvals (GRE-4085)", () => {
+  it("names the change and who asked, and says a changed person voids it", () => {
+    expect(approvalActionLabels("website_access_change")).toMatchObject({ approve: "Approve and change", reject: "Reject" });
+    expect(approvalLabel("website_access_change", { title: "Add Ed Editor as portal approver" })).toBe("Access change request: Add Ed Editor as portal approver");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <ApprovalPayloadRenderer
+            type="website_access_change"
+            payload={{ siteName: "Example site", beforeText: "not a portal approver", afterText: 'portal approver: "Sales lead"',
+              requestedBy: "Lintel", note: "Ed runs sales now" }}
+          />
+        </ThemeProvider>,
+      );
+    });
+    expect(container.textContent).toContain('not a portal approver → portal approver: "Sales lead"');
+    expect(container.textContent).toContain("Lintel");
+    expect(container.textContent).toContain("Ed runs sales now");
+    expect(container.textContent).toContain("the card is void and nothing is changed");
+    act(() => root.unmount());
+    container.remove();
+  });
+});
