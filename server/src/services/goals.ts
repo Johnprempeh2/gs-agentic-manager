@@ -769,7 +769,15 @@ export function goalService(db: Db) {
     update: async (id: string, data: Partial<GoalInsert>) => {
       const existing = await db.select().from(goals).where(eq(goals.id, id)).then((rows) => rows[0] ?? null);
       if (!existing) return null;
-      const patch = { ...data };
+      // A goal's identity and company never change (upstream 833d06874).
+      const identity = data as { id?: unknown; companyId?: unknown };
+      if (identity.companyId !== undefined && identity.companyId !== existing.companyId) {
+        throw unprocessable("Goal company cannot be changed");
+      }
+      if (identity.id !== undefined && identity.id !== existing.id) {
+        throw unprocessable("Goal id cannot be changed");
+      }
+      const { id: _id, companyId: _companyId, ...patch } = data;
       // Setting one kind of owner clears the other.
       if (patch.ownerUserId && patch.ownerAgentId === undefined) patch.ownerAgentId = null;
       if (patch.ownerAgentId && patch.ownerUserId === undefined) patch.ownerUserId = null;
