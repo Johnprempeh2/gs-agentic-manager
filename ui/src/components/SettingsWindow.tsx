@@ -10,11 +10,12 @@ export const SETTINGS_WINDOW_HREF_PREFIX = "gsam-settings:";
 // The frame's window.name survives navigation inside it, so Layout can drop its chrome on every page.
 export const SETTINGS_WINDOW_FRAME_NAME = "gsam-settings-window";
 
-/** The in-app path a gsam-settings: link opens, or null. Only same-origin paths, never another site. */
+/** What a gsam-settings: link opens: an in-app path, an https page elsewhere (Netlify, Stripe), or null. */
 export function settingsWindowPath(href: string | null | undefined): string | null {
   if (!href?.startsWith(SETTINGS_WINDOW_HREF_PREFIX)) return null;
   const path = href.slice(SETTINGS_WINDOW_HREF_PREFIX.length).trim();
-  return /^\/(?![/\\])[^\s]*$/.test(path) ? path : null;
+  if (/^\/(?![/\\])[^\s]*$/.test(path)) return path;
+  return /^https:\/\/[^\s/]+(?:\/[^\s]*)?$/.test(path) ? path : null;
 }
 
 export function isSettingsWindowFrame(): boolean {
@@ -24,6 +25,15 @@ export function isSettingsWindowFrame(): boolean {
 export function SettingsWindow({ path, label }: { path: string; label: ReactNode }) {
   const [open, setOpen] = useState(false);
   const src = applyCompanyPrefix(path, useActiveCompanyPrefix());
+  // Other sites (Netlify, Stripe) refuse to be framed, so they open in a small window beside GSAM.
+  if (path.startsWith("https://")) {
+    return (
+      <Button type="button" variant="outline" size="sm" className="my-1 gap-1.5" onClick={() => window.open(path, SETTINGS_WINDOW_FRAME_NAME, "popup,noopener,width=1100,height=760")}>
+        <ExternalLink className="size-3.5" aria-hidden />
+        {label}
+      </Button>
+    );
+  }
   if (!open) {
     return (
       <Button type="button" variant="outline" size="sm" className="my-1 gap-1.5" onClick={() => setOpen(true)}>
