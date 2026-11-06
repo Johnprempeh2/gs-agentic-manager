@@ -245,6 +245,19 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
+  /**
+   * Portal document writes (GRE-4083), on the write key. The route has already checked the actor. No write key is 409
+   * capability_not_configured, before any vault read or call to the site.
+   */
+  async function portalDocumentWrite(site: BridgeSite, method: "POST" | "PATCH", path: string, body: Record<string, unknown>,
+    actor: WebsiteBridgeActor, idempotencyKey?: string) {
+    if (!site.dataBridgeWriteSecretId) {
+      throw new HttpError(409, "Portal document changes are off for this site: no write key is set up",
+        { code: "capability_not_configured", capability: "write" });
+    }
+    return (await client(site, "write")).portalDocumentWrite(method, path, body, actor, idempotencyKey);
+  }
+
   /** Facet's reader (GRE-2324): the site's enquiries, page by page, as the scheduled pull. */
   const enquiryReader: WebsiteEnquiryReader = {
     async listEnquiries(siteId, cursor) {
@@ -260,6 +273,7 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
-  return { client, commerceClient, createKey, status, releaseHealth, activityEvents, schemaProbe, list, get, commerce, enquiryReader };
+  return { client, commerceClient, createKey, status, releaseHealth, activityEvents, schemaProbe, list, get, commerce, portalDocumentWrite,
+    enquiryReader };
 }
 export type WebsiteDataBridgeService = ReturnType<typeof websiteDataBridgeService>;

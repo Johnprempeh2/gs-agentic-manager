@@ -7,6 +7,8 @@ import {
   WEBSITE_COMMERCE_RESOURCES,
   WEBSITE_DATA_BRIDGE_API_ROUTES,
   WEBSITE_DATA_RESOURCES,
+  WEBSITE_PORTAL_DOCUMENT_API_ROUTES,
+  WEBSITE_PORTAL_DOCUMENT_MAX_BODY_BYTES,
   createWebsiteDataBridgeKeySchema,
   websiteCommerceItemQuerySchema,
   websiteCommerceListQuerySchema,
@@ -23,7 +25,12 @@ import {
   websiteClientMemberRoleSchema,
   websitePortalApproverSchema,
   websiteStaffRoleSchema,
+  websitePortalDocumentApproveSchema,
+  websitePortalDocumentCreateSchema,
+  websitePortalDocumentEditSchema,
+  websitePortalDocumentStepSchema,
   type WebsiteAccessChange,
+  type WebsitePortalDocumentStep,
   type PermissionKey,
   type WebsiteCommerceWriteMethod,
   type WebsiteCommerceResource,
@@ -67,6 +74,7 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   router.use("/companies/:companyId/website/sites/:siteId/data", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/commerce", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/access", requireEntitlement(db, "enableWebsiteView"));
+  router.use("/companies/:companyId/website/sites/:siteId/portal-documents", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/activity/:organisationId", requireEntitlement(db, "enableWebsiteView"));
 
   router.get("/companies/:companyId/website/activity/:organisationId", async (req, res) => {
@@ -103,7 +111,7 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   });
 
   async function siteFor(req: Request, res: Response,
-    permission: Extract<PermissionKey, "website:view" | "website:publish" | "website:commerce">): Promise<SiteRow | null> {
+    permission: Extract<PermissionKey, "website:view" | "website:edit" | "website:publish" | "website:commerce">): Promise<SiteRow | null> {
     const companyId = req.params.companyId as string;
     const siteId = req.params.siteId as string;
     assertCompanyAccess(req, companyId);
@@ -115,7 +123,8 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     if (!decision.allowed && decision.reason !== "deny_scope") {
       throw new HttpError(403, permission === "website:commerce"
         ? "You do not have Commerce rights for this site. Ask an admin of this company."
-        : WEBSITE_MESSAGES[permission === "website:view" ? "perm.view_none" : "perm.settings"], { code: "website_permission_missing", permission });
+        : WEBSITE_MESSAGES[permission === "website:view" ? "perm.view_none" : permission === "website:edit" ? "perm.edit_none" : "perm.settings"],
+      { code: "website_permission_missing", permission });
     }
     const site = decision.allowed && UUID_RE.test(siteId) ? await sites.getSite(companyId, siteId) : null;
     if (!site) {
@@ -499,6 +508,60 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     });
     res.status(201).json({ approval: result.approval });
   });
+
+  // ---- portal documents (GRE-4083, contract "Portal documents") ----
+  // Drafting (website:edit; agents may): create, edit a draft, submit, return to draft. Approve and publish, and withdraw
+  // (website:publish): an agent gets 403 website_publish_agent_refused and a board API key 403 website_portal_people_only,
+  // before any vault read or call to the site. The site refuses again: approve and publish needs a registered portal
+  // approver, withdraw a person. The activity log names the document, never its content.
+
+  function portalPersonOrRefuse(req: Request, step: WebsitePortalDocumentStep) {
+    const actor = req.actor;
+    if (actor.type === "board" && actor.userId && (actor.source === "session" || actor.source === "local_implicit")) return;
+    throw new HttpError(403, "Only a person can approve and publish or withdraw a portal document, by clicking in GSAM. An agent "
+      + "submits the draft; a portal approver publishes it.", { code: "website_portal_people_only", operation: step });
+  }
+
+  async function portalDocumentWrite(req: Request, res: Response, step: "create" | "edit" | WebsitePortalDocumentStep,
+    schema: z.ZodType<Record<string, unknown>>) {
+    const people = step === "approve-and-publish" || step === "withdraw";
+    const site = await siteFor(req, res, people ? "website:publish" : "website:edit");
+    if (!site) return;
+    if (people) portalPersonOrRefuse(req, step);
+    const documentId = req.params.documentId as string | undefined;
+    if (documentId !== undefined && !UUID_RE.test(documentId)) return notFound(res);
+    queryOf(NO_QUERY, req);
+    if (Buffer.byteLength(JSON.stringify(req.body ?? {})) > WEBSITE_PORTAL_DOCUMENT_MAX_BODY_BYTES) {
+      throw new HttpError(413, "The document is too large for the website (1 MB at most)", { code: "website_portal_document_too_large" });
+    }
+    const input = schema.safeParse(req.body ?? {});
+    if (!input.success) {
+      const issue = input.error.issues[0];
+      throw unprocessable(`The portal document change is not valid: ${issue?.path.join(".") || "body"}: ${issue?.message ?? "invalid"}`,
+        { code: "website_portal_document_invalid" });
+    }
+    const path = step === "create" ? "" : step === "edit" ? `/${documentId}` : `/${documentId}/${step}`;
+    const result = await bridge.portalDocumentWrite(site, step === "edit" ? "PATCH" : "POST", path, input.data, actorOf(req),
+      idempotencyKeyOf(req));
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.portal_document_changed",
+      entityType: "website_site", entityId: site.id, agentId: actor.agentId, runId: actor.runId,
+      details: { operation: step, documentId: result.item.id, customerId: result.item.customer_id, kind: result.item.kind,
+        version: result.item.version, status: result.item.status, rowVersion: result.item.row_version,
+        approvalId: result.approvalId ?? null },
+    });
+    res.status(step === "create" ? 201 : 200).json(result);
+  }
+
+  router.post(WEBSITE_PORTAL_DOCUMENT_API_ROUTES.create, (req, res) => portalDocumentWrite(req, res, "create", websitePortalDocumentCreateSchema));
+  router.patch(WEBSITE_PORTAL_DOCUMENT_API_ROUTES.edit, (req, res) => portalDocumentWrite(req, res, "edit", websitePortalDocumentEditSchema));
+  router.post(WEBSITE_PORTAL_DOCUMENT_API_ROUTES.submit, (req, res) => portalDocumentWrite(req, res, "submit", websitePortalDocumentStepSchema));
+  router.post(WEBSITE_PORTAL_DOCUMENT_API_ROUTES.returnToDraft, (req, res) =>
+    portalDocumentWrite(req, res, "return-to-draft", websitePortalDocumentStepSchema));
+  router.post(WEBSITE_PORTAL_DOCUMENT_API_ROUTES.approveAndPublish, (req, res) =>
+    portalDocumentWrite(req, res, "approve-and-publish", websitePortalDocumentApproveSchema));
+  router.post(WEBSITE_PORTAL_DOCUMENT_API_ROUTES.withdraw, (req, res) => portalDocumentWrite(req, res, "withdraw", websitePortalDocumentStepSchema));
 
   router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceList, async (req, res) => {
     const site = await siteFor(req, res, "website:view");

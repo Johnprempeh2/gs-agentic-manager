@@ -187,3 +187,59 @@ describe("website access tools", () => {
     await expect(call("website_access_request_change", { kind: "approver_remove", staffId: STAFF })).rejects.toThrow(/Access changes are off/);
   });
 });
+
+// GRE-4083: agents draft portal documents through GSAM's portal document routes. No tool approves and publishes or
+// withdraws: those are a person's click.
+describe("website portal document tools", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const CLIENT = "c0000000-0000-4000-8000-000000000001";
+  const DOC = "d0c00000-0000-4000-8000-000000000001";
+  const body = { sections: [{ id: "intro", title: "Intro", html: "<p>Hello <a href=\"https://greatstone.test\">us</a></p>" }] };
+
+  it("sends create, edit, submit and return to draft to their routes, with a key the same agent's retry repeats", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ item: { id: DOC } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await call("portal_document_create", { customerId: CLIENT, kind: "engagement_pack", title: "Pack", body, action: "accept",
+      confirmationText: "I accept", idempotencyKey: "k1" });
+    await call("portal_document_edit", { documentId: DOC, expectedRowVersion: 1, summary: null, title: "Pack 2", idempotencyKey: "k2" });
+    await call("portal_document_submit", { documentId: DOC, expectedRowVersion: 2, idempotencyKey: "k3" });
+    await call("portal_document_return_to_draft", { documentId: DOC, expectedRowVersion: 3, idempotencyKey: "k4" });
+    await call("portal_document_create", { customerId: CLIENT, kind: "engagement_pack", title: "Pack", body, action: "accept",
+      confirmationText: "I accept", idempotencyKey: "k1" });
+    const sent = fetchMock.mock.calls.map(([url, init]) => [(init as RequestInit).method, String(url).replace(BASE, ""), JSON.parse(String((init as RequestInit).body))]);
+    expect(sent.slice(0, 4)).toEqual([
+      ["POST", "/portal-documents", { customerId: CLIENT, kind: "engagement_pack", title: "Pack", body, action: "accept", confirmationText: "I accept" }],
+      ["PATCH", `/portal-documents/${DOC}`, { expectedRowVersion: 1, summary: null, title: "Pack 2" }],
+      ["POST", `/portal-documents/${DOC}/submit`, { expectedRowVersion: 2 }],
+      ["POST", `/portal-documents/${DOC}/return-to-draft`, { expectedRowVersion: 3 }],
+    ]);
+    const keys = fetchMock.mock.calls.map(([, init]) => ((init as RequestInit).headers as Record<string, string>)["Idempotency-Key"]);
+    expect(keys.every((k) => /^[A-Za-z0-9_-]{22}$/.test(k!))).toBe(true);
+    expect(new Set(keys.slice(0, 4)).size).toBe(4);
+    expect(keys[4]).toBe(keys[0]);
+  });
+
+  it("refuses bad fields and HTML before any call, and has no tool to approve, publish or withdraw", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ item: {} }));
+    vi.stubGlobal("fetch", fetchMock);
+    const create = (args: Record<string, unknown>) => call("portal_document_create", { customerId: CLIENT, kind: "nda", title: "NDA", idempotencyKey: "k", ...args });
+    await expect(create({ kind: "contract" })).rejects.toThrow();
+    await expect(create({ status: "published" })).rejects.toThrow();
+    await expect(create({ body: { sections: [{ id: "a", title: "A", html: "<script>x</script>" }] } })).rejects.toThrow(/<script> is not allowed/);
+    await expect(create({ body: { sections: [{ id: "a", title: "A", html: "<a href=\"javascript:x\">x</a>" }] } })).rejects.toThrow(/https:/);
+    await expect(create({ demos: [{ label: "Demo", url: "http://insecure.test" }] })).rejects.toThrow(/https/);
+    await expect(call("portal_document_edit", { documentId: DOC, expectedRowVersion: 1, idempotencyKey: "k" })).rejects.toThrow(/at least one/);
+    await expect(call("portal_document_submit", { documentId: "x", expectedRowVersion: 1, idempotencyKey: "k" })).rejects.toThrow();
+    await expect(call("portal_document_submit", { expectedRowVersion: 1, idempotencyKey: "k" })).rejects.toThrow(/documentId/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const names = projectToolDefinitions("standard").map((tool) => tool.name).filter((name) => name.startsWith("portal_"));
+    expect(names).toEqual(["portal_document_create", "portal_document_edit", "portal_document_submit", "portal_document_return_to_draft"]);
+    expect(names.some((name) => /approv|publish|withdraw/.test(name))).toBe(false);
+  });
+
+  it("passes the route's refusal and a stale document back to the agent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+      { error: "The record changed on the website", code: "website_bridge_conflict", details: { current: { id: DOC, row_version: 4 } } }, { status: 409 })));
+    await expect(call("portal_document_submit", { documentId: DOC, expectedRowVersion: 1, idempotencyKey: "k" })).rejects.toThrow(/row_version":4/);
+  });
+});

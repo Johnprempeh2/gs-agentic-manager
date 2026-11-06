@@ -218,6 +218,19 @@ export const bridgeActivationStepsSchema = z.object({
     rowVersion: z.number().int(), updatedAt: z.string(), licencesInRange: z.number().int().nonnegative(),
   }),
 });
+/**
+ * A portal document (GRE-4081 contract, "Portal documents"). Only these fields come through: anything else the site
+ * might add (a PDF path, a website user id) is dropped, so GSAM never passes it on.
+ */
+export const bridgePortalDocumentSchema = z.object({
+  id: z.string().min(1), customer_id: z.string(), kind: z.string(), series: z.string().nullable(), version: z.number().int(),
+  title: z.string(), summary: z.string().nullable(), body: z.unknown(), demos: z.unknown(), pdf_sha256: z.string().nullable(),
+  has_pdf: z.boolean(), action: z.string().nullable(), confirmation_text: z.string().nullable(), signatory_email: z.string().nullable(),
+  status: z.string(), content_sha256: z.string().nullable(), approval_id: z.string().nullable(), created_by_kind: z.string(),
+  created_run_id: z.string().nullable(), published_at: z.string().nullable(), withdrawn_at: z.string().nullable(),
+  created_at: z.string(), updated_at: z.string(), row_version: z.number().int(),
+});
+export const bridgePortalDocumentAnswerSchema = z.object({ item: bridgePortalDocumentSchema, approvalId: z.string().min(1).optional() });
 /** A refund request row, as `bridge_request_refund` and `bridge_refund_decision` return it. */
 export const bridgeRefundRequestSchema = z.object({
   item: z.object({ id: z.string().min(1), status: z.string() }).passthrough(),
@@ -403,6 +416,13 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
       const schema = bridgeAccessAnswerSchemas[change.kind] as unknown as z.ZodType<z.infer<(typeof bridgeAccessAnswerSchemas)[K]>>;
       return send(method, path, body, actor, schema, idempotencyKey);
     },
+    /**
+     * A portal document write (GRE-4083) on the `write` key, signed v2: `path` is after `/api/admin/v1/portal-documents`,
+     * e.g. `/<id>/submit`. The site refuses approve-and-publish to anyone but a registered portal approver, and
+     * withdraw to an agent.
+     */
+    portalDocumentWrite: (method: "POST" | "PATCH", path: string, body: Record<string, unknown>, actor: WebsiteBridgeActor,
+      idempotencyKey?: string) => send(method, `portal-documents${path}`, body, actor, bridgePortalDocumentAnswerSchema, idempotencyKey),
     /** Records a refund request on the `refund_request` key. Moves no money. */
     requestRefund: (input: { orderId: string; amountMinor: number; reason: string }, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
       send("POST", "refund-requests", { orderId: input.orderId, amountMinor: input.amountMinor, reason: input.reason }, actor,
