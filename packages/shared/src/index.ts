@@ -500,6 +500,8 @@ export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
 export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
+export * from "./types/links.js";
+export * from "./validators/links.js";
 export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
 export * from "./types/deep-dive-files.js";
