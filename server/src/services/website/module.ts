@@ -423,18 +423,18 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
     });
   }
 
-  /** The engine version when the site passes the connect check; otherwise the `connect.err.*` refusal. */
+  /** The engine version and release schema when the site passes the connect check; otherwise the `connect.err.*` refusal. */
   async function verifyConnection(input: WebsiteConnectInput) {
     const result = await checkConnection(input);
     if (!result.ok) throw websiteConnectRefusal(result);
-    return result.engineVersion;
+    return { engineVersion: result.engineVersion, releaseSchemaVersion: result.releaseSchemaVersion };
   }
 
   async function createSite(companyId: string, input: CreateWebsiteSite, actor: WebsiteActor) {
     if (input.netlifyTokenSecretId) await assertLinkableSecret(companyId, input.netlifyTokenSecretId);
     // Without a token there is nothing to check yet; the check runs when a token is added.
     const token = input.netlifyToken ?? (input.netlifyTokenSecretId ? await readToken(companyId, input.netlifyTokenSecretId, null) : null);
-    const engineVersion = token ? await verifyConnection({ netlifySiteId: input.netlifySiteId, domain: input.domain, token }) : null;
+    const engine = token ? await verifyConnection({ netlifySiteId: input.netlifySiteId, domain: input.domain, token }) : null;
     let row: SiteRow;
     try {
       [row] = await db
@@ -452,7 +452,8 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
           livePreviewUrl: input.livePreviewUrl ?? null,
           devPreviewUrl: input.devPreviewUrl ?? null,
           checkPaths: input.checkPaths ?? ["/"],
-          engineVersion,
+          engineVersion: engine?.engineVersion ?? null,
+          ...(engine ? { releaseSchemaVersion: engine.releaseSchemaVersion } : {}),
         })
         .returning();
     } catch (err) {
@@ -484,7 +485,7 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
     if (netlifyToken || linksNewSecret || targetChanged) {
       const secretId = linksNewSecret ? netlifyTokenSecretId! : netlifyTokenSecretId === null ? null : site.netlifyTokenSecretId;
       const token = netlifyToken ?? (secretId ? await readToken(site.companyId, secretId, site.id) : null);
-      if (token) patch.engineVersion = await verifyConnection({ ...target, token });
+      if (token) Object.assign(patch, await verifyConnection({ ...target, token }));
     }
     if (netlifyToken) {
       patch.netlifyTokenSecretId = await storeNetlifyToken(site.companyId, site, netlifyToken, actor.userId);
