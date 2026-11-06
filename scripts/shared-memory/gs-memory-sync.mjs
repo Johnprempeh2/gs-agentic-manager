@@ -7,7 +7,7 @@
 //   node gs-memory-sync.mjs run [--dry-run]   send what is new (dry run: count only, send nothing)
 //   node gs-memory-sync.mjs status            what was sent, today's count, last error
 //   node gs-memory-sync.mjs check             config, tokens (present or not), GSAM reachable, bank name
-//   node gs-memory-sync.mjs recall "<query>" [--as claude|codex]   ask the shared memory
+//   node gs-memory-sync.mjs recall "<query>" [--as claude|codex]   search John's own bank (person scope only)
 //   node gs-memory-sync.mjs handoff           the live handoff (from GSAM, or NOW.md when GSAM is down)
 //
 // The live handoff (John, 26 Oct): each run also mirrors the handoff in GSAM
@@ -374,7 +374,7 @@ export async function run({ dryRun = false, env = process.env, now = Date.now(),
     countRedactions(handoff.redacted ?? []);
     save();
 
-    // Newest first, so a backlog never delays today's work.
+    // Sessions newest first, so a backlog never delays today's work.
     const sources = [
       ...listFiles(config.claudeProjectsDir, (file) => file.endsWith(".jsonl"), 1).map((file) => ({ file, source: "claude_code" })),
       ...listFiles(config.codexSessionsDir, (file) => file.endsWith(".jsonl")).map((file) => ({ file, source: "codex" })),
@@ -408,6 +408,23 @@ export async function run({ dryRun = false, env = process.env, now = Date.now(),
       return outcomes;
     };
 
+    // Memory files next: they are John's curated decisions, so they never wait behind a session backlog.
+    if (budget > 0) {
+      const { entries, found } = memoryFileEntries(config.memoryDir, state);
+      countRedactions(found);
+      const batch = entries.slice(0, budget);
+      budget -= batch.length;
+      if (dryRun) summary.sent += batch.length;
+      else if (batch.length > 0) {
+        const outcomes = await deliver("memory_file", batch);
+        batch.forEach((entry, index) => {
+          if (outcomes[index] !== "capped") state.memory[entry.sourceId] = entry.hash;
+        });
+        if (outcomes.includes("capped")) budget = 0;
+        save();
+      }
+    }
+
     for (const { file, source } of sources) {
       if (budget <= 0) break;
       const { entries, advance, found } = sessionEntries(file, source, state, { now, backfillFrom: state.backfillFrom });
@@ -433,19 +450,6 @@ export async function run({ dryRun = false, env = process.env, now = Date.now(),
       save();
     }
 
-    if (budget > 0) {
-      const { entries, found } = memoryFileEntries(config.memoryDir, state);
-      countRedactions(found);
-      const batch = entries.slice(0, budget);
-      if (dryRun) summary.sent += batch.length;
-      else if (batch.length > 0) {
-        const outcomes = await deliver("memory_file", batch);
-        batch.forEach((entry, index) => {
-          if (outcomes[index] !== "capped") state.memory[entry.sourceId] = entry.hash;
-        });
-        save();
-      }
-    }
     state.lastRun = { at: new Date(now).toISOString(), ok: true, ...summary };
     save();
     log(`shared memory sync: ${JSON.stringify(summary)}`);
@@ -457,6 +461,18 @@ export async function run({ dryRun = false, env = process.env, now = Date.now(),
   } finally {
     release();
   }
+}
+
+/**
+ * Searches John's own bank (the link's person scope) only. Without scopeIds
+ * GSAM searches every scope the link may read and puts approved company
+ * records before John's unreviewed synced ones, so his hits can drop out.
+ */
+export async function recall({ config, token, query, limit = 8, send = post }) {
+  const scopes = await send(config, token, "/scopes");
+  const mine = (scopes ?? []).find((scope) => scope.kind === "person");
+  if (!mine) throw new Error("no person scope for this link yet: run the sync once, then try again");
+  return send(config, token, "/recall", { query, limit, scopeIds: [mine.id] });
 }
 
 async function main(argv) {
@@ -492,7 +508,7 @@ async function main(argv) {
     const as = rest.includes("--as") ? rest[rest.indexOf("--as") + 1] : "claude";
     const token = readToken(config.tokens[as === "codex" ? "codex" : "claude_code"]);
     if (!query || !token) throw new Error('usage: recall "<query>" [--as claude|codex] (and the token must be in the Keychain)');
-    const result = await post(config, token, "/recall", { query, limit: 8 });
+    const result = await recall({ config, token, query });
     for (const hit of result.results ?? []) {
       const record = hit.record;
       console.log(`- ${record.title ?? "(untitled)"}\n  source: ${record.sourceKind ?? "?"} ${record.sourceId ?? ""}; when: ${record.effectiveFrom ?? record.createdAt}; status: ${record.status}\n  ${String(hit.excerpt).replace(/\s+/g, " ").slice(0, 400)}`);
