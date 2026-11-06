@@ -28,6 +28,7 @@ import {
   Rocket,
   CreditCard,
   FileCheck2,
+  Link2,
   ImageIcon,
   Brain,
   Workflow,
@@ -449,6 +450,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     "deep-dive": gated(showDeepDive, link("/deep-dive", "Deep Dive", Microscope, { textBadge: "beta" })),
     // GRE-585: finished documents, now with the client work.
     deliverables: link("/deliverables", "Deliverables", FileCheck2),
+    // GRE-4252: every shared link, by client and project.
+    links: link("/links", "Links", Link2),
     images: link("/images", "GS Studio", ImageIcon),
     dashboard: link("/dashboard", "Dashboard", LayoutDashboard, { liveCount: liveRunCount }),
     tasks: link("/issues", "Tasks", CircleCheck, { activeKey: "item:tasks" }),
