@@ -3321,6 +3321,7 @@ export function accessRoutes(
         { name: "paperclip", path: "/api/skills/paperclip" },
         { name: "ponytail", path: "/api/skills/ponytail" },
         { name: "impeccable", path: "/api/skills/impeccable" },
+        { name: "design-assets", path: "/api/skills/design-assets" },
         {
           name: "para-memory-files",
           path: "/api/skills/para-memory-files"
