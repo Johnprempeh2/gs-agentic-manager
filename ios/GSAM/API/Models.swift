@@ -1,8 +1,9 @@
 import Foundation
 
 // The few fields the app reads from GSAM responses. Shapes follow
-// packages/shared/src/types (attention.ts, blocked-work.ts) and the
-// cli-auth routes in server/src/routes/access.ts. Unknown fields are ignored.
+// packages/shared/src/types (attention.ts, blocked-work.ts), the
+// cli-auth routes in server/src/routes/access.ts and the issue create route
+// in server/src/routes/issues.ts. Unknown fields are ignored.
 
 struct CLIAuthChallenge: Decodable, Equatable, Sendable {
     let id: String
@@ -101,4 +102,12 @@ struct BlockedWorkOverview: Decodable, Equatable, Sendable {
     let oldestWaitingSince: Date?
     let items: [BlockedWorkItem]
     let truncated: Bool
+}
+
+/// The answer to `POST /api/companies/:id/issues`.
+struct CreatedIssue: Decodable, Equatable, Sendable {
+    let id: String
+    let identifier: String?
+    let title: String
+    let deduplicated: Bool?
 }

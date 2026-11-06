@@ -1,8 +1,7 @@
 # GSAM for iPhone
 
 A native SwiftUI app that shows what needs John's approval and what work is
-blocked, across every GSAM company his login can see. Siri commands come in
-the next slice (GRE-4194).
+blocked, across every GSAM company his login can see, and answers three Siri commands.
 
 ## How it reaches GSAM
 
@@ -29,6 +28,22 @@ The app uses the sign-in challenge the `gsam` CLI uses (no server change):
 | Account   | `GET /api/cli-auth/me`, `GET /api/companies?scope=accessible` |
 | Needs you | `GET /api/companies/:id/attention?sort=decide`         |
 | Blocked   | `GET /api/companies/:id/blocked-work`                  |
+
+## Siri
+
+Three App Shortcuts, ready as soon as the app is installed (no setup in the
+Shortcuts app). Apple needs the app name in every phrase.
+
+| Say                                  | Siri does                                             | Routes |
+| ------------------------------------ | ----------------------------------------------------- | ------ |
+| "GSAM status"                        | Says how many items need you, how many tasks are blocked, and the longest wait | `attention?sort=decide`, `blocked-work` for each company |
+| "What needs my approval in GSAM"     | Reads the top three items of the attention feed, most severe first | `attention?sort=decide` for each company |
+| "Add a GSAM task"                    | Asks for the title and the company, then creates the task | `POST /api/companies/:id/issues` with `{ "title" }` |
+
+The intents run in the background with the same Keychain token and server
+address as the app. With no saved sign-in, Siri says "Open GSAM and sign in
+first." The logic is in `GSAM/Siri/SiriCommands.swift` and is tested with a
+fake server in `GSAMTests/SiriIntentTests.swift`.
 
 ## Build and test
 
