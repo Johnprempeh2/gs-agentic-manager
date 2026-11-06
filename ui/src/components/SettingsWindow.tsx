@@ -57,7 +57,7 @@ export function SettingsWindow({ path, label }: { path: string; label: ReactNode
           <X className="size-4" />
         </button>
       </span>
-      <iframe name={SETTINGS_WINDOW_FRAME_NAME} src={src} title={typeof label === "string" ? label : "Settings"} className="block h-[min(560px,70vh)] w-full bg-background" />
+      <iframe name={SETTINGS_WINDOW_FRAME_NAME} src={src} title={typeof label === "string" ? label : "Settings"} className="block w-full bg-background" style={{ height: "min(560px, 70vh)" }} />
     </span>
   );
 }
