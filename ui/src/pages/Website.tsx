@@ -8,6 +8,7 @@ import {
   Lock,
   MousePointerClick,
   Plus,
+  Settings2,
   Search,
   Target,
   TrendingUp,
@@ -52,7 +53,7 @@ import {
   type WebsiteTab,
 } from "../components/website/WebsiteHub";
 import { WebsitePagesTab, useOpenWebsiteEditor } from "../components/website/WebsiteEditorWorkspace";
-import { WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
+import { WebsiteDetailsForm, WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
 import { WebsiteCollectionsTab } from "../components/website/WebsiteCollections";
 import { WebsiteHomeTab } from "../components/website/WebsiteHome";
 import { WebsiteStyleTab } from "../components/website/WebsiteStyle";
@@ -697,6 +698,7 @@ export function Website() {
   const notice = useGoogleReturnNotice();
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { canManage, isLoading: accessLoading } = useCanManageWebsite(selectedCompanyId ?? "");
 
@@ -807,7 +809,22 @@ export function Website() {
               Add a website
             </Button>
           ) : null}
+          {canManage ? (
+            <Button type="button" variant="ghost" size="sm" aria-expanded={editingDetails} onClick={() => setEditingDetails((open) => !open)}>
+              <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Website settings
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+      {canManage && editingDetails ? (
+        <WebsiteDetailsForm
+          key={selected.id}
+          companyId={selectedCompanyId}
+          property={selected}
+          onDone={() => setEditingDetails(false)}
+          onRemoved={() => { setEditingDetails(false); setPropertyId(properties.find((p) => p.id !== selected.id)?.id ?? null); }}
+        />
       ) : null}
       <PropertyHub
         key={selected.id}

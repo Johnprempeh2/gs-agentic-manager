@@ -215,3 +215,66 @@ export function WebsiteGa4Link({ companyId, property, onDone }: {
     </form>
   );
 }
+
+/** Rename a website, change its address, or remove it from the list. */
+export function WebsiteDetailsForm({ companyId, property, onDone, onRemoved }: {
+  companyId: string;
+  property: WebsiteProperty;
+  onDone: () => void;
+  onRemoved: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(property.name);
+  const [siteUrl, setSiteUrl] = useState(property.siteUrl);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.website.overview(companyId) });
+  const save = useMutation({
+    mutationFn: () => websiteApi.update(companyId, property.id, {
+      ...(name.trim() !== property.name ? { name: name.trim() } : {}),
+      ...(siteUrl.trim() !== property.siteUrl ? { siteUrl: siteUrl.trim() } : {}),
+    }),
+    onSuccess: () => { void refresh(); onDone(); },
+  });
+  const remove = useMutation({
+    mutationFn: () => websiteApi.remove(companyId, property.id),
+    onSuccess: () => { void refresh(); onRemoved(); },
+  });
+  const changed = name.trim() !== property.name || siteUrl.trim() !== property.siteUrl;
+  const busy = save.isPending || remove.isPending;
+  const error = save.error ?? remove.error;
+  return (
+    <form
+      className="space-y-3 rounded-lg border border-border bg-card p-4"
+      data-testid="website-details"
+      onSubmit={(event) => { event.preventDefault(); save.mutate(); }}
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">Name</span>
+          <Input value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">Address</span>
+          <Input value={siteUrl} onChange={(event) => setSiteUrl(event.target.value)} disabled={busy} />
+        </label>
+      </div>
+      {error ? <p role="alert" className="text-xs text-status-danger">{errorStateMessage(error)}</p> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          className="mr-auto text-status-danger"
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm(`Remove "${property.name}" from the website list? Its reports go with it. The site itself is not touched.`)) remove.mutate();
+          }}
+        >
+          {remove.isPending ? "Removing" : "Remove website"}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone} disabled={busy}>Cancel</Button>
+        <Button type="submit" disabled={busy || !changed || !name.trim() || !siteUrl.trim()}>
+          {save.isPending ? "Saving" : "Save"}
+        </Button>
+      </div>
+    </form>
+  );
+}

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, projects } from "@greatstone/db";
+import { companies, projects, websiteProperties, websiteSite } from "@greatstone/db";
 import {
   WEBSITE_API_ROUTES,
   createWebsitePropertySchema,
@@ -149,6 +149,20 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
     const updated = await service.updateProperty(property, req.body);
     await logWebsite(req, companyId, "website.property_updated", property.id, { fields: Object.keys(req.body) });
     res.json(updated);
+  });
+
+  // Remove a website from the list (a duplicate or a retired test copy). Refused while a live site record uses it.
+  router.delete(WEBSITE_API_ROUTES.property, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyOwnerOrAdmin(req, companyId);
+    const property = await propertyInCompany(req, res);
+    if (!property) return;
+    const [inUse] = await db.select({ id: websiteSite.id }).from(websiteSite)
+      .where(and(eq(websiteSite.propertyId, property.id), isNull(websiteSite.archivedAt))).limit(1);
+    if (inUse) throw unprocessable("This website is still connected to a site. Archive the site first.");
+    await db.delete(websiteProperties).where(eq(websiteProperties.id, property.id));
+    await logWebsite(req, companyId, "website.property_removed", property.id, { name: property.name, siteUrl: property.siteUrl });
+    res.status(204).end();
   });
 
   router.get(WEBSITE_API_ROUTES.report, async (req, res) => {

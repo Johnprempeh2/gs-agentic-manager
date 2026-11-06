@@ -1662,6 +1662,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
   "POST /api/companies/{companyId}/website/properties",
   "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
+  "DELETE /api/companies/{companyId}/website/properties/{propertyId}",
   "POST /api/companies/{companyId}/website/properties/{propertyId}/google/connect",
   "POST /api/companies/{companyId}/website/properties/{propertyId}/google/disconnect",
   "POST /api/companies/{companyId}/website/properties/{propertyId}/pull",
@@ -16350,6 +16351,14 @@ registerCurrentRoute({
   summary: "Edit a website property (owners and admins); send ga4PropertyId null to unlink Google Analytics",
   body: updateWebsitePropertySchema,
   responses: websiteResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}",
+  tags: ["website"],
+  summary: "Remove a website property (owners and admins); refused while a non-archived site record uses it",
+  responses: { ...websiteResponses, 204: r.noContent },
 });
 
 registerCurrentRoute({

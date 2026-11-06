@@ -15,6 +15,7 @@ import {
   instanceSettings,
   websiteProperties,
   websitePulls,
+  websiteSite,
 } from "@greatstone/db";
 import type { WebsiteProperty, WebsiteReport } from "@greatstone/shared";
 import {
@@ -307,6 +308,23 @@ describeEmbeddedPostgres("website view routes", () => {
       .post(`/api/companies/${company.id}/website/properties`)
       .send({ name: "Bad", siteUrl: "https://b.example/", ga4PropertyId: "G-ABC123" })
       .expect(400);
+  });
+
+  it("removes a website from the list, but not while a site record uses it", async () => {
+    await enableWebsiteView();
+    const company = await seedCompany();
+    const http = request(app());
+    const created = await http
+      .post(`/api/companies/${company.id}/website/properties`)
+      .send({ name: "Old staging", siteUrl: "https://old.example/" })
+      .expect(201);
+    const property = created.body as WebsiteProperty;
+    await db.insert(websiteSite).values({ companyId: company.id, name: "Old", domain: "old.example", netlifySiteId: "n-old", propertyId: property.id });
+    await http.delete(`/api/companies/${company.id}/website/properties/${property.id}`).expect(422);
+    await db.update(websiteSite).set({ archivedAt: new Date() }).where(eq(websiteSite.propertyId, property.id));
+    await http.delete(`/api/companies/${company.id}/website/properties/${property.id}`).expect(204);
+    const overview = await http.get(`/api/companies/${company.id}/website`).expect(200);
+    expect(overview.body.properties.map((p: WebsiteProperty) => p.id)).not.toContain(property.id);
   });
 
   it("pulls each connected property once a day from the scheduler", async () => {
