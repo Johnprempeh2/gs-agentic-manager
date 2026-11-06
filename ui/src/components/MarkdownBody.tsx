@@ -41,6 +41,7 @@ import {
 } from "../lib/external-objects";
 import { normalizeExternalObjectHref } from "../lib/external-object-href";
 import { inAppDeliverablePath } from "../lib/deliverable-links";
+import { SettingsWindow, settingsWindowPath, SETTINGS_WINDOW_HREF_PREFIX } from "./SettingsWindow";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { richClipboardContentForSelection, writeRichClipboardEvent } from "../lib/rich-clipboard";
 import { isPlainPrimaryClick, parseAttachmentContentHref } from "../lib/attachment-preview";
@@ -381,6 +382,7 @@ function extractMermaidSource(children: ReactNode): string | null {
 
 function safeMarkdownUrlTransform(url: string): string {
   if (url.startsWith(WORKSPACE_FILE_HREF_PREFIX)) return url;
+  if (url.startsWith(SETTINGS_WINDOW_HREF_PREFIX)) return url;
   return parseMentionChipHref(url) ? url : defaultUrlTransform(url);
 }
 
@@ -903,6 +905,9 @@ function MarkdownBodyImpl({
           </Link>
         );
       }
+
+      const settingsPath = settingsWindowPath(href);
+      if (settingsPath) return <SettingsWindow path={settingsPath} label={linkChildren} />;
 
       const deliverablePath = inAppDeliverablePath(href);
       if (deliverablePath) {

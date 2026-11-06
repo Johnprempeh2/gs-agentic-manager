@@ -26,6 +26,7 @@ import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { isSettingsWindowFrame } from "./SettingsWindow";
 import { AddToHomeScreen } from "./AddToHomeScreen";
 import { PageSkeleton } from "./PageSkeleton";
 import { PullToRefresh } from "./PullToRefresh";
@@ -630,6 +631,24 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       resetNavigationScroll(main);
     }
   }, [location.key, location.pathname, location.state, navigationType]);
+
+  // Inside a task's settings window: just the page, no sidebar, breadcrumbs or app-wide overlays.
+  if (isSettingsWindowFrame()) {
+    return (
+      <ChatSetupSidebarProvider>
+      <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
+        <main id="main-content" className="h-dvh overflow-auto bg-background p-4 text-foreground">
+          <RouteErrorBoundary>
+            <Suspense fallback={<PageSkeleton variant="detail" />}>
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
+        </main>
+        <ToastViewport />
+      </GeneralSettingsProvider>
+      </ChatSetupSidebarProvider>
+    );
+  }
 
   return (
     <ChatSetupSidebarProvider>

@@ -1,0 +1,53 @@
+import { useState, type ReactNode } from "react";
+import { ExternalLink, Settings2, X } from "lucide-react";
+import { applyCompanyPrefix } from "@/lib/company-routes";
+import { useActiveCompanyPrefix } from "@/lib/router";
+import { Button } from "@/components/ui/button";
+
+// An agent writes [Open the secrets settings](gsam-settings:/company/settings/secrets) in a task, and the
+// person changes the setting in a small GSAM window right there, then closes it and carries on.
+export const SETTINGS_WINDOW_HREF_PREFIX = "gsam-settings:";
+// The frame's window.name survives navigation inside it, so Layout can drop its chrome on every page.
+export const SETTINGS_WINDOW_FRAME_NAME = "gsam-settings-window";
+
+/** The in-app path a gsam-settings: link opens, or null. Only same-origin paths, never another site. */
+export function settingsWindowPath(href: string | null | undefined): string | null {
+  if (!href?.startsWith(SETTINGS_WINDOW_HREF_PREFIX)) return null;
+  const path = href.slice(SETTINGS_WINDOW_HREF_PREFIX.length).trim();
+  return /^\/(?![/\\])[^\s]*$/.test(path) ? path : null;
+}
+
+export function isSettingsWindowFrame(): boolean {
+  return typeof window !== "undefined" && window.self !== window.top && window.name === SETTINGS_WINDOW_FRAME_NAME;
+}
+
+export function SettingsWindow({ path, label }: { path: string; label: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const src = applyCompanyPrefix(path, useActiveCompanyPrefix());
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" size="sm" className="my-1 gap-1.5" onClick={() => setOpen(true)}>
+        <Settings2 className="size-3.5" aria-hidden />
+        {label}
+      </Button>
+    );
+  }
+  return (
+    <span className="my-2 block overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <span className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+        <Settings2 className="size-3.5 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">{label}</span>
+        <a href={src} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" aria-label="Open in a full tab">
+          <ExternalLink className="size-3.5" />
+        </a>
+        <Button type="button" size="sm" className="h-7" onClick={() => setOpen(false)}>
+          Done
+        </Button>
+        <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)} aria-label="Close settings window">
+          <X className="size-4" />
+        </button>
+      </span>
+      <iframe name={SETTINGS_WINDOW_FRAME_NAME} src={src} title={typeof label === "string" ? label : "Settings"} className="block h-[min(560px,70vh)] w-full bg-background" />
+    </span>
+  );
+}
