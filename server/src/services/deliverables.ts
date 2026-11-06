@@ -36,6 +36,7 @@ import { isUniqueViolation } from "../db-errors.js";
 import { notFound, unprocessable } from "../errors.js";
 import type { StorageService } from "../storage/types.js";
 import { checkLinkStatus, classifyLinkStatus } from "./deliverable-links.js";
+import { linkService } from "./links.js";
 
 // Deliverables (GRE-388): finished documents John asked for. Each version is
 // an issue_work_products row of type "deliverable"; the key is external_id and
@@ -573,6 +574,18 @@ export function deliverableService(db: Db, storage?: StorageService) {
           });
           const detail = await getDetail(issue.companyId, id);
           if (!detail) throw notFound("Deliverable not found");
+          // The links register (GRE-4252): a link deliverable is filed there
+          // too, with its client, project and source task.
+          const register = linkService(db);
+          await register.capture({
+            companyId: issue.companyId,
+            issueId: issue.id,
+            url,
+            title: detail.title,
+            source: "deliverable",
+            type: register.linkTypeForDeliverableKind(detail.kind),
+            agentId: createdByAgentId,
+          });
           return detail;
         } catch (error) {
           // Two writers took the same version number; the loser re-reads and
