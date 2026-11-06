@@ -5,6 +5,8 @@ import {
   WEBSITE_DATA_RESOURCES,
   WEBSITE_CLIENT_MEMBER_ROLES,
   WEBSITE_STAFF_ROLES,
+  WEBSITE_PORTAL_DOCUMENT_ACTIONS,
+  WEBSITE_PORTAL_DOCUMENT_KINDS,
   createProjectSchema,
   createIssueSchema,
   mcpToolHints,
@@ -12,6 +14,9 @@ import {
   websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
   websiteAccessChangeRequestSchema,
+  websitePortalDocumentCreateSchema,
+  websitePortalDocumentEditSchema,
+  websitePortalDocumentStepSchema,
   type McpToolHints,
 } from "@greatstone/shared";
 import { z } from "zod";
@@ -41,6 +46,11 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   // GRE-4085: people and access. Reads are open; a change is only ever an ask (a card), and the same ask returns it.
   website_access_list: mcpToolHints("read"),
   website_access_request_change: mcpToolHints("write", { idempotent: true }),
+  // GRE-4083: portal document drafts. Each takes an idempotency key, so a retry writes once.
+  portal_document_create: mcpToolHints("write", { idempotent: true }),
+  portal_document_edit: mcpToolHints("write", { idempotent: true }),
+  portal_document_submit: mcpToolHints("write", { idempotent: true }),
+  portal_document_return_to_draft: mcpToolHints("write", { idempotent: true }),
   interview_round_get: mcpToolHints("read"),
   interview_synthesis_get: mcpToolHints("read"),
   interview_set_draft: mcpToolHints("write"),
@@ -338,6 +348,105 @@ async function accessToolCall(input: { apiUrl: string; token: string; companyId:
 const ACCESS_TOOL_NAMES = new Set(WEBSITE_ACCESS_TOOLS.map((tool) => tool.name));
 
 /**
+ * Portal documents (GRE-4083): a client's engagement pack, NDA, terms and the rest on the website's client portal. An
+ * agent drafts through GSAM's portal document routes (website:edit), signed with the site's write key; the site's audit
+ * names this agent and run. No tool approves and publishes or withdraws: those are a person's click, and the routes
+ * refuse an agent with 403 website_publish_agent_refused before any call to the site.
+ */
+const documentIdProperty = { type: "string", description: "The portal document id (website_data_list portal-documents shows them)." };
+const rowVersionProperty = { type: "integer", minimum: 0, description: "row_version of the document as you last read it. A stale one is refused with the current document: read it again." };
+const portalFieldProperties = {
+  title: { type: "string", minLength: 1, maxLength: 200 },
+  summary: { type: ["string", "null"], maxLength: 2000 },
+  body: {
+    type: ["object", "null"],
+    description: "{ sections: [{ id, title, html }] }: up to 60 sections; id is 1 to 64 letters, digits, - or _; html up to 100000 characters, only the tags p h2 h3 h4 h5 h6 ul ol li strong em b i a br blockquote code pre span hr, links to https:// or mailto:, and a plain class. Anything else is refused, not rewritten.",
+  },
+  demos: { type: ["array", "null"], maxItems: 20, items: { type: "object" }, description: "[{ label, url (https), note, afterSection (a section id) }]." },
+  action: { type: ["string", "null"], enum: [...WEBSITE_PORTAL_DOCUMENT_ACTIONS, null], description: "What the client does with it. accept and agree_in_principle need confirmationText before submit." },
+  confirmationText: { type: ["string", "null"], maxLength: 1000, description: "The words the client confirms." },
+  signatoryEmail: { type: ["string", "null"], description: "Who signs for the client." },
+};
+const WEBSITE_PORTAL_TOOLS = [
+  {
+    name: "portal_document_create",
+    description: "Create a draft portal document for one client on a connected website: an engagement pack, NDA, GITA, terms, pre-read, north star, investigation plan or GDXP. It stays draft and the client does not see it. series starts the next version of an existing document of the same client. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.portal_document_create,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: siteIdProperty,
+        customerId: { type: "string", description: "The client's customer id (website_data_list customers shows them)." },
+        kind: { type: "string", enum: [...WEBSITE_PORTAL_DOCUMENT_KINDS] },
+        series: { type: "string", description: "The series id of the client's document this is the next version of." },
+        ...portalFieldProperties,
+        idempotencyKey: idempotencyKeyProperty,
+      },
+      required: ["siteId", "customerId", "kind", "title", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "portal_document_edit",
+    description: "Change a draft portal document on a connected website at the row version you read. Only a draft changes; a published document changes by a new version (portal_document_create with its series). null clears a field. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.portal_document_edit,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: siteIdProperty, documentId: documentIdProperty, expectedRowVersion: rowVersionProperty,
+        ...portalFieldProperties, idempotencyKey: idempotencyKeyProperty,
+      },
+      required: ["siteId", "documentId", "expectedRowVersion", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "portal_document_submit",
+    description: "Send a draft portal document for approval: it goes to pending_approval and the site freezes its content. A portal approver (a person) approves and publishes it; no agent can. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.portal_document_submit,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, documentId: documentIdProperty, expectedRowVersion: rowVersionProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "documentId", "expectedRowVersion", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "portal_document_return_to_draft",
+    description: "Take a portal document that waits for approval back to draft, so it can be changed. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.portal_document_return_to_draft,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, documentId: documentIdProperty, expectedRowVersion: rowVersionProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "documentId", "expectedRowVersion", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+];
+
+/** Through GSAM's portal document routes, so the permission and people-only checks apply. Never approve or withdraw. */
+async function portalToolCall(input: { apiUrl: string; token: string; companyId: string; agentId: string; name: string;
+  args: Record<string, unknown> }) {
+  const { siteId, documentId, idempotencyKey, ...fields } = z.object({ siteId: z.string().uuid(), documentId: z.string().uuid().optional(),
+    idempotencyKey: z.string().min(1).max(200) }).passthrough().parse(input.args);
+  const base = `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(siteId)}/portal-documents`;
+  const key = commerceKey(input.agentId, input.name, idempotencyKey);
+  if (input.name === "portal_document_create") {
+    if (documentId) throw badRequest("A new document has no documentId");
+    return apiSend(input.apiUrl, input.token, "POST", base, websitePortalDocumentCreateSchema.parse(fields), key);
+  }
+  if (!documentId) throw badRequest(`${input.name} needs a documentId`);
+  const doc = `${base}/${encodeURIComponent(documentId)}`;
+  if (input.name === "portal_document_edit") {
+    return apiSend(input.apiUrl, input.token, "PATCH", doc, websitePortalDocumentEditSchema.parse(fields), key);
+  }
+  const step = websitePortalDocumentStepSchema.parse(fields);
+  return apiSend(input.apiUrl, input.token, "POST", `${doc}/${input.name === "portal_document_submit" ? "submit" : "return-to-draft"}`, step, key);
+}
+
+const PORTAL_TOOL_NAMES = new Set(WEBSITE_PORTAL_TOOLS.map((tool) => tool.name));
+
+/**
  * Parallel Interview (GRE-2667): agents read a round's status and synthesis, and draft question sets for a person to
  * approve. No tool approves a set, decides a proposal, releases or withdraws: those routes answer an agent with 403,
  * and these tools never call them.
@@ -383,7 +492,8 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...WEBSITE_ACCESS_TOOLS, ...INTERVIEW_TOOLS];
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...WEBSITE_ACCESS_TOOLS, ...WEBSITE_PORTAL_TOOLS,
+    ...INTERVIEW_TOOLS];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -585,6 +695,9 @@ export async function callProjectTool(input: {
   if (ACCESS_TOOL_NAMES.has(input.name)) {
     return accessToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId,
       issueId: input.conversation ? null : input.issueId, name: input.name, args });
+  }
+  if (PORTAL_TOOL_NAMES.has(input.name)) {
+    return portalToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId, name: input.name, args });
   }
   if (INTERVIEW_TOOL_NAMES.has(input.name)) {
     return interviewToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });
