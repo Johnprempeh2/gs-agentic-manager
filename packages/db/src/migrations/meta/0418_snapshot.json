@@ -58827,7 +58827,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "links_client_case_id_pipeline_cases_id_fk": {

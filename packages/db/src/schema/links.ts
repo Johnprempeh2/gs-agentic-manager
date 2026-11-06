@@ -14,7 +14,7 @@ export const sharedLinks = pgTable(
   "links",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull().references(() => companies.id),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     url: text("url").notNull(),
     title: text("title").notNull(),
     /** proposal, demo, recap, portal, deck, report, preview or other. */
