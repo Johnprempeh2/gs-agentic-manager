@@ -345,16 +345,16 @@ function ApproversSection({ companyId, siteId, staff, canChange }: {
         </ul>
       ) : null}
       {canChange && approvers.data ? (
-        <form onSubmit={add} className={cn(CARD, "grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end")}
+        <form onSubmit={add} className={cn(CARD, "flex flex-col gap-3 p-4 sm:flex-row sm:items-end")}
           data-testid="website-access-approver-add">
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
             <span className="font-medium">Staff member</span>
             <NativeSelect value={staffId} onChange={(event) => setStaffId(event.target.value)} disabled={eligible.length === 0}>
               <option value="">{eligible.length ? "Pick a staff member" : "Every active staff member is listed"}</option>
               {eligible.map((member) => <option key={member.id} value={member.id}>{member.name || member.email}</option>)}
             </NativeSelect>
           </label>
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
             <span className="font-medium">Label</span>
             <Input value={label} maxLength={100} placeholder="For example Director" onChange={(event) => setLabel(event.target.value)} />
           </label>
@@ -384,16 +384,16 @@ function AddMember({ disabled, onAdd }: { disabled: boolean; onAdd: (input: { na
   return (
     <form onSubmit={submit} className={cn(CARD, "space-y-3 p-4")} data-testid="website-access-member-add" noValidate>
       <p className="text-sm font-semibold">Add a person</p>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem_auto] sm:items-end">
-        <label className="flex min-w-0 flex-col gap-1 text-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
           <span className="font-medium">Name</span>
           <Input value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
         </label>
-        <label className="flex min-w-0 flex-col gap-1 text-sm">
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
           <span className="font-medium">Email</span>
           <Input type="email" value={email} maxLength={320} onChange={(event) => setEmail(event.target.value)} />
         </label>
-        <label className="flex min-w-0 flex-col gap-1 text-sm">
+        <label className="flex min-w-0 flex-col gap-1 text-sm sm:w-40">
           <span className="font-medium">Role</span>
           <NativeSelect value={role} onChange={(event) => setRole(event.target.value as WebsiteClientMemberRole)}>
             {WEBSITE_CLIENT_MEMBER_ROLES.map((value) => <option key={value} value={value}>{MEMBER_ROLE_LABEL[value]}</option>)}
