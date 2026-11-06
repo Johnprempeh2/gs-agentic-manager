@@ -58,6 +58,7 @@ import { WebsiteCollectionsTab } from "../components/website/WebsiteCollections"
 import { WebsiteHomeTab } from "../components/website/WebsiteHome";
 import { WebsiteStyleTab } from "../components/website/WebsiteStyle";
 import { WebsitePeopleTab } from "../components/website/WebsitePeople";
+import { WebsitePortalDocumentsTab } from "../components/website/WebsitePortalDocuments";
 
 /* ---- Formatting ---- */
 
@@ -681,6 +682,7 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
       {tab === "editor" ? <WebsitePagesTab companyId={companyId} property={property} onOpenTab={openTab} /> : null}
       {tab === "collections" ? <WebsiteCollectionsTab companyId={companyId} property={property} /> : null}
       {tab === "style" ? <WebsiteStyleTab companyId={companyId} property={property} /> : null}
+      {tab === "documents" ? <WebsitePortalDocumentsTab companyId={companyId} property={property} /> : null}
       {tab === "people" ? <WebsitePeopleTab companyId={companyId} property={property} /> : null}
       {tab === "releases" ? <WebsiteReleasesTab companyId={companyId} property={property} /> : null}
       {tab === "preview" ? <WebsitePreviewTab companyId={companyId} property={property} /> : null}
