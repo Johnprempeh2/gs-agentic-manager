@@ -339,10 +339,29 @@ describeEmbeddedPostgres("links register", () => {
         companyId, issueId: otherIssueId, projectId: otherProjectId, type: "preview_url", provider: "custom", title: "Bakery preview",
         url: "https://bakery-preview.example.ts.net", status: "active",
       },
+      {
+        companyId, issueId, projectId, type: "runtime_service", provider: "paperclip", title: "Local preview",
+        url: "http://127.0.0.1:5173", status: "active",
+      },
+    ]);
+    // Link work on hidden and test-harness tasks stays out, as on Deliverables.
+    const [hiddenIssue, harnessIssue] = await db.insert(issues).values([
+      { companyId, projectId, identifier: "GRE-11", title: "Hidden", status: "done", priority: "medium", hiddenAt: new Date() },
+      { companyId, projectId, identifier: "GRE-12", title: "Harness", status: "done", priority: "medium", harnessKind: "eval" },
+    ]).returning();
+    await db.insert(issueWorkProducts).values([
+      {
+        companyId, issueId: hiddenIssue!.id, projectId, type: "deliverable", provider: "paperclip", externalId: "hidden", title: "Hidden deck",
+        url: "https://hidden-deck.netlify.app", status: "active", metadata: { version: 1, kind: "deck", external: true },
+      },
+      {
+        companyId, issueId: harnessIssue!.id, projectId, type: "preview_url", provider: "custom", title: "Harness preview",
+        url: "https://harness-preview.example.ts.net", status: "active",
+      },
     ]);
     const res = await request(board()).post(`/api/companies/${companyId}/links/backfill`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ scanned: 2, created: 2, updated: 0 });
+    expect(res.body).toEqual({ scanned: 3, created: 2, updated: 0 });
     const rows = await request(board()).get(`/api/companies/${companyId}/links`);
     expect(rows.body.links.map((link: { title: string; type: string }) => [link.title, link.type]).sort()).toEqual([
       ["Acme deck", "deck"],

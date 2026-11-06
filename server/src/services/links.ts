@@ -409,7 +409,9 @@ export function linkService(db: Db) {
 
   /**
    * One-off fill from what GSAM already holds: link deliverables (latest
-   * version of each) and preview work products with a web address.
+   * version of each) and preview work products with a web address. Skips the
+   * same rows capture() would: local-only addresses, and (like Deliverables)
+   * work on hidden or test-harness tasks.
    */
   async function backfill(companyId: string, actor: LinkActor): Promise<LinksBackfillResult> {
     const rows = await db
@@ -422,15 +424,18 @@ export function linkService(db: Db) {
         createdAt: issueWorkProducts.createdAt,
       })
       .from(issueWorkProducts)
+      .innerJoin(issues, eq(issues.id, issueWorkProducts.issueId))
       .where(and(
         eq(issueWorkProducts.companyId, companyId),
         isNotNull(issueWorkProducts.url),
         inArray(issueWorkProducts.type, ["deliverable", ...CAPTURED_PREVIEW_WORK_PRODUCT_TYPES]),
+        isNull(issues.hiddenAt),
+        isNull(issues.harnessKind),
       ))
       .orderBy(asc(issueWorkProducts.createdAt));
     const result: LinksBackfillResult = { scanned: rows.length, created: 0, updated: 0 };
     for (const row of rows) {
-      if (!isHttpUrl(row.url)) continue;
+      if (!isHttpUrl(row.url) || isLoopback(row.url)) continue;
       const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
       const isDeliverable = row.type === "deliverable";
       const { created } = await upsert(
