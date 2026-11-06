@@ -493,15 +493,17 @@ function DocumentActions({ row, canEdit, canApprove, disabled, onEdit, onStep }:
   }
   if (row.status === "published" && canApprove) {
     return (
-      <ConfirmButton
-        label="Withdraw"
-        title={`Withdraw "${row.title}"?`}
-        description="The client no longer sees it in the portal. To change a published document, start a new version instead."
-        confirmLabel="Withdraw"
-        destructive
-        disabled={disabled || noVersion}
-        onConfirm={() => onStep("withdraw")}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <ConfirmButton
+          label="Withdraw"
+          title={`Withdraw "${row.title}"?`}
+          description="The client no longer sees it in the portal. To change a published document, start a new version instead."
+          confirmLabel="Withdraw"
+          destructive
+          disabled={disabled || noVersion}
+          onConfirm={() => onStep("withdraw")}
+        />
+      </div>
     );
   }
   return null;
