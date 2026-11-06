@@ -1,0 +1,112 @@
+# iOS CI for the GSAM iPhone app in ios/ (GRE-4194).
+#
+# Builds the app and runs its unit tests on an iPhone simulator on a
+# GitHub-hosted macOS runner (the PC that runs agents cannot build iPhone
+# apps). It also takes light and dark screenshots of each screen from the
+# app's demo mode (sample data, no server) for the pull request.
+#
+# Runs only when ios/ or this file changes, so it never slows Fork CI.
+# No secrets and a read-only token. Signing and TestFlight come later, on
+# their own task, once John holds the Apple Developer account.
+
+name: iOS
+
+on:
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Build and test (iPhone simulator)
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | test("^iPhone [0-9]+$"))] | last | .udid')
+          if [ -z "$udid" ] || [ "$udid" = "null" ]; then
+            echo "No iPhone simulator found" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          xcrun simctl list devices available | grep "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Build and run unit tests
+        run: |
+          mkdir -p build
+          set +e
+          xcodebuild test \
+            -project GSAM.xcodeproj \
+            -scheme GSAM \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            -resultBundlePath build/TestResults.xcresult \
+            > build/xcodebuild.log 2>&1
+          status=$?
+          grep -E "error:|warning:|Test |passed|failed|\*\* " build/xcodebuild.log | tail -300
+          exit $status
+
+      - name: Screenshots (light and dark)
+        run: |
+          set -euo pipefail
+          udid="${{ steps.sim.outputs.udid }}"
+          app=$(find build/Build/Products -path "*iphonesimulator/GSAM.app" -maxdepth 3 | head -1)
+          xcrun simctl boot "$udid" 2>/dev/null || true
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl status_bar "$udid" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+          xcrun simctl install "$udid" "$app"
+          mkdir -p screenshots
+          for appearance in light dark; do
+            xcrun simctl ui "$udid" appearance "$appearance"
+            for screen in signIn needsYou blocked empty error; do
+              xcrun simctl terminate "$udid" com.greatstone.gsam 2>/dev/null || true
+              xcrun simctl launch "$udid" com.greatstone.gsam -GSAMDemo "$screen"
+              sleep 4
+              xcrun simctl io "$udid" screenshot "screenshots/${screen}-${appearance}.png"
+            done
+          done
+          ls -l screenshots
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: ios/screenshots
+          if-no-files-found: ignore
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: |
+            ios/build/TestResults.xcresult
+            ios/build/xcodebuild.log
+          if-no-files-found: ignore
