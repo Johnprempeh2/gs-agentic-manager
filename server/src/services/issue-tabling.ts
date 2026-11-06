@@ -89,23 +89,27 @@ export async function parkedIssueIdSet(db: Db, companyId: string) {
   return new Set(list.map((row) => row.id));
 }
 
+/** Queued or running runs on the task; tabling callers cancel them. */
+export async function activeRunIdsForIssue(
+  db: Db,
+  issue: Pick<IssueRow, "id" | "companyId" | "executionRunId">,
+) {
+  const issueIdFromContext = sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+  const rows = await db
+    .select({ id: heartbeatRuns.id })
+    .from(heartbeatRuns)
+    .where(and(
+      eq(heartbeatRuns.companyId, issue.companyId),
+      inArray(heartbeatRuns.status, ["queued", "running"]),
+      issue.executionRunId
+        ? or(eq(heartbeatRuns.id, issue.executionRunId), eq(issueIdFromContext, issue.id))
+        : eq(issueIdFromContext, issue.id),
+    ));
+  return [...new Set(rows.map((row) => row.id))];
+}
+
 export function issueTablingService(db: Db, options: { now?: () => Date } = {}) {
   const now = () => options.now?.() ?? new Date();
-
-  async function activeRunIdsForIssue(issue: IssueRow) {
-    const issueIdFromContext = sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
-    const rows = await db
-      .select({ id: heartbeatRuns.id })
-      .from(heartbeatRuns)
-      .where(and(
-        eq(heartbeatRuns.companyId, issue.companyId),
-        inArray(heartbeatRuns.status, ["queued", "running"]),
-        issue.executionRunId
-          ? or(eq(heartbeatRuns.id, issue.executionRunId), eq(issueIdFromContext, issue.id))
-          : eq(issueIdFromContext, issue.id),
-      ));
-    return [...new Set(rows.map((row) => row.id))];
-  }
 
   async function table(
     issueId: string,
@@ -151,7 +155,7 @@ export function issueTablingService(db: Db, options: { now?: () => Date } = {}) 
         .returning();
       return { issue: updated!, wasAlreadyTabled, previous: existing };
     });
-    const activeRunIds = await activeRunIdsForIssue(result.previous);
+    const activeRunIds = await activeRunIdsForIssue(db, result.previous);
     return { issue: result.issue, activeRunIds, wasAlreadyTabled: result.wasAlreadyTabled };
   }
 
