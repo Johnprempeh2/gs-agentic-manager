@@ -93,7 +93,7 @@ describeEmbeddedPostgres("website module routes", () => {
   const localBoard: Actor = { type: "board", userId: "local-board", source: "local_implicit", isInstanceAdmin: true };
 
   // The connect check (GRE-2137) calls Netlify and the site: every test gets a passing fake unless it sets its own.
-  const passingCheck: WebsiteConnectionChecker = async () => ({ ok: true, engineVersion: "0.1.0" });
+  const passingCheck: WebsiteConnectionChecker = async () => ({ ok: true, engineVersion: "0.1.0", releaseSchemaVersion: 1 });
   let connectCheck: WebsiteConnectionChecker = passingCheck;
   afterEach(() => {
     connectCheck = passingCheck;
@@ -206,11 +206,13 @@ describeEmbeddedPostgres("website module routes", () => {
   it("connect check: stores the engine version /_release reports, and checks with the pasted token", async () => {
     await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
     const company = await seedCompany("Checked");
-    const netlify = withFakeNetlify({});
+    const netlify = withFakeNetlify({ release: { status: 200, body: { number: 1, engine: { version: "0.2.0", commit: "abc" }, supportedReleaseSchemas: [1, 2], siteContract: 1 } } });
     const site = (await request(app()).post(`/api/companies/${company.id}/website/sites`).send(connectBody).expect(201)).body as WebsiteSite;
     expect(site.engineVersion).toBe("0.2.0");
     const [row] = await db.select().from(websiteSite).where(eq(websiteSite.id, site.id));
     expect(row!.engineVersion).toBe("0.2.0");
+    expect(site.releaseSchemaVersion).toBe(2);
+    expect(row!.releaseSchemaVersion).toBe(2);
     expect(netlify.calls.map((call) => call.url)).toEqual([
       "https://api.netlify.com/api/v1/sites/netlify-site",
       "https://www.check.test/_release",
@@ -276,9 +278,13 @@ describeEmbeddedPostgres("website module routes", () => {
     await request(app()).patch(base).send({ domain: "check.test" }).expect(200);
     expect(moved.calls[0]!.authorization).toBe("Bearer nfp_check_token_value_1");
 
-    withFakeNetlify({ site: { id: "netlify-site", name: "check-site", custom_domain: "check.test" }, release: { status: 200, body: { engine: { version: "0.3.1" }, supportedReleaseSchemas: [1], siteContract: 1 } } });
+    withFakeNetlify({ site: { id: "netlify-site", name: "check-site", custom_domain: "check.test" }, release: { status: 200, body: { engine: { version: "0.3.1" }, supportedReleaseSchemas: [1, 2], siteContract: 1 } } });
     const updated = await request(app()).patch(base).send({ netlifyToken: "nfp_good_token_value_33" }).expect(200);
     expect(updated.body.engineVersion).toBe("0.3.1");
+    // GRE-4215: re-verify records the newest release schema the engine reads.
+    expect(updated.body.releaseSchemaVersion).toBe(2);
+    const [after] = await db.select().from(websiteSite).where(eq(websiteSite.id, site.id));
+    expect(after!.releaseSchemaVersion).toBe(2);
   });
 
   it("isolation 1, 2, 8: company A cannot read or list company B's site, page, entry or revisions", async () => {

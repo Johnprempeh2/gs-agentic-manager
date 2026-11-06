@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeNetlifyConnect } from "../../__tests__/helpers/fake-netlify-connect.js";
-import { checkWebsiteConnection, domainBelongsToSite, engineVersionAtLeast } from "./connect-check.js";
+import { checkWebsiteConnection, domainBelongsToSite, engineVersionAtLeast, highestReleaseSchema } from "./connect-check.js";
 
 const input = { netlifySiteId: "netlify-site", domain: "www.check.test", token: "nfp_token" };
 
@@ -9,7 +9,16 @@ describe("website connect check (GRE-2137)", () => {
     const { fetchImpl } = fakeNetlifyConnect({
       release: { status: 200, body: { siteId: "x", number: 1, source: "baked", engine: { version: "0.1.0", commit: "0".repeat(40) }, supportedReleaseSchemas: [1], siteContract: 1, refused: null } },
     });
-    await expect(checkWebsiteConnection(input, { fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.1.0" });
+    await expect(checkWebsiteConnection(input, { fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.1.0", releaseSchemaVersion: 1 });
+  });
+
+  it("returns the highest release schema the engine reads, and 1 when it lists none (GRE-4215)", async () => {
+    const both = fakeNetlifyConnect({ release: { status: 200, body: { engine: { version: "0.5.0" }, supportedReleaseSchemas: [1, 2], siteContract: 1 } } });
+    await expect(checkWebsiteConnection(input, { fetchImpl: both.fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.5.0", releaseSchemaVersion: 2 });
+    const none = fakeNetlifyConnect({ release: { status: 200, body: { engine: { version: "0.5.0" }, siteContract: 1 } } });
+    await expect(checkWebsiteConnection(input, { fetchImpl: none.fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.5.0", releaseSchemaVersion: 1 });
+    expect(highestReleaseSchema([])).toBe(1);
+    expect(highestReleaseSchema([2, "3", 1.5, 1])).toBe(2);
   });
 
   it("an address that does not answer at all is connect.err.domain", async () => {
@@ -28,7 +37,7 @@ describe("website connect check (GRE-2137)", () => {
       ok: false, problem: "site_contract_old", engineVersion: "0.5.0", siteContract: null,
     });
     const ahead = fakeNetlifyConnect({ release: { status: 200, body: { engine: { version: "0.5.0" }, supportedReleaseSchemas: [1], siteContract: 2 } } });
-    await expect(checkWebsiteConnection(input, { fetchImpl: ahead.fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.5.0" });
+    await expect(checkWebsiteConnection(input, { fetchImpl: ahead.fetchImpl })).resolves.toEqual({ ok: true, engineVersion: "0.5.0", releaseSchemaVersion: 1 });
   });
 
   it("matches the live address to the Netlify site's addresses", () => {

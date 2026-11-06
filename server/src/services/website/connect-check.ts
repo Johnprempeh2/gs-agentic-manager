@@ -14,7 +14,7 @@ export const WEBSITE_MIN_ENGINE_VERSION = "0.1.0";
 export type WebsiteConnectProblem = "netlify_not_found" | "token" | "token_scope" | "domain" | "no_release_route" | "engine_old" | "site_contract_old";
 
 export type WebsiteConnectResult =
-  | { ok: true; engineVersion: string }
+  | { ok: true; engineVersion: string; releaseSchemaVersion: number }
   | { ok: false; problem: WebsiteConnectProblem; engineVersion?: string | null; siteContract?: number | null };
 
 export interface WebsiteConnectInput {
@@ -163,5 +163,11 @@ export async function checkWebsiteConnection(
   if (!isSiteContractCurrent(release)) {
     return { ok: false, problem: "site_contract_old", engineVersion, siteContract: siteContractOf(release) };
   }
-  return { ok: true, engineVersion };
+  return { ok: true, engineVersion, releaseSchemaVersion: highestReleaseSchema(schemas) };
+}
+
+/** The newest release schema the engine reads; 1 when it does not list any (engines before the list). */
+export function highestReleaseSchema(schemas: unknown[] | null): number {
+  const versions = (schemas ?? []).filter((value): value is number => Number.isInteger(value) && (value as number) >= 1);
+  return versions.length ? Math.max(...versions) : 1;
 }
