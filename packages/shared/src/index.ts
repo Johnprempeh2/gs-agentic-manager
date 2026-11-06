@@ -525,6 +525,7 @@ export * from "./website-frame.js";
 export * from "./site-contract.js";
 export * from "./types/website-data-bridge.js";
 export * from "./types/website-access.js";
+export * from "./types/website-portal-documents.js";
 export * from "./website-activity.js";
 export * from "./types/intelligence.js";
 export * from "./validators/intelligence.js";

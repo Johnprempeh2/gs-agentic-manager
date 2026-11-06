@@ -202,3 +202,51 @@ the signing errors above.
 - `POST /api/admin/v1/customers/:id/users` (GRE-2631) still lets an agent create a client sign-in and membership. This
   route is older than this change and is not changed by it. Whether an agent keeps that right depends on John's
   answer on GRE-4079.
+
+## Portal documents (GRE-4081)
+
+The website side: Johnprempeh2/greatstone-website, migration `067_bridge_portal_documents`. GSAM's side (GRE-4083):
+`/api/companies/:companyId/website/sites/:siteId/portal-documents/*`, drafts for `website:edit` (agents may), approve
+and publish and withdraw for a signed-in person with `website:publish` only.
+
+The studio's Client portal actions, for GSAM. All are signed with a `write` key (gs-bridge-v2: the idempotency key
+header is required). `X-GS-Bridge-Actor` is the GSAM actor who acts (`agent:<id>` or `user:<id>`); the site reads it
+from the audit row it opens, never from the body. `X-GS-Bridge-Run` is recorded on the document and in the portal audit.
+
+| Route | Who | Body |
+|---|---|---|
+| `POST /api/admin/v1/portal-documents` | any actor | `customerId` (uuid, a client of the site), `kind`, `title`, and optional `series`, `summary`, `body`, `demos`, `action`, `confirmationText`, `signatoryEmail` |
+| `PATCH /api/admin/v1/portal-documents/:id` | any actor; drafts only | `expectedRowVersion` and one or more of `title`, `summary`, `body`, `demos`, `action`, `confirmationText`, `signatoryEmail` (null clears) |
+| `POST /api/admin/v1/portal-documents/:id/submit` | any actor; draft to pending_approval | `expectedRowVersion` |
+| `POST /api/admin/v1/portal-documents/:id/return-to-draft` | any actor; pending_approval to draft | `expectedRowVersion` |
+| `POST /api/admin/v1/portal-documents/:id/approve-and-publish` | a person who is a registered portal approver | `expectedContentSha256` (64 hex), optional `gsamApprovalRef` (up to 200 characters) |
+| `POST /api/admin/v1/portal-documents/:id/withdraw` | a person; published to withdrawn | `expectedRowVersion` |
+
+- `kind` is one of `engagement_pack`, `nda`, `gita`, `terms`, `pre_read`, `north_star`, `investigation_plan`, `gdxp`.
+  `action` is `none`, `accept` or `agree_in_principle`; a document with an action needs `confirmationText` before submit.
+- `body` is `{ "sections": [{ "id", "title", "html" }] }`: up to 60 sections, html up to 100,000 characters each, only
+  the tags `p h2 h3 h4 h5 h6 ul ol li strong em b i a br blockquote code pre span hr`, links to `https://` or `mailto:`,
+  and a plain `class`. Anything else is refused (400), not rewritten. `demos` is `[{ "label", "url" (https), "note",
+  "afterSection" }]`, up to 20. These are the portal MCP's rules.
+- `series` (create only) starts the next version of an existing document of the same client. When the new version is
+  published, the published one before it becomes `superseded`.
+- These routes take a body up to 1 MB; other writes stay at 64 KB.
+- Lifecycle: `draft` → `pending_approval` (the site computes `content_sha256` and freezes the content) →
+  `published` (approve and publish) → `withdrawn`. Only a draft is edited; a published document changes by a new version.
+- **Approve and publish** is refused (`403 denied`) unless the actor is `user:<id>` and the site links that id to a
+  registered portal approver who is active staff. The link is a row in `portal_bridge_approvers` that John adds by hand
+  on each site's database; no key, agent or migration can add one. Today the only approver is John. The fingerprint must
+  equal `expectedContentSha256` (else `409 conflict`); each version is approved once.
+- **Withdraw** is refused (`403 denied`) to any actor that is not `user:`.
+- Answer: `{ "item": <document> }` (201 for create, else 200); approve and publish also returns `"approvalId"`.
+  The document is `id, customer_id, kind, series, version, title, summary, body, demos, pdf_sha256, has_pdf, action,
+  confirmation_text, signatory_email, status, content_sha256, approval_id, created_by_kind, created_run_id,
+  published_at, withdrawn_at, created_at, updated_at, row_version`. `created_by_kind` is `agent` or `staff` (a person).
+  No PDF path and no website user id.
+- Errors: `bad_request` (400), `denied` (403), `not_found` (404: no such document, or another organisation's, or a
+  client or series of another client), `conflict` (409: wrong status, stale `expectedRowVersion`, wrong fingerprint,
+  already approved; the answer adds `"current": <document>`), `idempotency_mismatch` (409), and the signing errors above.
+  No new error codes.
+- Reads: `GET /api/admin/v1/portal-documents[/:id]` (read key) now also returns `content_sha256`, `row_version` and
+  `approval_id`, so GSAM can edit and approve a document the studio made. `body` stays on the site for the read key.
+- The PDF of a document is not written through the bridge yet (studio or portal MCP only).
