@@ -1,6 +1,6 @@
 ---
 name: design-assets
-description: Get, make, check and store the images a design needs: real brand logos (never drawn), light and dark logo variants, stock photos, icons, generated images, and adding them to a website's media library as drafts. Use for any page, deck or artifact that needs an image the media library does not have, and before placing any image on a background.
+description: Get, make, check and store a design's images: real brand logos (never drawn), light and dark variants, photos, icons, generated images, and website media library drafts. Look at an image before choosing its background.
 ---
 
 # Design assets
