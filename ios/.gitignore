@@ -1,0 +1,5 @@
+build/
+screenshots/
+xcuserdata/
+*.xcresult
+.DS_Store
