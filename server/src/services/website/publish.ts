@@ -19,6 +19,7 @@ import { logger } from "../../middleware/logger.js";
 import { getStorageService } from "../../storage/index.js";
 import { secretService } from "../secrets.js";
 import { WEBSITE_MESSAGES } from "./messages.js";
+import { websiteMediaExt } from "./media-file.js";
 import type { SiteRow } from "./module.js";
 import type { WebsitePublishStarter } from "./publish-approval.js";
 import { createNetlifyPublishClient, type NetlifyDeploy, type WebsiteNetlifyClient } from "./netlify-publish-client.js";
@@ -97,16 +98,6 @@ const CURRENT_KEY = "current";
 const RELEASE_HEADER = "x-gsam-release";
 const RELEASE_META_RE = /<meta[^>]+name=["']gsam-release["'][^>]*content=["']([^"']+)["']/i;
 const RELEASE_META_REVERSED_RE = /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']gsam-release["']/i;
-
-const MEDIA_EXT: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-  "image/svg+xml": "svg",
-  "image/avif": "avif",
-  "application/pdf": "pdf",
-};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -446,9 +437,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
         missingMedia.push(assetId);
         continue;
       }
-      const fromName = row.originalFilename?.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase();
-      const ext = MEDIA_EXT[row.contentType] ?? fromName ?? "bin";
-      const key = `media/${row.sha256}.${ext}`;
+      const key = `media/${row.sha256}.${websiteMediaExt(row)}`;
       media[assetId] = key;
       mediaUploads.push({ key, objectKey: row.objectKey, contentType: row.contentType });
     }

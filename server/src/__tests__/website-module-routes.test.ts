@@ -38,6 +38,8 @@ import { companySearchService } from "../services/company-search.js";
 import { secretService } from "../services/secrets.js";
 import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
 import { createStorageService } from "../storage/service.js";
+import type { StorageService } from "../storage/types.js";
+import { signWebsiteMediaLink, WEBSITE_MEDIA_LINK_TTL_SECONDS } from "../services/website/media-file.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -90,6 +92,7 @@ describeEmbeddedPostgres("website module routes", () => {
     rmSync(keyFolder, { recursive: true, force: true });
   });
 
+  const MEDIA_SECRET = "test-media-link-secret";
   const localBoard: Actor = { type: "board", userId: "local-board", source: "local_implicit", isInstanceAdmin: true };
 
   // The connect check (GRE-2137) calls Netlify and the site: every test gets a passing fake unless it sets its own.
@@ -99,14 +102,14 @@ describeEmbeddedPostgres("website module routes", () => {
     connectCheck = passingCheck;
   });
 
-  function app(actor: Actor = localBoard) {
+  function app(actor: Actor = localBoard, storage?: StorageService) {
     const instance = express();
     instance.use(express.json({ limit: "10mb" }));
     instance.use((req, _res, next) => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"], checkConnection: (input) => connectCheck(input) }));
+    instance.use("/api", websiteModuleRoutes(db, { gsamOrigins: ["https://gsam.example.test"], checkConnection: (input) => connectCheck(input), storage, mediaLinkSecret: () => MEDIA_SECRET }));
     instance.use(errorHandler);
     return instance;
   }
@@ -1142,6 +1145,115 @@ describeEmbeddedPostgres("website module routes", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("media files (GRE-4265): a site's own media entry is served by <sha256>.<ext> before release; anything else is 404", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const b = await seedWorld("Bravo", "bravo.test");
+    const root = mkdtempSync(path.join(os.tmpdir(), "gsam-media-file-"));
+    try {
+      const storage = createStorageService(createLocalDiskStorageProvider(root));
+      const store = async (companyId: string, body: string, contentType: string, name: string) => {
+        const put = await storage.putFile({ companyId, namespace: "website", originalFilename: name, contentType, body: Buffer.from(body) });
+        const [row] = await db.insert(assets).values({ companyId, ...put }).returning();
+        return row!;
+      };
+      const logo = await store(a.company.id, "alpha-logo-bytes", "image/png", "logo.png");
+      const icon = await store(a.company.id, "<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml", "icon.svg");
+      const unlisted = await store(a.company.id, "not-in-media", "image/png", "loose.png");
+      const bravo = await store(b.company.id, "bravo-logo-bytes", "image/png", "bravo.png");
+      const add = (world: typeof a, entryKey: string, assetId: string) =>
+        request(app()).post(`/api/companies/${world.company.id}/website/sites/${world.site.id}/entries`).send({ collection: "media", entryKey, content: { assetId, alt: entryKey } }).expect(201);
+      await add(a, "logo", logo.id);
+      await add(a, "icon", icon.id);
+      await add(b, "bravo", bravo.id);
+
+      const http = request(app(localBoard, storage));
+      const aMedia = `/api/companies/${a.company.id}/website/sites/${a.site.id}/media`;
+      const png = await http.get(`${aMedia}/${logo.sha256}.png`).buffer(true).expect(200);
+      expect(png.headers["content-type"]).toBe("image/png");
+      expect(png.headers["x-content-type-options"]).toBe("nosniff");
+      expect(Buffer.from(png.body).toString()).toBe("alpha-logo-bytes");
+      const svg = await http.get(`${aMedia}/${icon.sha256}.svg`).buffer(true).expect(200);
+      expect(svg.headers["content-type"]).toBe("image/svg+xml");
+      expect(svg.headers["content-security-policy"]).toContain("sandbox");
+
+      for (const url of [
+        `${aMedia}/${bravo.sha256}.png`, // another company's site media
+        `/api/companies/${a.company.id}/website/sites/${b.site.id}/media/${bravo.sha256}.png`,
+        `${aMedia}/${unlisted.sha256}.png`, // an asset with no media entry
+        `${aMedia}/${"0".repeat(64)}.png`, // unknown hash
+        `${aMedia}/${logo.sha256}.jpg`, // wrong ext
+        `${aMedia}/${logo.sha256}`,
+        `${aMedia}/..%2F..%2F${logo.objectKey.replace(/\//g, "%2F")}`,
+        `${aMedia}/${logo.sha256}.png%2F..%2F..%2Fx`,
+      ]) {
+        const response = await http.get(url);
+        expect(response.status, url).toBe(404);
+        expect(JSON.stringify(response.body)).not.toContain("bravo-logo-bytes");
+      }
+      // Read only: no other method answers.
+      for (const method of ["post", "put", "patch", "delete"] as const) {
+        expect((await http[method](`${aMedia}/${logo.sha256}.png`)).status, method).toBe(404);
+      }
+      // An agent of company A is refused at B's company and gets nothing of B's file.
+      const { actor: agentActor } = await seedAgent(a.company.id, ["website:view"]);
+      const crossCompany = await request(app(agentActor, storage)).get(`/api/companies/${b.company.id}/website/sites/${b.site.id}/media/${bravo.sha256}.png`).expect(403);
+      expect(JSON.stringify(crossCompany.body)).not.toContain("bravo-logo-bytes");
+      await request(app(agentActor, storage)).get(`${aMedia}/${logo.sha256}.png`).expect(200);
+      // Signed links (the sandboxed frame sends no cookie): a good signature serves with no session.
+      const anon = request(app({ type: "none", source: "none" } as Actor, storage));
+      const file = `${logo.sha256}.png`;
+      const sig = (input: { companyId?: string; siteId?: string; file?: string }, now = Date.now()) =>
+        signWebsiteMediaLink(MEDIA_SECRET, { companyId: a.company.id, siteId: a.site.id, file, ...input }, now);
+      const signedPng = await anon.get(`${aMedia}/${file}?sig=${sig({})}`).buffer(true).expect(200);
+      expect(signedPng.headers["content-type"]).toBe("image/png");
+      expect(Buffer.from(signedPng.body).toString()).toBe("alpha-logo-bytes");
+      expect((await anon.get(`${aMedia}/${file}`)).status).toBeGreaterThanOrEqual(401);
+      const good = sig({});
+      for (const bad of [
+        "", // empty
+        "garbage",
+        `${good.split(".")[0]}.${"A".repeat(43)}`, // forged mac
+        `${Number(good.split(".")[0]) + 60}.${good.split(".")[1]}`, // moved expiry
+        sig({}, Date.now() - (WEBSITE_MEDIA_LINK_TTL_SECONDS + 1) * 1000), // expired
+        sig({ file: `${icon.sha256}.svg` }), // signed for another file
+        sig({ siteId: b.site.id }), // signed for another site
+        signWebsiteMediaLink("another-secret", { companyId: a.company.id, siteId: a.site.id, file }),
+      ]) {
+        expect((await anon.get(`${aMedia}/${file}?sig=${encodeURIComponent(bad)}`)).status, bad).toBe(404);
+      }
+      // A link signed for B's own file still serves only B's site, and never A's file under B.
+      const bravoFile = `${bravo.sha256}.png`;
+      const bravoSig = signWebsiteMediaLink(MEDIA_SECRET, { companyId: b.company.id, siteId: b.site.id, file: bravoFile });
+      await anon.get(`/api/companies/${b.company.id}/website/sites/${b.site.id}/media/${bravoFile}?sig=${bravoSig}`).expect(200);
+      await anon.get(`${aMedia}/${bravoFile}?sig=${bravoSig}`).expect(404);
+      const aSigForBravo = signWebsiteMediaLink(MEDIA_SECRET, { companyId: a.company.id, siteId: a.site.id, file: bravoFile });
+      await anon.get(`${aMedia}/${bravoFile}?sig=${aSigForBravo}`).expect(404);
+      // An archived entry no longer serves its file.
+      const [logoEntry] = (await http.get(`${aMedia.replace(/\/media$/, "")}/entries?collection=media`).expect(200)).body.filter((e: { entryKey: string }) => e.entryKey === "logo");
+      await http.post(`${aMedia.replace(/\/media$/, "")}/entries/${logoEntry.id}/archive`).expect(200);
+      await http.get(`${aMedia}/${logo.sha256}.png`).expect(404);
+      await anon.get(`${aMedia}/${file}?sig=${sig({})}`).expect(404);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("live frame (GRE-4265): media paths point at GSAM's media route and the frame's CSP allows them", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const pageUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}/pages/${a.page.id}`;
+    const hash = "b".repeat(64);
+    const detail = (await http.get(pageUrl).expect(200)).body;
+    const saved = (await http.put(`${pageUrl}/content`).send({ content: { format: "gs-html", html: `<img src="/media/${hash}.png" alt="Logo">`, css: "" }, baseRevisionId: detail.latestRevisionId }).expect(200)).body;
+    const frame = await http.get(`${pageUrl}/live-frame?revision=${saved.revisionId}`).expect(200);
+    const link = new RegExp(`src="/api/companies/${a.company.id}/website/sites/${a.site.id}/media/${hash}\\.png\\?sig=(\\d+\\.[A-Za-z0-9_-]{43})"`);
+    const sig = link.exec(frame.text)?.[1];
+    expect(sig).toBe(signWebsiteMediaLink(MEDIA_SECRET, { companyId: a.company.id, siteId: a.site.id, file: `${hash}.png` }, Number(sig!.split(".")[0]) * 1000 - WEBSITE_MEDIA_LINK_TTL_SECONDS * 1000));
+    expect(frame.headers["content-security-policy"]).toMatch(/img-src data: blob:[^;]*'self'/);
   });
 
   it("collection entries (GRE-2138): a wrong-shaped entry or an unknown collection answers 422", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pageDocument, pagePart, siteAssetOrigin, splitPageDocument } from "../services/website/live-page.js";
+import { pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
+import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink } from "../services/website/media-file.js";
 import { LiveDesignConflict } from "../services/live-design.js";
 
 const page = { title: "Home", slug: "/", companyId: "c1", siteId: "s1" };
@@ -42,5 +43,53 @@ describe("website page documents (release schema 2)", () => {
     expect(siteAssetOrigin("https://gsam-editor--greatstone-home.netlify.app/")).toBe("https://gsam-editor--greatstone-home.netlify.app");
     expect(siteAssetOrigin("http://example.com")).toBeNull();
     expect(siteAssetOrigin(null)).toBeNull();
+  });
+
+  it("frames /media/ from GSAM's site media route and other assets from the preview origin (GRE-4265)", async () => {
+    const html = '<img src="/media/abc.png" srcset="/media/a.png 1x, /media/b.png 2x"><img src="/assets/logo.svg"><div style="x"></div>';
+    const store = {
+      readRevision: async () => ({ revisionNumber: 1, content: { format: "gs-html", html, css: ".h{background:url(/media/bg.jpg)}" } }),
+      readDocument: async () => null,
+      saveRevision: async () => ({ state: "failed" as const, message: "" }),
+    };
+    const framePage = { ...page, id: "p1", documentId: "d1" };
+    const media = "/api/companies/c1/website/sites/s1/media/";
+    const withOrigin = await websitePageFrame(store, framePage, async () => null, "r1", "https://preview.example");
+    expect(withOrigin).toContain(`src="${media}abc.png"`);
+    expect(withOrigin).toContain(`srcset="${media}a.png 1x, ${media}b.png 2x"`);
+    expect(withOrigin).toContain(`url(${media}bg.jpg)`);
+    expect(withOrigin).toContain('src="https://preview.example/assets/logo.svg"');
+    expect(withOrigin).not.toContain("https://preview.example/media/");
+    const noOrigin = await websitePageFrame(store, framePage, async () => null, "r1", null);
+    expect(noOrigin).toContain(`src="${media}abc.png"`);
+    expect(noOrigin).toContain('src="/assets/logo.svg"');
+    const signed = await websitePageFrame(store, framePage, async () => null, "r1", null, (file) => `sig-for-${file}`);
+    const hashed = "c".repeat(64);
+    expect(signed).toContain(`src="${media}abc.png"`); // not a <sha256> name: no signature, the route answers 404
+    const hashedStore = { ...store, readRevision: async () => ({ revisionNumber: 1, content: { format: "gs-html", html: `<img src="/media/${hashed}.png">`, css: "" } }) };
+    expect(await websitePageFrame(hashedStore, framePage, async () => null, "r1", null, (file) => `sig-for-${file}`)).toContain(`src="${media}${hashed}.png?sig=sig-for-${hashed}.png"`);
+  });
+
+  it("a media link signature holds only for its own company, site and file, until it expires", () => {
+    const input = { companyId: "c1", siteId: "s1", file: `${"a".repeat(64)}.png` };
+    const now = Date.UTC(2026, 10, 6);
+    const sig = signWebsiteMediaLink("k", input, now);
+    expect(verifyWebsiteMediaLink("k", input, sig, now)).toBe(true);
+    expect(verifyWebsiteMediaLink("k", input, sig, now + 59 * 60 * 1000)).toBe(true);
+    expect(verifyWebsiteMediaLink("k", input, sig, now + 60 * 60 * 1000)).toBe(false);
+    expect(verifyWebsiteMediaLink("other", input, sig, now)).toBe(false);
+    for (const changed of [{ companyId: "c2" }, { siteId: "s2" }, { file: `${"b".repeat(64)}.png` }]) {
+      expect(verifyWebsiteMediaLink("k", { ...input, ...changed }, sig, now)).toBe(false);
+    }
+    expect(verifyWebsiteMediaLink("k", input, "", now)).toBe(false);
+    expect(verifyWebsiteMediaLink("k", input, `${sig}x`, now)).toBe(false);
+  });
+
+  it("reads only <sha256>.<ext> as a media file name", () => {
+    const hash = "a".repeat(64);
+    expect(parseWebsiteMediaFileName(`${hash}.png`)).toEqual({ sha256: hash, ext: "png" });
+    for (const bad of [`${hash}`, `${hash}.PNG`, `${"a".repeat(63)}.png`, `../${hash}.png`, `${hash}.png/..`, `${hash}..png`, `${hash}.png%00`, "x.png"]) {
+      expect(parseWebsiteMediaFileName(bad), bad).toBeNull();
+    }
   });
 });

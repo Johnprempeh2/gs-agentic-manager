@@ -162,13 +162,29 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
  * The frame's document for a revision: the page with the real site stylesheet, as the build
  * shows it. `assetOrigin` (the site's preview address) serves the site's own images and fonts,
  * whose paths the page keeps site-relative; only the frame's copy points them there.
+ * `/media/` files come from GSAM's own copy of the site's media entries instead, so an image
+ * added since the last release shows too (GRE-4265). `signMedia` gives each such link its signature.
  */
-export async function websitePageFrame(store: Store, page: PageLike, loadChrome: ChromeLoader, revisionId: string, assetOrigin: string | null) {
+export async function websitePageFrame(
+  store: Store,
+  page: PageLike,
+  loadChrome: ChromeLoader,
+  revisionId: string,
+  assetOrigin: string | null,
+  signMedia?: (file: string) => string | null,
+) {
   const found = await store.readRevision(page.companyId, page.documentId, revisionId);
   if (!found) throw new LiveDesignConflict("That version of the page is gone.");
   const chrome = await loadChrome();
   const doc = pageDocument(page, pagePart(page, found.content), chrome, chrome?.stylesheet ?? "");
-  return assetOrigin ? doc.replace(/(["'(\s,])\/(assets|fonts|motion|media)\//g, `$1${assetOrigin}/$2/`) : doc;
+  // The sandboxed frame sends no sign-in cookie, so each media link carries its own signature.
+  const media = `/api/companies/${page.companyId}/website/sites/${page.siteId}/media/`;
+  const withMedia = doc.replace(/(["'(\s,])\/media\/([a-f0-9]{64}\.[a-z0-9]{1,8}(?![\w.?#]))?/g, (_match, lead: string, file?: string) => {
+    if (!file) return `${lead}${media}`;
+    const sig = signMedia?.(file);
+    return `${lead}${media}${file}${sig ? `?sig=${sig}` : ""}`;
+  });
+  return assetOrigin ? withMedia.replace(/(["'(\s,])\/(assets|fonts|motion)\//g, `$1${assetOrigin}/$2/`) : withMedia;
 }
 
 /** The draft the site's /live-design route renders: the page's own part, its shared parts and the stylesheet. */
