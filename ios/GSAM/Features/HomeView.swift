@@ -89,20 +89,20 @@ struct AttentionRow: View {
                     if let identifier = item.subject.identifier {
                         Text(identifier)
                             .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.secondary)
                     }
                     Spacer()
                     Text(item.activityAt, format: .relative(presentation: .named))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                 }
                 Text(item.subject.title ?? item.whyNow)
                     .font(.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                 if item.subject.title != nil {
                     Text(item.whyNow)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                         .lineLimit(3)
                 }
             }
@@ -121,11 +121,11 @@ struct BlockedRow: View {
                 if let identifier = item.issue.identifier {
                     Text(identifier)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                 }
                 Text(item.issue.title)
                     .font(.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                 HStack(spacing: 4) {
                     Image(systemName: ownerSymbol)
                         .accessibilityHidden(true)
@@ -136,7 +136,7 @@ struct BlockedRow: View {
                     }
                 }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondary)
             }
             .padding(.vertical, 2)
         }
@@ -162,6 +162,7 @@ struct BlockedRow: View {
 }
 
 /// A row that opens its GSAM page in Safari, or plain text when it has none.
+/// A `Link` tints `.primary` and `.secondary`, so rows use `Color.primary` and `Color.secondary`.
 private struct RowLink<Content: View>: View {
     let url: URL?
     @ViewBuilder let content: Content
