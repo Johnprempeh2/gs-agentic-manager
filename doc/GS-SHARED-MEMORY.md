@@ -183,6 +183,8 @@ John, 26 Oct: "Hindsight is where the 'where we left off' notes live."
   - trivial turns skipped;
   - turns batched;
   - unchanged text never re-sent;
+  - order in each run: the handoff, then changed memory files, then sessions newest first (memory files never wait
+    behind a session backlog);
   - Mac: at most 40 entries a run and 250 a day;
   - server: 300 new or changed entries a day per person scope (`GSAM_MEMORY_SYNC_DAILY_CAP`).
 - **When the cap is reached:**
@@ -258,7 +260,8 @@ After the release and the install, on the Mac:
 
 ## Recall test (item 7)
 
-From the Mac, after the first sync. Each answer prints the title, source (`sourceKind sourceId`), date and status:
+From the Mac, after the first sync. The command searches John's bank only (the link's `person` scope); it does
+not search company records. Each answer prints the title, source (`sourceKind sourceId`), date and status:
 
 ```sh
 S="$HOME/Library/Application Support/gs-memory-sync/bin/gs-memory-sync.mjs"

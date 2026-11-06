@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { claudeTurns, codexTurns, isTrivialTurn } from "./extract.mjs";
-import { run, syncHandoff, tailnetUrlProblem } from "./gs-memory-sync.mjs";
+import { recall, run, syncHandoff, tailnetUrlProblem } from "./gs-memory-sync.mjs";
 import { isNeverStoreFile, redact } from "./redact.mjs";
 
 // Fake secrets are built at run time so no secret-shaped literal sits in the repo.
@@ -351,6 +351,39 @@ describe("the Mac sync run", () => {
     } finally {
       cleanup();
     }
+  });
+
+  it("sends memory files before the session backlog", async () => {
+    const { dirs, env, server, send, cleanup } = sandbox();
+    try {
+      const now = Date.parse("2026-10-26T12:00:00Z");
+      const session = path.join(dirs.claude, "proj", "s1.jsonl");
+      fs.writeFileSync(session, `${claudeTurn(1, "2026-10-25T10:00:00Z")}\n${claudeTurn(2, "2026-10-25T10:05:00Z")}\n${claudeTurn(3, "2026-10-25T10:10:00Z")}\n`);
+      fs.utimesSync(session, new Date(now - 3_600_000), new Date(now - 3_600_000));
+      fs.writeFileSync(path.join(dirs.memory, "decision_client_identity.md"), "Client identity decision of 25 Oct, long enough to keep.");
+      // A run budget of 2 against 3 session turns: before the fix the memory file was never reached.
+      const configFile = path.join(dirs.home, "config.json");
+      fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, "utf8")), maxEntriesPerRun: 2 }));
+      await run({ env, now, send, log: () => {} });
+      const sent = server.calls.flatMap((call) => call.body.entries);
+      assert.deepEqual(sent.map((entry) => entry.source), ["memory_file", "claude_code"]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("recall searches the person scope only", async () => {
+    const calls = [];
+    const send = async (_config, token, route, body) => {
+      calls.push({ token, route, body });
+      if (route === "/scopes") return [{ id: "org-1", kind: "organization" }, { id: "john-1", kind: "person" }];
+      return { available: true, results: [] };
+    };
+    await recall({ config: {}, token: "claude-token", query: "client identity", send });
+    assert.deepEqual(calls.map((call) => call.route), ["/scopes", "/recall"]);
+    assert.equal(calls[0].body, undefined, "scopes is a GET");
+    assert.deepEqual(calls[1].body, { query: "client identity", limit: 8, scopeIds: ["john-1"] });
+    await assert.rejects(recall({ config: {}, token: "t", query: "x", send: async () => [{ id: "org-1", kind: "organization" }] }), /no person scope/);
   });
 
   it("only talks to the tailnet", () => {
