@@ -108,7 +108,7 @@ Notes:
 
 ## Website enquiries (GRE-2324)
 
-The website admin bridge is read-only from GSAM's side. A connected site can be checked by a person with website Edit access, and a scheduler checks connected sites every five minutes once a bridge reader is configured. The bridge reader returns pages of enquiries with opaque cursors. The real bridge connection and staging switch-over belong to GRE-2323; until then, tests provide a fake reader.
+The website admin bridge is read-only from GSAM's side. A connected site can be checked by a person with website Edit access, and a scheduler checks connected sites every 30 minutes once a bridge reader is configured (so each site database can sleep in between). The bridge reader returns pages of enquiries with opaque cursors. The real bridge connection and staging switch-over belong to GRE-2323; until then, tests provide a fake reader.
 
 Each website enquiry becomes one case in the `website-enquiries` Pipeline. Its case key includes the site and enquiry ids. The case retains source, page, UTM, consent and submission time in fields, and links to an Organisation by email domain when a live company-scoped match exists. Personal mailbox domains do not group unrelated people. A linked GSAM task provides the inbox item, routed to the Front door module owner or the company's default responsible user when one is set. The site's Resend owner alert remains the website's responsibility.
 
