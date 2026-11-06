@@ -71,6 +71,9 @@ export const websiteApi = {
       `/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}`,
       patch,
     ),
+  /** Remove a website from the list (owners and admins). Refused while a site record still uses it. */
+  remove: (companyId: string, propertyId: string) =>
+    api.delete<void>(`/companies/${encodeURIComponent(companyId)}/website/properties/${encodeURIComponent(propertyId)}`),
   /** The linked project's website work (website hub, 23 Oct 2026). */
   hub: (companyId: string, propertyId: string) =>
     api.get<WebsiteHub>(
