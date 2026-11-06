@@ -271,7 +271,7 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
   };
 }
 
-/** Poll sites with a configured bridge read key every five minutes. */
+/** Poll sites with a configured bridge read key every 30 minutes, so their databases can sleep in between. */
 export function startWebsiteEnquiryScheduler(
   db: Db,
   reader: WebsiteEnquiryReader,
@@ -299,7 +299,7 @@ export function startWebsiteEnquiryScheduler(
       running = false;
     }
   };
-  const timer = setInterval(() => { void tick(); }, 5 * 60_000);
+  const timer = setInterval(() => { void tick(); }, 30 * 60_000);
   timer.unref?.();
   return () => clearInterval(timer);
 }

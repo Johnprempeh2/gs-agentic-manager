@@ -90,7 +90,9 @@ export function startWebsiteActivityScheduler(db: Db, onError: (error: unknown, 
     finally { running = false; }
   };
   void tick();
-  const timer = setInterval(() => { void tick(); }, 5 * 60_000);
+  // ponytail: hourly so each website database can sleep (it suspends after ~5 idle minutes, and a
+  // 5-minute poll kept every one awake all day). Pull on demand if someone needs fresher activity.
+  const timer = setInterval(() => { void tick(); }, 60 * 60_000);
   timer.unref?.();
   return () => clearInterval(timer);
 }
