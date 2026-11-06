@@ -82,6 +82,8 @@ import {
   submitClientPublicationSchema,
   withdrawClientPublicationSchema,
   deliverablesQuerySchema,
+  importLinksSchema,
+  updateLinkSchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
   upsertIssueDocumentSchema,
@@ -11005,6 +11007,69 @@ registry.registerPath({
   summary: "Archive a reference",
   request: { params: z.object({ companyId: z.string(), id: z.string() }) },
   responses: { 204: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+// The links register (GRE-4252): every shared link, by client and project.
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/links",
+  tags: ["links"],
+  summary: "List and search the links register (q, clientCaseId, projectId, type, status, includeArchived)",
+  query: z.object({
+    q: z.string().optional(),
+    clientCaseId: z.string().optional(),
+    projectId: z.string().optional(),
+    type: z.string().optional(),
+    status: z.string().optional(),
+    includeArchived: z.string().optional(),
+    limit: z.string().optional(),
+  }),
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/links/{id}",
+  tags: ["links"],
+  summary: "Get one link",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/links",
+  tags: ["links"],
+  summary: "Add a link; the same URL again updates the stored row (201 created, 200 updated)",
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/links/{id}",
+  tags: ["links"],
+  summary: "Update a link's title, client, project, type, status, notes or date",
+  body: updateLinkSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/links/{id}/archive",
+  tags: ["links"],
+  summary: "Archive a link (status archived; rows are never deleted)",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/links/import",
+  tags: ["links"],
+  summary: "Import a CSV export of the Notion link register ({ csv })",
+  body: importLinksSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/links/backfill",
+  tags: ["links"],
+  summary: "Fill the register from existing link deliverables and previews (safe to run again)",
 });
 
 registry.registerPath({

@@ -96,6 +96,7 @@ const Releases = lazyPage(() => import("./pages/Releases"), "Releases");
 const Billing = lazyPage(() => import("./pages/Billing"), "Billing");
 const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
 const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverables");
+const Links = lazyPage(() => import("./pages/Links"), "Links");
 const Website = lazyPage(() => import("./pages/Website"), "Website");
 const WebsiteEditorPage = lazyPage(() => import("./pages/WebsiteEditorPage"), "WebsiteEditorPage");
 const WebsiteFeaturePage = lazyPage(() => import("./pages/WebsiteFeature"), "WebsiteFeaturePage");
@@ -489,6 +490,7 @@ function boardRoutes() {
         element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="links" element={<Links />} />
       <Route path="images" element={<Images />} />
       <Route path="website" element={<Website />} />
       {/* The full-screen website editor (GRE-2296): it covers the shell, so it has no sidebar or header. */}
@@ -958,6 +960,7 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="links" element={<UnprefixedBoardRedirect />} />
           <Route path="calendar" element={<UnprefixedBoardRedirect />} />
           <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
           <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />

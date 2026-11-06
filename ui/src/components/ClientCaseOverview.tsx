@@ -25,6 +25,7 @@ import { ClientJourneyOverview } from "./ClientJourneyOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { ClientPublications, EngagementTimelineView } from "./ClientPublications";
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
+import { ClientLinks } from "./links/ClientLinks";
 import { StatusBadge } from "./StatusBadge";
 import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
 import { DevtoolsDealEditor, DevtoolsNextStepDone } from "./DevtoolsDealEditor";
@@ -320,6 +321,12 @@ export function ClientCaseOverview({
       </OverviewSection>
         </>
       )}
+
+      {detail.case.companyId ? (
+        <OverviewSection title="Links" tour="client-links">
+          <ClientLinks companyId={detail.case.companyId} caseId={detail.case.id} />
+        </OverviewSection>
+      ) : null}
 
       <OverviewSection title="Open tasks">
         {openTasks.length > 0 ? (

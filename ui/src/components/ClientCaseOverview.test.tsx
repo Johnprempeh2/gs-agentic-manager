@@ -389,6 +389,7 @@ describe("client case page", () => {
       "Deliverables publishing",
       "What the client sees on the portal",
       "Engagement timeline",
+      "Links",
       "Open tasks",
       "Projects",
       "Stage history",

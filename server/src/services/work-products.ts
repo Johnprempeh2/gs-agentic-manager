@@ -1,9 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { executionWorkspaces, heartbeatRunEvents, issueWorkProducts, workspaceRuntimeServices } from "@greatstone/db";
+import { executionWorkspaces, heartbeatRunEvents, heartbeatRuns, issueWorkProducts, workspaceRuntimeServices } from "@greatstone/db";
 import type { IssueWorkProduct } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 import { insertRowsInChunks } from "./batch-insert.js";
+import { CAPTURED_PREVIEW_WORK_PRODUCT_TYPES, linkService } from "./links.js";
 import {
   createPullRequestMergeDetailsResolver,
   extractGitHubPullRequestReferences,
@@ -200,6 +201,31 @@ export function workProductService(
 ) {
   const resolvePullRequestDetails = opts.resolvePullRequestDetails ?? createPullRequestMergeDetailsResolver(db);
   const resolveCommitDetails = opts.resolveCommitDetails ?? createGitHubCommitDiffDetailsResolver(db);
+  /**
+   * The links register (GRE-4252): a preview with a web address is filed
+   * there with its client, project and source task. Never fails the caller.
+   */
+  async function captureLink(row: typeof issueWorkProducts.$inferSelect) {
+    if (!CAPTURED_PREVIEW_WORK_PRODUCT_TYPES.has(row.type) || !row.url) return;
+    const agentId = row.createdByRunId
+      ? await db
+        .select({ agentId: heartbeatRuns.agentId })
+        .from(heartbeatRuns)
+        .where(and(eq(heartbeatRuns.id, row.createdByRunId), eq(heartbeatRuns.companyId, row.companyId)))
+        .then((rows) => rows[0]?.agentId ?? null)
+        .catch(() => null)
+      : null;
+    await linkService(db).capture({
+      companyId: row.companyId,
+      issueId: row.issueId,
+      url: row.url,
+      title: row.title,
+      source: "preview",
+      type: "preview",
+      agentId,
+    });
+  }
+
   return {
     listForIssue: async (issueId: string, options: { refreshPullRequests?: boolean } = {}) => {
       const rows = await db
@@ -293,6 +319,7 @@ export function workProductService(
           .returning()
           .then((rows) => rows[0] ?? null);
       });
+      if (row) await captureLink(row);
       return row ? toIssueWorkProduct(row) : null;
     },
 
@@ -327,6 +354,7 @@ export function workProductService(
           .returning()
           .then((rows) => rows[0] ?? null);
       });
+      if (row && patch.url !== undefined) await captureLink(row);
       return row ? toIssueWorkProduct(row) : null;
     },
 

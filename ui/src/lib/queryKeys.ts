@@ -670,6 +670,10 @@ export const queryKeys = {
   motionStudies: {
     list: (companyId: string) => ["motion-studies", companyId] as const,
   },
+  links: {
+    all: (companyId: string) => ["links", companyId] as const,
+    list: (companyId: string, params: Record<string, string | undefined>) => ["links", companyId, "list", params] as const,
+  },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
     list: (companyId: string, params: Record<string, string | undefined>) =>
