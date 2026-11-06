@@ -7,7 +7,17 @@
 // same string with the idempotency key as a last line.
 import { createHash, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { z } from "zod";
-import { deepDiveSyncSitePath, websiteActivityBatchSchema, type DeepDiveSyncPayload, type WebsiteCommerceResource, type WebsiteDataResource } from "@greatstone/shared";
+import {
+  WEBSITE_CLIENT_MEMBER_ROLES,
+  WEBSITE_STAFF_ROLES,
+  deepDiveSyncSitePath,
+  websiteAccessChangeCall,
+  websiteActivityBatchSchema,
+  type DeepDiveSyncPayload,
+  type WebsiteAccessChange,
+  type WebsiteCommerceResource,
+  type WebsiteDataResource,
+} from "@greatstone/shared";
 import { HttpError } from "../../errors.js";
 
 export const BRIDGE_SCHEME = "gs-bridge-v1";
@@ -213,6 +223,31 @@ export const bridgeRefundRequestSchema = z.object({
   item: z.object({ id: z.string().min(1), status: z.string() }).passthrough(),
 });
 
+/**
+ * People and access (GRE-4085, contract "People and access"). Only these fields come through: anything else the site
+ * might add is dropped. Each list is one page.
+ */
+export const bridgeStaffSchema = z.object({
+  id: z.string().min(1), email: z.string(), name: z.string().nullable(), role: z.enum(WEBSITE_STAFF_ROLES), isActive: z.boolean(),
+  canSignIn: z.boolean(), portalApprover: z.boolean(), lastLoginAt: z.string().nullable(), updatedAt: z.string(),
+});
+export const bridgeApproverSchema = z.object({
+  staffId: z.string().min(1), email: z.string(), name: z.string().nullable(), label: z.string(), staffActive: z.boolean(), addedAt: z.string(),
+});
+export const bridgeMemberSchema = z.object({
+  membershipId: z.string().min(1), organisationId: z.string().min(1), userId: z.string().nullable(), email: z.string(),
+  name: z.string().nullable(), role: z.enum(WEBSITE_CLIENT_MEMBER_ROLES), isPrimary: z.boolean(), createdAt: z.string(), updatedAt: z.string(),
+});
+const accessListOf = <T extends z.ZodTypeAny>(item: T) => z.object({ items: z.array(item), nextCursor: z.null() });
+export const bridgeAccessAnswerSchemas = {
+  staff_role: z.object({ item: bridgeStaffSchema }),
+  approver_set: z.object({ item: bridgeApproverSchema }),
+  approver_remove: z.object({ staffId: z.string().min(1), removed: z.literal(true) }),
+  member_add: z.object({ item: bridgeMemberSchema }),
+  member_role: z.object({ item: bridgeMemberSchema }),
+  member_remove: z.object({ membershipId: z.string().min(1), organisationId: z.string().min(1), removed: z.literal(true) }),
+} as const;
+
 export interface WebsiteBridgeClientOptions {
   baseUrl: string;
   credential: WebsiteBridgeCredential;
@@ -352,6 +387,22 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
       send("PUT", `vendors/${encodeURIComponent(vendorId)}/activation-steps`,
         { activationSteps: input.activationSteps, expectedRowVersion: input.expectedRowVersion }, actor, bridgeActivationStepsSchema,
         idempotencyKey),
+    /** People and access reads (GRE-4085), on the read key. Open to any actor. */
+    accessStaff: (actor: WebsiteBridgeActor) => get("/api/admin/v1/access/staff", {}, actor, accessListOf(bridgeStaffSchema)),
+    accessPortalApprovers: (actor: WebsiteBridgeActor) =>
+      get("/api/admin/v1/access/portal-approvers", {}, actor, accessListOf(bridgeApproverSchema)),
+    accessClientMembers: (customerId: string, actor: WebsiteBridgeActor) =>
+      get(`/api/admin/v1/access/clients/${encodeURIComponent(customerId)}/members`, {}, actor, accessListOf(bridgeMemberSchema)),
+    /**
+     * One access change on the `write` key, signed v2. People only: the site answers an agent or system actor with
+     * 403 denied and changes nothing.
+     */
+    accessChange: <K extends WebsiteAccessChange["kind"]>(change: WebsiteAccessChange & { kind: K }, actor: WebsiteBridgeActor,
+      idempotencyKey?: string) => {
+      const { method, path, body } = websiteAccessChangeCall(change);
+      const schema = bridgeAccessAnswerSchemas[change.kind] as unknown as z.ZodType<z.infer<(typeof bridgeAccessAnswerSchemas)[K]>>;
+      return send(method, path, body, actor, schema, idempotencyKey);
+    },
     /** Records a refund request on the `refund_request` key. Moves no money. */
     requestRefund: (input: { orderId: string; amountMinor: number; reason: string }, actor: WebsiteBridgeActor, idempotencyKey?: string) =>
       send("POST", "refund-requests", { orderId: input.orderId, amountMinor: input.amountMinor, reason: input.reason }, actor,

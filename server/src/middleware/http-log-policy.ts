@@ -95,6 +95,8 @@ const MEMORY_CONTENT_HTTP_PATHS = [
   // Licence activation steps (GRE-3982) are free text the site refuses when it holds a licence key: the refused
   // body is the key. Both ways to write them (the PUT and a vendor PATCH) are left out.
   /^\/api\/companies\/[^/]+\/website\/sites\/[^/]+\/commerce\/vendors\/[^/]+(?:\/activation-steps)?\/?$/i,
+  // A client member's email and name (GRE-4085): adding one, or asking for it on a card.
+  /^\/api\/companies\/[^/]+\/website\/sites\/[^/]+\/access\/(?:clients\/[^/]+\/members|change-requests)\/?$/i,
 ];
 
 /**

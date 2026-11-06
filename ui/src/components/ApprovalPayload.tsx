@@ -12,6 +12,8 @@ export const typeLabel: Record<string, string> = {
   permission_grant: "Permission request",
   website_publish: "Publish proposal",
   commerce_refund_request: "Refund request",
+  commerce_publish_request: "Catalogue publish request",
+  website_access_change: "Access change request",
 };
 
 /**
@@ -23,6 +25,8 @@ export function approvalActionLabels(type: string) {
   if (type === "permission_grant") return { approve: "Grant", approving: "Granting...", reject: "Deny", rejecting: "Denying..." };
   if (type === "website_publish") return { approve: "Approve and Publish", approving: "Starting Publish...", reject: "Not now", rejecting: "Declining..." };
   if (type === "commerce_refund_request") return { approve: "Approve refund", approving: "Recording...", reject: "Reject refund", rejecting: "Recording..." };
+  if (type === "commerce_publish_request") return { approve: "Approve and publish", approving: "Publishing...", reject: "Reject", rejecting: "Rejecting..." };
+  if (type === "website_access_change") return { approve: "Approve and change", approving: "Changing...", reject: "Reject", rejecting: "Rejecting..." };
   return { approve: "Approve", approving: "Approving...", reject: "Reject", rejecting: "Rejecting..." };
 }
 
@@ -62,6 +66,8 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   permission_grant: KeyRound,
   website_publish: Globe,
   commerce_refund_request: ReceiptText,
+  commerce_publish_request: Globe,
+  website_access_change: KeyRound,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -383,6 +389,43 @@ function CommerceRefundRequestPayload({ payload }: { payload: Record<string, unk
   );
 }
 
+/** GRE-4089: an agent asks to publish or archive a catalogue record; approving does it on the site in your name. */
+function CommercePublishRequestPayload({ payload }: { payload: Record<string, unknown> }) {
+  const before = (payload.before ?? {}) as { status?: unknown; rowVersion?: unknown };
+  const after = (payload.after ?? {}) as { status?: unknown };
+  const item = payload.item && typeof payload.item === "object" ? payload.item as Record<string, unknown> : null;
+  return (
+    <div className="mt-3 space-y-1.5 text-sm">
+      <PayloadField label="Site" value={payload.siteName} />
+      <PayloadField label="Record" value={`${String(payload.resource ?? "")} ${String(payload.itemName ?? payload.itemId ?? "")}`.trim()} />
+      <PayloadField label="Change" value={`${String(before.status ?? "unknown")} → ${String(after.status ?? "")}`} />
+      <PayloadField label="Row version" value={before.rowVersion == null ? null : String(before.rowVersion)} />
+      <PayloadField label="Asked by" value={payload.requestedBy} />
+      <PayloadField label="Note" value={payload.note} />
+      {item && (
+        <details className="text-muted-foreground">
+          <summary className="cursor-pointer">The record as asked</summary>
+          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-xs">{JSON.stringify(item, null, 2)}</pre>
+        </details>
+      )}
+      <p className="leading-6 text-muted-foreground">Approving does this on the website in your name. If the record changed after the ask, the card is void and nothing is published.</p>
+    </div>
+  );
+}
+
+/** GRE-4085: an agent asks to change a staff role, portal approver or client member; approving does it in your name. */
+function WebsiteAccessChangePayload({ payload }: { payload: Record<string, unknown> }) {
+  return (
+    <div className="mt-3 space-y-1.5 text-sm">
+      <PayloadField label="Site" value={payload.siteName} />
+      <PayloadField label="Change" value={`${String(payload.beforeText ?? "unknown")} → ${String(payload.afterText ?? "")}`} />
+      <PayloadField label="Asked by" value={payload.requestedBy} />
+      <PayloadField label="Note" value={payload.note} />
+      <p className="leading-6 text-muted-foreground">Approving does this on the website in your name. If this person's access changed after the ask, the card is void and nothing is changed.</p>
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -397,6 +440,8 @@ export function ApprovalPayloadRenderer({
   if (type === "permission_grant") return <PermissionGrantPayload payload={payload} />;
   if (type === "website_publish") return <WebsitePublishPayload payload={payload} />;
   if (type === "commerce_refund_request") return <CommerceRefundRequestPayload payload={payload} />;
+  if (type === "commerce_publish_request") return <CommercePublishRequestPayload payload={payload} />;
+  if (type === "website_access_change") return <WebsiteAccessChangePayload payload={payload} />;
   if (type === "request_board_approval") {
     return <BoardApprovalPayload payload={payload} hideTitle={hidePrimaryTitle} />;
   }

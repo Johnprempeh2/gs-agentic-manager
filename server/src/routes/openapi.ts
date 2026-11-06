@@ -470,6 +470,12 @@ import {
   createWebsiteFeatureSchema,
   createWebsiteDataBridgeKeySchema,
   websiteCommerceRefundRequestSchema,
+  websiteCommercePublishRequestSchema,
+  websiteAccessChangeRequestSchema,
+  websiteClientMemberAddSchema,
+  websiteClientMemberRoleSchema,
+  websitePortalApproverSchema,
+  websiteStaffRoleSchema,
   websiteVendorActivationStepsSchema,
   setWebsiteBridgeSiteKeySchema,
   websiteDocumentRequestAnswerSchema,
@@ -17102,6 +17108,60 @@ registerCurrentRoute({
     + "is open but the site's answer was lost (deciding records it first, once); 409 capability_not_configured, over_refundable",
   body: websiteCommerceRefundRequestSchema,
   responses: { ...commerceWriteResponses, 202: { description: "The card is open; the site's answer was lost" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/commerce/publish-requests`,
+  tags: ["website"],
+  summary: "Ask a person to publish or archive one catalogue record (website:commerce; agents may; GRE-4089). Reads the record and opens a "
+    + "commerce_publish_request approval with it; publishes nothing. A person with website:commerce approves with POST /api/approvals/{id}/approve, "
+    + "which publishes it on the write key in their name, once; a record changed since the ask voids the card (409 commerce_publish_request_void). "
+    + "201 a new card; 200 the same open card for the same record, action and row version; 409 capability_not_configured; 422 already in that state",
+  body: websiteCommercePublishRequestSchema,
+  responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
+});
+
+// ─── Website people and access (GRE-4085) ──────────────────────────────────────
+
+const accessChangeSummary = (what: string) => `${what}, on the site's write key in the caller's name (website:publish; a signed-in person `
+  + "only: 403 website_access_people_only for an agent or a board API key, with no call to the site). An agent asks with "
+  + "access/change-requests instead. Optional Idempotency-Key header (22 base64url characters). 409 capability_not_configured when the "
+  + "site has no write key; the site's 404, 409 (the last active owner, an email already in use) come back as website_bridge_*";
+
+for (const [path, what] of [
+  ["access/staff", "The site's staff, by email: role, active, can sign in, portal approver"],
+  ["access/portal-approvers", "The site's portal approvers, oldest first"],
+  ["access/clients/{customerId}/members", "One client company's members, oldest first; 404 when the client is not this site's"],
+] as const) {
+  registerCurrentRoute({ method: "get", path: `${siteParams}/${path}`, tags: ["website"],
+    summary: `${what}, read only through the signed admin bridge (website:view; any actor). One page; nextCursor is null`,
+    responses: commerceReadResponses });
+}
+registerCurrentRoute({ method: "patch", path: `${siteParams}/access/staff/{staffId}`, tags: ["website"],
+  summary: accessChangeSummary("Change one staff member's role"), body: websiteStaffRoleSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "put", path: `${siteParams}/access/portal-approvers/{staffId}`, tags: ["website"],
+  summary: accessChangeSummary("Make a staff member a portal approver, or change their label"), body: websitePortalApproverSchema,
+  responses: commerceWriteResponses });
+registerCurrentRoute({ method: "delete", path: `${siteParams}/access/portal-approvers/{staffId}`, tags: ["website"],
+  summary: accessChangeSummary("Remove a portal approver"), responses: commerceWriteResponses });
+registerCurrentRoute({ method: "post", path: `${siteParams}/access/clients/{customerId}/members`, tags: ["website"],
+  summary: accessChangeSummary("Add a person to a client company: makes their sign-in (no password) and the membership"),
+  body: websiteClientMemberAddSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "patch", path: `${siteParams}/access/clients/{customerId}/members/{membershipId}`, tags: ["website"],
+  summary: accessChangeSummary("Change a client member's role"), body: websiteClientMemberRoleSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "delete", path: `${siteParams}/access/clients/{customerId}/members/{membershipId}`, tags: ["website"],
+  summary: accessChangeSummary("End a client membership (the person keeps their sign-in)"), responses: commerceWriteResponses });
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/access/change-requests`,
+  tags: ["website"],
+  summary: "Ask a person for one access change (website:view; agents may; GRE-4085). Reads the row the change touches and opens a "
+    + "website_access_change approval with it; changes nothing. A person with website:publish approves with POST /api/approvals/{id}/approve, "
+    + "which makes the change on the write key in their name, once; a row changed since the ask voids the card (409 website_access_request_void). "
+    + "201 a new card; 200 the same open card for the same change; 409 capability_not_configured; 422 nothing to change or no such person",
+  body: websiteAccessChangeRequestSchema,
+  responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
 });
 
 // ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────

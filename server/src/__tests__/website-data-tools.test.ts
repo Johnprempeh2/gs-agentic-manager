@@ -94,8 +94,27 @@ describe("website commerce tools: drafts", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     const names = projectToolDefinitions("standard").map((tool) => tool.name).filter((name) => name.startsWith("commerce_"));
     expect(names).toEqual(["commerce_draft_create", "commerce_draft_edit", "commerce_draft_delete", "commerce_convert_quote",
-      "commerce_import_dry_run", "commerce_request_refund"]);
-    expect(names.some((name) => /publish|archive|fx|apply|issue|decide/.test(name))).toBe(false);
+      "commerce_import_dry_run", "commerce_request_refund", "commerce_request_publish"]);
+    // only asks: no tool publishes, archives or decides
+    expect(names.filter((name) => !name.startsWith("commerce_request_")).some((name) => /publish|archive|fx|apply|issue|decide/.test(name))).toBe(false);
+  });
+
+  // GRE-4089: the agent asks; the route opens a card on its task and publishes nothing.
+  it("asks to publish through the publish-requests route, linked to the agent's task, never the write route", async () => {
+    const ISSUE = "1550e000-0000-4000-8000-000000000001";
+    const fetchMock = vi.fn(async () => Response.json({ approval: { id: "a" } }, { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await callProjectTool({ name: "commerce_request_publish", arguments: { siteId: SITE, resource: "offerings", id: ROW, action: "publish", note: "Ready" },
+      apiUrl: "http://gsam.test/api", token: "t", companyId: "c1", issueId: ISSUE, agentId: "a1", conversation: false });
+    await call("commerce_request_publish", { resource: "vendors", id: ROW, action: "archive" });
+    const sent = fetchMock.mock.calls.map(([url, init]) => [(init as RequestInit).method, String(url).replace(BASE, ""), JSON.parse(String((init as RequestInit).body))]);
+    expect(sent).toEqual([
+      ["POST", "/commerce/publish-requests", { resource: "offerings", id: ROW, action: "publish", note: "Ready", issueId: ISSUE }],
+      ["POST", "/commerce/publish-requests", { resource: "vendors", id: ROW, action: "archive" }],
+    ]);
+    await expect(call("commerce_request_publish", { resource: "fx", id: ROW, action: "publish" })).rejects.toThrow();
+    await expect(call("commerce_request_publish", { resource: "offerings", id: ROW, action: "delete" })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("passes a stale row's current version back to the agent", async () => {
@@ -103,5 +122,68 @@ describe("website commerce tools: drafts", () => {
       { error: "The record changed on the website", code: "website_bridge_conflict", details: { current: { id: ROW, row_version: 9 } } }, { status: 409 })));
     await expect(call("commerce_draft_edit", { resource: "vendors", id: ROW, expectedRowVersion: 1, fields: { name: "N" }, idempotencyKey: "k" }))
       .rejects.toThrow(/row_version":9/);
+  });
+});
+
+// GRE-4085 (John, 5 Nov: "a person approves every access change"): agents read access and ask for a change; the ask
+// opens a card. No tool calls a change route.
+describe("website access tools", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const STAFF = "a0000000-0000-4000-8000-000000000002";
+  const CLIENT = "c0000000-0000-4000-8000-000000000001";
+  const MEMBER = "d0000000-0000-4000-8000-000000000001";
+  const ISSUE = "1550e000-0000-4000-8000-000000000001";
+
+  it("reads staff, portal approvers and a client's members with GETs only", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ items: [], nextCursor: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    await call("website_access_list", { list: "staff" });
+    await call("website_access_list", { list: "portal-approvers" });
+    await call("website_access_list", { list: "client-members", customerId: CLIENT });
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      `${BASE}/access/staff`, `${BASE}/access/portal-approvers`, `${BASE}/access/clients/${CLIENT}/members`,
+    ]);
+    expect(fetchMock.mock.calls.every(([, init]) => !(init as RequestInit | undefined)?.method)).toBe(true);
+    await expect(call("website_access_list", { list: "client-members" })).rejects.toThrow(/customerId/);
+    await expect(call("website_access_list", { list: "staff", customerId: CLIENT })).rejects.toThrow(/customerId/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("asks through change-requests, linked to the agent's task, with a key the same ask repeats", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ approval: { id: "a" } }, { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const ask = (args: Record<string, unknown>) => callProjectTool({ name: "website_access_request_change", arguments: { siteId: SITE, ...args },
+      apiUrl: "http://gsam.test/api", token: "t", companyId: "c1", issueId: ISSUE, agentId: "a1", conversation: false });
+    await ask({ kind: "approver_set", staffId: STAFF, label: "Finance lead", note: "Runs finance" });
+    await ask({ kind: "member_add", customerId: CLIENT, email: "New@Client.example.test", name: "Nia", role: "member" });
+    await ask({ kind: "member_remove", customerId: CLIENT, membershipId: MEMBER });
+    await ask({ kind: "approver_set", staffId: STAFF, label: "Finance lead", note: "Runs finance" });
+    const sent = fetchMock.mock.calls.map(([url, init]) => [(init as RequestInit).method, String(url).replace(BASE, ""), JSON.parse(String((init as RequestInit).body))]);
+    expect(sent.slice(0, 3)).toEqual([
+      ["POST", "/access/change-requests", { change: { kind: "approver_set", staffId: STAFF, label: "Finance lead" }, note: "Runs finance", issueId: ISSUE }],
+      ["POST", "/access/change-requests", { change: { kind: "member_add", customerId: CLIENT, email: "new@client.example.test", name: "Nia", role: "member" }, issueId: ISSUE }],
+      ["POST", "/access/change-requests", { change: { kind: "member_remove", customerId: CLIENT, membershipId: MEMBER }, issueId: ISSUE }],
+    ]);
+    const keys = fetchMock.mock.calls.map(([, init]) => ((init as RequestInit).headers as Record<string, string>)["Idempotency-Key"]);
+    expect(keys[3]).toBe(keys[0]);
+    expect(new Set(keys.slice(0, 3)).size).toBe(3);
+  });
+
+  it("refuses a malformed ask before any call, and no access tool can change access itself", async () => {
+    const fetchMock = vi.fn(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(call("website_access_request_change", { kind: "staff_role", staffId: STAFF, role: "god" })).rejects.toThrow();
+    await expect(call("website_access_request_change", { kind: "staff_role", staffId: STAFF, role: "admin", label: "x" })).rejects.toThrow();
+    await expect(call("website_access_request_change", { kind: "member_role", customerId: CLIENT, role: "admin" })).rejects.toThrow();
+    await expect(call("website_access_request_change", { kind: "delete_everyone" })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    const tools = projectToolDefinitions("standard").filter((tool) => tool.name.startsWith("website_access"));
+    expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([["website_access_list", true], ["website_access_request_change", false]]);
+  });
+
+  it("passes the route's refusal back to the agent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+      { error: "Access changes are off for this site: no write key is set up", code: "capability_not_configured" }, { status: 409 })));
+    await expect(call("website_access_request_change", { kind: "approver_remove", staffId: STAFF })).rejects.toThrow(/Access changes are off/);
   });
 });

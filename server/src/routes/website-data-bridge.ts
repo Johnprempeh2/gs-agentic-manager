@@ -1,7 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import type { Db } from "@greatstone/db";
+import { and, eq } from "drizzle-orm";
+import { issues, type Db } from "@greatstone/db";
 import {
+  WEBSITE_ACCESS_API_ROUTES,
   WEBSITE_COMMERCE_RESOURCES,
   WEBSITE_DATA_BRIDGE_API_ROUTES,
   WEBSITE_DATA_RESOURCES,
@@ -11,9 +13,17 @@ import {
   websiteDataListQuerySchema,
   websiteActivityEventsQuerySchema,
   websiteCommerceRefundRequestSchema,
+  websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
   websitePaymentReportQuerySchema,
   websiteVendorActivationStepsSchema,
+  websiteAccessChangeRequestSchema,
+  websiteAccessChangeSchema,
+  websiteClientMemberAddSchema,
+  websiteClientMemberRoleSchema,
+  websitePortalApproverSchema,
+  websiteStaffRoleSchema,
+  type WebsiteAccessChange,
   type PermissionKey,
   type WebsiteCommerceWriteMethod,
   type WebsiteCommerceResource,
@@ -21,13 +31,15 @@ import {
 } from "@greatstone/shared";
 import { HttpError, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { accessService, logActivity } from "../services/index.js";
+import { accessService, issueApprovalService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { websiteModuleService, type SiteRow } from "../services/website/module.js";
 import { WEBSITE_MESSAGES } from "../services/website/messages.js";
 import { websiteDataBridgeService, type WebsiteDataBridgeOptions } from "../services/website/data-bridge.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
+import { commercePublishApprovals } from "../services/website/commerce-publish-approval.js";
 import { websiteActivityService } from "../services/website/activity.js";
+import { accessChangeLogDetails, websiteAccessService } from "../services/website/access.js";
 import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -46,11 +58,15 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   const access = accessService(db);
   const bridge = websiteDataBridgeService(db, options);
   const refunds = commerceRefundApprovals(db, options);
+  const publishRequests = commercePublishApprovals(db, options);
+  const websiteAccess = websiteAccessService(db, options);
+  const issueApprovals = issueApprovalService(db);
   const activity = websiteActivityService(db, { read: async () => { throw new Error("Activity reads cannot pull the website"); } });
 
   router.use("/companies/:companyId/website/sites/:siteId/data-bridge", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/data", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/sites/:siteId/commerce", requireEntitlement(db, "enableWebsiteView"));
+  router.use("/companies/:companyId/website/sites/:siteId/access", requireEntitlement(db, "enableWebsiteView"));
   router.use("/companies/:companyId/website/activity/:organisationId", requireEntitlement(db, "enableWebsiteView"));
 
   router.get("/companies/:companyId/website/activity/:organisationId", async (req, res) => {
@@ -275,6 +291,44 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     res.status(result.confirmed ? 201 : 202).json({ approval: result.approval, request: result.request });
   });
 
+  // Publish requests (GRE-4089): an agent asks; a person approves on the card and GSAM publishes in their name. This
+  // route makes no write call, so direct publish stays people only (website_commerce_people_only).
+  router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.commercePublishRequests, async (req, res) => {
+    const site = await siteFor(req, res, "website:commerce");
+    if (!site) return;
+    const input = websiteCommercePublishRequestSchema.safeParse(req.body);
+    if (!input.success) {
+      throw unprocessable(`The publish request is not valid: ${input.error.issues[0]?.path.join(".") || "body"}`, { code: "website_commerce_publish_request_invalid" });
+    }
+    if (input.data.issueId) {
+      const [issue] = await db.select({ id: issues.id }).from(issues)
+        .where(and(eq(issues.id, input.data.issueId), eq(issues.companyId, site.companyId))).limit(1);
+      if (!issue) throw unprocessable("No such task in this company", { code: "website_commerce_publish_request_invalid" });
+    }
+    const actor = getActorInfo(req);
+    const result = await publishRequests.request(site, input.data, {
+      agentId: actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+      bridge: actorOf(req),
+    });
+    if (input.data.issueId) {
+      await issueApprovals.linkManyForApproval(result.approval.id, [input.data.issueId], {
+        agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    }
+    if (result.replayed) {
+      res.status(200).json({ approval: result.approval });
+      return;
+    }
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.commerce_publish_requested",
+      entityType: "approval", entityId: result.approval.id, agentId: actor.agentId, runId: actor.runId,
+      details: { siteId: site.id, resource: input.data.resource, itemId: input.data.id, action: input.data.action,
+        issueId: input.data.issueId ?? null },
+    });
+    res.status(201).json({ approval: result.approval });
+  });
+
   // Licence activation steps (GRE-3982), per vendor. The text is customer-facing and must never hold a licence key:
   // the site refuses one (400 licence_key_in_text). Neither the text nor the site's answer goes to the activity log,
   // and the HTTP log leaves this route's body out (http-log-policy).
@@ -329,6 +383,122 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceWrite, (req, res) => commerceWrite(req, res, "POST"));
   router.patch(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceWrite, (req, res) => commerceWrite(req, res, "PATCH"));
   router.delete(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceWrite, (req, res) => commerceWrite(req, res, "DELETE"));
+
+  // ---- people and access (GRE-4085) ----
+  // Reads: website:view, any actor. Changes: a signed-in person with website:publish, in their own name; an agent (or
+  // a board API key) gets 403 website_access_people_only before any vault read or call to the site, and asks with
+  // POST access/change-requests instead (John, 5 Nov: "a person approves every access change").
+
+  function notFound(res: Response) {
+    res.status(404).json({ error: "The website has no such record.", code: "website_bridge_not_found" });
+  }
+
+  router.get(WEBSITE_ACCESS_API_ROUTES.staff, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await websiteAccess.reads.staff(site, actorOf(req)));
+  });
+
+  router.get(WEBSITE_ACCESS_API_ROUTES.portalApprovers, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    res.json(await websiteAccess.reads.portalApprovers(site, actorOf(req)));
+  });
+
+  router.get(WEBSITE_ACCESS_API_ROUTES.clientMembers, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const customerId = req.params.customerId as string;
+    if (!UUID_RE.test(customerId)) return notFound(res);
+    queryOf(NO_QUERY, req);
+    res.json(await websiteAccess.reads.clientMembers(site, customerId, actorOf(req)));
+  });
+
+  function personOrRefuseAccess(req: Request) {
+    const actor = req.actor;
+    if (actor.type === "board" && actor.userId && (actor.source === "session" || actor.source === "local_implicit")) return actor.userId;
+    throw new HttpError(403, "Only a person can change access, by clicking in GSAM. An agent asks with a card on its task "
+      + "(website_access_request_change); a person with Publish rights approves it.", { code: "website_access_people_only" });
+  }
+
+  async function accessChange<B extends Record<string, unknown>>(req: Request, res: Response, bodySchema: z.ZodType<B>,
+    build: (params: Record<string, string>, body: B) => unknown) {
+    assertCompanyAccess(req, req.params.companyId as string);
+    const userId = personOrRefuseAccess(req);
+    const site = await siteFor(req, res, "website:publish");
+    if (!site) return;
+    const params = req.params as Record<string, string>;
+    for (const key of ["staffId", "customerId", "membershipId"]) if (params[key] !== undefined && !UUID_RE.test(params[key]!)) return notFound(res);
+    queryOf(NO_QUERY, req);
+    const body = bodySchema.safeParse(req.body ?? {});
+    const parsed = body.success ? websiteAccessChangeSchema.safeParse(build(params, body.data)) : body;
+    if (!parsed.success) {
+      throw unprocessable(`The access change is not valid: ${parsed.error.issues[0]?.path.join(".") || "body"}`, { code: "website_access_change_invalid" });
+    }
+    const change = parsed.data as WebsiteAccessChange;
+    const result = await websiteAccess.change(site, change, { type: "user", id: userId }, idempotencyKeyOf(req)) as Record<string, unknown>;
+    const actor = getActorInfo(req);
+    const item = (result.item ?? null) as { membershipId?: unknown } | null;
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.access_changed",
+      entityType: "website_site", entityId: site.id, agentId: actor.agentId, runId: actor.runId,
+      details: { ...accessChangeLogDetails(change), ...(typeof item?.membershipId === "string" ? { membershipId: item.membershipId } : {}) },
+    });
+    res.json(result);
+  }
+
+  // Each body is checked strictly on its own, so a body cannot name another person than the path does.
+  router.patch(WEBSITE_ACCESS_API_ROUTES.staffMember, (req, res) =>
+    accessChange(req, res, websiteStaffRoleSchema, (p, body) => ({ ...body, kind: "staff_role", staffId: p.staffId })));
+  router.put(WEBSITE_ACCESS_API_ROUTES.portalApprover, (req, res) =>
+    accessChange(req, res, websitePortalApproverSchema, (p, body) => ({ ...body, kind: "approver_set", staffId: p.staffId })));
+  router.delete(WEBSITE_ACCESS_API_ROUTES.portalApprover, (req, res) =>
+    accessChange(req, res, NO_QUERY, (p) => ({ kind: "approver_remove", staffId: p.staffId })));
+  router.post(WEBSITE_ACCESS_API_ROUTES.clientMembers, (req, res) =>
+    accessChange(req, res, websiteClientMemberAddSchema, (p, body) => ({ ...body, kind: "member_add", customerId: p.customerId })));
+  router.patch(WEBSITE_ACCESS_API_ROUTES.clientMember, (req, res) =>
+    accessChange(req, res, websiteClientMemberRoleSchema, (p, body) =>
+      ({ ...body, kind: "member_role", customerId: p.customerId, membershipId: p.membershipId })));
+  router.delete(WEBSITE_ACCESS_API_ROUTES.clientMember, (req, res) =>
+    accessChange(req, res, NO_QUERY, (p) => ({ kind: "member_remove", customerId: p.customerId, membershipId: p.membershipId })));
+
+  // An ask (agents may): opens a website_access_change card and changes nothing.
+  router.post(WEBSITE_ACCESS_API_ROUTES.changeRequests, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const input = websiteAccessChangeRequestSchema.safeParse(req.body);
+    if (!input.success) {
+      throw unprocessable(`The access change request is not valid: ${input.error.issues[0]?.path.join(".") || "body"}`, { code: "website_access_request_invalid" });
+    }
+    if (input.data.issueId) {
+      const [issue] = await db.select({ id: issues.id }).from(issues)
+        .where(and(eq(issues.id, input.data.issueId), eq(issues.companyId, site.companyId))).limit(1);
+      if (!issue) throw unprocessable("No such task in this company", { code: "website_access_request_invalid" });
+    }
+    const actor = getActorInfo(req);
+    const result = await websiteAccess.request(site, input.data, {
+      agentId: actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+      bridge: actorOf(req),
+    });
+    if (input.data.issueId) {
+      await issueApprovals.linkManyForApproval(result.approval.id, [input.data.issueId], {
+        agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    }
+    if (result.replayed) {
+      res.status(200).json({ approval: result.approval });
+      return;
+    }
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.access_change_requested",
+      entityType: "approval", entityId: result.approval.id, agentId: actor.agentId, runId: actor.runId,
+      details: { siteId: site.id, ...accessChangeLogDetails(input.data.change), issueId: input.data.issueId ?? null },
+    });
+    res.status(201).json({ approval: result.approval });
+  });
 
   router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceList, async (req, res) => {
     const site = await siteFor(req, res, "website:view");

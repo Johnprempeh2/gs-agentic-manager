@@ -59,6 +59,12 @@ export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
    */
   commerceRefundRequests: "/companies/:companyId/website/sites/:siteId/commerce/refund-requests",
   /**
+   * POST `WebsiteCommercePublishRequestInput` → 201 `{ approval }` (website:commerce; agents may; GRE-4089). Asks a
+   * person to publish or archive one catalogue record: opens a `commerce_publish_request` approval with the record as
+   * it is now. Publishes nothing. A person's approval publishes it in their name; a change to the record first voids it.
+   */
+  commercePublishRequests: "/companies/:companyId/website/sites/:siteId/commerce/publish-requests",
+  /**
    * PUT `WebsiteVendorActivationStepsInput` → `{ item: WebsiteVendorActivationSteps }` (website:commerce; GRE-3982).
    * Sets or clears the licence activation steps a vendor's licences show, on the write key. The site refuses an agent
    * on a published vendor (403 website_bridge_denied) and any text with a full licence key (400
@@ -192,7 +198,46 @@ export interface CommerceRefundRequestApprovalPayload {
   clientKey?: string;
 }
 
-export type WebsiteDataBridgeState = "not_set_up" | "connected" | "failing";
+/**
+ * An ask to publish or archive one catalogue record (GRE-4089, John 5 Nov: "agents can publish anything but request
+ * approval to do so"). `issueId` links the card to the asker's task.
+ */
+export const websiteCommercePublishRequestSchema = z.object({
+  resource: z.enum(WEBSITE_COMMERCE_CATALOGUE_RESOURCES),
+  id: z.string().uuid(),
+  action: z.enum(["publish", "archive"]),
+  note: z.string().trim().min(1).max(2000).optional(),
+  issueId: z.string().uuid().optional(),
+}).strict();
+export type WebsiteCommercePublishRequestInput = z.infer<typeof websiteCommercePublishRequestSchema>;
+
+export const COMMERCE_PUBLISH_REQUEST_APPROVAL_TYPE = "commerce_publish_request";
+
+/** The card a person decides. The server builds it from the record as the site gave it; callers cannot set it. */
+export interface CommercePublishRequestApprovalPayload {
+  siteId: string;
+  siteName: string;
+  title: string;
+  summary: string;
+  resource: WebsiteCommerceCatalogueResource;
+  itemId: string;
+  itemName: string | null;
+  action: "publish" | "archive";
+  /** The record when asked. A different row version or content at approval voids the card. */
+  before: { status: string | null; rowVersion: number };
+  after: { status: "published" | "archived" };
+  /** The record's fields when asked, for the person to read; cut when large. */
+  item: Record<string, unknown>;
+  itemSha256: string;
+  requestedBy: string;
+  note: string | null;
+  /** Set when GSAM first sent the publish: a retry replays the same site key and skips the record check. */
+  publishSentAt?: string;
+  /** The site's answer once published: its status and row version. */
+  result?: { status: string | null; rowVersion: number | null };
+}
+
+export type WebsiteDataBridgeState ="not_set_up" | "connected" | "failing";
 
 export interface WebsiteDataBridgeStatus {
   state: WebsiteDataBridgeState;

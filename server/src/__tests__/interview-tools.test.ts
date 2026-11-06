@@ -19,7 +19,8 @@ describe("Parallel Interview agent tools", () => {
   it("offers read, read and draft only: nothing that approves, decides, releases or withdraws", () => {
     for (const mode of ISSUE_WORK_MODES) {
       const names = projectToolDefinitions(mode, true).map((tool) => tool.name);
-      expect(names.filter((name) => /approv|decid|decision|releas|withdraw|publish/.test(name)), mode).toEqual([]);
+      // commerce_request_publish (GRE-4089) only asks: it opens a card a person decides
+      expect(names.filter((name) => name !== "commerce_request_publish" && /approv|decid|decision|releas|withdraw|publish/.test(name)), mode).toEqual([]);
     }
     const tools = projectToolDefinitions("standard").filter((tool) => tool.name.startsWith("interview_"));
     expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
