@@ -56,7 +56,12 @@ final class SessionStore {
 
     /// The server address John typed, as a URL, or nil with a reason.
     func validatedServerURL() -> Result<URL, SignInError> {
-        let text = serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.serverURL(from: serverAddress)
+    }
+
+    /// Siri reads the saved address with this too, outside the app's screens.
+    nonisolated static func serverURL(from address: String) -> Result<URL, SignInError> {
+        let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return .failure(.missingAddress) }
         guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), url.host != nil else {
             return .failure(.invalidAddress)

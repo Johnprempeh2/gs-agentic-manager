@@ -99,6 +99,15 @@ struct GSAMClient: Sendable {
         try await send("GET", "/api/companies/\(companyId)/blocked-work")
     }
 
+    // MARK: Writes
+
+    /// Creates a task in one company, as the signed-in user. The server
+    /// answers with the existing task (`deduplicated`) when an open task with
+    /// the same title was made a moment ago.
+    func createIssue(companyId: String, title: String) async throws -> CreatedIssue {
+        try await send("POST", "/api/companies/\(companyId)/issues", body: ["title": title])
+    }
+
     /// A link to open a GSAM page (an `href` from the API) in the browser.
     func webURL(for href: String?) -> URL? {
         guard let href else { return nil }
