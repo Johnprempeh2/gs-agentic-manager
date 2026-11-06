@@ -24,6 +24,7 @@ import {
 import { conflict, notFound, unprocessable } from "../../errors.js";
 import { secretService } from "../secrets.js";
 import { WEBSITE_MESSAGES } from "./messages.js";
+import { websiteMediaExt } from "./media-file.js";
 import { checkWebsiteConnection, websiteConnectRefusal, type WebsiteConnectionChecker, type WebsiteConnectInput } from "./connect-check.js";
 
 // Website module (GRE-2105, ADR GRE-1914). Every function takes the company
@@ -932,6 +933,33 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
     return media;
   }
 
+  /**
+   * The asset behind `media/<sha256>.<ext>` for the live design frame (GRE-4265): only when one
+   * of this site's own media entries, released or not, names a same-company asset with that hash
+   * and extension. Anything else is null.
+   */
+  async function findMediaFile(companyId: string, siteId: string, sha256: string, ext: string) {
+    const entries = await db
+      .select({ body: documents.latestBody })
+      .from(websiteEntry)
+      .innerJoin(documents, and(eq(documents.id, websiteEntry.documentId), eq(documents.companyId, companyId)))
+      .where(
+        and(
+          eq(websiteEntry.companyId, companyId),
+          eq(websiteEntry.siteId, siteId),
+          eq(websiteEntry.collection, "media"),
+          isNull(websiteEntry.archivedAt),
+        ),
+      );
+    const assetIds = [...new Set(entries.map((row) => asRecord(parseBody(row.body)).assetId).filter(isUuid))];
+    if (assetIds.length === 0) return null;
+    const rows = await db
+      .select({ objectKey: assets.objectKey, contentType: assets.contentType, byteSize: assets.byteSize, originalFilename: assets.originalFilename })
+      .from(assets)
+      .where(and(eq(assets.companyId, companyId), eq(assets.sha256, sha256), inArray(assets.id, assetIds)));
+    return rows.find((row) => websiteMediaExt(row) === ext) ?? null;
+  }
+
   async function editorLoad(site: SiteRow, row: PageRow, editorFrameOrigin: string): Promise<WebsitePageEditorLoad | null> {
     const doc = await store.readDocument(row.companyId, row.documentId);
     if (!doc || !doc.latestRevisionId) return null;
@@ -973,6 +1001,7 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
     pageRevision,
     restorePageRevision,
     listMedia,
+    findMediaFile,
     editorLoad,
     listSites,
     listTokenSecrets,

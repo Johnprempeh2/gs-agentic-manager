@@ -86,6 +86,7 @@ import { pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-a
 import { injectImpeccableLive } from "../services/impeccable-helper.js";
 import { islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { siteAssetOrigin, websitePageDraft, websitePageFrame, websitePageSource } from "../services/website/live-page.js";
+import { parseWebsiteMediaFileName } from "../services/website/media-file.js";
 import { importHtmlRelease, loadWebsiteChrome, type HtmlReleaseImport } from "../services/website/chrome.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
 
@@ -764,7 +765,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     // The attachment sandbox, plus modals for Impeccable's confirm prompts.
-    let csp = HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals ");
+    // The site's media entries load from GSAM itself (GRE-4265), so they show before a release.
+    let csp = HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals ").replace("img-src data: blob:", "img-src data: blob: 'self'").replace("media-src data: blob:", "media-src data: blob: 'self'");
     if (assetOrigin) csp = csp.replace("font-src data:", `font-src data: ${assetOrigin}`).replace("img-src data: blob:", `img-src data: blob: ${assetOrigin}`).replace("media-src data: blob:", `media-src data: blob: ${assetOrigin}`);
     res.setHeader("Content-Security-Policy", csp);
     res.status(200).send(injectImpeccableLive(html));
@@ -975,6 +977,27 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const site = await siteFor(req, res, "website:view");
     if (!site) return;
     res.json(await service.listMedia(site.companyId, site.id));
+  });
+
+  // One media entry's file by its site name, for the live design frame before a release (GRE-4265).
+  router.get(WEBSITE_MODULE_API_ROUTES.mediaFile, async (req, res, next) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const name = parseWebsiteMediaFileName(req.params.file as string);
+    const file = name && options.storage ? await service.findMediaFile(site.companyId, site.id, name.sha256, name.ext) : null;
+    if (!file || !options.storage) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    const object = await options.storage.getObject(site.companyId, file.objectKey);
+    res.setHeader("Content-Type", file.contentType || object.contentType || "application/octet-stream");
+    res.setHeader("Content-Length", String(file.byteSize || object.contentLength || 0));
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    // An SVG opened on its own runs nothing here.
+    res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'");
+    object.stream.on("error", next);
+    object.stream.pipe(res);
   });
 
   // ---- review: submit (edit), approve and send back (people with Publish rights) ----

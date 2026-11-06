@@ -415,6 +415,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageChangeRequestImages: "/companies/:companyId/website/sites/:siteId/pages/:pageId/change-requests/:issueId/images",
   /** GET → `WebsiteMediaItem[]`, the site's media entries. */
   media: "/companies/:companyId/website/sites/:siteId/media",
+  /** GET → the file of one of the site's own media entries, released or not, by its site name `<sha256>.<ext>`; else 404 (website:view). The live design frame loads `/media/…` from here. */
+  mediaFile: "/companies/:companyId/website/sites/:siteId/media/:file",
   /** POST → `WebsitePage` (website:edit). Draft to review: asks a person with Publish rights to approve it. */
   pageSubmit: "/companies/:companyId/website/sites/:siteId/pages/:pageId/submit",
   /** POST → `WebsitePage` (website:publish, people only). The latest revision becomes the approved one. */
