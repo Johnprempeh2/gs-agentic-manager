@@ -220,7 +220,12 @@ export const api = {
       ...(options?.headers ? { headers: options.headers } : {}),
     }),
   put: <T>(path: string, body: unknown, options?: RequestOptions) =>
-    request<T>(path, { method: "PUT", body: JSON.stringify(body), signal: options?.signal }),
+    request<T>(path, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      signal: options?.signal,
+      ...(options?.headers ? { headers: options.headers } : {}),
+    }),
   /** Raw binary upload (e.g. one chunked import-transfer part); the body travels as-is. */
   putRaw: <T>(path: string, body: Blob, options?: RequestOptions) =>
     request<T>(path, {
