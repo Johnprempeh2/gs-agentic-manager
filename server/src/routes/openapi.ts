@@ -477,6 +477,10 @@ import {
   websitePortalApproverSchema,
   websiteStaffRoleSchema,
   websiteVendorActivationStepsSchema,
+  websitePortalDocumentApproveSchema,
+  websitePortalDocumentCreateSchema,
+  websitePortalDocumentEditSchema,
+  websitePortalDocumentStepSchema,
   setWebsiteBridgeSiteKeySchema,
   websiteDocumentRequestAnswerSchema,
   updateWebsiteFeatureSchema,
@@ -1676,6 +1680,9 @@ const BOARD_ONLY_OPERATIONS = new Set([
   // Sending a client's Deep Dive to the site, and the site's call-back key, are a person's click only (GRE-2439).
   "POST /api/companies/{companyId}/website/sites/{siteId}/deep-dive-sync/{clientCaseId}",
   "PUT /api/companies/{companyId}/website/sites/{siteId}/data-bridge/site-key",
+  // Approving and publishing, or withdrawing, a client portal document is a person's click only (GRE-4083).
+  "POST /api/companies/{companyId}/website/sites/{siteId}/portal-documents/{documentId}/approve-and-publish",
+  "POST /api/companies/{companyId}/website/sites/{siteId}/portal-documents/{documentId}/withdraw",
   "POST /api/companies/{companyId}/workflow-templates",
   "PATCH /api/workflow-templates/{id}",
   "GET /api/companies/{companyId}/releases",
@@ -17172,6 +17179,34 @@ registerCurrentRoute({
   body: websiteAccessChangeRequestSchema,
   responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
 });
+
+// ─── Website portal documents (GRE-4083) ───────────────────────────────────────
+
+const portalDocumentSummary = (what: string, who: string) => `${what}, on the site's write key (${who}; GRE-4083). Answer: { item }, the `
+  + "document without its PDF path. Optional Idempotency-Key header (22 base64url characters). 409 website_bridge_conflict with "
+  + "details.current on a wrong status or stale expectedRowVersion; 409 capability_not_configured when the site has no write key";
+const portalPeopleOnly = "website:publish; a signed-in person only: 403 website_publish_agent_refused for an agent and "
+  + "website_portal_people_only for a board API key, with no call to the site";
+
+registerCurrentRoute({ method: "post", path: `${siteParams}/portal-documents`, tags: ["website"],
+  summary: `${portalDocumentSummary("Create a draft portal document for one client of the site", "website:edit; agents may")}. 201 created`,
+  body: websitePortalDocumentCreateSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "patch", path: `${siteParams}/portal-documents/{documentId}`, tags: ["website"],
+  summary: portalDocumentSummary("Change a draft portal document at its row version; null clears a field", "website:edit; agents may"),
+  body: websitePortalDocumentEditSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "post", path: `${siteParams}/portal-documents/{documentId}/submit`, tags: ["website"],
+  summary: portalDocumentSummary("Send a draft for approval: pending_approval, with its content frozen and fingerprinted", "website:edit; agents may"),
+  body: websitePortalDocumentStepSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "post", path: `${siteParams}/portal-documents/{documentId}/return-to-draft`, tags: ["website"],
+  summary: portalDocumentSummary("Take a document that waits for approval back to draft", "website:edit; agents may"),
+  body: websitePortalDocumentStepSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "post", path: `${siteParams}/portal-documents/{documentId}/approve-and-publish`, tags: ["website"],
+  summary: `${portalDocumentSummary("Approve and publish a pending document at its content fingerprint; the answer adds approvalId", portalPeopleOnly)}. `
+    + "The site also refuses (403 website_bridge_denied) anyone who is not a registered portal approver",
+  body: websitePortalDocumentApproveSchema, responses: commerceWriteResponses });
+registerCurrentRoute({ method: "post", path: `${siteParams}/portal-documents/{documentId}/withdraw`, tags: ["website"],
+  summary: portalDocumentSummary("Withdraw a published document from the client portal", portalPeopleOnly),
+  body: websitePortalDocumentStepSchema, responses: commerceWriteResponses });
 
 // ─── Deep Dive sync to the website (GRE-2439) ──────────────────────────────────
 
