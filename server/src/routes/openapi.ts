@@ -16754,6 +16754,20 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/media/{file}`,
+  tags: ["website"],
+  summary: "Stream the stored file for <sha256>.<ext> when one of this site's own media entries (draft or released) names a same-company asset with that hash and ext; used by the live design frame. With sig (<expiry>.<hmac> over company, site and file) only the signature is checked, so the sandboxed frame needs no session; without sig it needs website:view. Any unknown, other-site, wrong-ext, bad or expired request answers 404",
+  query: z.object({ sig: z.string().optional() }),
+  responses: {
+    200: { description: "The media file, with its stored content type", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/entries`,
   tags: ["website"],
   summary: "List a site's collection entries, optionally for one collection (website:view)",
