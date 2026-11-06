@@ -28,7 +28,7 @@ import type {
   PluginExecutionWorkspaceMetadata,
 } from "@greatstone/plugin-sdk";
 import type { CreateIssueThreadInteraction, InviteJoinType, IssueDocumentSummary, PermissionKey, PrincipalType } from "@greatstone/shared";
-import { isBoardGoalKind, pluginOperationIssueOriginKind } from "@greatstone/shared";
+import { isBoardGoalKind, pluginOperationIssueOriginKind, updateGoalSchema } from "@greatstone/shared";
 import { companyService } from "./companies.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
@@ -2882,11 +2882,18 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const existing = requireInCompany("Goal", await goals.getById(params.goalId), companyId);
+        // Plugins send a raw patch: check it against the goal PATCH contract, which has no
+        // id or companyId, so a plugin cannot move a goal to another company (upstream 833d06874).
+        const parsed = updateGoalSchema.safeParse(params.patch);
+        if (!parsed.success) {
+          throw new Error(`Invalid goal update: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`);
+        }
+        const patch = parsed.data;
         // Vision, values and CSFs are for the board only (GRE-1132); plugins act as no board member.
-        if (isBoardGoalKind(existing.kind) || isBoardGoalKind((params.patch as { kind?: string | null }).kind)) {
+        if (isBoardGoalKind(existing.kind) || isBoardGoalKind(patch.kind)) {
           throw new Error("Plugins cannot edit vision, value or critical success factor goals");
         }
-        return (await goals.update(params.goalId, params.patch as any)) as Goal;
+        return (await goals.update(params.goalId, patch as any)) as Goal;
       },
     },
 
