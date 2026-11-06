@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
-import { parseWebsiteMediaFileName } from "../services/website/media-file.js";
+import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink } from "../services/website/media-file.js";
 import { LiveDesignConflict } from "../services/live-design.js";
 
 const page = { title: "Home", slug: "/", companyId: "c1", siteId: "s1" };
@@ -63,6 +63,26 @@ describe("website page documents (release schema 2)", () => {
     const noOrigin = await websitePageFrame(store, framePage, async () => null, "r1", null);
     expect(noOrigin).toContain(`src="${media}abc.png"`);
     expect(noOrigin).toContain('src="/assets/logo.svg"');
+    const signed = await websitePageFrame(store, framePage, async () => null, "r1", null, (file) => `sig-for-${file}`);
+    const hashed = "c".repeat(64);
+    expect(signed).toContain(`src="${media}abc.png"`); // not a <sha256> name: no signature, the route answers 404
+    const hashedStore = { ...store, readRevision: async () => ({ revisionNumber: 1, content: { format: "gs-html", html: `<img src="/media/${hashed}.png">`, css: "" } }) };
+    expect(await websitePageFrame(hashedStore, framePage, async () => null, "r1", null, (file) => `sig-for-${file}`)).toContain(`src="${media}${hashed}.png?sig=sig-for-${hashed}.png"`);
+  });
+
+  it("a media link signature holds only for its own company, site and file, until it expires", () => {
+    const input = { companyId: "c1", siteId: "s1", file: `${"a".repeat(64)}.png` };
+    const now = Date.UTC(2026, 10, 6);
+    const sig = signWebsiteMediaLink("k", input, now);
+    expect(verifyWebsiteMediaLink("k", input, sig, now)).toBe(true);
+    expect(verifyWebsiteMediaLink("k", input, sig, now + 59 * 60 * 1000)).toBe(true);
+    expect(verifyWebsiteMediaLink("k", input, sig, now + 60 * 60 * 1000)).toBe(false);
+    expect(verifyWebsiteMediaLink("other", input, sig, now)).toBe(false);
+    for (const changed of [{ companyId: "c2" }, { siteId: "s2" }, { file: `${"b".repeat(64)}.png` }]) {
+      expect(verifyWebsiteMediaLink("k", { ...input, ...changed }, sig, now)).toBe(false);
+    }
+    expect(verifyWebsiteMediaLink("k", input, "", now)).toBe(false);
+    expect(verifyWebsiteMediaLink("k", input, `${sig}x`, now)).toBe(false);
   });
 
   it("reads only <sha256>.<ext> as a media file name", () => {

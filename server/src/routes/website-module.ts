@@ -86,7 +86,8 @@ import { pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-a
 import { injectImpeccableLive } from "../services/impeccable-helper.js";
 import { islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { siteAssetOrigin, websitePageDraft, websitePageFrame, websitePageSource } from "../services/website/live-page.js";
-import { parseWebsiteMediaFileName } from "../services/website/media-file.js";
+import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink } from "../services/website/media-file.js";
+import { resolveAgentJwtSecret } from "../agent-jwt-secret.js";
 import { importHtmlRelease, loadWebsiteChrome, type HtmlReleaseImport } from "../services/website/chrome.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
 
@@ -152,6 +153,8 @@ export interface WebsiteModuleRouteOptions {
   enquiryCopy?: WebsiteEnquiryCopy;
   /** Where images attached to Ask an agent go (GRE-2527). Without it the upload route answers 503. */
   storage?: StorageService;
+  /** The key that signs the live frame's media links (GRE-4265). Default: the instance's run-token key. */
+  mediaLinkSecret?: () => string | null;
 }
 
 /** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
@@ -187,6 +190,7 @@ const EDITOR_ORIGIN_PROBLEMS = {
 export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions = {}) {
   const router = Router();
   const service = websiteModuleService(db, { checkConnection: options.checkConnection });
+  const mediaLinkSecret = options.mediaLinkSecret ?? resolveAgentJwtSecret;
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
   const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
@@ -317,6 +321,17 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       return null;
     }
     return site;
+  }
+
+  /** The site a signed media link names, when its signature is good and unexpired; else null. */
+  async function signedMediaSite(req: Request): Promise<SiteRow | null> {
+    const companyId = req.params.companyId as string;
+    const siteId = req.params.siteId as string;
+    const sig = req.query.sig;
+    const secret = mediaLinkSecret();
+    if (!secret || typeof sig !== "string" || !UUID_RE.test(companyId) || !UUID_RE.test(siteId)) return null;
+    if (!verifyWebsiteMediaLink(secret, { companyId, siteId, file: req.params.file as string }, sig)) return null;
+    return service.getSite(companyId, siteId);
   }
 
   /** Writes to pages and entries need a connected site: a disconnected (archived) site answers 409. */
@@ -752,7 +767,9 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const assetOrigin = siteAssetOrigin(site.devPreviewUrl ?? site.livePreviewUrl);
     let html: string;
     try {
-      html = await websitePageFrame(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId, assetOrigin);
+      const mediaSecret = mediaLinkSecret();
+      const signMedia = mediaSecret ? (file: string) => signWebsiteMediaLink(mediaSecret, { companyId: page.companyId, siteId: page.siteId, file }) : undefined;
+      html = await websitePageFrame(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId, assetOrigin, signMedia);
       html = withIslandPlaceholders(html, (await loadCompanyIslandManifest(db, page.companyId)).placeholderCss);
     } catch (err) {
       if (err instanceof LiveDesignConflict) {
@@ -980,9 +997,14 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   });
 
   // One media entry's file by its site name, for the live design frame before a release (GRE-4265).
+  // The live frame's links carry a signature instead, as its sandbox sends no sign-in cookie.
   router.get(WEBSITE_MODULE_API_ROUTES.mediaFile, async (req, res, next) => {
-    const site = await siteFor(req, res, "website:view");
-    if (!site) return;
+    const signed = req.query.sig !== undefined;
+    const site = signed ? await signedMediaSite(req) : await siteFor(req, res, "website:view");
+    if (!site) {
+      if (signed) res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
     const name = parseWebsiteMediaFileName(req.params.file as string);
     const file = name && options.storage ? await service.findMediaFile(site.companyId, site.id, name.sha256, name.ext) : null;
     if (!file || !options.storage) {
