@@ -120,6 +120,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/website-bridge/v1/tenants/:tenantId": "Website Deep Dive call back (GRE-2439); no GSAM sign-in, the gs-bridge-v1 "
     + "signature with the site's own key is the credential. That key names one site, so one company, and the tenant and "
     + "request are checked against that company (website-deep-dive-sync.test.ts covers wrong tenant and bad signature).",
+  "/api/website-ping/:siteId": "Public website ping; no sign-in and no data in or out (always 202). It only asks GSAM "
+    + "to pull that site over its own signed bridge, rate limited per site (website-ping.test.ts).",
   "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
   "/api/inbound/tasks/:publicId": "Inbound task webhook; authenticated by the hook's own token, not a session.",
   "/api/calendar-feeds/:file": "Subscribed calendar feed; the secret token in the URL is the credential, not a session.",
