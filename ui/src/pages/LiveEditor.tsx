@@ -484,7 +484,7 @@ function LiveEditorShell({
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
-          <LiveDesignChat live={live} onPreview={(url, label) => setPreview({ url, label })} />
+          <LiveDesignChat live={live} deployable={!!engine} onPreview={(url, label) => setPreview({ url, label })} />
         </aside>
       </div>
     </div>

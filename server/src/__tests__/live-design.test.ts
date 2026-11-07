@@ -1,3 +1,4 @@
+import { LIVE_DEPLOY_REQUEST } from "@greatstone/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acceptLiveDesign,
@@ -259,6 +260,18 @@ describe("live design through Impeccable's page tools", () => {
     expect(viewLiveDesign(s).codeTasks).toEqual([expect.objectContaining({ identifier: "GRE-1", status: "preview" })]);
     endLiveDesign(s);
     expect(viewLiveDesign(startLiveDesign(ids).session).codeTasks).toHaveLength(1);
+  });
+
+  it("tells the agent how the deploy button works: merge when green, John's card, the guarded deploy", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000);
+    steerLiveDesign(s, LIVE_DEPLOY_REQUEST);
+    const event = (await pollLiveDesign(s, 1000)) as { _instructions: string };
+    expect(event._instructions).toContain("Merge it yourself as soon as its checks pass");
+    expect(event._instructions).toContain('"kind": "deploy"');
+    expect(event._instructions).toContain("confirmation:<GRE-n>:weekly-release:<full main sha>");
+    expect(event._instructions).toContain("npm run deploy:prod -- greatstone-home");
+    expect(event._instructions).toContain("Never deploy with `netlify deploy --dir`");
   });
 
   it("queues a pick made while the agent is busy, freeing the page, and the agent makes it on the page next", async () => {

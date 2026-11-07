@@ -48,7 +48,12 @@ export const liveDesignCodeTaskSchema = z.object({
   status: z.enum(["working", "preview", "done", "blocked"]).default("working"),
   prUrl: httpsUrl.optional(),
   previewUrl: httpsUrl.optional(),
+  /** "deploy": the task that puts website main on the public site, behind John's card on it. */
+  kind: z.enum(["change", "deploy"]).optional(),
 });
+/** What John sends from the editor's deploy button; the agent's instructions say what it means. */
+export const LIVE_DEPLOY_REQUEST = "Deploy these changes to the public site.";
+
 export type LiveDesignCodeTask = z.infer<typeof liveDesignCodeTaskSchema>;
 
 export const liveDesignReplySchema = z.object({

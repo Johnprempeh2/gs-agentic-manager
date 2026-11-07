@@ -4,7 +4,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
-import { AgentWork, useLiveDesign } from "./LiveDesignChat";
+import { issuesApi } from "../api/issues";
+import { AgentWork, DeployCard, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -38,5 +39,38 @@ describe("AgentWork", () => {
     expect(el.textContent).toContain("Preview ready");
     expect(el.querySelector('a[href="https://p.netlify.app"]')).not.toBeNull();
     expect(el.textContent).toContain("Up next (1)");
+  });
+});
+
+describe("Deploy", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("offers the deploy button, and holds it while a deploy is under way", () => {
+    const el = document.createElement("div");
+    const onDeploy = vi.fn();
+    act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={onDeploy} />));
+    const button = [...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy these changes")!;
+    act(() => button.click());
+    expect(onDeploy).toHaveBeenCalledOnce();
+    const busy = document.createElement("div");
+    act(() => createRoot(busy).render(
+      <AgentWork view={{ codeTasks: [{ identifier: "GRE-9", title: "Deploy the website", status: "working", kind: "deploy" }], queued: [] } as never} onDeploy={onDeploy} />,
+    ));
+    expect([...busy.querySelectorAll("button")].find((b) => b.textContent === "Deploy in progress")?.disabled).toBe(true);
+  });
+
+  it("shows what goes live and accepts the agent's card on Deploy", async () => {
+    const details = "Approve production deploy: greatstone-home abc\n- Logo carousel";
+    vi.spyOn(issuesApi, "listInteractions").mockResolvedValue([
+      { id: "old", kind: "request_confirmation", status: "accepted", payload: { detailsMarkdown: details } },
+      { id: "c1", kind: "request_confirmation", status: "pending", payload: { detailsMarkdown: details } },
+    ] as never);
+    const accept = vi.spyOn(issuesApi, "acceptInteraction").mockResolvedValue({} as never);
+    const el = document.createElement("div");
+    act(() => createRoot(el).render(<DeployCard identifier="GRE-9" />));
+    await act(async () => { await Promise.resolve(); });
+    expect(el.textContent).toContain("Logo carousel");
+    await act(async () => { [...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy")!.click(); });
+    expect(accept).toHaveBeenCalledWith("GRE-9", "c1");
   });
 });
