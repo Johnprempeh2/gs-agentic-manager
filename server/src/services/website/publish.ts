@@ -97,6 +97,8 @@ export const WEBSITE_RELEASE_SCHEMA = 1;
 /** Release schema 2 (greatstone-website GRE-3776): pages carry `{ html, css }`, with shared chrome and one site stylesheet. */
 export const WEBSITE_HTML_RELEASE_SCHEMA = 2;
 const CURRENT_KEY = "current";
+/** greatstone-home (greatstoneint.com): only the editor's Deploy reaches it. */
+export const PUBLIC_NETLIFY_SITE_ID = "3b1e97e6-e184-4251-badd-deed532be3ab";
 const RELEASE_HEADER = "x-gsam-release";
 const RELEASE_META_RE = /<meta[^>]+name=["']gsam-release["'][^>]*content=["']([^"']+)["']/i;
 const RELEASE_META_REVERSED_RE = /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']gsam-release["']/i;
@@ -282,6 +284,10 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   /** Short transaction; `null` when another publish or rollback holds a live lease. */
   async function takeLease(tx: Tx, site: SiteRow, leaseId: string, kind: WebsiteReleaseKind): Promise<number | null> {
+    // Staging holds the edits (John, 7 Nov): Publish, Retry and Rollback never build or restore the public
+    // site. Publish to the staging site; the editor's Deploy is the only path to production.
+    if (site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID)
+      throw forbidden("Publishing goes to staging now. Use Deploy these changes in the editor to put it live.", { code: "website_public_site_deploy_only" });
     const [row] = await tx
       .update(websiteSite)
       .set({

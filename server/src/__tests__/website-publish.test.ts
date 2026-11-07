@@ -407,6 +407,17 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     }
   });
 
+  it("never publishes to the public site: Deploy in the editor is the only path to production", async () => {
+    const { site, page, base } = await seedSite();
+    await db.update(websiteSite).set({ netlifySiteId: "3b1e97e6-e184-4251-badd-deed532be3ab" }).where(eq(websiteSite.id, site.id));
+    await approveLatest(page.id);
+    const res = await request(app()).post(`${base}/releases`).send({}).expect(403);
+    expect(res.body.error).toMatch(/Deploy these changes/);
+    await settle();
+    expect(netlify.state.builds).toBe(0);
+    expect(await releaseCount(site.id)).toBe(0);
+  });
+
   it("one Publish makes exactly one production deploy, then shows Live", async () => {
     const { site, page, base } = await seedSite();
     const revisionId = await approveLatest(page.id);
