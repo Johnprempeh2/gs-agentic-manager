@@ -250,6 +250,15 @@ export function isLiveDesignAgentConnected(s: Session) {
  * The open session for this task and agent, or a new one. `needsWake` is true
  * when no agent run is polling, so the caller wakes the agent.
  */
+
+// ponytail: in memory, so a GSAM restart clears the chats; store them with the page if that matters.
+const chats = new Map<string, LiveDesignMessage[]>();
+function pageChat(key: string) {
+  let messages = chats.get(key);
+  if (!messages) chats.set(key, (messages = []));
+  return messages;
+}
+
 export function startLiveDesign(input: {
   companyId: string;
   issueId: string;
@@ -272,7 +281,8 @@ export function startLiveDesign(input: {
       variants: [],
       appliedAttachmentId: null,
       error: null,
-      messages: [],
+      // The page's chat carries over to the next time it is opened (any computer).
+      messages: pageChat(`${input.issueId}:${input.attachmentId}`),
       queue: [],
       waiter: null,
       frames: [],
@@ -725,4 +735,5 @@ export function liveDesignWakeMessage(sessionId: string, fileName: string) {
 /** Test seam. */
 export function resetLiveDesignSessions() {
   sessions.clear();
+  chats.clear();
 }

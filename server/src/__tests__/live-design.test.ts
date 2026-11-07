@@ -75,6 +75,15 @@ describe("live design through Impeccable's page tools", () => {
     expect(handleImpeccableRequest(s, post({ type: "generate", id: "x", freeformPrompt: "again", element: {} })).status).toBe(409);
   });
 
+  it("keeps the page's chat when the editor is closed and opened again", () => {
+    const { session: first } = startLiveDesign(ids);
+    steerLiveDesign(first, "make the logos a carousel");
+    endLiveDesign(first);
+    const { session: again } = startLiveDesign(ids);
+    expect(again.id).not.toBe(first.id);
+    expect(viewLiveDesign(again).messages.map((m) => m.text)).toContain("make the logos a carousel");
+  });
+
   it("keeps a note John sent about versions he then discards: it reaches the agent as a page request", async () => {
     const { session: s } = startLiveDesign(ids);
     handleImpeccableRequest(s, post({ type: "generate", id: "imp22222", action: "impeccable", freeformPrompt: "Fix the logos", count: 3,

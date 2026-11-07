@@ -70,6 +70,9 @@ function readVendor(file: string) {
 /** Runs in the page before Impeccable's scripts. Treats everything from the parent as untrusted. */
 const ADAPTER = String.raw`(function () {
   var BASE = "http://localhost:" + __PORT__ + "/";
+  // GSAM starts a new session each time the editor opens and forgets old ones on a restart, so a
+  // checkpoint Impeccable saved earlier names a session nothing will answer: it would lock the picker.
+  try { window.localStorage.removeItem("impeccable-live-session"); } catch (e) { /* storage denied */ }
   var pending = {}, rid = 0, streams = [], lastClicks = [], picked = {};
   function post(msg) { msg.source = "gs-impeccable"; window.parent.postMessage(msg, "*"); }
 
