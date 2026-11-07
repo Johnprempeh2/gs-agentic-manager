@@ -90,6 +90,10 @@ import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink
 import { resolveAgentJwtSecret } from "../agent-jwt-secret.js";
 import { importHtmlRelease, loadWebsiteChrome, type HtmlReleaseImport } from "../services/website/chrome.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
+import { cachedDeployChanges, loadDeployChanges, WEBSITE_PROJECT_ID, WEBSITE_REPO } from "../services/website/deploy-changes.js";
+import { createGitRemoteAuthProvider, GIT_CREDENTIAL_TOKEN_ENV_KEY } from "../services/git-credentials.js";
+import { secretService } from "../services/secrets.js";
+import { logger } from "../middleware/logger.js";
 
 type WebsitePermission = Extract<PermissionKey, "website:view" | "website:edit" | "website:publish">;
 
@@ -808,6 +812,29 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   });
 
   // The site stylesheet as plain CSS, so an agent can read the classes and tokens a page may use.
+  // What the editor's deploy button would put live. Read only, cached a minute, and a 503 (never a
+  // broken editor) when GitHub or Netlify cannot say. Tokens stay server-side.
+  router.get(WEBSITE_MODULE_API_ROUTES.siteDeployChanges, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    try {
+      res.json(await cachedDeployChanges(site.id, async () => {
+        if (!site.netlifyTokenSecretId) throw new Error("no Netlify token");
+        const netlifyToken = await secretService(db).resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
+          accessContext: { consumerType: "system", consumerId: `website-deploy-changes:${site.id}`, configPath: "netlify.token", actorType: "system" },
+        });
+        // The Website project's GitHub grant, the one its agents work in the website repo with.
+        const auth = await createGitRemoteAuthProvider(db, site.companyId, { projectId: WEBSITE_PROJECT_ID, operation: "inspect" })(`https://github.com/${WEBSITE_REPO}.git`);
+        const githubToken = auth?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY];
+        if (!githubToken) throw new Error("no GitHub token");
+        return loadDeployChanges({ netlifySiteId: site.netlifySiteId, netlifyToken, githubToken });
+      }));
+    } catch (err) {
+      logger.warn({ siteId: site.id, err: err instanceof Error ? err.message : String(err) }, "Website deploy changes unavailable");
+      res.status(503).json({ error: "The change list is not available right now." });
+    }
+  });
+
   router.get(WEBSITE_MODULE_API_ROUTES.siteStylesheet, async (req, res) => {
     const site = await siteFor(req, res, "website:view");
     if (!site) return;

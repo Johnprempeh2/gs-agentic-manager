@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LIVE_DEPLOY_REQUEST, type LiveDesignView } from "@greatstone/shared";
+import { LIVE_DEPLOY_REQUEST, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
 import { ArrowUp, Library, Loader2 } from "lucide-react";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
@@ -56,7 +56,27 @@ export function DeployCard({ identifier }: { identifier: string }) {
 }
 
 /** What the agent is building in code for this page, what is waiting its turn, and the deploy button. */
-export function AgentWork({ view, onPreview, onDeploy }: { view: LiveDesignView | null; onPreview?: (url: string, label: string) => void; onDeploy?: () => void }) {
+/** What the deploy button would put live, from GSAM (cached a minute there). Nothing shown when it cannot say. */
+function useDeployChanges(load?: () => Promise<WebsiteDeployChanges>) {
+  const [changes, setChanges] = useState<WebsiteDeployChanges | null>(null);
+  useEffect(() => {
+    if (!load) return;
+    let live = true;
+    const get = () => load().then((c) => live && setChanges(c), () => live && setChanges(null));
+    void get();
+    const t = setInterval(get, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, [load]);
+  return changes;
+}
+
+export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
+  view: LiveDesignView | null;
+  onPreview?: (url: string, label: string) => void;
+  onDeploy?: () => void;
+  deployChanges?: () => Promise<WebsiteDeployChanges>;
+}) {
+  const changes = useDeployChanges(onDeploy ? deployChanges : undefined);
   const tasks = view?.codeTasks ?? [];
   const queued = view?.queued ?? [];
   const deploying = tasks.some((t) => t.kind === "deploy" && (t.status === "working" || t.status === "preview")) ||
@@ -87,6 +107,18 @@ export function AgentWork({ view, onPreview, onDeploy }: { view: LiveDesignView 
           <ol className="list-decimal pl-4">
             {queued.map((q, i) => <li key={i} className="truncate">{q}</li>)}
           </ol>
+        </div>
+      ) : null}
+      {onDeploy && changes ? (
+        <div className="text-xs text-muted-foreground">
+          <p className="font-medium">{changes.commits.length ? `Not live yet (${changes.commits.length})` : "The public site is up to date"}</p>
+          {changes.commits.length ? (
+            <ul className="space-y-0.5">
+              {changes.commits.map((c) => (
+                <li key={c.sha} className="truncate"><span className="font-mono">{c.sha.slice(0, 7)}</span> {c.title}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
       {onDeploy ? (
@@ -185,7 +217,12 @@ function useElapsed(since: string | undefined, running: boolean) {
  * Impeccable's own bar on the page.
  */
 /** `deployable`: a website page, so the chat offers the deploy button. */
-export function LiveDesignChat({ live, onPreview, deployable }: { live: ReturnType<typeof useLiveDesign>; onPreview?: (url: string, label: string) => void; deployable?: boolean }) {
+export function LiveDesignChat({ live, onPreview, deployable, deployChanges }: {
+  live: ReturnType<typeof useLiveDesign>;
+  onPreview?: (url: string, label: string) => void;
+  deployable?: boolean;
+  deployChanges?: () => Promise<WebsiteDeployChanges>;
+}) {
   const { view, error, run } = live;
   const [note, setNote] = useState("");
   const dictation = useComposerDictation(note, setNote);
@@ -256,6 +293,7 @@ export function LiveDesignChat({ live, onPreview, deployable }: { live: ReturnTy
       <AgentWork
         view={view}
         onPreview={onPreview}
+        deployChanges={deployChanges}
         onDeploy={deployable && view && status !== "ended" ? () => void run((id) => liveDesignApi.steer(id, LIVE_DEPLOY_REQUEST)) : undefined}
       />
 

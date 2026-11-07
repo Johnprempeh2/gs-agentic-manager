@@ -399,6 +399,8 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageLiveRestore: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-restore",
   /** GET `?revision=` → `{ page, chrome, stylesheet }`: the draft the site's /live-design route renders (website:view). */
   pageLiveDraft: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-draft",
+  /** GET → `WebsiteDeployChanges`: website main commits since the last production deploy, for the editor's deploy button (website:view). 503 when GitHub or Netlify cannot say. */
+  siteDeployChanges: "/companies/:companyId/website/sites/:siteId/deploy-changes",
   /** GET → text/css: the site stylesheet for schema 2 pages, for agents (website:view). */
   siteStylesheet: "/companies/:companyId/website/sites/:siteId/stylesheet",
   /** POST a schema 2 release file → `{ updated, created, unchanged, chrome }`: import the site's pages as HTML drafts (people, website:edit). */
@@ -566,4 +568,13 @@ export interface WebsiteHomeSummary {
   devFraming: "allowed" | "refused" | "unknown";
   train: WebsiteHomeTrain;
   launch: WebsiteHomeLaunch;
+}
+
+/** What the editor's deploy button would put live. */
+export interface WebsiteDeployChanges {
+  /** The commit the public site was last deployed from. */
+  liveCommit: string;
+  mainCommit: string;
+  /** Newest first. */
+  commits: { sha: string; title: string }[];
 }

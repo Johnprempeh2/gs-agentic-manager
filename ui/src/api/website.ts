@@ -1,4 +1,4 @@
-import type { LiveDesignView } from "@greatstone/shared";
+import type { LiveDesignView, WebsiteDeployChanges } from "@greatstone/shared";
 import { api, ApiError, plainHttpErrorMessage } from "./client";
 import {
   WEBSITE_NOT_ENTITLED_CODE,
@@ -134,6 +134,9 @@ export const websiteModuleApi = {
   /** The draft the site's /live-design route renders: the page's own part, its shared parts and the stylesheet. */
   liveDraft: (companyId: string, siteId: string, pageId: string, revisionId: string) =>
     api.get<Record<string, unknown>>(`${pagePath(companyId, siteId, pageId)}/live-draft?revision=${encodeURIComponent(revisionId)}`, { cache: "no-store" }),
+  /** Website main commits since the last production deploy, for the editor's deploy button. Fails with 503 when unknown. */
+  deployChanges: (companyId: string, siteId: string) =>
+    api.get<WebsiteDeployChanges>(`${sitePath(companyId, siteId)}/deploy-changes`),
   /** Live design on the page (plan revision 8): opens or joins the session. */
   liveStart: (companyId: string, siteId: string, pageId: string) =>
     api.post<LiveDesignView>(`${pagePath(companyId, siteId, pageId)}/live`, {}),

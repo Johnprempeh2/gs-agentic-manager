@@ -59,6 +59,20 @@ describe("Deploy", () => {
     expect([...busy.querySelectorAll("button")].find((b) => b.textContent === "Deploy in progress")?.disabled).toBe(true);
   });
 
+  it("lists what is not live yet next to the button, and shows nothing when GSAM cannot say", async () => {
+    const el = document.createElement("div");
+    const changes = vi.fn(async () => ({ liveCommit: "a", mainCommit: "b", commits: [{ sha: "0117d3e0000", title: "Logo carousel" }] }));
+    act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={changes} />));
+    await act(async () => { await Promise.resolve(); });
+    expect(el.textContent).toContain("Not live yet (1)");
+    expect(el.textContent).toContain("0117d3e Logo carousel");
+    const down = document.createElement("div");
+    act(() => createRoot(down).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={() => Promise.reject(new Error("503"))} />));
+    await act(async () => { await Promise.resolve(); });
+    expect(down.textContent).not.toContain("Not live yet");
+    expect(down.textContent).toContain("Deploy these changes");
+  });
+
   it("shows what goes live and accepts the agent's card on Deploy", async () => {
     const details = "Approve production deploy: greatstone-home abc\n- Logo carousel";
     vi.spyOn(issuesApi, "listInteractions").mockResolvedValue([

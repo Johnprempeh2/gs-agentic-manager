@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView } from "@greatstone/shared";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
 import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -101,7 +101,7 @@ export function WebsitePageLiveEditor() {
   });
   const navigate = useNavigate();
   const engine = useMemo(
-    () => ({ siteId, draft: (revisionId: string) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId) }),
+    () => ({ siteId, draft: (revisionId: string) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId), deployChanges: () => websiteModuleApi.deployChanges(companyId, siteId) }),
     [companyId, siteId, pageId],
   );
   const { data: pages } = useQuery({
@@ -189,7 +189,7 @@ function LiveEditorShell({
   /** Moves to another page of the same site. */
   switcher?: ReactNode;
   /** A website page drawn by the site's own engine (its /live-design route): who to greet and where the draft comes from. */
-  engine?: { siteId: string; draft: (revisionId: string) => Promise<Record<string, unknown>> };
+  engine?: { siteId: string; draft: (revisionId: string) => Promise<Record<string, unknown>>; deployChanges?: () => Promise<WebsiteDeployChanges> };
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
@@ -484,7 +484,7 @@ function LiveEditorShell({
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
-          <LiveDesignChat live={live} deployable={!!engine} onPreview={(url, label) => setPreview({ url, label })} />
+          <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => setPreview({ url, label })} />
         </aside>
       </div>
     </div>
