@@ -11,9 +11,12 @@ import { asc, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { websiteSite } from "@greatstone/db";
 import {
+  GS_INTERVIEW_PARTICIPANT_WITHDRAWN,
   gsInterviewDetailSchema,
+  gsInterviewEventItemSchema,
   gsInterviewInsightSchema,
   gsInterviewInviteAnswerSchema,
+  gsInterviewParticipantWithdrawnSchema,
   gsInterviewPersonSchema,
   gsInterviewRoundItemSchema,
   gsInterviewSendAnswerSchema,
@@ -24,6 +27,7 @@ import {
   type GsInterviewDetail,
   type GsInterviewInviteAnswer,
   type GsInterviewInvitePerson,
+  type GsInterviewParticipantWithdrawnEvent,
   type GsInterviewReleasedSynthesis,
   type GsInterviewPerson,
   type GsInterviewRoundItem,
@@ -59,6 +63,11 @@ export interface InterviewBridge {
   interview(scope: InterviewBridgeScope, interviewId: string, actor: WebsiteBridgeActor): Promise<GsInterviewDetail>;
   /** `GET rounds/{roundId}/withdrawals`: every hard delete, oldest first, all pages. */
   withdrawals(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewWithdrawal[]>;
+  /**
+   * `GET rounds/{roundId}/events` after `after` (null: from the start), oldest first: the `participant_withdrawn`
+   * events only (GRE-4304). `truncated` when the page limit stopped the read before the end.
+   */
+  withdrawnEvents(scope: InterviewBridgeScope, after: string | null, actor: WebsiteBridgeActor): Promise<{ events: GsInterviewParticipantWithdrawnEvent[]; truncated: boolean }>;
   /** `GET rounds/{roundId}`: the round as the website has it, with what the client sees now (GRE-2667). */
   round(scope: InterviewBridgeScope, actor: WebsiteBridgeActor): Promise<GsInterviewRoundItem>;
   /** `POST rounds/{roundId}/synthesis/released`: the client sees it at once. Only after a person releases it. */
@@ -87,6 +96,17 @@ const interviewAnswerSchema = z.object({ item: z.unknown() });
 const withdrawalsAnswerSchema = z.object({ items: z.array(z.unknown()), nextCursor: z.union([z.string(), z.number()]).nullable().optional() });
 /** A round has a few hundred people at most; this many pages means the site is looping. */
 const MAX_WITHDRAWAL_PAGES = 50;
+/** The outbox also holds every phase_complete and session_end: up to 10,000 events after the last withdrawal. */
+const MAX_EVENT_PAGES = 100;
+
+/** A `participant_withdrawn` outbox item, round-level fields only; null for any other event, which is not parsed. */
+function withdrawnEventOf(value: unknown, what: string): GsInterviewParticipantWithdrawnEvent | null {
+  const item = parsed(gsInterviewEventItemSchema, value, what);
+  const type = (item.payload as { type?: unknown } | null)?.type;
+  if (item.event !== GS_INTERVIEW_PARTICIPANT_WITHDRAWN && type !== GS_INTERVIEW_PARTICIPANT_WITHDRAWN) return null;
+  const payload = parsed(gsInterviewParticipantWithdrawnSchema, { ...(item.payload as object), type: GS_INTERVIEW_PARTICIPANT_WITHDRAWN }, `${what}.payload`);
+  return { cursor: item.cursor, withdrawnAt: payload.withdrawn_at, releasedAffected: payload.released_affected };
+}
 
 /** Insights one by one, so one the site sends in a form GSAM does not know names itself in the error. */
 function detailOf(value: unknown, what: string): GsInterviewDetail {
@@ -148,6 +168,22 @@ export function websiteInterviewBridge(db: Db): InterviewBridge {
       }
       throw new WebsiteBridgeError("bad_response", 200, `withdrawals: more than ${MAX_WITHDRAWAL_PAGES} pages`);
     },
+    async withdrawnEvents(scope, after, actor) {
+      const bridge = await client(scope, "read");
+      const events: GsInterviewParticipantWithdrawnEvent[] = [];
+      let cursor = after ?? undefined;
+      for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
+        const answer = parsed(withdrawalsAnswerSchema, await bridge.interviewRead(`${base(scope)}/events`, { after: cursor, limit: "100" }, actor), "events");
+        answer.items.forEach((item, index) => {
+          const event = withdrawnEventOf(item, `events.${index}`);
+          if (event) events.push(event);
+        });
+        // A page cursor whose row the site has since deleted answers an empty page: the next read starts again from `after`.
+        if (answer.nextCursor === null || answer.nextCursor === undefined || answer.items.length === 0) return { events, truncated: false };
+        cursor = String(answer.nextCursor);
+      }
+      return { events, truncated: true };
+    },
     async round(scope, actor) {
       const answer = await (await client(scope, "read")).interviewRead(base(scope), {}, actor);
       return parsed(gsInterviewRoundItemSchema, parsed(interviewAnswerSchema, answer, "round").item, "round");
@@ -186,6 +222,8 @@ interface FakeRound {
   /** Ended interviews, with consent, insights and the raw turns the website keeps. */
   interviews: Map<string, GsInterviewDetail & { turns: { seq: number; role: string; content: string }[] }>;
   withdrawals: GsInterviewWithdrawal[];
+  /** The round's outbox, oldest first, as `GET …/events` lists it. */
+  outbox: { cursor: string; event: string | null; payload: Record<string, unknown> }[];
   /** What the client sees: the released synthesis, or null. */
   released: (GsInterviewReleasedSynthesis & { releasedAt: string }) | null;
   /** Every synthesis push and withdraw, in order, as the site received it. */
@@ -247,6 +285,7 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
         emails: existing?.emails ?? [],
         interviews: existing?.interviews ?? new Map(),
         withdrawals: existing?.withdrawals ?? [],
+        outbox: existing?.outbox ?? [],
         released: existing?.released ?? null,
         synthesisLog: existing?.synthesisLog ?? [],
       };
@@ -336,6 +375,15 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
     async withdrawals(scope) {
       return [...roundOf(scope).withdrawals];
     },
+    async withdrawnEvents(scope, after) {
+      const outbox = roundOf(scope).outbox;
+      const from = after === null ? 0 : outbox.findIndex((item) => item.cursor === after) + 1;
+      // As on the site: a cursor whose row is gone answers nothing.
+      if (from === 0 && after !== null) return { events: [], truncated: false };
+      const events = outbox.slice(from).map((item, index) => withdrawnEventOf(structuredClone(item), `events.${index}`))
+        .filter((event): event is GsInterviewParticipantWithdrawnEvent => event !== null);
+      return { events, truncated: false };
+    },
     async round(scope) {
       return itemOf(scope.roundId, roundOf(scope));
     },
@@ -400,6 +448,16 @@ export function createFakeInterviewBridge(options: FakeInterviewBridgeOptions = 
           if (input.interviewId ? id === input.interviewId : detail.interview.userId === input.userId) round.interviews.delete(id);
         }
         round.withdrawals.push({ cursor: String(round.withdrawals.length + 1), userId: input.userId, interviewId: input.interviewId, at: new Date(now()).toISOString() });
+        // The person's own delete (the whole person) also writes the round-only outbox event (GRE-4304).
+        if (input.interviewId === null) {
+          round.outbox.push({ cursor: randomBytes(12).toString("base64url"), event: null, payload: {
+            type: "participant_withdrawn", engagement_id: roundId, synthesis_stale: true, released_affected: round.released !== null,
+            withdrawn_at: new Date(now()).toISOString() } });
+        }
+      },
+      /** Any other outbox event, e.g. a session_end with its transcript. */
+      addEvent(roundId: string, event: string, payload: Record<string, unknown>) {
+        rounds.get(roundId)?.outbox.push({ cursor: randomBytes(12).toString("base64url"), event, payload });
       },
       /** The person opens the join link and makes their account: the invitation becomes theirs by user id. */
       join(roundId: string, employeeId: string, userId: string) {
