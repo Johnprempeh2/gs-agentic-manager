@@ -338,6 +338,11 @@ describe("parseManagedConfigEnv environments section", () => {
         ),
       ),
     ).toThrow(/adapters\[0\].clientSecret/);
+    expect(() =>
+      parseManagedConfigEnv(
+        envWith(validDoc({ environments: [entry({ config: { pools: [[], [{ privateKey: { password: "s" } }]] } })] })),
+      ),
+    ).toThrow(/pools\[1\]\[0\].privateKey.password/);
   });
 });
 
