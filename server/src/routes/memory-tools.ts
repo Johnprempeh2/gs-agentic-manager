@@ -38,6 +38,7 @@ export function memoryToolRoutes(
   options: {
     engine?: MemoryEngine;
     engineTimeoutMs?: number;
+    recallTimeoutMs?: number;
     /** Answers a call with no key at all, pointing the app at the memory sign-in. */
     signInChallenge?: (req: Request, res: Response) => void;
   } = {},

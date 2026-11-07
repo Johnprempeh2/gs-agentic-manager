@@ -5,6 +5,7 @@ import path from "node:path";
 import type { MemoryRetainMode } from "@greatstone/shared";
 import { logger } from "../../middleware/logger.js";
 import {
+  MEMORY_ENGINE_RECALL_TIMEOUT_MS,
   MEMORY_ENGINE_RETAIN_TIMEOUT_MS,
   MEMORY_ENGINE_TIMEOUT_MS,
   MemoryEngineUnavailableError,
@@ -94,12 +95,15 @@ export function createHindsightMemoryEngine(options: {
   timeoutMs?: number;
   /** Retain with Claude extraction can take far longer than a recall. */
   retainTimeoutMs?: number;
+  /** Recall can land while a retain's fact extraction is running (GRE-4292); give it its own, longer timeout. */
+  recallTimeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): MemoryEngine {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
   const retainTimeoutMs = options.retainTimeoutMs ?? MEMORY_ENGINE_RETAIN_TIMEOUT_MS;
+  const recallTimeoutMs = options.recallTimeoutMs ?? MEMORY_ENGINE_RECALL_TIMEOUT_MS;
   /** Bank → retain mode last set on the engine, so a mode switch reconfigures the bank once. */
   const bankModes = new Map<string, MemoryRetainMode>();
 
@@ -193,6 +197,7 @@ export function createHindsightMemoryEngine(options: {
           `${bankPath(request.bankId)}/memories/recall`,
           { op: "recall", bank: request.bankId, read: request.tags, write: [], doc: null },
           { query: request.query, tags: request.tags, tags_match: "any_strict", budget: "mid", max_tokens: 4096 },
+          recallTimeoutMs,
         )) as { results?: HindsightRecallResult[] } | null;
       } catch (error) {
         // A bank is made on its first retain (GRE-867). Until then it holds
