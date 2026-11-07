@@ -230,6 +230,18 @@ describe("live design through Impeccable's page tools", () => {
     expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "q1" });
   });
 
+  it("frees the page when the agent says it will not make versions for a pick", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000);
+    handleImpeccableRequest(s, post({ type: "generate", id: "m1", freeformPrompt: "Make it a carousel", element: { tagName: "section" } }));
+    expect(replyLiveDesign(s, { requestId: "m1", error: "That grid is site code; I'm doing it as a code change." })).toEqual({ ok: true });
+    expect(viewLiveDesign(s)).toMatchObject({ status: "idle" });
+    expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "m1" });
+    // John can pick the next thing straight away.
+    handleImpeccableRequest(s, post({ type: "generate", id: "m2", freeformPrompt: "Bigger heading", element: { tagName: "h2" } }));
+    expect(viewLiveDesign(s)).toMatchObject({ status: "generating" });
+  });
+
   it("handles Impeccable's Insert: a new element next to an anchor, nothing replaced", async () => {
     const { session: s } = startLiveDesign(ids);
     handleImpeccableRequest(s, {
