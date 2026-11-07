@@ -203,6 +203,8 @@ function LiveEditorShell({
   // Editing off lets clicks reach the page (change slides, open menus); a new version reloads with editing on.
   const [editing, setEditing] = useState(true);
   useEffect(() => setEditing(true), [pageId]);
+  // An agent's code change shown in place of the page, to compare before it goes anywhere.
+  const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, engineOrigin ?? "*");
@@ -450,7 +452,18 @@ function LiveEditorShell({
                 }
               />
             ) : null}
-            {frameSrc ? (
+            {preview ? (
+              <div className="flex h-full flex-col">
+                <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs" role="status">
+                  <span className="min-w-0 flex-1 truncate">Preview of {preview.label}. Nothing here is live.</span>
+                  <a href={preview.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">Open in a tab</a>
+                  <Button type="button" size="sm" className="h-7" onClick={() => setPreview(null)}>Back to the page</Button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <ScaledFrame key={preview.url} src={preview.url} title={`Preview of ${preview.label}`} width={WIDTHS[viewport]} sandbox={ENGINE_SANDBOX} frameRef={frameRef} viewport={viewport} />
+                </div>
+              </div>
+            ) : frameSrc ? (
               <ScaledFrame
                 key={pageId}
                 src={frameSrc}
@@ -471,7 +484,7 @@ function LiveEditorShell({
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
-          <LiveDesignChat live={live} />
+          <LiveDesignChat live={live} onPreview={(url, label) => setPreview({ url, label })} />
         </aside>
       </div>
     </div>

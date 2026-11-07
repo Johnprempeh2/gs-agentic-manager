@@ -14,6 +14,43 @@ import { DictationButton, DictationInterim, useComposerDictation } from "./Dicta
 
 const isGoneSession = (err: unknown) => err instanceof ApiError && err.status === 404;
 
+const CODE_TASK_STATUS = { working: "Building", preview: "Preview ready", done: "Done", blocked: "Blocked" } as const;
+
+/** What the agent is building in code for this page, and what is waiting its turn. */
+export function AgentWork({ view, onPreview }: { view: LiveDesignView | null; onPreview?: (url: string, label: string) => void }) {
+  const tasks = view?.codeTasks ?? [];
+  const queued = view?.queued ?? [];
+  if (!tasks.length && !queued.length) return null;
+  return (
+    <section className="max-h-48 space-y-2 overflow-y-auto border-t border-border px-4 py-2" aria-label="Agent's work">
+      {tasks.length ? (
+        <ul className="space-y-1.5">
+          {tasks.map((t) => (
+            <li key={t.identifier} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+              <span className="font-mono text-muted-foreground">{t.identifier}</span>
+              <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
+              <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>{CODE_TASK_STATUS[t.status]}</span>
+              {t.previewUrl && onPreview ? (
+                <button type="button" className="underline underline-offset-2" onClick={() => onPreview(t.previewUrl!, `${t.identifier} ${t.title}`)}>Show here</button>
+              ) : null}
+              {t.previewUrl ? <a href={t.previewUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">Preview</a> : null}
+              {t.prUrl ? <a href={t.prUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">Pull request</a> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {queued.length ? (
+        <div className="text-xs text-muted-foreground">
+          <p className="font-medium">Up next ({queued.length})</p>
+          <ol className="list-decimal pl-4">
+            {queued.map((q, i) => <li key={i} className="truncate">{q}</li>)}
+          </ol>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * The live session for one page: started on open, polled while open, ended on close.
  * `start` opens it (a task file, a deliverable or a website page); `key` names that page.
@@ -100,7 +137,7 @@ function useElapsed(since: string | undefined, running: boolean) {
  * and a box for notes to the agent. Picking and versions happen in
  * Impeccable's own bar on the page.
  */
-export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign> }) {
+export function LiveDesignChat({ live, onPreview }: { live: ReturnType<typeof useLiveDesign>; onPreview?: (url: string, label: string) => void }) {
   const { view, error, run } = live;
   const [note, setNote] = useState("");
   const dictation = useComposerDictation(note, setNote);
@@ -135,7 +172,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
           <li className="space-y-2 text-sm text-muted-foreground">
             <p>Pick anything on the page with the bar at the bottom, type what should change and press Go.</p>
             <p>The agent's versions appear in place. Flick through them, tune them, then accept one. The agent saves it into the file.</p>
-            <p>Or ask here for a change to the whole page. Every saved change is a new version you can undo.</p>
+            <p>Or ask here for anything: a change to the whole page, a new section, a feature. Code changes show below as the agent builds them, and you can keep asking while it works.</p>
           </li>
         ) : null}
         {view?.messages.map((m, i) =>
@@ -167,6 +204,8 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
         ) : null}
         {error ? <li className="text-sm text-destructive" role="alert">{error}</li> : null}
       </ol>
+
+      <AgentWork view={view} onPreview={onPreview} />
 
       <form
         className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"

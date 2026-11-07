@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import type {
   LiveDesignReply,
   LiveDesignRequest,
   LiveDesignStatus,
-  LiveDesignMessage,
+  LiveDesignMessage, LiveDesignCodeTask,
   LiveDesignVariant,
   LiveDesignView,
 } from "@greatstone/shared";
@@ -34,7 +37,7 @@ type AgentEvent =
       request: LiveDesignRequest;
       attachmentId: string;
     }
-  | { type: "steer"; requestId: string | null; message: string }
+  | { type: "steer"; requestId: string | null; message: string; about?: { label: string; selector: string; html: string } }
   | { type: "edits"; requestId: string; edits: StagedEdit[]; attachmentId: string }
   | { type: "discard"; requestId: string }
   | { type: "restored"; attachmentId: string; version: number | null }
@@ -101,6 +104,7 @@ interface Session {
   source: LivePageSource | null;
   /** For a website page: the islands it may use, as agent instructions (GRE-3786). Null for other pages. */
   islands: string | null;
+  codeTasks: LiveDesignCodeTask[];
   agentSeenAt: number;
   touchedAt: number;
 }
@@ -116,6 +120,7 @@ const sessions = new Map<string, Session>();
 function say(s: Session, from: LiveDesignMessage["from"], text: string) {
   s.messages.push({ from, text: text.slice(0, 2000), at: new Date().toISOString() });
   if (s.messages.length > 200) s.messages.splice(0, s.messages.length - 200);
+  saveStore();
 }
 
 function isConnected(s: Session, now = Date.now()) {
@@ -198,6 +203,10 @@ export function viewLiveDesign(s: Session): LiveDesignView {
     deliverableId: s.deliverableId,
     frameSrc: s.source ? s.source.frameSrc(s.attachmentId) : null,
     sourceKind: s.source?.kind ?? "attachment",
+    codeTasks: s.codeTasks,
+    queued: s.queue.flatMap((e) =>
+      e.type === "generate" ? [`${e.request.label || e.request.tag}: ${e.request.prompt}`] : e.type === "steer" && !e.requestId ? [e.about ? `${e.about.label}: ${e.message}` : e.message] : [],
+    ),
   };
 }
 
@@ -251,8 +260,39 @@ export function isLiveDesignAgentConnected(s: Session) {
  * when no agent run is polling, so the caller wakes the agent.
  */
 
-// ponytail: in memory, so a GSAM restart clears the chats; store them with the page if that matters.
+// Chats and code tasks are kept in one small file so a GSAM restart or release does not lose them.
+// ponytail: one JSON file rewritten on change; move to the database if it grows past a few MB.
 const chats = new Map<string, LiveDesignMessage[]>();
+const storeFile = () => path.resolve(resolvePaperclipInstanceRoot(), "live-design-chats.json");
+let storeLoaded = !!process.env.VITEST;
+let saveTimer: NodeJS.Timeout | null = null;
+function loadStore() {
+  if (storeLoaded) return;
+  storeLoaded = true;
+  try {
+    const saved = JSON.parse(fs.readFileSync(storeFile(), "utf8")) as { chats?: Record<string, LiveDesignMessage[]>; codeTasks?: Record<string, LiveDesignCodeTask[]> };
+    for (const [k, v] of Object.entries(saved.chats ?? {})) chats.set(k, v);
+    for (const [k, v] of Object.entries(saved.codeTasks ?? {})) pageCodeTasks.set(k, v);
+  } catch {
+    // No file yet, or unreadable: start empty.
+  }
+}
+function saveStore() {
+  if (process.env.VITEST || saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const body = JSON.stringify({ chats: Object.fromEntries(chats), codeTasks: Object.fromEntries(pageCodeTasks) });
+    fs.promises.writeFile(storeFile() + ".tmp", body).then(() => fs.promises.rename(storeFile() + ".tmp", storeFile())).catch(() => {});
+  }, 2000);
+  saveTimer.unref?.();
+}
+const pageCodeTasks = new Map<string, LiveDesignCodeTask[]>();
+function codeTasksFor(issueId: string) {
+  let tasks = pageCodeTasks.get(issueId);
+  if (!tasks) pageCodeTasks.set(issueId, (tasks = []));
+  return tasks;
+}
+
 function pageChat(key: string) {
   let messages = chats.get(key);
   if (!messages) chats.set(key, (messages = []));
@@ -269,6 +309,7 @@ export function startLiveDesign(input: {
 }) {
   const { islands = null, ...ids } = input;
   sweep();
+  loadStore();
   let s = [...sessions.values()].find(
     (x) => x.status !== "ended" && x.issueId === input.issueId && x.agentId === input.agentId,
   );
@@ -295,6 +336,7 @@ export function startLiveDesign(input: {
       deliverableId: null,
       source: null,
       islands,
+      codeTasks: codeTasksFor(input.issueId),
       agentSeenAt: 0,
       touchedAt: Date.now(),
     };
@@ -315,7 +357,17 @@ export class LiveDesignConflict extends Error {}
 /** `id` is Impeccable's session id for this request, so the page and the agent use the same one. */
 export function requestLiveDesign(s: Session, request: LiveDesignRequest, id = randomUUID().slice(0, 8)) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
-  if (s.status === "applying") throw new LiveDesignConflict("The agent is still saving the last version.");
+  // A pick while the agent is busy waits its turn and is then made straight on the page (Versions undoes it).
+  if (s.status === "generating" || s.status === "applying") {
+    const label = request.label || request.tag;
+    say(s, "john", `${label}: ${request.prompt}`);
+    push(s, { type: "steer", requestId: null, message: request.prompt, about: { label, selector: request.selector, html: request.html.slice(0, 20_000) } });
+    const waiting = s.queue.filter((e) => e.type === "steer" && !e.requestId).length;
+    say(s, "gsam", `Queued (${waiting} waiting). The agent makes it straight on the page after the current one; Versions undoes it.`);
+    frame(s, { type: "error", id, message: `Queued, number ${waiting}. Pick the next thing whenever you like.` });
+    s.touchedAt = Date.now();
+    return s;
+  }
   // A new request replaces versions John has not kept.
   if (s.request && s.status === "ready") push(s, { type: "discard", requestId: s.request.id });
   s.request = { ...request, id, startedAt: new Date().toISOString() };
@@ -442,12 +494,23 @@ export function liveDesignAcceptsPage(s: Session, requestId: string) {
   return s.request?.id === requestId && s.status === "applying";
 }
 
+/** How an agent takes any request as a code change: John can ask for anything, not just what the page HTML can hold. */
+function codeTaskLine(s: Session, requestId: string) {
+  return [
+    `John can ask for anything here. When it needs a change to the site's code (an island, a new section type, a feature, behaviour, data, a whole-site change), you make it yourself, never hand it to another agent:`,
+    `1. Create a task assigned to you for it, then at once ${replyCall(s.id)} and jsonBody { "requestId": "${requestId}", "message": "<one sentence: what you will build>", "codeTask": { "identifier": "<GRE-n>", "title": "<short title>", "status": "working" } }. That frees the page for his next request.`,
+    `2. Build it in the website repo on a branch with a pull request and a preview. Send the same codeTask again as it moves on: with "prUrl" when the pull request is open, "status": "preview" and "previewUrl" when the preview is up, "status": "done" when merged (use requestId "page" for these updates).`,
+    `3. Keep polling between steps so his next requests reach you; they wait in order. Deploys to the public site still need his yes.`,
+  ].join("\n");
+}
+
 /** The request id an agent uses for a change to the whole page that John asked for in the chat. */
 export const LIVE_DESIGN_PAGE_REQUEST = "page";
 
 export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   if (s.status === "ended") return { ok: false, reason: "ended" as const };
   s.agentSeenAt = Date.now();
+  if (reply.codeTask) return replyCodeTask(s, reply, reply.codeTask);
   if (reply.requestId === LIVE_DESIGN_PAGE_REQUEST) return replyPage(s, reply);
   if (reply.designMd) s.designMd = reply.designMd;
   if (s.editsRequestId && reply.requestId === s.editsRequestId) return replyEdits(s, reply);
@@ -484,6 +547,26 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
   }
   if (reply.message) return { ok: true };
   return { ok: false, reason: "unexpected_reply" as const };
+}
+
+/** The agent took a pick or a note as a code change, or reports progress on one. */
+function replyCodeTask(s: Session, reply: LiveDesignReply, task: LiveDesignCodeTask) {
+  const known = s.codeTasks.findIndex((t) => t.identifier === task.identifier);
+  if (known >= 0) s.codeTasks.splice(known, 1);
+  s.codeTasks.unshift(task);
+  if (s.codeTasks.length > 20) s.codeTasks.length = 20;
+  saveStore();
+  if (reply.message) say(s, "agent", reply.message);
+  if (known < 0) say(s, "gsam", `Taken as a code change: ${task.identifier} ${task.title}. Pick the next thing whenever you like.`);
+  else if (task.status === "preview" && task.previewUrl) say(s, "gsam", `${task.identifier} has a preview ready.`);
+  // A pick the agent will not answer with versions: free the page now.
+  if (s.request?.id === reply.requestId && s.status === "generating") {
+    s.request = null;
+    s.variants = [];
+    s.status = "idle";
+    frame(s, { type: "error", id: reply.requestId, message: `Taken as a code change (${task.identifier}).` });
+  }
+  return { ok: true };
 }
 
 /** A whole-page change from the chat: saved straight away as the next version, no versions to pick. */
@@ -656,7 +739,8 @@ function withInstructions(s: Session, event: AgentEvent) {
             : []),
           `John reads a chat beside the page. Send one short note first so he knows what you are trying: ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "message": "<one plain sentence>"${s.designMd ? "" : ', "designMd": "<the full text of DESIGN.md>"'} }.${s.designMd ? "" : " Include designMd this once so his design panel shows the project's design system."}`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "variants": [{ "name": "...", "html": "...", "css": "...", "params": [] }] }. Speed matters: John is watching. Then poll again.`,
-          `If you will not make versions for this pick (for example it is site code you are changing in the repo instead), ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<one plain sentence on what you are doing instead>" } straight away: until you do, the page stays locked and John cannot pick anything else.`,
+          codeTaskLine(s, event.requestId),
+          `If you cannot do it at all, ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<one plain sentence>" } straight away: until you answer, the page stays locked and John cannot pick anything else.`,
         ].join("\n"),
       };
     }
@@ -681,10 +765,13 @@ function withInstructions(s: Session, event: AgentEvent) {
         _instructions: event.requestId
           ? `John added a note to the current request: "${event.message}". Take it into account; if you already sent versions, send revised ones with the same requestId. If the note starts "About version N", it is about that version: revise it and send all versions again in the same order, the others unchanged. Answer him with a short "message" reply.`
           : [
-              `John wrote in the chat: "${event.message}".`,
+              event.about
+                ? `John picked ${event.about.label} (selector ${event.about.selector}) while you were busy and asked: "${event.message}". Its HTML: ${event.about.html}\nMake it straight on the page, no versions to pick.`
+                : `John wrote in the chat: "${event.message}".`,
               `If it needs more than a quick answer, first ${replyCall(s.id)} and jsonBody { "requestId": "page", "message": "<one plain sentence: what you are about to do>" } so he knows you are on it, then do the work.`,
               ...(s.source?.guidance ? [s.source.guidance] : []),
               `If he asks for a change to the page, make it to the whole page (start from ${pageCall(s.id)}) and ${replyCall(s.id)} and jsonBody { "requestId": "page", "pageHtml": "<the complete updated page>", "message": "<what you changed>" }. GSAM saves it as the next version.`,
+              codeTaskLine(s, "page"),
               `Otherwise answer with jsonBody { "requestId": "page", "message": "<your answer>" }. Then poll again.`,
             ].join("\n"),
       };
@@ -737,4 +824,5 @@ export function liveDesignWakeMessage(sessionId: string, fileName: string) {
 export function resetLiveDesignSessions() {
   sessions.clear();
   chats.clear();
+  pageCodeTasks.clear();
 }
