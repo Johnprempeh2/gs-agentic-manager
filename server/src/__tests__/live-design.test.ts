@@ -242,6 +242,25 @@ describe("live design through Impeccable's page tools", () => {
     expect(viewLiveDesign(s)).toMatchObject({ status: "generating" });
   });
 
+  it("takes a pick as a code change: frees the page, lists the task, queues the next request", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000);
+    handleImpeccableRequest(s, post({ type: "generate", id: "c1", freeformPrompt: "Make it a carousel", element: { tagName: "ul" } }));
+    await pollLiveDesign(s, 1000); // the agent takes the pick
+    const task = { identifier: "GRE-1", title: "Logo carousel", status: "working" as const };
+    expect(replyLiveDesign(s, { requestId: "c1", message: "Building it in the site code.", codeTask: task })).toEqual({ ok: true });
+    expect(viewLiveDesign(s)).toMatchObject({ status: "idle", request: null, codeTasks: [task] });
+    expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "c1" });
+    // While the agent builds, John asks for more; it waits in order.
+    handleImpeccableRequest(s, post({ type: "generate", id: "c2", freeformPrompt: "Bigger heading", element: { tagName: "h2" } }));
+    expect(viewLiveDesign(s).queued).toEqual(["h2: Bigger heading"]);
+    // Progress updates replace the task, and survive the editor being opened again.
+    replyLiveDesign(s, { requestId: "page", codeTask: { ...task, status: "preview", previewUrl: "https://deploy-preview-9--greatstone-home.netlify.app" } });
+    expect(viewLiveDesign(s).codeTasks).toEqual([expect.objectContaining({ identifier: "GRE-1", status: "preview" })]);
+    endLiveDesign(s);
+    expect(viewLiveDesign(startLiveDesign(ids).session).codeTasks).toHaveLength(1);
+  });
+
   it("handles Impeccable's Insert: a new element next to an anchor, nothing replaced", async () => {
     const { session: s } = startLiveDesign(ids);
     handleImpeccableRequest(s, {
