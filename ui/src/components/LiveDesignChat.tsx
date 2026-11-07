@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveDesignView } from "@greatstone/shared";
 import { ArrowUp, Library, Loader2 } from "lucide-react";
+import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,8 @@ import { useCompany } from "../context/CompanyContext";
 import { ReferencePickerList } from "./ReferenceStudio";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DictationButton, DictationInterim, useComposerDictation } from "./DictationButton";
+
+const isGoneSession = (err: unknown) => err instanceof ApiError && err.status === 404;
 
 /**
  * The live session for one page: started on open, polled while open, ended on close.
@@ -53,7 +56,10 @@ export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string,
     if (!polling) return;
     const timer = setInterval(() => {
       if (!idRef.current) return;
-      liveDesignApi.get(idRef.current).then(setView).catch(() => undefined);
+      liveDesignApi.get(idRef.current).then(setView).catch((err: unknown) => {
+        // A GSAM release forgets open sessions: start a new one instead of leaving a dead editor.
+        if (isGoneSession(err)) setAttempt((n) => n + 1);
+      });
     }, 1500);
     return () => clearInterval(timer);
   }, [polling]);
@@ -67,6 +73,10 @@ export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string,
       setView(await fn(idRef.current));
       return true;
     } catch (err) {
+      if (isGoneSession(err)) {
+        setAttempt((n) => n + 1);
+        return false;
+      }
       setError(err instanceof Error ? err.message : "That did not work");
       return false;
     }
