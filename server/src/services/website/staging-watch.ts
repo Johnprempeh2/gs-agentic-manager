@@ -14,6 +14,9 @@ import { lastGuardedCommit, STAGING_NETLIFY_SITE_ID, WEBSITE_PROJECT_ID, WEBSITE
 import { websiteTeamAgent } from "./pending-alert.js";
 
 export const STAGING_WATCH_TITLE = "Put website main on staging";
+export const STAGING_WATCH_ALERT_TITLE = "Staging watch cannot reach";
+/** Sweeps in a row that must fail before the team gets a task: one blip is not worth a task. */
+export const STAGING_WATCH_FAILURES_BEFORE_ALERT = 3;
 const CHECK_EVERY_MS = 2 * 60_000;
 
 export interface StagingWatchDeps {
@@ -22,6 +25,35 @@ export interface StagingWatchDeps {
   /** The watch's task that is not done or cancelled, if any. */
   openTask(): Promise<{ identifier: string | null } | null>;
   createTask(sha: string, staged: string | null): Promise<void>;
+  /** The open "cannot reach" task, if any. */
+  openAlert(): Promise<{ id: string } | null>;
+  createAlert(service: string, reason: string): Promise<void>;
+  closeAlert(id: string): Promise<void>;
+}
+
+/** Which service a failed check names, so the alert says what to fix. Messages carry no secrets. */
+export class StagingWatchError extends Error {
+  constructor(readonly service: "GitHub" | "Netlify", message: string) {
+    super(message);
+  }
+}
+
+/** One sweep: the check, then the alert after 3 failures in a row (one task), closed by the next success. */
+export async function stagingWatchSweep(deps: StagingWatchDeps, state: { failures: number }) {
+  try {
+    const result = await stagingWatchTick(deps);
+    state.failures = 0;
+    const alert = await deps.openAlert();
+    if (alert) await deps.closeAlert(alert.id);
+    return result;
+  } catch (err) {
+    state.failures += 1;
+    if (state.failures >= STAGING_WATCH_FAILURES_BEFORE_ALERT && !(await deps.openAlert())) {
+      const service = err instanceof StagingWatchError ? err.service : "GitHub or Netlify";
+      await deps.createAlert(service, err instanceof Error ? err.message : String(err));
+    }
+    throw err;
+  }
 }
 
 export async function stagingWatchTick(deps: StagingWatchDeps) {
@@ -48,23 +80,23 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
     async mainCommit() {
       const auth = await createGitRemoteAuthProvider(db, site.companyId, { projectId: WEBSITE_PROJECT_ID, operation: "inspect" })(`https://github.com/${WEBSITE_REPO}.git`);
       const token = auth?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY];
-      if (!token) throw new Error("no GitHub token for the Website project");
+      if (!token) throw new StagingWatchError("GitHub", "no GitHub token for the Website project (its GitHub grant, or a GITHUB_TOKEN company secret)");
       const res = await fetch(`https://api.github.com/repos/${WEBSITE_REPO}/commits/main`, {
         headers: { ...headers(token), accept: "application/vnd.github+json", "user-agent": "GS Agentic Manager" },
         signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+      if (!res.ok) throw new StagingWatchError("GitHub", `GitHub answered ${res.status} for ${WEBSITE_REPO} main`);
       return ((await res.json()) as { sha: string }).sha;
     },
     async stagedCommit() {
-      if (!site.netlifyTokenSecretId) throw new Error("no Netlify token");
+      if (!site.netlifyTokenSecretId) throw new StagingWatchError("Netlify", "the website site has no Netlify token");
       const token = await secretService(db).resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
         accessContext: { consumerType: "system", consumerId: `website-staging-watch:${site.id}`, configPath: "netlify.token", actorType: "system" },
       });
       const res = await fetch(`https://api.netlify.com/api/v1/sites/${STAGING_NETLIFY_SITE_ID}/deploys?per_page=100`, {
         headers: headers(token), signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) throw new Error(`Netlify answered ${res.status}`);
+      if (!res.ok) throw new StagingWatchError("Netlify", `Netlify answered ${res.status} for the staging site's deploys (check the website site's Netlify token)`);
       return lastGuardedCommit(await res.json(), "staging");
     },
     async openTask() {
@@ -74,6 +106,35 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
         .where(and(eq(issues.companyId, site.companyId), like(issues.title, `${STAGING_WATCH_TITLE}%`), notInArray(issues.status, ["done", "cancelled"])))
         .limit(1);
       return row ?? null;
+    },
+    async openAlert() {
+      const [row] = await db
+        .select({ id: issues.id })
+        .from(issues)
+        .where(and(eq(issues.companyId, site.companyId), like(issues.title, `${STAGING_WATCH_ALERT_TITLE}%`), notInArray(issues.status, ["done", "cancelled"])))
+        .limit(1);
+      return row ?? null;
+    },
+    async createAlert(service, reason) {
+      const team = await websiteTeamAgent(db, site.companyId, site.propertyId);
+      await issueService(db).create(site.companyId, {
+        title: `${STAGING_WATCH_ALERT_TITLE} ${service}`,
+        description: [
+          `The staging watch has failed ${STAGING_WATCH_FAILURES_BEFORE_ALERT} sweeps in a row, so merges to website main are not reaching staging.`,
+          "",
+          `- Service: ${service}`,
+          `- Last error: ${reason}`,
+          "",
+          "Fix the token or connection named above (the website site's Netlify token in its settings, or the Website project's GitHub grant). GSAM closes this task by itself on the next sweep that works.",
+        ].join("\n"),
+        status: "todo",
+        priority: "high",
+        assigneeAgentId: team.id,
+        projectId: team.projectId ?? WEBSITE_PROJECT_ID,
+      });
+    },
+    async closeAlert(id) {
+      await issueService(db).update(id, { status: "done" });
     },
     async createTask(sha, staged) {
       const team = await websiteTeamAgent(db, site.companyId, site.propertyId);
@@ -90,6 +151,7 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
 }
 
 let lastCheck = 0;
+const sweepState = { failures: 0 };
 
 /** Runs with the execution-control sweeps; checks GitHub and Netlify at most every two minutes. */
 export async function runStagingWatch(db: Db, now = Date.now()) {
@@ -99,7 +161,7 @@ export async function runStagingWatch(db: Db, now = Date.now()) {
   const [site] = await db.select().from(websiteSite).where(eq(websiteSite.netlifySiteId, "3b1e97e6-e184-4251-badd-deed532be3ab")).limit(1);
   if (!site || site.archivedAt) return;
   try {
-    const result = await stagingWatchTick(defaultDeps(db, site));
+    const result = await stagingWatchSweep(defaultDeps(db, site), sweepState);
     if (result === "created") logger.info({ siteId: site.id }, "website staging watch handed main to the website team");
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "website staging watch could not check");

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { stagingWatchTaskDescription, stagingWatchTick, type StagingWatchDeps } from "../services/website/staging-watch.js";
+import { StagingWatchError, stagingWatchSweep, stagingWatchTaskDescription, stagingWatchTick, type StagingWatchDeps } from "../services/website/staging-watch.js";
 
 function deps(over: Partial<StagingWatchDeps>): StagingWatchDeps {
   return {
@@ -7,6 +7,9 @@ function deps(over: Partial<StagingWatchDeps>): StagingWatchDeps {
     stagedCommit: async () => "a".repeat(40),
     openTask: async () => null,
     createTask: vi.fn(async () => undefined),
+    openAlert: async () => null,
+    createAlert: vi.fn(async () => undefined),
+    closeAlert: vi.fn(async () => undefined),
     ...over,
   };
 }
@@ -35,5 +38,34 @@ describe("website staging watch", () => {
     expect(text).toContain("npm run deploy:staging");
     expect(text).toContain("detached at origin main");
     expect(text).toContain("never touches the public site");
+  });
+
+  it("raises one task naming the service after 3 failed sweeps in a row, and closes it when a sweep works", async () => {
+    const secret = "nfp_secret_value";
+    let alert: { id: string } | null = null;
+    let failing = true;
+    const d = deps({
+      stagedCommit: async () => {
+        if (failing) throw new StagingWatchError("Netlify", "Netlify answered 401 for the staging site's deploys (check the website site's Netlify token)");
+        return "b".repeat(40);
+      },
+      openAlert: async () => alert,
+      createAlert: vi.fn(async () => { alert = { id: "alert-1" }; }),
+      closeAlert: vi.fn(async () => { alert = null; }),
+    });
+    const state = { failures: 0 };
+    for (let i = 0; i < 2; i += 1) await expect(stagingWatchSweep(d, state)).rejects.toThrow();
+    expect(d.createAlert).not.toHaveBeenCalled();
+    await expect(stagingWatchSweep(d, state)).rejects.toThrow();
+    await expect(stagingWatchSweep(d, state)).rejects.toThrow();
+    expect(d.createAlert).toHaveBeenCalledTimes(1);
+    const [service, reason] = (d.createAlert as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(service).toBe("Netlify");
+    expect(reason).toContain("401");
+    expect(reason).not.toContain(secret);
+    failing = false;
+    expect(await stagingWatchSweep(d, state)).toBe("current");
+    expect(d.closeAlert).toHaveBeenCalledWith("alert-1");
+    expect(state.failures).toBe(0);
   });
 });
