@@ -269,7 +269,8 @@ describe("live design through Impeccable's page tools", () => {
     const event = (await pollLiveDesign(s, 1000)) as { _instructions: string };
     expect(event._instructions).toContain("Merge it yourself as soon as its checks pass");
     expect(event._instructions).toContain('"kind": "deploy"');
-    expect(event._instructions).toContain("confirmation:<GRE-n>:weekly-release:<full main sha>");
+    expect(event._instructions).toContain("npm run deploy:staging");
+    expect(event._instructions).toContain("confirmation:<GRE-n>:weekly-release:<full staged sha>");
     expect(event._instructions).toContain("npm run deploy:prod -- greatstone-home");
     expect(event._instructions).toContain("Never deploy with `netlify deploy --dir`");
   });

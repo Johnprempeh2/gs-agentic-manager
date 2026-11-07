@@ -37,6 +37,9 @@ describe("AgentWork", () => {
     act(() => createRoot(el).render(<AgentWork view={view} />));
     expect(el.textContent).toContain("GRE-1");
     expect(el.textContent).toContain("Preview ready");
+    const saved = document.createElement("div");
+    act(() => createRoot(saved).render(<AgentWork view={{ codeTasks: [{ identifier: "GRE-2", title: "Hover lift", status: "done" }], queued: [] } as never} />));
+    expect(saved.textContent).toContain("Saved to staging, not live");
     expect(el.querySelector('a[href="https://p.netlify.app"]')).not.toBeNull();
     expect(el.textContent).toContain("Up next (1)");
   });
@@ -61,15 +64,15 @@ describe("Deploy", () => {
 
   it("lists what is not live yet next to the button, and shows nothing when GSAM cannot say", async () => {
     const el = document.createElement("div");
-    const changes = vi.fn(async () => ({ liveCommit: "a", mainCommit: "b", commits: [{ sha: "0117d3e0000", title: "Logo carousel" }] }));
+    const changes = vi.fn(async () => ({ liveCommit: "a", stagingCommit: "b", commits: [{ sha: "0117d3e0000", title: "Logo carousel" }] }));
     act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={changes} />));
     await act(async () => { await Promise.resolve(); });
-    expect(el.textContent).toContain("Not live yet (1)");
+    expect(el.textContent).toContain("Saved to staging, not live yet (1)");
     expect(el.textContent).toContain("0117d3e Logo carousel");
     const down = document.createElement("div");
     act(() => createRoot(down).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={() => Promise.reject(new Error("503"))} />));
     await act(async () => { await Promise.resolve(); });
-    expect(down.textContent).not.toContain("Not live yet");
+    expect(down.textContent).not.toContain("not live yet");
     expect(down.textContent).toContain("Deploy these changes");
   });
 

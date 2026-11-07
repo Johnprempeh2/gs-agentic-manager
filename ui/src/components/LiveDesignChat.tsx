@@ -15,7 +15,10 @@ import { DictationButton, DictationInterim, useComposerDictation } from "./Dicta
 
 const isGoneSession = (err: unknown) => err instanceof ApiError && err.status === 404;
 
-const CODE_TASK_STATUS = { working: "Building", preview: "Preview ready", done: "Done", blocked: "Blocked" } as const;
+// Saved is not live (John, 7 Nov): a finished change sits on staging until he presses Deploy.
+const CODE_TASK_STATUS = { working: "Building", preview: "Preview ready", done: "Saved to staging, not live", blocked: "Blocked" } as const;
+
+const DEPLOY_STATUS = { working: "Getting ready to go live", preview: "Waiting for your yes", done: "Live", blocked: "Blocked" } as const;
 
 const APPROVAL_PREFIX = "Approve production deploy:";
 
@@ -90,7 +93,9 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
             <li key={t.identifier} className="flex flex-wrap items-baseline gap-x-2 text-xs">
               <span className="font-mono text-muted-foreground">{t.identifier}</span>
               <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
-              <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>{CODE_TASK_STATUS[t.status]}</span>
+              <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>
+                {t.kind === "deploy" ? DEPLOY_STATUS[t.status] : t.status === "done" && changes && !changes.commits.length ? "Live" : CODE_TASK_STATUS[t.status]}
+              </span>
               {t.previewUrl && onPreview ? (
                 <button type="button" className="underline underline-offset-2" onClick={() => onPreview(t.previewUrl!, `${t.identifier} ${t.title}`)}>Show here</button>
               ) : null}
@@ -111,7 +116,7 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
       ) : null}
       {onDeploy && changes ? (
         <div className="text-xs text-muted-foreground">
-          <p className="font-medium">{changes.commits.length ? `Not live yet (${changes.commits.length})` : "The public site is up to date"}</p>
+          <p className="font-medium">{changes.commits.length ? `Saved to staging, not live yet (${changes.commits.length})` : "Everything saved is live"}</p>
           {changes.commits.length ? (
             <ul className="space-y-0.5">
               {changes.commits.map((c) => (
@@ -125,6 +130,9 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
         <Button type="button" size="sm" variant="secondary" className="w-full" disabled={deploying} onClick={onDeploy}>
           {deploying ? "Deploy in progress" : "Deploy these changes"}
         </Button>
+      ) : null}
+      {onDeploy ? (
+        <p className="text-xs text-muted-foreground">Changes save to staging. Deploy is the only thing that puts them live.</p>
       ) : null}
     </section>
   );

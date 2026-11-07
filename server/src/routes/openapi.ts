@@ -16665,7 +16665,7 @@ registerCurrentRoute({
   method: "get",
   path: `${siteParams}/deploy-changes`,
   tags: ["website"],
-  summary: "Website main commits since the last production deploy, for the live editor's deploy button (website:view)",
+  summary: "Commits on website staging that the public site does not have yet, for the live editor's deploy button (website:view)",
   responses: websiteModuleResponses,
 });
 
