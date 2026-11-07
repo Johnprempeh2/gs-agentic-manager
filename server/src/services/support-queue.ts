@@ -75,6 +75,30 @@ export function suggestSupportPriority(subject: string, body: string): SupportPr
   return "P2";
 }
 
+/**
+ * Domains Greatstone sends from (GRE-4417). Mail from them to a client support
+ * inbox is our own system mail (sign-up checks, password resets, invites sent
+ * to a test inbox), not a client asking for help, so it opens no ticket.
+ * Set `GSAM_SUPPORT_INTERNAL_SENDER_DOMAINS` (comma separated) to change it.
+ */
+export const DEFAULT_SUPPORT_INTERNAL_SENDER_DOMAINS = ["greatstoneint.com"];
+
+export function supportInternalSenderDomains(raw = process.env.GSAM_SUPPORT_INTERNAL_SENDER_DOMAINS): string[] {
+  if (raw === undefined) return DEFAULT_SUPPORT_INTERNAL_SENDER_DOMAINS;
+  return raw
+    .split(",")
+    .map((domain) => domain.trim().toLowerCase().replace(/^@/, ""))
+    .filter(Boolean);
+}
+
+/** True when `from` ("Name <a@b>" or "a@b") is at one of `domains` or a subdomain of one. */
+export function isInternalSender(from: string | null | undefined, domains: string[]): boolean {
+  const address = (from?.match(/<([^>]+)>/)?.[1] ?? from ?? "").trim().toLowerCase();
+  const domain = address.slice(address.lastIndexOf("@") + 1);
+  if (!address.includes("@") || !domain) return false;
+  return domains.some((own) => domain === own || domain.endsWith(`.${own}`));
+}
+
 export function normalizeClientCode(raw: string): string {
   const code = raw.trim().toUpperCase();
   if (!CLIENT_CODE.test(code)) throw badRequest("Client code must be 2 to 12 letters or digits (no client names)");
@@ -131,8 +155,12 @@ export type QueueConfigInput = {
   holidays?: string[];
 };
 
-export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () => Date } = {}) {
+export function supportQueueService(
+  db: Db,
+  deps: { wakeup?: Wakeup; now?: () => Date; internalSenderDomains?: string[] } = {},
+) {
   const now = deps.now ?? (() => new Date());
+  const internalSenderDomains = deps.internalSenderDomains ?? supportInternalSenderDomains();
   const issuesSvc = issueService(db);
 
   async function companyAgents(companyId: string): Promise<AgentLite[]> {
@@ -636,6 +664,8 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
     configureQueue,
     listQueues: (companyId: string) => db.select().from(supportQueues).where(eq(supportQueues.companyId, companyId)),
     queueForEmailEndpoint,
+    /** Our own sending address: the email stays a plain record, not a ticket. */
+    isInternalSender: (from: string | null | undefined) => isInternalSender(from, internalSenderDomains),
     issueFields,
     afterEmailIntake,
     intake,

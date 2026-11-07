@@ -1360,6 +1360,8 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             .where(eq(chatDeliveries.id, delivery.id));
           return;
         }
+        // Greatstone's own system mail to a client support inbox (GRE-4417).
+        let ownMail = false;
         if (!conversation) {
           const placement = await inboundPlacement(
             endpoint.companyId,
@@ -1368,13 +1370,24 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           // A client support inbox (GRE-665) files the thread in its queue's
           // project with the client code, priority and routed owner.
           const supportQueue = await support.queueForEmailEndpoint(endpoint.companyId, endpoint.id);
-          const supportFields = supportQueue
+          // Mail from our own sending domains (sign-up checks, resets, invites
+          // sent to a test inbox) is not a client asking for help: keep it as
+          // a closed email record with no ticket, clock or wake. A later reply
+          // from anyone else reopens it like any done email task.
+          ownMail = Boolean(supportQueue) && support.isInternalSender(message.from);
+          const supportFields = supportQueue && !ownMail
             ? (await support.issueFields(supportQueue, {
                 subject: message.subject,
                 body: emailText(message),
                 receivedAt: new Date(message.timestamp),
               })).fields
-            : null;
+            : ownMail
+              ? {
+                  description: `Email from Greatstone's own address ${plainEmailMarkdown(message.from)} to ${endpoint.botExternalId}. Not a client support ticket: no response clock.`,
+                  status: "done" as const,
+                  priority: "low" as const,
+                }
+              : null;
           const task = await issueService(db).create(
             endpoint.companyId,
             {
@@ -1392,7 +1405,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             },
             tx,
           );
-          if (supportQueue) event.supportReceivedAt = message.timestamp;
+          if (supportQueue && !ownMail) event.supportReceivedAt = message.timestamp;
           [conversation] = await tx
             .insert(chatConversations)
             .values({
@@ -1430,6 +1443,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           .for("update");
         if (
           !alreadyRetained &&
+          !ownMail &&
           task.status === "done" &&
           !isAutomaticEmail(message)
         )
@@ -1447,6 +1461,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
         event.commentId = link?.commentId ?? undefined;
         event.wakePending =
           !alreadyRetained &&
+          !ownMail &&
           task.status !== "cancelled" &&
           !isAutomaticEmail(message) &&
           !message.labels.includes("sent");

@@ -24,7 +24,12 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { supportQueueService, suggestSupportPriority } from "../services/support-queue.ts";
+import {
+  isInternalSender,
+  supportInternalSenderDomains,
+  supportQueueService,
+  suggestSupportPriority,
+} from "../services/support-queue.ts";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -44,6 +49,27 @@ describe("suggestSupportPriority", () => {
     expect(suggestSupportPriority("Site is down", "Nobody can log in")).toBe("P1");
     expect(suggestSupportPriority("Report export broken", "The CSV is empty")).toBe("P2");
     expect(suggestSupportPriority("Quick question", "How do we add a user?")).toBe("P3");
+  });
+});
+
+describe("internal sender list (GRE-4417)", () => {
+  it("defaults to greatstoneint.com and reads a comma-separated override", () => {
+    expect(supportInternalSenderDomains(undefined)).toEqual(["greatstoneint.com"]);
+    expect(supportInternalSenderDomains(" GreatstoneInt.com, @mail.example.org ,")).toEqual(["greatstoneint.com", "mail.example.org"]);
+    expect(supportInternalSenderDomains("")).toEqual([]);
+  });
+
+  it("matches our domains and their subdomains, never a lookalike or a missing address", () => {
+    const own = ["greatstoneint.com"];
+    expect(isInternalSender("orders@greatstoneint.com", own)).toBe(true);
+    expect(isInternalSender("Greatstone <Orders@GreatstoneInt.com>", own)).toBe(true);
+    expect(isInternalSender("noreply@mail.greatstoneint.com", own)).toBe(true);
+    expect(isInternalSender("help@client.example", own)).toBe(false);
+    expect(isInternalSender("orders@notgreatstoneint.com", own)).toBe(false);
+    expect(isInternalSender("orders@greatstoneint.com.evil.example", own)).toBe(false);
+    expect(isInternalSender("greatstoneint.com", own)).toBe(false);
+    expect(isInternalSender(null, own)).toBe(false);
+    expect(isInternalSender("orders@greatstoneint.com", [])).toBe(false);
   });
 });
 
