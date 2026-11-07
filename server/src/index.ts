@@ -109,6 +109,7 @@ import { websiteService } from "./services/website/index.js";
 import { stallRecoveryService } from "./services/stall-recovery.js";
 import { websitePublishService } from "./services/website/publish.js";
 import { raiseWebsitePendingAlerts } from "./services/website/pending-alert.js";
+import { runStagingWatch } from "./services/website/staging-watch.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -1410,6 +1411,8 @@ async function startServerWithDatabaseTeardown(
     ["strategy_board_emails", () => runScheduledStrategyBoardEmails(db, { sender: boardEmailSender, publicBaseUrl: config.authPublicBaseUrl ?? null })],
     // GRE-2132: one alert task per website release still Pending 30 minutes after its switch. Never retries or calls Netlify.
     ["website_pending_alert", () => raiseWebsitePendingAlerts(db)],
+    // Staging holds the edits (John, 7 Nov): hand a moved website main to the team to put on staging.
+    ["website_staging_watch", () => runStagingWatch(db)],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;

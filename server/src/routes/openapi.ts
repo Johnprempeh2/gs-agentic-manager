@@ -16663,6 +16663,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/deploy-changes`,
+  tags: ["website"],
+  summary: "Commits on website staging that the public site does not have yet, for the live editor's deploy button (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/stylesheet`,
   tags: ["website"],
   summary: "The site stylesheet for HTML pages (release schema 2), as CSS, so agents can use its classes and tokens (website:view)",

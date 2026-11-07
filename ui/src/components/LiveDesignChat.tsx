@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LiveDesignView } from "@greatstone/shared";
+import { LIVE_DEPLOY_REQUEST, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
 import { ArrowUp, Library, Loader2 } from "lucide-react";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
+import { issuesApi } from "../api/issues";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,27 +15,93 @@ import { DictationButton, DictationInterim, useComposerDictation } from "./Dicta
 
 const isGoneSession = (err: unknown) => err instanceof ApiError && err.status === 404;
 
-const CODE_TASK_STATUS = { working: "Building", preview: "Preview ready", done: "Done", blocked: "Blocked" } as const;
+// Saved is not live (John, 7 Nov): a finished change sits on staging until he presses Deploy.
+const CODE_TASK_STATUS = { working: "Building", preview: "Preview ready", done: "Saved to staging, not live", blocked: "Blocked" } as const;
 
-/** What the agent is building in code for this page, and what is waiting its turn. */
-export function AgentWork({ view, onPreview }: { view: LiveDesignView | null; onPreview?: (url: string, label: string) => void }) {
+const DEPLOY_STATUS = { working: "Getting ready to go live", preview: "Waiting for your yes", done: "Live", blocked: "Blocked" } as const;
+
+const APPROVAL_PREFIX = "Approve production deploy:";
+
+/** The agent's deploy card on its deploy task: what goes out, and John's one yes. */
+export function DeployCard({ identifier }: { identifier: string }) {
+  const [card, setCard] = useState<{ id: string; details: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      issuesApi.listInteractions(identifier).then((list) => {
+        const found = list.find((i) => i.kind === "request_confirmation" && i.status === "pending" &&
+          String((i.payload as { detailsMarkdown?: string }).detailsMarkdown ?? "").startsWith(APPROVAL_PREFIX));
+        if (live) setCard(found ? { id: found.id, details: String((found.payload as { detailsMarkdown?: string }).detailsMarkdown) } : null);
+      }).catch(() => undefined);
+    void load();
+    const t = setInterval(load, 4000);
+    return () => { live = false; clearInterval(t); };
+  }, [identifier]);
+  if (!card) return null;
+  const act = (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    fn().then(() => setCard(null), (err: unknown) => setError(err instanceof Error ? err.message : "That did not work")).finally(() => setBusy(false));
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-border p-2 text-xs">
+      <p className="font-medium text-foreground">Ready to go live</p>
+      <p className="whitespace-pre-wrap text-muted-foreground">{card.details}</p>
+      <div className="flex gap-2">
+        <Button type="button" size="sm" disabled={busy} onClick={() => act(() => issuesApi.acceptInteraction(identifier, card.id))}>Deploy</Button>
+        <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => act(() => issuesApi.rejectInteraction(identifier, card.id, "Not now"))}>Not now</Button>
+      </div>
+      {error ? <p className="text-destructive" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
+/** What the agent is building in code for this page, what is waiting its turn, and the deploy button. */
+/** What the deploy button would put live, from GSAM (cached a minute there). Nothing shown when it cannot say. */
+function useDeployChanges(load?: () => Promise<WebsiteDeployChanges>) {
+  const [changes, setChanges] = useState<WebsiteDeployChanges | null>(null);
+  useEffect(() => {
+    if (!load) return;
+    let live = true;
+    const get = () => load().then((c) => live && setChanges(c), () => live && setChanges(null));
+    void get();
+    const t = setInterval(get, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, [load]);
+  return changes;
+}
+
+export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
+  view: LiveDesignView | null;
+  onPreview?: (url: string, label: string) => void;
+  onDeploy?: () => void;
+  deployChanges?: () => Promise<WebsiteDeployChanges>;
+}) {
+  const changes = useDeployChanges(onDeploy ? deployChanges : undefined);
   const tasks = view?.codeTasks ?? [];
   const queued = view?.queued ?? [];
-  if (!tasks.length && !queued.length) return null;
+  const deploying = tasks.some((t) => t.kind === "deploy" && (t.status === "working" || t.status === "preview")) ||
+    queued.some((q) => q.includes(LIVE_DEPLOY_REQUEST));
+  if (!tasks.length && !queued.length && !onDeploy) return null;
   return (
-    <section className="max-h-48 space-y-2 overflow-y-auto border-t border-border px-4 py-2" aria-label="Agent's work">
+    <section className="max-h-72 space-y-2 overflow-y-auto border-t border-border px-4 py-2" aria-label="Agent's work">
       {tasks.length ? (
         <ul className="space-y-1.5">
           {tasks.map((t) => (
             <li key={t.identifier} className="flex flex-wrap items-baseline gap-x-2 text-xs">
               <span className="font-mono text-muted-foreground">{t.identifier}</span>
               <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
-              <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>{CODE_TASK_STATUS[t.status]}</span>
+              <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>
+                {t.kind === "deploy" ? DEPLOY_STATUS[t.status] : t.status === "done" && changes && !changes.commits.length ? "Live" : CODE_TASK_STATUS[t.status]}
+              </span>
               {t.previewUrl && onPreview ? (
                 <button type="button" className="underline underline-offset-2" onClick={() => onPreview(t.previewUrl!, `${t.identifier} ${t.title}`)}>Show here</button>
               ) : null}
               {t.previewUrl ? <a href={t.previewUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">Preview</a> : null}
               {t.prUrl ? <a href={t.prUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">Pull request</a> : null}
+              {t.kind === "deploy" && t.status === "preview" ? <div className="basis-full"><DeployCard identifier={t.identifier} /></div> : null}
             </li>
           ))}
         </ul>
@@ -46,6 +113,26 @@ export function AgentWork({ view, onPreview }: { view: LiveDesignView | null; on
             {queued.map((q, i) => <li key={i} className="truncate">{q}</li>)}
           </ol>
         </div>
+      ) : null}
+      {onDeploy && changes ? (
+        <div className="text-xs text-muted-foreground">
+          <p className="font-medium">{changes.commits.length ? `Saved to staging, not live yet (${changes.commits.length})` : "Everything saved is live"}</p>
+          {changes.commits.length ? (
+            <ul className="space-y-0.5">
+              {changes.commits.map((c) => (
+                <li key={c.sha} className="truncate"><span className="font-mono">{c.sha.slice(0, 7)}</span> {c.title}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {onDeploy ? (
+        <Button type="button" size="sm" variant="secondary" className="w-full" disabled={deploying} onClick={onDeploy}>
+          {deploying ? "Deploy in progress" : "Deploy these changes"}
+        </Button>
+      ) : null}
+      {onDeploy ? (
+        <p className="text-xs text-muted-foreground">Changes save to staging. Deploy is the only thing that puts them live.</p>
       ) : null}
     </section>
   );
@@ -137,7 +224,13 @@ function useElapsed(since: string | undefined, running: boolean) {
  * and a box for notes to the agent. Picking and versions happen in
  * Impeccable's own bar on the page.
  */
-export function LiveDesignChat({ live, onPreview }: { live: ReturnType<typeof useLiveDesign>; onPreview?: (url: string, label: string) => void }) {
+/** `deployable`: a website page, so the chat offers the deploy button. */
+export function LiveDesignChat({ live, onPreview, deployable, deployChanges }: {
+  live: ReturnType<typeof useLiveDesign>;
+  onPreview?: (url: string, label: string) => void;
+  deployable?: boolean;
+  deployChanges?: () => Promise<WebsiteDeployChanges>;
+}) {
   const { view, error, run } = live;
   const [note, setNote] = useState("");
   const dictation = useComposerDictation(note, setNote);
@@ -205,7 +298,12 @@ export function LiveDesignChat({ live, onPreview }: { live: ReturnType<typeof us
         {error ? <li className="text-sm text-destructive" role="alert">{error}</li> : null}
       </ol>
 
-      <AgentWork view={view} onPreview={onPreview} />
+      <AgentWork
+        view={view}
+        onPreview={onPreview}
+        deployChanges={deployChanges}
+        onDeploy={deployable && view && status !== "ended" ? () => void run((id) => liveDesignApi.steer(id, LIVE_DEPLOY_REQUEST)) : undefined}
+      />
 
       <form
         className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
