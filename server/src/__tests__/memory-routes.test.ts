@@ -131,7 +131,7 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     });
   }
 
-  async function setup(name: string, options: { engineTimeoutMs?: number } = {}) {
+  async function setup(name: string, options: { engineTimeoutMs?: number; recallTimeoutMs?: number } = {}) {
     const seeded = await seedCompanyWithBoardAccess(ctx.db, name);
     const fake = fakeEngine();
     const directRetainSlots = createEngineCallSlots(MEMORY_DIRECT_RETAIN_CONCURRENCY);
@@ -538,8 +538,31 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(recall.body.available).toBe(true);
   });
 
+  it("gives recall a longer limit than the write-path timeout, since it shares the engine with retain's extraction (GRE-4292)", async () => {
+    const seeded = await seedCompanyWithBoardAccess(ctx.db, "SlowRecall");
+    // Like Hindsight answering while another call's fact extraction is still
+    // running on the same engine process: slower than the write-path default
+    // (100 ms here), but well inside recall's own, longer limit.
+    const engine: MemoryEngine = {
+      async retain() {},
+      async recall() {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return [];
+      },
+      async deleteDocument() {},
+    };
+    const factory = (db: typeof ctx.db) => memoryRoutes(db, { engine, engineTimeoutMs: 100, recallTimeoutMs: 1_000 });
+    const board = routeApp(ctx.db, seeded.actor, factory);
+    const base = `/api/companies/${seeded.companyId}/memory`;
+    await enable(board, base);
+
+    const recall = await request(board).post(`${base}/recall`).send({ query: "anything" });
+    expect(recall.status).toBe(200);
+    expect(recall.body.available).toBe(true);
+  });
+
   it("answers 'memory unavailable' when the engine is down or hangs, and keeps the contribution", async () => {
-    const { board, asAgent, base, companyId, fake } = await setup("Down", { engineTimeoutMs: 200 });
+    const { board, asAgent, base, companyId, fake } = await setup("Down", { engineTimeoutMs: 200, recallTimeoutMs: 200 });
     const mason = await seedAgent(companyId, "Mason");
     await enable(board, base);
     const agent = asAgent(mason.id);
@@ -834,5 +857,50 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
 
     // Reading the log writes nothing.
     expect(await ctx.db.select().from(memoryOperations)).toHaveLength(before.length);
+  });
+
+  it("puts the newest synced entry from the named tool first, even though every synced entry is unreviewed (GRE-4292)", async () => {
+    const { board, asAgent, base, companyId } = await setup("ToolRank");
+    const mason = await seedAgent(companyId, "Mason");
+    await enable(board, base);
+    const agent = asAgent(mason.id);
+    const scope = await scopeOf(agent, base, "agent");
+
+    async function syncedSession(sourceKind: string, effectiveFrom: string) {
+      const res = await request(agent)
+        .post(`${base}/records`)
+        .send({ scopeId: scope.id, content: `session summary from ${sourceKind}`, sourceKind, effectiveFrom });
+      expect(res.status).toBe(201);
+      return res.body.record.id as string;
+    }
+
+    const olderClaudeCode = await syncedSession("sync:claude_code", "2026-10-25T00:00:00Z");
+    const gsamFeed = await syncedSession("sync:gsam", "2026-11-06T00:00:00Z");
+    const olderCodex = await syncedSession("sync:codex", "2026-11-01T00:00:00Z");
+    const newestCodex = await syncedSession("sync:codex", "2026-11-06T12:00:00Z");
+    const newestClaudeCode = await syncedSession("sync:claude_code", "2026-11-06T18:00:00Z");
+
+    // "ChatGPT" means Codex's sync, and "last session" means newest first:
+    // the newest sync:codex entry leads, ahead of every other sourceKind and
+    // ahead of the older sync:codex entry, regardless of score.
+    const recalled = await request(agent).post(`${base}/recall`).send({ query: "what did ChatGPT do last session" });
+    expect(recalled.status).toBe(200);
+    const ids = recalled.body.results.map((hit: { record: { id: string } }) => hit.record.id);
+    expect(ids[0]).toBe(newestCodex);
+    expect(ids.indexOf(newestCodex)).toBeLessThan(ids.indexOf(olderCodex));
+    expect(ids.indexOf(olderCodex)).toBeLessThan(ids.indexOf(gsamFeed));
+    expect(ids.indexOf(olderCodex)).toBeLessThan(ids.indexOf(olderClaudeCode));
+    expect(ids.indexOf(olderCodex)).toBeLessThan(ids.indexOf(newestClaudeCode));
+
+    // Naming Claude Code instead puts its newest entry first.
+    const claudeRecall = await request(agent).post(`${base}/recall`).send({ query: "what did Claude Code do last session" });
+    expect(claudeRecall.body.results[0].record.id).toBe(newestClaudeCode);
+
+    // With no tool named, "latest" still orders purely by recency.
+    const anyTool = await request(agent).post(`${base}/recall`).send({ query: "what happened in the latest session" });
+    const anyIds = anyTool.body.results.map((hit: { record: { id: string } }) => hit.record.id);
+    expect(anyIds[0]).toBe(newestClaudeCode);
+    expect(anyIds[1]).toBe(newestCodex);
+    expect(anyIds[2]).toBe(gsamFeed);
   });
 });
