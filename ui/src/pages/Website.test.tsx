@@ -255,6 +255,32 @@ describe("Website page", () => {
     expect(websiteApiMock.update).not.toHaveBeenCalled();
   });
 
+  it("keeps one settings box and one hub, for the chosen website, while switching websites", async () => {
+    const live = property();
+    const staging = property({ id: "prop-2", name: "Greatstone staging", siteUrl: "https://staging.greatstone.example/" });
+    websiteApiMock.overview.mockResolvedValue(overview({ properties: [live, staging] }));
+    const consoleError = vi.spyOn(console, "error");
+    await render("/website?tab=traffic");
+    await waitForText("Visitors per day");
+    const button = (label: string) => Array.from(container.querySelectorAll("button")).find((el) => el.textContent === label)!;
+    const settings = await vi.waitFor(() => {
+      expect(button("Website settings")).toBeDefined();
+      return button("Website settings");
+    });
+    await act(async () => { settings.click(); });
+    for (let round = 0; round < 3; round++) {
+      for (const site of [staging, live]) {
+        await act(async () => { button(site.name).click(); });
+        const forms = container.querySelectorAll('[data-testid="website-details"]');
+        expect(forms).toHaveLength(1);
+        expect((forms[0]!.querySelector("input") as HTMLInputElement).value).toBe(site.name);
+        expect(container.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+      }
+    }
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key");
+    consoleError.mockRestore();
+  });
+
   it("cancels adding a website and does not offer it to people who are not owners or admins", async () => {
     await render("/website?tab=traffic");
     await waitForText("Visitors per day");
