@@ -80,6 +80,8 @@ import { websiteBridgeInboundRoutes, websiteDeepDiveSyncRoutes } from "./routes/
 import { websiteDataBridgeService } from "./services/website/data-bridge.js";
 import { startWebsiteEnquiryScheduler, type WebsiteEnquiryReader } from "./services/website/enquiries.js";
 import { startWebsiteActivityScheduler } from "./services/website/activity.js";
+import { interviewBridgeFromEnv } from "./services/website/interview-bridge.js";
+import { startInterviewWithdrawalPromptScheduler } from "./services/deep-dive-interview-withdrawal-prompts.js";
 import { websiteEnquiryPipedriveCopy } from "./services/website/enquiry-pipedrive.js";
 import { registerWebsitePublishStarter } from "./services/website/publish-approval.js";
 import { websitePublishStarter } from "./services/website/publish.js";
@@ -903,7 +905,9 @@ export async function createApp(
   api.use(caseRoutes(db, opts.storageService));
   api.use(deepDiveFindingsRoutes(db));
   api.use(deepDiveSessionsRoutes(db));
-  api.use(deepDiveInterviewsRoutes(db));
+  // One bridge for the routes and the withdrawal poller, so the sandbox's in-memory fake is shared.
+  const interviewBridge = interviewBridgeFromEnv(db);
+  api.use(deepDiveInterviewsRoutes(db, { interviewBridge }));
   api.use(deepDiveBoardsRoutes(db));
   api.use(deepDiveOpportunitiesRoutes(db));
   api.use(deepDiveTraceabilityRoutes(db));
@@ -1451,6 +1455,12 @@ export async function createApp(
   const stopWebsiteActivityScheduler = startWebsiteActivityScheduler(db, (err, siteId) => {
     logger.warn({ err, siteId }, "website activity pull failed");
   });
+  // GRE-4304: a participant's withdrawal gives the round's owner one task to re-run and re-release the synthesis.
+  const stopInterviewWithdrawalPromptScheduler = startInterviewWithdrawalPromptScheduler(
+    db, interviewBridge, { heartbeat: heartbeatService(db, { pluginWorkerManager: workerManager }) }, (err, roundId) => {
+      logger.warn({ err, roundId }, "interview withdrawal read failed");
+    },
+  );
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
@@ -1560,6 +1570,7 @@ export async function createApp(
       stopCrmSyncScheduler();
       stopWebsiteEnquiryScheduler();
       stopWebsiteActivityScheduler();
+      stopInterviewWithdrawalPromptScheduler();
       devWatcher?.close();
       viteHtmlRenderer?.dispose();
       void viteDevServer?.close().catch(() => undefined);
