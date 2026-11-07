@@ -101,6 +101,7 @@ export function islandsForAgents(manifest: Pick<IslandManifest, "islands">) {
     'This is a website page. Its working parts are islands, placed with <gs-island name="..." data-...></gs-island>; live design shows each as a labelled placeholder because the real one runs only on the site.',
     "Keep every island tag unless John asks to remove it. Use only these island names and data attributes; the site drops anything else:",
     ...lines,
+    "When John asks to change what an island looks like or does (a logo grid into a carousel), you own it: make the change in the website repo yourself on a branch with a pull request and a preview, and track it on a task assigned to you. Never hand it to another agent. Answer his pick straight away with an error reply saying you are doing it as a code change, so the page frees up for his next pick.",
   ].join("\n");
 }
 

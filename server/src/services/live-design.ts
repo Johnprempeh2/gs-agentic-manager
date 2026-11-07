@@ -656,6 +656,7 @@ function withInstructions(s: Session, event: AgentEvent) {
             : []),
           `John reads a chat beside the page. Send one short note first so he knows what you are trying: ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "message": "<one plain sentence>"${s.designMd ? "" : ', "designMd": "<the full text of DESIGN.md>"'} }.${s.designMd ? "" : " Include designMd this once so his design panel shows the project's design system."}`,
           `Then ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "variants": [{ "name": "...", "html": "...", "css": "...", "params": [] }] }. Speed matters: John is watching. Then poll again.`,
+          `If you will not make versions for this pick (for example it is site code you are changing in the repo instead), ${replyCall(s.id)} and jsonBody { "requestId": "${event.requestId}", "error": "<one plain sentence on what you are doing instead>" } straight away: until you do, the page stays locked and John cannot pick anything else.`,
         ].join("\n"),
       };
     }
