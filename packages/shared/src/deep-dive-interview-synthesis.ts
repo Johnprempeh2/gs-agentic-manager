@@ -100,6 +100,32 @@ export const gsInterviewWithdrawalSchema = z.object({
 });
 export type GsInterviewWithdrawal = z.infer<typeof gsInterviewWithdrawalSchema>;
 
+/**
+ * `GET rounds/{roundId}/events`: one item of the round's outbox. GSAM reads only
+ * `participant_withdrawn` (GRE-4304); the other events carry insights and
+ * transcripts, so their payload is never parsed.
+ */
+export const gsInterviewEventItemSchema = z.object({
+  cursor: z.union([z.string().min(1).max(200), z.number()]).transform(String),
+  event: z.string().nullable().optional(),
+  payload: z.unknown(),
+});
+export const GS_INTERVIEW_PARTICIPANT_WITHDRAWN = "participant_withdrawn";
+/** The round-level fields only: unknown keys are dropped. The site sends no name, email or id of the person. */
+export const gsInterviewParticipantWithdrawnSchema = z.object({
+  type: z.literal(GS_INTERVIEW_PARTICIPANT_WITHDRAWN),
+  released_affected: z.boolean().optional().transform((v) => v ?? false),
+  withdrawn_at: z.string().max(64).nullable().optional()
+    .transform((v) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null)),
+});
+export interface GsInterviewParticipantWithdrawnEvent {
+  /** The outbox row's cursor: opaque, and unique in the round. */
+  cursor: string;
+  withdrawnAt: string | null;
+  /** The site took the person out of a synthesis that existed, so the client may have seen their content. */
+  releasedAffected: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Rule 1: two voices
 // ---------------------------------------------------------------------------
