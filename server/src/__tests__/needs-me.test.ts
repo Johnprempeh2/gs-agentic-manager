@@ -253,6 +253,11 @@ describeEmbeddedPostgres("one needs-me list for the board user (GRE-355)", () =>
     const closed = await task(companyId, { status: "done", assigneeAgentId: agentId });
     const old = await task(companyId, { status: "todo", assigneeAgentId: agentId });
     const otherUser = await task(companyId, { status: "todo", assigneeAgentId: agentId });
+    const answeredInComment = await task(companyId, { status: "blocked", assigneeAgentId: agentId });
+    await question(companyId, answeredInComment, agentId, {
+      status: "expired",
+      result: { version: 1, answers: [], expirationReason: "superseded_by_comment", commentId: randomUUID() },
+    });
     await question(companyId, expiredOnOpen, agentId, { status: "expired", title: "Older question" });
     await question(companyId, expiredOnOpen, agentId, { status: "expired", title: "Which month?" });
     await question(companyId, reAsked, agentId, { status: "expired" });

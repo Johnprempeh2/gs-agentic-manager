@@ -92,6 +92,8 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
             eq(issueThreadInteractions.companyId, companyId),
             eq(issues.companyId, companyId),
             eq(issueThreadInteractions.status, "expired"),
+            // A card closed because someone answered it in a comment was not missed.
+            sql`coalesce(${issueThreadInteractions.result} ->> 'expirationReason', '') <> 'superseded_by_comment'`,
             isNotNull(issueThreadInteractions.createdByAgentId),
             isNull(issueThreadInteractions.addresseeAgentId),
             or(
