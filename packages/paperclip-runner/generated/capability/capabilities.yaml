@@ -85,7 +85,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:235",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L234:delegating-review-tasks",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L235:delegating-review-tasks",
       "heading": "Delegating review tasks",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -94,7 +94,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:246",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L245:managing-a-user-s-inbox",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L246:managing-a-user-s-inbox",
       "heading": "Managing A User's Inbox",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -103,7 +103,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:254",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L253:issue-dependencies-blockers",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L254:issue-dependencies-blockers",
       "heading": "Issue Dependencies (Blockers)",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -112,7 +112,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:279",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L278:requesting-board-approval",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L279:requesting-board-approval",
       "heading": "Requesting Board Approval",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -121,7 +121,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:300",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L299:issue-thread-interactions",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L300:issue-thread-interactions",
       "heading": "Issue-Thread Interactions",
       "primaryDisposition": "always_agent_tool",
       "semanticOperation": "request_human_input",
@@ -130,7 +130,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:330",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L329:standalone-decisions",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L330:standalone-decisions",
       "heading": "Standalone Decisions",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -139,7 +139,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:434",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L433:mcp-tool-approval-gates",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L434:mcp-tool-approval-gates",
       "heading": "MCP Tool Approval Gates",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -148,7 +148,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:476",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L475:niche-workflow-pointers",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L476:niche-workflow-pointers",
       "heading": "Niche Workflow Pointers",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -157,7 +157,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:486",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L485:cases",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L486:cases",
       "heading": "Cases",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -166,7 +166,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:491",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L490:company-skills-workflow",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L491:company-skills-workflow",
       "heading": "Company Skills Workflow",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -175,7 +175,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:502",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L501:routines",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L502:routines",
       "heading": "Routines",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -184,7 +184,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:513",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L512:issue-workspace-runtime-controls",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L513:issue-workspace-runtime-controls",
       "heading": "Issue Workspace Runtime Controls",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -193,7 +193,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:520",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L519:proposing-credentials-safely",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L520:proposing-credentials-safely",
       "heading": "Proposing Credentials Safely",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -202,7 +202,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:527",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L526:reading-granted-secrets",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L527:reading-granted-secrets",
       "heading": "Reading Granted Secrets",
       "primaryDisposition": "optional_agent_tool",
       "semanticOperation": "scoped_discovery",
@@ -211,7 +211,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:553",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L552:critical-rules",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L553:critical-rules",
       "heading": "Critical Rules",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -220,7 +220,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:577",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L576:comment-style-required",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L577:comment-style-required",
       "heading": "Comment Style (Required)",
       "primaryDisposition": "always_agent_tool",
       "semanticOperation": "report_progress",
@@ -229,7 +229,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:609",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L608:update",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L609:update",
       "heading": "Update",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -238,7 +238,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:619",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L618:planning-required-when-planning-requested",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L619:planning-required-when-planning-requested",
       "heading": "Planning (Required when planning requested)",
       "primaryDisposition": "always_agent_tool",
       "semanticOperation": "write_document",
@@ -247,7 +247,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:652",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L651:key-endpoints-hot-routes",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L652:key-endpoints-hot-routes",
       "heading": "Key Endpoints (Hot Routes)",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -256,7 +256,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:681",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L680:searching-issues",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L681:searching-issues",
       "heading": "Searching Issues",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
@@ -265,7 +265,7 @@
     {
       "id": "skill:skills/paperclip/SKILL.md:691",
       "kind": "skill_heading",
-      "sourceAnchor": "skills/paperclip/SKILL.md#L690:full-reference",
+      "sourceAnchor": "skills/paperclip/SKILL.md#L691:full-reference",
       "heading": "Full Reference",
       "primaryDisposition": "control_plane_owned",
       "semanticOperation": "runtime_reconciliation",
