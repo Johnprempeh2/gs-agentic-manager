@@ -78,6 +78,13 @@ export function unconfiguredMemoryEngine(): MemoryEngine {
 export const MEMORY_ENGINE_TIMEOUT_MS = 8_000;
 /** Upper bound for one retain at the adapter; the request path still caps it with `withEngineTimeout`. */
 export const MEMORY_ENGINE_RETAIN_TIMEOUT_MS = 120_000;
+/**
+ * Recall shares the engine process with retain's fact extraction (an LLM call
+ * of 12 to 28 s). A recall that lands while extraction is running answers in
+ * 6 to 7 s, past the 8 s write-path default, and the caller sees "Memory
+ * unavailable" even though the engine was about to answer (GRE-4292).
+ */
+export const MEMORY_ENGINE_RECALL_TIMEOUT_MS = 20_000;
 
 /**
  * Most direct retains the gateway keeps running on the engine at once. Each

@@ -121,7 +121,12 @@ export function memoryCallerApp(
 // company setting is off.
 export function memoryRoutes(
   db: Db,
-  options: { engine?: MemoryEngine; engineTimeoutMs?: number; directRetainSlots?: EngineCallSlots } = {},
+  options: {
+    engine?: MemoryEngine;
+    engineTimeoutMs?: number;
+    recallTimeoutMs?: number;
+    directRetainSlots?: EngineCallSlots;
+  } = {},
 ) {
   const router = Router();
   const svc = memoryGatewayService(db, options);

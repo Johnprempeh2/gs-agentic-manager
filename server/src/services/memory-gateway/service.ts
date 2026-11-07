@@ -51,6 +51,7 @@ import {
   directRetainSlots,
   MemoryEngineUnavailableError,
   unconfiguredMemoryEngine,
+  MEMORY_ENGINE_RECALL_TIMEOUT_MS,
   MEMORY_ENGINE_TIMEOUT_MS,
   withEngineTimeout,
   type EngineCallSlots,
@@ -75,6 +76,30 @@ export const DIRECT_RETAIN_GRACE_MS = 5_000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A query naming a tool ("what did ChatGPT do") means the synced session from
+ * that tool, even though every synced entry is `unreviewed` and the semantic
+ * match on the tool's own name is weak (GRE-4292). Checked in this order
+ * because "ChatGPT" and "Codex" both mean the gateway's Codex sync.
+ */
+function querySourceKindHint(query: string): string | null {
+  const lower = query.toLowerCase();
+  if (/\bchatgpt\b/.test(lower) || /\bcodex\b/.test(lower)) return "sync:codex";
+  if (/\bclaude code\b/.test(lower)) return "sync:claude_code";
+  if (/\bgsam\b/.test(lower)) return "sync:gsam";
+  return null;
+}
+
+/** "last session", "latest", "most recent": order matches by date, newest first, instead of by score. */
+function queryWantsNewestFirst(query: string): boolean {
+  return /\b(last|latest|most recent|recently)\b/i.test(query);
+}
+
+function recordTimestampMs(record: MemoryRecord): number {
+  const value = record.effectiveFrom ?? record.createdAt;
+  return new Date(value).getTime();
+}
 
 /**
  * Who is calling the gateway. Built from the authenticated actor only; nothing
@@ -284,13 +309,22 @@ export async function companyMemoryEnabled(db: Db, companyId: string) {
 
 export function memoryGatewayService(
   db: Db,
-  options: { engine?: MemoryEngine; engineTimeoutMs?: number; directRetainSlots?: EngineCallSlots } = {},
+  options: {
+    engine?: MemoryEngine;
+    engineTimeoutMs?: number;
+    /** Recall shares the engine with retain's extraction, so it gets its own, longer limit (GRE-4292). */
+    recallTimeoutMs?: number;
+    directRetainSlots?: EngineCallSlots;
+  } = {},
 ) {
   const engine = options.engine ?? unconfiguredMemoryEngine();
   const retainSlots = options.directRetainSlots ?? directRetainSlots;
   const engineTimeoutMs = options.engineTimeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
+  const recallTimeoutMs = options.recallTimeoutMs ?? MEMORY_ENGINE_RECALL_TIMEOUT_MS;
   const callEngine = <T>(work: () => Promise<T>) =>
     withEngineTimeout(Promise.resolve().then(work), engineTimeoutMs);
+  const callEngineForRecall = <T>(work: () => Promise<T>) =>
+    withEngineTimeout(Promise.resolve().then(work), recallTimeoutMs);
 
   async function logOperation(
     caller: MemoryReviewActor,
@@ -968,7 +1002,9 @@ export function memoryGatewayService(
     const hits: MemoryEngineHit[] = [];
     try {
       for (const [bankId, tags] of tagsByBank) {
-        hits.push(...(await callEngine(() => engine.recall({ bankId, query: input.query, tags, limit: input.limit }))));
+        hits.push(
+          ...(await callEngineForRecall(() => engine.recall({ bankId, query: input.query, tags, limit: input.limit }))),
+        );
       }
     } catch (error) {
       if (!(error instanceof MemoryEngineUnavailableError)) throw error;
@@ -1063,9 +1099,21 @@ export function memoryGatewayService(
     const statusRank = (record: MemoryRecord) =>
       record.status === "unreviewed" && new Date(record.createdAt).getTime() <= expiredBefore ? 4 : (rank[record.status] ?? 9);
     const order = (hit: MemoryRecallHit) => (hit.inForceAsOf === false ? 10 : 0) + statusRank(hit.record);
+    // A query naming a tool means that tool's synced session, ahead of
+    // everything else; one asking for "last" or "latest" then wants the
+    // newest of those first, not the highest-scoring (GRE-4292).
+    const sourceKindHint = querySourceKindHint(input.query);
+    const newestFirst = queryWantsNewestFirst(input.query);
+    const toolRank = (hit: MemoryRecallHit) =>
+      sourceKindHint ? (hit.record.sourceKind === sourceKindHint ? 0 : 1) : 0;
     const results = candidates.sort((a, b) => {
+      const byTool = toolRank(a) - toolRank(b);
+      if (byTool !== 0) return byTool;
       const byStatus = order(a) - order(b);
-      return byStatus !== 0 ? byStatus : (b.score ?? -1) - (a.score ?? -1);
+      if (byStatus !== 0) return byStatus;
+      return newestFirst
+        ? recordTimestampMs(b.record) - recordTimestampMs(a.record)
+        : (b.score ?? -1) - (a.score ?? -1);
     });
 
     const now = new Date();

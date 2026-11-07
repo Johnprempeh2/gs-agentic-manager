@@ -266,6 +266,7 @@ import {
 import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
 import { chatWebhookBodyParser } from "./middleware/chat-webhook-body.js";
+import { websitePingRoutes } from "./routes/website-ping.js";
 import { createChatWebhookDiagnostics } from "./services/chat-webhook-diagnostics.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -713,6 +714,9 @@ export async function createApp(
   // Fleet spokes sign each message with their own key (GRE-1082); no session.
   app.use(fleetSpokeRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   app.use(chatWebhookRoutes(chatChannels));
+  // The website pings when an enquiry arrives (no data, no key); the pull itself uses GSAM's signed bridge.
+  let websitePing = (_siteId: string) => {};
+  app.use("/api", websitePingRoutes((siteId) => websitePing(siteId)));
   // The instance validates single-use registration state and its trusted
   // current origin. This exact GET is the only public setup return.
   app.get("/api/chat-github/manifest/callback", async (req, res) => {
@@ -1461,6 +1465,10 @@ export async function createApp(
       logger.warn({ err, roundId }, "interview withdrawal read failed");
     },
   );
+  websitePing = (siteId) => {
+    void stopWebsiteEnquiryScheduler.pull(siteId);
+    void stopWebsiteActivityScheduler.pull(siteId);
+  };
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
