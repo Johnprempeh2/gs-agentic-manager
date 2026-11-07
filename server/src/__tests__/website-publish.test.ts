@@ -188,7 +188,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
         if (deferJobs) deferred.push(job);
         else running.push(job());
       },
-      timing: { deployPollMs: 1, deployTimeoutMs: 30, verifyRounds: 2, verifyDelayMs: 1 },
+      timing: { deployPollMs: 1, deployTimeoutMs: 30, stagingDeployTimeoutMs: 30, verifyRounds: 2, verifyDelayMs: 1 },
       checkConnection: async () => ({ ok: true, engineVersion: "0.2.0", releaseSchemaVersion: engineSchema }),
     };
   }
@@ -407,15 +407,29 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     }
   });
 
-  it("never publishes to the public site: Deploy in the editor is the only path to production", async () => {
+  it("publishes the public site's record to staging: no build, waits for the staging deploy, checks staging", async () => {
     const { site, page, base } = await seedSite();
     await db.update(websiteSite).set({ netlifySiteId: "3b1e97e6-e184-4251-badd-deed532be3ab" }).where(eq(websiteSite.id, site.id));
     await approveLatest(page.id);
-    const res = await request(app()).post(`${base}/releases`).send({}).expect(403);
-    expect(res.body.error).toMatch(/Deploy these changes/);
-    await settle();
+    const seen: string[] = [];
+    const original = netlify.fetchPage;
+    netlify.fetchPage = async (url: string) => (seen.push(url), original(url));
+    const first = await publish(base);
+    // Git builds are off on staging: the staging watch hands the rebuild to the website team.
     expect(netlify.state.builds).toBe(0);
-    expect(await releaseCount(site.id)).toBe(0);
+    expect(first.status).toBe("pending");
+    expect(first.pendingReason).toBe("build_timeout");
+    expect(JSON.parse(netlify.blobs.get("current")!.body)).toMatchObject({ release: 1 });
+    // The team's deploy:staging lands, then Retry checks staging (never greatstoneint.com) and goes Live.
+    netlify.engineDeploy("engine-2");
+    const plan = await request(app()).get(`${base}/releases/${first.id}/retry`).expect(200);
+    expect(plan.body.plan ?? plan.body).toMatchObject({ action: "verify", costsCredits: false });
+    await request(app()).post(`${base}/releases/${first.id}/retry`).send({}).expect(202);
+    await settle();
+    expect((await releaseById(first.id)).status).toBe("live");
+    expect(netlify.state.builds).toBe(0);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((u) => u.startsWith("https://gre3833-next-db-staging.netlify.app/"))).toBe(true);
   });
 
   it("one Publish makes exactly one production deploy, then shows Live", async () => {

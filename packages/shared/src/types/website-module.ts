@@ -576,6 +576,10 @@ export interface WebsiteDeployChanges {
   liveCommit: string;
   /** The commit staging serves: what Deploy promotes. */
   stagingCommit: string;
+  /** The GSAM content release the public site's store points at (null: none yet). */
+  liveContentRelease: number | null;
+  /** The content release staging's store points at: what Deploy promotes with the commit. */
+  stagingContentRelease: number | null;
   /** Newest first. */
   commits: { sha: string; title: string }[];
 }

@@ -8,10 +8,11 @@ export const WEBSITE_REPO = "Johnprempeh2/greatstone-website";
 /** Staging holds the edits (John, 7 Nov): every merge to main lands here first. */
 /** gre3833-next-db-staging, the one staging site since GRE-4202, serving the public site's Vite build since 7 Nov. */
 export const STAGING_NETLIFY_SITE_ID = "6689e558-855b-40b1-be45-c530531fed45";
+export const STAGING_DOMAIN = "gre3833-next-db-staging.netlify.app";
 const CACHE_MS = 60_000;
 const TIMEOUT_MS = 15_000;
 
-export type DeployChangesTokens = { netlifySiteId: string; netlifyToken: string; githubToken: string };
+export type DeployChangesTokens = { netlifySiteId: string; netlifyToken: string; githubToken: string; storeName?: string };
 
 /** The newest ready deploy whose title names the commit it was built from, on that channel. */
 export function lastGuardedCommit(deploys: { state?: string; title?: string | null }[], channel: "prod" | "staging"): string | null {
@@ -30,7 +31,20 @@ export async function loadDeployChanges(tokens: DeployChangesTokens, fetchImpl: 
     return res.json();
   };
   const deploysOf = (id: string) => get(`https://api.netlify.com/api/v1/sites/${encodeURIComponent(id)}/deploys?per_page=100`, tokens.netlifyToken);
-  const [prod, staging] = await Promise.all([deploysOf(tokens.netlifySiteId), deploysOf(STAGING_NETLIFY_SITE_ID)]);
+  // The content release each site's store points at (`current`), as GSAM's publish and deploy:prod write it.
+  const contentOf = async (id: string) => {
+    const store = encodeURIComponent(`site:${tokens.storeName ?? "gsam-content"}`);
+    const res = await fetchImpl(`https://api.netlify.com/api/v1/blobs/${encodeURIComponent(id)}/${store}/current`, {
+      headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`api.netlify.com answered ${res.status} for a content pointer`);
+    const release = ((await res.json()) as { release?: unknown }).release;
+    return typeof release === "number" ? release : null;
+  };
+  const [prod, staging, liveContentRelease, stagingContentRelease] = await Promise.all([
+    deploysOf(tokens.netlifySiteId), deploysOf(STAGING_NETLIFY_SITE_ID), contentOf(tokens.netlifySiteId), contentOf(STAGING_NETLIFY_SITE_ID),
+  ]);
   const base = lastGuardedCommit(prod, "prod");
   const staged = lastGuardedCommit(staging, "staging");
   if (!base) throw new Error("no guarded production deploy found");
@@ -43,6 +57,8 @@ export async function loadDeployChanges(tokens: DeployChangesTokens, fetchImpl: 
   return {
     liveCommit: base,
     stagingCommit: staged,
+    liveContentRelease,
+    stagingContentRelease,
     // Newest first, the first line of each message.
     commits: commits.map((c) => ({ sha: c.sha, title: c.commit.message.split("\n")[0]! })).reverse(),
   };

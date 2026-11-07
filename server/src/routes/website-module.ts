@@ -827,7 +827,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
         const auth = await createGitRemoteAuthProvider(db, site.companyId, { projectId: WEBSITE_PROJECT_ID, operation: "inspect" })(`https://github.com/${WEBSITE_REPO}.git`);
         const githubToken = auth?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY];
         if (!githubToken) throw new Error("no GitHub token");
-        return loadDeployChanges({ netlifySiteId: site.netlifySiteId, netlifyToken, githubToken });
+        return loadDeployChanges({ netlifySiteId: site.netlifySiteId, netlifyToken, githubToken, storeName: site.blobsStoreName });
       }));
     } catch (err) {
       logger.warn({ siteId: site.id, err: err instanceof Error ? err.message : String(err) }, "Website deploy changes unavailable");
