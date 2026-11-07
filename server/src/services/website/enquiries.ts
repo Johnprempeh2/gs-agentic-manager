@@ -1,10 +1,11 @@
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies, companyMemberships, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, websiteFeature, websiteProperties, websiteSite } from "@greatstone/db";
 import { pipelineService } from "../pipelines.js";
 import { logActivity } from "../activity-log.js";
 import { issueService } from "../issues.js";
 import { logger } from "../../middleware/logger.js";
+import { serialPulls } from "./pull-queue.js";
 
 /** The read-only shape supplied by the website admin bridge. */
 export interface WebsiteEnquiry {
@@ -282,16 +283,12 @@ export function startWebsiteEnquiryScheduler(
   onError: (error: unknown, siteId: string) => void,
 ) {
   const service = websiteEnquiryService(db, copyToPipedrive);
-  let running = false;
-  let again: string | null = null;
-  const tick = async (onlySiteId?: string): Promise<void> => {
-    // A ping during a pull runs once more afterwards, so a new enquiry is never left for the safety net.
-    if (running) { again = onlySiteId ?? again ?? ""; return; }
-    running = true;
+  // A ping during a pull runs afterwards, so a new enquiry is never left for the safety net.
+  const tick = serialPulls(async (onlySiteIds) => {
     try {
       const sites = await db.select({ id: websiteSite.id, companyId: websiteSite.companyId })
         .from(websiteSite).where(and(isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId),
-          ...(onlySiteId ? [eq(websiteSite.id, onlySiteId)] : [])));
+          ...(onlySiteIds ? [inArray(websiteSite.id, onlySiteIds)] : [])));
       for (const site of sites) {
         try {
           await service.importFromBridge(site.companyId, site.id, reader);
@@ -301,14 +298,9 @@ export function startWebsiteEnquiryScheduler(
       }
     } catch (error) {
       onError(error, "");
-    } finally {
-      running = false;
-      const next = again;
-      again = null;
-      if (next !== null) void tick(next || undefined);
     }
-  };
+  });
   const timer = setInterval(() => { void tick(); }, 12 * 60 * 60_000);
   timer.unref?.();
-  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick(siteId) });
+  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick([siteId]) });
 }

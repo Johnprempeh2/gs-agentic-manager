@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { websiteActivityCursors, websiteActivityEvents, websiteSite } from "@greatstone/db";
 import { websiteActivityBatchSchema, type WebsiteActivityBatch } from "@greatstone/shared";
 import { websiteDataBridgeService } from "./data-bridge.js";
+import { serialPulls } from "./pull-queue.js";
 
 export interface WebsiteActivityReader {
   read(site: typeof websiteSite.$inferSelect, cursor: string): Promise<WebsiteActivityBatch>;
@@ -75,32 +76,22 @@ export function startWebsiteActivityScheduler(db: Db, onError: (error: unknown, 
   const bridge = websiteDataBridgeService(db);
   const service = websiteActivityService(db, { read: async (site, cursor) =>
     (await bridge.client(site)).activity(cursor, { type: "system", id: "website-activity-pull" }) });
-  let running = false;
-  let again: string | null = null;
-  const tick = async (onlySiteId?: string): Promise<void> => {
-    // A ping during a pull runs once more afterwards, as for enquiries.
-    if (running) { again = onlySiteId ?? again ?? ""; return; }
-    running = true;
+  // A ping during a pull runs afterwards, as for enquiries.
+  const tick = serialPulls(async (onlySiteIds) => {
     try {
       const sites = await db.select().from(websiteSite).where(and(
         isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId),
-        ...(onlySiteId ? [eq(websiteSite.id, onlySiteId)] : []),
+        ...(onlySiteIds ? [inArray(websiteSite.id, onlySiteIds)] : []),
       ));
       for (const site of sites) {
         try { await service.pullSite(site); } catch (error) { onError(error, site.id); }
       }
     } catch (error) { onError(error, ""); }
-    finally {
-      running = false;
-      const next = again;
-      again = null;
-      if (next !== null) void tick(next || undefined);
-    }
-  };
+  });
   void tick();
   // Twice a day as a safety net; the site pings GSAM when something happens (`pull(siteId)`),
   // so each website database can sleep in between.
   const timer = setInterval(() => { void tick(); }, 12 * 60 * 60_000);
   timer.unref?.();
-  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick(siteId) });
+  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick([siteId]) });
 }
