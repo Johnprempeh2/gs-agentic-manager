@@ -109,7 +109,14 @@ describe("Hindsight memory engine adapter", () => {
         new Promise<Response>((_resolve, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))),
     ]) {
       const { fetchImpl } = recordingFetch(respond as never);
-      const engine = createHindsightMemoryEngine({ baseUrl: "http://e", apiKey: "k", assertionSecret: SECRET, fetchImpl, timeoutMs: 50 });
+      const engine = createHindsightMemoryEngine({
+        baseUrl: "http://e",
+        apiKey: "k",
+        assertionSecret: SECRET,
+        fetchImpl,
+        timeoutMs: 50,
+        recallTimeoutMs: 50,
+      });
       await expect(engine.recall({ bankId: "b", query: "q", tags: ["scope:org"], limit: 1 })).rejects.toBeInstanceOf(
         MemoryEngineUnavailableError,
       );
@@ -164,11 +171,35 @@ describe("Hindsight memory engine adapter", () => {
       fetchImpl,
       timeoutMs: 20,
       retainTimeoutMs: 1_000,
+      recallTimeoutMs: 20,
     });
     await expect(engine.retain(doc)).resolves.toEqual({ usage: { inputTokens: 12, outputTokens: 3 } });
     await expect(engine.recall({ bankId: "b", query: "q", tags: ["scope:org"], limit: 1 })).rejects.toBeInstanceOf(
       MemoryEngineUnavailableError,
     );
+  });
+
+  it("gives recall its own, longer timeout than the write-path default, since it shares the engine with retain's extraction (GRE-4292)", async () => {
+    // Slower than the write-path default (20 ms here) but inside recall's own limit (1000 ms),
+    // like Hindsight answering while another call's fact extraction is still running.
+    const hang = (_url: string, init: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ results: [] })), 80);
+        init.signal!.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(init.signal!.reason);
+        });
+      });
+    const { fetchImpl } = recordingFetch((url, init) => (url.endsWith("/recall") ? hang(url, init) : json({})));
+    const engine = createHindsightMemoryEngine({
+      baseUrl: "http://e",
+      apiKey: "k",
+      assertionSecret: SECRET,
+      fetchImpl,
+      timeoutMs: 20,
+      recallTimeoutMs: 1_000,
+    });
+    await expect(engine.recall({ bankId: "b", query: "q", tags: ["scope:org"], limit: 1 })).resolves.toEqual([]);
   });
 
   describe("gateway config file", () => {
