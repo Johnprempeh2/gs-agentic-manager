@@ -109,7 +109,7 @@ describeEmbeddedPostgres("live release announcement (GRE-50)", () => {
     return { companyId, agentId };
   }
 
-  async function seedIssue(input: { companyId: string; agentId: string; monitor?: Record<string, unknown> }) {
+  async function seedIssue(input: { companyId: string; agentId: string; monitor?: Record<string, unknown>; status?: "in_progress" | "blocked" }) {
     const id = randomUUID();
     issueNumber += 1;
     const nextCheckAt = new Date("2099-01-01T00:00:00.000Z");
@@ -120,7 +120,7 @@ describeEmbeddedPostgres("live release announcement (GRE-50)", () => {
       id,
       companyId: input.companyId,
       title: "After-check once the fix is live",
-      status: "in_progress",
+      status: input.status ?? "in_progress",
       priority: "medium",
       assigneeAgentId: input.agentId,
       issueNumber,
@@ -172,6 +172,8 @@ describeEmbeddedPostgres("live release announcement (GRE-50)", () => {
       agentId,
       monitor: { serviceName: LIVE_RELEASE_MONITOR_SERVICE_NAME, externalRef: "bbbbbbb" },
     });
+    // A task parked as blocked until the release lands (GRE-4305) is woken too.
+    const blockedWaiting = await seedIssue({ companyId, agentId, status: "blocked", monitor: { serviceName: LIVE_RELEASE_MONITOR_SERVICE_NAME, externalRef: "aaaaaaa" } });
     const otherMonitor = await seedIssue({ companyId, agentId, monitor: { serviceName: "Vendor deploy" } });
     const notWaiting = await seedIssue({ companyId, agentId });
 
@@ -182,7 +184,7 @@ describeEmbeddedPostgres("live release announcement (GRE-50)", () => {
     expect(activity[0]).toMatchObject({ companyId, entityType: "release", entityId: LIVE_COMMIT });
     expect(activity[0].details).toMatchObject({ commit: LIVE_COMMIT, tag: "live-2026-09-28.1", startedAt: event.startedAt });
 
-    for (const issueId of [waiting, waitingForLiveCommit]) {
+    for (const issueId of [waiting, waitingForLiveCommit, blockedWaiting]) {
       const wakes = await wakesFor(issueId);
       expect(wakes).toHaveLength(1);
       expect(wakes[0].reason).toBe("issue_monitor_due");
