@@ -821,7 +821,7 @@ export function Website() {
       ) : null}
       {canManage && editingDetails ? (
         <WebsiteDetailsForm
-          key={selected.id}
+          key={`details-${selected.id}`}
           companyId={selectedCompanyId}
           property={selected}
           onDone={() => setEditingDetails(false)}
@@ -829,7 +829,7 @@ export function Website() {
         />
       ) : null}
       <PropertyHub
-        key={selected.id}
+        key={`hub-${selected.id}`}
         companyId={selectedCompanyId}
         property={selected}
         signInAvailable={googleSignInAvailable}
