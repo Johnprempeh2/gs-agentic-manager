@@ -39,6 +39,18 @@ export const liveDesignVariantSchema = z.object({
 });
 export type LiveDesignVariant = z.infer<typeof liveDesignVariantSchema>;
 
+const httpsUrl = z.string().url().max(500).refine((u) => u.startsWith("https://"), "https only");
+
+/** A change the agent is making in the site's code rather than on the page: shown in the editor until it is done. */
+export const liveDesignCodeTaskSchema = z.object({
+  identifier: z.string().min(1).max(32),
+  title: z.string().min(1).max(200),
+  status: z.enum(["working", "preview", "done", "blocked"]).default("working"),
+  prUrl: httpsUrl.optional(),
+  previewUrl: httpsUrl.optional(),
+});
+export type LiveDesignCodeTask = z.infer<typeof liveDesignCodeTaskSchema>;
+
 export const liveDesignReplySchema = z.object({
   requestId: z.string().min(1).max(64),
   variants: z.array(liveDesignVariantSchema).min(1).max(4).optional(),
@@ -51,6 +63,8 @@ export const liveDesignReplySchema = z.object({
   message: z.string().max(1000).optional(),
   /** The project's DESIGN.md, for Impeccable's design panel. Sent once per session. */
   designMd: z.string().max(100_000).optional(),
+  /** "I am doing this as a code change": frees the page for John's next pick and lists the work in the editor. */
+  codeTask: liveDesignCodeTaskSchema.optional(),
 });
 export type LiveDesignReply = z.infer<typeof liveDesignReplySchema>;
 
@@ -100,6 +114,10 @@ export interface LiveDesignView {
   frameSrc: string | null;
   /** A task file or a website page. */
   sourceKind: "attachment" | "website-page";
+  /** Code changes the agent is making for this page, newest first. */
+  codeTasks: LiveDesignCodeTask[];
+  /** Picks and notes waiting for the agent, in order. */
+  queued: string[];
 }
 
 /**

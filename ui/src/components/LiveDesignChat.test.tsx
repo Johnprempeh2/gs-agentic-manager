@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
-import { useLiveDesign } from "./LiveDesignChat";
+import { AgentWork, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -23,5 +23,20 @@ describe("useLiveDesign", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
     expect(start).toHaveBeenCalledTimes(2);
     expect(result.current.sessionId).toBe("s2");
+  });
+});
+
+describe("AgentWork", () => {
+  it("lists the agent's code changes with their links, and what is waiting", () => {
+    const el = document.createElement("div");
+    const view = {
+      codeTasks: [{ identifier: "GRE-1", title: "Logo carousel", status: "preview", previewUrl: "https://p.netlify.app", prUrl: "https://github.com/x/y/pull/1" }],
+      queued: ["h2: Bigger heading"],
+    } as never;
+    act(() => createRoot(el).render(<AgentWork view={view} />));
+    expect(el.textContent).toContain("GRE-1");
+    expect(el.textContent).toContain("Preview ready");
+    expect(el.querySelector('a[href="https://p.netlify.app"]')).not.toBeNull();
+    expect(el.textContent).toContain("Up next (1)");
   });
 });
