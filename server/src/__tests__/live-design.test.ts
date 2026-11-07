@@ -261,6 +261,19 @@ describe("live design through Impeccable's page tools", () => {
     expect(viewLiveDesign(startLiveDesign(ids).session).codeTasks).toHaveLength(1);
   });
 
+  it("queues a pick made while the agent is busy, freeing the page, and the agent makes it on the page next", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000);
+    handleImpeccableRequest(s, post({ type: "generate", id: "b1", freeformPrompt: "Glow", element: { tagName: "a" } }));
+    handleImpeccableRequest(s, post({ type: "generate", id: "b2", freeformPrompt: "Bigger", element: { tagName: "h2", outerHTML: "<h2>Hi</h2>" } }));
+    expect(viewLiveDesign(s)).toMatchObject({ status: "generating", request: { id: "b1" }, queued: ["a: Glow", "h2: Bigger"] });
+    expect(s.frames.at(-1)?.data).toMatchObject({ type: "error", id: "b2" });
+    await pollLiveDesign(s, 1000); // the agent takes b1
+    const next = (await pollLiveDesign(s, 1000)) as { type: string; _instructions: string };
+    expect(next.type).toBe("steer");
+    expect(next._instructions).toContain("<h2>Hi</h2>");
+  });
+
   it("handles Impeccable's Insert: a new element next to an anchor, nothing replaced", async () => {
     const { session: s } = startLiveDesign(ids);
     handleImpeccableRequest(s, {

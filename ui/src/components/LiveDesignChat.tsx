@@ -17,7 +17,7 @@ const isGoneSession = (err: unknown) => err instanceof ApiError && err.status ==
 const CODE_TASK_STATUS = { working: "Building", preview: "Preview ready", done: "Done", blocked: "Blocked" } as const;
 
 /** What the agent is building in code for this page, and what is waiting its turn. */
-export function AgentWork({ view }: { view: LiveDesignView | null }) {
+export function AgentWork({ view, onPreview }: { view: LiveDesignView | null; onPreview?: (url: string, label: string) => void }) {
   const tasks = view?.codeTasks ?? [];
   const queued = view?.queued ?? [];
   if (!tasks.length && !queued.length) return null;
@@ -30,6 +30,9 @@ export function AgentWork({ view }: { view: LiveDesignView | null }) {
               <span className="font-mono text-muted-foreground">{t.identifier}</span>
               <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
               <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>{CODE_TASK_STATUS[t.status]}</span>
+              {t.previewUrl && onPreview ? (
+                <button type="button" className="underline underline-offset-2" onClick={() => onPreview(t.previewUrl!, `${t.identifier} ${t.title}`)}>Show here</button>
+              ) : null}
               {t.previewUrl ? <a href={t.previewUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">Preview</a> : null}
               {t.prUrl ? <a href={t.prUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">Pull request</a> : null}
             </li>
@@ -134,7 +137,7 @@ function useElapsed(since: string | undefined, running: boolean) {
  * and a box for notes to the agent. Picking and versions happen in
  * Impeccable's own bar on the page.
  */
-export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign> }) {
+export function LiveDesignChat({ live, onPreview }: { live: ReturnType<typeof useLiveDesign>; onPreview?: (url: string, label: string) => void }) {
   const { view, error, run } = live;
   const [note, setNote] = useState("");
   const dictation = useComposerDictation(note, setNote);
@@ -202,7 +205,7 @@ export function LiveDesignChat({ live }: { live: ReturnType<typeof useLiveDesign
         {error ? <li className="text-sm text-destructive" role="alert">{error}</li> : null}
       </ol>
 
-      <AgentWork view={view} />
+      <AgentWork view={view} onPreview={onPreview} />
 
       <form
         className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
