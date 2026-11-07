@@ -16426,6 +16426,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "post",
+  path: "/api/website-ping/{siteId}",
+  tags: ["website"],
+  summary: "A connected website says something is new; GSAM pulls that site over its signed bridge (no body, no key, rate limited, always 202)",
+  responses: { 202: { description: "Accepted" } },
+});
+
+registerCurrentRoute({
   method: "delete",
   path: "/api/companies/{companyId}/website/properties/{propertyId}",
   tags: ["website"],

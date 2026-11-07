@@ -1,10 +1,11 @@
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies, companyMemberships, organisations, pipelineCaseIssueLinks, pipelineCases, pipelines, websiteFeature, websiteProperties, websiteSite } from "@greatstone/db";
 import { pipelineService } from "../pipelines.js";
 import { logActivity } from "../activity-log.js";
 import { issueService } from "../issues.js";
 import { logger } from "../../middleware/logger.js";
+import { serialPulls } from "./pull-queue.js";
 
 /** The read-only shape supplied by the website admin bridge. */
 export interface WebsiteEnquiry {
@@ -271,7 +272,10 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
   };
 }
 
-/** Poll sites with a configured bridge read key every 30 minutes, so their databases can sleep in between. */
+/**
+ * Pull sites with a configured bridge read key twice a day as a safety net; the site pings GSAM when an
+ * enquiry arrives (`pull(siteId)`), so its database can sleep in between.
+ */
 export function startWebsiteEnquiryScheduler(
   db: Db,
   reader: WebsiteEnquiryReader,
@@ -279,13 +283,12 @@ export function startWebsiteEnquiryScheduler(
   onError: (error: unknown, siteId: string) => void,
 ) {
   const service = websiteEnquiryService(db, copyToPipedrive);
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
+  // A ping during a pull runs afterwards, so a new enquiry is never left for the safety net.
+  const tick = serialPulls(async (onlySiteIds) => {
     try {
       const sites = await db.select({ id: websiteSite.id, companyId: websiteSite.companyId })
-        .from(websiteSite).where(and(isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId)));
+        .from(websiteSite).where(and(isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId),
+          ...(onlySiteIds ? [inArray(websiteSite.id, onlySiteIds)] : [])));
       for (const site of sites) {
         try {
           await service.importFromBridge(site.companyId, site.id, reader);
@@ -295,11 +298,9 @@ export function startWebsiteEnquiryScheduler(
       }
     } catch (error) {
       onError(error, "");
-    } finally {
-      running = false;
     }
-  };
-  const timer = setInterval(() => { void tick(); }, 30 * 60_000);
+  });
+  const timer = setInterval(() => { void tick(); }, 12 * 60 * 60_000);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick([siteId]) });
 }
