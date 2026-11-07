@@ -60,6 +60,11 @@ export function DeployCard({ identifier }: { identifier: string }) {
 
 /** What the agent is building in code for this page, what is waiting its turn, and the deploy button. */
 /** What the deploy button would put live, from GSAM (cached a minute there). Nothing shown when it cannot say. */
+/** Page edits waiting: staging's content release differs from the public site's. */
+function contentWaiting(c: WebsiteDeployChanges) {
+  return c.stagingContentRelease != null && c.stagingContentRelease !== c.liveContentRelease;
+}
+
 function useDeployChanges(load?: () => Promise<WebsiteDeployChanges>) {
   const [changes, setChanges] = useState<WebsiteDeployChanges | null>(null);
   useEffect(() => {
@@ -94,7 +99,7 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
               <span className="font-mono text-muted-foreground">{t.identifier}</span>
               <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
               <span className={cn("text-muted-foreground", t.status === "blocked" && "text-destructive")}>
-                {t.kind === "deploy" ? DEPLOY_STATUS[t.status] : t.status === "done" && changes && !changes.commits.length ? "Live" : CODE_TASK_STATUS[t.status]}
+                {t.kind === "deploy" ? DEPLOY_STATUS[t.status] : t.status === "done" && changes && !changes.commits.length && !contentWaiting(changes) ? "Live" : CODE_TASK_STATUS[t.status]}
               </span>
               {t.previewUrl && onPreview ? (
                 <button type="button" className="underline underline-offset-2" onClick={() => onPreview(t.previewUrl!, `${t.identifier} ${t.title}`)}>Show here</button>
@@ -116,9 +121,19 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
       ) : null}
       {onDeploy && changes ? (
         <div className="text-xs text-muted-foreground">
-          <p className="font-medium">{changes.commits.length ? `Saved to staging, not live yet (${changes.commits.length})` : "Everything saved is live"}</p>
-          {changes.commits.length ? (
+          <p className="font-medium">
+            {changes.commits.length || contentWaiting(changes)
+              ? `Saved to staging, not live yet (${changes.commits.length + (contentWaiting(changes) ? 1 : 0)})`
+              : "Everything saved is live"}
+          </p>
+          {changes.commits.length || contentWaiting(changes) ? (
             <ul className="space-y-0.5">
+              {contentWaiting(changes) ? (
+                <li className="truncate">
+                  Page edits: content release {changes.stagingContentRelease}
+                  {changes.liveContentRelease != null ? ` (live has ${changes.liveContentRelease})` : " (first content release)"}
+                </li>
+              ) : null}
               {changes.commits.map((c) => (
                 <li key={c.sha} className="truncate"><span className="font-mono">{c.sha.slice(0, 7)}</span> {c.title}</li>
               ))}

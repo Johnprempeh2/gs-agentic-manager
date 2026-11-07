@@ -3,9 +3,9 @@
 // watches and hands the work over on a task, so the Netlify token never leaves the agent's
 // deploy environment (and never goes on GitHub). One open task at a time; a failure stays on
 // that task, and the watch raises no new one until it is closed.
-import { and, eq, like, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, like, notInArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { issues, websiteSite } from "@greatstone/db";
+import { issues, websiteRelease, websiteSite } from "@greatstone/db";
 import { logger } from "../../middleware/logger.js";
 import { createGitRemoteAuthProvider, GIT_CREDENTIAL_TOKEN_ENV_KEY } from "../git-credentials.js";
 import { issueService } from "../issues.js";
@@ -24,7 +24,9 @@ export interface StagingWatchDeps {
   stagedCommit(): Promise<string | null>;
   /** The watch's task that is not done or cancelled, if any. */
   openTask(): Promise<{ identifier: string | null } | null>;
-  createTask(sha: string, staged: string | null): Promise<void>;
+  /** A published content release switched on staging's store that waits for a staging rebuild (its number), or null. */
+  contentWaiting(): Promise<number | null>;
+  createTask(sha: string, staged: string | null, content: number | null): Promise<void>;
   /** The open "cannot reach" task, if any. */
   openAlert(): Promise<{ id: string } | null>;
   createAlert(service: string, reason: string): Promise<void>;
@@ -57,18 +59,20 @@ export async function stagingWatchSweep(deps: StagingWatchDeps, state: { failure
 }
 
 export async function stagingWatchTick(deps: StagingWatchDeps) {
-  const [main, staged] = await Promise.all([deps.mainCommit(), deps.stagedCommit()]);
-  if (main === staged) return "current" as const;
+  const [main, staged, content] = await Promise.all([deps.mainCommit(), deps.stagedCommit(), deps.contentWaiting()]);
+  if (main === staged && content === null) return "current" as const;
   if (await deps.openTask()) return "busy" as const;
-  await deps.createTask(main, staged);
+  await deps.createTask(main, staged, content);
   return "created" as const;
 }
 
-export function stagingWatchTaskDescription(sha: string, staged: string | null) {
+export function stagingWatchTaskDescription(sha: string, staged: string | null, content: number | null = null) {
+  const env = content === null ? "" : `GSAM_CONTENT_RELEASE=${content} `;
   return [
     `Website main is at \`${sha}\`; staging (gre3833-next-db-staging) holds \`${staged ?? "nothing GSAM can read"}\`.`,
+    ...(content === null ? [] : [`GSAM content release ${content} was published to staging's store and waits for a staging rebuild (page edits from the Website module).`]),
     "",
-    `In a clean checkout of ${WEBSITE_REPO} detached at origin main, run \`npm run deploy:staging\` with GSAM_TASK_ID set to this task. No card is needed and it never touches the public site.`,
+    `In a clean checkout of ${WEBSITE_REPO} detached at origin main, run \`${env}npm run deploy:staging\` with GSAM_TASK_ID set to this task. No card is needed and it never touches the public site.`,
     "Done when it succeeds (it also rebuilds the GSAM editor). If it fails, mark this task blocked with the error: the watch raises no new task while this one is open, so the failure stays in sight.",
   ].join("\n");
 }
@@ -136,11 +140,23 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
     async closeAlert(id) {
       await issueService(db).update(id, { status: "done" });
     },
-    async createTask(sha, staged) {
+    async contentWaiting() {
+      const rows = await db
+        .select({ number: websiteRelease.number, deploy: websiteRelease.deploy })
+        .from(websiteRelease)
+        .where(and(eq(websiteRelease.companyId, site.companyId), eq(websiteRelease.siteId, site.id), inArray(websiteRelease.status, ["switched", "pending"])))
+        .orderBy(desc(websiteRelease.number))
+        .limit(1);
+      const row = rows[0];
+      // A build the publish job has seen finish is a check for a person (Retry), not a new staging deploy.
+      const state = (row?.deploy as { state?: string; deployId?: string | null } | null)?.state;
+      return row && state !== "ready" && state !== "building" ? row.number : null;
+    },
+    async createTask(sha, staged, content) {
       const team = await websiteTeamAgent(db, site.companyId, site.propertyId);
       await issueService(db).create(site.companyId, {
-        title: `${STAGING_WATCH_TITLE} (${sha.slice(0, 7)})`,
-        description: stagingWatchTaskDescription(sha, staged),
+        title: `${STAGING_WATCH_TITLE} (${sha.slice(0, 7)}${content === null ? "" : `, content release ${content}`})`,
+        description: stagingWatchTaskDescription(sha, staged, content),
         status: "todo",
         priority: "high",
         assigneeAgentId: team.id,

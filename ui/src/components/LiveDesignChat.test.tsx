@@ -64,10 +64,11 @@ describe("Deploy", () => {
 
   it("lists what is not live yet next to the button, and shows nothing when GSAM cannot say", async () => {
     const el = document.createElement("div");
-    const changes = vi.fn(async () => ({ liveCommit: "a", stagingCommit: "b", commits: [{ sha: "0117d3e0000", title: "Logo carousel" }] }));
+    const changes = vi.fn(async () => ({ liveCommit: "a", stagingCommit: "b", liveContentRelease: 3, stagingContentRelease: 4, commits: [{ sha: "0117d3e0000", title: "Logo carousel" }] }));
     act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={changes} />));
     await act(async () => { await Promise.resolve(); });
-    expect(el.textContent).toContain("Saved to staging, not live yet (1)");
+    expect(el.textContent).toContain("Saved to staging, not live yet (2)");
+    expect(el.textContent).toContain("Page edits: content release 4 (live has 3)");
     expect(el.textContent).toContain("0117d3e Logo carousel");
     const down = document.createElement("div");
     act(() => createRoot(down).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={() => Promise.reject(new Error("503"))} />));

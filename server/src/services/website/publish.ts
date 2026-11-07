@@ -24,6 +24,7 @@ import type { SiteRow } from "./module.js";
 import type { WebsitePublishStarter } from "./publish-approval.js";
 import { checkWebsiteConnection, type WebsiteConnectionChecker } from "./connect-check.js";
 import { createNetlifyPublishClient, type NetlifyDeploy, type WebsiteNetlifyClient } from "./netlify-publish-client.js";
+import { STAGING_DOMAIN, STAGING_NETLIFY_SITE_ID } from "./deploy-changes.js";
 
 // Website Publish and rollback (GRE-2108; plan GRE-1831 rev 7 section 3.2;
 // ADR GRE-1914 sections 4 and 5).
@@ -78,6 +79,8 @@ interface PublishTiming {
   leaseRenewMs: number;
   deployPollMs: number;
   deployTimeoutMs: number;
+  /** An agent picks up the staging watch's task and builds: far longer than a Netlify build. */
+  stagingDeployTimeoutMs: number;
   verifyRounds: number;
   verifyDelayMs: number;
 }
@@ -88,6 +91,7 @@ const DEFAULT_TIMING: PublishTiming = {
   deployPollMs: 5_000,
   // Measured rebuild: 36 s (GRE-1915). Five minutes leaves room for a slow queue.
   deployTimeoutMs: 5 * 60_000,
+  stagingDeployTimeoutMs: 90 * 60_000,
   verifyRounds: 6,
   verifyDelayMs: 5_000,
 };
@@ -99,6 +103,16 @@ export const WEBSITE_HTML_RELEASE_SCHEMA = 2;
 const CURRENT_KEY = "current";
 /** greatstone-home (greatstoneint.com): only the editor's Deploy reaches it. */
 export const PUBLIC_NETLIFY_SITE_ID = "3b1e97e6-e184-4251-badd-deed532be3ab";
+/**
+ * Staging holds the edits (John, 7 Nov): the public site's record publishes its content releases to STAGING's
+ * store and checks them on the staging site. Git builds are off there, so no build is started: the staging watch
+ * hands the rebuild to the website team, and the job waits for that deploy. Only Deploy promotes code and
+ * content to the public site (scripts/deploy-site.mjs deploy:prod).
+ */
+export function publishTarget<T extends Pick<SiteRow, "netlifySiteId" | "domain">>(site: T): T & { staged: boolean } {
+  if (site.netlifySiteId !== PUBLIC_NETLIFY_SITE_ID) return { ...site, staged: false };
+  return { ...site, netlifySiteId: STAGING_NETLIFY_SITE_ID, domain: STAGING_DOMAIN, staged: true };
+}
 const RELEASE_HEADER = "x-gsam-release";
 const RELEASE_META_RE = /<meta[^>]+name=["']gsam-release["'][^>]*content=["']([^"']+)["']/i;
 const RELEASE_META_REVERSED_RE = /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']gsam-release["']/i;
@@ -206,7 +220,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
         actorType: "system",
       },
     });
-    return createNetlifyPublishClient({ netlifySiteId: site.netlifySiteId, storeName: site.blobsStoreName, token });
+    return createNetlifyPublishClient({ netlifySiteId: publishTarget(site).netlifySiteId, storeName: site.blobsStoreName, token });
   }
   const netlifyFor = options.netlifyFor ?? defaultNetlifyFor;
   const checkConnection = options.checkConnection ?? checkWebsiteConnection;
@@ -221,7 +235,8 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
       const token = await secrets.resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
         accessContext: { consumerType: "system", consumerId: `website-publish:${site.id}`, configPath: "netlify.token", actorType: "system" },
       });
-      const result = await checkConnection({ netlifySiteId: site.netlifySiteId, domain: site.domain, token });
+      const target = publishTarget(site);
+      const result = await checkConnection({ netlifySiteId: target.netlifySiteId, domain: target.domain, token });
       if (!result.ok || result.releaseSchemaVersion <= site.releaseSchemaVersion) return site.releaseSchemaVersion;
       await db
         .update(websiteSite)
@@ -284,10 +299,6 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   /** Short transaction; `null` when another publish or rollback holds a live lease. */
   async function takeLease(tx: Tx, site: SiteRow, leaseId: string, kind: WebsiteReleaseKind): Promise<number | null> {
-    // Staging holds the edits (John, 7 Nov): Publish, Retry and Rollback never build or restore the public
-    // site. Publish to the staging site; the editor's Deploy is the only path to production.
-    if (site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID)
-      throw forbidden("Publishing goes to staging now. Use Deploy these changes in the editor to put it live.", { code: "website_public_site_deploy_only" });
     const [row] = await tx
       .update(websiteSite)
       .set({
@@ -570,7 +581,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   // ---- serve (build or restore) and verify ----
 
-  async function waitForDeploy(release: ReleaseRow, netlify: WebsiteNetlifyClient, deploy: WebsiteReleaseDeploy): Promise<ReleaseRow> {
+  async function waitForDeploy(release: ReleaseRow, netlify: WebsiteNetlifyClient, deploy: WebsiteReleaseDeploy, timeoutMs = timing.deployTimeoutMs): Promise<ReleaseRow> {
     const started = Date.now();
     let current = deploy;
     let row = release;
@@ -586,7 +597,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
         row = await updateRelease(row, { deploy: current as unknown as Record<string, unknown> });
         if (found.state !== "building") return row;
       }
-      if (Date.now() - started >= timing.deployTimeoutMs) return row;
+      if (Date.now() - started >= timeoutMs) return row;
       await sleep(timing.deployPollMs);
     }
   }
@@ -605,7 +616,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
       results = await Promise.all(
         paths.map(async (path): Promise<WebsiteReleaseCheck> => {
           try {
-            const page = await fetchPage(`https://${site.domain}${path}`);
+            const page = await fetchPage(`https://${publishTarget(site).domain}${path}`);
             const seen = reportedRelease(page);
             if (page.status >= 400) return { kind: "verify", name: path, ok: false, message: `${path} answered ${page.status}.` };
             if (seen !== String(expected)) return { kind: "verify", name: path, ok: false, message: `${path} shows release ${seen ?? "unknown"}, not ${expected}.` };
@@ -702,9 +713,12 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
       // Record the request before the call: after a crash, Retry finds this build instead of starting a second one.
       let deploy: WebsiteReleaseDeploy = { method: "build", requestedAt: new Date().toISOString(), deployId: null, commitRef: null, state: "requested" };
       release = await updateRelease(release, { deploy: deploy as unknown as Record<string, unknown> });
-      const started = await fenced(site, leaseId, fence, () => netlify.startBuild());
-      deploy = { ...deploy, deployId: started.deployId, state: "building" };
-      release = await updateRelease(release, { deploy: deploy as unknown as Record<string, unknown> });
+      // Staging: no build call (Git builds are off). The staging watch sees this request and hands the rebuild over.
+      if (!publishTarget(site).staged) {
+        const started = await fenced(site, leaseId, fence, () => netlify.startBuild());
+        deploy = { ...deploy, deployId: started.deployId, state: "building" };
+        release = await updateRelease(release, { deploy: deploy as unknown as Record<string, unknown> });
+      }
     } else if (input.action === "restore") {
       const deployId = input.restoreDeployId;
       if (!deployId) throw new Error("restore needs a deploy id");
@@ -717,7 +731,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     const deploy = asDeploy(release.deploy);
     if (!deploy) return pending(release, "build_not_started");
     if (deploy.state !== "ready") {
-      release = await waitForDeploy(release, netlify, deploy);
+      release = await waitForDeploy(release, netlify, deploy, publishTarget(site).staged ? timing.stagingDeployTimeoutMs : timing.deployTimeoutMs);
       const after = asDeploy(release.deploy);
       if (after?.state === "error") return pending(release, "build_failed");
       if (after?.state !== "ready") return pending(release, "build_timeout");
@@ -867,7 +881,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     if (release.status !== "pending") throw conflict("Only a Pending release can be retried.", { code: "website_release_not_pending", status: release.status });
     const fresh = await refreshDeploy(site, release);
     const deploy = asDeploy(fresh.deploy);
-    if (deploy && deploy.state !== "error" && (deploy.deployId || deploy.state === "ready")) {
+    if (deploy && deploy.state !== "error" && (deploy.deployId || deploy.state === "ready" || (publishTarget(site).staged && deploy.state === "requested"))) {
       return { release: fresh, plan: { action: "verify", costsCredits: false, reason: deploy.state === "ready" ? "The rebuild worked. Retry checks the live pages again." : "The rebuild is still running. Retry waits for it, then checks the live pages." } };
     }
     return {
