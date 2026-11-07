@@ -22,6 +22,7 @@ import { WEBSITE_MESSAGES } from "./messages.js";
 import { websiteMediaExt } from "./media-file.js";
 import type { SiteRow } from "./module.js";
 import type { WebsitePublishStarter } from "./publish-approval.js";
+import { checkWebsiteConnection, type WebsiteConnectionChecker } from "./connect-check.js";
 import { createNetlifyPublishClient, type NetlifyDeploy, type WebsiteNetlifyClient } from "./netlify-publish-client.js";
 
 // Website Publish and rollback (GRE-2108; plan GRE-1831 rev 7 section 3.2;
@@ -69,6 +70,7 @@ export interface WebsitePublishOptions {
   /** Runs the job after the route has answered. Tests pass a collector and await it. */
   runInBackground?: (job: () => Promise<void>) => void;
   timing?: Partial<PublishTiming>;
+  checkConnection?: WebsiteConnectionChecker;
 }
 
 interface PublishTiming {
@@ -205,6 +207,30 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     return createNetlifyPublishClient({ netlifySiteId: site.netlifySiteId, storeName: site.blobsStoreName, token });
   }
   const netlifyFor = options.netlifyFor ?? defaultNetlifyFor;
+  const checkConnection = options.checkConnection ?? checkWebsiteConnection;
+
+  /**
+   * The site's engine may have moved on since its token was saved (GRE-4214): ask it again with the token it
+   * already has, so a newer engine never needs a person to re-link the token. Keeps the stored value on any failure.
+   */
+  async function refreshReleaseSchema(site: SiteRow, needed: number): Promise<number> {
+    if (site.releaseSchemaVersion >= needed || !site.netlifyTokenSecretId) return site.releaseSchemaVersion;
+    try {
+      const token = await secrets.resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
+        accessContext: { consumerType: "system", consumerId: `website-publish:${site.id}`, configPath: "netlify.token", actorType: "system" },
+      });
+      const result = await checkConnection({ netlifySiteId: site.netlifySiteId, domain: site.domain, token });
+      if (!result.ok || result.releaseSchemaVersion <= site.releaseSchemaVersion) return site.releaseSchemaVersion;
+      await db
+        .update(websiteSite)
+        .set({ engineVersion: result.engineVersion, releaseSchemaVersion: result.releaseSchemaVersion, updatedAt: new Date() })
+        .where(eq(websiteSite.id, site.id));
+      return result.releaseSchemaVersion;
+    } catch (err) {
+      logger.warn({ err, siteId: site.id }, "website publish: engine re-check failed");
+      return site.releaseSchemaVersion;
+    }
+  }
 
   async function defaultReadAsset(companyId: string, objectKey: string) {
     const object = await getStorageService().getObject(companyId, objectKey);
@@ -447,10 +473,11 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     // Every page HTML: schema 2. Any block page left: schema 1, which cannot carry HTML pages.
     const htmlPageCount = pageFiles.filter((file) => isWebsiteHtmlPage(file.content)).length;
     const schema = pageFiles.length > 0 && htmlPageCount === pageFiles.length ? WEBSITE_HTML_RELEASE_SCHEMA : WEBSITE_RELEASE_SCHEMA;
+    const siteSchema = await refreshReleaseSchema(site, schema);
     checks.push(
-      site.releaseSchemaVersion >= schema
+      siteSchema >= schema
         ? { kind: "check", name: "release_schema", ok: true }
-        : { kind: "check", name: "release_schema", ok: false, message: `This release needs release schema ${schema}; this site's engine reads ${site.releaseSchemaVersion}. Update the site's engine first.` },
+        : { kind: "check", name: "release_schema", ok: false, message: `This release needs release schema ${schema}; this site's engine reads ${siteSchema}. Update the site's engine first.` },
     );
     checks.push(
       pageFiles.length > 0

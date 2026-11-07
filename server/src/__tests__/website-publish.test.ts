@@ -176,6 +176,8 @@ describeEmbeddedPostgres("website publish and rollback", () => {
   let deferred: Array<() => Promise<void>> = [];
   let deferJobs = false;
   let running: Promise<void>[] = [];
+  // The release schema the site's engine reports when GSAM asks it again.
+  let engineSchema = 1;
 
   function publishOptions(): WebsitePublishOptions {
     return {
@@ -187,6 +189,7 @@ describeEmbeddedPostgres("website publish and rollback", () => {
         else running.push(job());
       },
       timing: { deployPollMs: 1, deployTimeoutMs: 30, verifyRounds: 2, verifyDelayMs: 1 },
+      checkConnection: async () => ({ ok: true, engineVersion: "0.2.0", releaseSchemaVersion: engineSchema }),
     };
   }
 
@@ -642,8 +645,11 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect((refused.checks as Array<{ name: string; ok: boolean }>).find((c) => c.name === "release_schema")?.ok).toBe(false);
     expect(netlify.blobs.size).toBe(0);
 
-    await db.update(websiteSite).set({ releaseSchemaVersion: 2 }).where(eq(websiteSite.id, site.id));
+    // The engine is updated on the site: GSAM asks it again on Publish, with no token re-link (GRE-4214).
+    engineSchema = 2;
     const live = await publish(base);
+    expect((await db.select().from(websiteSite).where(eq(websiteSite.id, site.id)))[0]?.releaseSchemaVersion).toBe(2);
+    engineSchema = 1;
     expect(live.status).toBe("live");
     const file = JSON.parse(netlify.blobs.get(`releases/${live.number}.json`)!.body);
     expect(file.schema).toBe(2);
