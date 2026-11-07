@@ -50,7 +50,9 @@ import {
   toolConnectionInstalls,
   connectionGrants,
   projects,
+  supportTickets,
 } from "@greatstone/db";
+import { supportQueueService } from "../services/support-queue.js";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import {
   emailChannelService,
@@ -1304,6 +1306,41 @@ describe("AgentMail durable email pipeline", () => {
     expect(result.status).toBe(200);
     expect(result.body.issue.status).toBe("todo");
     expect(result.body.recoveryAction.status).toBe("resolved");
+  });
+
+  it("opens no support ticket or clock for Greatstone's own mail to a client inbox, but still does for a client (GRE-4417)", async () => {
+    const f = await fixture();
+    const projectId = randomUUID();
+    await db.insert(projects).values({ id: projectId, companyId: f.companyId, name: "Client support" });
+    const support = supportQueueService(db);
+    await support.configureQueue(f.companyId, { clientCode: "TST", projectId, triageAgentId: f.agentId, emailEndpointId: f.endpointId });
+    const issueForThread = async (thread: string) =>
+      (await db.select().from(issues).where(eq(issues.originId, `email:${f.endpointId}:${thread}`)))[0];
+    const clockComments = async (issueId: string) =>
+      (await db.select().from(issueComments).where(eq(issueComments.issueId, issueId)))
+        .filter((comment) => comment.body.includes("Support clock started"));
+
+    await f.receive(f.message("own", "own-thread", { from: "Greatstone <orders@greatstoneint.com>", subject: "Verify your email" }));
+    const own = await issueForThread("own-thread");
+    expect(own).toMatchObject({ title: "Verify your email", status: "done", priority: "low", assigneeAgentId: f.agentId });
+    expect(own.projectId).not.toBe(projectId);
+    expect(own.description).not.toContain("Client support ticket");
+    expect(await db.select().from(supportTickets).where(eq(supportTickets.issueId, own.id))).toHaveLength(0);
+    expect(await clockComments(own.id)).toHaveLength(0);
+    expect(f.wakeup).not.toHaveBeenCalled();
+    // The email itself is kept on the inbox.
+    expect((await f.service.thread(f.companyId, own.id))?.messages).toHaveLength(1);
+    // The clock sweep does not reopen it as a missing ticket.
+    expect((await support.sweep()).repaired).toBe(0);
+    expect(await db.select().from(supportTickets).where(eq(supportTickets.issueId, own.id))).toHaveLength(0);
+
+    await f.receive(f.message("client", "client-thread", { from: "Client <help@client.example>", subject: "Report export broken" }));
+    const client = await issueForThread("client-thread");
+    expect(client).toMatchObject({ title: "[TST] Report export broken", projectId, status: "todo", priority: "high" });
+    expect(client.description).toContain("Client support ticket for client **TST**");
+    expect(await db.select().from(supportTickets).where(eq(supportTickets.issueId, client.id))).toHaveLength(1);
+    expect(await clockComments(client.id)).toHaveLength(1);
+    expect(f.wakeup).toHaveBeenCalled();
   });
 
   it("places inbound low-trust tasks inside their configured project and rejects unscoped setup", async () => {
