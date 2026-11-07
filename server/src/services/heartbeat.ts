@@ -12575,7 +12575,8 @@ export function heartbeatService(
         sql`${issues.executionPolicy} -> 'monitor' ->> 'serviceName' = ${LIVE_RELEASE_MONITOR_SERVICE_NAME}`,
         isNull(issues.assigneeUserId),
         sql`${issues.assigneeAgentId} is not null`,
-        inArray(issues.status, ["in_progress", "in_review"]),
+        // A task parked as blocked or todo until a release lands is woken too: the release is what it waits for.
+        inArray(issues.status, ["in_progress", "in_review", "blocked", "todo"]),
         or(
           isNull(issues.monitorWakeRequestedAt),
           lt(issues.monitorWakeRequestedAt, staleClaimThreshold),

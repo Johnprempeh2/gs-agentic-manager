@@ -83,7 +83,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:234",
+      "id": "skill:skills/paperclip/SKILL.md:235",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L234:delegating-review-tasks",
       "heading": "Delegating review tasks",
@@ -92,7 +92,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:245",
+      "id": "skill:skills/paperclip/SKILL.md:246",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L245:managing-a-user-s-inbox",
       "heading": "Managing A User's Inbox",
@@ -101,7 +101,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:253",
+      "id": "skill:skills/paperclip/SKILL.md:254",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L253:issue-dependencies-blockers",
       "heading": "Issue Dependencies (Blockers)",
@@ -110,7 +110,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:278",
+      "id": "skill:skills/paperclip/SKILL.md:279",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L278:requesting-board-approval",
       "heading": "Requesting Board Approval",
@@ -119,7 +119,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:299",
+      "id": "skill:skills/paperclip/SKILL.md:300",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L299:issue-thread-interactions",
       "heading": "Issue-Thread Interactions",
@@ -128,7 +128,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:329",
+      "id": "skill:skills/paperclip/SKILL.md:330",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L329:standalone-decisions",
       "heading": "Standalone Decisions",
@@ -137,7 +137,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:433",
+      "id": "skill:skills/paperclip/SKILL.md:434",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L433:mcp-tool-approval-gates",
       "heading": "MCP Tool Approval Gates",
@@ -146,7 +146,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:475",
+      "id": "skill:skills/paperclip/SKILL.md:476",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L475:niche-workflow-pointers",
       "heading": "Niche Workflow Pointers",
@@ -155,7 +155,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:485",
+      "id": "skill:skills/paperclip/SKILL.md:486",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L485:cases",
       "heading": "Cases",
@@ -164,7 +164,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:490",
+      "id": "skill:skills/paperclip/SKILL.md:491",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L490:company-skills-workflow",
       "heading": "Company Skills Workflow",
@@ -173,7 +173,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:501",
+      "id": "skill:skills/paperclip/SKILL.md:502",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L501:routines",
       "heading": "Routines",
@@ -182,7 +182,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:512",
+      "id": "skill:skills/paperclip/SKILL.md:513",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L512:issue-workspace-runtime-controls",
       "heading": "Issue Workspace Runtime Controls",
@@ -191,7 +191,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:519",
+      "id": "skill:skills/paperclip/SKILL.md:520",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L519:proposing-credentials-safely",
       "heading": "Proposing Credentials Safely",
@@ -200,7 +200,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:526",
+      "id": "skill:skills/paperclip/SKILL.md:527",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L526:reading-granted-secrets",
       "heading": "Reading Granted Secrets",
@@ -209,7 +209,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:552",
+      "id": "skill:skills/paperclip/SKILL.md:553",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L552:critical-rules",
       "heading": "Critical Rules",
@@ -218,7 +218,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:576",
+      "id": "skill:skills/paperclip/SKILL.md:577",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L576:comment-style-required",
       "heading": "Comment Style (Required)",
@@ -227,7 +227,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:608",
+      "id": "skill:skills/paperclip/SKILL.md:609",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L608:update",
       "heading": "Update",
@@ -236,7 +236,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:618",
+      "id": "skill:skills/paperclip/SKILL.md:619",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L618:planning-required-when-planning-requested",
       "heading": "Planning (Required when planning requested)",
@@ -245,7 +245,7 @@
       "expectedMockState": "operation_result"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:651",
+      "id": "skill:skills/paperclip/SKILL.md:652",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L651:key-endpoints-hot-routes",
       "heading": "Key Endpoints (Hot Routes)",
@@ -254,7 +254,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:680",
+      "id": "skill:skills/paperclip/SKILL.md:681",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L680:searching-issues",
       "heading": "Searching Issues",
@@ -263,7 +263,7 @@
       "expectedMockState": "runtime_decision_record"
     },
     {
-      "id": "skill:skills/paperclip/SKILL.md:690",
+      "id": "skill:skills/paperclip/SKILL.md:691",
       "kind": "skill_heading",
       "sourceAnchor": "skills/paperclip/SKILL.md#L690:full-reference",
       "heading": "Full Reference",
