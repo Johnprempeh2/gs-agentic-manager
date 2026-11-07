@@ -76,8 +76,10 @@ export function startWebsiteActivityScheduler(db: Db, onError: (error: unknown, 
   const service = websiteActivityService(db, { read: async (site, cursor) =>
     (await bridge.client(site)).activity(cursor, { type: "system", id: "website-activity-pull" }) });
   let running = false;
-  const tick = async (onlySiteId?: string) => {
-    if (running) return;
+  let again: string | null = null;
+  const tick = async (onlySiteId?: string): Promise<void> => {
+    // A ping during a pull runs once more afterwards, as for enquiries.
+    if (running) { again = onlySiteId ?? again ?? ""; return; }
     running = true;
     try {
       const sites = await db.select().from(websiteSite).where(and(
@@ -88,7 +90,12 @@ export function startWebsiteActivityScheduler(db: Db, onError: (error: unknown, 
         try { await service.pullSite(site); } catch (error) { onError(error, site.id); }
       }
     } catch (error) { onError(error, ""); }
-    finally { running = false; }
+    finally {
+      running = false;
+      const next = again;
+      again = null;
+      if (next !== null) void tick(next || undefined);
+    }
   };
   void tick();
   // Twice a day as a safety net; the site pings GSAM when something happens (`pull(siteId)`),
