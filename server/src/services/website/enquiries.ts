@@ -271,7 +271,10 @@ export function websiteEnquiryService(db: Db, copyToPipedrive?: WebsiteEnquiryCo
   };
 }
 
-/** Poll sites with a configured bridge read key every 30 minutes, so their databases can sleep in between. */
+/**
+ * Pull sites with a configured bridge read key twice a day as a safety net; the site pings GSAM when an
+ * enquiry arrives (`pull(siteId)`), so its database can sleep in between.
+ */
 export function startWebsiteEnquiryScheduler(
   db: Db,
   reader: WebsiteEnquiryReader,
@@ -280,12 +283,15 @@ export function startWebsiteEnquiryScheduler(
 ) {
   const service = websiteEnquiryService(db, copyToPipedrive);
   let running = false;
-  const tick = async () => {
-    if (running) return;
+  let again: string | null = null;
+  const tick = async (onlySiteId?: string): Promise<void> => {
+    // A ping during a pull runs once more afterwards, so a new enquiry is never left for the safety net.
+    if (running) { again = onlySiteId ?? again ?? ""; return; }
     running = true;
     try {
       const sites = await db.select({ id: websiteSite.id, companyId: websiteSite.companyId })
-        .from(websiteSite).where(and(isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId)));
+        .from(websiteSite).where(and(isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId),
+          ...(onlySiteId ? [eq(websiteSite.id, onlySiteId)] : [])));
       for (const site of sites) {
         try {
           await service.importFromBridge(site.companyId, site.id, reader);
@@ -297,9 +303,12 @@ export function startWebsiteEnquiryScheduler(
       onError(error, "");
     } finally {
       running = false;
+      const next = again;
+      again = null;
+      if (next !== null) void tick(next || undefined);
     }
   };
-  const timer = setInterval(() => { void tick(); }, 30 * 60_000);
+  const timer = setInterval(() => { void tick(); }, 12 * 60 * 60_000);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick(siteId) });
 }

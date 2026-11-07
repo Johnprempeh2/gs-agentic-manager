@@ -76,12 +76,13 @@ export function startWebsiteActivityScheduler(db: Db, onError: (error: unknown, 
   const service = websiteActivityService(db, { read: async (site, cursor) =>
     (await bridge.client(site)).activity(cursor, { type: "system", id: "website-activity-pull" }) });
   let running = false;
-  const tick = async () => {
+  const tick = async (onlySiteId?: string) => {
     if (running) return;
     running = true;
     try {
       const sites = await db.select().from(websiteSite).where(and(
         isNull(websiteSite.archivedAt), isNotNull(websiteSite.dataBridgeReadSecretId),
+        ...(onlySiteId ? [eq(websiteSite.id, onlySiteId)] : []),
       ));
       for (const site of sites) {
         try { await service.pullSite(site); } catch (error) { onError(error, site.id); }
@@ -90,9 +91,9 @@ export function startWebsiteActivityScheduler(db: Db, onError: (error: unknown, 
     finally { running = false; }
   };
   void tick();
-  // ponytail: hourly so each website database can sleep (it suspends after ~5 idle minutes, and a
-  // 5-minute poll kept every one awake all day). Pull on demand if someone needs fresher activity.
-  const timer = setInterval(() => { void tick(); }, 60 * 60_000);
+  // Twice a day as a safety net; the site pings GSAM when something happens (`pull(siteId)`),
+  // so each website database can sleep in between.
+  const timer = setInterval(() => { void tick(); }, 12 * 60 * 60_000);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return Object.assign(() => clearInterval(timer), { pull: (siteId: string) => tick(siteId) });
 }

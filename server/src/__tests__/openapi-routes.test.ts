@@ -76,6 +76,7 @@ const apiPrefixes: Record<string, string> = {
   "chat-channels.ts": "/api",
   "slack-tools.ts": "/api",
   "email.ts": "/api",
+  "website-ping.ts": "/api",
   "cloud.ts": "/api/cloud",
   "companies.ts": "/api/companies",
   "company-skills.ts": "/api",
