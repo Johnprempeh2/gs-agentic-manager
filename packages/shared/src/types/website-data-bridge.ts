@@ -196,6 +196,9 @@ export interface CommerceRefundRequestApprovalPayload {
   requestStatus: string | null;
   /** The caller's Idempotency-Key, when it sent one: the same key returns this card. */
   clientKey?: string;
+  /** The order's reference and what it bought, by name, read when the card opened. Absent on older cards. */
+  orderReference?: string | null;
+  orderSummary?: string | null;
 }
 
 /**
@@ -489,3 +492,21 @@ export const websiteDocumentRequestAnswerSchema = z.object({
   fileName: z.string().max(255).nullable().optional(),
 }).strict();
 export type WebsiteDocumentRequestAnswer = z.infer<typeof websiteDocumentRequestAnswerSchema>;
+
+/** One line of a quote or order: the product's name first, its edition, then how many. */
+export function purchaseLineName(line: Record<string, unknown>): string | null {
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const name = [str(line.offering_name), str(line.variant_name)].filter(Boolean).join(", ");
+  if (!name) return null;
+  const qty = Number(line.qty);
+  return Number.isFinite(qty) && qty > 1 ? `${name} × ${qty}` : name;
+}
+
+/** "Aspose.Total for .NET, Developer × 2 and 1 more": what a quote or order is for. Null when no line has a name. */
+export function purchaseSummary(items: unknown): string | null {
+  const names = (Array.isArray(items) ? items : []).map((line) => purchaseLineName(line as Record<string, unknown>));
+  const named = names.filter((name): name is string => name !== null);
+  if (!named.length) return null;
+  const more = names.length - 1;
+  return more > 0 ? `${named[0]} and ${more} more` : named[0]!;
+}

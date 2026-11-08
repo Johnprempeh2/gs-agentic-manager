@@ -28,6 +28,7 @@ import {
   newestFirst,
   organisationFor,
   recordTime,
+  recordCode,
   recordTitle,
   recordTotal,
   statusLabel,
@@ -181,7 +182,10 @@ export function CommerceList({ companyId, siteId, resource }: { companyId: strin
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{recordTitle(resource, record)}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{rowMeta(resource, record, customers)}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {recordCode(resource, record) ? <span className="font-mono">{recordCode(resource, record)} · </span> : null}
+                      {rowMeta(resource, record, customers)}
+                    </span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
                     {total ? <span className="text-sm font-medium tabular-nums">{total}</span> : null}
@@ -254,12 +258,16 @@ function LineItems({ record }: { record: CommerceRecord }) {
       <h2 className="text-sm font-semibold">Items</h2>
       <ul className="divide-y divide-border rounded-xl border border-border bg-card">
         {items.map((item, index) => {
-          const name = [text(item.offering_name), text(item.variant_name)].filter(Boolean).join(", ") || "Item";
+          const name = [text(item.offering_name), text(item.variant_name)].filter(Boolean).join(", ") || text(item.sku) || "Item";
+          const code = text(item.sku) && text(item.sku) !== name ? text(item.sku) : null;
           const unit = formatMinor(item.unit_price_minor ?? item.captured_price_minor ?? item.list_price_minor, item.currency);
           const line = formatMinor(item.line_total_minor, item.currency);
           return (
             <li key={text(item.id) ?? index} className="flex min-w-0 items-baseline gap-3 px-4 py-2.5 text-sm">
-              <span className="min-w-0 flex-1 break-words sm:truncate">{name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block break-words font-medium sm:truncate">{name}</span>
+                {code ? <span className="block truncate font-mono text-xs text-muted-foreground">{code}</span> : null}
+              </span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                 {text(item.qty) ?? "1"} × {unit ?? "No price"}
               </span>
@@ -335,6 +343,7 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
             {title}
             <StatusPill status={record.status} />
           </h2>
+          {recordCode(resource, record) ? <p className="font-mono text-xs text-muted-foreground">{recordCode(resource, record)}</p> : null}
         </div>
         {total ? <p className="text-xl font-semibold tabular-nums">{total}</p> : null}
       </header>

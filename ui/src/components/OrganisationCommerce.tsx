@@ -6,6 +6,7 @@ import {
   COMMERCE_COPY,
   COMMERCE_RESOURCES,
   newestFirst,
+  recordCode,
   recordTitle,
   recordTotal,
   statusLabel,
@@ -74,7 +75,10 @@ export function OrganisationCommerce({ companyId, websiteOrganisationId }: { com
                         to={`/commerce/${resource}/${encodeURIComponent(id)}`}
                         className="flex min-w-0 items-baseline gap-2 px-3 py-2 text-sm hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                       >
-                        <span className="min-w-0 flex-1 truncate font-medium">{recordTitle(resource, record)}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {recordTitle(resource, record)}
+                          {recordCode(resource, record) ? <span className="ml-1.5 font-mono text-xs font-normal text-muted-foreground">{recordCode(resource, record)}</span> : null}
+                        </span>
                         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                           {[total, status ? statusLabel(status) : null].filter(Boolean).join(" · ")}
                         </span>
