@@ -177,7 +177,7 @@ export function DashboardDigestCard({ companyId }: { companyId: string }) {
 const KIND_ICON: Record<AgentWorkDigestItemKind, { icon: LucideIcon; label: string; className?: string }> = {
   task_finished: { icon: CheckCircle2, label: "Finished" },
   task_started: { icon: CirclePlay, label: "Started" },
-  decision_raised: { icon: MessageCircleQuestion, label: "Needs you" },
+  decision_raised: { icon: MessageCircleQuestion, label: "Decisions" },
   run_failed: { icon: CircleAlert, label: "Failed", className: "text-destructive" },
 };
 

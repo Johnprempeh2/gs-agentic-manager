@@ -339,3 +339,15 @@ describe("WebsiteHomeTab", () => {
     expect(launch.textContent).toContain("GRE-2663 not found");
   });
 });
+
+describe("website sweep", () => {
+  it("opens Pages for ?tab=pages and never calls a train Live without a live release", async () => {
+    const { websiteTabFrom } = await import("./WebsiteHub");
+    expect(websiteTabFrom("pages")).toBe("editor");
+    const { TrainPanel } = await import("./WebsiteTrainAndLaunch");
+    const el = document.createElement("div");
+    const train = { state: "live", issue: { id: "i", identifier: "GRE-1", title: "t", status: "done" }, tag: null, card: null, nextRunAt: null } as never;
+    act(() => createRoot(el).render(<MemoryRouter><TrainPanel train={train} releaseLive={false} /></MemoryRouter>));
+    expect(el.querySelector('[data-testid="website-home-train-state"]')?.textContent).toBe("Approved, not deployed");
+  });
+});

@@ -91,7 +91,8 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
     queued.some((q) => q.includes(LIVE_DEPLOY_REQUEST));
   if (!tasks.length && !queued.length && !onDeploy) return null;
   return (
-    <section className="max-h-72 space-y-2 overflow-y-auto border-t border-border px-4 py-2" aria-label="Agent's work">
+    <section className="space-y-2 border-t border-border px-4 py-2" aria-label="Agent's work">
+      <div className="max-h-72 space-y-2 overflow-y-auto">
       {tasks.length ? (
         <ul className="space-y-1.5">
           {tasks.map((t) => (
@@ -121,26 +122,38 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
       ) : null}
       {onDeploy && changes ? (
         <div className="text-xs text-muted-foreground">
-          <p className="font-medium">
-            {changes.commits.length || contentWaiting(changes)
-              ? `Saved to staging, not live yet (${changes.commits.length + (contentWaiting(changes) ? 1 : 0)})`
-              : "Everything saved is live"}
-          </p>
+          <p className="font-medium text-foreground">Deploys everything below to greatstoneint.com, not just this page.</p>
           {changes.commits.length || contentWaiting(changes) ? (
-            <ul className="space-y-0.5">
+            <>
+              <p className="font-medium">
+                Saved to staging, not live yet ({changes.commits.length + (contentWaiting(changes) ? 1 : 0)})
+              </p>
               {contentWaiting(changes) ? (
-                <li className="truncate">
-                  Page edits: content release {changes.stagingContentRelease}
-                  {changes.liveContentRelease != null ? ` (live has ${changes.liveContentRelease})` : " (first content release)"}
-                </li>
+                <>
+                  <p className="mt-1 font-medium">Content (1)</p>
+                  <ul className="space-y-0.5">
+                    <li className="truncate">
+                      Page edits: content release {changes.stagingContentRelease}
+                      {changes.liveContentRelease != null ? ` (live has ${changes.liveContentRelease})` : " (first content release)"}
+                    </li>
+                  </ul>
+                </>
               ) : null}
-              {changes.commits.map((c) => (
-                <li key={c.sha} className="truncate"><span className="font-mono">{c.sha.slice(0, 7)}</span> {c.title}</li>
-              ))}
-            </ul>
-          ) : null}
+              {changes.commits.length ? (
+                <>
+                  <p className="mt-1 font-medium">Site code ({changes.commits.length})</p>
+                  <ul className="space-y-0.5">
+                    {changes.commits.map((c) => (
+                      <li key={c.sha} className="truncate"><span className="font-mono">{c.sha.slice(0, 7)}</span> {c.title}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </>
+          ) : <p className="font-medium">Everything saved is live</p>}
         </div>
       ) : null}
+      </div>
       {onDeploy ? (
         <Button type="button" size="sm" variant="secondary" className="w-full" disabled={deploying} onClick={onDeploy}>
           {deploying ? "Deploy in progress" : "Deploy these changes"}
@@ -194,12 +207,13 @@ export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string,
   useEffect(() => {
     if (!polling) return;
     const timer = setInterval(() => {
-      if (!idRef.current) return;
+      // Every 5s while the tab is visible; nothing while it is hidden.
+      if (!idRef.current || document.hidden) return;
       liveDesignApi.get(idRef.current).then(setView).catch((err: unknown) => {
         // A GSAM release forgets open sessions: start a new one instead of leaving a dead editor.
         if (isGoneSession(err)) setAttempt((n) => n + 1);
       });
-    }, 1500);
+    }, 5000);
     return () => clearInterval(timer);
   }, [polling]);
 

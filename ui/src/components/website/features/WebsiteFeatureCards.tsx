@@ -107,7 +107,9 @@ function FeatureCardLink({ card, siteId }: { card: WebsiteFeatureCard; siteId: s
       <span className="flex flex-col gap-1 text-xs text-muted-foreground">
         {card.openTasks ? <span className={cn(tasks.needsPerson > 0 && "font-medium text-status-warning-foreground")}>{tasks.text}</span> : null}
         <span>
-          {card.lastRelease ? (
+          {card.lastRelease && card.lastRelease.status !== "live" && card.lastRelease.status !== "superseded" ? (
+            <>Release {card.lastRelease.number}, not live yet</>
+          ) : card.lastRelease ? (
             <>
               Release {card.lastRelease.number},{" "}
               <time dateTime={card.lastRelease.at} title={releaseDate(card.lastRelease.at)}>{releaseTime(card.lastRelease.at)}</time>

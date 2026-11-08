@@ -73,7 +73,7 @@ function cardLine(card: NonNullable<WebsiteHomeTrain["card"]>): ReactNode {
   return `Release card ${card.status}`;
 }
 
-export function TrainPanel({ train }: { train: WebsiteHomeTrain | null }) {
+export function TrainPanel({ train, releaseLive = true }: { train: WebsiteHomeTrain | null; releaseLive?: boolean }) {
   const next = train?.nextRunAt ? (
     <p className="text-xs text-muted-foreground" data-testid="website-home-train-next">
       Next train <time dateTime={train.nextRunAt}>{nextTrainLabel(train.nextRunAt)}</time>
@@ -88,7 +88,8 @@ export function TrainPanel({ train }: { train: WebsiteHomeTrain | null }) {
       </Panel>
     );
   }
-  const copy = TRAIN_STATE_COPY[train.state];
+  // A done, approved train is only Live when a release is actually live on the site.
+  const copy = train.state === "live" && !releaseLive ? { ...TRAIN_STATE_COPY.approved, label: "Approved, not deployed" } : TRAIN_STATE_COPY[train.state];
   return (
     <Panel title="Weekly release train" icon={TrainFront} testId="website-home-train">
       <div className="flex flex-wrap items-center gap-2">
@@ -149,10 +150,10 @@ export function LaunchPanel({ launch }: { launch: WebsiteHomeLaunch | null }) {
   );
 }
 
-export function TrainAndLaunch({ train, launch }: { train: WebsiteHomeTrain | null; launch: WebsiteHomeLaunch | null }) {
+export function TrainAndLaunch({ train, launch, releaseLive }: { train: WebsiteHomeTrain | null; launch: WebsiteHomeLaunch | null; releaseLive?: boolean }) {
   return (
     <div className="grid gap-3 lg:grid-cols-2" data-testid="website-home-train-and-launch">
-      <TrainPanel train={train} />
+      <TrainPanel train={train} releaseLive={releaseLive} />
       <LaunchPanel launch={launch} />
     </div>
   );

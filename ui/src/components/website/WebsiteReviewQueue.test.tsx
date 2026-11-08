@@ -85,7 +85,7 @@ describe("WebsiteReviewQueue", () => {
       confirmLabel: "Approve 3",
     }));
     expect(moduleApiMock.approveReview).toHaveBeenCalledWith("co-1", "site-1", {});
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Approved 2 pages and 1 entry. They go live with the next Publish.");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("Approved 2 pages and 1 entry. They go live when you Deploy.");
   });
 
   it("approves only the ticked items", async () => {
@@ -116,7 +116,7 @@ describe("WebsiteReviewQueue", () => {
     await render();
     await click(button());
     const status = container.querySelector('[role="status"]')?.textContent ?? "";
-    expect(status).toContain("Approved 2 pages. They go live with the next Publish. 1 item was not approved.");
+    expect(status).toContain("Approved 2 pages. They go live when you Deploy. 1 item was not approved.");
     expect(status).toContain("product/aspose-pdf-net: The entry fields are incomplete");
   });
 

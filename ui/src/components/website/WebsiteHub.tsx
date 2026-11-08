@@ -60,9 +60,10 @@ export const WEBSITE_TABS: { value: WebsiteTab; label: string }[] = [
   { value: "traffic", label: "Traffic" },
 ];
 
-/** The tab named in `?tab=`. The old Overview became Home, so `?tab=overview` opens Home. */
+/** The tab named in `?tab=`. The old Overview became Home, so `?tab=overview` opens Home; `?tab=pages` opens Pages. */
 export function websiteTabFrom(value: string | null): WebsiteTab {
   if (value === "overview") return "home";
+  if (value === "pages") return "editor";
   return WEBSITE_TABS.some((tab) => tab.value === value) ? (value as WebsiteTab) : WEBSITE_DEFAULT_TAB;
 }
 
