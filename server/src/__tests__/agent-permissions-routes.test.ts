@@ -943,6 +943,30 @@ describe.sequential("agent permission routes", () => {
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["itself", agentId],
+    ["another agent allowed to configure it", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+  ])("keeps agent termination board-only on PATCH status when the caller is %s", async (_who, actorAgentId) => {
+    mockAccessService.hasPermission.mockResolvedValue(true);
+    mockAgentService.getById.mockResolvedValue({ ...baseAgent, status: "idle" });
+    const app = await createApp({
+      type: "agent",
+      agentId: actorAgentId,
+      companyId,
+      source: "agent_key",
+      runId: "run-1",
+    });
+
+    const res = await requestApp(app, (baseUrl) => request(baseUrl)
+      .patch(`/api/agents/${agentId}`)
+      .send({ status: "terminated" }));
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("only a board user can terminate an agent");
+    expect(mockAgentService.update).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
   it("blocks agent-authenticated self-updates that set instructions bundle roots", async () => {
     const app = await createApp({
       type: "agent",
