@@ -155,7 +155,7 @@ export function AgentWork({ view, onPreview, onDeploy, deployChanges }: {
       ) : null}
       </div>
       {onDeploy ? (
-        <Button type="button" size="sm" variant="secondary" className="w-full" disabled={deploying} onClick={onDeploy}>
+        <Button type="button" size="sm" variant="secondary" className="w-full" disabled={deploying || (!!changes && !changes.commits.length && !contentWaiting(changes))} onClick={onDeploy}>
           {deploying ? "Deploy in progress" : "Deploy these changes"}
         </Button>
       ) : null}
