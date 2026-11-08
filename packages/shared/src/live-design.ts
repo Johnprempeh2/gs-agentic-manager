@@ -51,7 +51,7 @@ export const liveDesignCodeTaskSchema = z.object({
   /** "deploy": the task that puts website main on the public site, behind John's card on it. */
   kind: z.enum(["change", "deploy"]).optional(),
 });
-/** What John sends from the editor's deploy button; the agent's instructions say what it means. */
+/** What the chat shows when John presses the deploy button. Only the button's `deploy: true` deploys; typing this does not. */
 export const LIVE_DEPLOY_REQUEST = "Deploy these changes to the public site.";
 
 export type LiveDesignCodeTask = z.infer<typeof liveDesignCodeTaskSchema>;
@@ -84,7 +84,11 @@ export const liveDesignHelperRequestSchema = z.object({
 });
 export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSchema>;
 
-export const liveDesignSteerSchema = z.object({ message: z.string().trim().min(1).max(2000) });
+export const liveDesignSteerSchema = z.object({
+  message: z.string().trim().min(1).max(2000),
+  /** Set only by the Deploy button: a typed message never deploys. */
+  deploy: z.boolean().optional(),
+});
 
 /** Start live design; with a deliverable, every saved change becomes its next version. */
 export const liveDesignStartSchema = z.object({ deliverableId: z.string().uuid().optional() });
@@ -123,6 +127,8 @@ export interface LiveDesignView {
   codeTasks: LiveDesignCodeTask[];
   /** Picks and notes waiting for the agent, in order. */
   queued: string[];
+  /** Direct edits (removals, text) made on the page and not saved to the draft yet. */
+  stagedCount: number;
 }
 
 /**

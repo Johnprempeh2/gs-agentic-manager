@@ -53,9 +53,48 @@ const STARTER_CSS =
  */
 export const HOME_LANDING_ISLAND = '<gs-island name="two-doors-landing"></gs-island>';
 const HOME_GUIDANCE =
-  `This is the home page. Its hero and doors are the frozen Two Doors landing, ${HOME_LANDING_ISLAND}: keep that tag first and exactly as it is, and never restyle it (no page CSS for .td-, .b-hero or gs-island). Add or edit sections only after it. A save that changes the landing is refused.`;
+  `This is the home page. Its hero and doors are the frozen Two Doors landing, ${HOME_LANDING_ISLAND}: keep that tag first and exactly as it is (its data-copy attribute, when present, holds John's words for it: keep it unchanged unless he asks to change the landing's text), and never restyle it (no page CSS for .td-, .b-hero or gs-island). Add or edit sections only after it. A save that changes the landing is refused.`;
+/**
+ * The landing's words are John's to change from the Website module (8 Nov): the island may carry data-copy, a
+ * JSON object of text fields (strings) and toggles such as showCue (booleans). Links, images and anything
+ * structural stay in code; the site ignores unknown keys too (greatstone-website next-proof/landing-copy.mjs).
+ */
+const LANDING_TAG = /^<gs-island name="two-doors-landing"(?: data-copy="([^"<>]*)")?><\/gs-island>/;
+const decodeAttr = (v: string) => v.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+export function landingCopyOf(html: string): Record<string, string | boolean> | null {
+  const m = html.trimStart().match(LANDING_TAG);
+  if (!m) return null;
+  if (m[1] === undefined) return {};
+  try {
+    const parsed = JSON.parse(decodeAttr(m[1])) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const ok = Object.entries(parsed).every(([k, v]) =>
+      /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(k) && !/(Href|Image)$/.test(k) && (typeof v === "boolean" || (typeof v === "string" && v.length <= 600)));
+    return ok ? (parsed as Record<string, string | boolean>) : null;
+  } catch {
+    return null;
+  }
+}
+/** The landing tag with these words; an empty object gives the bare frozen tag. */
+export function landingTag(copy: Record<string, string | boolean>) {
+  if (!Object.keys(copy).length) return HOME_LANDING_ISLAND;
+  const attr = JSON.stringify(copy).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<gs-island name="two-doors-landing" data-copy="${attr}"></gs-island>`;
+}
+/** The page with the landing's words merged in, or null when the page does not start with the landing. */
+export function withLandingCopy(pageHtml: string, changes: Record<string, string | boolean>) {
+  const open = pageHtml.match(/<main\b[^>]*\bid\s*=\s*["']gs-page["'][^>]*>\s*/i);
+  if (!open || open.index === undefined) return null;
+  const at = open.index + open[0].length;
+  const rest = pageHtml.slice(at);
+  const copy = landingCopyOf(rest);
+  const tag = rest.match(LANDING_TAG);
+  if (!copy || !tag) return null;
+  return pageHtml.slice(0, at) + landingTag({ ...copy, ...changes }) + rest.slice(tag[0].length);
+}
+
 export function checkHomeFrozen(part: { html: string; css: string }) {
-  if (!part.html.trimStart().startsWith(HOME_LANDING_ISLAND) || part.html.split("two-doors-landing").length !== 2) {
+  if (landingCopyOf(part.html) === null || part.html.split("two-doors-landing").length !== 2) {
     throw new LiveDesignConflict(`The home page keeps the Two Doors landing first and unchanged (${HOME_LANDING_ISLAND}); add sections after it. Nothing was saved.`);
   }
   if (/\.td-|\.b-hero|gs-island|two-doors/i.test(part.css)) {
@@ -159,23 +198,33 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
         ? `${engineOrigin}/live-design#revision=${encodeURIComponent(revisionId)}`
         : `/api/companies/${page.companyId}/website/sites/${page.siteId}/pages/${page.id}/live-frame?revision=${encodeURIComponent(revisionId)}`,
     read: async (revisionId) => pageDocument(page, await part(revisionId), await loadChrome(), null),
-    save: async (html, agentId) => {
-      const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
-      if (page.slug === "/") checkHomeFrozen(content);
-      const doc = await store.readDocument(page.companyId, page.documentId);
-      if (!doc?.latestRevisionId) throw new LiveDesignConflict("The page is gone.");
-      const result = await store.saveRevision({
-        companyId: page.companyId,
-        documentId: page.documentId,
-        content,
-        baseRevisionId: doc.latestRevisionId,
-        changeSummary: "Live design",
-        actor: { agentId, userId: null },
-      });
-      if (result.state !== "saved") throw new LiveDesignConflict(result.message);
-      return result.revisionId;
+    // Pick's edits on the landing's words (8 Nov): GSAM saves them itself, no agent and no page rewrite.
+    setIslandCopy: async (revisionId, changes, agentId) => {
+      if (page.slug !== "/") throw new LiveDesignConflict("Only the home page has an editable landing.");
+      const doc = pageDocument(page, await part(revisionId), await loadChrome(), null);
+      const next = withLandingCopy(doc, changes);
+      if (!next) throw new LiveDesignConflict("This page does not start with the Two Doors landing, so its words cannot be set here.");
+      return save(next, agentId);
     },
+    version: async (revisionId) => (await store.readRevision(page.companyId, page.documentId, revisionId))?.revisionNumber ?? null,
+    save: (html, agentId) => save(html, agentId),
   };
+  async function save(html: string, agentId: string) {
+    const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
+    if (page.slug === "/") checkHomeFrozen(content);
+    const doc = await store.readDocument(page.companyId, page.documentId);
+    if (!doc?.latestRevisionId) throw new LiveDesignConflict("The page is gone.");
+    const result = await store.saveRevision({
+      companyId: page.companyId,
+      documentId: page.documentId,
+      content,
+      baseRevisionId: doc.latestRevisionId,
+      changeSummary: "Live design",
+      actor: { agentId, userId: null },
+    });
+    if (result.state !== "saved") throw new LiveDesignConflict(result.message);
+    return result.revisionId;
+  }
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   replyLiveDesign,
   startLiveDesign,
   steerLiveDesign,
+  refuseLiveDesignSave,
   viewLiveDesign,
 } from "../services/live-design.js";
 import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
@@ -21407,7 +21408,7 @@ export function issueRoutes(
   router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), async (req, res) => {
     const session = liveSessionForBoard(req);
     try {
-      steerLiveDesign(session, req.body.message);
+      steerLiveDesign(session, req.body.message, null, req.body.deploy === true);
     } catch (err) {
       if (!sendLiveConflict(res, err)) throw err;
       return;
@@ -21464,6 +21465,7 @@ export function issueRoutes(
       }
     }
     // The agent sent the finished page: check it is still wanted, then save it through the page's source.
+    let savedVersion: number | null = null;
     if (reply.pageHtml && !reply.appliedAttachmentId) {
       if (!liveDesignAcceptsPage(session, reply.requestId) || !session.source) {
         res.json({ ok: false, reason: "not_expected" });
@@ -21473,11 +21475,14 @@ export function issueRoutes(
         reply.appliedAttachmentId = await session.source.save(reply.pageHtml, session.agentId);
       } catch (err) {
         if (!(err instanceof LiveDesignConflict)) throw err;
+        // John sees the refusal too (the home page's landing guard), not only the agent.
+        refuseLiveDesignSave(session, reply.requestId, err.message);
         res.json({ ok: false, reason: "save_failed", message: err.message });
         return;
       }
+      savedVersion = (await session.source.version?.(reply.appliedAttachmentId).catch(() => null)) ?? null;
     }
-    const result = replyLiveDesign(session, reply);
+    const result = replyLiveDesign(session, reply, savedVersion);
     // A saved change to a deliverable becomes its next version, as a draft (John, 2 Nov).
     if (result.ok && reply.appliedAttachmentId && session.deliverableId) {
       await fileLiveDeliverableVersion(req, session, reply.appliedAttachmentId, null);

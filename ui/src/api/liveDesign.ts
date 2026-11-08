@@ -1,4 +1,4 @@
-import type { LiveDesignHelperRequest, LiveDesignView } from "@greatstone/shared";
+import { LIVE_DEPLOY_REQUEST, type LiveDesignHelperRequest, type LiveDesignView } from "@greatstone/shared";
 import { api } from "./client";
 
 const session = (id: string) => `/live-design/${encodeURIComponent(id)}`;
@@ -16,6 +16,8 @@ export const liveDesignApi = {
   restore: (id: string, attachmentId: string) => api.post<LiveDesignView>(`${session(id)}/restore`, { attachmentId }),
   get: (id: string) => api.get<LiveDesignView>(session(id), { cache: "no-store" }),
   steer: (id: string, message: string) => api.post<LiveDesignView>(`${session(id)}/steer`, { message }),
+  /** Only the Deploy button sends this; a typed message never deploys. */
+  deploy: (id: string) => api.post<LiveDesignView>(`${session(id)}/steer`, { message: LIVE_DEPLOY_REQUEST, deploy: true }),
   end: (id: string) => api.post<LiveDesignView>(`${session(id)}/end`, {}),
   /** Impeccable's page scripts calling their helper, which GSAM stands in for. */
   helper: (id: string, request: LiveDesignHelperRequest) =>

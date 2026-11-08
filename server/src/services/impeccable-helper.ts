@@ -79,8 +79,47 @@ const ADAPTER = String.raw`(function () {
   // Remember what John clicked, to find the element Impeccable picked when it asks for versions.
   document.addEventListener("click", function (e) {
     var el = e.target;
+    if (el && el.closest && el.closest("[id^='impeccable'], [data-impeccable-ui]")) return;
     lastClicks = [];
     while (el && el.nodeType === 1 && el !== document.body) { lastClicks.push(el); el = el.parentElement; }
+    pickedEl = e.target;
+    setLocked(lockedPart(e.target));
+  }, true);
+
+  // A part an island renders (the Two Doors landing on /) is built in the site's code, so a removal or
+  // a text edit there could never save. Pick does not offer them, and the editor says why, before anything.
+  // Its words are the exception: text the site marks data-gs-field (and data-gs-toggle, a part that can be
+  // hidden) is editable from here, and GSAM saves it into the island (the landing's data-copy).
+  var pickedEl = null;
+  function wordsOf(el) {
+    if (!el || !el.closest) return null;
+    var toggle = el.closest("[data-gs-toggle]");
+    var field = el.closest("[data-gs-field]");
+    if (!toggle && !field) return null;
+    return { toggle: toggle ? toggle.getAttribute("data-gs-toggle") : null, field: field ? field.getAttribute("data-gs-field") : null, toggleEl: toggle, fieldEl: field, el: toggle || field };
+  }
+  function lockedPart(el) {
+    var hit = el && el.closest ? el.closest("[data-gs-island], gs-island") : null;
+    if (!hit || wordsOf(el)) return null;
+    return hit.getAttribute("data-gs-island-label") || String(hit.getAttribute("data-gs-island") || hit.getAttribute("name") || "island").replace(/-/g, " ");
+  }
+  var locked = null;
+  function setLocked(label) {
+    locked = label;
+    if (label) document.documentElement.setAttribute("data-gs-locked-pick", "");
+    else document.documentElement.removeAttribute("data-gs-locked-pick");
+    post({ kind: "locked-pick", label: label });
+  }
+  var lockStyle = document.createElement("style");
+  lockStyle.textContent = "html[data-gs-locked-pick] #impeccable-live-edit-badge button[aria-label='Remove element'],html[data-gs-locked-pick] #impeccable-live-edit-badge button[aria-label='Edit copy']{display:none!important}";
+  (document.head || document.documentElement).appendChild(lockStyle);
+  // Delete and Backspace remove the picked element too.
+  document.addEventListener("keydown", function (e) {
+    if (locked && (e.key === "Delete" || e.key === "Backspace") && !(e.target && e.target.isContentEditable) && !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || "")) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      post({ kind: "locked-pick", label: locked });
+    }
   }, true);
   function selectorOf(el) {
     var parts = [];
@@ -156,6 +195,34 @@ const ADAPTER = String.raw`(function () {
           var el = findPicked(evt.element);
           if (el) { picked[evt.id] = el; extra.selector = selectorOf(el); }
         }
+      } catch (e) { /* the helper stand-in rejects bad bodies */ }
+    }
+    // Last guard: an edit on a locked part never stages, so it can never look saved.
+    if (locked && url.indexOf(BASE + "manual-edit-stash") === 0 && method === "POST") {
+      post({ kind: "locked-pick", label: locked });
+      return Promise.resolve(new Response(JSON.stringify({ error: "This part is locked" }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    }
+    // Edits on the island's words: name the field each op changes, so GSAM saves it into the island.
+    var words = wordsOf(pickedEl);
+    if (words && url.indexOf(BASE + "manual-edit-stash") === 0 && method === "POST" && typeof body === "string") {
+      try {
+        var stash = JSON.parse(body);
+        var norm = function (t) { return String(t || "").replace(/\s+/g, " ").trim(); };
+        (stash.ops || []).forEach(function (op) {
+          if (op.removeElement) {
+            // The innermost marked part Impeccable removed (a field, or the toggle around it), never a wider selection.
+            var tag = String(op.tag || "");
+            var inner = [words.fieldEl, words.toggleEl].filter(Boolean).sort(function (x, y) { return x.contains(y) ? 1 : -1; });
+            var hitEl = inner.filter(function (n) { return n.tagName.toLowerCase() === tag; })[0];
+            if (hitEl && hitEl === words.toggleEl) op.islandToggle = words.toggle;
+            else if (hitEl) op.islandField = words.field;
+            return;
+          }
+          var fields = [words.el].concat(Array.prototype.slice.call(words.el.querySelectorAll("[data-gs-field]")));
+          var hit = fields.filter(function (f) { return f.hasAttribute("data-gs-field") && norm(f.textContent) === norm(op.originalText); })[0];
+          if (hit) op.islandField = hit.getAttribute("data-gs-field");
+        });
+        body = JSON.stringify(stash);
       } catch (e) { /* the helper stand-in rejects bad bodies */ }
     }
     var id = ++rid;

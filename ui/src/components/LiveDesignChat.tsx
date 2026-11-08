@@ -254,8 +254,10 @@ function useElapsed(since: string | undefined, running: boolean) {
  * Impeccable's own bar on the page.
  */
 /** `deployable`: a website page, so the chat offers the deploy button. */
-export function LiveDesignChat({ live, onPreview, deployable, deployChanges }: {
+export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onEditsDiscarded }: {
   live: ReturnType<typeof useLiveDesign>;
+  /** The page dropped its unsaved edits: reload the frame so removed parts show again. */
+  onEditsDiscarded?: () => void;
   onPreview?: (url: string, label: string) => void;
   deployable?: boolean;
   deployChanges?: () => Promise<WebsiteDeployChanges>;
@@ -331,8 +333,10 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges }: {
         view={view}
         onPreview={onPreview}
         deployChanges={deployChanges}
-        onDeploy={deployable && view && status !== "ended" ? () => void run((id) => liveDesignApi.steer(id, LIVE_DEPLOY_REQUEST)) : undefined}
+        onDeploy={deployable && view && status !== "ended" ? () => void run((id) => liveDesignApi.deploy(id)) : undefined}
       />
+
+      <StagedEdits live={live} onDiscarded={onEditsDiscarded} />
 
       <form
         className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
@@ -404,6 +408,33 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges }: {
   );
 }
 
+/**
+ * Direct edits made on the page wait here until saved, so a removal is never a silent no-op:
+ * Save to draft has the agent write them into the page as the next version; Undo drops them.
+ */
+export function StagedEdits({ live, onDiscarded }: { live: ReturnType<typeof useLiveDesign>; onDiscarded?: () => void }) {
+  const { view, run } = live;
+  const count = view?.stagedCount ?? 0;
+  if (!view || !count || view.status === "ended") return null;
+  const saving = view.status === "applying";
+  const helper = (path: string) => (id: string) =>
+    liveDesignApi.helper(id, { method: "POST", path, body: null, extra: {} }).then(() => liveDesignApi.get(id));
+  return (
+    <section className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2 text-xs" aria-label="Unsaved edits" role="status">
+      <span className="min-w-0 flex-1 font-medium text-foreground">
+        {saving ? "Saving to the draft…" : `${count} edit${count === 1 ? "" : "s"} not saved yet`}
+      </span>
+      <Button type="button" size="sm" variant="ghost" className="h-7" disabled={saving}
+        onClick={() => void run(helper("/manual-edit-discard")).then((ok) => ok && onDiscarded?.())}>
+        Undo
+      </Button>
+      <Button type="button" size="sm" className="h-7" disabled={saving} onClick={() => void run(helper("/manual-edit-commit"))}>
+        Save to draft
+      </Button>
+    </section>
+  );
+}
+
 function AgentLine({ view }: { view: LiveDesignView | null }) {
   const text = !view
     ? "Starting live design…"
@@ -411,7 +442,9 @@ function AgentLine({ view }: { view: LiveDesignView | null }) {
       ? "Live design ended. Go back and open it again to carry on."
       : view.agentConnected
         ? "The agent is connected"
-        : "Waking the agent (about 40 seconds the first time)";
+        : view.queued.length
+          ? `Waiting for the agent to join: ${view.queued.length} message${view.queued.length === 1 ? "" : "s"} not answered yet`
+          : "Waking the agent (about 40 seconds the first time)";
   return (
     <p className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
       <span

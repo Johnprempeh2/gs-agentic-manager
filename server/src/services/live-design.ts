@@ -38,7 +38,7 @@ type AgentEvent =
       request: LiveDesignRequest;
       attachmentId: string;
     }
-  | { type: "steer"; requestId: string | null; message: string; about?: { label: string; selector: string; html: string } }
+  | { type: "steer"; requestId: string | null; message: string; about?: { label: string; selector: string; html: string }; deploy?: true }
   | { type: "edits"; requestId: string; edits: StagedEdit[]; attachmentId: string }
   | { type: "discard"; requestId: string }
   | { type: "restored"; attachmentId: string; version: number | null }
@@ -64,6 +64,10 @@ export interface LivePageSource {
   read(versionId: string): Promise<string>;
   /** Save the agent's complete page; returns the new version's id. */
   save(html: string, agentId: string): Promise<string>;
+  /** Set an island's words (the home landing's data-copy) on the newest version; returns the new version's id. */
+  setIslandCopy?(versionId: string, changes: Record<string, string | boolean>, agentId: string): Promise<string>;
+  /** The version number John sees for a version id, when the source numbers them. */
+  version?(versionId: string): Promise<number | null>;
   /** The page's name, for messages. */
   label: string;
   /** Extra rules for the agent about this kind of page (a website page's size, media and shared parts). */
@@ -205,6 +209,7 @@ export function viewLiveDesign(s: Session): LiveDesignView {
     frameSrc: s.source ? s.source.frameSrc(s.attachmentId) : null,
     sourceKind: s.source?.kind ?? "attachment",
     codeTasks: s.codeTasks,
+    stagedCount: opCount(s),
     queued: s.queue.flatMap((e) =>
       e.type === "generate" ? [`${e.request.label || e.request.tag}: ${e.request.prompt}`] : e.type === "steer" && !e.requestId ? [e.about ? `${e.about.label}: ${e.message}` : e.message] : [],
     ),
@@ -344,6 +349,11 @@ export function startLiveDesign(input: {
     delete (s as { source?: unknown }).source;
     s.source = input.source ?? null;
     sessions.set(s.id, s);
+    // The last session went away with John's message unanswered (a GSAM restart drops open sessions,
+    // their unsaved edits and waiting requests): say so, never leave it looking taken.
+    if (s.messages.at(-1)?.from === "john") {
+      say(s, "gsam", "Your last message got no answer before the editor reconnected, so nothing from it was saved or deployed. Send it again if you still want it.");
+    }
   }
   s.attachmentId = input.attachmentId;
   if (input.source) s.source = input.source;
@@ -410,14 +420,23 @@ export function discardLiveDesign(s: Session) {
   return s;
 }
 
-/** A note from John to the agent mid-request ("make the second one calmer"). */
-export function steerLiveDesign(s: Session, message: string, steerId: string | null = null) {
+/** A typed message asking to put the site live. Only the Deploy button deploys, so GSAM answers these itself. */
+const DEPLOY_ASK = /^\s*(please\s+|can you\s+|now\s+)*(deploy|publish)\b(?!\s+(a|an)\s)|\b(deploy|publish|push|ship)\b.{0,40}\b(public site|live site|to live|production|greatstoneint)|\b(put|make|take)\s+(it|this|them|these|these changes|the (page|site|changes))\s+live\b|\bgo live\b/i;
+export const DEPLOY_ANSWER = "Typing does not deploy anything. Deploy is the button below the chat, and only that button puts changes on the public site.";
+
+/** A note from John to the agent mid-request ("make the second one calmer"). `deploy`: John pressed the Deploy button. */
+export function steerLiveDesign(s: Session, message: string, steerId: string | null = null, deploy = false) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
-  const text = message.trim().slice(0, 2000);
+  const text = deploy ? LIVE_DEPLOY_REQUEST : message.trim().slice(0, 2000);
   if (!text) return s;
   say(s, "john", text);
   s.touchedAt = Date.now();
-  push(s, { type: "steer", requestId: s.request?.id ?? null, message: text });
+  if (!deploy && DEPLOY_ASK.test(text)) {
+    say(s, "gsam", DEPLOY_ANSWER);
+    if (steerId) frame(s, { type: "steer_done", id: steerId, message: DEPLOY_ANSWER });
+    return s;
+  }
+  push(s, deploy ? { type: "steer", requestId: null, message: text, deploy: true } : { type: "steer", requestId: s.request?.id ?? null, message: text });
   s.lastSteer = { requestId: s.request?.id ?? null, message: text };
   // Impeccable keeps its steer box locked until the helper says the note was taken.
   if (steerId) frame(s, { type: "steer_done", id: steerId, message: "Sent to the agent." });
@@ -497,7 +516,7 @@ export function liveDesignAcceptsPage(s: Session, requestId: string) {
 
 /** How an agent takes any request as a code change: John can ask for anything, not just what the page HTML can hold. */
 const LIVE_DEPLOY_LINE = [
-  `When John says "${LIVE_DEPLOY_REQUEST}" he is promoting what staging holds to the public site; that is the only thing he decides. Create a task assigned to you in the Website project, reply codeTask { "identifier": "<GRE-n>", "title": "Deploy the website", "status": "working", "kind": "deploy" }, then on that task:`,
+  `A typed message never deploys: if one asks you to deploy or publish, reply only that Deploy is the button below the chat and only that button deploys. When a steer event has "deploy": true (John pressed the Deploy button), he is promoting what staging holds to the public site; that is the only thing he decides. Create a task assigned to you in the Website project, reply codeTask { "identifier": "<GRE-n>", "title": "Deploy the website", "status": "working", "kind": "deploy" }, then on that task:`,
   `a. Find the staged commit (the newest ready "gsam-source:staging:<sha>" deploy on gre3833-next-db-staging; \`node scripts/deploy-site.mjs inspect gre3833-next-db-staging\`) and the live one (\`... inspect greatstone-home\`), and list the commits between them (one line each, newest first). Also read both content releases (\`node scripts/deploy-site.mjs content\` prints staging's and the public site's GSAM content release).`,
   `b. Create a request_confirmation card on the task with idempotencyKey "confirmation:<GRE-n>:weekly-release:<full staged sha>", requestedResolverPolicy "human_only", and detailsMarkdown that starts "Approve production deploy: greatstone-home <full staged sha>" followed by the line "Content release <n> (sha256 <first 12 of its sha256>)" for staging's content release (deploy:prod refuses a card that does not name it), then that list. Send the codeTask again with "status": "preview".`,
   `c. When he accepts it, in a clean checkout detached at exactly the staged sha run \`npm run deploy:prod -- greatstone-home\` with GSAM_TASK_ID set to the task: it promotes the commit and that content release together. Never deploy with \`netlify deploy --dir\` or skip the build: that misses the Netlify Database setup and breaks /api. Then check https://greatstoneint.com/api/auth/get-session and /api/catalogue answer 200; if not, restore the previous deploy at once. Send "status": "done", or "blocked" with the reason.`,
@@ -516,13 +535,16 @@ function codeTaskLine(s: Session, requestId: string) {
 /** The request id an agent uses for a change to the whole page that John asked for in the chat. */
 export const LIVE_DESIGN_PAGE_REQUEST = "page";
 
-export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
+const savedLine = (version: number | null) => (version ? `Saved to the draft as version ${version}. Use Versions to undo.` : "Saved to the draft as a new version. Use Versions to undo.");
+
+/** `savedVersion`: the number of the version GSAM just saved from the agent's page, when known. */
+export function replyLiveDesign(s: Session, reply: LiveDesignReply, savedVersion: number | null = null) {
   if (s.status === "ended") return { ok: false, reason: "ended" as const };
   s.agentSeenAt = Date.now();
   if (reply.codeTask) return replyCodeTask(s, reply, reply.codeTask);
-  if (reply.requestId === LIVE_DESIGN_PAGE_REQUEST) return replyPage(s, reply);
+  if (reply.requestId === LIVE_DESIGN_PAGE_REQUEST) return replyPage(s, reply, savedVersion);
   if (reply.designMd) s.designMd = reply.designMd;
-  if (s.editsRequestId && reply.requestId === s.editsRequestId) return replyEdits(s, reply);
+  if (s.editsRequestId && reply.requestId === s.editsRequestId) return replyEdits(s, reply, savedVersion);
   if (!s.request || s.request.id !== reply.requestId) return { ok: false, reason: "stale_request" as const };
   if (reply.message) say(s, "agent", reply.message);
   if (reply.error) {
@@ -550,7 +572,7 @@ export function replyLiveDesign(s: Session, reply: LiveDesignReply) {
     s.request = null;
     s.variants = [];
     s.status = "idle";
-    say(s, "gsam", "Saved into the page as a new version of the file.");
+    say(s, "gsam", s.source?.kind === "website-page" ? savedLine(savedVersion) : "Saved into the page as a new version of the file.");
     frame(s, { type: "agent_done", id: reply.requestId, data: { carbonize: false } });
     return { ok: true };
   }
@@ -579,7 +601,7 @@ function replyCodeTask(s: Session, reply: LiveDesignReply, task: LiveDesignCodeT
 }
 
 /** A whole-page change from the chat: saved straight away as the next version, no versions to pick. */
-function replyPage(s: Session, reply: LiveDesignReply) {
+function replyPage(s: Session, reply: LiveDesignReply, savedVersion: number | null) {
   if (reply.message) say(s, "agent", reply.message);
   if (!reply.appliedAttachmentId) return { ok: true };
   // Never under open versions or edits: a later Accept would target a page that changed under it.
@@ -587,22 +609,82 @@ function replyPage(s: Session, reply: LiveDesignReply) {
   s.attachmentId = reply.appliedAttachmentId;
   s.appliedAttachmentId = reply.appliedAttachmentId;
   s.touchedAt = Date.now();
-  say(s, "gsam", "Page updated and saved as a new version. Use Versions to undo.");
+  say(s, "gsam", s.source?.kind === "website-page" ? savedLine(savedVersion) : "Page updated and saved as a new version. Use Versions to undo.");
   return { ok: true };
 }
 
+const ELEMENT_NOUNS: Record<string, string> = {
+  a: "link", button: "button", img: "image", picture: "image", svg: "graphic", video: "video",
+  h1: "heading", h2: "heading", h3: "heading", h4: "heading", h5: "heading", h6: "heading",
+  p: "paragraph", li: "list item", ul: "list", ol: "list", section: "section", nav: "menu",
+  form: "form", input: "field", figure: "figure", table: "table", blockquote: "quote",
+};
+
+/** "Removed the “Begin the Conversation” link.", from what Impeccable found the element by. */
+export function describeRemoval(op: Record<string, unknown>) {
+  const tag = String(op.tag ?? "").toLowerCase();
+  const noun = ELEMENT_NOUNS[tag] ?? "element";
+  const text = String(op.originalText ?? "").replace(/\s+/g, " ").trim();
+  // Impeccable falls back to an id or class name when there is no text; that is no use to John.
+  const named = text && text !== op.elementId && !(Array.isArray(op.classes) && op.classes.includes(text));
+  return named ? `Removed the “${text.length > 60 ? `${text.slice(0, 57)}…` : text}” ${noun}.` : `Removed ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}.`;
+}
+
 const opCount = (s: Session) => s.staged.reduce((n, e) => n + e.ops.length, 0);
+
+const FIELD_NAME = /^[A-Za-z][A-Za-z0-9]{0,39}$/;
+
+/** Pick changed or hid the landing's words: GSAM writes them into the island and saves the next draft version. */
+async function saveIslandCopy(s: Session, ops: Array<Record<string, unknown>>) {
+  const changes: Record<string, string | boolean> = {};
+  for (const op of ops) {
+    const toggle = String(op.islandToggle ?? "");
+    const field = String(op.islandField ?? "");
+    if (op.removeElement === true && FIELD_NAME.test(toggle)) {
+      changes[toggle] = false;
+      say(s, "john", describeRemoval(op).replace(/^Removed/, "Hid"));
+    } else if (op.removeElement === true && FIELD_NAME.test(field)) {
+      changes[field] = "";
+      say(s, "john", describeRemoval(op).replace(/^Removed/, "Hid"));
+    } else if (FIELD_NAME.test(field) && typeof op.newText === "string") {
+      changes[field] = op.newText.slice(0, 600);
+      say(s, "john", `Changed “${String(op.originalText ?? "").slice(0, 80)}” to “${op.newText.slice(0, 80)}”.`);
+    }
+  }
+  if (!Object.keys(changes).length || !s.source?.setIslandCopy) return;
+  try {
+    const id = await s.source.setIslandCopy(s.attachmentId, changes, s.agentId);
+    const version = (await s.source.version?.(id).catch(() => null)) ?? null;
+    s.attachmentId = id;
+    s.appliedAttachmentId = id;
+    s.touchedAt = Date.now();
+    say(s, "gsam", savedLine(version));
+    frame(s, { type: "manual_edit_commit_done", appliedCount: ops.length, remainingCount: opCount(s) });
+  } catch (err) {
+    say(s, "gsam", `Not saved: ${err instanceof Error ? err.message : "the page could not be saved"}`);
+    frame(s, { type: "manual_edit_commit_failed", error: "not_saved" });
+  }
+}
 
 /** Impeccable's pencil saved an edit (or a removal); it waits here until John applies. */
 export function stageLiveDesignEdit(s: Session, edit: StagedEdit) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
   if (s.editsRequestId) throw new LiveDesignConflict("The agent is still applying your last edits.");
+  // Edits on an island's words (Pick marks them islandField / islandToggle) save at once, without the agent.
+  const islandOps = edit.ops.filter((op) => typeof op.islandField === "string" || typeof op.islandToggle === "string");
+  if (islandOps.length && s.source?.setIslandCopy) {
+    void saveIslandCopy(s, islandOps);
+    edit = { ...edit, ops: edit.ops.filter((op) => !islandOps.includes(op)) };
+    if (!edit.ops.length) return { ok: true, pendingCount: opCount(s) };
+  }
+  const before = opCount(s);
   s.staged.push({ ...edit, ops: edit.ops.slice(0, 50) });
   s.touchedAt = Date.now();
   for (const op of edit.ops) {
-    if (op.removeElement === true) say(s, "john", `Removed ${String(op.tag ?? "an element")}.`);
+    if (op.removeElement === true) say(s, "john", describeRemoval(op));
     else if (typeof op.newText === "string") say(s, "john", `Changed “${String(op.originalText ?? "").slice(0, 80)}” to “${op.newText.slice(0, 80)}”.`);
   }
+  if (!before) say(s, "gsam", "Not saved yet. Press Save to draft below the chat to save it, or Undo.");
   frame(s, { type: "manual_edit_stashed", pendingCount: opCount(s) });
   return { ok: true, pendingCount: opCount(s) };
 }
@@ -650,7 +732,7 @@ export function applyLiveDesignEdits(s: Session) {
   return { status: "started", pendingCount: count };
 }
 
-function replyEdits(s: Session, reply: LiveDesignReply) {
+function replyEdits(s: Session, reply: LiveDesignReply, savedVersion: number | null) {
   if (reply.message) say(s, "agent", reply.message);
   const count = opCount(s);
   const settle = () => {
@@ -668,11 +750,25 @@ function replyEdits(s: Session, reply: LiveDesignReply) {
     s.staged = [];
     s.appliedAttachmentId = reply.appliedAttachmentId;
     s.attachmentId = reply.appliedAttachmentId;
-    say(s, "gsam", "Edits saved into the page as a new version of the file.");
+    say(s, "gsam", s.source?.kind === "website-page" ? savedLine(savedVersion) : "Edits saved into the page as a new version of the file.");
     frame(s, { type: "manual_edit_commit_done", appliedCount: count, remainingCount: 0 });
     return { ok: true };
   }
   return reply.message ? { ok: true } : { ok: false, reason: "unexpected_reply" as const };
+}
+
+/**
+ * The page's source refused the agent's page (the home page's Two Doors guard, a size limit):
+ * John sees why in the chat, and edits being applied stay staged instead of vanishing.
+ */
+export function refuseLiveDesignSave(s: Session, requestId: string, reason: string) {
+  say(s, "gsam", `Not saved: ${reason}`);
+  if (s.editsRequestId === requestId) {
+    s.editsRequestId = null;
+    if (s.status === "applying") s.status = "idle";
+    say(s, "gsam", "Your edits are still waiting. Undo them, or ask in the chat.");
+    frame(s, { type: "manual_edit_commit_failed", error: reason });
+  }
 }
 
 /** The page's helper event stream from `after`, waiting up to `waitMs` for something new. */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
-import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -216,6 +216,9 @@ function LiveEditorShell({
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
   // What the page reported about itself: blank, or pulling code and styles from the internet.
   const [health, setHealth] = useState<{ blank: boolean; scripts: string[]; styles: string[] } | null>(null);
+  /** The part John picked is locked (an island, such as the Two Doors landing): its name, or null. */
+  const [locked, setLocked] = useState<string | null>(null);
+  const [frameReload, setFrameReload] = useState(0);
   const sessionId = live.sessionId;
   const pageId = live.view?.attachmentId ?? "";
   const frameSrc = live.view?.frameSrc ?? fallbackSrc ?? "";
@@ -299,7 +302,9 @@ function LiveEditorShell({
       if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
       const m = e.data as Record<string, unknown> | null;
       if (!m || m.source !== "gs-impeccable") return;
-      if (m.kind === "page-health") {
+      if (m.kind === "locked-pick") {
+        setLocked(typeof m.label === "string" && m.label ? m.label.slice(0, 80) : null);
+      } else if (m.kind === "page-health") {
         const hosts = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 5) : []);
         setHealth({ blank: m.blank === true, scripts: hosts(m.scripts), styles: hosts(m.styles) });
       } else if (m.kind === "stream-open") {
@@ -475,6 +480,13 @@ function LiveEditorShell({
                 }
               />
             ) : null}
+            {locked && !preview && !readOnly ? (
+              <div className="absolute inset-x-3 top-3 z-raised flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="alert">
+                <Lock aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                <p className="min-w-0 flex-1">This part is locked (the {locked}). Ask in the chat, or add sections below. Its words can still be changed: pick the text itself.</p>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setLocked(null)}>Dismiss</Button>
+              </div>
+            ) : null}
             {preview ? (
               <div className="flex h-full flex-col">
                 <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs" role="status">
@@ -498,7 +510,7 @@ function LiveEditorShell({
               </div>
             ) : frameSrc ? (
               <ScaledFrame
-                key={pageId}
+                key={`${pageId}:${frameReload}`}
                 src={frameSrc}
                 title={`Live design of ${title}`}
                 width={WIDTHS[viewport]}
@@ -517,7 +529,7 @@ function LiveEditorShell({
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
-          <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => setPreview({ url, label })} />
+          <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => setPreview({ url, label })} onEditsDiscarded={() => setFrameReload((n) => n + 1)} />
         </aside>
       </div>
     </div>
