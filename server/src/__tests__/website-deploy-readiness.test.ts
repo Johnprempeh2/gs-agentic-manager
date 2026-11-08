@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { deployBlockers, deployRefusal } from "../services/website/deploy-readiness.js";
 
-function fakeFetch(opts: { offerings?: unknown[]; release?: number | null; status?: Record<string, number> }) {
+function fakeFetch(opts: { offerings?: unknown[]; release?: number | null; status?: Record<string, number>; shop?: string }) {
   return (async (input: string | URL) => {
     const url = String(input);
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
     if (url.endsWith("/current")) return opts.release === null ? new Response("", { status: 404 }) : json({ release: opts.release ?? 7 });
     if (url.includes("/releases/")) return json({ collections: { offerings: opts.offerings ?? [] } });
     const path = new URL(url).pathname;
-    return new Response("ok", { status: opts.status?.[path] ?? 200 });
+    return new Response(path === "/shop" ? (opts.shop ?? "from £669.00") : "ok", { status: opts.status?.[path] ?? 200 });
   }) as typeof fetch;
 }
 
@@ -41,6 +41,12 @@ describe("deployBlockers", () => {
     const problems = await deployBlockers("t", "gsam-content", fakeFetch({ offerings: [product], status: { "/shop": 500, "/product/aspose-words": 404 } }));
     expect(problems.sort()).toEqual(["Staging page /product/aspose-words answers 404, not 200.", "Staging page /shop answers 500, not 200."]);
     expect(deployRefusal(problems)).toMatch(/^Deploy stopped: staging is not ready, so greatstoneint.com was not changed\. /);
+  });
+
+  it("refuses when staging's /shop shows no prices", async () => {
+    expect(await deployBlockers("t", "gsam-content", fakeFetch({ offerings: [product], shop: "Price on application" }))).toEqual([
+      "Staging's /shop shows no prices, so the shop would show Price on application for every product.",
+    ]);
   });
 
   it("fails closed when a page does not answer", async () => {
