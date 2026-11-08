@@ -1,5 +1,6 @@
 import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound, Globe, ReceiptText } from "lucide-react";
 import { MarkdownBody } from "./MarkdownBody";
+import { Link } from "@/lib/router";
 import { formatCents } from "../lib/utils";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import type { PermissionKey } from "@greatstone/shared";
@@ -348,11 +349,23 @@ function PermissionGrantPayload({ payload }: { payload: Record<string, unknown> 
 }
 
 /** GRE-2109: an agent proposes a Publish; the summary says what it costs and in whose name it runs. */
+type PublishChangeView = {
+  kind: string;
+  id?: string;
+  label: string;
+  path?: string;
+  changeLines?: string[];
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+};
+
+/** John, 8 Nov: each page on the card says what changed and opens the draft. */
 function WebsitePublishPayload({ payload }: { payload: Record<string, unknown> }) {
   const changes = Array.isArray(payload.changes)
-    ? payload.changes.filter((change): change is { label: string; kind: string } =>
+    ? payload.changes.filter((change): change is PublishChangeView =>
       typeof change === "object" && change !== null && typeof (change as { label?: unknown }).label === "string")
     : [];
+  const siteId = typeof payload.siteId === "string" ? payload.siteId : null;
   return (
     <div className="mt-3 space-y-2 text-sm">
       <PayloadField label="Site" value={payload.siteName} />
@@ -360,9 +373,32 @@ function WebsitePublishPayload({ payload }: { payload: Record<string, unknown> }
       {changes.length > 0 && (
         <div className="space-y-1">
           <p className="text-(length:--text-micro) font-medium uppercase tracking-(--tracking-label) text-muted-foreground">What goes live</p>
-          <ul className="space-y-0.5 text-muted-foreground">
+          <ul className="space-y-2">
             {changes.map((change, index) => (
-              <li key={`${index}-${change.label}`}>{change.label}</li>
+              <li key={`${index}-${change.label}`} className="space-y-0.5">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium text-foreground">{change.label}</span>
+                  {change.path && <code className="text-xs text-muted-foreground">{change.path}</code>}
+                  {change.kind === "page" && siteId && change.id && (
+                    <Link to={`/website/sites/${siteId}/pages/${change.id}/design`} className="text-xs underline underline-offset-2">
+                      View page
+                    </Link>
+                  )}
+                </div>
+                {change.changeLines && change.changeLines.length > 0 && (
+                  <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+                    {change.changeLines.map((line, i) => <li key={i}>{line}</li>)}
+                  </ul>
+                )}
+                {change.kind === "page" && change.changeLines && change.changeLines.length === 0 && (
+                  <p className="pl-5 text-muted-foreground">No content change: page details only</p>
+                )}
+                {(change.seoTitle || change.seoDescription) && (
+                  <p className="pl-5 text-xs text-muted-foreground">
+                    SEO: {change.seoTitle ?? "no title"}{change.seoDescription ? `, ${change.seoDescription}` : ""}
+                  </p>
+                )}
+              </li>
             ))}
           </ul>
         </div>

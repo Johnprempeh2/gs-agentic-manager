@@ -232,6 +232,8 @@ describeEmbeddedPostgres("website publish approvals", () => {
         manifest: { pages: [{ pageId: page.id, revisionId }], entries: [] },
       },
     });
+    // The card says what the page changes (John, 8 Nov): never published, so it is new.
+    expect(proposed.body.payload.changes[0]).toMatchObject({ kind: "page", path: expect.any(String), changeLines: ["New page: not on the live site yet"] });
     const again = await request(app(actor)).post(`${base}/publish-proposals`).expect(200);
     expect(again.body.id).toBe(proposed.body.id);
   });

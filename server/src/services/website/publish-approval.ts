@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { agents, approvals, authUsers, websiteEntry, websitePage } from "@greatstone/db";
+import { agents, approvals, authUsers, documentRevisions, websiteEntry, websitePage } from "@greatstone/db";
 import {
   WEBSITE_PUBLISH_APPROVAL_TYPE,
   type WebsitePublishApprovalPayload,
@@ -10,6 +10,7 @@ import { HttpError, conflict, forbidden, unprocessable } from "../../errors.js";
 import { accessService } from "../access.js";
 import { WEBSITE_MESSAGES, publishProposalText } from "./messages.js";
 import type { SiteRow, WebsiteActor } from "./module.js";
+import { describePageChanges } from "./page-changes.js";
 
 // The website_publish approval (GRE-2109, ADR GRE-1914 section 6). An agent,
 // or a person without Publish rights, proposes a Publish of a site. A person
@@ -75,7 +76,14 @@ export function websitePublishApprovals(db: Db) {
   /** Every approved page and entry of the site: what the next Publish takes live. */
   async function approvedChanges(companyId: string, siteId: string): Promise<WebsitePublishChange[]> {
     const pages = await db
-      .select({ id: websitePage.id, revisionId: websitePage.approvedRevisionId, title: websitePage.title })
+      .select({
+        id: websitePage.id,
+        revisionId: websitePage.approvedRevisionId,
+        publishedRevisionId: websitePage.publishedRevisionId,
+        title: websitePage.title,
+        slug: websitePage.slug,
+        seo: websitePage.seo,
+      })
       .from(websitePage)
       .where(and(
         eq(websitePage.companyId, companyId),
@@ -94,8 +102,32 @@ export function websitePublishApprovals(db: Db) {
         isNotNull(websiteEntry.approvedRevisionId),
         isNull(websiteEntry.archivedAt),
       ));
+    // What each page changes against the version live now, for the card (John, 8 Nov).
+    const revisionIds = pages.flatMap((p) => [p.revisionId!, p.publishedRevisionId].filter((id): id is string => !!id));
+    const bodies = revisionIds.length
+      ? await db
+          .select({ id: documentRevisions.id, body: documentRevisions.body })
+          .from(documentRevisions)
+          .where(and(eq(documentRevisions.companyId, companyId), inArray(documentRevisions.id, revisionIds)))
+      : [];
+    const bodyOf = new Map(bodies.map((r) => [r.id, r.body]));
+    const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
     return [
-      ...pages.map((page) => ({ kind: "page" as const, id: page.id, revisionId: page.revisionId!, label: page.title })),
+      ...pages.map((page) => {
+        const diff = describePageChanges(page.publishedRevisionId ? bodyOf.get(page.publishedRevisionId) : null, bodyOf.get(page.revisionId!));
+        const seo = (page.seo ?? {}) as Record<string, unknown>;
+        return {
+          kind: "page" as const,
+          id: page.id,
+          revisionId: page.revisionId!,
+          label: page.title,
+          path: page.slug,
+          changeLines: diff.lines,
+          firstChangedBlockId: diff.firstChangedBlockId,
+          seoTitle: text(seo.title),
+          seoDescription: text(seo.description),
+        };
+      }),
       ...entries.map((entry) => ({ kind: "entry" as const, id: entry.id, revisionId: entry.revisionId!, label: `${entry.collection}/${entry.entryKey}` })),
     ];
   }

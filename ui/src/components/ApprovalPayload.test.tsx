@@ -2,9 +2,14 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { ApprovalPayloadRenderer, approvalActionLabels, approvalLabel, permissionKeyLabel, scopeTypeLabel } from "./ApprovalPayload";
 import { ThemeProvider } from "../context/ThemeContext";
+
+vi.mock("@/lib/router", () => ({
+  Link: ({ to, children, ...rest }: { to: string; children: ReactNode }) => <a href={to} {...rest}>{children}</a>,
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -280,21 +285,30 @@ describe("website_publish approvals", () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <ThemeProvider>
-          <ApprovalPayloadRenderer
-            type="website_publish"
-            payload={{
-              siteName: "Example site",
-              summary: "1 change is ready. Approving starts a Publish in your name. It costs about 15 credits.",
-              changes: [{ kind: "page", id: "p1", revisionId: "r1", label: "About" }],
-            }}
-          />
-        </ThemeProvider>,
+          <ThemeProvider>
+            <ApprovalPayloadRenderer
+              type="website_publish"
+              payload={{
+                siteId: "s1",
+                siteName: "Example site",
+                summary: "1 change is ready. Approving starts a Publish in your name. It costs about 15 credits.",
+                changes: [{
+                  kind: "page", id: "p1", revisionId: "r1", label: "About", path: "/about",
+                  changeLines: ["Edited Hero: title"], seoTitle: "About us", seoDescription: null,
+                }],
+              }}
+            />
+          </ThemeProvider>
+        ,
       );
     });
     expect(container.textContent).toContain("Example site");
     expect(container.textContent).toContain("Approving starts a Publish in your name");
     expect(container.textContent).toContain("About");
+    expect(container.textContent).toContain("/about");
+    expect(container.textContent).toContain("Edited Hero: title");
+    expect(container.textContent).toContain("SEO: About us");
+    expect(container.querySelector("a")?.getAttribute("href")).toBe("/website/sites/s1/pages/p1/design");
     act(() => root.unmount());
     container.remove();
   });
