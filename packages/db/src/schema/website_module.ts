@@ -255,7 +255,7 @@ export const websiteRelease = pgTable(
     check("website_release_kind_chk", sql`${t.kind} in ('publish', 'rollback')`),
     check(
       "website_release_status_chk",
-      sql`${t.status} in ('building', 'checks_failed', 'uploading', 'switched', 'pending', 'live', 'superseded', 'failed')`,
+      sql`${t.status} in ('building', 'checks_failed', 'uploading', 'switched', 'staged', 'pending', 'live', 'superseded', 'failed')`,
     ),
   ],
 );

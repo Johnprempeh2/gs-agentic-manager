@@ -37,6 +37,7 @@ export const RELEASE_STATUS_COPY: Record<WebsiteReleaseStatus, { label: string; 
   checks_failed: { label: "Stopped by checks", help: "A check failed, so nothing was sent. The live site has not changed.", tone: "bg-status-danger-soft text-status-danger" },
   uploading: { label: "Sending", help: "Sending pages and images to the site.", tone: "bg-status-info-soft text-status-info-foreground" },
   switched: { label: "Rebuilding the site", help: "The site is building with this release. This takes about a minute.", tone: "bg-status-info-soft text-status-info-foreground" },
+  staged: { label: "Saved to staging", help: "This content release is saved to staging, which rebuilds with it in a few minutes. Deploy takes it to the public site.", tone: "bg-status-success-soft text-status-success-foreground" },
   pending: { label: "Pending", help: "The live check has not passed yet. See what failed and retry.", tone: "bg-status-warning-soft text-status-warning-foreground" },
   live: { label: "Live", help: "Visitors see this release.", tone: "bg-status-success-soft text-status-success-foreground" },
   superseded: { label: "Replaced", help: "A newer release is live. You can roll back to this one.", tone: "bg-status-neutral-soft text-status-neutral-foreground" },
@@ -67,6 +68,13 @@ const PUBLISH_STEPS = [
   () => "Rebuilding the site",
   () => "Checking the live pages",
 ];
+
+/** A running release with no change for this long has stalled: the page stops spinning and says what to do. */
+export const RELEASE_STALLED_MS = 6 * 60_000;
+
+export function isReleaseStalled(release: WebsiteRelease, now = Date.now()) {
+  return isReleaseActive(release.status) && now - new Date(release.updatedAt).getTime() > RELEASE_STALLED_MS;
+}
 
 /** The step a running release is on: 1 checks, 2 send, 3 rebuild, 4 verify. */
 function currentStep(release: WebsiteRelease) {
@@ -181,6 +189,14 @@ function ReleaseProgress({ companyId, siteId, release, pollMs, onSettled }: {
     }
   }, [settled, current, onSettled]);
   if (settled) return null;
+  if (isReleaseStalled(current)) {
+    return (
+      <Panel title={`Release ${current.number} has stopped moving`} tone="danger" testId="website-release-stalled">
+        <p>Nothing has changed for over 5 minutes, so GSAM is ending this Publish as "Did not finish". The live site has not changed.</p>
+        <p className="text-xs">Refresh in a minute, then Publish again. If it stops here again, ask the website team to check the Netlify connection.</p>
+      </Panel>
+    );
+  }
   const step = currentStep(current);
   return (
     <Panel title={PUBLISH_STEPS[step]!(current.number)} testId="website-release-progress">
@@ -520,6 +536,12 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
           {failedSummary(latest) ? (
             <p className="break-words text-xs"><span className="font-medium">What failed: </span>{failedSummary(latest)}</p>
           ) : null}
+        </Panel>
+      );
+    } else if (latest.status === "staged") {
+      latestPanel = (
+        <Panel title={`Saved to staging (content release ${latest.number})`} tone="success" testId="website-release-staged">
+          <p className="text-xs">Staging rebuilds with these changes in a few minutes. The public site changes only when you Deploy.</p>
         </Panel>
       );
     } else if (latest.status === "live" && finished === latest.id) {

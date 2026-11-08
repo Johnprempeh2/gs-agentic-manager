@@ -74,7 +74,7 @@ function release(overrides: Partial<WebsiteRelease> = {}): WebsiteRelease {
     liveAt: null,
     failedAt: null,
     createdAt: "2026-10-23T10:00:00.000Z",
-    updatedAt: "2026-10-23T10:00:00.000Z",
+    updatedAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -319,6 +319,22 @@ describe("WebsiteReleases", () => {
     expect(container.textContent).toContain("What failedBuild script returned non-zero exit code: 2");
     const summary = [...container.querySelectorAll("dd")].find((node) => node.textContent?.startsWith("Build script"));
     expect(summary?.textContent).toBe("Build script returned non-zero exit code: 2");
+  });
+
+  it("a Publish to staging ends Saved to staging, and a stalled release stops spinning and says what to do", async () => {
+    moduleMock.releases.mockResolvedValue([release({ id: "rel-2", number: 2, status: "staged", deploy: null }), live41]);
+    await render();
+    expect(container.textContent).toContain("Saved to staging (content release 2)");
+    expect(container.textContent).not.toContain("Rebuilding the site");
+
+    const stalled = release({ id: "rel-3", number: 3, status: "switched", updatedAt: new Date(Date.now() - 7 * 60_000).toISOString() });
+    moduleMock.releases.mockResolvedValue([stalled, live41]);
+    moduleMock.release.mockResolvedValue(stalled);
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(container.querySelector("[data-testid=website-release-stalled]")?.textContent).toContain("Publish again");
+    expect(container.querySelector("[aria-label='In progress']")).toBeNull();
   });
 
   it("shows the busy line muted, not as an error", async () => {

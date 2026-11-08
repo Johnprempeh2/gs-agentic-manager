@@ -39,7 +39,7 @@ import { websiteRoutes } from "../routes/website.js";
 import { instanceSettingsService } from "../services/index.js";
 import type { NetlifyDeploy, WebsiteNetlifyClient } from "../services/website/netlify-publish-client.js";
 import { registerWebsitePublishStarter } from "../services/website/publish-approval.js";
-import { reportedRelease, websitePublishService, websitePublishStarter, type FetchedPage, type WebsitePublishOptions } from "../services/website/publish.js";
+import { reportedRelease, STUCK_DEPLOY_MESSAGE, STUCK_DEPLOY_REQUEST_MS, websitePublishService, websitePublishStarter, type FetchedPage, type WebsitePublishOptions } from "../services/website/publish.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -418,49 +418,41 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     }
   });
 
-  it("publishes the public site's record to staging: no build, waits for the staging deploy, checks staging", async () => {
+  // John, 8 Nov: release 2 sat on "Rebuilding the site" waiting for a staging deploy only an agent could start.
+  it("publishes the public site's record to staging and ends Saved to staging: no build, no wait", async () => {
     const { site, page, base } = await seedSite();
     await db.update(websiteSite).set({ netlifySiteId: "3b1e97e6-e184-4251-badd-deed532be3ab" }).where(eq(websiteSite.id, site.id));
     await approveLatest(page.id);
-    const seen: string[] = [];
-    const original = netlify.fetchPage;
-    netlify.fetchPage = async (url: string) => (seen.push(url), original(url));
     const first = await publish(base);
-    // Git builds are off on staging: the staging watch hands the rebuild to the website team.
     expect(netlify.state.builds).toBe(0);
-    expect(first.status).toBe("pending");
-    expect(first.pendingReason).toBe("build_timeout");
+    expect(netlify.state.fetches).toBe(0);
+    expect(first).toMatchObject({ status: "staged", pendingReason: null, deploy: null });
     expect(JSON.parse(netlify.blobs.get("current")!.body)).toMatchObject({ release: 1 });
-    // The team's deploy:staging lands, then Retry checks staging (never greatstoneint.com) and goes Live.
-    netlify.engineDeploy("engine-2");
-    const plan = await request(app()).get(`${base}/releases/${first.id}/retry`).expect(200);
-    expect(plan.body.plan ?? plan.body).toMatchObject({ action: "verify", costsCredits: false });
-    await request(app()).post(`${base}/releases/${first.id}/retry`).send({}).expect(202);
-    await settle();
-    expect((await releaseById(first.id)).status).toBe("live");
-    expect(netlify.state.builds).toBe(0);
-    expect(seen.length).toBeGreaterThan(0);
-    expect(seen.every((u) => u.startsWith("https://gre3833-next-db-staging.netlify.app/"))).toBe(true);
+    // A second Publish replaces the first staged release.
+    await saveAndApprove(base, page.id, "Second");
+    const second = await publish(base);
+    expect(second.status).toBe("staged");
+    expect((await releaseById(first.id)).status).toBe("superseded");
   });
 
-  // GRE-4485: greatstone-home's release 1 took a staging source deploy Netlify canceled after 4 s as its own and
-  // ended build_failed. A deploy GSAM did not start is not this release's end on staging.
-  it("a canceled staging deploy GSAM did not start does not fail the public site's release", async () => {
-    const { site, page, base } = await seedSite();
+  it("the backstop: a deploy request with no deploy after 5 minutes ends failed with the reason (staged: Saved to staging)", async () => {
+    const { company, site } = await seedSite();
+    const old = new Date(Date.now() - STUCK_DEPLOY_REQUEST_MS - 1000).toISOString();
+    const deploy = { method: "build", requestedAt: old, deployId: null, commitRef: null, state: "requested" };
+    const insert = (number: number, status: string, requestedAt = old) =>
+      db.insert(websiteRelease).values({ companyId: company.id, siteId: site.id, number, kind: "publish", manifest: {}, status, deploy: { ...deploy, requestedAt } }).returning().then((r) => r[0]!);
+    const stuck = await insert(1, "switched");
+    const fresh = await insert(2, "switched", new Date().toISOString());
+    const service = websitePublishService(db, publishOptions());
+    expect(await service.expireStuckReleases()).toEqual({ staged: 0, failed: 1 });
+    expect(await releaseById(stuck.id)).toMatchObject({ status: "failed", deploy: { state: "error", errorMessage: STUCK_DEPLOY_MESSAGE } });
+    expect((await releaseById(fresh.id)).status).toBe("switched");
+
     await db.update(websiteSite).set({ netlifySiteId: "3b1e97e6-e184-4251-badd-deed532be3ab" }).where(eq(websiteSite.id, site.id));
-    await approveLatest(page.id);
-    netlify.canceledDeploy();
-    const first = await publish(base);
-    expect(netlify.state.builds).toBe(0);
-    expect(first.status).toBe("pending");
-    expect(first.pendingReason).toBe("build_timeout");
-    expect(first.deploy).toMatchObject({ deployId: null, state: "requested" });
-    netlify.engineDeploy("engine-2");
-    const plan = await request(app()).get(`${base}/releases/${first.id}/retry`).expect(200);
-    expect(plan.body).toMatchObject({ action: "verify", costsCredits: false });
-    await request(app()).post(`${base}/releases/${first.id}/retry`).send({}).expect(202);
-    await settle();
-    expect((await releaseById(first.id)).status).toBe("live");
+    const staged = await insert(3, "pending");
+    expect(await service.expireStuckReleases()).toEqual({ staged: 1, failed: 0 });
+    expect(await releaseById(staged.id)).toMatchObject({ status: "staged", deploy: null });
+    expect(netlify.state.builds + netlify.state.restores + netlify.state.fetches).toBe(0);
   });
 
   it("refuses Publish on a site with no Netlify build settings before any release exists", async () => {

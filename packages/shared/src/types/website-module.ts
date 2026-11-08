@@ -215,6 +215,8 @@ export const WEBSITE_RELEASE_STATUSES = [
   "checks_failed",
   "uploading",
   "switched",
+  /** The public site's content release is in staging's store (staging rebuilds it); only Deploy takes it live. */
+  "staged",
   "pending",
   "live",
   "superseded",

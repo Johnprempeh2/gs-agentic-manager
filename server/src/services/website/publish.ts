@@ -115,6 +115,16 @@ export function publishTarget<T extends Pick<SiteRow, "netlifySiteId" | "domain"
 }
 /** A site with no linked repository: only an upload (greatstone-home's deploy:prod) deploys it (GRE-4485). */
 export const UPLOAD_ONLY_SITE_MESSAGE = "This site is deployed by upload, so Netlify cannot rebuild it. Use the weekly release (deploy:prod) instead.";
+/**
+ * The backstop (John, 8 Nov: "I don't want to see this problem again"): a deploy GSAM asked for that has no deploy
+ * id 5 minutes later is not coming. The release ends failed with this reason instead of waiting.
+ */
+export const STUCK_DEPLOY_REQUEST_MS = 5 * 60_000;
+export const STUCK_DEPLOY_MESSAGE =
+  "No deploy started within 5 minutes, so GSAM stopped waiting. Nothing changed on the live site. Publish again; if it stops here again, ask the website team to check the Netlify connection.";
+export function isStuckDeployRequest(deploy: WebsiteReleaseDeploy | null, now = Date.now()) {
+  return !!deploy && deploy.state === "requested" && !deploy.deployId && now - Date.parse(deploy.requestedAt) > STUCK_DEPLOY_REQUEST_MS;
+}
 const RELEASE_HEADER = "x-gsam-release";
 const RELEASE_META_RE = /<meta[^>]+name=["']gsam-release["'][^>]*content=["']([^"']+)["']/i;
 const RELEASE_META_REVERSED_RE = /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']gsam-release["']/i;
@@ -645,6 +655,10 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
         current = next;
         if (current.state === "ready" || current.state === "error") return row;
       }
+      if (isStuckDeployRequest(current)) {
+        current = { ...current, state: "error", errorMessage: STUCK_DEPLOY_MESSAGE };
+        return updateRelease(row, { deploy: current as unknown as Record<string, unknown> });
+      }
       if (Date.now() - started >= timeoutMs) return row;
       await sleep(timing.deployPollMs);
     }
@@ -692,7 +706,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
             eq(websiteRelease.companyId, site.companyId),
             eq(websiteRelease.siteId, site.id),
             ne(websiteRelease.id, release.id),
-            inArray(websiteRelease.status, ["live", "pending", "switched"]),
+            inArray(websiteRelease.status, ["live", "pending", "switched", "staged"]),
           ),
         );
       await tx
@@ -757,6 +771,11 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     const netlify = await netlifyFor(site);
     const priorChecks = ((release.checks ?? []) as WebsiteReleaseCheck[]).filter((c) => c.kind === "check");
 
+    // Staging holds the edits (John, 8 Nov): the content release is in staging's store and the staging watch hands
+    // the rebuild over. Publish ends here as "Saved to staging"; it never waits on a deploy. Deploy takes it live.
+    if (input.action === "build" && publishTarget(site).staged) {
+      return updateRelease(release, { status: "staged", pendingReason: null, deploy: null });
+    }
     if (input.action === "build") {
       // Record the request before the call: after a crash, Retry finds this build instead of starting a second one.
       let deploy: WebsiteReleaseDeploy = { method: "build", requestedAt: new Date().toISOString(), deployId: null, commitRef: null, state: "requested" };
@@ -781,6 +800,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     if (deploy.state !== "ready") {
       release = await waitForDeploy(site, release, netlify, deploy);
       const after = asDeploy(release.deploy);
+      if (after?.state === "error" && after.errorMessage === STUCK_DEPLOY_MESSAGE) return updateRelease(release, { status: "failed", failedAt: new Date(), pendingReason: null });
       if (after?.state === "error") return pending(release, "build_failed");
       if (after?.state !== "ready") return pending(release, "build_timeout");
     }
@@ -817,7 +837,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
           eq(websiteRelease.companyId, site.companyId),
           eq(websiteRelease.siteId, site.id),
           ne(websiteRelease.id, releaseId),
-          inArray(websiteRelease.status, ["pending", "switched"]),
+          inArray(websiteRelease.status, ["pending", "switched", "staged"]),
         ),
       );
   }
@@ -1084,7 +1104,37 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     return { failed, pending: pendingCount };
   }
 
+  /**
+   * The backstop sweep: a release still waiting on a deploy request with no deploy id after 5 minutes. On the
+   * public site's record (staged) the content is in staging's store, so it ends "Saved to staging"; anywhere
+   * else it ends failed with the reason. Never calls Netlify.
+   */
+  async function expireStuckReleases(now = Date.now()) {
+    const rows = await db
+      .select({ release: websiteRelease, netlifySiteId: websiteSite.netlifySiteId, domain: websiteSite.domain })
+      .from(websiteRelease)
+      .innerJoin(websiteSite, and(eq(websiteSite.companyId, websiteRelease.companyId), eq(websiteSite.id, websiteRelease.siteId)))
+      .where(inArray(websiteRelease.status, ["switched", "pending"]));
+    let staged = 0;
+    let failed = 0;
+    for (const { release, netlifySiteId, domain } of rows) {
+      const deploy = asDeploy(release.deploy);
+      if (!isStuckDeployRequest(deploy, now)) continue;
+      if (publishTarget({ netlifySiteId, domain }).staged && release.kind === "publish") {
+        await updateRelease(release, { status: "staged", pendingReason: null, deploy: null });
+        staged += 1;
+      } else {
+        const ended = { ...deploy!, state: "error", errorMessage: STUCK_DEPLOY_MESSAGE };
+        await updateRelease(release, { status: "failed", failedAt: new Date(now), pendingReason: null, deploy: ended as unknown as Record<string, unknown> });
+        failed += 1;
+      }
+      await releaseLease({ companyId: release.companyId, id: release.siteId }, release.id);
+    }
+    return { staged, failed };
+  }
+
   return {
+    expireStuckReleases,
     getSite,
     getRelease,
     listReleases,
