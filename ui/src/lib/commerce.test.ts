@@ -54,6 +54,8 @@ describe("record display", () => {
     expect(recordCode("orders", order)).toBe("ORD-9");
     expect(recordTitle("orders", { id: "o3", reference: "ORD-10", items: [{ offering_id: "x" }] })).toBe("ORD-10");
     expect(recordCode("orders", { id: "o3", reference: "ORD-10", items: [] })).toBeNull();
+    expect(recordTitle("invoices", { id: "o4", invoice_number: "INV-7", items: [{ offering_name: "IronPDF", qty: 3 }] })).toBe("IronPDF × 3");
+    expect(recordCode("invoices", { id: "o4", invoice_number: "INV-7", items: [{ offering_name: "IronPDF" }] })).toBe("INV-7");
   });
 
   it("uses the quoted total, else the indicative one", () => {
