@@ -77,6 +77,15 @@ describe("Deploy", () => {
     expect(down.textContent).toContain("Deploy these changes");
   });
 
+  it("disables the deploy button when everything saved is live", async () => {
+    const el = document.createElement("div");
+    const changes = vi.fn(async () => ({ liveCommit: "a", stagingCommit: "a", liveContentRelease: 4, stagingContentRelease: 4, commits: [] }));
+    act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={changes} />));
+    await act(async () => { await Promise.resolve(); });
+    expect(el.textContent).toContain("Everything saved is live");
+    expect([...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy these changes")?.disabled).toBe(true);
+  });
+
   it("shows what goes live and accepts the agent's card on Deploy", async () => {
     const details = "Approve production deploy: greatstone-home abc\n- Logo carousel";
     vi.spyOn(issuesApi, "listInteractions").mockResolvedValue([

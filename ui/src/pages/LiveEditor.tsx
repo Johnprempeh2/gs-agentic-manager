@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
 import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -95,10 +95,27 @@ export function WebsitePageLiveEditor() {
   const live = useLiveDesign(() => websiteModuleApi.liveStart(companyId, siteId, pageId), `${siteId}:${pageId}`, !!companyId);
   const current = live.view?.attachmentId ?? null;
   const { data: page } = useQuery({
-    queryKey: ["website-live-page", companyId, siteId, pageId],
+    queryKey: ["website-live-page", companyId, siteId, pageId, current],
     queryFn: () => websiteModuleApi.page(companyId, siteId, pageId),
     enabled: !!companyId,
   });
+  const { data: sites } = useQuery({
+    queryKey: ["website-live-sites", companyId],
+    queryFn: () => websiteModuleApi.sites(companyId),
+    enabled: !!companyId,
+  });
+  // A page still in the old block format shows as it is on the site (the address the frame already uses for its assets), read-only.
+  const site = sites?.find((s) => s.id === siteId);
+  const siteBase = site?.devPreviewUrl ?? site?.livePreviewUrl ?? null;
+  const oldBlocks = !!page && !isWebsiteHtmlPage(page.content) && Array.isArray((page.content as { content?: unknown[] } | null)?.content) &&
+    (page.content as { content: unknown[] }).content.length > 0;
+  const readOnly = oldBlocks && siteBase?.startsWith("https://") && page
+    ? {
+        url: new URL(page.slug, siteBase).href,
+        // The home page (Two Doors) is frozen by John: never offer to rebuild it.
+        onRebuild: page.slug === "/" ? undefined : () => void live.run((id) => liveDesignApi.steer(id, "Rebuild this page from its blocks, same look")),
+      }
+    : undefined;
   const navigate = useNavigate();
   const engine = useMemo(
     () => ({ siteId, draft: (revisionId: string) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId), deployChanges: () => websiteModuleApi.deployChanges(companyId, siteId) }),
@@ -147,6 +164,7 @@ export function WebsitePageLiveEditor() {
       }))}
       onRestore={(revisionId) => void live.run(() => websiteModuleApi.liveRestore(companyId, siteId, pageId, revisionId))}
       engine={engine}
+      readOnly={readOnly}
     />
   );
 }
@@ -177,6 +195,7 @@ function LiveEditorShell({
   onRestore,
   switcher,
   engine,
+  readOnly,
 }: {
   live: ReturnType<typeof useLiveDesign>;
   title: string;
@@ -189,6 +208,8 @@ function LiveEditorShell({
   /** Moves to another page of the same site. */
   switcher?: ReactNode;
   /** A website page drawn by the site's own engine (its /live-design route): who to greet and where the draft comes from. */
+  /** An old block format page: the real page from the site, read-only, with an optional rebuild. */
+  readOnly?: { url: string; onRebuild?: () => void };
   engine?: { siteId: string; draft: (revisionId: string) => Promise<Record<string, unknown>>; deployChanges?: () => Promise<WebsiteDeployChanges> };
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -461,6 +482,16 @@ function LiveEditorShell({
                 </div>
                 <div className="min-h-0 flex-1">
                   <ScaledFrame key={preview.url} src={preview.url} title={`Preview of ${preview.label}`} width={WIDTHS[viewport]} sandbox={ENGINE_SANDBOX} frameRef={frameRef} viewport={viewport} />
+                </div>
+              </div>
+            ) : readOnly ? (
+              <div className="flex h-full flex-col">
+                <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs" role="status">
+                  <span className="min-w-0 flex-1">Shown as it is on the site. This page is built from older blocks, so chat edits can't change it yet.</span>
+                  {readOnly.onRebuild ? <Button type="button" size="sm" className="h-7" onClick={readOnly.onRebuild}>Rebuild as editable</Button> : null}
+                </div>
+                <div className="min-h-0 flex-1">
+                  <ScaledFrame key={readOnly.url} src={readOnly.url} title={`${title} as it is on the site`} width={WIDTHS[viewport]} sandbox={ENGINE_SANDBOX} frameRef={frameRef} viewport={viewport} />
                 </div>
               </div>
             ) : frameSrc ? (
