@@ -32,7 +32,7 @@ import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./
 // The Sitemap section (GRE-2111): see, compare, edit and approve the site's
 // structure. Every view edits one local draft of the chosen option; Save
 // writes it, Approve (people who can publish) makes it the site's pages and
-// menus, live with the next Publish.
+// menus, live when you Deploy.
 
 export type SitemapView = "tree" | "board" | "menus" | "journeys" | "list" | "compare" | "xml";
 
@@ -156,7 +156,7 @@ function ApproveDialog({ option, pages, pending, error, onCancel, onApprove }: {
         <AlertDialogHeader className="text-left sm:text-left">
           <AlertDialogTitle className="text-base leading-snug">Approve {option?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Its pages become the site's pages and menus: {impact?.created ?? 0} new pages are planned and {impact?.archived ?? 0} pages that are not in it are archived (not deleted). Visitors see it after the next Publish.
+            Its pages become the site's pages and menus: {impact?.created ?? 0} new pages are planned and {impact?.archived ?? 0} pages that are not in it are archived (not deleted). Visitors see it after you Deploy.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(error)}</p> : null}
@@ -293,7 +293,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
       setApprovingId(null);
       setOptionId(result.option.id);
       setNotice(
-        `Approved ${result.option.name}: ${result.summary.created} new pages planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live with the next Publish.`,
+        `Approved ${result.option.name}: ${result.summary.created} new pages planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live when you Deploy.`,
       );
       refresh();
     },

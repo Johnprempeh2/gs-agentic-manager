@@ -156,7 +156,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
       if (entryKey.trim() !== detail.data?.entryKey) await websiteModuleApi.updateEntry(companyId, siteId, entryId, { entryKey: entryKey.trim() });
       return result;
     },
-    onSuccess: () => { setMessage("Draft saved. It goes live after approval and the next Publish."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
+    onSuccess: () => { setMessage("Draft saved. It goes live after approval, when you Deploy."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
   });
   const changeStatus = useMutation({
     mutationFn: async (action: "review" | "approve" | "archive") => {
@@ -165,14 +165,14 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
       if (action === "archive") return websiteModuleApi.archiveEntry(companyId, siteId, entryId);
       return websiteModuleApi.submitEntry(companyId, siteId, entryId);
     },
-    onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. This change goes live with the next Publish." : "Archived. This change goes live with the next Publish."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
+    onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. This change goes live when you Deploy." : "Archived. This change goes live when you Deploy."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
   });
   if (detail.error) return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
   if (entryId && !detail.data) return <p className="text-sm text-muted-foreground">Loading entry</p>;
   const entry = detail.data as WebsiteEntryDetail | undefined;
   const dirty = !!entry && (entryKey.trim() !== entry.entryKey || JSON.stringify(fields) !== JSON.stringify(entry.content));
   const restore = async (revisionId: string) => {
-    if (!entryId || !window.confirm("Restore this version? It becomes a new draft after you save. The live site does not change until the next Publish.")) return;
+    if (!entryId || !window.confirm("Restore this version? It becomes a new draft after you save. The live site does not change until you Deploy.")) return;
     try {
       const old = await websiteModuleApi.entryRevision(companyId, siteId, entryId, revisionId);
       setFields(old.content);
@@ -180,7 +180,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
     } catch (error) { setMessage(errorStateMessage(error)); }
   };
   return <section className="space-y-5" data-testid="website-entry-editor">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? entry.entryKey : `New ${collection}`}</h3><p className="text-sm text-muted-foreground">Fields version {definition.fieldsVersion}. {entry?.status ?? "Draft"}. Changes go live with the next Publish.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? entry.entryKey : `New ${collection}`}</h3><p className="text-sm text-muted-foreground">Fields version {definition.fieldsVersion}. {entry?.status ?? "Draft"}. Changes go live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
     <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <label className="block space-y-1 text-sm"><span className="font-medium">Entry key</span><Input value={entryKey} onChange={(event) => setEntryKey(event.target.value)} required maxLength={200} /></label>
       <SchemaField schema={definition.definition as FieldSchema} value={fields} label="Fields" path="website-entry-fields" onChange={setFields} />
@@ -189,7 +189,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
     {entry ? <div className="flex flex-wrap gap-2">
       {entry.status === "draft" ? <Button variant="outline" onClick={() => changeStatus.mutate("review")} disabled={changeStatus.isPending || save.isPending || dirty}>Send for review</Button> : null}
       {entry.status === "review" && canManage ? <Button variant="outline" onClick={() => changeStatus.mutate("approve")} disabled={changeStatus.isPending || dirty}>Approve</Button> : null}
-      <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${collection}? It leaves the live site at the next Publish. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
+      <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${collection}? It leaves the live site when you Deploy. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
     </div> : null}
     {message ? <p role="status" className="text-sm text-status-success">{message}</p> : null}
     {save.error || changeStatus.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(save.error ?? changeStatus.error)}</p> : null}
@@ -213,14 +213,14 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   if (!site) return <p className="text-sm text-muted-foreground">Connect a site under Releases before editing collections.</p>;
   const selected = COLLECTIONS.find((item) => item.key === collection)!;
   return <div className="space-y-5" data-testid="website-collections">
-    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects and forms. Approved changes go live with the next Publish.</p></div>
+    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects and forms. Approved changes go live when you Deploy.</p></div>
     {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Imports 10 vendors, 32 categories, 24 products, six public team cards and three forms from the 22 October snapshot. The product list is partial. Existing entries are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
     <label className="block max-w-sm space-y-1 text-sm"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</NativeSelect></label>
     {entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
       <section className="space-y-4"><div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">{selected.label}</h3><Button onClick={() => setEntryId(null)}>New {selected.singular}</Button></div>
         {entries.error ? <ErrorState error={entries.error} onRetry={() => void entries.refetch()} /> : entries.isLoading ? <p className="text-sm text-muted-foreground">Loading entries</p> : entries.data?.length ?
           <ul className="divide-y">{entries.data.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div><span className="font-medium">{entry.entryKey}</span><span className="ml-2 text-muted-foreground">{entry.status}</span><p className="text-muted-foreground">Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}</p></div><Button variant="outline" size="sm" onClick={() => setEntryId(entry.id)}>Edit</Button></li>)}</ul> :
-          <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, it goes live with the next Publish.`}</p></div>}
+          <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, it goes live when you Deploy.`}</p></div>}
       </section>}
   </div>;
 }

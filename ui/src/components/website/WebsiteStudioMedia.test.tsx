@@ -145,7 +145,7 @@ describe("WebsiteMediaPicker", () => {
     const [companyId, siteId, input] = api.createEntry.mock.calls[0]!;
     expect([companyId, siteId]).toEqual(["co-1", "site-1"]);
     expect(input).toMatchObject({ collection: "media", content: { assetId: "asset-1", alt: "Boats in a harbour at dawn", caption: null, focalPoint: { x: 0.5, y: 0.5 } } });
-    expect(onAdded).toHaveBeenCalledWith("Added from GS Studio. It is now in Website media and goes live with the next Publish.", {
+    expect(onAdded).toHaveBeenCalledWith("Added from GS Studio. It is now in Website media and goes live when you Deploy.", {
       assetId: "asset-1",
       contentPath: "/api/assets/asset-1/content",
       alt: "Boats in a harbour at dawn",

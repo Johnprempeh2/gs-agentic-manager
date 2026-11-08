@@ -266,7 +266,7 @@ export type SitemapPageStatus = "new" | "planned" | "drafted" | "live";
 export const SITEMAP_STATUS_LABELS: Record<SitemapPageStatus, string> = {
   new: "New",
   planned: "To build",
-  drafted: "Built",
+  drafted: "Drafted",
   live: "Live",
 };
 

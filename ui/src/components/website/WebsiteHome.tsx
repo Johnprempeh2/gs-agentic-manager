@@ -430,7 +430,7 @@ function NeedsYou({
   return (
     <section className="space-y-4" aria-labelledby="website-home-needs-you" data-testid="website-home-needs-you">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="website-home-needs-you" className="text-lg font-semibold">Needs you</h2>
+        <h2 id="website-home-needs-you" className="text-lg font-semibold">Decisions</h2>
         <Link to="/decisions" className="rounded-sm text-sm font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           All decisions
         </Link>
@@ -784,7 +784,7 @@ export function WebsiteHomeTab({
       <Hero property={property} site={site} home={home} devUrl={devUrl} onOpenTab={onOpenTab} onEditPages={site && onEditPages ? () => void openHomeDesign(site.id) : undefined} />
       <NeedsYou companyId={companyId} projectId={projectId} tree={treeQuery.data} home={home} />
       {site ? <WebsiteReviewQueue companyId={companyId} siteId={site.id} /> : null}
-      {home ? <TrainAndLaunch train={home.train ?? null} launch={home.launch ?? null} /> : null}
+      {home ? <TrainAndLaunch train={home.train ?? null} launch={home.launch ?? null} releaseLive={!!home.releases.live} /> : null}
       <WebsiteFeaturesSection companyId={companyId} site={site} canChange={canPublish} />
       <Tiles companyId={companyId} property={property} site={site} home={home} tree={treeQuery.data} onOpenTab={onOpenTab} />
       {projectId ? null : <LinkProjectFirst companyId={companyId} property={property} />}

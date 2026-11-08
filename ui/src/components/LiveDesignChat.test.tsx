@@ -21,7 +21,7 @@ describe("useLiveDesign", () => {
     act(() => createRoot(document.createElement("div")).render(<Probe />));
     await act(async () => { await Promise.resolve(); });
     expect(result.current.sessionId).toBe("s1");
-    await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5100); });
     expect(start).toHaveBeenCalledTimes(2);
     expect(result.current.sessionId).toBe("s2");
   });
