@@ -1,4 +1,4 @@
-import type { WebsiteDataResource, WebsiteFeature } from "@greatstone/shared";
+import { purchaseSummary, type WebsiteDataResource, type WebsiteFeature } from "@greatstone/shared";
 
 // Commerce, Phase A (GRE-2383, plan on GRE-2326): read-only screens for the
 // website's quotes, orders, invoices and licences, read through the admin
@@ -53,15 +53,25 @@ export function formatMinor(minor: unknown, currency: unknown): string | null {
   return `${(amount / 100).toFixed(2)}${code ? ` ${code}` : ""}`;
 }
 
-/** The record's own name: its invoice number or reference, else a short id. */
+/** What was bought, by name (John, 8 Nov); the record's code only when no line has a name. */
 export function recordTitle(resource: CommerceResource, record: CommerceRecord): string {
   const id = text(record.id) ?? "";
+  if (resource !== "licences") {
+    const bought = purchaseSummary(record.items);
+    if (bought) return bought;
+  }
   if (resource === "invoices") return text(record.invoice_number) ?? text(record.reference) ?? id.slice(0, 8);
   if (resource === "licences") {
     const product = [text(record.offering_name), text(record.variant_name)].filter(Boolean).join(", ");
     return product || `Licence ${id.slice(0, 8)}`;
   }
   return text(record.reference) ?? id.slice(0, 8);
+}
+
+/** The record's code (reference, invoice number) for the small print, when the title is not already it. */
+export function recordCode(resource: CommerceResource, record: CommerceRecord): string | null {
+  const code = resource === "invoices" ? text(record.invoice_number) ?? text(record.reference) : resource === "licences" ? null : text(record.reference);
+  return code && code !== recordTitle(resource, record) ? code : null;
 }
 
 /** The bridge masks licence keys to their last four characters (GRE-2330); GSAM never sees more. */

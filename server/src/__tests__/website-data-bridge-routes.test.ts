@@ -232,6 +232,19 @@ describeEmbeddedPostgres("website data bridge routes", () => {
     expect(seen.every((s) => s.verified)).toBe(true);
   });
 
+  it("names what was bought: an invoice takes its order's lines, a line with only ids takes the catalogue's names", async () => {
+    const { base, companyId } = await seedSite();
+    const { actor } = await seedAgent(companyId, ["website:view"]);
+    const http = request(app(actor));
+    await makeKey(base);
+    answer = (url) => url.pathname.endsWith("/invoices/o1") ? Response.json({ item: { id: "o1", invoice_number: "INV-1" } })
+      : url.pathname.endsWith("/orders/o1") ? Response.json({ item: { id: "o1", items: [{ offering_id: "p1", variant_id: "v1", qty: 2 }] } })
+        : url.pathname.endsWith("/offerings") ? Response.json({ items: [{ id: "p1", name: "IronPDF", variants: [{ id: "v1", name: "Lite", sku: "IRON-LITE" }] }], nextCursor: null })
+          : new Response(JSON.stringify({ error: { code: "not_found" } }), { status: 404 });
+    const { item } = (await http.get(`${base}/data/invoices/o1`).expect(200)).body;
+    expect(item.items).toEqual([{ offering_id: "p1", variant_id: "v1", qty: 2, offering_name: "IronPDF", variant_name: "Lite", sku: "IRON-LITE" }]);
+  });
+
   it("reads commerce records, FX and the payment report on the read key, as the calling agent (GRE-2354 2c(a))", async () => {
     const { base, companyId } = await seedSite();
     const { actor, agentId } = await seedAgent(companyId, ["website:view"]);

@@ -379,7 +379,8 @@ function CommerceRefundRequestPayload({ payload }: { payload: Record<string, unk
   return (
     <div className="mt-3 space-y-1.5 text-sm">
       <PayloadField label="Site" value={payload.siteName} />
-      <PayloadField label="Order" value={payload.orderId} />
+      <PayloadField label="Bought" value={payload.orderSummary} />
+      <PayloadField label="Order" value={payload.orderReference ?? payload.orderId} />
       <PayloadField label="Amount" value={amount} />
       <PayloadField label="Reason" value={payload.reason} />
       <PayloadField label="Asked by" value={payload.requestedBy} />

@@ -11,6 +11,7 @@ import {
   maskedLicenceKey,
   newestFirst,
   organisationFor,
+  recordCode,
   recordTitle,
   recordTotal,
   websiteCustomerFor,
@@ -45,6 +46,14 @@ describe("record display", () => {
     expect(recordTitle("invoices", { id: "o1", invoice_number: "INV-0042", reference: "ORD-7" })).toBe("INV-0042");
     expect(recordTitle("quotes", { id: "q1", reference: "Q-2026-001" })).toBe("Q-2026-001");
     expect(recordTitle("licences", { id: "l1", offering_name: "JetBrains All Products", variant_name: "Annual" })).toBe("JetBrains All Products, Annual");
+    const order = { id: "o2", reference: "ORD-9", items: [
+      { offering_name: "Aspose.Total for .NET", variant_name: "Developer", qty: 2 },
+      { offering_name: "IronPDF", qty: 1 },
+    ] };
+    expect(recordTitle("orders", order)).toBe("Aspose.Total for .NET, Developer × 2 and 1 more");
+    expect(recordCode("orders", order)).toBe("ORD-9");
+    expect(recordTitle("orders", { id: "o3", reference: "ORD-10", items: [{ offering_id: "x" }] })).toBe("ORD-10");
+    expect(recordCode("orders", { id: "o3", reference: "ORD-10", items: [] })).toBeNull();
   });
 
   it("uses the quoted total, else the indicative one", () => {

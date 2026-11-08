@@ -188,9 +188,40 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     return { ...value, ...writeSide };
   }
 
+  /**
+   * What was bought, by name (John, 8 Nov). Lines snapshot offering_name/variant_name; a line that kept only its ids
+   * gets the name from the catalogue, read once per call (24 products, one page), never once per line.
+   */
+  async function namedLines(site: BridgeSite, rows: Record<string, unknown>[], actor: WebsiteBridgeActor) {
+    const lines = rows.flatMap((row) => (Array.isArray(row.items) ? row.items as Record<string, unknown>[] : []));
+    if (!lines.some((line) => !line.offering_name && line.offering_id)) return rows;
+    let offerings: Record<string, unknown>[];
+    try {
+      offerings = (await (await client(site)).list("offerings", { limit: 100 }, actor)).items;
+    } catch {
+      return rows; // the screen falls back to the line's code
+    }
+    const names = new Map<string, unknown>();
+    for (const offering of offerings) {
+      names.set(String(offering.id), offering.name);
+      for (const variant of Array.isArray(offering.variants) ? offering.variants as Record<string, unknown>[] : []) {
+        names.set(`v:${String(variant.id)}`, variant.name);
+        names.set(`sku:${String(variant.id)}`, variant.sku);
+      }
+    }
+    for (const line of lines) {
+      if (!line.offering_name && line.offering_id) line.offering_name = names.get(String(line.offering_id)) ?? null;
+      if (!line.variant_name && line.variant_id) line.variant_name = names.get(`v:${String(line.variant_id)}`) ?? null;
+      if (!line.sku && line.variant_id) line.sku = names.get(`sku:${String(line.variant_id)}`) ?? null;
+    }
+    return rows;
+  }
+
   async function list(site: BridgeSite, resource: WebsiteDataResource,
     filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) {
-    return (await client(site)).list(resource, filters, actor);
+    const page = await (await client(site)).list(resource, filters, actor);
+    if (resource === "quotes" || resource === "orders") await namedLines(site, page.items, actor);
+    return page;
   }
 
   async function releaseHealth(site: BridgeSite, actor: WebsiteBridgeActor) {
@@ -206,7 +237,17 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
   }
 
   async function get(site: BridgeSite, resource: WebsiteDataResource, id: string, actor: WebsiteBridgeActor) {
-    return (await client(site)).get(resource, id, actor);
+    const result = await (await client(site)).get(resource, id, actor);
+    // an invoice is its order with a number, so its lines are the order's (same id)
+    if (resource === "invoices" && !Array.isArray(result.item.items)) {
+      try {
+        result.item.items = (await (await client(site)).get("orders", id, actor)).item.items ?? [];
+      } catch {
+        // no lines is still a readable invoice
+      }
+    }
+    if (resource === "quotes" || resource === "orders" || resource === "invoices") await namedLines(site, [result.item], actor);
+    return result;
   }
 
   /** Commerce reads (GRE-2354 2c(a)): the same read key and the same audit on the site. */

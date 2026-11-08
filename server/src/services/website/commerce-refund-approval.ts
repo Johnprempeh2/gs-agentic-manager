@@ -4,6 +4,7 @@ import type { Db } from "@greatstone/db";
 import { agents, approvals, authUsers } from "@greatstone/db";
 import {
   COMMERCE_REFUND_REQUEST_APPROVAL_TYPE,
+  purchaseSummary,
   type CommerceRefundRequestApprovalPayload,
   type WebsiteCommerceRefundRequestInput,
 } from "@greatstone/shared";
@@ -126,11 +127,21 @@ export function commerceRefundApprovals(db: Db, bridgeOptions: WebsiteDataBridge
       }
     }
     const who = await requesterName(actor);
+    // what the order bought, by name, so the card says it (John, 8 Nov); the id stays as the fallback
+    let order: Record<string, unknown> | null = null;
+    try {
+      order = (await bridge.get(site, "orders", input.orderId, actor.bridge)).item;
+    } catch {
+      order = null;
+    }
+    const orderReference = typeof order?.reference === "string" ? order.reference : null;
+    const orderSummary = purchaseSummary(order?.items);
+    const orderLabel = orderSummary ?? `order ${orderReference ?? input.orderId.slice(0, 8)}`;
     const payload: CommerceRefundRequestApprovalPayload = {
       siteId: site.id,
       siteName: site.name,
-      title: `Refund request: order ${input.orderId.slice(0, 8)}`,
-      summary: `${who} asks for a refund of ${formatMinor(input.amountMinor, null)} on order ${input.orderId}. Reason: ${input.reason}. `
+      title: `Refund request: ${orderLabel}`,
+      summary: `${who} asks for a refund of ${formatMinor(input.amountMinor, null)} on ${orderSummary ? `${orderSummary} (order ${orderReference ?? input.orderId})` : `order ${orderReference ?? input.orderId}`}. Reason: ${input.reason}. `
         + "Approving records the decision on the website only: a person still makes the refund in Stripe.",
       orderId: input.orderId,
       amountMinor: input.amountMinor,
@@ -139,6 +150,8 @@ export function commerceRefundApprovals(db: Db, bridgeOptions: WebsiteDataBridge
       requestedBy: who,
       requestId: null,
       requestStatus: null,
+      orderReference,
+      orderSummary,
       ...(clientKey ? { clientKey } : {}),
     };
     const [created] = await db
