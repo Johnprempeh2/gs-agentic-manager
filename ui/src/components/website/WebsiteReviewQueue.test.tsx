@@ -17,9 +17,10 @@ vi.mock("../../api/website", async () => {
 });
 vi.mock("../../context/ConfirmContext", () => ({ useConfirm: () => confirm }));
 
-import { WebsiteReviewQueue, reviewCountText } from "./WebsiteReviewQueue";
+import { WebsiteReviewQueue, reviewCountText, versionLabel } from "./WebsiteReviewQueue";
 
-const page = (id: string, title: string, slug: string) => ({ id, title, slug, status: "review" }) as WebsitePage;
+const page = (id: string, title: string, slug: string, extra: Partial<WebsitePage> = {}) =>
+  ({ id, title, slug, status: "review", latestRevisionId: `${id}-r2`, latestRevisionNumber: 2, approvedRevisionId: null, updatedAt: "2026-11-08T10:00:00Z", ...extra }) as WebsitePage;
 const entry = (id: string, entryKey: string) => ({ id, entryKey, collection: "product", status: "review" }) as WebsiteEntry;
 const queue: Queue = {
   pages: [page("p1", "Home", "/"), page("p2", "About", "/about")],
@@ -132,5 +133,17 @@ describe("WebsiteReviewQueue", () => {
     moduleApiMock.review.mockResolvedValue({ pages: [], entries: [] });
     await render();
     expect(container.querySelector('[data-testid="website-review-queue"]')).toBeNull();
+  });
+
+  it("lists the newest change first and labels the version Approve takes", async () => {
+    moduleApiMock.review.mockResolvedValue({
+      pages: [page("p1", "About", "/about"), page("p2", "Two Doors", "/", { latestRevisionId: "r20", latestRevisionNumber: 20, approvedRevisionId: "r19", updatedAt: "2026-11-08T17:00:00Z" })],
+      entries: [],
+    });
+    await render();
+    expect(container.querySelector("li")?.textContent).toContain("Two Doors");
+    const labels = [...container.querySelectorAll('[data-testid="website-review-version"]')].map((node) => node.textContent);
+    expect(labels).toEqual(["Version 20, newest draft (replaces the approved version)", "Version 2, newest draft"]);
+    expect(versionLabel({ latestRevisionId: "a", latestRevisionNumber: 3, approvedRevisionId: "a", updatedAt: "" })).toBe("Version 3, newest draft");
   });
 });

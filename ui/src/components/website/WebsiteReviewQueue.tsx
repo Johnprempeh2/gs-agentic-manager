@@ -14,7 +14,19 @@ import { useCanPublishWebsite } from "./WebsiteSiteConnection";
 // with Publish rights on the site approves them all, or the ones they tick, after
 // one confirm that shows the count. Approving never publishes.
 
-type Item = { key: string; kind: "page" | "entry"; id: string; title: string; detail: string };
+type Item = { key: string; kind: "page" | "entry"; id: string; title: string; detail: string; version: string; updatedAt: string };
+type Row = { latestRevisionId: string | null; latestRevisionNumber: number; approvedRevisionId: string | null; updatedAt: string };
+
+/**
+ * John, 8 Nov: say which version Approve takes. Approve always takes the newest saved version; when an
+ * older version is approved now, the label says this one replaces it, so the old one is never mistaken for it.
+ */
+export function versionLabel(row: Row) {
+  const draft = `Version ${row.latestRevisionNumber}, newest draft`;
+  return row.approvedRevisionId && row.approvedRevisionId !== row.latestRevisionId ? `${draft} (replaces the approved version)` : draft;
+}
+
+const info = (row: Row) => ({ version: versionLabel(row), updatedAt: row.updatedAt });
 
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
@@ -43,10 +55,11 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
     queryFn: () => websiteModuleApi.review(companyId, siteId),
   });
 
+  // Newest change first.
   const items: Item[] = [
-    ...(reviewQuery.data?.pages ?? []).map((page) => ({ key: `page:${page.id}`, kind: "page" as const, id: page.id, title: page.title, detail: page.slug })),
-    ...(reviewQuery.data?.entries ?? []).map((entry) => ({ key: `entry:${entry.id}`, kind: "entry" as const, id: entry.id, title: entry.entryKey, detail: entry.collection })),
-  ];
+    ...(reviewQuery.data?.pages ?? []).map((page) => ({ key: `page:${page.id}`, kind: "page" as const, id: page.id, title: page.title, detail: page.slug, ...info(page) })),
+    ...(reviewQuery.data?.entries ?? []).map((entry) => ({ key: `entry:${entry.id}`, kind: "entry" as const, id: entry.id, title: entry.entryKey, detail: entry.collection, ...info(entry) })),
+  ].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
   const chosen = items.filter((item) => selected.has(item.key));
 
   const approve = useMutation({
@@ -137,6 +150,7 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm font-medium">{item.title}</span>
                 <span className="truncate font-mono text-xs text-muted-foreground">{item.detail}</span>
+                <span className="truncate text-xs text-muted-foreground" data-testid="website-review-version">{item.version}</span>
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">{item.kind === "page" ? "Page" : "Entry"}</span>
             </li>

@@ -20,6 +20,7 @@ import { getStorageService } from "../../storage/index.js";
 import { secretService } from "../secrets.js";
 import { WEBSITE_MESSAGES } from "./messages.js";
 import { websiteMediaExt } from "./media-file.js";
+import { siteAssetOrigin } from "./live-page.js";
 import type { SiteRow } from "./module.js";
 import type { WebsitePublishStarter } from "./publish-approval.js";
 import { checkWebsiteConnection, type WebsiteConnectionChecker } from "./connect-check.js";
@@ -177,6 +178,30 @@ export function reportedRelease(page: FetchedPage): string | null {
     // not JSON
   }
   return null;
+}
+
+/**
+ * Publish refresh (John, 8 Nov): the site serves its current shared stylesheet and footer at
+ * /_chrome.json (greatstone-website, written by its HTML export). When it answers, the release
+ * takes them instead of GSAM's copy, so they cannot drift from the code. When it does not, the
+ * release keeps GSAM's approved copy and the check says so; it never fails a Publish.
+ */
+export function applyChromeRefresh(chromeParts: Map<string, Record<string, unknown>>, fetched: FetchedPage | null): WebsiteReleaseCheck {
+  const kept = (why: string): WebsiteReleaseCheck => ({ kind: "check", name: "chrome_refresh", ok: true, message: `Kept GSAM's shared stylesheet and footer: ${why}.` });
+  if (!fetched) return kept("the site could not be reached");
+  if (fetched.status !== 200) return kept(`the site has no /_chrome.json yet (HTTP ${fetched.status})`);
+  let file: { version?: unknown; stylesheet?: unknown; footer?: { html?: unknown; css?: unknown } };
+  try {
+    file = JSON.parse(fetched.body);
+  } catch {
+    return kept("the site's /_chrome.json is not JSON");
+  }
+  if (file?.version !== 1 || typeof file.stylesheet !== "string" || !file.stylesheet || typeof file.footer?.html !== "string" || !file.footer.html) {
+    return kept("the site's /_chrome.json is not version 1 with a stylesheet and footer");
+  }
+  chromeParts.set("stylesheet", { css: file.stylesheet });
+  chromeParts.set("footer", { html: file.footer.html, css: typeof file.footer.css === "string" ? file.footer.css : "" });
+  return { kind: "check", name: "chrome_refresh", ok: true, message: "Shared stylesheet and footer refreshed from the site's code." };
 }
 
 function stableJson(value: unknown): string {
@@ -527,6 +552,10 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
         : { kind: "check", name: "html_pages", ok: false, message: `Some pages are HTML and ${blockPages.join(", ")} ${blockPages.length === 1 ? "is" : "are"} still in the block format. A release is all one or the other: import or rebuild ${blockPages.length === 1 ? "it" : "them"} as HTML first.` },
     );
     if (schema === WEBSITE_HTML_RELEASE_SCHEMA) {
+      // John, 8 Nov: the shared stylesheet and footer follow the site's code, not the copy taken at import.
+      const origin = siteAssetOrigin(site.livePreviewUrl);
+      const fetched = origin ? await fetchPage(`${origin}/_chrome.json`).catch(() => null) : null;
+      checks.push(applyChromeRefresh(chromeParts, fetched));
       checks.push(
         typeof chromeParts.get("stylesheet")?.css === "string"
           ? { kind: "check", name: "site_chrome", ok: true }
