@@ -394,7 +394,8 @@ function LiveEditorShell({
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
         {switcher}
-        <Button
+        {/* A read-only old block page has nothing to edit, so it has no editing switch. */}
+        {readOnly ? null : <Button
           type="button"
           size="sm"
           variant={editing ? "secondary" : "outline"}
@@ -409,7 +410,7 @@ function LiveEditorShell({
         >
           {editing ? <PenLine aria-hidden="true" className="size-4" /> : <MousePointerClick aria-hidden="true" className="size-4" />}
           <span className="hidden sm:inline">{editing ? "Editing on" : "Editing off"}</span>
-        </Button>
+        </Button>}
         {versions?.length ? (
           <VersionMenu
             versions={versions}
@@ -460,7 +461,8 @@ function LiveEditorShell({
             </div>
           ) : (
             <>
-            {health && (health.blank || health.scripts.length > 0 || health.styles.length > 0) ? (
+            {/* The health notice sits over the top of the frame, so on a read-only page it would hide the banner. */}
+            {!readOnly && health && (health.blank || health.scripts.length > 0 || health.styles.length > 0) ? (
               <PageHealthNotice
                 health={health}
                 onFix={() =>

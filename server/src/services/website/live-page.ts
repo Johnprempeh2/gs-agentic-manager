@@ -45,6 +45,24 @@ const STARTER_CSS =
   ".gs-starter{max-width:1100px;margin:0 auto;padding:96px 24px}.gs-starter h1{font-size:48px;font-weight:800;margin:0 0 16px}" +
   ".gs-starter p{max-width:60ch;line-height:1.7;font-size:17px}";
 
+/**
+ * The home page (/) is the frozen Two Doors landing (John, 24 Oct): its hero and doors are the
+ * two-doors-landing island, built in the site's code. John may add sections below it (25 Oct), so
+ * chat edits are allowed, but a save must keep the island first and unchanged, and page CSS may not
+ * reach into the landing (agents restyled .td-* classes through page CSS before, 5 Nov).
+ */
+export const HOME_LANDING_ISLAND = '<gs-island name="two-doors-landing"></gs-island>';
+const HOME_GUIDANCE =
+  `This is the home page. Its hero and doors are the frozen Two Doors landing, ${HOME_LANDING_ISLAND}: keep that tag first and exactly as it is, and never restyle it (no page CSS for .td-, .b-hero or gs-island). Add or edit sections only after it. A save that changes the landing is refused.`;
+export function checkHomeFrozen(part: { html: string; css: string }) {
+  if (!part.html.trimStart().startsWith(HOME_LANDING_ISLAND) || part.html.split("two-doors-landing").length !== 2) {
+    throw new LiveDesignConflict(`The home page keeps the Two Doors landing first and unchanged (${HOME_LANDING_ISLAND}); add sections after it. Nothing was saved.`);
+  }
+  if (/\.td-|\.b-hero|gs-island|two-doors/i.test(part.css)) {
+    throw new LiveDesignConflict("Page CSS on the home page cannot restyle the Two Doors landing (its .td- and hero classes). Nothing was saved.");
+  }
+}
+
 /** What an empty or block-built page shows until it has its HTML version. */
 export function websiteStarterPage(page: Pick<PageLike, "title" | "slug">, blocks: unknown) {
   const hasBlocks = blocks !== null && blocks !== undefined;
@@ -134,6 +152,7 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
       "Never answer that something cannot be built. When a request needs behaviour HTML and CSS cannot give (live data, a new kind of form, a new interaction), build the best script-free version now, then create one issue in the website project assigned to Keystone, titled \"Website behaviour: <what>\", describing the markup you used and what the behaviour must add, and tell John in one line that the fuller version is on its way with that issue's key. Check for an open issue with the same title first.",
       "Before making versions, check that what John picked can be saved: anything rendered by a <gs-island> (for example the whole Two Doors landing) lives in the site's code, not in this page. If it is inside an island, make no versions: create that website-behaviour issue as above, then reply with an error field (it closes the request) saying in one line that this part is built in code so a change would not save here, and the issue key that will build it.",
       "If the page is a starter with a gs-page-blocks script, rebuild it from those blocks with the same words and order, then drop that script, but only when John asks for that rebuild, and never for the home page (/), which John has frozen.",
+      ...(page.slug === "/" ? [HOME_GUIDANCE] : []),
     ].join(" "),
     frameSrc: (revisionId) =>
       engineOrigin
@@ -142,6 +161,7 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
     read: async (revisionId) => pageDocument(page, await part(revisionId), await loadChrome(), null),
     save: async (html, agentId) => {
       const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
+      if (page.slug === "/") checkHomeFrozen(content);
       const doc = await store.readDocument(page.companyId, page.documentId);
       if (!doc?.latestRevisionId) throw new LiveDesignConflict("The page is gone.");
       const result = await store.saveRevision({
