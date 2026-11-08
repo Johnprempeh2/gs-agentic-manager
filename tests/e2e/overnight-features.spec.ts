@@ -52,7 +52,6 @@ test("tonight's pages open without errors", async ({ page, request }) => {
   const problems = watchForBreakage(page);
 
   const pages: Array<[string, string]> = [
-    ["needed", "What we need from you"],
     ["calendar", "Calendar"],
     ["scorecard", "Scorecard"],
     ["notifications", "Notifications"],
@@ -83,7 +82,7 @@ test("search finds a task by a word in its title", async ({ page, request }) => 
   await expect(page).toHaveURL(new RegExp(`/issues/${task.identifier}$`));
 });
 
-test("What we need from you lists a question waiting on the board", async ({ page, request }) => {
+test("Decisions lists a question waiting on the board", async ({ page, request }) => {
   const company = await seedCompany(request, "Needed");
   const task = await createTask(request, company, "Quarterly board pack");
   await json(
@@ -93,9 +92,8 @@ test("What we need from you lists a question waiting on the board", async ({ pag
   );
 
   await page.goto(`/${company.issuePrefix}/needed`);
-  const questions = page.getByRole("region", { name: /Answer a question/ });
-  await expect(questions.getByRole("link", { name: /Send the pack on Monday\?/ })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("1 thing needs you.")).toBeVisible();
+  await expect(page).toHaveURL(/\/desk/);
+  await expect(page.getByText(/Send the pack on Monday\?/).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test("memory pasted from ChatGPT waits in Review for someone else to confirm", async ({ page, request }) => {
