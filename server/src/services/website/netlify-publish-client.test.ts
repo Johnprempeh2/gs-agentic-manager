@@ -62,4 +62,27 @@ describe("netlify publish client", () => {
     expect(await client.restoreDeploy("deploy-0")).toMatchObject({ id: "deploy-0", state: "ready", commitRef: "abc" });
     expect(calls[3]).toMatchObject({ url: "https://api.netlify.com/api/v1/sites/site-1/deploys/deploy-0/restore", method: "POST" });
   });
+
+  // GRE-4485: greatstone-home has no linked repository; `/deploys/:id` answers for any site the token reads.
+  it("reads build settings, a deploy's own site, and skips failed deploys only when asked", async () => {
+    const since = "2026-11-08T00:00:00.000Z";
+    const rows = [
+      { id: "d-2", state: "canceled", context: "production", created_at: "2026-11-08T00:02:00.000Z", site_id: "site-1" },
+      { id: "d-1", state: "building", context: "production", created_at: "2026-11-08T00:01:00.000Z", site_id: "site-1" },
+    ];
+    const { calls, fetchImpl } = recorder([
+      { json: { id: "site-1", build_settings: {} } },
+      { json: { id: "site-1", build_settings: { repo_url: "https://github.com/acme/site" } } },
+      { json: { id: "d-9", state: "ready", site_id: "site-2" } },
+      { json: rows },
+      { json: rows },
+    ]);
+    const client = createNetlifyPublishClient({ netlifySiteId: "site-1", storeName: "gsam-content", token: "tok", fetchImpl });
+    expect(await client.hasBuildSettings()).toBe(false);
+    expect(await client.hasBuildSettings()).toBe(true);
+    expect(calls[0]).toMatchObject({ url: "https://api.netlify.com/api/v1/sites/site-1", method: "GET" });
+    expect(await client.getDeploy("d-9")).toMatchObject({ id: "d-9", siteId: "site-2" });
+    expect(await client.findProductionDeploySince(new Date(since))).toMatchObject({ id: "d-2", state: "error" });
+    expect(await client.findProductionDeploySince(new Date(since), { skipFailed: true })).toMatchObject({ id: "d-1", state: "building", siteId: "site-1" });
+  });
 });
