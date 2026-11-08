@@ -7,7 +7,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatMinor, statusLabel, statusTone, text } from "@/lib/commerce";
+import { formatMinor, recordCode, recordTitle, statusLabel, statusTone, text } from "@/lib/commerce";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
@@ -115,12 +115,13 @@ export function CommercePayments({ companyId, siteId }: { companyId: string; sit
                     <li key={id} className="space-y-1 px-4 py-3">
                       <div className="flex min-w-0 items-center gap-3">
                         <Link to={`/commerce/orders/${encodeURIComponent(id)}`} className="min-w-0 flex-1 truncate text-sm font-medium text-primary underline-offset-4 hover:underline">
-                          {text(order.reference) ?? id.slice(0, 8)}
+                          {recordTitle("orders", order)}
                         </Link>
                         <span className="shrink-0 text-sm font-medium tabular-nums">{formatMinor(order.total_minor, order.currency)}</span>
                         <Pill tone={statusTone(text(order.status) ?? "")}>{statusLabel(text(order.status) ?? "")}</Pill>
                       </div>
                       <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {recordCode("orders", order) ? <span className="font-mono">{recordCode("orders", order)}</span> : null}
                         <span>{text(order.placed_at ?? order.created_at) ? formatDate(text(order.placed_at ?? order.created_at)!) : ""}</span>
                         {Number(order.refunded_minor ?? 0) > 0 ? <span>Refunded {formatMinor(order.refunded_minor, order.currency)}</span> : null}
                         {refunds.length ? <span>{refunds.length} refund {refunds.length === 1 ? "request" : "requests"}</span> : null}

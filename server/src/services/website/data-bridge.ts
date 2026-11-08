@@ -220,7 +220,7 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
   async function list(site: BridgeSite, resource: WebsiteDataResource,
     filters: { customer?: string; updatedSince?: string; cursor?: string; limit?: number }, actor: WebsiteBridgeActor) {
     const page = await (await client(site)).list(resource, filters, actor);
-    if (resource === "quotes" || resource === "orders") await namedLines(site, page.items, actor);
+    if (resource === "quotes" || resource === "orders" || resource === "invoices") await namedLines(site, page.items, actor);
     return page;
   }
 
