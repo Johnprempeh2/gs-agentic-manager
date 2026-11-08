@@ -11,6 +11,8 @@ export interface NetlifyDeploy {
   commitRef: string | null;
   createdAt: string | null;
   errorMessage: string | null;
+  /** The Netlify site the deploy belongs to. `/deploys/:id` answers for any site the token reads (GRE-4485). */
+  siteId: string | null;
 }
 
 export interface WebsiteNetlifyClient {
@@ -18,10 +20,15 @@ export interface WebsiteNetlifyClient {
   putBlob(key: string, body: Buffer | string, contentType: string): Promise<void>;
   /** Content-only rebuild of the production branch: one production deploy, about 15 credits. */
   startBuild(): Promise<{ deployId: string | null }>;
+  /** False when the site has no linked repository, so only an upload deploys it and a build cannot (GRE-4485). */
+  hasBuildSettings(): Promise<boolean>;
   /** `null` when Netlify no longer has the deploy (404). */
   getDeploy(deployId: string): Promise<NetlifyDeploy | null>;
-  /** Newest production deploy created at or after `since`; finds a build whose id was lost in a restart. */
-  findProductionDeploySince(since: Date): Promise<NetlifyDeploy | null>;
+  /**
+   * Newest production deploy created at or after `since`; finds a build whose id was lost in a restart.
+   * `skipFailed`: ignore failed and canceled deploys (staging, where GSAM never starts the deploy it waits for).
+   */
+  findProductionDeploySince(since: Date, options?: { skipFailed?: boolean }): Promise<NetlifyDeploy | null>;
   /** The deploy production serves now. */
   publishedDeploy(): Promise<NetlifyDeploy | null>;
   /** Publish an earlier deploy again. Not a new build: 0 credits. */
@@ -57,6 +64,7 @@ function toDeploy(raw: Record<string, unknown>): NetlifyDeploy {
     commitRef: typeof raw.commit_ref === "string" && raw.commit_ref ? raw.commit_ref : null,
     createdAt: typeof raw.created_at === "string" ? raw.created_at : null,
     errorMessage: typeof raw.error_message === "string" ? raw.error_message : null,
+    siteId: typeof raw.site_id === "string" && raw.site_id ? raw.site_id : null,
   };
 }
 
@@ -133,6 +141,12 @@ export function createNetlifyPublishClient(input: {
       return { deployId: typeof build.deploy_id === "string" ? build.deploy_id : null };
     },
 
+    async hasBuildSettings() {
+      const row = await apiJson<Record<string, unknown>>(`/sites/${site}`);
+      const settings = row.build_settings as Record<string, unknown> | null | undefined;
+      return Boolean(settings && typeof settings.repo_url === "string" && settings.repo_url);
+    },
+
     async getDeploy(deployId) {
       const res = await api(`/deploys/${encodeURIComponent(deployId)}`);
       if (res.status === 404) return null;
@@ -140,10 +154,11 @@ export function createNetlifyPublishClient(input: {
       return toDeploy((await res.json()) as Record<string, unknown>);
     },
 
-    async findProductionDeploySince(since) {
+    async findProductionDeploySince(since, options = {}) {
       const rows = await apiJson<Array<Record<string, unknown>>>(`/sites/${site}/deploys?per_page=10&production=true`);
       const found = rows
         .filter((row) => row.context === "production" || row.context === undefined)
+        .filter((row) => !options.skipFailed || deployState(row.state) !== "error")
         .filter((row) => typeof row.created_at === "string" && Date.parse(row.created_at) >= since.getTime() - 5_000)
         .sort((a, b) => Date.parse(String(b.created_at)) - Date.parse(String(a.created_at)));
       return found[0] ? toDeploy(found[0]) : null;

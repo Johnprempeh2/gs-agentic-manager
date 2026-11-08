@@ -69,6 +69,10 @@ function fakeNetlify() {
     engineDeploys: 0,
     fetches: 0,
     deploySeq: 0,
+    /** False: no linked repository, so the site is deployed only by upload. */
+    buildSettings: true,
+    /** The Netlify site the next deploy lands on (null: Netlify did not say). */
+    deploySiteId: null as string | null,
   };
 
   function currentRelease(): number | null {
@@ -79,7 +83,7 @@ function fakeNetlify() {
   function addDeploy(kind: "build" | "engine", outcome: "ready" | "error" | "building") {
     state.deploySeq += 1;
     const id = `deploy-${state.deploySeq}`;
-    const deploy = { id, state: outcome, commitRef: state.engineCommit, createdAt: new Date().toISOString(), errorMessage: outcome === "error" ? "Build script returned non-zero exit code: 2" : null, release: currentRelease() };
+    const deploy = { id, state: outcome, commitRef: state.engineCommit, createdAt: new Date().toISOString(), errorMessage: outcome === "error" ? "Build script returned non-zero exit code: 2" : null, siteId: state.deploySiteId, release: currentRelease() };
     deploys.set(id, deploy);
     if (outcome === "ready") state.publishedDeployId = id;
     if (kind === "engine") state.engineDeploys += 1;
@@ -97,11 +101,14 @@ function fakeNetlify() {
       state.builds += 1;
       return { deployId: addDeploy("build", state.nextBuild).id };
     },
+    async hasBuildSettings() {
+      return state.buildSettings;
+    },
     async getDeploy(deployId) {
       return deploys.get(deployId) ?? null;
     },
-    async findProductionDeploySince(since) {
-      const found = [...deploys.values()].filter((d) => Date.parse(d.createdAt!) >= since.getTime() - 5_000);
+    async findProductionDeploySince(since, options = {}) {
+      const found = [...deploys.values()].filter((d) => Date.parse(d.createdAt!) >= since.getTime() - 5_000 && !(options.skipFailed && d.state === "error"));
       return found.at(-1) ?? null;
     },
     async publishedDeploy() {
@@ -139,6 +146,10 @@ function fakeNetlify() {
     engineDeploy(commit: string) {
       state.engineCommit = commit;
       addDeploy("engine", "ready");
+    },
+    /** A deploy GSAM did not start that Netlify canceled (on staging: a source deploy, GRE-4485). */
+    canceledDeploy() {
+      addDeploy("engine", "error");
     },
   };
 }
@@ -430,6 +441,53 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(netlify.state.builds).toBe(0);
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((u) => u.startsWith("https://gre3833-next-db-staging.netlify.app/"))).toBe(true);
+  });
+
+  // GRE-4485: greatstone-home's release 1 took a staging source deploy Netlify canceled after 4 s as its own and
+  // ended build_failed. A deploy GSAM did not start is not this release's end on staging.
+  it("a canceled staging deploy GSAM did not start does not fail the public site's release", async () => {
+    const { site, page, base } = await seedSite();
+    await db.update(websiteSite).set({ netlifySiteId: "3b1e97e6-e184-4251-badd-deed532be3ab" }).where(eq(websiteSite.id, site.id));
+    await approveLatest(page.id);
+    netlify.canceledDeploy();
+    const first = await publish(base);
+    expect(netlify.state.builds).toBe(0);
+    expect(first.status).toBe("pending");
+    expect(first.pendingReason).toBe("build_timeout");
+    expect(first.deploy).toMatchObject({ deployId: null, state: "requested" });
+    netlify.engineDeploy("engine-2");
+    const plan = await request(app()).get(`${base}/releases/${first.id}/retry`).expect(200);
+    expect(plan.body).toMatchObject({ action: "verify", costsCredits: false });
+    await request(app()).post(`${base}/releases/${first.id}/retry`).send({}).expect(202);
+    await settle();
+    expect((await releaseById(first.id)).status).toBe("live");
+  });
+
+  it("refuses Publish on a site with no Netlify build settings before any release exists", async () => {
+    const { site, page, base } = await seedSite();
+    await approveLatest(page.id);
+    netlify.state.buildSettings = false;
+    const res = await request(app()).post(`${base}/releases`).send({}).expect(422);
+    expect(res.body.details?.code).toBe("website_netlify_build_unavailable");
+    expect(res.body.error).toMatch(/deployed by upload.*deploy:prod/);
+    await settle();
+    expect(await releaseCount(site.id)).toBe(0);
+    expect(netlify.state.builds).toBe(0);
+    expect(netlify.blobs.size).toBe(0);
+    const [siteRow] = await db.select().from(websiteSite).where(eq(websiteSite.id, site.id));
+    expect(siteRow!.publishLeaseId).toBeNull();
+  });
+
+  it("a deploy on another Netlify site fails the release with the reason instead of a wait", async () => {
+    const { page, base } = await seedSite();
+    await approveLatest(page.id);
+    netlify.state.deploySiteId = "6689e558-855b-40b1-be45-c530531fed45";
+    const release = await publish(base);
+    expect(release.status).toBe("pending");
+    expect(release.pendingReason).toBe("build_failed");
+    expect(release.deploy).toMatchObject({ deployId: "deploy-1", state: "error" });
+    expect((release.deploy as { errorMessage: string }).errorMessage).toContain("is on Netlify site 6689e558-855b-40b1-be45-c530531fed45, not this release's site netlify-site");
+    expect(netlify.state.fetches).toBe(0);
   });
 
   it("one Publish makes exactly one production deploy, then shows Live", async () => {

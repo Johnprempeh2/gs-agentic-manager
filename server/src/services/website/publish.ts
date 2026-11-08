@@ -113,6 +113,8 @@ export function publishTarget<T extends Pick<SiteRow, "netlifySiteId" | "domain"
   if (site.netlifySiteId !== PUBLIC_NETLIFY_SITE_ID) return { ...site, staged: false };
   return { ...site, netlifySiteId: STAGING_NETLIFY_SITE_ID, domain: STAGING_DOMAIN, staged: true };
 }
+/** A site with no linked repository: only an upload (greatstone-home's deploy:prod) deploys it (GRE-4485). */
+export const UPLOAD_ONLY_SITE_MESSAGE = "This site is deployed by upload, so Netlify cannot rebuild it. Use the weekly release (deploy:prod) instead.";
 const RELEASE_HEADER = "x-gsam-release";
 const RELEASE_META_RE = /<meta[^>]+name=["']gsam-release["'][^>]*content=["']([^"']+)["']/i;
 const RELEASE_META_REVERSED_RE = /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']gsam-release["']/i;
@@ -581,21 +583,67 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   // ---- serve (build or restore) and verify ----
 
-  async function waitForDeploy(release: ReleaseRow, netlify: WebsiteNetlifyClient, deploy: WebsiteReleaseDeploy, timeoutMs = timing.deployTimeoutMs): Promise<ReleaseRow> {
+  /**
+   * Refuses a Netlify build where none can run, before any release row or lease exists: a site with no linked
+   * repository is deployed only by upload (GRE-4485). Staging is never asked to build (the staging watch hands
+   * the rebuild over), so the public site's record is not refused. A failed read is not a "no": the build step
+   * still ends Pending with Retry if Netlify refuses it.
+   */
+  async function assertCanBuild(site: SiteRow) {
+    if (publishTarget(site).staged) return;
+    let canBuild = true;
+    try {
+      canBuild = await (await netlifyFor(site)).hasBuildSettings();
+    } catch (err) {
+      logger.warn({ err, siteId: site.id }, "website publish could not read the site's Netlify build settings");
+    }
+    if (!canBuild) throw unprocessable(UPLOAD_ONLY_SITE_MESSAGE, { code: "website_netlify_build_unavailable" });
+  }
+
+  function readDeploy(site: SiteRow, netlify: WebsiteNetlifyClient, deploy: WebsiteReleaseDeploy) {
+    return deploy.deployId
+      ? netlify.getDeploy(deploy.deployId)
+      : netlify.findProductionDeploySince(new Date(deploy.requestedAt), { skipFailed: publishTarget(site).staged });
+  }
+
+  /**
+   * What a deploy Netlify reports means for this release (GRE-4485). A deploy on another Netlify site is never
+   * this release's: the wait ends failed, with the reason. On staging GSAM never starts the deploy it waits for,
+   * so a failed or canceled one (a source deploy Netlify canceled, another deploy:staging) is not this release's
+   * end: forget it and keep waiting for the next.
+   */
+  function nextDeploy(site: SiteRow, current: WebsiteReleaseDeploy, found: NetlifyDeploy): WebsiteReleaseDeploy {
+    const target = publishTarget(site);
+    if (found.siteId && found.siteId !== target.netlifySiteId) {
+      return {
+        ...current,
+        deployId: found.id,
+        commitRef: found.commitRef,
+        state: "error",
+        errorMessage: `Deploy ${found.id} is on Netlify site ${found.siteId}, not this release's site ${target.netlifySiteId}. GSAM does not wait on another site's deploy.`,
+      };
+    }
+    if (target.staged && found.state === "error") return { ...current, deployId: null, commitRef: null, state: "requested", errorMessage: null };
+    return { ...current, deployId: found.id, commitRef: found.commitRef, state: found.state, errorMessage: found.errorMessage };
+  }
+
+  async function waitForDeploy(site: SiteRow, release: ReleaseRow, netlify: WebsiteNetlifyClient, deploy: WebsiteReleaseDeploy): Promise<ReleaseRow> {
+    const timeoutMs = publishTarget(site).staged ? timing.stagingDeployTimeoutMs : timing.deployTimeoutMs;
     const started = Date.now();
     let current = deploy;
     let row = release;
     for (;;) {
       let found: NetlifyDeploy | null = null;
       try {
-        found = current.deployId ? await netlify.getDeploy(current.deployId) : await netlify.findProductionDeploySince(new Date(current.requestedAt));
+        found = await readDeploy(site, netlify, current);
       } catch (err) {
         logger.warn({ err, releaseId: release.id }, "website publish could not read the Netlify deploy; trying again");
       }
       if (found) {
-        current = { ...current, deployId: found.id, commitRef: found.commitRef, state: found.state, errorMessage: found.errorMessage };
-        row = await updateRelease(row, { deploy: current as unknown as Record<string, unknown> });
-        if (found.state !== "building") return row;
+        const next = nextDeploy(site, current, found);
+        if (stableJson(next) !== stableJson(current)) row = await updateRelease(row, { deploy: next as unknown as Record<string, unknown> });
+        current = next;
+        if (current.state === "ready" || current.state === "error") return row;
       }
       if (Date.now() - started >= timeoutMs) return row;
       await sleep(timing.deployPollMs);
@@ -731,7 +779,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     const deploy = asDeploy(release.deploy);
     if (!deploy) return pending(release, "build_not_started");
     if (deploy.state !== "ready") {
-      release = await waitForDeploy(release, netlify, deploy, publishTarget(site).staged ? timing.stagingDeployTimeoutMs : timing.deployTimeoutMs);
+      release = await waitForDeploy(site, release, netlify, deploy);
       const after = asDeploy(release.deploy);
       if (after?.state === "error") return pending(release, "build_failed");
       if (after?.state !== "ready") return pending(release, "build_timeout");
@@ -837,6 +885,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
   async function startPublish(site: SiteRow, person: WebsitePerson, fromApproval?: WebsitePublishApprovalOrigin) {
     if (!site.netlifyTokenSecretId) throw unprocessable("This site has no Netlify token. Add it in the site settings first.", { code: "website_netlify_token_missing" });
     if (site.archivedAt) throw unprocessable("This site is archived.", { code: "website_site_archived" });
+    await assertCanBuild(site);
     const releaseId = randomUUID();
     const started = await db.transaction(async (tx) => {
       const fence = await takeLease(tx, site, releaseId, "publish");
@@ -869,10 +918,10 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
   async function refreshDeploy(site: SiteRow, release: ReleaseRow) {
     const deploy = asDeploy(release.deploy);
     if (!deploy || deploy.state === "ready" || deploy.state === "error") return release;
-    const netlify = await netlifyFor(site);
-    const found = deploy.deployId ? await netlify.getDeploy(deploy.deployId) : await netlify.findProductionDeploySince(new Date(deploy.requestedAt));
+    const found = await readDeploy(site, await netlifyFor(site), deploy);
     if (!found) return release;
-    const next: WebsiteReleaseDeploy = { ...deploy, deployId: found.id, commitRef: found.commitRef, state: found.state, errorMessage: found.errorMessage };
+    const next = nextDeploy(site, deploy, found);
+    if (stableJson(next) === stableJson(deploy)) return release;
     return updateRelease(release, { deploy: next as unknown as Record<string, unknown> });
   }
 
@@ -892,6 +941,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   async function retry(site: SiteRow, release: ReleaseRow, person: WebsitePerson, confirmRebuild: boolean) {
     const { plan, release: fresh } = await retryPlan(site, release);
+    if (plan.action === "build") await assertCanBuild(site);
     if (plan.costsCredits && !confirmRebuild) {
       throw conflict("Retry would start a new rebuild (about 15 credits). Confirm the rebuild to go on.", { code: "website_rebuild_needs_confirm", plan });
     }
@@ -944,6 +994,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
 
   async function rollback(site: SiteRow, target: ReleaseRow, person: WebsitePerson, confirmRebuild: boolean) {
     const { plan, restoreDeployId } = await rollbackPlan(site, target);
+    if (plan.action === "build") await assertCanBuild(site);
     if (plan.costsCredits && !confirmRebuild) {
       throw conflict("This rollback needs a rebuild (about 15 credits). Confirm the rebuild to go on.", { code: "website_rebuild_needs_confirm", plan });
     }
