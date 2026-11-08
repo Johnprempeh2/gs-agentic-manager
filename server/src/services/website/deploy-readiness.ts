@@ -22,7 +22,9 @@ export async function deployBlockers(netlifyToken: string, storeName = "gsam-con
         headers: { authorization: `Bearer ${netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`answered ${res.status}`);
-      const offerings = (((await res.json()) as { collections?: Record<string, unknown> }).collections?.offerings ?? []) as Item[];
+      // GSAM writes each collection as an array; the website's baked export wraps it as { fieldsVersion, entries }.
+      const raw = ((await res.json()) as { collections?: Record<string, unknown> }).collections?.offerings;
+      const offerings = (Array.isArray(raw) ? raw : (raw as { entries?: unknown } | undefined)?.entries ?? []) as Item[];
       if (!Array.isArray(offerings) || offerings.length === 0) {
         problems.push(`Staging's content release ${release} has 0 products, so the shop would be empty on greatstoneint.com.`);
       } else {

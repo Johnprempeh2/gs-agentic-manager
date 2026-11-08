@@ -19,6 +19,13 @@ describe("deployBlockers", () => {
     expect(await deployBlockers("t", "gsam-content", fakeFetch({ offerings: [product] }))).toEqual([]);
   });
 
+  it("reads the wrapped { entries } collection shape too", async () => {
+    const wrapped = (async (input: string | URL) => String(input).includes("/releases/")
+      ? new Response(JSON.stringify({ collections: { offerings: { fieldsVersion: 1, entries: [product] } } }))
+      : fakeFetch({ offerings: [product] })(input)) as typeof fetch;
+    expect(await deployBlockers("t", "gsam-content", wrapped)).toEqual([]);
+  });
+
   it("refuses a release with 0 products", async () => {
     const problems = await deployBlockers("t", "gsam-content", fakeFetch({ offerings: [] }));
     expect(problems).toEqual(["Staging's content release 7 has 0 products, so the shop would be empty on greatstoneint.com."]);
