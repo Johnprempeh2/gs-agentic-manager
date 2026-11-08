@@ -1,7 +1,7 @@
 import type { NeedsMe, NeedsMeBlockingTask } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { StatusIcon } from "./StatusIcon";
-import { issueUrl } from "../lib/utils";
+import { formatShortDate, issueUrl } from "../lib/utils";
 
 interface NeedsMeListProps {
   needsMe: NeedsMe;
@@ -23,7 +23,7 @@ export function formatWaitAge(ms: number) {
 export function blockingLabel(task: NeedsMeBlockingTask) {
   if (task.blocksCount > 0) return task.blocksCount === 1 ? "Blocks 1 task" : `Blocks ${task.blocksCount} tasks`;
   const due = new Date(`${task.dueDate}T00:00:00`);
-  return `Due ${due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+  return `Due ${formatShortDate(due)}`;
 }
 
 /**
