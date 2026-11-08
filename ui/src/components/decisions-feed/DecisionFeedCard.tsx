@@ -990,6 +990,6 @@ function WebsitePublishChanges({ card }: { card: DecisionCard }) {
     queryFn: () => approvalsApi.get(approvalId!),
     enabled: !!approvalId,
   });
-  if (!data) return null;
+  if (data?.type !== "website_publish" || !data.payload) return null;
   return <ApprovalPayloadRenderer type={data.type} payload={data.payload as Record<string, unknown>} />;
 }
