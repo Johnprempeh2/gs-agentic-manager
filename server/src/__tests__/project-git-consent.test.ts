@@ -191,4 +191,43 @@ const support = await getEmbeddedPostgresTestSupport();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 503 })));
     await expect(provider(fixture)(fixture.repoUrl)).rejects.toThrow(/visibility/i);
   });
+
+  const anonymousRateLimit = () => vi.fn(async () => Response.json(
+    { message: "API rate limit exceeded for 203.0.113.7." },
+    { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1794098476" } },
+  ));
+
+  it("uses the project grant without an anonymous visibility call, even when that budget is spent", async () => {
+    await consent();
+    const fetch = anonymousRateLimit();
+    vi.stubGlobal("fetch", fetch);
+    const authorized = await provider(fixture, { operation: "inspect" })(fixture.repoUrl);
+    expect(authorized?.env.GSAM_GIT_TOKEN).toBe(`token-${fixture.userId}`);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("names GitHub's anonymous rate limit when a project has no grant", async () => {
+    vi.stubGlobal("fetch", anonymousRateLimit());
+    const denied = provider(fixture)(fixture.repoUrl);
+    await expect(denied).rejects.toThrow(/anonymous rate limit is used up until 2026-/);
+    await expect(denied).rejects.toThrow(/Authorize this project's GitHub Connector/);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+      { message: "You have exceeded a secondary rate limit." }, { status: 403 },
+    )));
+    await expect(provider(fixture)(fixture.repoUrl)).rejects.toThrow(/rate limit/);
+  });
+
+  it("keeps a public repository anonymous when the project grant cannot serve it", async () => {
+    await consent();
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, fixture.grantId));
+    await db.update(connectionGrants).set({ providerTenant: { ...grant.providerTenant,
+      github: { ...grant.providerTenant!.github!, repositories: [], repositoryCount: 0 },
+    } }).where(eq(connectionGrants.id, fixture.grantId));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ full_name: "example/private", private: false })));
+    const anonymous = await provider(fixture)(fixture.repoUrl);
+    expect(anonymous?.source).toBe("anonymous");
+    expect(anonymous?.env.GSAM_GIT_TOKEN).toBe("");
+    vi.stubGlobal("fetch", anonymousRateLimit());
+    await expect(provider(fixture)(fixture.repoUrl)).rejects.toThrow(/cannot access this repository/i);
+  });
 });
