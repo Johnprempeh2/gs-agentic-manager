@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
 import { issuesApi } from "../api/issues";
-import { AgentWork, DeployCard, useLiveDesign } from "./LiveDesignChat";
+import { AgentWork, DeployCard, StagedEdits, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -99,5 +99,20 @@ describe("Deploy", () => {
     expect(el.textContent).toContain("Logo carousel");
     await act(async () => { [...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy")!.click(); });
     expect(accept).toHaveBeenCalledWith("GRE-9", "c1");
+  });
+});
+
+describe("StagedEdits", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("shows unsaved direct edits with Save to draft, which asks the helper to apply them", async () => {
+    const helper = vi.spyOn(liveDesignApi, "helper").mockResolvedValue({ status: 202, body: "{}" });
+    vi.spyOn(liveDesignApi, "get").mockResolvedValue({ id: "s1" } as never);
+    const run = vi.fn(async (fn: (id: string) => Promise<unknown>) => { await fn("s1"); return true; });
+    const el = document.createElement("div");
+    act(() => createRoot(el).render(<StagedEdits live={{ view: { status: "idle", stagedCount: 1 }, run } as never} />));
+    expect(el.textContent).toContain("1 edit not saved yet");
+    await act(async () => { [...el.querySelectorAll("button")].find((b) => b.textContent === "Save to draft")!.click(); });
+    expect(helper).toHaveBeenCalledWith("s1", expect.objectContaining({ path: "/manual-edit-commit" }));
   });
 });

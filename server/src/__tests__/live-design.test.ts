@@ -2,7 +2,10 @@ import { LIVE_DEPLOY_REQUEST } from "@greatstone/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acceptLiveDesign,
+  DEPLOY_ANSWER,
+  describeRemoval,
   discardLiveDesign,
+  refuseLiveDesignSave,
   steerLiveDesign,
   endLiveDesign,
   getLiveDesign,
@@ -265,14 +268,54 @@ describe("live design through Impeccable's page tools", () => {
   it("tells the agent how the deploy button works: merge when green, John's card, the guarded deploy", async () => {
     const { session: s } = startLiveDesign(ids);
     await pollLiveDesign(s, 1000);
-    steerLiveDesign(s, LIVE_DEPLOY_REQUEST);
-    const event = (await pollLiveDesign(s, 1000)) as { _instructions: string };
+    steerLiveDesign(s, "", null, true);
+    const event = (await pollLiveDesign(s, 1000)) as { _instructions: string; deploy?: boolean; message: string };
+    expect(event).toMatchObject({ deploy: true, message: LIVE_DEPLOY_REQUEST });
+    expect(event._instructions).toContain('"deploy": true (John pressed the Deploy button)');
     expect(event._instructions).toContain("Merge it yourself as soon as its checks pass");
     expect(event._instructions).toContain('"kind": "deploy"');
     expect(event._instructions).toContain("npm run deploy:staging");
     expect(event._instructions).toContain("confirmation:<GRE-n>:weekly-release:<full staged sha>");
     expect(event._instructions).toContain("npm run deploy:prod -- greatstone-home");
     expect(event._instructions).toContain("Never deploy with `netlify deploy --dir`");
+  });
+
+  it("never deploys from a typed message: GSAM answers that Deploy is the button, the agent gets nothing", async () => {
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000);
+    for (const typed of [LIVE_DEPLOY_REQUEST, "deploy it", "please publish this to the public site", "go live now", "put these changes live"]) {
+      steerLiveDesign(s, typed);
+      expect(s.messages.at(-1)).toMatchObject({ from: "gsam", text: DEPLOY_ANSWER });
+    }
+    expect(viewLiveDesign(s).queued).toEqual([]);
+    expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "timeout" });
+    // Ordinary requests that mention the words still reach the agent.
+    steerLiveDesign(s, "add a section on how we deploy AI for clients");
+    expect(await pollLiveDesign(s, 1000)).toMatchObject({ type: "steer", message: "add a section on how we deploy AI for clients" });
+  });
+
+  it("describes a removal in words, shows it as unsaved, and says why when the page refuses the save", async () => {
+    expect(describeRemoval({ tag: "a", originalText: "Begin the Conversation" })).toBe("Removed the “Begin the Conversation” link.");
+    expect(describeRemoval({ tag: "img", originalText: "hero", classes: ["hero"] })).toBe("Removed an image.");
+    const { session: s } = startLiveDesign(ids);
+    await pollLiveDesign(s, 1000);
+    handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-stash", body: JSON.stringify({ ops: [{ ref: "r1", tag: "a", originalText: "Begin the Conversation", removeElement: true }] }) });
+    expect(s.messages.slice(-2).map((m) => m.text)).toEqual(["Removed the “Begin the Conversation” link.", expect.stringContaining("Not saved yet")]);
+    expect(viewLiveDesign(s).stagedCount).toBe(1);
+    handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-commit", body: null });
+    const event = (await pollLiveDesign(s, 1000)) as { requestId: string };
+    refuseLiveDesignSave(s, event.requestId, "The home page keeps the Two Doors landing first and unchanged.");
+    expect(s.messages.some((m) => m.text.startsWith("Not saved: The home page keeps"))).toBe(true);
+    expect(viewLiveDesign(s)).toMatchObject({ status: "idle", stagedCount: 1 });
+  });
+
+  it("says so when a session went away with John's message unanswered", () => {
+    // The page's chat is kept; the session that heard John's last message is gone.
+    const s = startLiveDesign(ids).session;
+    s.messages.push({ from: "john", text: "Removed a link.", at: "" });
+    endLiveDesign(s);
+    const reopened = startLiveDesign(ids).session;
+    expect(reopened.messages.at(-1)?.text).toContain("got no answer before the editor reconnected");
   });
 
   it("queues a pick made while the agent is busy, freeing the page, and the agent makes it on the page next", async () => {

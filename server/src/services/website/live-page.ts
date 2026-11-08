@@ -159,6 +159,7 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
         ? `${engineOrigin}/live-design#revision=${encodeURIComponent(revisionId)}`
         : `/api/companies/${page.companyId}/website/sites/${page.siteId}/pages/${page.id}/live-frame?revision=${encodeURIComponent(revisionId)}`,
     read: async (revisionId) => pageDocument(page, await part(revisionId), await loadChrome(), null),
+    version: async (revisionId) => (await store.readRevision(page.companyId, page.documentId, revisionId))?.revisionNumber ?? null,
     save: async (html, agentId) => {
       const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
       if (page.slug === "/") checkHomeFrozen(content);

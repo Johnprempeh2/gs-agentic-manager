@@ -79,8 +79,36 @@ const ADAPTER = String.raw`(function () {
   // Remember what John clicked, to find the element Impeccable picked when it asks for versions.
   document.addEventListener("click", function (e) {
     var el = e.target;
+    if (el && el.closest && el.closest("[id^='impeccable'], [data-impeccable-ui]")) return;
     lastClicks = [];
     while (el && el.nodeType === 1 && el !== document.body) { lastClicks.push(el); el = el.parentElement; }
+    setLocked(lockedPart(e.target));
+  }, true);
+
+  // A part an island renders (the Two Doors landing on /) is built in the site's code, so a removal or
+  // a text edit there could never save. Pick does not offer them, and the editor says why, before anything.
+  function lockedPart(el) {
+    var hit = el && el.closest ? el.closest("[data-gs-island], gs-island") : null;
+    if (!hit) return null;
+    return hit.getAttribute("data-gs-island-label") || String(hit.getAttribute("data-gs-island") || hit.getAttribute("name") || "island").replace(/-/g, " ");
+  }
+  var locked = null;
+  function setLocked(label) {
+    locked = label;
+    if (label) document.documentElement.setAttribute("data-gs-locked-pick", "");
+    else document.documentElement.removeAttribute("data-gs-locked-pick");
+    post({ kind: "locked-pick", label: label });
+  }
+  var lockStyle = document.createElement("style");
+  lockStyle.textContent = "html[data-gs-locked-pick] #impeccable-live-edit-badge button[aria-label='Remove element'],html[data-gs-locked-pick] #impeccable-live-edit-badge button[aria-label='Edit copy']{display:none!important}";
+  (document.head || document.documentElement).appendChild(lockStyle);
+  // Delete and Backspace remove the picked element too.
+  document.addEventListener("keydown", function (e) {
+    if (locked && (e.key === "Delete" || e.key === "Backspace") && !(e.target && e.target.isContentEditable) && !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || "")) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      post({ kind: "locked-pick", label: locked });
+    }
   }, true);
   function selectorOf(el) {
     var parts = [];
@@ -157,6 +185,11 @@ const ADAPTER = String.raw`(function () {
           if (el) { picked[evt.id] = el; extra.selector = selectorOf(el); }
         }
       } catch (e) { /* the helper stand-in rejects bad bodies */ }
+    }
+    // Last guard: an edit on a locked part never stages, so it can never look saved.
+    if (locked && url.indexOf(BASE + "manual-edit-stash") === 0 && method === "POST") {
+      post({ kind: "locked-pick", label: locked });
+      return Promise.resolve(new Response(JSON.stringify({ error: "This part is locked" }), { status: 409, headers: { "Content-Type": "application/json" } }));
     }
     var id = ++rid;
     var path = url.slice(BASE.length - 1);
