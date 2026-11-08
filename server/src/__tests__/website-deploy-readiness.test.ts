@@ -12,7 +12,7 @@ function fakeFetch(opts: { offerings?: unknown[]; release?: number | null; statu
   }) as typeof fetch;
 }
 
-const product = { key: "aspose-words", fields: { slug: "aspose-words" } };
+const product = { key: "6f1c0d2e-uuid", fields: { data: { slug: "aspose-words" } } };
 
 describe("deployBlockers", () => {
   it("passes when staging has products and every key page answers 200", async () => {

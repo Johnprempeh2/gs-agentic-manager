@@ -7,7 +7,7 @@ import { contentPointer, STAGING_DOMAIN, STAGING_NETLIFY_SITE_ID } from "./deplo
 const TIMEOUT_MS = 15_000;
 export const DEPLOY_KEY_PATHS = ["/", "/shop", "/consultancy", "/contact"] as const;
 
-type Item = { key?: string; fields?: { slug?: unknown } | null };
+type Item = { fields?: { slug?: unknown; data?: { slug?: unknown } } | null };
 
 /** Every reason Deploy must not run now, in plain words; empty when it may. */
 export async function deployBlockers(netlifyToken: string, storeName = "gsam-content", fetchImpl: typeof fetch = fetch): Promise<string[]> {
@@ -29,7 +29,10 @@ export async function deployBlockers(netlifyToken: string, storeName = "gsam-con
         problems.push(`Staging's content release ${release} has 0 products, so the shop would be empty on greatstoneint.com.`);
       } else {
         const first = offerings[0]!;
-        sample = typeof first.fields?.slug === "string" ? first.fields.slug : first.key ?? null;
+        // Catalogue entries carry their row as { data }; the entry key is an id, not the slug.
+        const slug = first.fields?.data?.slug ?? first.fields?.slug;
+        sample = typeof slug === "string" ? slug : null;
+        if (!sample) problems.push(`Staging's content release ${release} has a product with no slug, so GSAM cannot check a product page.`);
       }
     }
   } catch (err) {
