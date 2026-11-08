@@ -71,6 +71,14 @@ async function eligibleGrants(db: Db, companyId: string, userId: string) {
     && grant.credentialSecretRefs.some((ref) => ref.configPath === "oauth.access_token"));
 }
 
+async function rateLimited(response: Response) {
+  if (response.status !== 403 && response.status !== 429) return false;
+  if (response.headers.get("x-ratelimit-remaining") === "0") return true;
+  const body = await response.text().catch(() => "");
+  return /rate limit/i.test(body);
+}
+
+/** Anonymous lookup: GitHub allows 60 of these an hour per IP, shared by everything on the host. */
 async function publicRepository(fullName: string): Promise<boolean> {
   let response: Response;
   try {
@@ -83,6 +91,11 @@ async function publicRepository(fullName: string): Promise<boolean> {
     throw forbidden("Repository visibility is unavailable");
   }
   if (response.status === 404) return false;
+  if (await rateLimited(response)) {
+    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    const until = Number.isFinite(reset) && reset > 0 ? ` until ${new Date(reset * 1000).toISOString()}` : "";
+    throw forbidden(`GitHub's anonymous rate limit is used up${until}, so repository visibility is unknown. Authorize this project's GitHub Connector to check with its grant`);
+  }
   if (!response.ok) throw forbidden("Repository visibility is unavailable");
   const metadata = await response.json().catch(() => null) as { full_name?: unknown; private?: unknown } | null;
   if (metadata?.full_name?.toString().toLowerCase() !== fullName.toLowerCase()
@@ -187,68 +200,88 @@ export function projectGitAuthorizationService(db: Db) {
         || resolveCoreTrustPreset({ companyId: input.companyId, project, issue }).kind !== "standard") {
         throw forbidden("Git credentials are unavailable to low-trust projects or tasks");
       }
-      // Public repositories need no credential, including when a project has a grant.
-      if (await publicRepository(repo.fullName)) return null;
       if (!project.gitAuthorizationGrantId || !project.gitAuthorizedByUserId) {
+        // Public repositories need no credential.
+        if (await publicRepository(repo.fullName)) return null;
         throw forbidden("Authorize this project's GitHub Connector before private background Git work");
       }
-      await assertProjectWriter(db, input.companyId, projectId, project.gitAuthorizedByUserId);
-      const selected = (await eligibleGrants(db, input.companyId, project.gitAuthorizedByUserId))
-        .find(({ grant }) => grant.id === project.gitAuthorizationGrantId);
-      if (!selected) throw forbidden("Project GitHub authorization is unavailable");
-      let freshGrant: Grant;
+      // A project with a grant uses it first, so polling (the staging watch) never spends the
+      // anonymous visibility budget. A public repository the grant cannot serve stays anonymous.
       try {
-        freshGrant = await (await import("./tool-access.js")).toolAccessService(db)
-          .refreshManagedGitHubGrantAccess(selected.connection, selected.grant, {
-            actorType: "system", actorId: "project-git-credential",
-          });
-      } catch {
-        throw forbidden("Current GitHub repository access is unavailable");
+        return await grantCredential(input, project, projectId, repo, matching[0]!.id, secrets);
+      } catch (error) {
+        if (await publicRepository(repo.fullName).catch(() => false)) return null;
+        throw error;
       }
-      if (freshGrant.id !== selected.grant.id || !repositoryAllowed(freshGrant, repo.fullName)) {
-        throw forbidden("The selected GitHub grant cannot access this repository");
-      }
-      const resolved = await resolveManagedGitHubCredential(db, secrets, input.companyId, {
-        responsibleUserId: project.gitAuthorizedByUserId,
-        explicitGrantId: project.gitAuthorizationGrantId,
-        allowStandingDelegation: false,
-      });
-      if (!resolved.credential || resolved.credential.grantId !== project.gitAuthorizationGrantId) {
-        throw forbidden("The selected GitHub credential is unavailable");
-      }
-      const current = await getProject(input.companyId, projectId);
-      if (current.archivedAt || current.gitAuthorizationGrantId !== project.gitAuthorizationGrantId
-        || current.gitAuthorizedByUserId !== project.gitAuthorizedByUserId) {
-        throw forbidden("Project GitHub authorization changed during credential acquisition");
-      }
-      await assertProjectWriter(db, input.companyId, projectId, project.gitAuthorizedByUserId);
-      const [currentWorkspace] = await db.select({ repoUrl: projectWorkspaces.repoUrl })
-        .from(projectWorkspaces).where(and(
-          eq(projectWorkspaces.companyId, input.companyId),
-          eq(projectWorkspaces.projectId, projectId),
-          eq(projectWorkspaces.id, matching[0]!.id),
-        ));
-      if (!currentWorkspace?.repoUrl || canonicalRepoUrl(currentWorkspace.repoUrl).url.toLowerCase() !== repo.url.toLowerCase()) {
-        throw forbidden("Project repository changed during credential acquisition");
-      }
-      const [currentIssue] = input.issueId ? await db.select({
-        projectId: issues.projectId, executionPolicy: issues.executionPolicy, sourceTrust: issues.sourceTrust,
-      }).from(issues).where(and(eq(issues.companyId, input.companyId), eq(issues.id, input.issueId))) : [];
-      if ((input.issueId && (!currentIssue || currentIssue.projectId !== projectId))
-        || isLowTrustQuarantined(currentIssue?.sourceTrust)
-        || resolveCoreTrustPreset({ companyId: input.companyId, project: current, issue: currentIssue }).kind !== "standard") {
-        throw forbidden("Project trust or task scope changed during credential acquisition");
-      }
-      const latest = (await eligibleGrants(db, input.companyId, project.gitAuthorizedByUserId))
-        .find(({ grant }) => grant.id === project.gitAuthorizationGrantId);
-      if (!latest || !repositoryAllowed(latest.grant, repo.fullName)) {
-        throw forbidden("Project GitHub authorization changed during credential acquisition");
-      }
-      const token = resolved.credential.token;
-      if (!token || token.length > 4096 || /[\0\r\n]/.test(token) || token.startsWith("secret://")) {
-        throw forbidden("Project GitHub credential is unavailable");
-      }
-      return resolved.credential;
     },
   };
+
+  async function grantCredential(
+    input: { companyId: string; issueId: string | null },
+    project: typeof projects.$inferSelect,
+    projectId: string,
+    repo: ReturnType<typeof canonicalRepoUrl>,
+    workspaceId: string,
+    secrets: Secrets,
+  ): Promise<GitCredential> {
+    const { gitAuthorizationGrantId: grantId, gitAuthorizedByUserId: ownerId } = project;
+    if (!grantId || !ownerId) throw forbidden("Project GitHub authorization is unavailable");
+    await assertProjectWriter(db, input.companyId, projectId, ownerId);
+    const selected = (await eligibleGrants(db, input.companyId, ownerId))
+      .find(({ grant }) => grant.id === grantId);
+    if (!selected) throw forbidden("Project GitHub authorization is unavailable");
+    let freshGrant: Grant;
+    try {
+      freshGrant = await (await import("./tool-access.js")).toolAccessService(db)
+        .refreshManagedGitHubGrantAccess(selected.connection, selected.grant, {
+          actorType: "system", actorId: "project-git-credential",
+        });
+    } catch {
+      throw forbidden("Current GitHub repository access is unavailable");
+    }
+    if (freshGrant.id !== selected.grant.id || !repositoryAllowed(freshGrant, repo.fullName)) {
+      throw forbidden("The selected GitHub grant cannot access this repository");
+    }
+    const resolved = await resolveManagedGitHubCredential(db, secrets, input.companyId, {
+      responsibleUserId: ownerId,
+      explicitGrantId: grantId,
+      allowStandingDelegation: false,
+    });
+    if (!resolved.credential || resolved.credential.grantId !== grantId) {
+      throw forbidden("The selected GitHub credential is unavailable");
+    }
+    const current = await getProject(input.companyId, projectId);
+    if (current.archivedAt || current.gitAuthorizationGrantId !== grantId
+      || current.gitAuthorizedByUserId !== ownerId) {
+      throw forbidden("Project GitHub authorization changed during credential acquisition");
+    }
+    await assertProjectWriter(db, input.companyId, projectId, ownerId);
+    const [currentWorkspace] = await db.select({ repoUrl: projectWorkspaces.repoUrl })
+      .from(projectWorkspaces).where(and(
+        eq(projectWorkspaces.companyId, input.companyId),
+        eq(projectWorkspaces.projectId, projectId),
+        eq(projectWorkspaces.id, workspaceId),
+      ));
+    if (!currentWorkspace?.repoUrl || canonicalRepoUrl(currentWorkspace.repoUrl).url.toLowerCase() !== repo.url.toLowerCase()) {
+      throw forbidden("Project repository changed during credential acquisition");
+    }
+    const [currentIssue] = input.issueId ? await db.select({
+      projectId: issues.projectId, executionPolicy: issues.executionPolicy, sourceTrust: issues.sourceTrust,
+    }).from(issues).where(and(eq(issues.companyId, input.companyId), eq(issues.id, input.issueId))) : [];
+    if ((input.issueId && (!currentIssue || currentIssue.projectId !== projectId))
+      || isLowTrustQuarantined(currentIssue?.sourceTrust)
+      || resolveCoreTrustPreset({ companyId: input.companyId, project: current, issue: currentIssue }).kind !== "standard") {
+      throw forbidden("Project trust or task scope changed during credential acquisition");
+    }
+    const latest = (await eligibleGrants(db, input.companyId, ownerId))
+      .find(({ grant }) => grant.id === grantId);
+    if (!latest || !repositoryAllowed(latest.grant, repo.fullName)) {
+      throw forbidden("Project GitHub authorization changed during credential acquisition");
+    }
+    const token = resolved.credential.token;
+    if (!token || token.length > 4096 || /[\0\r\n]/.test(token) || token.startsWith("secret://")) {
+      throw forbidden("Project GitHub credential is unavailable");
+    }
+    return resolved.credential;
+  }
 }
