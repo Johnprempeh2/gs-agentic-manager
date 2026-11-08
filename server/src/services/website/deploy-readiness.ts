@@ -43,6 +43,8 @@ export async function deployBlockers(netlifyToken: string, storeName = "gsam-con
     try {
       const res = await fetchImpl(`https://${STAGING_DOMAIN}${path}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (res.status !== 200) problems.push(`Staging page ${path} answers ${res.status}, not 200.`);
+      // The shop prices from the site database at request time; without it every card says Price on application.
+      else if (path === "/shop" && !/£\s?\d/.test(await res.text())) problems.push("Staging's /shop shows no prices, so the shop would show Price on application for every product.");
     } catch {
       problems.push(`Staging page ${path} did not answer.`);
     }
