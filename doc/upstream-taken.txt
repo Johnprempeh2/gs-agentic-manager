@@ -9,3 +9,4 @@ c46e41e81 taken 2d4052797 PR #275: validate native MCP gateway ownership
 b17019e14 partial a11103cec PR #290: only the ACP session-env security part; rest waits for a sync
 cad26c6bf partial 2cb0c980b PR #275: only the test helper tool-gateway-listing-fixture.ts; the fix itself waits for a sync
 1206373a9 partial 0199a2666 PR #1100: only the nested-array secret check and redaction; plugin environment recovery parts skipped (plugin entries not in our fork)
+f858f7967 taken 0b1c68c65 PR #1112: board-only gate on PATCH status; profile-link wording in the 403 skipped (POST /terminate already assertBoard)
