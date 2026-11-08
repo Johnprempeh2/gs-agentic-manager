@@ -561,7 +561,7 @@ describeEmbeddedPostgres("website module routes", () => {
     const first = await http.post(path).send({}).expect(200);
     expect(first.body).toMatchObject({ imported: 210, skipped: 0 });
     const second = await http.post(path).send({}).expect(200);
-    expect(second.body).toMatchObject({ imported: 0, skipped: 210 });
+    expect(second.body).toMatchObject({ imported: 0, updated: 0, skipped: 210 });
     const team = await http.get(`/api/companies/${company.id}/website/sites/${site.id}/entries?collection=public-person`).expect(200);
     expect(team.body).toHaveLength(6);
     expect(JSON.stringify(team.body)).not.toContain("inviteToken");
@@ -577,10 +577,19 @@ describeEmbeddedPostgres("website module routes", () => {
     const bundled = Object.fromEntries(["vendors", "categories", "products"].map((key) =>
       [key, new Map((publicImport[key as "vendors"] as Array<{ id: string }>).map((row) => [row.id, row]))])) as Record<string, Map<string, Record<string, unknown>>>;
     const collectionOf = { vendors: "vendor", categories: "category", products: "product" } as const;
+    // The last old product is left as its import wrote it, with a stale price: a re-run refreshes it.
+    const staleKey = firstImportKeys.products.at(-1)!;
     for (const key of ["vendors", "categories", "products"] as const) {
       for (const id of firstImportKeys[key]) {
-        const data = key === "products" ? { ...bundled[key].get(id), name: `Edited ${id}` } : bundled[key].get(id);
-        await service.createEntry(company.id, site.id, { collection: collectionOf[key], entryKey: id, content: { data } }, actor);
+        const data = bundled[key].get(id)!;
+        if (key === "products" && id === staleKey) {
+          await service.createEntry(company.id, site.id, { collection: "product", entryKey: id, content: { data: { ...data, from_price_minor: null } } }, actor);
+          continue;
+        }
+        const entry = await service.createEntry(company.id, site.id, { collection: collectionOf[key], entryKey: id, content: { data } }, actor);
+        if (key !== "products") continue;
+        const row = (await service.getEntryRow(company.id, site.id, entry.id))!;
+        await service.saveEntryRevision(row, { content: { data: { ...data, name: `Edited ${id}` } }, baseRevisionId: entry.latestRevisionId!, actor });
       }
     }
     for (const [index, person] of publicImport.people.entries()) {
@@ -593,13 +602,19 @@ describeEmbeddedPostgres("website module routes", () => {
 
     const path = `/api/companies/${company.id}/website/sites/${site.id}/entries/import-public-drafts`;
     const result = await request(app()).post(path).send({}).expect(200);
-    expect(result.body).toMatchObject({ imported: 135, skipped: 75 });
+    expect(result.body).toMatchObject({ imported: 135, updated: 1, skipped: 74 });
 
     const after = (await service.listEntries(company.id, site.id)).filter((entry) => entry.id !== seeded.id);
     const count = (collection: string) => after.filter((entry) => entry.collection === collection).length;
     expect({ product: count("product"), category: count("category"), vendor: count("vendor") }).toEqual({ product: 159, category: 32, vendor: 10 });
     expect(new Set(after.map((entry) => `${entry.collection}:${entry.entryKey}`)).size).toBe(after.length);
-    for (const [id, revisionId] of before) expect(after.find((entry) => entry.id === id)?.latestRevisionId).toBe(revisionId);
+    const stale = after.find((entry) => entry.collection === "product" && entry.entryKey === staleKey)!;
+    for (const [id, revisionId] of before) if (id !== stale.id) expect(after.find((entry) => entry.id === id)?.latestRevisionId).toBe(revisionId);
+    const refreshed = await service.entryDetail((await service.getEntryRow(company.id, site.id, stale.id))!);
+    expect(refreshed?.content).toEqual({ data: bundled.products.get(staleKey) });
+    expect(stale.latestRevisionNumber).toBe(2);
+    // A second run changes nothing.
+    expect((await request(app()).post(path).send({}).expect(200)).body).toMatchObject({ imported: 0, updated: 0, skipped: 210 });
     const oldProduct = after.find((entry) => entry.collection === "product" && entry.entryKey === firstImportKeys.products[0])!;
     const row = await service.getEntryRow(company.id, site.id, oldProduct.id);
     const detail = await service.entryDetail(row!);

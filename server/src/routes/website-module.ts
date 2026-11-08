@@ -1143,6 +1143,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.json(await service.listEntries(site.companyId, site.id, collection, req.query.includeArchived === "true"));
   });
 
+  const CATALOGUE_IMPORT_COLLECTIONS = new Set(["vendor", "category", "product"]);
   router.post(WEBSITE_MODULE_API_ROUTES.entryImport, async (req, res) => {
     const site = await siteFor(req, res, "website:publish");
     if (!site) return;
@@ -1153,16 +1154,31 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       ...publicImport.people.map((item, index) => ({ collection: "public-person", entryKey: `public-person-${index + 1}`, content: item })),
       ...publicImport.forms.map((item) => ({ collection: "form", entryKey: item.key, content: item })),
     ];
-    const existing = new Set((await service.listEntries(site.companyId, site.id, undefined, true)).map((item) => `${item.collection}:${item.entryKey}`));
+    const existing = new Map((await service.listEntries(site.companyId, site.id, undefined, true)).map((item) => [`${item.collection}:${item.entryKey}`, item]));
     let imported = 0;
+    let updated = 0;
     for (const row of rows) {
-      if (existing.has(`${row.collection}:${row.entryKey}`)) continue;
+      const current = existing.get(`${row.collection}:${row.entryKey}`);
       assertCollectionFields(row.collection, row.content);
-      await service.createEntry(site.companyId, site.id, row, actorOf(req));
-      imported++;
+      if (!current) {
+        await service.createEntry(site.companyId, site.id, row, actorOf(req));
+        imported++;
+        continue;
+      }
+      // Re-running refreshes a catalogue entry nobody has edited since its import (still revision 1, not archived),
+      // so stale prices and cut descriptions from an older snapshot are replaced. An entry a person edited is kept.
+      if (!CATALOGUE_IMPORT_COLLECTIONS.has(row.collection) || current.archivedAt || current.latestRevisionNumber !== 1 || !current.latestRevisionId) continue;
+      const entryRow = await service.getEntryRow(site.companyId, site.id, current.id);
+      const detail = entryRow ? await service.entryDetail(entryRow) : null;
+      if (!entryRow || !detail || JSON.stringify(detail.content) === JSON.stringify(row.content)) continue;
+      const saved = await service.saveEntryRevision(entryRow, {
+        content: row.content, baseRevisionId: current.latestRevisionId, changeSummary: `Refreshed from the ${publicImport.capturedAt} catalogue`, actor: actorOf(req),
+      });
+      if (saved.state === "saved") updated++;
     }
-    await log(req, site.companyId, "website.public_drafts_imported", "website_site", site.id, { imported, skipped: rows.length - imported, capturedAt: publicImport.capturedAt });
-    res.json({ imported, skipped: rows.length - imported, capturedAt: publicImport.capturedAt });
+    const skipped = rows.length - imported - updated;
+    await log(req, site.companyId, "website.public_drafts_imported", "website_site", site.id, { imported, updated, skipped, capturedAt: publicImport.capturedAt });
+    res.json({ imported, updated, skipped, capturedAt: publicImport.capturedAt });
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.entries, validate(createWebsiteEntrySchema), async (req, res) => {
