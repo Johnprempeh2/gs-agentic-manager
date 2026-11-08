@@ -1413,6 +1413,8 @@ async function startServerWithDatabaseTeardown(
     ["website_pending_alert", () => raiseWebsitePendingAlerts(db)],
     // Staging holds the edits (John, 7 Nov): hand a moved website main to the team to put on staging.
     ["website_staging_watch", () => runStagingWatch(db)],
+    // John, 8 Nov: a release whose deploy request has no deploy 5 minutes on never spins forever. Never calls Netlify.
+    ["website_stuck_releases", () => websitePublishService(db as any).expireStuckReleases()],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
