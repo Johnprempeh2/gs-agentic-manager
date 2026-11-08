@@ -3,6 +3,7 @@
 // site and gsam-source:prod:<sha> on the public one, as scripts/deploy-site.mjs writes them).
 // Read only. Fails soft: the button works without it.
 import type { WebsiteDeployChanges } from "@greatstone/shared";
+import { netlifyBlobUrl } from "./netlify-publish-client.js";
 
 export const WEBSITE_REPO = "Johnprempeh2/greatstone-website";
 /** Staging holds the edits (John, 7 Nov): every merge to main lands here first. */
@@ -33,8 +34,7 @@ export async function loadDeployChanges(tokens: DeployChangesTokens, fetchImpl: 
   const deploysOf = (id: string) => get(`https://api.netlify.com/api/v1/sites/${encodeURIComponent(id)}/deploys?per_page=100`, tokens.netlifyToken);
   // The content release each site's store points at (`current`), as GSAM's publish and deploy:prod write it.
   const contentOf = async (id: string) => {
-    const store = encodeURIComponent(`site:${tokens.storeName ?? "gsam-content"}`);
-    const res = await fetchImpl(`https://api.netlify.com/api/v1/blobs/${encodeURIComponent(id)}/${store}/current`, {
+    const res = await fetchImpl(netlifyBlobUrl(id, tokens.storeName ?? "gsam-content", "current"), {
       headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.status === 404) return null;
