@@ -64,6 +64,8 @@ export interface LivePageSource {
   read(versionId: string): Promise<string>;
   /** Save the agent's complete page; returns the new version's id. */
   save(html: string, agentId: string): Promise<string>;
+  /** Set an island's words (the home landing's data-copy) on the newest version; returns the new version's id. */
+  setIslandCopy?(versionId: string, changes: Record<string, string | boolean>, agentId: string): Promise<string>;
   /** The version number John sees for a version id, when the source numbers them. */
   version?(versionId: string): Promise<number | null>;
   /** The page's name, for messages. */
@@ -630,10 +632,51 @@ export function describeRemoval(op: Record<string, unknown>) {
 
 const opCount = (s: Session) => s.staged.reduce((n, e) => n + e.ops.length, 0);
 
+const FIELD_NAME = /^[A-Za-z][A-Za-z0-9]{0,39}$/;
+
+/** Pick changed or hid the landing's words: GSAM writes them into the island and saves the next draft version. */
+async function saveIslandCopy(s: Session, ops: Array<Record<string, unknown>>) {
+  const changes: Record<string, string | boolean> = {};
+  for (const op of ops) {
+    const toggle = String(op.islandToggle ?? "");
+    const field = String(op.islandField ?? "");
+    if (op.removeElement === true && FIELD_NAME.test(toggle)) {
+      changes[toggle] = false;
+      say(s, "john", describeRemoval(op).replace(/^Removed/, "Hid"));
+    } else if (op.removeElement === true && FIELD_NAME.test(field)) {
+      changes[field] = "";
+      say(s, "john", describeRemoval(op).replace(/^Removed/, "Hid"));
+    } else if (FIELD_NAME.test(field) && typeof op.newText === "string") {
+      changes[field] = op.newText.slice(0, 600);
+      say(s, "john", `Changed “${String(op.originalText ?? "").slice(0, 80)}” to “${op.newText.slice(0, 80)}”.`);
+    }
+  }
+  if (!Object.keys(changes).length || !s.source?.setIslandCopy) return;
+  try {
+    const id = await s.source.setIslandCopy(s.attachmentId, changes, s.agentId);
+    const version = (await s.source.version?.(id).catch(() => null)) ?? null;
+    s.attachmentId = id;
+    s.appliedAttachmentId = id;
+    s.touchedAt = Date.now();
+    say(s, "gsam", savedLine(version));
+    frame(s, { type: "manual_edit_commit_done", appliedCount: ops.length, remainingCount: opCount(s) });
+  } catch (err) {
+    say(s, "gsam", `Not saved: ${err instanceof Error ? err.message : "the page could not be saved"}`);
+    frame(s, { type: "manual_edit_commit_failed", error: "not_saved" });
+  }
+}
+
 /** Impeccable's pencil saved an edit (or a removal); it waits here until John applies. */
 export function stageLiveDesignEdit(s: Session, edit: StagedEdit) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
   if (s.editsRequestId) throw new LiveDesignConflict("The agent is still applying your last edits.");
+  // Edits on an island's words (Pick marks them islandField / islandToggle) save at once, without the agent.
+  const islandOps = edit.ops.filter((op) => typeof op.islandField === "string" || typeof op.islandToggle === "string");
+  if (islandOps.length && s.source?.setIslandCopy) {
+    void saveIslandCopy(s, islandOps);
+    edit = { ...edit, ops: edit.ops.filter((op) => !islandOps.includes(op)) };
+    if (!edit.ops.length) return { ok: true, pendingCount: opCount(s) };
+  }
   const before = opCount(s);
   s.staged.push({ ...edit, ops: edit.ops.slice(0, 50) });
   s.touchedAt = Date.now();

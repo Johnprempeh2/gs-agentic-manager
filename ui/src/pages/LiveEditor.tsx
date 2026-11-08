@@ -483,7 +483,7 @@ function LiveEditorShell({
             {locked && !preview && !readOnly ? (
               <div className="absolute inset-x-3 top-3 z-raised flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="alert">
                 <Lock aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                <p className="min-w-0 flex-1">This part is locked (the {locked}). Ask in the chat, or add sections below.</p>
+                <p className="min-w-0 flex-1">This part is locked (the {locked}). Ask in the chat, or add sections below. Its words can still be changed: pick the text itself.</p>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setLocked(null)}>Dismiss</Button>
               </div>
             ) : null}

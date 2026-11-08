@@ -309,6 +309,21 @@ describe("live design through Impeccable's page tools", () => {
     expect(viewLiveDesign(s)).toMatchObject({ status: "idle", stagedCount: 1 });
   });
 
+  it("saves Pick's edits on an island's words straight into the draft, without the agent", async () => {
+    const calls: unknown[] = [];
+    const source = { kind: "website-page" as const, label: "Home (/)", frameSrc: () => "", read: async () => "", save: async () => "x",
+      setIslandCopy: async (_v: string, changes: Record<string, unknown>) => { calls.push(changes); return "r21"; }, version: async () => 21 };
+    const { session: s } = startLiveDesign({ ...ids, source });
+    handleImpeccableRequest(s, { method: "POST", path: "/manual-edit-stash", body: JSON.stringify({ ops: [
+      { ref: "r1", tag: "a", originalText: "Choose your side", removeElement: true, islandToggle: "showCue" },
+      { ref: "r2", tag: "span", originalText: "Begin", newText: "Start", islandField: "consultancyCta" },
+    ] }) });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls).toEqual([{ showCue: false, consultancyCta: "Start" }]);
+    expect(viewLiveDesign(s)).toMatchObject({ attachmentId: "r21", stagedCount: 0 });
+    expect(s.messages.map((m) => m.text)).toEqual(["Hid the “Choose your side” link.", "Changed “Begin” to “Start”.", "Saved to the draft as version 21. Use Versions to undo."]);
+  });
+
   it("says so when a session went away with John's message unanswered", () => {
     // The page's chat is kept; the session that heard John's last message is gone.
     const s = startLiveDesign(ids).session;

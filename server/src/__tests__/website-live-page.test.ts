@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkHomeFrozen, HOME_LANDING_ISLAND, pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
+import { checkHomeFrozen, HOME_LANDING_ISLAND, landingCopyOf, landingTag, websitePageSource, withLandingCopy, pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
 import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink } from "../services/website/media-file.js";
 import { LiveDesignConflict } from "../services/live-design.js";
 
@@ -106,5 +106,34 @@ describe("the frozen home page", () => {
       { html: `${HOME_LANDING_ISLAND}${HOME_LANDING_ISLAND}`, css: "" },
       { html: HOME_LANDING_ISLAND, css: "#gs-page .td-public-clients-grid{gap:0}" },
     ]) expect(() => checkHomeFrozen(part)).toThrow(LiveDesignConflict);
+  });
+
+  describe("the landing's words from the Website module", () => {
+    it("lets the island carry data-copy (text and toggles) but nothing structural", () => {
+      const tag = landingTag({ showCue: false, cueText: 'Pick "one" <b>' });
+      expect(landingCopyOf(tag)).toEqual({ showCue: false, cueText: 'Pick "one" <b>' });
+      expect(() => checkHomeFrozen({ html: `${tag}<section>Below</section>`, css: "" })).not.toThrow();
+      expect(landingTag({})).toBe(HOME_LANDING_ISLAND);
+      for (const bad of [
+        '<gs-island name="two-doors-landing" data-copy="{&quot;chooseHref&quot;:&quot;/x&quot;}"></gs-island>',
+        '<gs-island name="two-doors-landing" data-copy="[1]"></gs-island>',
+        '<gs-island name="two-doors-landing" data-style="big"></gs-island>',
+      ]) expect(() => checkHomeFrozen({ html: bad, css: "" })).toThrow(LiveDesignConflict);
+      expect(() => checkHomeFrozen({ html: tag, css: ".td-cue{display:none}" })).toThrow(LiveDesignConflict);
+    });
+
+    it("merges new words into the page's landing and saves the next version", async () => {
+      const saved: unknown[] = [];
+      const store = {
+        readRevision: async () => ({ revisionNumber: 20, content: { format: "gs-html", html: `${landingTag({ cueText: "Old" })}<section>Below</section>`, css: "" } }),
+        readDocument: async () => ({ latestRevisionId: "r20" }),
+        saveRevision: async (input: { content: unknown }) => { saved.push(input.content); return { state: "saved" as const, revisionId: "r21" }; },
+      };
+      const page = { id: "p", companyId: "c", siteId: "s", documentId: "d", title: "Home", slug: "/" };
+      const source = websitePageSource(store, page, async () => null);
+      expect(await source.setIslandCopy!("r20", { showCue: false }, "agent1")).toBe("r21");
+      expect(saved[0]).toMatchObject({ html: `${landingTag({ cueText: "Old", showCue: false })}<section>Below</section>` });
+      expect(withLandingCopy("<main id=\"gs-page\"><section>No landing</section></main>", { showCue: false })).toBeNull();
+    });
   });
 });
