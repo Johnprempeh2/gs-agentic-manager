@@ -736,7 +736,7 @@ export function Desk() {
     return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
-  const waits = needsMe && ((needsMe.overdueWaits?.length ?? 0) > 0 || (needsMe.expiredCards?.length ?? 0) > 0)
+  const waits = needsMe && ((needsMe.overdueWaits?.length ?? 0) > 0 || (needsMe.expiredCards?.length ?? 0) > 0 || (needsMe.blockingTasks?.length ?? 0) > 0)
     ? needsMe
     : null;
   const nothingNeedsYou = visibleIssues.length === 0 && allDecisionCards.length === 0 && !waits;

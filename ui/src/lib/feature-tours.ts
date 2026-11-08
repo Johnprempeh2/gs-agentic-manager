@@ -298,7 +298,7 @@ export const TEAM_CHAT_TOUR: TourDefinition = {
 /** The closing step on everyday tours: where help lives. */
 const HELP_EVERYWHERE: TourStep = {
   title: "Help on every page",
-  body: "Select Show me around at the top of any page to see its tour. Start each day on Needed from you, at the top of the sidebar.",
+  body: "Select Show me around at the top of any page to see its tour. Start each day on Decisions, at the top of the sidebar.",
 };
 
 export const DASHBOARD_TOUR: TourDefinition = {
@@ -330,41 +330,6 @@ export const DASHBOARD_TOUR: TourDefinition = {
       body: "Select New Task and describe what you want in plain words. An agent picks it up and reports back in the task.",
     },
     HELP_EVERYWHERE,
-  ],
-};
-
-export const NEEDED_TOUR: TourDefinition = {
-  id: "needed",
-  title: "Needed from you",
-  description: "Everything the team is waiting on you for, on one page, and on your phone.",
-  version: 3,
-  autoStart: false,
-  route: { match: /^\/needed\/?$/, path: "/needed" },
-  label: "Needed from you",
-  steps: [
-    {
-      target: "needed-summary",
-      title: "Start here each day",
-      body: "This page answers one question: what is the team waiting on me for? The first line says how many things and how long the oldest has waited.",
-    },
-    {
-      target: "needed-groups",
-      title: "Grouped by what to do",
-      body: "Questions to answer, sign-offs, stuck work, logins to fix and anything that has waited on you for over a day. The same items, and the same number, as Decisions on your Desk. Select a group to jump to it. Select Act here to answer or approve without leaving the page.",
-    },
-    {
-      target: "needed-meanwhile",
-      title: "What the team did meanwhile",
-      body: "Below the list, see what each agent finished and started since you were last here.",
-    },
-    {
-      title: "On your phone",
-      body: "This page works on a phone too. Swipe a row to the right to put it away until tomorrow, and select Undo if you change your mind. Your Inbox works the same way.",
-    },
-    {
-      title: "When it is empty",
-      body: "Nothing here means the agents have all they need from you. Check back when the sidebar shows a new decision.",
-    },
   ],
 };
 
@@ -597,7 +562,7 @@ export const TASK_DETAIL_TOUR: TourDefinition = {
     },
     {
       title: "When it is waiting on you",
-      body: "If the agent needs you, the task also appears on Needed from you and in Decisions, so you never have to hunt for it.",
+      body: "If the agent needs you, the task also appears in Decisions, so you never have to hunt for it.",
     },
   ],
 };
@@ -964,7 +929,6 @@ export const SINCE_LAST_VISIT_TOUR: TourDefinition = {
 };
 
 export const CORE_TOURS: TourDefinition[] = [
-  NEEDED_TOUR,
   DASHBOARD_TOUR,
   DECISIONS_TOUR,
   MY_TASKS_TOUR,

@@ -15,7 +15,7 @@ export interface SidebarSectionDefault {
  * destination appears exactly once; feature switches decide which ones render.
  */
 export const SIDEBAR_SECTIONS: readonly SidebarSectionDefault[] = [
-  { id: "today", label: "Today", items: ["needed", "decisions", "my-tasks", "inbox", "calendar"] },
+  { id: "today", label: "Today", items: ["decisions", "my-tasks", "inbox", "calendar"] },
   { id: "chats", label: "Chats", items: ["chats"] },
   { id: "clients", label: "Clients", items: ["organisations", "commerce", "pipelines", "deep-dive", "deliverables", "links", "images"] },
   {

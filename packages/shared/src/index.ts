@@ -322,6 +322,7 @@ export type {
   DecisionCardEscalation,
   NeedsMe,
   NeedsMeTask,
+  NeedsMeBlockingTask,
   NeedsMeOverdueWait,
   NeedsMeExpiredCard,
 } from "./types/decisions-feed.js";

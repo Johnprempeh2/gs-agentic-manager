@@ -14,7 +14,7 @@ vi.mock("@/lib/router", () => ({
   ),
 }));
 
-import { NeedsMeList, formatWaitAge } from "./NeedsMeList";
+import { NeedsMeList, blockingLabel, formatWaitAge } from "./NeedsMeList";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -41,6 +41,7 @@ function needsMe(overrides: Partial<NeedsMe> = {}): NeedsMe {
     assignedTasks,
     overdueWaits: overrides.overdueWaits ?? [],
     expiredCards: overrides.expiredCards ?? [],
+    blockingTasks: overrides.blockingTasks ?? [],
   };
 }
 
@@ -160,5 +161,25 @@ describe("NeedsMeList (GRE-358)", () => {
   it("renders nothing when nothing is assigned and decisions are left out", () => {
     render(<NeedsMeList needsMe={needsMe({ assignedTasks: [] })} />);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("lists tasks the user is blocking in Decisions, with why", () => {
+    const base = { identifier: "GRE-7", status: "todo", priority: "high", updatedAt: "2026-10-02T05:00:00.000Z" };
+    render(
+      <NeedsMeList
+        includeAssigned={false}
+        needsMe={needsMe({
+          blockingTasks: [
+            { ...base, id: "issue-7", title: "Approve the brief", blocksCount: 2, dueDate: null },
+            { ...base, id: "issue-8", identifier: "GRE-8", title: "Send the invoice", blocksCount: 0, dueDate: "2026-11-10" },
+          ],
+        })}
+      />,
+    );
+    const rows = [...container.querySelectorAll('[data-testid="needs-me-blocking-task"]')].map((row) => row.textContent);
+    expect(rows).toEqual(["Blocks 2 tasksApprove the briefGRE-7", "Due 10 NovSend the invoiceGRE-8"]);
+    expect(container.textContent).toContain("Waiting on you");
+    expect(container.textContent).not.toContain("Sign off the Indago statement of work");
+    expect(blockingLabel({ ...base, id: "x", title: "x", blocksCount: 1, dueDate: null })).toBe("Blocks 1 task");
   });
 });

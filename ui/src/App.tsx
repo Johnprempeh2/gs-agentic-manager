@@ -181,7 +181,6 @@ const WebsitePageLiveEditor = lazyPage(() => import("./pages/LiveEditor"), "Webs
 const ProjectTree = lazyPage(() => import("./pages/ProjectTree"), "ProjectTree");
 const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
 const WhatNeedsMe = lazyPage(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
-const NeededFromYou = lazyPage(() => import("./pages/NeededFromYou"), "NeededFromYou");
 const CompanyExport = lazy(() =>
   import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
 );
@@ -545,7 +544,8 @@ function boardRoutes() {
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
-      <Route path="needed" element={<NeededFromYou />} />
+      {/* Needed from you folded into Decisions: one place for everything waiting on you. */}
+      <Route path="needed" element={<Navigate to="/desk#desk-needs-me" replace />} />
       {/* Decisions live in the Desk's Decisions section. Focus mode and the
           history curtains (Tabled, Dismissed, Decided, Expired) live only on
           the old page, so it stays at decisions/focus. */}

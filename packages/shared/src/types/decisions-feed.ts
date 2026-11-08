@@ -276,6 +276,15 @@ export interface NeedsMeTask {
 }
 
 /**
+ * An assigned task where the user is the blocker: another open task waits on
+ * it (`blocksCount` > 0) or it is due within a week. Shown in Decisions.
+ */
+export interface NeedsMeBlockingTask extends NeedsMeTask {
+  blocksCount: number;
+  dueDate: string | null;
+}
+
+/**
  * A task that has waited on the user or the board for more than 24h
  * (GRE-500). `waitingForMs` is its age at `generatedAt`.
  */
@@ -317,7 +326,7 @@ export interface NeedsMe {
   count: number;
   /**
    * The one "needs you" number shown everywhere: every decision card except
-   * "At your desk" ones (GRE-450), every overdue wait and every expired
+   * "At your desk" ones (GRE-450), every task the user is blocking, every overdue wait and every expired
    * question listed here.
    */
   decisionCount: number;
@@ -325,6 +334,8 @@ export interface NeedsMe {
   decisions: DecisionCard[];
   /** Assigned open tasks, without the ones already shown as a decision card. */
   assignedTasks: NeedsMeTask[];
+  /** The `assignedTasks` the user is blocking; counted in `decisionCount`. */
+  blockingTasks?: NeedsMeBlockingTask[];
   /**
    * Waits on the user or the board older than 24h, oldest first. A task here
    * is not repeated in `assignedTasks`. It may also have a decision card:

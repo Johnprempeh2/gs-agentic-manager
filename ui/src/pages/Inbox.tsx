@@ -2832,7 +2832,7 @@ export function Inbox() {
 
       {/* Decisions live on the Desk with the one count; Mine lists the tasks assigned to you. */}
       {tab === "mine" && needsMe ? (
-        <NeedsMeList needsMe={{ ...needsMe, overdueWaits: [], expiredCards: [] }} />
+        <NeedsMeList needsMe={{ ...needsMe, overdueWaits: [], expiredCards: [], blockingTasks: [] }} />
       ) : null}
 
       {tab === "blocked" ? (

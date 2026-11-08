@@ -76,6 +76,7 @@ export type {
   DecisionCardSetup,
   NeedsMe,
   NeedsMeTask,
+  NeedsMeBlockingTask,
   NeedsMeOverdueWait,
   NeedsMeExpiredCard,
 } from "./decisions-feed.js";

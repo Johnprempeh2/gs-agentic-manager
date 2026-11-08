@@ -1,4 +1,4 @@
-import type { NeedsMe } from "@greatstone/shared";
+import type { NeedsMe, NeedsMeBlockingTask } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { StatusIcon } from "./StatusIcon";
 import { issueUrl } from "../lib/utils";
@@ -19,6 +19,13 @@ export function formatWaitAge(ms: number) {
   return rest === 0 ? `${days}d` : `${days}d ${rest}h`;
 }
 
+/** "Blocks 2 tasks" or "Due 10 Nov": why an assigned task is in Decisions. */
+export function blockingLabel(task: NeedsMeBlockingTask) {
+  if (task.blocksCount > 0) return task.blocksCount === 1 ? "Blocks 1 task" : `Blocks ${task.blocksCount} tasks`;
+  const due = new Date(`${task.dueDate}T00:00:00`);
+  return `Due ${due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+}
+
 /**
  * Compact rows: tasks that have waited on the user or the board for more
  * than 24h, with their age (GRE-500), agents' questions that expired
@@ -32,13 +39,15 @@ export function NeedsMeList({ needsMe, includeAssigned = true, title }: NeedsMeL
   const tasks = includeAssigned ? needsMe.assignedTasks : [];
   // Questions from agents that expired before anyone answered them.
   const expiredCards = needsMe.expiredCards ?? [];
-  const overdue = waits.length + expiredCards.length;
+  // Assigned tasks the user is blocking: part of the Decisions count.
+  const blocking = needsMe.blockingTasks ?? [];
+  const overdue = waits.length + expiredCards.length + blocking.length;
   const shown = overdue + tasks.length;
   if (shown === 0) return null;
 
   // Overdue rows are part of the Decisions count shown above them, so they
   // carry no second number. Assigned tasks are counted on their own.
-  const heading = title ?? (overdue > 0 ? "Overdue" : "Assigned to you");
+  const heading = title ?? (blocking.length > 0 ? "Waiting on you" : overdue > 0 ? "Overdue" : "Assigned to you");
   const showCount = overdue === 0;
 
   return (
@@ -82,6 +91,22 @@ export function NeedsMeList({ needsMe, includeAssigned = true, title }: NeedsMeL
               <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{card.question ?? card.title}</span>
               {card.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{card.identifier}</span>
+              ) : null}
+            </Link>
+          </li>
+        ))}
+        {blocking.map((task) => (
+          <li key={task.id} data-testid="needs-me-blocking-task">
+            <Link
+              to={issueUrl(task)}
+              className="flex min-w-0 items-center gap-3 px-4 py-2.5 text-sm hover:bg-accent/50"
+            >
+              <span className="shrink-0 rounded-sm bg-status-warning-soft px-1.5 py-0.5 text-xs font-medium text-status-warning-foreground">
+                {blockingLabel(task)}
+              </span>
+              <span className="min-w-0 line-clamp-2 font-medium sm:truncate">{task.title}</span>
+              {task.identifier ? (
+                <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{task.identifier}</span>
               ) : null}
             </Link>
           </li>
