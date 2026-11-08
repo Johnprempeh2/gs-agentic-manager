@@ -25,6 +25,17 @@ export function lastGuardedCommit(deploys: { state?: string; title?: string | nu
   return null;
 }
 
+/** The content release a site's store points at (`current`), as GSAM's publish and deploy:prod write it; null when none. */
+export async function contentPointer(netlifySiteId: string, storeName: string, netlifyToken: string, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+  const res = await fetchImpl(netlifyBlobUrl(netlifySiteId, storeName, "current"), {
+    headers: { authorization: `Bearer ${netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`api.netlify.com answered ${res.status} for a content pointer`);
+  const release = ((await res.json()) as { release?: unknown }).release;
+  return typeof release === "number" ? release : null;
+}
+
 export async function loadDeployChanges(tokens: DeployChangesTokens, fetchImpl: typeof fetch = fetch): Promise<WebsiteDeployChanges> {
   const get = async (url: string, auth: string, extra: Record<string, string> = {}) => {
     const res = await fetchImpl(url, { headers: { authorization: `Bearer ${auth}`, ...extra }, signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -32,16 +43,7 @@ export async function loadDeployChanges(tokens: DeployChangesTokens, fetchImpl: 
     return res.json();
   };
   const deploysOf = (id: string) => get(`https://api.netlify.com/api/v1/sites/${encodeURIComponent(id)}/deploys?per_page=100`, tokens.netlifyToken);
-  // The content release each site's store points at (`current`), as GSAM's publish and deploy:prod write it.
-  const contentOf = async (id: string) => {
-    const res = await fetchImpl(netlifyBlobUrl(id, tokens.storeName ?? "gsam-content", "current"), {
-      headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`api.netlify.com answered ${res.status} for a content pointer`);
-    const release = ((await res.json()) as { release?: unknown }).release;
-    return typeof release === "number" ? release : null;
-  };
+  const contentOf = (id: string) => contentPointer(id, tokens.storeName ?? "gsam-content", tokens.netlifyToken, fetchImpl);
   const [prod, staging, liveContentRelease, stagingContentRelease] = await Promise.all([
     deploysOf(tokens.netlifySiteId), deploysOf(STAGING_NETLIFY_SITE_ID), contentOf(tokens.netlifySiteId), contentOf(STAGING_NETLIFY_SITE_ID),
   ]);
