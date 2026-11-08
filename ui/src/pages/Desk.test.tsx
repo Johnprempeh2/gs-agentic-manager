@@ -39,13 +39,14 @@ vi.mock("../context/ToastContext", () => ({
 }));
 vi.mock("../api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: ME } }) } }));
 // Decisions now live in Needs me: the feed and the one count.
+let blockingTasks: Array<{ id: string; identifier: string; title: string; status: string; priority: string; updatedAt: string; blocksCount: number; dueDate: string | null }> = [];
 let decisionCards: Array<{ id: string; task: { id: string } | null; decision: string; severity: string; atDesk?: { command: string | null } | null }> = [];
 vi.mock("../api/decisionsFeed", () => ({
   decisionsFeedApi: {
     get: async () => ({ companyId: "company-1", count: decisionCards.length, cards: decisionCards, assignableAgents: [] }),
     needsMe: async () => ({
       companyId: "company-1", count: decisionCards.length, decisionCount: decisionCards.filter((card) => !card.atDesk).length, assignedTaskCount: 0,
-      decisions: decisionCards, assignedTasks: [], overdueWaits: [], expiredCards: [],
+      decisions: decisionCards, assignedTasks: [], overdueWaits: [], expiredCards: [], blockingTasks,
     }),
   },
 }));
@@ -198,6 +199,7 @@ function typeInto(input: HTMLInputElement, value: string) {
 }
 
 beforeEach(() => {
+  blockingTasks = [];
   window.localStorage.clear();
   decisionCards = [];
   follows = [];
@@ -557,6 +559,17 @@ describe("Desk sections", () => {
     expect(needsMe.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect([...needsMe.querySelectorAll("a")].find((a) => a.textContent === "Focus and history")?.getAttribute("href")).toBe("/decisions/focus");
     expect(container.textContent).not.toContain("Nothing needs you right now.");
+  });
+
+  it("shows a task you are blocking once, in Decisions, not again in Your tasks", async () => {
+    openIssues = [makeIssue("1"), makeIssue("5", { title: "Approve the brief" })];
+    blockingTasks = [{ id: "5", identifier: "GRE-5", title: "Approve the brief", status: "todo", priority: "high", updatedAt: "2026-11-01T00:00:00.000Z", blocksCount: 1, dueDate: null }];
+    await renderPage();
+
+    expect(section("desk-needs-me")!.querySelector('[data-testid="needs-me-blocking-task"]')?.textContent).toContain("Approve the brief");
+    const tasks = section("desk-tasks")!;
+    expect(tasks.querySelector('[data-row="5"]')).toBeNull();
+    expect(tasks.querySelector('[data-row="1"]')).not.toBeNull();
   });
 
   it("keeps At your desk cards in their own labelled group, outside the one count (GRE-450)", async () => {

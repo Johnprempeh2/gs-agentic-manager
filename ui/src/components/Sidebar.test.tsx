@@ -546,7 +546,7 @@ describe("Sidebar", () => {
     );
     const root = await renderSidebar();
 
-    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Desk", "Inbox", "Calendar"]);
+    expect(sectionLabels("Today")).toEqual(["Decisions", "Desk", "Inbox", "Calendar"]);
 
     flushSync(() => {
       root.unmount();
@@ -687,7 +687,7 @@ describe("Sidebar", () => {
       await click(textButton("Customise sidebar"));
       await click(button("More options for Inbox"));
       await click(menuItem("Move up"));
-      expect(lastSavedLayout()?.sections?.today).toEqual(["needed", "decisions", "inbox", "my-tasks", "calendar"]);
+      expect(lastSavedLayout()?.sections?.today).toEqual(["decisions", "inbox", "my-tasks", "calendar"]);
 
       await click(button("More options for Agents"));
       await click(menuItem("Pin to top"));
@@ -695,7 +695,7 @@ describe("Sidebar", () => {
       expect(button("Unpin Agents")).not.toBeNull();
 
       await click(textButton("Done"));
-      expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Inbox", "Desk", "Calendar"]);
+      expect(sectionLabels("Today")).toEqual(["Decisions", "Inbox", "Desk", "Calendar"]);
       expect(sectionLabels("Pinned")).toEqual(["Agents"]);
       // Pinned items move to the top group; they are not listed twice.
       expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
@@ -814,7 +814,7 @@ describe("Sidebar", () => {
       .map((section) => section.getAttribute("data-sidebar-section"));
     expect(headings).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
     expect(sectionLabels("Help")).toEqual(["What's newNew", "Tutorials"]);
-    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Desk", "Inbox", "Calendar"]);
+    expect(sectionLabels("Today")).toEqual(["Decisions", "Desk", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Links", "GS Studio"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);

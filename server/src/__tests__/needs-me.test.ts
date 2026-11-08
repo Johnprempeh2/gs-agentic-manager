@@ -9,6 +9,7 @@ import {
   companyMemberships,
   createDb,
   issueComments,
+  issueRelations,
   issueThreadInteractions,
   issues,
 } from "@greatstone/db";
@@ -43,6 +44,7 @@ describeEmbeddedPostgres("one needs-me list for the board user (GRE-355)", () =>
   });
 
   afterEach(async () => {
+    await db.delete(issueRelations);
     await db.delete(issueComments);
     await db.delete(issueThreadInteractions);
     await db.delete(activityLog);
@@ -226,6 +228,33 @@ describeEmbeddedPostgres("one needs-me list for the board user (GRE-355)", () =>
     expect(body.decisions.map((card) => card.task?.id)).toEqual([both]);
     expect(taskIds(body)).toEqual([plain]);
     expect(body).toMatchObject({ count: 2, decisionCount: 1, assignedTaskCount: 1 });
+  });
+
+  it("puts an assigned task in Decisions only when the user is its blocker", async () => {
+    const { companyId } = await seedCompany();
+    const blocker = await task(companyId, { assigneeUserId: USER_ID });
+    const waiting = await task(companyId, { status: "blocked" });
+    const staleBlocker = await task(companyId, { assigneeUserId: USER_ID });
+    const finished = await task(companyId, { status: "done" });
+    const today = new Date().toISOString().slice(0, 10);
+    const due = await task(companyId, { assigneeUserId: USER_ID, dueDate: today });
+    const later = await task(companyId, { assigneeUserId: USER_ID, dueDate: "2099-01-01" });
+    const chore = await task(companyId, { assigneeUserId: USER_ID, status: "backlog" });
+    await db.insert(issueRelations).values([
+      { companyId, issueId: blocker, relatedIssueId: waiting, type: "blocks" },
+      // Blocking only finished work does not make the user a blocker.
+      { companyId, issueId: staleBlocker, relatedIssueId: finished, type: "blocks" },
+    ]);
+
+    const body = await needsMe(companyId);
+
+    expect(body.blockingTasks?.map((t) => [t.id, t.blocksCount, t.dueDate]).sort()).toEqual(
+      [[blocker, 1, null], [due, 0, today]].sort(),
+    );
+    expect(body.decisionCount).toBe(2);
+    expect(body.assignedTaskCount).toBe(3);
+    expect(taskIds(body)).toEqual([blocker, staleBlocker, due, later, chore].sort());
+    expect(body.count).toBe(body.decisionCount + body.assignedTaskCount);
   });
 
   it("leaves release tasks out: releases run from Claude", async () => {

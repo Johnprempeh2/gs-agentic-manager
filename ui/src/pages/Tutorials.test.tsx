@@ -185,20 +185,19 @@ describe("Tutorials", () => {
     expect(words.querySelector("#word-routine")?.textContent).toContain("Work that repeats on a schedule");
   });
 
-  it("leads a new person through the first four tours in order", async () => {
-    server.rows = [{ tourKey: "needed", tourVersion: 3, seenAt: "2026-10-01T00:00:00.000Z" }];
+  it("leads a new person through the first three tours in order", async () => {
+    server.rows = [{ tourKey: "decisions", tourVersion: 1, seenAt: "2026-10-01T00:00:00.000Z" }];
     await render();
     const card = document.querySelector<HTMLElement>('[data-testid="tutorials-start-here"]')!;
-    expect(card.textContent).toContain("1 of 4 done");
+    expect(card.textContent).toContain("1 of 3 done");
     expect([...card.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
-      "1. Needed from you(done)",
-      "2. Decisions(not done yet)",
-      "3. Tasks(not done yet)",
-      "4. Agents(not done yet)",
+      "1. Decisions(done)",
+      "2. Tasks(not done yet)",
+      "3. Agents(not done yet)",
     ]);
-    const next = [...card.querySelectorAll("button")].find((el) => el.textContent === "Next: Decisions")!;
+    const next = [...card.querySelectorAll("button")].find((el) => el.textContent === "Next: Tasks")!;
     await act(async () => next.click());
     await flush();
-    expect(pathname).toBe("/decisions");
+    expect(pathname).toBe("/issues");
   });
 });

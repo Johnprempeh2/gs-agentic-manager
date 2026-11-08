@@ -288,9 +288,12 @@ export function Desk() {
   }, [merged.issues, touchedIssues, doneIssues, currentUserId]);
   // Pinned tasks already sit at the top, and a task with a decision card is
   // that card: neither shows again as a row.
+  // A task you are blocking sits in Decisions too, so it is not repeated here.
+  const blockingIds = useMemo(() => new Set((needsMe?.blockingTasks ?? []).map((task) => task.id)), [needsMe]);
   const listedIssues = useMemo(
-    () => [...deskIssueById.values()].filter((issue) => !pinnedIds.has(issue.id) && !cardTaskIds.has(issue.id)),
-    [deskIssueById, pinnedIds, cardTaskIds],
+    () => [...deskIssueById.values()].filter((issue) =>
+      !pinnedIds.has(issue.id) && !cardTaskIds.has(issue.id) && !blockingIds.has(issue.id)),
+    [deskIssueById, pinnedIds, cardTaskIds, blockingIds],
   );
 
   // Routine chores (schedules, digests, self-checks) stay hidden unless asked for.
@@ -736,7 +739,7 @@ export function Desk() {
     return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
-  const waits = needsMe && ((needsMe.overdueWaits?.length ?? 0) > 0 || (needsMe.expiredCards?.length ?? 0) > 0)
+  const waits = needsMe && ((needsMe.overdueWaits?.length ?? 0) > 0 || (needsMe.expiredCards?.length ?? 0) > 0 || (needsMe.blockingTasks?.length ?? 0) > 0)
     ? needsMe
     : null;
   const nothingNeedsYou = visibleIssues.length === 0 && allDecisionCards.length === 0 && !waits;

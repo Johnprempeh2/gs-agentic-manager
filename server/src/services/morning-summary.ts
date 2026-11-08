@@ -30,8 +30,8 @@ function userWork() {
 
 /**
  * Needs you, in the order the Desk shows it: decisions, then overdue waits,
- * then expired questions. Assigned tasks are not "needs you"; they are on the
- * Desk as tasks. Pair with `needsMe.decisionCount`, the one count.
+ * then expired questions, then assigned tasks the user is blocking. Other
+ * assigned tasks are not "needs you"; they are on the Desk as tasks. Pair with `needsMe.decisionCount`, the one count.
  */
 export function needsYouItems(needsMe: NeedsMe): MorningSummaryTask[] {
   const items: MorningSummaryTask[] = [];
@@ -47,6 +47,7 @@ export function needsYouItems(needsMe: NeedsMe): MorningSummaryTask[] {
   }
   for (const wait of needsMe.overdueWaits) push({ id: wait.id, identifier: wait.identifier, title: wait.title });
   for (const card of needsMe.expiredCards ?? []) push({ id: card.id, identifier: card.identifier, title: card.title });
+  for (const task of needsMe.blockingTasks ?? []) push({ id: task.id, identifier: task.identifier, title: task.title });
   return items;
 }
 

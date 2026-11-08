@@ -21,9 +21,8 @@ export interface PaletteDestination {
 /** Pages, in the order the empty palette lists them. Labels match the sidebar. */
 export const PALETTE_PAGES: readonly PaletteDestination[] = [
   { kind: "page", id: "desk", label: "Desk", path: "/desk", keywords: ["my tasks", "home"] },
-  { kind: "page", id: "decisions", label: "Decisions", path: "/desk#desk-needs-me", keywords: ["needs me", "approvals"] },
+  { kind: "page", id: "decisions", label: "Decisions", path: "/desk#desk-needs-me", keywords: ["needs me", "needed from you", "waiting on me", "approvals"] },
   { kind: "page", id: "pinned", label: "Pinned", path: "/desk", keywords: ["pins", "followed"] },
-  { kind: "page", id: "needed", label: "Needed from you", path: "/needed", keywords: ["waiting on me"] },
   { kind: "page", id: "inbox", label: "Inbox", path: "/inbox", keywords: ["unread", "messages"] },
   { kind: "page", id: "calendar", label: "Calendar", path: "/calendar", keywords: ["deadlines", "dates"] },
   { kind: "page", id: "dashboard", label: "Dashboard", path: "/dashboard", keywords: ["overview"] },

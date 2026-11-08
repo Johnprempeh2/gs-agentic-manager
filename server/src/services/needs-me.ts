@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { issues, issueThreadInteractions } from "@greatstone/db";
-import type { NeedsMe, NeedsMeExpiredCard, NeedsMeOverdueWait } from "@greatstone/shared";
+import type { NeedsMe, NeedsMeBlockingTask, NeedsMeExpiredCard, NeedsMeOverdueWait } from "@greatstone/shared";
 import type { AttentionServiceOptions } from "./attention.js";
 import { viewerPrincipalUserIds } from "./board-identity.js";
 import { decisionsFeedService } from "./decisions-feed.js";
@@ -18,6 +18,8 @@ const CLOSED_ISSUE_STATUSES = ["done", "cancelled"];
 /** How far back an expired question still shows in Needs you. */
 const EXPIRED_CARD_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 const EXPIRED_CARD_LIMIT = 20;
+// ponytail: fixed 7-day window for "due"; make it a setting if John wants another.
+const BLOCKING_DUE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * One "needs me" list for the board user (GRE-355): the Decisions feed plus
@@ -44,6 +46,15 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
             status: issues.status,
             priority: issues.priority,
             updatedAt: issues.updatedAt,
+            dueDate: issues.dueDate,
+            // Open tasks waiting on this one: the user is their blocker.
+            blocksCount: sql<number>`(
+              select count(*)::int from issue_relations as rel
+              inner join issues as blocked on blocked.id = rel.related_issue_id
+              where rel.issue_id = "issues"."id"
+                and rel.type = 'blocks'
+                and blocked.status not in ('done', 'cancelled')
+            )`,
           })
           .from(issues)
           .where(and(
@@ -140,7 +151,20 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
       const assignedTasks = assigned
         // Releases run from Claude, not from here (release-task.ts).
         .filter((task) => !cardTaskIds.has(task.id) && !waitIds.has(task.id) && !isReleaseTask(task.title))
-        .map((task) => ({ ...task, updatedAt: task.updatedAt.toISOString() }));
+        .map(({ dueDate: _dueDate, blocksCount: _blocksCount, ...task }) => ({ ...task, updatedAt: task.updatedAt.toISOString() }));
+      // Assigned tasks where the user is genuinely the blocker (another open
+      // task waits on it, or it is due within a week) are decisions, counted
+      // once with the cards. Optional chores stay on the task list only.
+      const dueCutoff = new Date(now.getTime() + BLOCKING_DUE_WINDOW_MS).toISOString().slice(0, 10);
+      const assignedById = new Map(assigned.map((task) => [task.id, task]));
+      const blockingTasks: NeedsMeBlockingTask[] = assignedTasks.flatMap((task) => {
+        const row = assignedById.get(task.id)!;
+        const blocks = Number(row.blocksCount ?? 0);
+        const due = row.dueDate !== null && row.dueDate <= dueCutoff;
+        return blocks > 0 || due ? [{ ...task, blocksCount: blocks, dueDate: row.dueDate }] : [];
+      });
+      const blockingIds = new Set(blockingTasks.map((task) => task.id));
+      const otherAssigned = assignedTasks.filter((task) => !blockingIds.has(task.id));
       // A wait that already has a card is counted once, as the card. The
       // wait stays in `overdueWaits` for its age; lists skip it beside its card.
       const uncountedWaits = overdueWaits.filter((wait) => !cardTaskIds.has(wait.id));
@@ -171,15 +195,16 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
       // cards stay out (GRE-450) and are shown apart, labelled as such.
       // Sidebar, phone tab, app icon, Dashboard, Desk, Needed from you,
       // Focus, push and the morning summary all show it.
-      const decisionCount = feed.count + uncountedWaits.length + expiredCards.length;
+      const decisionCount = feed.count + uncountedWaits.length + expiredCards.length + blockingTasks.length;
       return {
         companyId,
         generatedAt: feed.generatedAt,
-        count: decisionCount + assignedTasks.length,
+        count: decisionCount + otherAssigned.length,
         decisionCount,
-        assignedTaskCount: assignedTasks.length,
+        assignedTaskCount: otherAssigned.length,
         decisions: feed.cards,
         assignedTasks,
+        blockingTasks,
         overdueWaits,
         expiredCards,
       };
