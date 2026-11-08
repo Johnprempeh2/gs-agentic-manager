@@ -5554,6 +5554,12 @@ export function agentRoutes(
       }
     }
 
+    // Termination is board-only and irreversible on every route, not just POST /terminate
+    // (upstream paperclipai/paperclip#19955).
+    if ((req.body as Record<string, unknown>).status === "terminated" && req.actor.type !== "board") {
+      throw forbidden("Board access required: only a board user can terminate an agent. Ask a person with board access to terminate it from the agent's profile.");
+    }
+
     const patchData = { ...(req.body as Record<string, unknown>) };
     const replaceAdapterConfig = patchData.replaceAdapterConfig === true;
     delete patchData.replaceAdapterConfig;
