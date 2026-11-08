@@ -40,6 +40,8 @@ import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.j
 import { createStorageService } from "../storage/service.js";
 import type { StorageService } from "../storage/types.js";
 import { signWebsiteMediaLink, WEBSITE_MEDIA_LINK_TTL_SECONDS } from "../services/website/media-file.js";
+import publicImport from "../services/website/public-import-v1.json" with { type: "json" };
+import firstImportKeys from "./fixtures/website-public-import-2026-10-22-keys.json" with { type: "json" };
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -557,12 +559,61 @@ describeEmbeddedPostgres("website module routes", () => {
     const http = request(app());
     const path = `/api/companies/${company.id}/website/sites/${site.id}/entries/import-public-drafts`;
     const first = await http.post(path).send({}).expect(200);
-    expect(first.body).toMatchObject({ imported: 75, skipped: 0 });
+    expect(first.body).toMatchObject({ imported: 210, skipped: 0 });
     const second = await http.post(path).send({}).expect(200);
-    expect(second.body).toMatchObject({ imported: 0, skipped: 75 });
+    expect(second.body).toMatchObject({ imported: 0, skipped: 210 });
     const team = await http.get(`/api/companies/${company.id}/website/sites/${site.id}/entries?collection=public-person`).expect(200);
     expect(team.body).toHaveLength(6);
     expect(JSON.stringify(team.body)).not.toContain("inviteToken");
+  });
+
+  it("re-import over the 24-product snapshot adds only the missing products and keeps existing entries (GRE-4698)", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const { company, site, entry: seeded } = await seedWorld("Reimport", "reimport.test");
+    const service = websiteModuleService(db);
+    const actor = { agentId: null, userId: "local-board" };
+    // The site as the 22 Oct import left it: 10 vendors, 32 categories, 24 products, 6 people, 3 forms.
+    // Each old product carries a local edit, so an overwrite would show.
+    const bundled = Object.fromEntries(["vendors", "categories", "products"].map((key) =>
+      [key, new Map((publicImport[key as "vendors"] as Array<{ id: string }>).map((row) => [row.id, row]))])) as Record<string, Map<string, Record<string, unknown>>>;
+    const collectionOf = { vendors: "vendor", categories: "category", products: "product" } as const;
+    for (const key of ["vendors", "categories", "products"] as const) {
+      for (const id of firstImportKeys[key]) {
+        const data = key === "products" ? { ...bundled[key].get(id), name: `Edited ${id}` } : bundled[key].get(id);
+        await service.createEntry(company.id, site.id, { collection: collectionOf[key], entryKey: id, content: { data } }, actor);
+      }
+    }
+    for (const [index, person] of publicImport.people.entries()) {
+      await service.createEntry(company.id, site.id, { collection: "public-person", entryKey: `public-person-${index + 1}`, content: person }, actor);
+    }
+    for (const form of publicImport.forms) await service.createEntry(company.id, site.id, { collection: "form", entryKey: form.key, content: form }, actor);
+    const imports = new Set(["vendor", "category", "product", "public-person", "form"]);
+    const before = new Map((await service.listEntries(company.id, site.id)).filter((entry) => imports.has(entry.collection) && entry.id !== seeded.id).map((entry) => [entry.id, entry.latestRevisionId]));
+    expect(before.size).toBe(75);
+
+    const path = `/api/companies/${company.id}/website/sites/${site.id}/entries/import-public-drafts`;
+    const result = await request(app()).post(path).send({}).expect(200);
+    expect(result.body).toMatchObject({ imported: 135, skipped: 75 });
+
+    const after = (await service.listEntries(company.id, site.id)).filter((entry) => entry.id !== seeded.id);
+    const count = (collection: string) => after.filter((entry) => entry.collection === collection).length;
+    expect({ product: count("product"), category: count("category"), vendor: count("vendor") }).toEqual({ product: 159, category: 32, vendor: 10 });
+    expect(new Set(after.map((entry) => `${entry.collection}:${entry.entryKey}`)).size).toBe(after.length);
+    for (const [id, revisionId] of before) expect(after.find((entry) => entry.id === id)?.latestRevisionId).toBe(revisionId);
+    const oldProduct = after.find((entry) => entry.collection === "product" && entry.entryKey === firstImportKeys.products[0])!;
+    const row = await service.getEntryRow(company.id, site.id, oldProduct.id);
+    const detail = await service.entryDetail(row!);
+    expect((detail?.content as { data: { name: string } }).data.name).toBe(`Edited ${firstImportKeys.products[0]}`);
+  });
+
+  it("the bundled public snapshot holds the full catalogue: 159 products, 32 categories, 10 vendors", () => {
+    expect({ products: publicImport.products.length, categories: publicImport.categories.length, vendors: publicImport.vendors.length })
+      .toEqual({ products: 159, categories: 32, vendors: 10 });
+    for (const key of ["vendors", "categories", "products"] as const) {
+      const ids = (publicImport[key] as Array<{ id: string }>).map((row) => row.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids).toEqual(expect.arrayContaining(firstImportKeys[key]));
+    }
   });
 
   it("isolation 9: page and entry documents never show in company search", async () => {
