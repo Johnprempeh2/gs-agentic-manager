@@ -24,6 +24,9 @@ import {
   refuseLiveDesignSave,
   viewLiveDesign,
 } from "../services/live-design.js";
+import { deployBlockers, deployRefusal } from "../services/website/deploy-readiness.js";
+import { PUBLIC_NETLIFY_SITE_ID } from "../services/website/publish.js";
+import { secretService } from "../services/secrets.js";
 import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
 import { deliverableService } from "../services/deliverables.js";
@@ -101,6 +104,7 @@ import {
   pipelineStages,
   pipelines,
   projectWorkspaces,
+  websiteSite,
 } from "@greatstone/db";
 import {
   addIssueCommentSchema,
@@ -21135,6 +21139,18 @@ export function issueRoutes(
   });
 
   /** Live design (John, 2 Nov): John asks for a change, the agent answers with versions shown in place. */
+  /** The pre-Deploy safety check on staging, with the public site's Netlify token (Deploy only ever targets it). */
+  async function liveDeployBlockers(companyId: string): Promise<string[]> {
+    const site = await db.select().from(websiteSite)
+      .where(and(eq(websiteSite.companyId, companyId), eq(websiteSite.netlifySiteId, PUBLIC_NETLIFY_SITE_ID)))
+      .then((rows) => rows[0] ?? null);
+    if (!site?.netlifyTokenSecretId) return ["GSAM has no Netlify token for greatstoneint.com, so it cannot check staging."];
+    const token = await secretService(db).resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
+      accessContext: { consumerType: "system", consumerId: `website-deploy-check:${site.id}`, configPath: "netlify.token", actorType: "system" },
+    });
+    return deployBlockers(token, site.blobsStoreName);
+  }
+
   function liveSessionForBoard(req: Request) {
     assertBoard(req);
     const session = getLiveDesign(req.params.sessionId as string);
@@ -21407,6 +21423,13 @@ export function issueRoutes(
 
   router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), async (req, res) => {
     const session = liveSessionForBoard(req);
+    if (req.body.deploy === true) {
+      const problems = await liveDeployBlockers(session.companyId);
+      if (problems.length) {
+        res.status(409).json({ error: deployRefusal(problems) });
+        return;
+      }
+    }
     try {
       steerLiveDesign(session, req.body.message, null, req.body.deploy === true);
     } catch (err) {
