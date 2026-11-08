@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
+import { checkHomeFrozen, HOME_LANDING_ISLAND, pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
 import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink } from "../services/website/media-file.js";
 import { LiveDesignConflict } from "../services/live-design.js";
 
@@ -91,5 +91,20 @@ describe("website page documents (release schema 2)", () => {
     for (const bad of [`${hash}`, `${hash}.PNG`, `${"a".repeat(63)}.png`, `../${hash}.png`, `${hash}.png/..`, `${hash}..png`, `${hash}.png%00`, "x.png"]) {
       expect(parseWebsiteMediaFileName(bad), bad).toBeNull();
     }
+  });
+});
+
+describe("the frozen home page", () => {
+  it("allows sections added after the Two Doors landing", () => {
+    expect(() => checkHomeFrozen({ html: `${HOME_LANDING_ISLAND}<section class="gs-new"><h2>New</h2></section>`, css: ".gs-new{padding:0}" })).not.toThrow();
+  });
+
+  it("refuses a save that moves, drops or restyles the landing", () => {
+    for (const part of [
+      { html: '<section>New</section>', css: "" },
+      { html: `<section>Above</section>${HOME_LANDING_ISLAND}`, css: "" },
+      { html: `${HOME_LANDING_ISLAND}${HOME_LANDING_ISLAND}`, css: "" },
+      { html: HOME_LANDING_ISLAND, css: "#gs-page .td-public-clients-grid{gap:0}" },
+    ]) expect(() => checkHomeFrozen(part)).toThrow(LiveDesignConflict);
   });
 });
