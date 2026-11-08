@@ -65,6 +65,15 @@ function encodeKey(key: string) {
 }
 
 /**
+ * A key in a site store on the REST API. The store goes out as `site:<name>` with the colon
+ * as is, as `@netlify/blobs` 11.1.6 sends it: `site%3A<name>` is a different store that the
+ * site and the Next build never read (GRE-4477).
+ */
+export function netlifyBlobUrl(netlifySiteId: string, storeName: string, key: string) {
+  return `${API}/api/v1/blobs/${encodeURIComponent(netlifySiteId)}/${SITE_STORE_PREFIX}${encodeURIComponent(storeName)}/${encodeKey(key)}`;
+}
+
+/**
  * The Netlify REST API, as `@netlify/blobs` uses it from outside Netlify
  * (Summit's GRE-1915 proof wrote Blobs this way): a site store is
  * `site:<name>`, and reads and writes go through a signed URL.
@@ -79,8 +88,7 @@ export function createNetlifyPublishClient(input: {
   const fetchImpl: typeof fetch = (url, init) => baseFetch(url, { ...init, signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
   const site = encodeURIComponent(input.netlifySiteId);
   const auth = { authorization: `Bearer ${input.token}` };
-  const blobPath = (key: string) =>
-    `${API}/api/v1/blobs/${site}/${encodeURIComponent(`${SITE_STORE_PREFIX}${input.storeName}`)}/${encodeKey(key)}`;
+  const blobPath = (key: string) => netlifyBlobUrl(input.netlifySiteId, input.storeName, key);
 
   async function api(path: string, init: RequestInit = {}) {
     const res = await fetchImpl(`${API}/api/v1${path}`, {

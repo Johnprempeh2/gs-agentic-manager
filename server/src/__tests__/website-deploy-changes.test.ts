@@ -18,7 +18,7 @@ describe("website deploy changes", () => {
   it("lists staging's commits that the public site lacks, newest first, first line of each message", async () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request) => {
       const u = String(url);
-      if (u === "https://api.netlify.com/api/v1/blobs/6689e558-855b-40b1-be45-c530531fed45/site%3Agsam-content/current") return Response.json({ release: 2 });
+      if (u === "https://api.netlify.com/api/v1/blobs/6689e558-855b-40b1-be45-c530531fed45/site:gsam-content/current") return Response.json({ release: 2 });
       if (u.startsWith("https://api.netlify.com/api/v1/sites/site-1/deploys")) return Response.json([{ state: "ready", title: `gsam-source:prod:${live}` }]);
       if (u.startsWith("https://api.netlify.com/api/v1/sites/6689e558-855b-40b1-be45-c530531fed45/deploys")) return Response.json([{ state: "ready", title: `gsam-source:staging:${sha(3)}` }]);
       if (u === `https://api.github.com/repos/Johnprempeh2/greatstone-website/compare/${live}...${sha(3)}`)

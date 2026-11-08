@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNetlifyPublishClient } from "./netlify-publish-client.js";
+import { createNetlifyPublishClient, netlifyBlobUrl } from "./netlify-publish-client.js";
 
 function recorder(answers: Array<{ status?: number; json?: unknown }>) {
   const calls: Array<{ url: string; method: string; headers: Record<string, string>; body?: unknown }> = [];
@@ -18,12 +18,26 @@ describe("netlify publish client", () => {
     const client = createNetlifyPublishClient({ netlifySiteId: "site-1", storeName: "gsam-content", token: "tok", fetchImpl });
     await client.putBlob("releases/42.json", "{}", "application/json");
     expect(calls[0]).toMatchObject({
-      url: "https://api.netlify.com/api/v1/blobs/site-1/site%3Agsam-content/releases/42.json",
+      url: "https://api.netlify.com/api/v1/blobs/site-1/site:gsam-content/releases/42.json",
       method: "PUT",
       headers: { authorization: "Bearer tok", accept: "application/json;type=signed-url" },
     });
     expect(calls[1]).toMatchObject({ url: "https://signed.example/put", method: "PUT", headers: { "content-type": "application/json" }, body: "{}" });
     expect(calls[1]!.headers.authorization).toBeUndefined();
+  });
+
+  // GRE-4477: @netlify/blobs 11.1.6 sends the store as `site:<name>` with the colon as is.
+  // `site%3A...` is a different store, so the site and the Next build never saw a release.
+  it("names the store site:<name> on every Blobs call, the way @netlify/blobs does", async () => {
+    const { calls, fetchImpl } = recorder([{ status: 200 }, { json: { url: "https://signed.example/put" } }, { status: 200 }]);
+    const client = createNetlifyPublishClient({ netlifySiteId: "site-1", storeName: "gsam-content", token: "tok", fetchImpl });
+    await client.blobExists("media/a b.png");
+    await client.putBlob("current", "{}", "application/json");
+    expect(calls.map((call) => [call.method, call.url]).slice(0, 2)).toEqual([
+      ["HEAD", "https://api.netlify.com/api/v1/blobs/site-1/site:gsam-content/media/a%20b.png"],
+      ["PUT", "https://api.netlify.com/api/v1/blobs/site-1/site:gsam-content/current"],
+    ]);
+    expect(netlifyBlobUrl("site-1", "gsam-content", "releases/42.json")).toBe("https://api.netlify.com/api/v1/blobs/site-1/site:gsam-content/releases/42.json");
   });
 
   it("reads a missing key as absent and a missing deploy as gone", async () => {
