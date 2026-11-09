@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/link-plugin-dev-sdk.mjs",
+    "deps:sync": "bash scripts/sync-deps.sh",
     "preflight:workspace-links": "node cli/node_modules/tsx/dist/cli.mjs scripts/ensure-workspace-package-links.ts",
     "dev": "pnpm --filter @greatstone/server exec tsx ../scripts/dev-runner.ts watch",
     "dev:watch": "pnpm --filter @greatstone/server exec tsx ../scripts/dev-runner.ts watch",
