@@ -30,6 +30,9 @@ import {
   updateWebsitePageSchema,
   updateWebsiteSiteSchema,
   websiteReleaseActionSchema,
+  websiteRedirectInputSchema,
+  saveWebsiteRedirectSchema,
+  renameWebsiteMediaSchema,
   WEBSITE_CHANGE_IMAGE_MAX_BYTES,
   WEBSITE_CHANGE_MAX_ATTACHMENTS,
   type PermissionKey,
@@ -90,6 +93,8 @@ import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink
 import { resolveAgentJwtSecret } from "../agent-jwt-secret.js";
 import { importHtmlRelease, loadWebsiteChrome, type HtmlReleaseImport } from "../services/website/chrome.js";
 import { websiteTeamAgent } from "../services/website/pending-alert.js";
+import { websiteRedirectService } from "../services/website/redirects.js";
+import { websiteMediaUses } from "../services/website/media-manage.js";
 import { cachedDeployChanges, loadDeployChanges, WEBSITE_PROJECT_ID, WEBSITE_REPO } from "../services/website/deploy-changes.js";
 import { createGitRemoteAuthProvider, GIT_CREDENTIAL_TOKEN_ENV_KEY } from "../services/git-credentials.js";
 import { secretService } from "../services/secrets.js";
@@ -197,6 +202,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
   const mediaLinkSecret = options.mediaLinkSecret ?? resolveAgentJwtSecret;
   const publish = websitePublishService(db, options.publish);
   const sitemap = websiteSitemapService(db);
+  const redirects = websiteRedirectService(db, service);
   const changeRequests = websiteChangeRequestService(db, { heartbeat: options.heartbeat });
   const issues = issueService(db);
   const access = accessService(db);
@@ -1047,6 +1053,99 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'");
     object.stream.on("error", next);
     object.stream.pipe(res);
+  });
+
+  // ---- media rename and delete (GRE-4785): the entry's name, or out of the next release; the file stays ----
+
+  async function mediaEntryFor(req: Request, res: Response) {
+    const entry = await entryFor(req, res, "website:edit");
+    if (!entry) return null;
+    if (entry.collection !== "media" || entry.archivedAt) {
+      res.status(404).json({ error: NOT_FOUND });
+      return null;
+    }
+    return entry;
+  }
+
+  router.patch(WEBSITE_MODULE_API_ROUTES.mediaEntry, validate(renameWebsiteMediaSchema), async (req, res) => {
+    const entry = await mediaEntryFor(req, res);
+    if (!entry) return;
+    const name = req.body.name as string;
+    if (name !== entry.entryKey) {
+      await service.updateEntry(entry, { entryKey: name });
+      await log(req, entry.companyId, "website.media_renamed", "website_entry", entry.id, { siteId: entry.siteId, from: entry.entryKey, to: name });
+    }
+    const item = (await service.listMedia(entry.companyId, entry.siteId)).find((media) => media.entryId === entry.id);
+    if (!item) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    res.json(item);
+  });
+
+  router.delete(WEBSITE_MODULE_API_ROUTES.mediaEntry, async (req, res) => {
+    const entry = await mediaEntryFor(req, res);
+    if (!entry) return;
+    const content = (await service.entryDetail(entry))?.content as { assetId?: unknown } | undefined;
+    const usedBy = typeof content?.assetId === "string" && UUID_RE.test(content.assetId) ? await websiteMediaUses(db, entry, content.assetId) : [];
+    if (usedBy.length > 0) {
+      const names = usedBy.slice(0, 3).map((use) => use.title).join(", ");
+      throw conflict(`This media is still used by ${names}${usedBy.length > 3 ? ` and ${usedBy.length - 3} more` : ""}. Take it off ${usedBy.length === 1 ? "that" : "those"} first.`, {
+        code: "website_media_in_use", usedBy,
+      });
+    }
+    await service.archiveEntry(entry);
+    await log(req, entry.companyId, "website.media_deleted", "website_entry", entry.id, { siteId: entry.siteId, name: entry.entryKey });
+    res.json({ entryId: entry.id });
+  });
+
+  // ---- redirects (GRE-4785): drafts like any entry; a person approves, and they go live with the next Publish ----
+
+  async function redirectEntryFor(req: Request, res: Response) {
+    const entry = await entryFor(req, res, "website:edit");
+    if (!entry) return null;
+    if (entry.collection !== "redirect" || entry.archivedAt) {
+      res.status(404).json({ error: NOT_FOUND });
+      return null;
+    }
+    return entry;
+  }
+
+  router.get(WEBSITE_MODULE_API_ROUTES.redirects, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    res.json(await redirects.list(site));
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.redirects, validate(websiteRedirectInputSchema), async (req, res) => {
+    const site = await writableSiteFor(req, res);
+    if (!site) return;
+    const { redirect, created } = await redirects.create(site, req.body, actorOf(req));
+    if (created) {
+      await log(req, site.companyId, "website.redirect_created", "website_entry", redirect.entryId, {
+        siteId: site.id, from: redirect.from, to: redirect.to, status: redirect.status,
+      });
+    }
+    res.status(created ? 201 : 200).json(redirect);
+  });
+
+  router.patch(WEBSITE_MODULE_API_ROUTES.redirect, validate(saveWebsiteRedirectSchema), async (req, res) => {
+    const entry = await redirectEntryFor(req, res);
+    if (!entry) return;
+    const site = (await service.getSite(entry.companyId, entry.siteId))!;
+    const redirect = await redirects.update(site, entry, req.body, actorOf(req));
+    await log(req, entry.companyId, "website.redirect_saved", "website_entry", entry.id, {
+      siteId: entry.siteId, from: redirect.from, to: redirect.to, status: redirect.status,
+    });
+    res.json(redirect);
+  });
+
+  router.delete(WEBSITE_MODULE_API_ROUTES.redirect, async (req, res) => {
+    const entry = await redirectEntryFor(req, res);
+    if (!entry) return;
+    await service.archiveEntry(entry);
+    await log(req, entry.companyId, "website.redirect_deleted", "website_entry", entry.id, { siteId: entry.siteId });
+    res.json({ entryId: entry.id });
   });
 
   // ---- review: submit (edit), approve and send back (people with Publish rights) ----

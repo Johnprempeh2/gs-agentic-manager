@@ -373,6 +373,27 @@ export const updateWebsiteEntrySchema = z
 export type UpdateWebsiteEntry = z.infer<typeof updateWebsiteEntrySchema>;
 
 /**
+ * A redirect (GRE-4785), in the release schema's words: `from` is a path on this site with no query or `#`;
+ * `to` is a path on this site or an https:// address.
+ */
+export const websiteRedirectInputSchema = z
+  .object({
+    from: z.string().trim().max(2000).regex(/^\/(?!\/)[^?#\s]*$/, "Start the old path with /, with no ? or #, like /old-page"),
+    to: z.string().trim().max(2000).regex(/^(?:\/(?!\/)|https:\/\/)\S*$/, "Use a path on this site, like /new-page, or an https:// address"),
+    status: z.union([z.literal(301), z.literal(302), z.literal(307), z.literal(308)]).default(301),
+  })
+  .strict();
+export type WebsiteRedirectInput = z.input<typeof websiteRedirectInputSchema>;
+
+/** A change to a redirect, at the version the caller read. */
+export const saveWebsiteRedirectSchema = websiteRedirectInputSchema.extend({ baseRevisionId: z.string().uuid() }).strict();
+export type SaveWebsiteRedirect = z.input<typeof saveWebsiteRedirectSchema>;
+
+/** A media entry's new name (its entry key). The file and the pages that use it do not change. */
+export const renameWebsiteMediaSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
+export type RenameWebsiteMedia = z.infer<typeof renameWebsiteMediaSchema>;
+
+/**
  * Retry and Rollback bodies (GRE-2108). A click that would start a rebuild
  * (one production deploy, about 15 credits) must say so with
  * `confirmRebuild: true`; a free verify or restore needs nothing.
