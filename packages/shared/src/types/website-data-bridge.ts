@@ -5,6 +5,8 @@ import { z } from "zod";
 
 export const WEBSITE_DATA_RESOURCES = [
   "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries", "billing-lines",
+  // the client timeline (GRE-4782): live items only, `?customer=` for one client
+  "engagements",
 ] as const;
 export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
 
@@ -65,6 +67,13 @@ export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
    */
   commercePublishRequests: "/companies/:companyId/website/sites/:siteId/commerce/publish-requests",
   /**
+   * POST `WebsiteCommerceChangeRequestInput` → 201 `{ approval }` (website:commerce; agents may; GRE-4783). Asks a
+   * person to make one commerce settings change (`websiteCommerceSettingsOperation`): opens a `commerce_change_request`
+   * approval and changes nothing. A person's approval makes the change in their name. A licence key or download link
+   * in the body goes to the vault, never onto the card.
+   */
+  commerceChangeRequests: "/companies/:companyId/website/sites/:siteId/commerce/change-requests",
+  /**
    * PUT `WebsiteVendorActivationStepsInput` → `{ item: WebsiteVendorActivationSteps }` (website:commerce; GRE-3982).
    * Sets or clears the licence activation steps a vendor's licences show, on the write key. The site refuses an agent
    * on a published vendor (403 website_bridge_denied) and any text with a full licence key (400
@@ -105,17 +114,36 @@ const CATALOGUE_CHILDREN: Record<string, { sub: string; edit: boolean }[]> = {
   "pricing-rules": [{ sub: "targets", edit: false }],
 };
 const ROW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** An enquiry as the reads name it: `si-<uuid>` (service enquiry) or `fd-<uuid>` (front door lead). */
+const ENQUIRY_ID = /^(?:si|fd)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The commerce settings (GRE-4782 contract, "Commerce settings"): the records beside the catalogue. */
+export const WEBSITE_COMMERCE_SETTINGS_RESOURCES = [
+  "orders", "enquiries", "customers", "engagements", "licences", "customer-tiers", "portal-acceptances",
+] as const;
+/** Body fields that hold a licence key or its download link: they go to the vault, never onto a card or a log. */
+export const WEBSITE_LICENCE_SECRET_FIELDS = ["licenceKey", "downloadUrl"] as const;
 
 /**
  * The typed commerce write for a method and path parts (after `/commerce/`), or null: GSAM sends only these, the same
- * table as the site's `writeRoute` (greatstone-website, lib/admin-bridge-write.mjs). Ids must be uuids.
+ * table as the site's `writeRoute` and `settingsRoute` (greatstone-website, lib/admin-bridge-write.mjs). Ids must be
+ * uuids, but an enquiry's (`si-` or `fd-` and a uuid). `body` decides the settings that are people only by field:
+ * a client's `tierId` (it sets their prices) and a licence's `licenceKey` or `downloadUrl`. Editing or deleting a
+ * timeline item that is shared is people only too, but only the site knows it is shared: it answers 403 denied.
  */
-export function websiteCommerceWriteOperation(method: string, parts: readonly string[]): WebsiteCommerceWriteOperation | null {
+export function websiteCommerceWriteOperation(method: string, parts: readonly string[],
+  body?: Record<string, unknown>): WebsiteCommerceWriteOperation | null {
   const [res, id, sub, childId, extra] = parts;
   if (extra !== undefined || !res) return null;
+  const op = (name: string, peopleOnly = false) => ({ name, peopleOnly });
+  if (res === "enquiries") {
+    if (id === undefined || sub !== undefined || !ENQUIRY_ID.test(id)) return null;
+    if (method === "PATCH") return op("enquiries.edit");
+    // only a front door lead is deleted (personal data, for good); a service enquiry is not
+    return method === "DELETE" && id.toLowerCase().startsWith("fd-") ? op("enquiries.delete", true) : null;
+  }
   if (id !== undefined && !ROW_ID.test(id)) return null;
   if (childId !== undefined && !ROW_ID.test(childId)) return null;
-  const op = (name: string, peopleOnly = false) => ({ name, peopleOnly });
   if ((WEBSITE_COMMERCE_CATALOGUE_RESOURCES as readonly string[]).includes(res)) {
     if (id === undefined) return method === "POST" ? op(`${res}.create`) : null;
     if (sub === undefined) return method === "PATCH" ? op(`${res}.edit`) : method === "DELETE" ? op(`${res}.delete`) : null;
@@ -140,7 +168,84 @@ export function websiteCommerceWriteOperation(method: string, parts: readonly st
     if (sub === undefined) return method === "PATCH" ? op("invoices.edit") : null;
     return sub === "issue" && method === "POST" ? op("invoices.issue", true) : null;
   }
+  // ---- commerce settings (GRE-4782): people only where it emails a client, sets prices or touches a licence key ----
+  const has = (field: string) => body !== undefined && Object.prototype.hasOwnProperty.call(body, field);
+  if (res === "orders" && id !== undefined) {
+    if (sub === undefined) return method === "PATCH" ? op("orders.edit") : null;
+    return sub === "notify-licence" && method === "POST" ? op("orders.notify_licence", true) : null;
+  }
+  if (res === "customers") {
+    if (id === undefined) return method === "POST" ? op("customers.create", has("tierId")) : null;
+    if (sub === undefined) return method === "PATCH" ? op("customers.edit", has("tierId")) : null;
+    if (method !== "POST") return null;
+    return sub === "engagements" ? op("engagements.create") : sub === "licences" ? op("licences.issue", true) : null;
+  }
+  if (res === "engagements" && id !== undefined) {
+    if (sub === undefined) return method === "PATCH" ? op("engagements.edit") : method === "DELETE" ? op("engagements.delete") : null;
+    return (sub === "share" || sub === "unshare") && method === "POST" ? op(`engagements.${sub}`, true) : null;
+  }
+  if (res === "licences" && id !== undefined) {
+    if (sub === undefined) {
+      return method === "PATCH" ? op("licences.edit", WEBSITE_LICENCE_SECRET_FIELDS.some(has)) : null;
+    }
+    return (sub === "revoke" || sub === "reissue") && method === "POST" ? op(`licences.${sub}`, true) : null;
+  }
+  if (res === "customer-tiers") {
+    if (id === undefined) return method === "POST" ? op("customer-tiers.create") : null;
+    return sub === undefined && method === "PATCH" ? op("customer-tiers.edit") : null;
+  }
+  if (res === "portal-acceptances" && id !== undefined) {
+    return sub === "resend" && method === "POST" ? op("portal-acceptances.resend", true) : null;
+  }
   return null;
+}
+
+/** A commerce settings change (GRE-4782 table), or null: the only changes a `commerce_change_request` card may carry. */
+export function websiteCommerceSettingsOperation(method: string, parts: readonly string[], body?: Record<string, unknown>) {
+  if (!(WEBSITE_COMMERCE_SETTINGS_RESOURCES as readonly string[]).includes(parts[0] ?? "")) return null;
+  return websiteCommerceWriteOperation(method, parts, body);
+}
+
+/**
+ * An ask for one commerce settings change (GRE-4783; John, 5 Nov: anything that emails a client, changes money, or
+ * issues or revokes a licence key goes through a person's approval card). `path` is after `/commerce/`, as for a
+ * direct write; `body` is the site's. `issueId` links the card to the asker's task.
+ */
+export const websiteCommerceChangeRequestSchema = z.object({
+  method: z.enum(["POST", "PATCH", "DELETE"]),
+  path: z.string().min(1).max(200).regex(/^[A-Za-z0-9-]+(?:\/[A-Za-z0-9-]+){0,3}$/, "segments of letters, digits and dashes"),
+  body: z.record(z.string(), z.unknown()).optional(),
+  note: z.string().trim().min(1).max(2000).optional(),
+  issueId: z.string().uuid().optional(),
+}).strict();
+export type WebsiteCommerceChangeRequestInput = z.infer<typeof websiteCommerceChangeRequestSchema>;
+
+export const COMMERCE_CHANGE_REQUEST_APPROVAL_TYPE = "commerce_change_request";
+
+/** The card a person decides. The server builds it; callers cannot set it. */
+export interface CommerceChangeRequestApprovalPayload {
+  siteId: string;
+  siteName: string;
+  title: string;
+  summary: string;
+  /** e.g. `licences.issue`, `orders.notify_licence`. */
+  operation: string;
+  method: WebsiteCommerceWriteMethod;
+  path: string;
+  /** The body as asked, without a licence key or download link: those are in the vault (`vaultRef`). */
+  body: Record<string, unknown> | null;
+  /** The fields kept in the vault, and the last four characters of a licence key, for the person to check. */
+  vaultedFields: string[];
+  licenceKeyLast4: string | null;
+  vaultRef: string | null;
+  /** The same open ask (same change) returns this card. */
+  changeKey: string;
+  requestedBy: string;
+  note: string | null;
+  /** Set when GSAM first sent the change: a retry replays the same site key. */
+  sentAt?: string;
+  /** The site's answer once made. */
+  result?: Record<string, unknown>;
 }
 
 export const websiteCommerceRefundRequestSchema = z.object({
