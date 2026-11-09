@@ -94,7 +94,7 @@ function ReplaceKeyForm({ saving, onSave, onCancel }: {
   };
   return (
     <form className="space-y-3" onSubmit={submit} noValidate>
-      <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="licence-secret-kind" className="text-sm font-medium">Replace</label>
           <NativeSelect id="licence-secret-kind" value={field} onChange={(e) => setField(e.target.value as typeof field)} disabled={saving}>
@@ -102,7 +102,7 @@ function ReplaceKeyForm({ saving, onSave, onCancel }: {
             <option value="downloadUrl">Download link</option>
           </NativeSelect>
         </div>
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
           <label htmlFor="licence-secret-value" className="text-sm font-medium">{field === "licenceKey" ? "New key" : "New link"}</label>
           <Input id="licence-secret-value" type={field === "licenceKey" ? "password" : "url"} autoComplete="off" spellCheck={false}
             value={value} onChange={(e) => setValue(e.target.value)} disabled={saving} className="font-mono" />
