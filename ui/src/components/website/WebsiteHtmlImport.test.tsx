@@ -77,7 +77,7 @@ describe("WebsiteHtmlImport", () => {
     const result = container.querySelector('[data-testid="website-html-import-result"]')!.textContent!;
     expect(result).toContain("2 pages became drafts.");
     expect(result).toContain("1 new, 1 changed, 0 unchanged.");
-    expect(result).toContain("Nothing is published.");
+    expect(result).toContain("Nothing is live yet.");
   });
 
   it("refuses a file that is not JSON or not schema 2 without calling the server", async () => {

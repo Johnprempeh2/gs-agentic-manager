@@ -114,7 +114,7 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
           <p className="text-xs text-muted-foreground">
             {items.length
               ? `${reviewCountText(items.filter((item) => item.kind === "page").length, items.filter((item) => item.kind === "entry").length)} waiting for approval.`
-              : "Nothing is waiting for approval."}
+              : "Nothing to review. Changes sent for review show here."}
             {canPublish ? null : " A person with Publish rights on this site approves them."}
           </p>
         </div>

@@ -25,7 +25,7 @@ vi.mock("../../../api/auth", () => ({ authApi: authMock }));
 vi.mock("../../../api/website-features", () => ({ websiteFeaturesApi: featuresMock }));
 vi.mock("../../../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 
-import { SitemapSection, mixName, sitemapViewKey, treeFromPages } from "./SitemapSection";
+import { SitemapSection, approveImpactText, mixName, sitemapViewKey, treeFromPages } from "./SitemapSection";
 
 const site = { id: "site-1", companyId: "co-1", domain: "www.example.test" } as WebsiteSite;
 
@@ -218,5 +218,12 @@ describe("SitemapSection", () => {
       { id: "page-2", slug: "/about", title: "About", status: "planned", menu: "footer", menuOrder: 3, parentPageId: "page-1", navOrder: 0, seo: { noindex: true } },
     ] as unknown as WebsitePage[]);
     expect(tree.nodes.find((node) => node.pageId === "page-2")).toMatchObject({ parentId: "n1", menu: "footer", menuOrder: 3, noindex: true });
+  });
+});
+
+describe("approveImpactText", () => {
+  it("uses singular forms for 1 (GRE-2107 rule 0)", () => {
+    expect(approveImpactText({ created: 1, archived: 1 })).toBe("1 new page is planned and 1 page that is not in it is archived (not deleted).");
+    expect(approveImpactText({ created: 2, archived: 0 })).toBe("2 new pages are planned and 0 pages that are not in it are archived (not deleted).");
   });
 });

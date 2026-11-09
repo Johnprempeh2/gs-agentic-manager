@@ -17,6 +17,7 @@ const moduleMock = vi.hoisted(() => ({
   retry: vi.fn(),
   rollbackPlan: vi.fn(),
   rollback: vi.fn(),
+  home: vi.fn().mockResolvedValue({ approvedChanges: 3 }),
 }));
 const canManage = vi.hoisted(() => ({ value: true }));
 vi.mock("../../api/website", async () => {
@@ -28,7 +29,7 @@ vi.mock("../../api/access", () => ({
 }));
 vi.mock("./WebsiteSetup", () => ({ useCanManageWebsite: () => ({ canManage: canManage.value, isLoading: false }) }));
 
-import { WebsiteReleases, releaseDate } from "./WebsiteReleases";
+import { WebsiteReleases, publishConfirmTitle, releaseDate } from "./WebsiteReleases";
 
 const site: WebsiteSite = {
   id: "site-1",
@@ -161,7 +162,7 @@ describe("WebsiteReleases", () => {
     await render();
 
     await click("Publish");
-    expect(document.body.textContent).toContain("Publish to Greatstone?");
+    expect(document.body.textContent).toContain("Publish 3 changes to Greatstone?");
     expect(document.body.textContent).toContain("costs about 15 credits");
     await click("Publish now");
     expect(moduleMock.publish).toHaveBeenCalledWith("co-1", "site-1");
@@ -286,7 +287,7 @@ describe("WebsiteReleases", () => {
     );
   });
 
-  it("Pending: the live release is offered as Go back in the banner, not as Roll back on its row", async () => {
+  it("Pending: the live release is offered as Roll back in the banner, not as Roll back on its row", async () => {
     const pending = release({ status: "pending", pendingReason: "verify_failed", checks: [] });
     moduleMock.releases.mockResolvedValue([pending, live41, replaced40]);
     moduleMock.retryPlan.mockResolvedValue({ action: "verify", costsCredits: false, reason: "The rebuild worked." });
@@ -294,19 +295,18 @@ describe("WebsiteReleases", () => {
     moduleMock.rollback.mockResolvedValue(release({ id: "rel-43", number: 43, kind: "rollback", rollbackOfReleaseId: "rel-41", status: "building" }));
     await render();
     const banner = container.querySelector("[data-testid=website-release-pending]")!;
-    expect(banner.textContent).toContain("Why: The live pages do not show this release yet.");
-    expect(banner.textContent).not.toContain("What failed");
+    expect(banner.textContent).toContain("What failed: The live pages do not show this release yet.");
     // The reason shows once, in the banner, not again in the row.
     expect(container.textContent?.split("The live pages do not show this release yet.").length).toBe(2);
     // Only the Replaced row offers Roll back.
     expect([...container.querySelectorAll("button")].filter((entry) => entry.textContent === "Roll back to this release")).toHaveLength(1);
-    await click("Go back to Release 41");
-    expect(document.body.textContent).toContain("Go back to Release 41?");
-    await click("Go back");
+    await click("Roll back to Release 41");
+    expect(document.body.textContent).toContain("Roll back to Release 41?");
+    await click("Roll back");
     expect(moduleMock.rollback).toHaveBeenCalledWith("co-1", "site-1", "rel-41", false);
   });
 
-  it("marks a rollback release as Restored, and shows what failed on a release that did not finish", async () => {
+  it("tags a rollback release with the release it restores, and shows what failed on a release that did not finish", async () => {
     const restore43 = release({ id: "rel-43", number: 43, kind: "rollback", rollbackOfReleaseId: "rel-41", status: "live", liveAt: "2026-10-23T11:00:00.000Z" });
     const failed42 = release({
       status: "failed",
@@ -314,8 +314,10 @@ describe("WebsiteReleases", () => {
     });
     moduleMock.releases.mockResolvedValue([restore43, failed42, live41]);
     await render();
-    expect(container.textContent).toContain("Restored Release 41");
-    expect(container.textContent).not.toContain("Roll back to Release 41");
+    // The rollback release is tagged with the release it restores (copy 11, releases.rollback_tag); it is a label, not a button.
+    const tag = [...container.querySelectorAll("span")].find((node) => node.textContent === "Roll back to Release 41");
+    expect(tag).toBeDefined();
+    expect([...container.querySelectorAll("button")].some((node) => node.textContent === "Roll back to Release 41")).toBe(false);
     expect(container.textContent).toContain("What failedBuild script returned non-zero exit code: 2");
     const summary = [...container.querySelectorAll("dd")].find((node) => node.textContent?.startsWith("Build script"));
     expect(summary?.textContent).toBe("Build script returned non-zero exit code: 2");
@@ -355,5 +357,13 @@ describe("WebsiteReleases", () => {
     expect(button("Publish")).toBeUndefined();
     expect(button("Roll back to this release")).toBeUndefined();
     expect(container.textContent).toContain("A person with Publish rights approves them and starts the Publish.");
+  });
+});
+
+describe("publishConfirmTitle (GRE-2107 copy 9)", () => {
+  it("counts the approved changes, with a singular form, and names the site", () => {
+    expect(publishConfirmTitle(3, "Greatstone")).toBe("Publish 3 changes to Greatstone?");
+    expect(publishConfirmTitle(1, "Greatstone")).toBe("Publish 1 change to Greatstone?");
+    expect(publishConfirmTitle(null, "Greatstone")).toBe("Publish to Greatstone?");
   });
 });

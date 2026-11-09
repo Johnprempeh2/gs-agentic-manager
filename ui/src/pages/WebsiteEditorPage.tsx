@@ -59,12 +59,11 @@ export function WebsiteEditorPage() {
     body = (
       <EmptyState
         icon={Lock}
-        title="The Website view is switched off"
-        message="This instance does not include the Website view. An instance admin can switch it on under Settings → Experimental."
+        message="The Website section is switched off for this company."
       />
     );
   } else if (overviewQuery.error) body = <ErrorState error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} />;
-  else body = <EmptyState icon={Globe} title="No website is set up yet" message="Set up the website on the Website page first." />;
+  else body = <EmptyState icon={Globe} title="Connect your website" message="Connect a site on the Website page first, then edit its pages here." />;
 
   return (
     <FullScreen>

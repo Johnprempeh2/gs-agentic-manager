@@ -282,7 +282,7 @@ function CommentThread({
           <CheckCircle2 />
           {resolve.isPending ? "Resolving" : "Mark resolved"}
         </Button>
-        <p className="text-xs text-muted-foreground">Resolving closes the task. Nothing is published.</p>
+        <p className="text-xs text-muted-foreground">Resolving closes the task. Nothing goes live.</p>
       </div>
     </section>
   );

@@ -383,3 +383,8 @@ export function boardDefaultFolded(tree: Tree): Set<string> {
   const top = roots.length === 1 ? roots[0]!.id : null;
   return new Set(tree.nodes.filter((node) => node.id !== top && childrenOf(tree, node.id).length > BOARD_FOLD_OVER).map((node) => node.id));
 }
+
+/** "1 page", "3 pages": every count string has a singular form (copy rule 0). */
+export function countOf(n: number, singular: string, plural = `${singular}s`): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}

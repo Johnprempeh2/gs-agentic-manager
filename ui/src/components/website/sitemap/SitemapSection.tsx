@@ -24,7 +24,7 @@ import { formatDateTime } from "@/lib/utils";
 import { PageTabBar } from "../../PageTabBar";
 import { ErrorState, errorStateMessage } from "../../ErrorState";
 import { SitemapBoardView } from "./SitemapBoard";
-import { pagesLookup } from "./model";
+import { countOf, pagesLookup } from "./model";
 import { SitemapCompareView } from "./SitemapCompare";
 import { SitemapTreeView } from "./SitemapTree";
 import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./SitemapViews";
@@ -140,6 +140,13 @@ export function approvalImpact(tree: WebsiteSitemapTree, pages: WebsitePage[]) {
   return { created, archived: pages.filter((page) => !matched.has(page.id)).length };
 }
 
+/** The approve confirm's impact line, with singular forms. */
+export function approveImpactText(impact: { created: number; archived: number } | null): string {
+  const created = impact?.created ?? 0;
+  const archived = impact?.archived ?? 0;
+  return `${countOf(created, "new page")} ${created === 1 ? "is" : "are"} planned and ${countOf(archived, "page")} that ${archived === 1 ? "is" : "are"} not in it ${archived === 1 ? "is" : "are"} archived (not deleted).`;
+}
+
 /** The one approve step, opened from the header and from Compare alike. */
 function ApproveDialog({ option, pages, pending, error, onCancel, onApprove }: {
   option: WebsiteSitemapOption | null;
@@ -156,7 +163,7 @@ function ApproveDialog({ option, pages, pending, error, onCancel, onApprove }: {
         <AlertDialogHeader className="text-left sm:text-left">
           <AlertDialogTitle className="text-base leading-snug">Approve {option?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Its pages become the site's pages and menus: {impact?.created ?? 0} new pages are planned and {impact?.archived ?? 0} pages that are not in it are archived (not deleted). Visitors see it after you Deploy.
+            Its pages become the site's pages and menus: {approveImpactText(impact)} Visitors see it after you Deploy.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(error)}</p> : null}
@@ -293,7 +300,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
       setApprovingId(null);
       setOptionId(result.option.id);
       setNotice(
-        `Approved ${result.option.name}: ${result.summary.created} new pages planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live when you Deploy.`,
+        `Approved ${result.option.name}: ${countOf(result.summary.created, "new page")} planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live when you Deploy.`,
       );
       refresh();
     },
@@ -335,7 +342,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
             {statusPill(option)}
             {draft ? <Pill className="bg-status-warning-soft text-status-warning-foreground">Unsaved changes</Pill> : null}
             <span className="text-xs text-muted-foreground">
-              {tree.nodes.length} pages, {tree.journeys.length} journeys
+              {countOf(tree.nodes.length, "page")}, {countOf(tree.journeys.length, "journey")}
               {option.approvedAt ? `, approved ${formatDateTime(option.approvedAt)}` : ""}
             </span>
           </div>
@@ -444,7 +451,7 @@ function SitemapXmlView({ companyId, site }: { companyId: string; site: WebsiteS
   return (
     <div className="space-y-3" data-testid="sitemap-xml">
       <p className="text-sm text-muted-foreground">
-        The sitemap.xml the approved sitemap makes for {site.domain}: every page that is not marked noindex. Publishing puts it on the site.
+        The sitemap.xml the approved sitemap makes for {site.domain}: every page that is not marked noindex. The next Publish puts it on the site.
       </p>
       <pre className="max-h-(--sz-70vh) overflow-auto rounded-xl border border-border bg-muted p-4 font-mono text-xs text-foreground">
         {xml.isLoading ? "Loading" : xml.data}

@@ -499,8 +499,7 @@ function NotEntitled() {
   return (
     <EmptyState
       icon={Lock}
-      title="The Website view is switched off"
-      message="This instance does not include the Website view. An instance admin can switch it on under Settings → Experimental."
+      message="The Website section is switched off for this company."
     />
   );
 }
@@ -752,8 +751,8 @@ export function Website() {
         ) : accessLoading ? null : (
           <EmptyState
             icon={Search}
-            title="No website is set up yet"
-            message="A company owner or admin can set up the website here. Ask one of them to add it."
+            title="Connect your website"
+            message="Connect a site to edit its pages here and Publish them. A company owner or admin can connect it."
           />
         )}
       </div>

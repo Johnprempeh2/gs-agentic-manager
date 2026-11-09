@@ -352,7 +352,7 @@ export function WebsiteMediaPicker({
 
         {tab === "library" ? (
           libraryItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No media yet. Images added as media entries show here.</p>
+            <p className="text-sm text-muted-foreground">No media yet. Upload images, or pick from GS Studio or the animation studio.</p>
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
