@@ -17,6 +17,8 @@ import {
   websitePortalDocumentCreateSchema,
   websitePortalDocumentEditSchema,
   websitePortalDocumentStepSchema,
+  websiteRedirectInputSchema,
+  renameWebsiteMediaSchema,
   type McpToolHints,
 } from "@greatstone/shared";
 import { z } from "zod";
@@ -51,6 +53,13 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   portal_document_edit: mcpToolHints("write", { idempotent: true }),
   portal_document_submit: mcpToolHints("write", { idempotent: true }),
   portal_document_return_to_draft: mcpToolHints("write", { idempotent: true }),
+  // GRE-4785: redirects and media. A save or delete is a draft change; a person approves and publishes it.
+  website_redirect_list: mcpToolHints("read"),
+  website_redirect_save: mcpToolHints("write", { idempotent: true }),
+  website_redirect_delete: mcpToolHints("destructive", { idempotent: true }),
+  website_media_list: mcpToolHints("read"),
+  website_media_rename: mcpToolHints("write", { idempotent: true }),
+  website_media_delete: mcpToolHints("destructive", { idempotent: true }),
   interview_round_get: mcpToolHints("read"),
   interview_synthesis_get: mcpToolHints("read"),
   interview_set_draft: mcpToolHints("write"),
@@ -447,6 +456,105 @@ async function portalToolCall(input: { apiUrl: string; token: string; companyId:
 const PORTAL_TOOL_NAMES = new Set(WEBSITE_PORTAL_TOOLS.map((tool) => tool.name));
 
 /**
+ * Redirects and media (GRE-4785, GRE-4079 step 5d), through GSAM's Website module routes (website:edit for changes).
+ * A redirect an agent saves is a draft; with sendForReview it waits for a person, who approves it, and it goes live
+ * with the next Publish, which is a person's click. A deleted redirect or media entry leaves the site at that Publish
+ * too. No tool approves or publishes: those routes refuse an agent.
+ */
+const entryIdProperty = { type: "string", description: "The entry id, as website_redirect_list or website_media_list shows it." };
+const WEBSITE_REDIRECT_MEDIA_TOOLS = [
+  {
+    name: "website_redirect_list",
+    description: "List a connected website's redirects: old path, new address, status code (301 permanent, 302 or 307 temporary, 308 permanent), state (draft, review, approved, published) and latestRevisionId.",
+    annotations: PROJECT_TOOL_HINTS.website_redirect_list,
+    inputSchema: { type: "object", properties: { siteId: siteIdProperty }, required: ["siteId"], additionalProperties: false },
+  },
+  {
+    name: "website_redirect_save",
+    description: "Add a redirect, or change one (give entryId and the baseRevisionId you read). It is saved as a draft; sendForReview asks a person to approve it, and it goes live with the next Publish. One redirect per old path; a path a page uses now, or a loop, is refused. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.website_redirect_save,
+    inputSchema: {
+      type: "object",
+      properties: {
+        siteId: siteIdProperty,
+        entryId: { ...entryIdProperty, description: "Only to change a redirect. Leave out to add one." },
+        baseRevisionId: { type: "string", description: "With entryId: latestRevisionId of the redirect as you read it. A stale one is refused: read the list again." },
+        from: { type: "string", description: "The old path on this site, starting with /, with no ? or #." },
+        to: { type: "string", description: "A path on this site starting with /, or an https:// address." },
+        status: { type: "integer", enum: [301, 302, 307, 308], description: "301 (default) for a page that moved for good." },
+        sendForReview: { type: "boolean", description: "Send it to a person to approve after the save." },
+      },
+      required: ["siteId", "from", "to"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "website_redirect_delete",
+    description: "Delete a redirect. It leaves the site at the next Publish; its history stays. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.website_redirect_delete,
+    inputSchema: { type: "object", properties: { siteId: siteIdProperty, entryId: entryIdProperty }, required: ["siteId", "entryId"], additionalProperties: false },
+  },
+  {
+    name: "website_media_list",
+    description: "List a connected website's media: each entry's id, name (entryKey), alt text, caption, file type and size.",
+    annotations: PROJECT_TOOL_HINTS.website_media_list,
+    inputSchema: { type: "object", properties: { siteId: siteIdProperty }, required: ["siteId"], additionalProperties: false },
+  },
+  {
+    name: "website_media_rename",
+    description: "Rename a media entry. Only the name changes: the file and the pages that use it stay as they are. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.website_media_rename,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, entryId: entryIdProperty, name: { type: "string", minLength: 1, maxLength: 200 } },
+      required: ["siteId", "entryId", "name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "website_media_delete",
+    description: "Delete a media entry. It leaves the site at the next Publish; the file stays in the company's files. Refused while a page or entry uses it: the error names them. Needs website:edit.",
+    annotations: PROJECT_TOOL_HINTS.website_media_delete,
+    inputSchema: { type: "object", properties: { siteId: siteIdProperty, entryId: entryIdProperty }, required: ["siteId", "entryId"], additionalProperties: false },
+  },
+];
+
+/** Through the Website module routes, so the company check, website:edit and the redirect checks apply. */
+async function redirectMediaToolCall(input: { apiUrl: string; token: string; companyId: string; agentId: string; name: string;
+  args: Record<string, unknown> }) {
+  const uuid = z.string().uuid();
+  const { siteId } = z.object({ siteId: uuid }).passthrough().parse(input.args);
+  const site = `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(siteId)}`;
+  const key = (body: unknown) => commerceKey(input.agentId, input.name, createHash("sha256").update(JSON.stringify(body)).digest("hex"));
+  if (input.name === "website_redirect_list") return { redirects: await apiGet(input.apiUrl, input.token, `${site}/redirects`) };
+  if (input.name === "website_media_list") return { media: await apiGet(input.apiUrl, input.token, `${site}/media`) };
+  if (input.name === "website_redirect_save") {
+    const args = z.object({ siteId: uuid, entryId: uuid.optional(), baseRevisionId: uuid.optional(), sendForReview: z.boolean().optional() })
+      .passthrough().parse(input.args);
+    if (Boolean(args.entryId) !== Boolean(args.baseRevisionId)) throw badRequest("entryId and baseRevisionId go together");
+    const { siteId: _site, entryId, baseRevisionId, sendForReview, ...fields } = args;
+    const redirect = websiteRedirectInputSchema.parse(fields);
+    const saved = entryId
+      ? await apiSend(input.apiUrl, input.token, "PATCH", `${site}/redirects/${encodeURIComponent(entryId)}`, { ...redirect, baseRevisionId }, key({ entryId, baseRevisionId, redirect }))
+      : await apiSend(input.apiUrl, input.token, "POST", `${site}/redirects`, redirect, key(redirect));
+    if (!sendForReview || saved.state === "review") return saved;
+    const submitted = await apiSend(input.apiUrl, input.token, "POST", `${site}/entries/${encodeURIComponent(saved.entryId)}/submit`, {}, key({ submit: saved.entryId, revision: saved.latestRevisionId }));
+    return { ...saved, state: submitted.status };
+  }
+  const args = z.object({ siteId: uuid, entryId: uuid, name: z.string().optional() }).strict().parse(input.args);
+  const entry = encodeURIComponent(args.entryId);
+  if (input.name === "website_media_rename") {
+    const body = renameWebsiteMediaSchema.parse({ name: args.name });
+    return apiSend(input.apiUrl, input.token, "PATCH", `${site}/media/${entry}`, body, key({ entryId: args.entryId, ...body }));
+  }
+  if (args.name !== undefined) throw badRequest(`${input.name} takes no name`);
+  const path = input.name === "website_media_delete" ? `${site}/media/${entry}` : `${site}/redirects/${entry}`;
+  return apiSend(input.apiUrl, input.token, "DELETE", path, undefined, key({ entryId: args.entryId }));
+}
+
+const REDIRECT_MEDIA_TOOL_NAMES = new Set(WEBSITE_REDIRECT_MEDIA_TOOLS.map((tool) => tool.name));
+
+/**
  * Parallel Interview (GRE-2667): agents read a round's status and synthesis, and draft question sets for a person to
  * approve. No tool approves a set, decides a proposal, releases or withdraws: those routes answer an agent with 403,
  * and these tools never call them.
@@ -493,7 +601,7 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       : tool.inputSchema,
   }));
   return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...WEBSITE_ACCESS_TOOLS, ...WEBSITE_PORTAL_TOOLS,
-    ...INTERVIEW_TOOLS];
+    ...WEBSITE_REDIRECT_MEDIA_TOOLS, ...INTERVIEW_TOOLS];
 }
 
 async function apiGet(apiUrl: string, token: string, path: string) {
@@ -698,6 +806,9 @@ export async function callProjectTool(input: {
   }
   if (PORTAL_TOOL_NAMES.has(input.name)) {
     return portalToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId, name: input.name, args });
+  }
+  if (REDIRECT_MEDIA_TOOL_NAMES.has(input.name)) {
+    return redirectMediaToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId, name: input.name, args });
   }
   if (INTERVIEW_TOOL_NAMES.has(input.name)) {
     return interviewToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, name: input.name, args });

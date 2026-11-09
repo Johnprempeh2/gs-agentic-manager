@@ -243,3 +243,67 @@ describe("website portal document tools", () => {
     await expect(call("portal_document_submit", { documentId: DOC, expectedRowVersion: 1, idempotencyKey: "k" })).rejects.toThrow(/row_version":4/);
   });
 });
+
+// GRE-4785 (GRE-4079 step 5d): redirects and media through the Website module routes (website:edit). A save is a
+// draft; no tool approves or publishes.
+describe("website redirect and media tools", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const ENTRY = "e0000000-0000-4000-8000-000000000001";
+  const REV = "f0000000-0000-4000-8000-000000000001";
+  const REV2 = "f0000000-0000-4000-8000-000000000002";
+
+  it("sends list, save, send for review, rename and delete to their routes, with a key a retry repeats", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      if (String(url).endsWith("/submit")) return Response.json({ id: ENTRY, status: "review" });
+      if (init?.method === "POST" || init?.method === "PATCH") return Response.json({ entryId: ENTRY, state: "draft", latestRevisionId: REV2 });
+      return Response.json(init?.method === "DELETE" ? { entryId: ENTRY } : []);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await call("website_redirect_list", {})).toEqual({ redirects: [] });
+    expect(await call("website_media_list", {})).toEqual({ media: [] });
+    await call("website_redirect_save", { from: "/old", to: "/new" });
+    expect(await call("website_redirect_save", { entryId: ENTRY, baseRevisionId: REV, from: "/old", to: "/newer", status: 308, sendForReview: true }))
+      .toMatchObject({ entryId: ENTRY, state: "review" });
+    await call("website_redirect_delete", { entryId: ENTRY });
+    await call("website_media_rename", { entryId: ENTRY, name: "harbour" });
+    await call("website_media_delete", { entryId: ENTRY });
+    await call("website_redirect_save", { from: "/old", to: "/new" });
+    const sent = fetchMock.mock.calls.map(([url, init]) => [init?.method ?? "GET", String(url).replace(BASE, ""), init?.body ? JSON.parse(String(init.body)) : undefined]);
+    expect(sent).toEqual([
+      ["GET", "/redirects", undefined],
+      ["GET", "/media", undefined],
+      ["POST", "/redirects", { from: "/old", to: "/new", status: 301 }],
+      ["PATCH", `/redirects/${ENTRY}`, { from: "/old", to: "/newer", status: 308, baseRevisionId: REV }],
+      ["POST", `/entries/${ENTRY}/submit`, {}],
+      ["DELETE", `/redirects/${ENTRY}`, undefined],
+      ["PATCH", `/media/${ENTRY}`, { name: "harbour" }],
+      ["DELETE", `/media/${ENTRY}`, undefined],
+      ["POST", "/redirects", { from: "/old", to: "/new", status: 301 }],
+    ]);
+    const keys = fetchMock.mock.calls.map(([, init]) => (init?.headers as Record<string, string> | undefined)?.["Idempotency-Key"]);
+    expect(keys[8]).toBe(keys[2]);
+    expect(new Set(keys.slice(2, 8)).size).toBe(6);
+  });
+
+  it("refuses bad redirects before any call, and has no tool to approve or publish", async () => {
+    const fetchMock = vi.fn(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(call("website_redirect_save", { from: "old", to: "/new" })).rejects.toThrow();
+    await expect(call("website_redirect_save", { from: "/old", to: "http://plain.test" })).rejects.toThrow();
+    await expect(call("website_redirect_save", { from: "/old", to: "/new", status: 303 })).rejects.toThrow();
+    await expect(call("website_redirect_save", { entryId: ENTRY, from: "/old", to: "/new" })).rejects.toThrow(/baseRevisionId/);
+    await expect(call("website_redirect_save", { from: "/old", to: "/new", state: "approved" })).rejects.toThrow();
+    await expect(call("website_media_rename", { entryId: ENTRY, name: " " })).rejects.toThrow();
+    await expect(call("website_media_delete", { entryId: "x" })).rejects.toThrow();
+    await expect(call("website_redirect_delete", { entryId: ENTRY, name: "x" })).rejects.toThrow(/takes no name/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const names = projectToolDefinitions("standard").map((tool) => tool.name).filter((name) => /^website_(redirect|media)_/.test(name));
+    expect(names).toEqual(["website_redirect_list", "website_redirect_save", "website_redirect_delete", "website_media_list", "website_media_rename", "website_media_delete"]);
+  });
+
+  it("passes the route's refusal back to the agent, with the pages that still use a media file", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+      { error: "This media is still used by Home. Take it off that first.", details: { code: "website_media_in_use" } }, { status: 409 })));
+    await expect(call("website_media_delete", { entryId: ENTRY })).rejects.toThrow(/still used by Home/);
+  });
+});
