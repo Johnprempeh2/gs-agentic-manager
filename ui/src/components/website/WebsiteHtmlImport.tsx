@@ -61,7 +61,7 @@ function ImportSummary({ result }: { result: WebsiteHtmlImportResult }) {
           {result.chrome.length ? ` Shared parts updated: ${result.chrome.join(", ")}.` : ""}
         </p>
       ) : null}
-      <p className="text-muted-foreground">Nothing is published. Review the drafts on the Sitemap tab, then Publish.</p>
+      <p className="text-muted-foreground">Nothing is live yet. Review the drafts on the Sitemap tab, then Publish.</p>
     </div>
   );
 }
@@ -87,7 +87,7 @@ export function WebsiteHtmlImport({ companyId, site }: { companyId: string; site
       <div className="space-y-0.5">
         <p className="text-sm font-medium">Import HTML</p>
         <p id={`${inputId}-help`} className="text-xs text-muted-foreground">
-          Bring the site's pages in from its release file (schema 2, for example html-export-release.json). Each page becomes a draft on {site.name}. Nothing is published.
+          Bring the site's pages in from its release file (schema 2, for example html-export-release.json). Each page becomes a draft on {site.name}. Nothing goes live.
         </p>
       </div>
       <form

@@ -5,6 +5,7 @@ import {
   websiteCollectionFieldSchema,
   websiteCollectionManifest,
   type WebsiteEntryDetail,
+  type WebsiteEntryStatus,
   type WebsiteProperty,
 } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
@@ -59,6 +60,14 @@ function blank(schema: FieldSchema): Value {
   if (field.type === "integer" || field.type === "number") return field.minimum ?? 0;
   return "";
 }
+
+/** Entry status labels (copy 1, status labels). */
+export const ENTRY_STATUS_LABEL: Record<WebsiteEntryStatus, string> = {
+  draft: "Draft",
+  review: "In review",
+  approved: "Approved",
+  published: "Live",
+};
 
 function humanise(key: string) {
   return key.replaceAll("_", " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (char) => char.toUpperCase());
@@ -180,7 +189,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
     } catch (error) { setMessage(errorStateMessage(error)); }
   };
   return <section className="space-y-5" data-testid="website-entry-editor">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? entry.entryKey : `New ${collection}`}</h3><p className="text-sm text-muted-foreground">Fields version {definition.fieldsVersion}. {entry?.status ?? "Draft"}. Changes go live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? entry.entryKey : `New ${collection}`}</h3><p className="text-sm text-muted-foreground">Fields version {definition.fieldsVersion}. {ENTRY_STATUS_LABEL[entry?.status ?? "draft"]}. Changes go live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
     <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <label className="block space-y-1 text-sm"><span className="font-medium">Entry key</span><Input value={entryKey} onChange={(event) => setEntryKey(event.target.value)} required maxLength={200} /></label>
       <SchemaField schema={definition.definition as FieldSchema} value={fields} label="Fields" path="website-entry-fields" onChange={setFields} />
@@ -219,7 +228,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
     {entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
       <section className="space-y-4"><div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">{selected.label}</h3><Button onClick={() => setEntryId(null)}>New {selected.singular}</Button></div>
         {entries.error ? <ErrorState error={entries.error} onRetry={() => void entries.refetch()} /> : entries.isLoading ? <p className="text-sm text-muted-foreground">Loading entries</p> : entries.data?.length ?
-          <ul className="divide-y">{entries.data.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div><span className="font-medium">{entry.entryKey}</span><span className="ml-2 text-muted-foreground">{entry.status}</span><p className="text-muted-foreground">Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}</p></div><Button variant="outline" size="sm" onClick={() => setEntryId(entry.id)}>Edit</Button></li>)}</ul> :
+          <ul className="divide-y">{entries.data.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div><span className="font-medium">{entry.entryKey}</span><span className="ml-2 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span><p className="text-muted-foreground">Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}</p></div><Button variant="outline" size="sm" onClick={() => setEntryId(entry.id)}>Edit</Button></li>)}</ul> :
           <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, it goes live when you Deploy.`}</p></div>}
       </section>}
   </div>;

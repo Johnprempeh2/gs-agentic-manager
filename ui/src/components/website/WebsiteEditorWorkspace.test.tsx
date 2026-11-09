@@ -1160,7 +1160,7 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(editor.sentMessages("insert-media")[0]!.payload).toMatchObject({ blockId: "h1", field: "backgroundImage", mediaEntryId: "asset-7" });
   });
 
-  it("Request publish asks a person with Publish rights; it never publishes, and needs the page saved first", async () => {
+  it("Send for review asks a person with Publish rights; it never publishes, and needs the page saved first", async () => {
     api.submitPage.mockResolvedValue({ ...page, status: "review" });
     await render();
     const editor = await connect(fullAck);
@@ -1174,35 +1174,39 @@ describe("full-screen editor (GRE-2296)", () => {
     await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-request-publish"]')!.click());
     await flush();
     expect(api.submitPage).toHaveBeenCalledWith("co-1", "site-1", "page-1");
-    expect(text()).toContain("Home is waiting for approval");
+    expect(text()).toContain("Sent for review. A person with Publish rights can approve it.");
+    expect(text()).not.toContain("Request publish");
   });
 
   describe("editor host version check (GRE-2357)", () => {
     const canvas = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-canvas"]');
     const outOfDate = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-out-of-date"]');
 
-    it("an old engine (no editor contract) gets 'Editor host is out of date', not the frame", async () => {
+    it("an old engine (no editor contract) gets 'the editor does not match', not the frame", async () => {
       await render();
       const editor = await connect({ editorContract: undefined });
-      expect(outOfDate()!.textContent).toContain("Editor host is out of date");
-      expect(outOfDate()!.textContent).toContain(`Redeploy the editor host (${EDITOR})`);
+      expect(outOfDate()!.textContent).toContain("This site's editor does not match this version of GSAM.");
+      // Versions and addresses sit under a closed Details line (GRE-2107 copy 4).
+      const details = outOfDate()!.querySelector<HTMLDetailsElement>('[data-testid="website-frame-problem-details"]')!;
+      expect(details.open).toBe(false);
+      expect(details.textContent).toContain(`site editor none at ${EDITOR}, GSAM expects 1`);
       expect(frame()).toBeNull();
       expect(editor.sent("load-draft")).toHaveLength(0);
       expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");
     });
 
-    it("a site with no GSAM and website contract gets 'Out of date: update the website', not the frame (GRE-2633)", async () => {
+    it("a site with no GSAM and website contract gets 'ask your website team to update the site', not the frame (GRE-2633)", async () => {
       await render();
       const editor = await connect({ siteContract: undefined });
       const message = document.body.querySelector<HTMLElement>('[data-testid="website-site-out-of-date"]');
-      expect(message!.textContent).toContain("Out of date: update the website.");
-      expect(message!.textContent).toContain("The website speaks contract none; GSAM needs 1 or later.");
+      expect(message!.textContent).toContain("Ask your website team to update the site, then try again.");
+      expect(message!.textContent).toContain("Details: site none, GSAM expects 1 or later.");
       expect(frame()).toBeNull();
       expect(editor.sent("load-draft")).toHaveLength(0);
       expect(document.body.querySelector('[data-testid="website-save-state"]')!.textContent).toBe("Not open");
     });
 
-    it("a silent engine gets 'Editor host is out of date' after the hello timeout, and Retry loads the frame again", async () => {
+    it("a silent engine gets 'the editor does not match' after the hello timeout, and Try again loads the frame again", async () => {
       await render();
       const iframe = frame()!;
       vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
@@ -1212,9 +1216,9 @@ describe("full-screen editor (GRE-2296)", () => {
       await act(async () => { vi.advanceTimersByTime(10_000); });
       vi.useRealTimers();
       await flush();
-      expect(outOfDate()!.textContent).toContain("Editor host is out of date");
+      expect(outOfDate()!.textContent).toContain("This site's editor does not match this version of GSAM.");
       expect(frame()).toBeNull();
-      await act(async () => button("Retry").click());
+      await act(async () => button("Try again").click());
       await flush();
       expect(outOfDate()).toBeNull();
       expect(frame()).not.toBeNull();
@@ -1343,7 +1347,7 @@ describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
     expect(api.savePageContent).toHaveBeenCalledTimes(1);
     expect(api.savePageContent.mock.calls[0]![3]).toMatchObject({ content: data });
     expect(importWarning()).toBeNull();
-    expect(text()).toContain("The live page is now in the draft. Nothing is published.");
+    expect(text()).toContain("The live page is now in the draft. Nothing is live yet.");
   });
 });
 

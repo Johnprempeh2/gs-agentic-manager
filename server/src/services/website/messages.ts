@@ -7,6 +7,7 @@ export const WEBSITE_MESSAGES = {
   "perm.edit_none": "You can view this site but not edit it. Ask an admin for edit access.",
   "perm.publish_none": "You can save changes and send them for review. A person with Publish rights approves them and starts the Publish.",
   "perm.settings": "Only people with Publish rights can change site settings, the theme and the token.",
+  "perm.not_found": "This site or page is not here. It may have been archived, or the link is wrong.",
   "agent.publish_refused": "Agents cannot Publish, retry or roll back. Propose a Publish instead; a person approves it.",
   "agent.grant_refused": "Agents cannot have Publish rights. Each Publish is a person's click.",
   // new: an agent tries to approve or send back a page or entry.

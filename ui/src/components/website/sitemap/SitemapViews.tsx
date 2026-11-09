@@ -21,6 +21,7 @@ import {
   childrenOf,
   indent,
   menuItems,
+  countOf,
   moveSibling,
   nodeStatus,
   outdent,
@@ -175,7 +176,7 @@ export function SitemapListView({ tree, pagesById }: SitemapViewProps) {
             ))}
           </NativeSelect>
         </label>
-        <p className="text-xs text-muted-foreground" aria-live="polite">{rows.length} of {tree.nodes.length} pages</p>
+        <p className="text-xs text-muted-foreground" aria-live="polite">{rows.length} of {countOf(tree.nodes.length, "page")}</p>
       </div>
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-full text-sm" aria-label="Every page in this option">
@@ -264,7 +265,7 @@ export function SitemapMenusView({ tree, onChange, pagesById, readOnly }: Sitema
           >
             <div className="flex items-baseline justify-between gap-2">
               <h3 id={`sitemap-menu-${menu}`} className="text-sm font-semibold">{MENU_LABELS[menu]}</h3>
-              <span className="text-xs text-muted-foreground">{items.length} pages</span>
+              <span className="text-xs text-muted-foreground">{countOf(items.length, "page")}</span>
             </div>
             {items.length === 0 ? <p className="text-xs text-muted-foreground">{readOnly ? "No pages." : "Drag pages here, or use Move to on a page."}</p> : null}
             {[...groups.entries()].map(([group, groupItems]) => (

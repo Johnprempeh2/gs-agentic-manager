@@ -96,6 +96,12 @@ export function releaseDate(at: string) {
   return `${formatDate(at)}, ${formatClockTime(at)}`;
 }
 
+/** Publish confirm title (copy 9): the count of approved changes when GSAM knows it. */
+export function publishConfirmTitle(count: number | null, site: string): string {
+  if (count === null) return `Publish to ${site}?`;
+  return count === 1 ? `Publish 1 change to ${site}?` : `Publish ${count} changes to ${site}?`;
+}
+
 /** Rollback confirm body (copy 11): the cost line only when the rollback rebuilds. */
 export function rollbackConfirmBody(plan: WebsiteReleaseActionPlan, liveAt: string) {
   const cost = plan.costsCredits ? " and costs about 15 credits" : "";
@@ -229,6 +235,15 @@ function ChecksFailed({ release }: { release: WebsiteRelease }) {
           {failed.map((check) => <li key={check.name}>{check.message ?? check.name}</li>)}
         </ul>
       ) : null}
+      {failed.some((check) => check.details) ? (
+        // Versions, ids and script names are for the website team (copy rule 0): closed by default.
+        <details className="text-xs" data-testid="website-release-checks-details">
+          <summary className="cursor-pointer">Details</summary>
+          <ul className="mt-1 space-y-0.5">
+            {failed.flatMap((check) => (check.details ? [<li key={check.name}>{check.details}</li>] : []))}
+          </ul>
+        </details>
+      ) : null}
     </Panel>
   );
 }
@@ -284,7 +299,7 @@ function PendingPanel({ companyId, site, release, releases, canManage, personNam
     <Panel title={`Release ${release.number} is pending`} tone="warning" testId="website-release-pending">
       <p className="text-xs text-muted-foreground">Pending since {releaseTime(since)}</p>
       {release.pendingReason ? (
-        <p className="text-xs"><span className="font-medium">Why: </span>{PENDING_REASON_TEXT[release.pendingReason]}</p>
+        <p className="text-xs"><span className="font-medium">What failed: </span>{PENDING_REASON_TEXT[release.pendingReason]}</p>
       ) : null}
       {buildFailed ? (
         <p data-testid="website-pending-case">{live ? `The site did not rebuild. Visitors still see Release ${live.number}.` : "The site did not rebuild."}</p>
@@ -327,7 +342,7 @@ function PendingPanel({ companyId, site, release, releases, canManage, personNam
           {live?.liveAt ? (
             // The way out while this release is Pending: put the live release back (copy 11 confirm).
             <Button type="button" size="sm" variant="ghost" className="max-sm:-ml-3 sm:ml-auto" onClick={() => onGoBack(live)}>
-              Go back to Release {live.number}
+              Roll back to Release {live.number}
             </Button>
           ) : null}
         </div>
@@ -362,12 +377,10 @@ function PendingPanel({ companyId, site, release, releases, canManage, personNam
 }
 
 /** Roll back confirm (copy 11): reads the plan when it opens, so the cost line is right before the click. */
-function RollbackDialog({ companyId, siteId, target, goBack, releases, personName, onClose }: {
+function RollbackDialog({ companyId, siteId, target, releases, personName, onClose }: {
   companyId: string;
   siteId: string;
   target: WebsiteRelease;
-  /** Opened from the Pending banner: the target is the release visitors see now. */
-  goBack: boolean;
   releases: WebsiteRelease[];
   personName: (id: string | null) => string;
   onClose: () => void;
@@ -402,7 +415,7 @@ function RollbackDialog({ companyId, siteId, target, goBack, releases, personNam
     <AlertDialog open onOpenChange={(open) => !open && !rollback.isPending && onClose()}>
       <AlertDialogContent data-testid="website-rollback-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>{goBack ? `Go back to Release ${target.number}?` : `Roll back to Release ${target.number}?`}</AlertDialogTitle>
+          <AlertDialogTitle>Roll back to Release {target.number}?</AlertDialogTitle>
           <AlertDialogDescription data-testid="website-rollback-body">
             {plan && target.liveAt
               ? rollbackConfirmBody(plan, target.liveAt)
@@ -418,7 +431,7 @@ function RollbackDialog({ companyId, siteId, target, goBack, releases, personNam
             disabled={!plan || planQuery.isFetching || rollback.isPending}
             onClick={() => plan && rollback.mutate(plan.costsCredits)}
           >
-            {rollback.isPending ? "Starting" : goBack ? "Go back" : "Roll back"}
+            {rollback.isPending ? "Starting" : "Roll back"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -442,7 +455,7 @@ function ReleaseRow({ release, rollbackOf, showReason, personName, canRollBack, 
       <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", canRollBack && "sm:pr-44")}>
         <span className="font-medium">Release {release.number}</span>
         <StatusLabel status={release.status} />
-        {rollbackOf ? <span className="text-xs text-muted-foreground">Restored Release {rollbackOf.number}</span> : null}
+        {rollbackOf ? <span className="text-xs text-muted-foreground">Roll back to Release {rollbackOf.number}</span> : null}
       </div>
       <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
         {release.liveAt ? <div className="flex gap-1"><dt>Went live</dt><dd className="text-foreground">{releaseTime(release.liveAt)}</dd></div> : null}
@@ -469,7 +482,10 @@ function ReleaseRow({ release, rollbackOf, showReason, personName, canRollBack, 
                 {release.checks.map((check) => (
                   <li key={`${check.kind}-${check.name}`} className="flex gap-2">
                     <span className={check.ok ? "text-status-success" : "text-status-danger"}>{check.ok ? "Passed" : "Failed"}</span>
-                    <span className="min-w-0 break-all font-mono">{check.kind === "verify" ? check.name : check.message ?? check.name}</span>
+                    <span className="min-w-0 break-all font-mono">
+                      {check.kind === "verify" ? check.name : check.message ?? check.name}
+                      {check.details ? ` ${check.details}` : ""}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -494,7 +510,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
   const { canManage } = useCanManageWebsite(companyId);
   const personName = useUserLabels(companyId);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
-  const [rollbackTarget, setRollbackTarget] = useState<{ release: WebsiteRelease; goBack: boolean } | null>(null);
+  const [rollbackTarget, setRollbackTarget] = useState<WebsiteRelease | null>(null);
   const [finished, setFinished] = useState<string | null>(null);
   const releasesKey = queryKeys.website.releases(companyId, site.id);
   const releasesQuery = useQuery({
@@ -503,6 +519,13 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
   });
   const releases = releasesQuery.data ?? [];
   const latest = releases[0] ?? null;
+  // The count in the Publish confirm (copy 9), read when the confirm opens.
+  const home = useQuery({
+    queryKey: queryKeys.website.home(companyId, site.id),
+    queryFn: () => websiteModuleApi.home(companyId, site.id),
+    enabled: confirmingPublish,
+  });
+  const approvedChanges = home.data?.approvedChanges ?? null;
   const publish = useMutation({
     mutationFn: () => websiteModuleApi.publish(companyId, site.id),
     onSuccess: () => {
@@ -526,7 +549,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
     if (isReleaseActive(latest.status)) {
       latestPanel = <ReleaseProgress key={latest.id} companyId={companyId} siteId={site.id} release={latest} pollMs={pollMs} onSettled={onSettled} />;
     } else if (latest.status === "pending") {
-      latestPanel = <PendingPanel companyId={companyId} site={site} release={latest} releases={releases} canManage={canManage} personName={personName} onGoBack={(live) => setRollbackTarget({ release: live, goBack: true })} />;
+      latestPanel = <PendingPanel companyId={companyId} site={site} release={latest} releases={releases} canManage={canManage} personName={personName} onGoBack={setRollbackTarget} />;
     } else if (latest.status === "checks_failed") {
       latestPanel = <ChecksFailed release={latest} />;
     } else if (latest.status === "failed") {
@@ -601,7 +624,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
               showReason={!(release.id === latest?.id && latestPanel)}
               personName={personName}
               canRollBack={canManage && !running && !!release.liveAt && release.status === "superseded"}
-              onRollBack={() => setRollbackTarget({ release, goBack: false })}
+              onRollBack={() => setRollbackTarget(release)}
             />
           ))}
         </ul>
@@ -609,7 +632,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       <AlertDialog open={confirmingPublish} onOpenChange={(open) => !publish.isPending && setConfirmingPublish(open)}>
         <AlertDialogContent data-testid="website-publish-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Publish to {site.name}?</AlertDialogTitle>
+            <AlertDialogTitle>{publishConfirmTitle(approvedChanges, site.name)}</AlertDialogTitle>
             <AlertDialogDescription>
               This updates the live site. It takes about a minute and costs about 15 credits. Saving drafts is free, so group your changes into one Publish.
             </AlertDialogDescription>
@@ -626,8 +649,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
         <RollbackDialog
           companyId={companyId}
           siteId={site.id}
-          target={rollbackTarget.release}
-          goBack={rollbackTarget.goBack}
+          target={rollbackTarget}
           releases={releases}
           personName={personName}
           onClose={() => setRollbackTarget(null)}

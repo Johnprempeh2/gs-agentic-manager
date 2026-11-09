@@ -126,10 +126,10 @@ export function pageProgress(pages: WebsiteHomeSummary["pages"]) {
 export function liveStatus(site: WebsiteSite | null, releases: WebsiteHomeSummary["releases"] | undefined) {
   if (!site) return { label: "Not connected", tone: "bg-status-neutral-soft text-status-neutral-foreground" };
   const latest = releases?.latest ?? null;
-  if (latest && isReleaseActive(latest.status)) return { label: "Publishing", tone: "bg-status-info-soft text-status-info-foreground" };
+  if (latest && isReleaseActive(latest.status)) return { label: "Preparing", tone: "bg-status-info-soft text-status-info-foreground" };
   if (latest?.status === "pending") return { label: "Pending", tone: "bg-status-warning-soft text-status-warning-foreground" };
   if (releases?.live) return { label: "Live", tone: "bg-status-success-soft text-status-success-foreground" };
-  return { label: "Not published yet", tone: "bg-status-neutral-soft text-status-neutral-foreground" };
+  return { label: "No release from GSAM yet", tone: "bg-status-neutral-soft text-status-neutral-foreground" };
 }
 
 
@@ -359,7 +359,7 @@ function Hero({
           ) : liveRelease ? (
             <ReleaseLine release={liveRelease} />
           ) : (
-            <p className="text-sm text-muted-foreground">Nothing published from GSAM yet.</p>
+            <p className="text-sm text-muted-foreground">No release from GSAM yet</p>
           )}
           {latest && latest.id !== liveRelease?.id ? (
             <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

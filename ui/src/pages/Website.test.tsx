@@ -156,7 +156,7 @@ describe("Website page", () => {
   it("shows the switched-off state without calling the Website API when the switch is off", async () => {
     settingsMock.getExperimental.mockResolvedValue({ enableWebsiteView: false });
     await render();
-    await waitForText("The Website view is switched off");
+    await waitForText("The Website section is switched off for this company.");
     expect(websiteApiMock.overview).not.toHaveBeenCalled();
   });
 
@@ -165,7 +165,7 @@ describe("Website page", () => {
       new ApiError("The Website view is not part of this plan", 403, { code: "not_entitled" }),
     );
     await render();
-    await waitForText("The Website view is switched off");
+    await waitForText("The Website section is switched off for this company.");
   });
 
   it("shows a load error with a retry for other failures", async () => {
@@ -183,8 +183,8 @@ describe("Website page", () => {
     });
     websiteApiMock.overview.mockResolvedValue(overview({ properties: [] }));
     await render();
-    await waitForText("No website is set up yet");
-    expect(text()).toContain("A company owner or admin can set up the website here.");
+    await waitForText("Connect your website");
+    expect(text()).toContain("A company owner or admin can connect it.");
     expect(container.querySelector('[data-testid="website-setup"]')).toBeNull();
   });
 

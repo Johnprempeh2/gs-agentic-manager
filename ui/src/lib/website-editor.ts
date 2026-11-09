@@ -1,8 +1,10 @@
 import {
-  SITE_CONTRACT_OUT_OF_DATE_MESSAGE,
+  SITE_CONTRACT_MIN_SITE_VERSION,
+  WEBSITE_EDITOR_CONTRACT,
+  WEBSITE_FRAME_PROTOCOLS,
   checkWebsiteEditorOrigin,
   isWebsiteFrameAssetUrl,
-  siteContractDetail,
+  siteContractOf,
   type WebsiteFrameInsertMediaResult,
   type WebsiteFrameMediaEntry,
   type WebsiteFrameSetMotionResult,
@@ -137,17 +139,46 @@ export async function saveThroughGsam(request: WebsiteFrameSaveRequest, deps: Sa
   };
 }
 
+/** Copy 4, "Opening the editor": what the editor says when the frame does not open. */
+export const EDITOR_ERR = {
+  no_answer: "The site's editor did not answer. Check the site is online, then try again.",
+  protocol: "This site's editor does not match this version of GSAM. Ask your website team to update the site, then try again.",
+  wrong_site: "The editor at this address belongs to a different site. Check the site settings.",
+} as const;
+
+/** A frame problem: the line people read, and the versions and addresses for the website team under "Details". */
+export interface FrameProblem {
+  text: string;
+  details: string | null;
+}
+
+/** Details of a site that speaks an older site contract (GRE-2633). */
+export function siteOutOfDateDetails(answer: unknown): string {
+  return `Details: site ${siteContractOf(answer) ?? "none"}, GSAM expects ${SITE_CONTRACT_MIN_SITE_VERSION} or later.`;
+}
+
+/** Details of an editor host older than this GSAM (GRE-2357). */
+export function editorOutOfDateDetails(contract: number | null, editorOrigin: string): string {
+  return `Details: site editor ${contract ?? "none"} at ${editorOrigin}, GSAM expects ${WEBSITE_EDITOR_CONTRACT}. Redeploy it from the website's main branch.`;
+}
+
 /** What the workspace says about the frame's connection (contract section 5.1), or null when it is working. */
-export function frameConnectionMessage(connection: WebsiteFrameConnection, editorOrigin: string): string | null {
+export function frameConnectionMessage(connection: WebsiteFrameConnection, editorOrigin: string): FrameProblem | null {
   switch (connection.phase) {
     case "no-answer":
-      return `The site's editor did not answer. Check that ${editorOrigin} is deployed and that GSAM_EDITOR_ORIGINS includes this GSAM address.`;
+      return {
+        text: EDITOR_ERR.no_answer,
+        details: `Details: ${editorOrigin} did not answer. Check it is deployed and that GSAM_EDITOR_ORIGINS includes this GSAM address.`,
+      };
     case "refused-protocol":
-      return `This site's editor speaks protocol ${connection.supported.join(", ") || "none"}; GSAM speaks 1. Update the site engine or GSAM.`;
+      return {
+        text: EDITOR_ERR.protocol,
+        details: `Details: site editor ${connection.supported.join(", ") || "none"}, GSAM expects ${WEBSITE_FRAME_PROTOCOLS.join(", ")}.`,
+      };
     case "refused-site":
-      return "This address serves a different site.";
+      return { text: EDITOR_ERR.wrong_site, details: null };
     case "site-out-of-date":
-      return `${SITE_CONTRACT_OUT_OF_DATE_MESSAGE} ${siteContractDetail(connection)}`;
+      return { text: EDITOR_ERR.protocol, details: siteOutOfDateDetails(connection) };
     default:
       return null;
   }

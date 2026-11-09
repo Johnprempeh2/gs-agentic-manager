@@ -18,6 +18,7 @@ import {
   placeInMenu,
   removeNode,
   type Tree,
+  countOf,
 } from "./model";
 
 const tree: Tree = {
@@ -133,5 +134,13 @@ describe("sitemap model", () => {
     expect(ownSlug("/", undefined)).toBe("/");
     expect(ownSlug("/tools/kit", "/consultancy")).toBe("/tools/kit");
     expect(ownSlug("/toolset", "/tools")).toBe("/toolset");
+  });
+});
+
+describe("countOf", () => {
+  it("uses the singular for 1 (GRE-2107 rule 0)", () => {
+    expect(countOf(1, "page")).toBe("1 page");
+    expect(countOf(0, "page")).toBe("0 pages");
+    expect(countOf(2, "new page")).toBe("2 new pages");
   });
 });

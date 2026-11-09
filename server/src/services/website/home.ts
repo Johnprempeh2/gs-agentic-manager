@@ -184,6 +184,10 @@ export function websiteHomeService(db: Db) {
       .from(websiteEntry)
       .where(and(eq(websiteEntry.companyId, companyId), eq(websiteEntry.siteId, site.id), isNull(websiteEntry.archivedAt)))
       .groupBy(websiteEntry.collection);
+    const [approvedEntries] = await db
+      .select({ n: count() })
+      .from(websiteEntry)
+      .where(and(eq(websiteEntry.companyId, companyId), eq(websiteEntry.siteId, site.id), eq(websiteEntry.status, "approved"), isNull(websiteEntry.archivedAt)));
     const collections = Object.fromEntries(
       entryCounts.filter((row) => row.collection !== "media").map((row) => [row.collection, Number(row.n)]),
     );
@@ -237,6 +241,7 @@ export function websiteHomeService(db: Db) {
         ? { id: open.id, title: payload.title ?? "Publish the approved changes", changeCount: payload.changeCount ?? 0, createdAt: open.createdAt.toISOString() }
         : null,
       collections,
+      approvedChanges: pages.approved + Number(approvedEntries?.n ?? 0),
       activity: await activity(site),
       // The addresses the Preview tab and the Home hero actually show.
       liveFraming: await framingOf(addresses.live, gsamOrigins),

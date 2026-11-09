@@ -76,6 +76,7 @@ function summary(overrides: Partial<WebsiteHomeSummary> = {}): WebsiteHomeSummar
     },
     publishApproval: null,
     collections: { product: 12, "public-person": 6, redirect: 3, form: 2 },
+    approvedChanges: 1,
     activity: [
       { id: "a1", action: "website.page_saved", entityType: "website_page", entityId: "p1", actorType: "agent", actorName: "Mikey", subject: "Home", createdAt: "2026-10-23T10:00:00.000Z" },
     ],
@@ -158,7 +159,7 @@ describe("Website Home helpers", () => {
     expect(liveStatus(null, undefined).label).toBe("Not connected");
     expect(liveStatus(site, summary().releases).label).toBe("Pending");
     expect(liveStatus(site, { latest: summary().releases.live, live: summary().releases.live }).label).toBe("Live");
-    expect(liveStatus(site, { latest: null, live: null }).label).toBe("Not published yet");
+    expect(liveStatus(site, { latest: null, live: null }).label).toBe("No release from GSAM yet");
   });
 });
 
