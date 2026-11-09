@@ -521,3 +521,12 @@ export function websiteEditorPath(input: { propertyId?: string | null; pageId?: 
   const query = params.toString();
   return query ? `/website/edit?${query}` : "/website/edit";
 }
+
+/**
+ * A page in live design (plan revision 8 on GRE-1831): the editor for pages in
+ * the HTML format the content release carries (schema 2). It shows a page still
+ * in blocks as it is on the site, with Rebuild as editable.
+ */
+export function websitePageDesignPath(siteId: string, pageId: string): string {
+  return `/website/sites/${encodeURIComponent(siteId)}/pages/${encodeURIComponent(pageId)}/design`;
+}
