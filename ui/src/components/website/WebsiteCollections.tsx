@@ -17,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
 import { useCanManageWebsite } from "./WebsiteSetup";
+import { WebsiteRedirects } from "./WebsiteRedirects";
+import { WebsiteMediaLibrary } from "./WebsiteMediaLibrary";
 
 type FieldSchema = {
   $ref?: string;
@@ -41,6 +43,8 @@ const COLLECTIONS = [
   { key: "form", label: "Forms", singular: "form" },
   { key: "vendor", label: "Vendors", singular: "vendor" },
 ] as const;
+/** GRE-4785: redirects and media have their own screens; the rest use the schema form. */
+const MEDIA_VIEW = "media";
 
 function resolve(schema: FieldSchema): FieldSchema {
   if (!schema.$ref) return schema;
@@ -212,7 +216,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   const { canManage } = useCanManageWebsite(companyId);
   const [collection, setCollection] = useState<string>("product");
   const [entryId, setEntryId] = useState<string | null | undefined>(undefined);
-  const entries = useQuery({ queryKey: ["website-entries", companyId, site?.id, collection], queryFn: () => websiteModuleApi.entries(companyId, site!.id, collection), enabled: !!site });
+  const entries = useQuery({ queryKey: ["website-entries", companyId, site?.id, collection], queryFn: () => websiteModuleApi.entries(companyId, site!.id, collection), enabled: !!site && collection !== "redirect" && collection !== MEDIA_VIEW });
   const importDrafts = useMutation({
     mutationFn: () => websiteModuleApi.importPublicDrafts(companyId, site!.id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["website-entries", companyId, site?.id] }),
@@ -220,12 +224,12 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   if (error) return <ErrorState error={error} />;
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading collections</p>;
   if (!site) return <p className="text-sm text-muted-foreground">Connect a site under Releases before editing collections.</p>;
-  const selected = COLLECTIONS.find((item) => item.key === collection)!;
+  const selected = COLLECTIONS.find((item) => item.key === collection) ?? COLLECTIONS[0];
   return <div className="space-y-5" data-testid="website-collections">
-    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects and forms. Approved changes go live when you Deploy.</p></div>
+    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms and media. Approved changes go live when you Deploy.</p></div>
     {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Imports 10 vendors, 32 categories, 24 products, six public team cards and three forms from the 22 October snapshot. The product list is partial. Existing entries are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
-    <label className="block max-w-sm space-y-1 text-sm"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</NativeSelect></label>
-    {entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
+    <label className="block max-w-sm space-y-1 text-sm"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}<option value={MEDIA_VIEW}>Media</option></NativeSelect></label>
+    {collection === "redirect" ? <WebsiteRedirects companyId={companyId} siteId={site.id} /> : collection === MEDIA_VIEW ? <WebsiteMediaLibrary companyId={companyId} siteId={site.id} /> : entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
       <section className="space-y-4"><div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">{selected.label}</h3><Button onClick={() => setEntryId(null)}>New {selected.singular}</Button></div>
         {entries.error ? <ErrorState error={entries.error} onRetry={() => void entries.refetch()} /> : entries.isLoading ? <p className="text-sm text-muted-foreground">Loading entries</p> : entries.data?.length ?
           <ul className="divide-y">{entries.data.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div><span className="font-medium">{entry.entryKey}</span><span className="ml-2 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span><p className="text-muted-foreground">Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}</p></div><Button variant="outline" size="sm" onClick={() => setEntryId(entry.id)}>Edit</Button></li>)}</ul> :

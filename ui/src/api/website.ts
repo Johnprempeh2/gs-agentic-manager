@@ -14,6 +14,9 @@ import {
   type UpdateWebsiteProperty,
   type UpdateWebsiteSite,
   type WebsiteMediaItem,
+  type WebsiteRedirect,
+  type WebsiteRedirectInput,
+  type SaveWebsiteRedirect,
   type WebsitePage,
   type WebsitePageDetail,
   type WebsitePageEditorLoad,
@@ -167,6 +170,20 @@ export const websiteModuleApi = {
     return api.postForm<WebsiteChangeImage>(`${pagePath(companyId, siteId, pageId)}/change-requests/${encodeURIComponent(issueId)}/images`, form);
   },
   media: (companyId: string, siteId: string) => api.get<WebsiteMediaItem[]>(`${sitePath(companyId, siteId)}/media`),
+  /** GRE-4785: a media entry's new name; the file and the pages that use it do not change. */
+  renameMedia: (companyId: string, siteId: string, entryId: string, name: string) =>
+    api.patch<WebsiteMediaItem>(`${sitePath(companyId, siteId)}/media/${encodeURIComponent(entryId)}`, { name }),
+  /** GRE-4785: leaves the site at the next Publish. 409 `website_media_in_use` names the pages that use it. */
+  deleteMedia: (companyId: string, siteId: string, entryId: string) =>
+    api.delete<{ entryId: string }>(`${sitePath(companyId, siteId)}/media/${encodeURIComponent(entryId)}`),
+  /** GRE-4785: the site's redirects. Each change is a draft a person approves; it goes live with the next Publish. */
+  redirects: (companyId: string, siteId: string) => api.get<WebsiteRedirect[]>(`${sitePath(companyId, siteId)}/redirects`),
+  createRedirect: (companyId: string, siteId: string, input: WebsiteRedirectInput) =>
+    api.post<WebsiteRedirect>(`${sitePath(companyId, siteId)}/redirects`, input),
+  saveRedirect: (companyId: string, siteId: string, entryId: string, input: SaveWebsiteRedirect) =>
+    api.patch<WebsiteRedirect>(`${sitePath(companyId, siteId)}/redirects/${encodeURIComponent(entryId)}`, input),
+  deleteRedirect: (companyId: string, siteId: string, entryId: string) =>
+    api.delete<{ entryId: string }>(`${sitePath(companyId, siteId)}/redirects/${encodeURIComponent(entryId)}`),
   entries: (companyId: string, siteId: string, collection: string) =>
     api.get<WebsiteEntry[]>(`${sitePath(companyId, siteId)}/entries?collection=${encodeURIComponent(collection)}`),
   /** Import a schema 2 release file as HTML drafts (people, website:edit). Nothing is published. */
