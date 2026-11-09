@@ -5559,6 +5559,21 @@ export function agentRoutes(
     if ((req.body as Record<string, unknown>).status === "terminated" && req.actor.type !== "board") {
       throw forbidden("Board access required: only a board user can terminate an agent. Ask a person with board access to terminate it from the agent's profile.");
     }
+    // Pause is board-only and resume needs the change grant and a valid org chain,
+    // the same as POST /pause and POST /resume (upstream paperclipai/paperclip#20164).
+    const requestedStatus = (req.body as Record<string, unknown>).status;
+    if (requestedStatus === "paused" && req.actor.type !== "board") {
+      throw forbidden("Board access required: only a board user can pause an agent. Ask a person with board access to pause it from the agent's profile.");
+    }
+    if (requestedStatus === "idle") {
+      await assertCanResumeAgent(req, existing);
+      if (existing.orgChainHealth?.status === "invalid_org_chain") {
+        res.status(409).json({
+          error: existing.orgChainHealth?.repairGuidance ?? "Repair this agent's reporting chain before resuming it",
+        });
+        return;
+      }
+    }
 
     const patchData = { ...(req.body as Record<string, unknown>) };
     const replaceAdapterConfig = patchData.replaceAdapterConfig === true;
