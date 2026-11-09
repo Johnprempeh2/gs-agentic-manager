@@ -13,7 +13,7 @@ vi.mock("../services/responsible-user-denial-run-outcomes.js", () => ({
 }));
 vi.mock("../sentry.js", () => ({ captureException: captureExceptionMock }));
 vi.mock("../telemetry.js", () => ({ getTelemetryClient: () => ({}) }));
-vi.mock("@paperclipai/shared/telemetry", () => ({
+vi.mock("@greatstone/shared/telemetry", () => ({
   trackErrorHandlerCrash: trackErrorHandlerCrashMock,
 }));
 

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Db } from "@paperclipai/db";
-import type { AiConnectionBinding } from "@paperclipai/shared";
-import { readAiConnectionConfigurationFailure } from "../services/ai-connection-configuration-failure.js";
+import type { Db } from "@greatstone/db";
+import type { AiConnectionBinding } from "@greatstone/shared";
 import { aiConnectionService } from "../services/ai-connections.js";
 
 describe("AI connection binding mode guard", () => {
@@ -27,8 +26,7 @@ describe("AI connection binding mode guard", () => {
       binding,
     }).catch((caught: unknown) => caught);
 
-    expect(error).toMatchObject({ status: 422 });
-    expect(readAiConnectionConfigurationFailure(error)).toBe("ai_connection_incompatible");
+    expect(error).toMatchObject({ status: 422, details: { code: "ai_connection_incompatible" } });
     expect(select).not.toHaveBeenCalled();
   });
 });
