@@ -41,7 +41,7 @@ import {
 import { logActivity } from "./activity-log.js";
 import { budgetService } from "./budgets.js";
 import { applyInstallLimitsToNewAgent, getInstallLimits } from "./install-limits.js";
-import { normalizeAgentPermissions } from "./agent-permissions.js";
+import { CEO_HIRING_DENIAL_KEY, ceoHiringDenial, normalizeAgentPermissions, withoutCeoHiringDenial } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 import {
   assertClaudeOAuthBindingInvariant,
@@ -363,7 +363,7 @@ export function agentService(db: Db) {
   function normalizeAgentBaseRow(row: typeof agents.$inferSelect) {
     return withUrlKey({
       ...row,
-      permissions: normalizeAgentPermissions(row.permissions),
+      permissions: normalizeAgentPermissions(row.permissions, { role: row.role }),
     });
   }
 
@@ -756,7 +756,13 @@ export function agentService(db: Db) {
 
     const normalizedPatch = { ...data } as Partial<typeof agents.$inferInsert>;
     if (data.permissions !== undefined) {
-      normalizedPatch.permissions = normalizeAgentPermissions(data.permissions);
+      // Only the permissions control records a CEO hiring restriction. Keep an
+      // existing one unless this write turns hiring on, and never take one from input.
+      const incoming = withoutCeoHiringDenial(data.permissions) as Record<string, unknown> | null;
+      const denial = ceoHiringDenial(existing.permissions);
+      normalizedPatch.permissions = normalizeAgentPermissions(
+        denial && incoming?.canCreateAgents !== true ? { ...incoming, [CEO_HIRING_DENIAL_KEY]: denial } : incoming,
+      );
     }
     if (
       Object.prototype.hasOwnProperty.call(normalizedPatch, "adapterConfig") &&
@@ -900,7 +906,7 @@ export function agentService(db: Db) {
       const uniqueName = deduplicateAgentName(data.name, existingAgents);
 
       const role = data.role ?? "general";
-      const normalizedPermissions = normalizeAgentPermissions(data.permissions, { context: "create" });
+      const normalizedPermissions = normalizeAgentPermissions(withoutCeoHiringDenial(data.permissions), { context: "create" });
       const runtimeConfig = normalizeRuntimeConfigForNewAgent(data.runtimeConfig);
       const adapterType = data.adapterType ?? "process";
       const rawAdapterConfig = isPlainRecord(data.adapterConfig)
@@ -1159,7 +1165,7 @@ export function agentService(db: Db) {
         if (patch.permissions !== undefined) {
           // The pending-approval activation replays the original hire
           // request, so the new-agent creation default applies.
-          patch.permissions = normalizeAgentPermissions(patch.permissions, { context: "create" });
+          patch.permissions = normalizeAgentPermissions(withoutCeoHiringDenial(patch.permissions), { context: "create" });
         }
         const updated = await tx
           .update(agents)
@@ -1206,7 +1212,7 @@ export function agentService(db: Db) {
       const updated = await db
         .update(agents)
         .set({
-          permissions: normalizeAgentPermissions({ ...existing.permissions, ...permissions }),
+          permissions: normalizeAgentPermissions({ ...existing.permissions, ...permissions }, { role: existing.role }),
           updatedAt: new Date(),
         })
         .where(eq(agents.id, id))

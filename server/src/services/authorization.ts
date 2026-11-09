@@ -172,11 +172,12 @@ function permissionForAction(action: AuthorizationAction): PermissionKey | null 
 }
 
 function canCreateAgentsLegacy(agent: { role: string; permissions: unknown }) {
-  if (agent.role === "ceo") return true;
-  // Raw agent rows may predate permission normalization; apply the same
-  // defaults the agent service applies on read so enforcement matches what
-  // the API reports.
-  return normalizeAgentPermissions(agent.permissions).canCreateAgents;
+  // A saved hiring denial is the access policy for every role: the CEO title
+  // must not override a denial the board recorded on the permissions page.
+  // The CEO role only fills in hiring authority for rows without one. Raw rows
+  // may predate permission normalization; apply the same defaults the agent
+  // service applies on read so enforcement matches what the API reports.
+  return normalizeAgentPermissions(agent.permissions, { role: agent.role }).canCreateAgents;
 }
 
 function scopeValueList(value: unknown): string[] {
