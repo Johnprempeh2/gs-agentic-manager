@@ -431,6 +431,18 @@ describeEmbeddedPostgres("website commerce settings routes", () => {
       expect(comments[0]!.body).toMatch(/Nothing was changed/);
     });
 
+    it("a card whose vaulted key is gone closes at approval, changes nothing, and the agent hears to ask again", async () => {
+      const world = await seedWorld();
+      const card = (await ask(world, issue).expect(201)).body.approval;
+      await db.update(approvals).set({ payload: { ...card.payload, vaultRef: null } }).where(eq(approvals.id, card.id));
+      const refused = await request(app(world.owner.actor)).post(`/api/approvals/${card.id}/approve`).send({}).expect(422);
+      expect(refused.body.code).toBe("website_commerce_change_secret_missing");
+      expect((await db.select().from(approvals))[0]).toMatchObject({ status: "cancelled" });
+      expect(writes()).toHaveLength(0);
+      const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, world.issueId));
+      expect(comments.map((c) => c.body)).toEqual([expect.stringMatching(/licence key for this card is gone\. Ask again\. Nothing was changed/)]);
+    });
+
     it("fails closed with no write key: 409, no call and no card", async () => {
       const world = await seedWorld({ write: false });
       await ask(world, { method: "POST", path: `orders/${ORDER}/notify-licence` }).expect(409);

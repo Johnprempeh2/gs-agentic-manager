@@ -260,7 +260,9 @@ export function commerceChangeApprovals(db: Db, bridgeOptions: WebsiteDataBridge
     } catch (error) {
       if (error instanceof WebsiteBridgeError && CLOSES_CARD.has(error.code)) {
         await closeCard(approval, `The website refused this change: ${error.message} Nothing was changed.`, userId);
-      } else if (!(error instanceof HttpError && (error.details as { code?: string } | undefined)?.code === "website_commerce_change_secret_missing")) {
+      } else if (error instanceof HttpError && (error.details as { code?: string } | undefined)?.code === "website_commerce_change_secret_missing") {
+        await closeCard(approval, `${error.message} Nothing was changed.`, userId);
+      } else {
         await db.update(approvals)
           .set({ status: "pending", decidedByUserId: null, decidedAt: null, decisionNote: null, updatedAt: new Date() })
           .where(and(eq(approvals.id, approval.id), eq(approvals.status, "approved")));
