@@ -476,6 +476,7 @@ import {
   createWebsiteDataBridgeKeySchema,
   websiteCommerceRefundRequestSchema,
   websiteCommercePublishRequestSchema,
+  websiteCommerceChangeRequestSchema,
   websiteAccessChangeRequestSchema,
   websiteClientMemberAddSchema,
   websiteClientMemberRoleSchema,
@@ -17235,7 +17236,11 @@ const commerceWriteResponses = {
 const commerceWriteSummary = (method: string) => `${method} one typed commerce change on the site through the signed admin bridge's write key `
   + "(website:commerce). {path} is one of the site's write operations, e.g. offerings, offerings/{id}, offerings/{id}/variants/{variantId}, "
   + "pricing-rules/{id}/targets, quotes/{id}, quotes/{id}/convert, invoices/{id}, imports. People only (403 for an agent or a board API key): "
-  + "…/{id}/publish, …/{id}/archive, PATCH fx, imports/{id}/apply, invoices/{id}/issue. The body is the site's to check. Optional "
+  + "…/{id}/publish, …/{id}/archive, PATCH fx, imports/{id}/apply, invoices/{id}/issue. Commerce settings (GRE-4783): orders/{id}, "
+  + "enquiries/{si-|fd-id}, customers, customers/{id}, customers/{id}/engagements, engagements/{id}, licences/{id}, customer-tiers, "
+  + "customer-tiers/{id}; people only: orders/{id}/notify-licence, DELETE enquiries/{fd-id}, customers/{id}/licences, licences/{id}/revoke "
+  + "and /reissue, engagements/{id}/share and /unshare, portal-acceptances/{id}/resend, and a body with tierId, licenceKey or downloadUrl "
+  + "(an agent asks with commerce/change-requests). The body is the site's to check. Optional "
   + "Idempotency-Key header (22 base64url characters) makes a repeat write once. 409 capability_not_configured when the site has no write "
   + "key, with no call to the site; 409 website_bridge_conflict with details.current on a stale expectedRowVersion";
 
@@ -17284,6 +17289,19 @@ registerCurrentRoute({
     + "which publishes it on the write key in their name, once; a record changed since the ask voids the card (409 commerce_publish_request_void). "
     + "201 a new card; 200 the same open card for the same record, action and row version; 409 capability_not_configured; 422 already in that state",
   body: websiteCommercePublishRequestSchema,
+  responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/commerce/change-requests`,
+  tags: ["website"],
+  summary: "Ask a person for one commerce settings change (website:commerce; agents may; GRE-4783): a client email, a licence, a client's "
+    + "tier, a shared timeline item or deleting a lead. Opens a commerce_change_request approval and changes nothing; a licenceKey or "
+    + "downloadUrl in the body goes to the vault, and the card shows a key's last four only. A person with website:commerce approves with "
+    + "POST /api/approvals/{id}/approve, which makes the change on the write key in their name, once; the site's refusal closes the card. "
+    + "201 a new card; 200 the same open card for the same change; 409 capability_not_configured; 422 not a commerce settings change",
+  body: websiteCommerceChangeRequestSchema,
   responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
 });
 

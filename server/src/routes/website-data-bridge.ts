@@ -17,6 +17,8 @@ import {
   websiteCommerceRefundRequestSchema,
   websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
+  websiteCommerceSettingsOperation,
+  websiteCommerceChangeRequestSchema,
   websitePaymentReportQuerySchema,
   websiteVendorActivationStepsSchema,
   websiteAccessChangeRequestSchema,
@@ -45,6 +47,7 @@ import { WEBSITE_MESSAGES } from "../services/website/messages.js";
 import { websiteDataBridgeService, type WebsiteDataBridgeOptions } from "../services/website/data-bridge.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
 import { commercePublishApprovals } from "../services/website/commerce-publish-approval.js";
+import { commerceChangeApprovals } from "../services/website/commerce-change-approval.js";
 import { websiteActivityService } from "../services/website/activity.js";
 import { accessChangeLogDetails, websiteAccessService } from "../services/website/access.js";
 import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
@@ -66,6 +69,7 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
   const bridge = websiteDataBridgeService(db, options);
   const refunds = commerceRefundApprovals(db, options);
   const publishRequests = commercePublishApprovals(db, options);
+  const commerceChanges = commerceChangeApprovals(db, options);
   const websiteAccess = websiteAccessService(db, options);
   const issueApprovals = issueApprovalService(db);
   const activity = websiteActivityService(db, { read: async () => { throw new Error("Activity reads cannot pull the website"); } });
@@ -252,7 +256,8 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     const actor = req.actor;
     if (actor.type === "board" && actor.userId && (actor.source === "session" || actor.source === "local_implicit")) return;
     throw new HttpError(403, "Only a person can do this, by clicking in GSAM. Agents draft; people publish, archive, change FX, "
-      + "apply imports, issue invoices and decide refunds.", { code: "website_commerce_people_only", operation });
+      + "apply imports, issue invoices and decide refunds. For a client email, a licence, a client's tier, sharing a timeline "
+      + "item or deleting a lead, an agent asks with POST commerce/change-requests.", { code: "website_commerce_people_only", operation });
   }
 
   function idempotencyKeyOf(req: Request) {
@@ -366,27 +371,78 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
     res.json(result);
   });
 
+  // Commerce settings (GRE-4783, contract "Commerce settings"): an agent asks for a people-only change here. It opens a
+  // commerce_change_request card and changes nothing; a person with website:commerce approves it in their name.
+  router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceChangeRequests, async (req, res) => {
+    const site = await siteFor(req, res, "website:commerce");
+    if (!site) return;
+    queryOf(NO_QUERY, req);
+    if (Buffer.byteLength(JSON.stringify(req.body ?? {})) > MAX_WRITE_BODY_BYTES) {
+      throw new HttpError(413, "The change is too large for the website (64 KiB at most)", { code: "website_commerce_body_too_large" });
+    }
+    const input = websiteCommerceChangeRequestSchema.safeParse(req.body);
+    if (!input.success) {
+      throw unprocessable(`The commerce change request is not valid: ${input.error.issues[0]?.path.join(".") || "body"}`,
+        { code: "website_commerce_change_request_invalid" });
+    }
+    if (input.data.issueId) {
+      const [issue] = await db.select({ id: issues.id }).from(issues)
+        .where(and(eq(issues.id, input.data.issueId), eq(issues.companyId, site.companyId))).limit(1);
+      if (!issue) throw unprocessable("No such task in this company", { code: "website_commerce_change_request_invalid" });
+    }
+    const actor = getActorInfo(req);
+    const result = await commerceChanges.request(site, input.data, {
+      agentId: actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+      bridge: actorOf(req),
+    });
+    if (input.data.issueId) {
+      await issueApprovals.linkManyForApproval(result.approval.id, [input.data.issueId], {
+        agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    }
+    if (result.replayed) {
+      res.status(200).json({ approval: result.approval });
+      return;
+    }
+    // ids and the operation only: a body can hold a client's name or a licence key
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.commerce_change_requested",
+      entityType: "approval", entityId: result.approval.id, agentId: actor.agentId, runId: actor.runId,
+      details: { siteId: site.id, operation: result.operation?.name ?? null, path: input.data.path, issueId: input.data.issueId ?? null },
+    });
+    res.status(201).json({ approval: result.approval });
+  });
+
   async function commerceWrite(req: Request, res: Response, method: WebsiteCommerceWriteMethod) {
     const site = await siteFor(req, res, "website:commerce");
     if (!site) return;
     const parts = (req.params as unknown as { path: string[] }).path ?? [];
-    const operation = websiteCommerceWriteOperation(method, parts);
+    const body = writeBodyOf(req, method);
+    const operation = websiteCommerceWriteOperation(method, parts, body);
     if (!operation) {
       // only the typed operations go to the site; reads have their own routes
       res.status(404).json({ error: "No such commerce change.", code: "website_commerce_operation_unknown" });
       return;
     }
     if (operation.peopleOnly) personClickOrRefuse(req, operation.name);
-    const body = writeBodyOf(req, method);
     const idempotencyKey = idempotencyKeyOf(req);
-    const result = await bridge.commerce.write(site, method, parts.map(encodeURIComponent).join("/"), body, actorOf(req), idempotencyKey);
+    const path = parts.map(encodeURIComponent).join("/");
+    const settings = websiteCommerceSettingsOperation(method, parts, body) !== null;
+    const result = settings
+      ? await bridge.commerce.settingsWrite(site, method, path, body, actorOf(req), idempotencyKey)
+      : await bridge.commerce.write(site, method, path, body, actorOf(req), idempotencyKey);
+    const item = "item" in result ? result.item : null;
     const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.commerce_changed",
       entityType: "website_site", entityId: site.id, agentId: actor.agentId, runId: actor.runId,
-      details: { operation: operation.name, path: parts.join("/"), rowId: typeof result.item.id === "string" ? result.item.id : null },
+      details: { operation: operation.name, path: parts.join("/"),
+        rowId: item ? (typeof item.id === "string" ? item.id : null) : "id" in result ? result.id : null,
+        ...("email" in result && result.email ? { email: result.email } : {}) },
     });
-    res.status(method === "POST" && /\.(create|dry_run|convert)$/.test(operation.name) ? 201 : 200).json(result);
+    res.status(method === "POST" && (/\.(create|dry_run|convert)$/.test(operation.name) || operation.name === "licences.issue") ? 201 : 200)
+      .json(result);
   }
 
   router.post(WEBSITE_DATA_BRIDGE_API_ROUTES.commerceWrite, (req, res) => commerceWrite(req, res, "POST"));
