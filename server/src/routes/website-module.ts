@@ -1067,10 +1067,11 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     return entry;
   }
 
-  router.patch(WEBSITE_MODULE_API_ROUTES.mediaEntry, validate(renameWebsiteMediaSchema), async (req, res) => {
+  // The lookup comes before the body check, so a file name or a foreign id is a 404 whatever is sent.
+  router.patch(WEBSITE_MODULE_API_ROUTES.mediaEntry, async (req, res) => {
     const entry = await mediaEntryFor(req, res);
     if (!entry) return;
-    const name = req.body.name as string;
+    const { name } = renameWebsiteMediaSchema.parse(req.body);
     if (name !== entry.entryKey) {
       await service.updateEntry(entry, { entryKey: name });
       await log(req, entry.companyId, "website.media_renamed", "website_entry", entry.id, { siteId: entry.siteId, from: entry.entryKey, to: name });
