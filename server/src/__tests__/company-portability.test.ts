@@ -6124,6 +6124,21 @@ describe("company portability", () => {
     );
     expect(agentSvc.create).toHaveBeenCalledTimes(createCallsBeforeInvalidProfile);
   });
+
+  it("asks the importing actor for hiring authority before an import creates agents", async () => {
+    const portability = companyPortabilityService({} as any);
+    const include = { company: true, agents: true, projects: false, issues: false, skills: false };
+    const exported = await portability.exportBundle("company-1", { include });
+    agentSvc.list.mockResolvedValue([]);
+    agentSvc.create.mockClear();
+    const assertCanCreateAgents = vi.fn(async () => { throw new Error("hiring denied"); });
+
+    await expect(portability.importBundle({ source: { type: "inline", files: exported.files, rootPath: exported.rootPath }, include,
+      target: { mode: "new_company", newCompanyName: "Denied import" }, collisionStrategy: "rename", agents: "all" }, null,
+      { mode: "agent_safe", assertCanCreateAgents })).rejects.toThrow("hiring denied");
+    expect(assertCanCreateAgents).toHaveBeenCalledTimes(1);
+    expect(agentSvc.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("dedupeImportedCompanyName", () => {

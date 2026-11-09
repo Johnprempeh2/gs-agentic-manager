@@ -116,6 +116,7 @@ import { getDisabledAdapterTypes } from "../services/adapter-plugin-store.js";
 import { skillVersionSelectionMap } from "../services/runtime-skill-selections.js";
 import { isFixedClaudeOAuthBinding, secretService } from "../services/secrets.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
+import { CEO_HIRING_DENIAL_KEY, ceoHiringDenial, normalizeAgentPermissions } from "../services/agent-permissions.js";
 import { providerTraceStore } from "../services/provider-trace-store.js";
 import {
   persistReprojectedWorkspaceDiffs,
@@ -5151,6 +5152,13 @@ export function agentRoutes(
         res.status(403).json({ error: "Only CEO can manage permissions" });
         return;
       }
+      // Hiring authority is granted only by an actor that holds it. A CEO the
+      // board denied hiring must not restore it for itself or pass it to
+      // another agent to hire through (upstream c0fc7608e).
+      const savedCanCreateAgents = normalizeAgentPermissions(existing.permissions, { role: existing.role }).canCreateAgents;
+      if (typeof req.body.canCreateAgents === "boolean" && req.body.canCreateAgents !== savedCanCreateAgents) {
+        await assertCanCreateAgentsForCompany(req, existing.companyId);
+      }
     } else {
       await assertBoardCanManageAgentsForCompany(req, existing.companyId);
     }
@@ -5201,7 +5209,17 @@ export function agentRoutes(
       });
       return;
     }
-    const agent = await svc.updatePermissions(id, permissionFlags);
+    // Saving a CEO's hiring as off here is the board's restriction, since this
+    // control shows the effective value; record who and when, so it is told
+    // apart from a false saved by other writes. Keep an earlier record.
+    const permissionsPatch = existing.role === "ceo" && permissionFlags.canCreateAgents === false
+      ? { ...permissionFlags, [CEO_HIRING_DENIAL_KEY]: ceoHiringDenial(existing.permissions) ?? {
+          actorType: req.actor.type === "agent" ? "agent" : "user",
+          actorId: (req.actor.type === "agent" ? req.actor.agentId : req.actor.userId) ?? null,
+          at: new Date().toISOString(),
+        } }
+      : permissionFlags;
+    const agent = await svc.updatePermissions(id, permissionsPatch);
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
       return;
@@ -5210,6 +5228,11 @@ export function agentRoutes(
     const effectiveCanAssignTasks =
       agent.role === "ceo" || Boolean(agent.permissions?.canCreateAgents) || req.body.canAssignTasks;
     await access.ensureMembership(agent.companyId, "agent", agent.id, "member", "active");
+    // The toggle is the visible hiring control: turning it off also removes an
+    // explicit agents:create grant that would otherwise still allow hiring.
+    if (permissionFlags.canCreateAgents === false) {
+      await access.setPrincipalPermission(agent.companyId, "agent", agent.id, "agents:create", false, null);
+    }
     const grantedByUserId = req.actor.type === "board" ? (req.actor.userId ?? null) : null;
     const changeGrants: Array<[PermissionKey, boolean | undefined]> = [
       ["agents:configure", canConfigureAgents],
