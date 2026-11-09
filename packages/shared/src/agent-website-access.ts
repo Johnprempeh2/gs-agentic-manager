@@ -17,6 +17,17 @@ export type AgentWebsiteAccessLevel = (typeof AGENT_WEBSITE_ACCESS_LEVELS)[numbe
 
 export const WEBSITE_VIEW_PERMISSION_KEY = "website:view" as const satisfies PermissionKey;
 export const WEBSITE_EDIT_PERMISSION_KEY = "website:edit" as const satisfies PermissionKey;
+/**
+ * Commerce for an agent (GRE-4814): catalogue, prices and invoices as drafts,
+ * and asks to publish or refund. A person approves each ask. It needs website
+ * access view or higher and carries the same site scope.
+ */
+export const WEBSITE_COMMERCE_PERMISSION_KEY = "website:commerce" as const satisfies PermissionKey;
+
+/** True when the agent holds website:commerce, scoped or not. */
+export function agentHasCommerce(grants: ReadonlyArray<{ permissionKey: string }>): boolean {
+  return grants.some((grant) => grant.permissionKey === WEBSITE_COMMERCE_PERMISSION_KEY);
+}
 
 /** Reads the level from an agent's grants. Only unscoped (all sites) grants count. */
 export function agentWebsiteAccessLevel(

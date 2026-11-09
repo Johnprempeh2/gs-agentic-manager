@@ -2150,6 +2150,103 @@ describe.sequential("agent permission routes", () => {
     });
   });
 
+  describe("Commerce (GRE-4814)", () => {
+    const boardActor = {
+      type: "board" as const,
+      userId: "board-user",
+      source: "local_implicit" as const,
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    };
+    const siteId = "33333333-3333-4333-8333-333333333333";
+    const grant = (permissionKey: string, scope: Record<string, unknown> | null = null) => ({ permissionKey, scope });
+    const commerceCalls = () =>
+      mockAccessService.setPrincipalPermission.mock.calls.filter((call) => call[3] === "website:commerce");
+    const patch = (app: Awaited<ReturnType<typeof createApp>>, body: Record<string, unknown>) =>
+      requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, ...body }));
+
+    it("lets a person turn Commerce on with the agent's website site scope, and logs it", async () => {
+      mockAccessService.listPrincipalGrants.mockResolvedValue([grant("website:view", { siteIds: [siteId] })]);
+      const res = await patch(await createApp(boardActor), { canUseCommerce: true });
+      expect(res.status).toBe(200);
+      expect(commerceCalls()).toEqual([
+        [companyId, "agent", agentId, "website:commerce", true, "board-user", { siteIds: [siteId] }],
+      ]);
+      expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        action: "agent.commerce_access_updated",
+        details: { before: false, after: true },
+      }));
+    });
+
+    it("grants Commerce on every site when website access covers every site", async () => {
+      mockAccessService.listPrincipalGrants.mockResolvedValue([grant("website:view"), grant("website:edit")]);
+      const res = await patch(await createApp(boardActor), { canUseCommerce: true });
+      expect(res.status).toBe(200);
+      expect(commerceCalls()).toEqual([[companyId, "agent", agentId, "website:commerce", true, "board-user", null]]);
+    });
+
+    it("lets a person turn Commerce off", async () => {
+      mockAccessService.listPrincipalGrants.mockResolvedValue([grant("website:view"), grant("website:commerce")]);
+      const res = await patch(await createApp(boardActor), { canUseCommerce: false });
+      expect(res.status).toBe(200);
+      expect(commerceCalls()).toEqual([[companyId, "agent", agentId, "website:commerce", false, "board-user", null]]);
+    });
+
+    it("refuses Commerce without website access, before anything is written", async () => {
+      mockAccessService.listPrincipalGrants.mockResolvedValue([]);
+      const app = await createApp(boardActor);
+      for (const body of [{ canUseCommerce: true }, { canUseCommerce: true, websiteAccess: "none" }]) {
+        const res = await patch(app, body);
+        expect(res.status).toBe(422);
+      }
+      expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+
+    it("clears Commerce when website access is set to none", async () => {
+      let grants = [grant("website:view"), grant("website:commerce")];
+      mockAccessService.listPrincipalGrants.mockImplementation(async () => grants);
+      mockAccessService.setPrincipalPermission.mockImplementation(async (_c, _t, _id, key: string, enabled: boolean) => {
+        grants = grants.filter((row) => row.permissionKey !== key);
+        if (enabled) grants.push(grant(key));
+      });
+      const res = await patch(await createApp(boardActor), { websiteAccess: "none" });
+      expect(res.status).toBe(200);
+      expect(commerceCalls()).toEqual([[companyId, "agent", agentId, "website:commerce", false, "board-user", null]]);
+    });
+
+    it("refuses an agent giving Commerce to itself or another agent, even a CEO", async () => {
+      mockAccessService.listPrincipalGrants.mockResolvedValue([grant("website:view")]);
+      mockAgentService.getById.mockImplementation(async (id: string) =>
+        id === "ceo-agent" ? { ...baseAgent, id: "ceo-agent", role: "ceo" } : baseAgent);
+      for (const actorAgentId of [agentId, "ceo-agent"]) {
+        const app = await createApp({ type: "agent", agentId: actorAgentId, companyId, runId: "run-1", source: "agent_key" });
+        for (const canUseCommerce of [true, false]) {
+          const res = await patch(app, { canUseCommerce });
+          expect(res.status).toBe(403);
+        }
+      }
+      expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+
+    it("refuses board users without users:manage_permissions", async () => {
+      mockAccessService.listPrincipalGrants.mockResolvedValue([grant("website:view")]);
+      mockAccessService.decide.mockImplementation(async (input: { action?: string }) => {
+        const allowed = input.action !== "users:manage_permissions";
+        return { allowed, reason: allowed ? "allow_explicit_grant" : "deny_missing_grant", explanation: "test" };
+      });
+      const res = await patch(
+        await createApp({ ...boardActor, isInstanceAdmin: false, source: "session" as const }),
+        { canUseCommerce: true },
+      );
+      expect(res.status).toBe(403);
+      expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+    });
+  });
+
   it("refuses memory toggles with 422 instead of answering 200 for a change it cannot make (GRE-988)", async () => {
     const app = await createApp({
       type: "board",

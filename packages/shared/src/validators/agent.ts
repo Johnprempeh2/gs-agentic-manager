@@ -337,6 +337,9 @@ export const updateAgentPermissionsSchema = z.object({
   // Limits websiteAccess to one site of this company (GRE-3992). Null or
   // absent: every site. Sent only together with websiteAccess.
   websiteSiteId: z.string().uuid().nullable().optional(),
+  // Commerce (GRE-4814): sets or clears website:commerce. Board users with
+  // users:manage_permissions only; needs website access view or higher.
+  canUseCommerce: z.boolean().optional(),
   trustPreset: trustPresetSchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
 }).refine((body) => !body.websiteSiteId || body.websiteAccess, {

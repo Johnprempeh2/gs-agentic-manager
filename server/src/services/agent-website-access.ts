@@ -1,6 +1,8 @@
 import {
+  WEBSITE_COMMERCE_PERMISSION_KEY,
   WEBSITE_EDIT_PERMISSION_KEY,
   WEBSITE_VIEW_PERMISSION_KEY,
+  agentHasCommerce,
   agentWebsiteAccess,
   type AgentWebsiteAccessLevel,
 } from "@greatstone/shared";
@@ -40,4 +42,29 @@ export async function setAgentWebsiteAccess(
   );
   const after = agentWebsiteAccess(await access.listPrincipalGrants(companyId, "agent", agentId));
   return { before, after };
+}
+
+/**
+ * Keeps one agent's website:commerce grant in step with its website access
+ * (GRE-4814). `enabled` true or false sets or clears it; undefined keeps it as
+ * it is. A held grant always carries the scope of the agent's website:view
+ * grant, and is cleared when the agent has no website access. The caller
+ * refuses `enabled: true` without website access before anything is written.
+ * Returns null when nothing changed.
+ */
+export async function syncAgentCommerceAccess(
+  access: AccessService,
+  input: { companyId: string; agentId: string; enabled?: boolean; grantedByUserId: string | null },
+): Promise<{ before: boolean; after: boolean } | null> {
+  const { companyId, agentId, grantedByUserId } = input;
+  const grants = await access.listPrincipalGrants(companyId, "agent", agentId);
+  const before = agentHasCommerce(grants);
+  const view = grants.find((grant) => grant.permissionKey === WEBSITE_VIEW_PERMISSION_KEY);
+  const after = Boolean(view) && (input.enabled ?? before);
+  if (!before && !after) return null;
+  await access.setPrincipalPermission(
+    companyId, "agent", agentId, WEBSITE_COMMERCE_PERMISSION_KEY, after, grantedByUserId,
+    (view?.scope as Record<string, unknown> | null | undefined) ?? null,
+  );
+  return before === after ? null : { before, after };
 }

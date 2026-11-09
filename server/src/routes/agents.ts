@@ -6,7 +6,7 @@ import { toolConnections } from "@greatstone/db";
 import { aiConnectionService } from "../services/ai-connections.js";
 import { defaultAiConnectionForHire } from "../services/agent-ai-connection-default.js";
 import { assertAiConnectionCreateAccess, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest, validateAiApiKey } from "./ai-connections.js";
-import { isAiConnectionCompatible, normalizeAgentApiKeyScope } from "@greatstone/shared";
+import { agentWebsiteAccess, isAiConnectionCompatible, normalizeAgentApiKeyScope } from "@greatstone/shared";
 import type { PermissionKey } from "@greatstone/shared";
 import { applyConnectorSkills, resolveConnectorAssignments, annotateConnectorSkills, isConnectorSkill } from "../services/connector-runtime.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
@@ -88,7 +88,7 @@ import {
 } from "../services/index.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { setAgentPipelineAccess } from "../services/agent-pipeline-access.js";
-import { setAgentWebsiteAccess } from "../services/agent-website-access.js";
+import { setAgentWebsiteAccess, syncAgentCommerceAccess } from "../services/agent-website-access.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
@@ -5171,17 +5171,20 @@ export function agentRoutes(
       pipelineAccess,
       websiteAccess,
       websiteSiteId,
+      canUseCommerce,
       ...permissionFlags
     } = req.body;
-    // Pipeline access levels (GRE-1072) and website access (GRE-2239) are
-    // changed only by board users who may manage permissions. Checked before
-    // anything is written.
-    if (pipelineAccess || websiteAccess) {
+    // Pipeline access levels (GRE-1072), website access (GRE-2239) and
+    // Commerce (GRE-4814) are changed only by board users who may manage
+    // permissions. Checked before anything is written.
+    if (pipelineAccess || websiteAccess || typeof canUseCommerce === "boolean") {
       if (req.actor.type !== "board") {
         throw forbidden(
           pipelineAccess
             ? "Only board users with users:manage_permissions can change pipeline access"
-            : "Only board users with users:manage_permissions can change website access",
+            : websiteAccess
+              ? "Only board users with users:manage_permissions can change website access"
+              : "Only board users with users:manage_permissions can change Commerce",
         );
       }
       const decision = await access.decide({
@@ -5199,6 +5202,12 @@ export function agentRoutes(
         .where(and(eq(websiteSite.companyId, existing.companyId), eq(websiteSite.id, websiteSiteId)))
         .then((rows) => rows[0] ?? null);
       if (!site) throw unprocessable("Website site not found in this company");
+    }
+    // Commerce needs website access view or higher, as it is after this save.
+    if (canUseCommerce === true) {
+      const level = websiteAccess
+        ?? agentWebsiteAccess(await access.listPrincipalGrants(existing.companyId, "agent", existing.id)).level;
+      if (level === "none") throw unprocessable("Commerce needs website access view or higher");
     }
     // Memory rights have one writer: the owner-only grant service (G3,
     // GRE-933). This route cannot write them, so it must not answer 200 for
@@ -5267,8 +5276,32 @@ export function agentRoutes(
           grantedByUserId,
         })
       : null;
+    // Run after website access so the grant takes its new site scope, or is
+    // cleared when website access goes to none.
+    const commerceChange = websiteAccess || typeof canUseCommerce === "boolean"
+      ? await syncAgentCommerceAccess(access, {
+          companyId: agent.companyId,
+          agentId: agent.id,
+          enabled: canUseCommerce,
+          grantedByUserId,
+        })
+      : null;
 
     const actor = getActorInfo(req);
+    if (commerceChange) {
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "agent.commerce_access_updated",
+        entityType: "agent",
+        entityId: agent.id,
+        details: { before: commerceChange.before, after: commerceChange.after },
+      });
+    }
     if (websiteAccessChange) {
       await logActivity(db, {
         companyId: agent.companyId,

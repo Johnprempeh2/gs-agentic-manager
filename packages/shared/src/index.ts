@@ -223,8 +223,10 @@ export {
 } from "./pipeline-access.js";
 export {
   AGENT_WEBSITE_ACCESS_LEVELS,
+  WEBSITE_COMMERCE_PERMISSION_KEY,
   WEBSITE_EDIT_PERMISSION_KEY,
   WEBSITE_VIEW_PERMISSION_KEY,
+  agentHasCommerce,
   agentWebsiteAccess,
   agentWebsiteAccessLevel,
   type AgentWebsiteAccessLevel,
