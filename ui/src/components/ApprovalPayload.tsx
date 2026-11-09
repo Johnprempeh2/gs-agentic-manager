@@ -15,6 +15,7 @@ export const typeLabel: Record<string, string> = {
   commerce_refund_request: "Refund request",
   commerce_publish_request: "Catalogue publish request",
   website_access_change: "Access change request",
+  commerce_change_request: "Commerce change request",
 };
 
 /**
@@ -28,6 +29,7 @@ export function approvalActionLabels(type: string) {
   if (type === "commerce_refund_request") return { approve: "Approve refund", approving: "Recording...", reject: "Reject refund", rejecting: "Recording..." };
   if (type === "commerce_publish_request") return { approve: "Approve and publish", approving: "Publishing...", reject: "Reject", rejecting: "Rejecting..." };
   if (type === "website_access_change") return { approve: "Approve and change", approving: "Changing...", reject: "Reject", rejecting: "Rejecting..." };
+  if (type === "commerce_change_request") return { approve: "Approve and change", approving: "Changing...", reject: "Reject", rejecting: "Rejecting..." };
   return { approve: "Approve", approving: "Approving...", reject: "Reject", rejecting: "Rejecting..." };
 }
 
@@ -69,6 +71,7 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   commerce_refund_request: ReceiptText,
   commerce_publish_request: Globe,
   website_access_change: KeyRound,
+  commerce_change_request: ReceiptText,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -463,6 +466,32 @@ function WebsiteAccessChangePayload({ payload }: { payload: Record<string, unkno
   );
 }
 
+/**
+ * GRE-4783: an agent asks for a commerce change only a person may make (a client email, a licence, a client's tier, a
+ * shared timeline item, deleting a lead); approving makes it in your name. A licence key shows its last four only.
+ */
+function CommerceChangeRequestPayload({ payload }: { payload: Record<string, unknown> }) {
+  const body = payload.body && typeof payload.body === "object" && Object.keys(payload.body).length ? payload.body : null;
+  const vaultedFields = Array.isArray(payload.vaultedFields) ? payload.vaultedFields.map(String) : [];
+  return (
+    <div className="mt-3 space-y-1.5 text-sm">
+      <PayloadField label="Site" value={payload.siteName} />
+      <PayloadField label="Change" value={payload.title} />
+      <PayloadField label="Licence key" value={typeof payload.licenceKeyLast4 === "string" ? `ending ${payload.licenceKeyLast4}` : null} />
+      <PayloadField label="Kept safe" value={vaultedFields.length ? vaultedFields.join(", ") : null} />
+      <PayloadField label="Asked by" value={payload.requestedBy} />
+      <PayloadField label="Note" value={payload.note} />
+      {body && (
+        <details className="text-muted-foreground">
+          <summary className="cursor-pointer">The change as asked</summary>
+          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-xs">{JSON.stringify(body, null, 2)}</pre>
+        </details>
+      )}
+      <p className="leading-6 text-muted-foreground">{String(payload.summary ?? "Approving makes this change on the website in your name.")}</p>
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({
   type,
   payload,
@@ -479,6 +508,7 @@ export function ApprovalPayloadRenderer({
   if (type === "commerce_refund_request") return <CommerceRefundRequestPayload payload={payload} />;
   if (type === "commerce_publish_request") return <CommercePublishRequestPayload payload={payload} />;
   if (type === "website_access_change") return <WebsiteAccessChangePayload payload={payload} />;
+  if (type === "commerce_change_request") return <CommerceChangeRequestPayload payload={payload} />;
   if (type === "request_board_approval") {
     return <BoardApprovalPayload payload={payload} hideTitle={hidePrimaryTitle} />;
   }
