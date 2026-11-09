@@ -464,6 +464,9 @@ import {
   saveWebsiteContentSchema,
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
+  websiteRedirectInputSchema,
+  saveWebsiteRedirectSchema,
+  renameWebsiteMediaSchema,
   sendBackWebsiteContentSchema,
   approveWebsiteReviewSchema,
   createWebsiteSitemapOptionSchema,
@@ -16780,6 +16783,57 @@ registerCurrentRoute({
     403: r.forbidden,
     404: r.notFound,
   },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/media/{entryId}`,
+  tags: ["website"],
+  summary: "Rename a media entry (its name only; the file stays) (website:edit). 409 when the name is taken",
+  body: renameWebsiteMediaSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: `${siteParams}/media/{entryId}`,
+  tags: ["website"],
+  summary: "Delete a media entry: it leaves the site at the next Publish and the file stays (website:edit). 409 website_media_in_use while a page's draft or live version uses it",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/redirects`,
+  tags: ["website"],
+  summary: "List a site's redirects with their review status (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/redirects`,
+  tags: ["website"],
+  summary: "Add a redirect as a draft; a person approves it and it goes live with the next Publish (website:edit). The same add twice answers 200 with the existing one. 409 when the old path has a redirect; 422 for a page's own path, a redirect to itself or a loop",
+  body: websiteRedirectInputSchema,
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/redirects/{entryId}`,
+  tags: ["website"],
+  summary: "Change a redirect's old path, new path or HTTP status (301, 302, 307 or 308) at the version read (baseRevisionId) (website:edit); same checks as add",
+  body: saveWebsiteRedirectSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: `${siteParams}/redirects/{entryId}`,
+  tags: ["website"],
+  summary: "Delete a redirect; it leaves the site at the next Publish (website:edit)",
+  responses: websiteModuleResponses,
 });
 
 registerCurrentRoute({
