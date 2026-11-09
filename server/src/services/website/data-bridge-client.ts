@@ -209,6 +209,14 @@ export const bridgeSyncAckSchema = z.object({ ok: z.literal(true), tenantId: z.s
 /** A write's answer: the row as it is after the change (`imports/:id/apply` adds the apply result). */
 export const bridgeWriteSchema = z.object({ item: z.record(z.string(), z.unknown()), result: z.unknown().optional() });
 /**
+ * A commerce settings change's answer (GRE-4782 contract): the row after it, the licence-issued email's outcome
+ * (`sent`, `not_sent`, `not_configured`, or `sending` on a replay), or a deleted lead's id (no row is left).
+ */
+export const bridgeSettingsWriteSchema = z.union([
+  z.object({ item: z.record(z.string(), z.unknown()), email: z.string().optional() }),
+  z.object({ id: z.string().min(1), deleted: z.literal(true) }),
+]);
+/**
  * A vendor's activation steps (GRE-3981 contract). Only these fields come through: anything else the site might add
  * (a key, a last 4) is dropped, so GSAM never passes it on.
  */
@@ -383,6 +391,12 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
      */
     write: (method: WriteMethod, path: string, body: Record<string, unknown> | undefined, actor: WebsiteBridgeActor,
       idempotencyKey?: string) => send(method, path, body, actor, bridgeWriteSchema, idempotencyKey),
+    /**
+     * A commerce settings change (GRE-4782) on the `write` key: orders, enquiries, clients, the timeline, licences,
+     * tiers and receipts. The site refuses an agent or system actor a people-only one (403 denied).
+     */
+    settingsWrite: (method: WriteMethod, path: string, body: Record<string, unknown> | undefined, actor: WebsiteBridgeActor,
+      idempotencyKey?: string) => send(method, path, body, actor, bridgeSettingsWriteSchema, idempotencyKey),
     /**
      * Parallel Interview (gs-interview-v1, GRE-2665): `path` is after `/api/admin/v1/interview/`, keyed by the
      * website organisation id. The answer is parsed by the caller. Reads use the read key, writes the write key.

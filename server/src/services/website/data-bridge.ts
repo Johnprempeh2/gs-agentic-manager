@@ -270,6 +270,11 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
       actor: WebsiteBridgeActor, idempotencyKey?: string) {
       return (await commerceClient(site, "write")).write(method, path, body, actor, idempotencyKey);
     },
+    /** A commerce settings change (GRE-4782) on the write key. The route has already checked the operation and the actor. */
+    async settingsWrite(site: BridgeSite, method: WebsiteCommerceWriteMethod, path: string, body: Record<string, unknown> | undefined,
+      actor: WebsiteBridgeActor, idempotencyKey?: string) {
+      return (await commerceClient(site, "write")).settingsWrite(method, path, body, actor, idempotencyKey);
+    },
     /** One vendor's licence activation steps (GRE-3982), on the write key. */
     async putActivationSteps(site: BridgeSite, vendorId: string, input: WebsiteVendorActivationStepsInput, actor: WebsiteBridgeActor,
       idempotencyKey?: string) {

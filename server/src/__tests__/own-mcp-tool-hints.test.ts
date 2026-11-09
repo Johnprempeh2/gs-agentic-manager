@@ -32,9 +32,15 @@ describe("our own MCP tools declare effect hints", () => {
     expect(effects.create_task).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
     // GRE-2354 2c(b): commerce drafts write, each with an idempotency key; a delete is destructive
     for (const name of ["commerce_draft_create", "commerce_draft_edit", "commerce_convert_quote", "commerce_import_dry_run", "commerce_request_refund", "commerce_request_publish",
-      "portal_document_create", "portal_document_edit", "portal_document_submit", "portal_document_return_to_draft"]) {
+      "portal_document_create", "portal_document_edit", "portal_document_submit", "portal_document_return_to_draft",
+      "website_redirect_save", "website_media_rename"]) {
       expect(effects[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
     }
     expect(effects.commerce_draft_delete).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
+    // GRE-4785: redirects and media
+    expect(effects.website_redirect_list).toMatchObject({ readOnlyHint: true });
+    expect(effects.website_media_list).toMatchObject({ readOnlyHint: true });
+    expect(effects.website_redirect_delete).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
+    expect(effects.website_media_delete).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
   });
 });

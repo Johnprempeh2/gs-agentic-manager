@@ -703,6 +703,7 @@ export const queryKeys = {
     revisions: (companyId: string, siteId: string, pageId: string) =>
       ["website", companyId, "revisions", siteId, pageId] as const,
     media: (companyId: string, siteId: string) => ["website", companyId, "media", siteId] as const,
+    redirects: (companyId: string, siteId: string) => ["website", companyId, "redirects", siteId] as const,
     /** A page's open comments for the agents (GRE-2350). */
     pageComments: (companyId: string, siteId: string, pageId: string) =>
       ["website", companyId, "page-comments", siteId, pageId] as const,

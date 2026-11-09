@@ -486,7 +486,42 @@ export const WEBSITE_MODULE_API_ROUTES = {
   home: "/companies/:companyId/website/sites/:siteId/home",
   /** GET → `WebsiteSiteStyle` (website:view): colours, fonts and building blocks from the site's stylesheet and release theme. */
   style: "/companies/:companyId/website/sites/:siteId/style",
+  /**
+   * GET → `WebsiteRedirect[]` (website:view). POST `WebsiteRedirectInput` → 201 `WebsiteRedirect` draft (website:edit);
+   * 200 with the same redirect when one from that path to the same place is already there (GRE-4785).
+   */
+  redirects: "/companies/:companyId/website/sites/:siteId/redirects",
+  /** PATCH `SaveWebsiteRedirect` → `WebsiteRedirect`, a new draft. DELETE → `{ entryId }`: it leaves the site at the next Publish (website:edit). */
+  redirect: "/companies/:companyId/website/sites/:siteId/redirects/:entryId",
+  /**
+   * PATCH `RenameWebsiteMedia` → `WebsiteMediaItem`. DELETE → `{ entryId }`, or 409 `website_media_in_use` with
+   * `details.usedBy`: it leaves the site at the next Publish, and the file stays in the company's files (website:edit).
+   */
+  mediaEntry: "/companies/:companyId/website/sites/:siteId/media/:entryId",
 } as const;
+
+/** The status codes the site's release schema takes for a redirect. 301 is the default. */
+export const WEBSITE_REDIRECT_STATUSES = [301, 302, 307, 308] as const;
+export type WebsiteRedirectStatus = (typeof WEBSITE_REDIRECT_STATUSES)[number];
+
+/** One redirect on the site: a `redirect` collection entry, published with the site release (GRE-4785). */
+export interface WebsiteRedirect {
+  entryId: string;
+  key: string;
+  from: string;
+  to: string;
+  status: WebsiteRedirectStatus;
+  state: WebsiteEntryStatus;
+  latestRevisionId: string | null;
+  updatedAt: string;
+}
+
+/** A page or entry whose draft, approved or live content uses a media file, so the media cannot be deleted. */
+export interface WebsiteMediaUse {
+  kind: "page" | "entry";
+  id: string;
+  title: string;
+}
 
 /** A release as the Home shows it: who published it by name. */
 export interface WebsiteHomeRelease {

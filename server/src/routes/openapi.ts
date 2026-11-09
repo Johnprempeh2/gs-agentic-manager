@@ -464,6 +464,9 @@ import {
   saveWebsiteContentSchema,
   createWebsiteEntrySchema,
   updateWebsiteEntrySchema,
+  websiteRedirectInputSchema,
+  saveWebsiteRedirectSchema,
+  renameWebsiteMediaSchema,
   sendBackWebsiteContentSchema,
   approveWebsiteReviewSchema,
   createWebsiteSitemapOptionSchema,
@@ -473,6 +476,7 @@ import {
   createWebsiteDataBridgeKeySchema,
   websiteCommerceRefundRequestSchema,
   websiteCommercePublishRequestSchema,
+  websiteCommerceChangeRequestSchema,
   websiteAccessChangeRequestSchema,
   websiteClientMemberAddSchema,
   websiteClientMemberRoleSchema,
@@ -16783,6 +16787,57 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/media/{entryId}`,
+  tags: ["website"],
+  summary: "Rename a media entry (its name only; the file stays) (website:edit). 409 when the name is taken",
+  body: renameWebsiteMediaSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: `${siteParams}/media/{entryId}`,
+  tags: ["website"],
+  summary: "Delete a media entry: it leaves the site at the next Publish and the file stays (website:edit). 409 website_media_in_use while a page's draft or live version uses it",
+  responses: { ...websiteModuleResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/redirects`,
+  tags: ["website"],
+  summary: "List a site's redirects with their review status (website:view)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/redirects`,
+  tags: ["website"],
+  summary: "Add a redirect as a draft; a person approves it and it goes live with the next Publish (website:edit). The same add twice answers 200 with the existing one. 409 when the old path has a redirect; 422 for a page's own path, a redirect to itself or a loop",
+  body: websiteRedirectInputSchema,
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: `${siteParams}/redirects/{entryId}`,
+  tags: ["website"],
+  summary: "Change a redirect's old path, new path or HTTP status (301, 302, 307 or 308) at the version read (baseRevisionId) (website:edit); same checks as add",
+  body: saveWebsiteRedirectSchema,
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: `${siteParams}/redirects/{entryId}`,
+  tags: ["website"],
+  summary: "Delete a redirect; it leaves the site at the next Publish (website:edit)",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
   method: "get",
   path: `${siteParams}/entries`,
   tags: ["website"],
@@ -17181,7 +17236,11 @@ const commerceWriteResponses = {
 const commerceWriteSummary = (method: string) => `${method} one typed commerce change on the site through the signed admin bridge's write key `
   + "(website:commerce). {path} is one of the site's write operations, e.g. offerings, offerings/{id}, offerings/{id}/variants/{variantId}, "
   + "pricing-rules/{id}/targets, quotes/{id}, quotes/{id}/convert, invoices/{id}, imports. People only (403 for an agent or a board API key): "
-  + "…/{id}/publish, …/{id}/archive, PATCH fx, imports/{id}/apply, invoices/{id}/issue. The body is the site's to check. Optional "
+  + "…/{id}/publish, …/{id}/archive, PATCH fx, imports/{id}/apply, invoices/{id}/issue. Commerce settings (GRE-4783): orders/{id}, "
+  + "enquiries/{si-|fd-id}, customers, customers/{id}, customers/{id}/engagements, engagements/{id}, licences/{id}, customer-tiers, "
+  + "customer-tiers/{id}; people only: orders/{id}/notify-licence, DELETE enquiries/{fd-id}, customers/{id}/licences, licences/{id}/revoke "
+  + "and /reissue, engagements/{id}/share and /unshare, portal-acceptances/{id}/resend, and a body with tierId, licenceKey or downloadUrl "
+  + "(an agent asks with commerce/change-requests). The body is the site's to check. Optional "
   + "Idempotency-Key header (22 base64url characters) makes a repeat write once. 409 capability_not_configured when the site has no write "
   + "key, with no call to the site; 409 website_bridge_conflict with details.current on a stale expectedRowVersion";
 
@@ -17230,6 +17289,19 @@ registerCurrentRoute({
     + "which publishes it on the write key in their name, once; a record changed since the ask voids the card (409 commerce_publish_request_void). "
     + "201 a new card; 200 the same open card for the same record, action and row version; 409 capability_not_configured; 422 already in that state",
   body: websiteCommercePublishRequestSchema,
+  responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/commerce/change-requests`,
+  tags: ["website"],
+  summary: "Ask a person for one commerce settings change (website:commerce; agents may; GRE-4783): a client email, a licence, a client's "
+    + "tier, a shared timeline item or deleting a lead. Opens a commerce_change_request approval and changes nothing; a licenceKey or "
+    + "downloadUrl in the body goes to the vault, and the card shows a key's last four only. A person with website:commerce approves with "
+    + "POST /api/approvals/{id}/approve, which makes the change on the write key in their name, once; the site's refusal closes the card. "
+    + "201 a new card; 200 the same open card for the same change; 409 capability_not_configured; 422 not a commerce settings change",
+  body: websiteCommerceChangeRequestSchema,
   responses: { ...commerceWriteResponses, 200: { description: "The open card for this ask" } },
 });
 

@@ -45,6 +45,8 @@ const SECRET_SENSITIVE_HTTP_PATHS = [
   /^\/api\/companies\/[^/]+\/mailbox-oauth\/apps\/[^/]+\/?$/,
   // Connecting a website site carries its Netlify token (GRE-2137).
   /^\/api\/companies\/[^/]+\/website\/sites(?:\/[^/]+)?\/?$/,
+  // A website licence's key or download link (GRE-4783): issuing or editing one, or asking for it on a card.
+  /^\/api\/companies\/[^/]+\/website\/sites\/[^/]+\/commerce\/(?:customers\/[^/]+\/licences|licences\/[^/]+|change-requests)\/?$/i,
 ];
 const SECRET_SENSITIVE_HTTP_METHODS = new Set(["POST", "PUT", "PATCH"]);
 

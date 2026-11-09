@@ -372,3 +372,33 @@ describe("website_access_change approvals (GRE-4085)", () => {
     container.remove();
   });
 });
+
+describe("commerce_change_request approvals (GRE-4783)", () => {
+  it("names the change, shows a licence key's last four only, and says it emails the client", () => {
+    expect(approvalActionLabels("commerce_change_request")).toMatchObject({ approve: "Approve and change", reject: "Reject" });
+    expect(approvalLabel("commerce_change_request", { title: "Issue a licence: Acme Ltd" })).toBe("Commerce change request: Issue a licence: Acme Ltd");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <ApprovalPayloadRenderer
+            type="commerce_change_request"
+            payload={{ siteName: "Example site", title: "Issue a licence: Acme Ltd", body: { offeringName: "Aspose.Total", seats: 2 },
+              vaultedFields: ["licenceKey"], licenceKeyLast4: "9876", requestedBy: "Lintel", note: "Paid in full",
+              summary: "Lintel asks: Issue a licence: Acme Ltd. Approving makes this change on the website in your name." }}
+          />
+        </ThemeProvider>,
+      );
+    });
+    expect(container.textContent).toContain("Issue a licence: Acme Ltd");
+    expect(container.textContent).toContain("ending 9876");
+    expect(container.textContent).toContain("licenceKey");
+    expect(container.textContent).toContain("Paid in full");
+    expect(container.textContent).toContain("Approving makes this change on the website in your name.");
+    act(() => root.unmount());
+    container.remove();
+  });
+});
