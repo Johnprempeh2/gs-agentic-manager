@@ -249,6 +249,8 @@ export interface WebsiteReleaseCheck {
   name: string;
   ok: boolean;
   message?: string;
+  /** Version numbers, ids and script names for the website team, shown under "Details". */
+  details?: string;
 }
 
 export interface WebsiteRelease {
@@ -568,6 +570,8 @@ export interface WebsiteHomeSummary {
   publishApproval: { id: string; title: string; changeCount: number; createdAt: string } | null;
   /** Non-archived entries by collection (media excluded). */
   collections: Record<string, number>;
+  /** Approved pages and entries: what the next Publish takes live. */
+  approvedChanges: number;
   activity: WebsiteHomeActivity[];
   /**
    * Whether the Live view's address (the mirror when set, else

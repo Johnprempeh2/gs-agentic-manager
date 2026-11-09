@@ -115,7 +115,9 @@ export function publishTarget<T extends Pick<SiteRow, "netlifySiteId" | "domain"
   return { ...site, netlifySiteId: STAGING_NETLIFY_SITE_ID, domain: STAGING_DOMAIN, staged: true };
 }
 /** A site with no linked repository: only an upload (greatstone-home's deploy:prod) deploys it (GRE-4485). */
-export const UPLOAD_ONLY_SITE_MESSAGE = "This site is deployed by upload, so Netlify cannot rebuild it. Use the weekly release (deploy:prod) instead.";
+export const UPLOAD_ONLY_SITE_MESSAGE = "This site is updated by upload, so a Publish cannot rebuild it. Ask your website team to send it with the weekly release.";
+/** The website team's part of the upload-only refusal, under "Details". */
+export const UPLOAD_ONLY_SITE_DETAILS = "Details: the site has no linked repository, so Netlify cannot build it. Deploy it with deploy:prod (scripts/deploy-site.mjs).";
 /**
  * The backstop (John, 8 Nov: "I don't want to see this problem again"): a deploy GSAM asked for that has no deploy
  * id 5 minutes later is not coming. The release ends failed with this reason instead of waiting.
@@ -531,12 +533,18 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     checks.push(
       siteSchema >= schema
         ? { kind: "check", name: "release_schema", ok: true }
-        : { kind: "check", name: "release_schema", ok: false, message: `This release needs release schema ${schema}; this site's engine reads ${siteSchema}. Update the site's engine first.` },
+        : {
+          kind: "check",
+          name: "release_schema",
+          ok: false,
+          message: "This release does not match the site. Ask your website team to update the site.",
+          details: `Details: release made for site version ${schema}, site runs ${siteSchema}.`,
+        },
     );
     checks.push(
       pageFiles.length > 0
         ? { kind: "check", name: "has_pages", ok: true }
-        : { kind: "check", name: "has_pages", ok: false, message: "No page is approved yet, so there is nothing to publish." },
+        : { kind: "check", name: "has_pages", ok: false, message: "No page is approved yet, so there is nothing to Publish." },
     );
     checks.push(
       badJson.length === 0
@@ -559,13 +567,13 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
       checks.push(
         typeof chromeParts.get("stylesheet")?.css === "string"
           ? { kind: "check", name: "site_chrome", ok: true }
-          : { kind: "check", name: "site_chrome", ok: false, message: "The site's shared header, footer and stylesheet are not approved yet. Approve them in Collections (_chrome) first." },
+          : { kind: "check", name: "site_chrome", ok: false, message: "The site's shared header, footer and stylesheet are not approved yet. Approve them in Collections first.", details: "Details: collection entry _chrome." },
       );
     }
     checks.push(
       missingMedia.length === 0
         ? { kind: "check", name: "media_assets", ok: true }
-        : { kind: "check", name: "media_assets", ok: false, message: `${missingMedia.length} image(s) are not in this company's files.` },
+        : { kind: "check", name: "media_assets", ok: false, message: missingMedia.length === 1 ? "1 image is not in this company's files." : `${missingMedia.length} images are not in this company's files.` },
     );
     // Page SEO the engine would refuse (for example a malformed `faq`) fails here, before upload.
     const badSeo = releasedPages.flatMap(({ page }) => {
@@ -583,7 +591,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     checks.push(
       site.checkPaths.length > 0 && badPaths.length === 0
         ? { kind: "check", name: "check_paths", ok: true }
-        : { kind: "check", name: "check_paths", ok: false, message: "The site needs check pages (paths that start with /) before it can publish." },
+        : { kind: "check", name: "check_paths", ok: false, message: "The site needs check pages (paths that start with /) before you can Publish." },
     );
 
     const theme = site.theme ?? {};
@@ -636,7 +644,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     } catch (err) {
       logger.warn({ err, siteId: site.id }, "website publish could not read the site's Netlify build settings");
     }
-    if (!canBuild) throw unprocessable(UPLOAD_ONLY_SITE_MESSAGE, { code: "website_netlify_build_unavailable" });
+    if (!canBuild) throw unprocessable(UPLOAD_ONLY_SITE_MESSAGE, { code: "website_netlify_build_unavailable", details: UPLOAD_ONLY_SITE_DETAILS });
   }
 
   function readDeploy(site: SiteRow, netlify: WebsiteNetlifyClient, deploy: WebsiteReleaseDeploy) {
@@ -1190,7 +1198,7 @@ export function websitePublishStarter(db: Db, options: WebsitePublishOptions = {
       throw forbidden(WEBSITE_MESSAGES["proposal.publish.person_only"], { code: "website_publish_person_only" });
     }
     const site = await service.getSite(input.companyId, input.siteId);
-    if (!site) throw notFound("Website site not found");
+    if (!site) throw notFound(WEBSITE_MESSAGES["perm.not_found"]);
     const release = await service.startPublish(site, { userId: input.publishedByUserId }, {
       approvalId: input.approvalId,
       requestedByAgentId: input.requestedByAgentId,

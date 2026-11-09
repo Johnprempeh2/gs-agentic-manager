@@ -461,7 +461,8 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     netlify.state.buildSettings = false;
     const res = await request(app()).post(`${base}/releases`).send({}).expect(422);
     expect(res.body.details?.code).toBe("website_netlify_build_unavailable");
-    expect(res.body.error).toMatch(/deployed by upload.*deploy:prod/);
+    expect(res.body.error).toMatch(/updated by upload.*weekly release/);
+    expect(res.body.details?.details).toMatch(/deploy:prod/);
     await settle();
     expect(await releaseCount(site.id)).toBe(0);
     expect(netlify.state.builds).toBe(0);
