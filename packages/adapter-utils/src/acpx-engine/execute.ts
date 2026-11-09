@@ -77,6 +77,8 @@ import {
 } from "@greatstone/adapter-utils/server-utils";
 import { shellQuote } from "@greatstone/adapter-utils/ssh";
 import { wrapWithAgentSecretShield } from "../local-process-sandbox.js";
+import { redactDiagnosticText } from "../command-redaction.js";
+import { collectRunSecretValues, redactRunSecretValues } from "../run-secret-values.js";
 import { createEphemeralSessionEnvironmentStore } from "./ephemeral-session-environment.js";
 import {
   createAcpRuntime,
@@ -3448,6 +3450,33 @@ async function readChildStderrTail(input: {
   }
 }
 
+
+const ACP_REQUEST_FAILURE_TITLE_MAX_CHARS = 4_096;
+
+/**
+ * Provider text from a JSON-RPC error (upstream #18087). Redact every value the
+ * run was given (configured env, secret-named launch env, the run API key) and
+ * common credential shapes, drop control characters except line breaks and
+ * tabs, then bound the length.
+ */
+function sanitizeAcpRequestFailureText(
+  text: string,
+  launchEnv: Readonly<Record<string, unknown>>,
+  authToken: string | null | undefined,
+  configEnv: Readonly<Record<string, unknown>>,
+): string {
+  const secretValues = collectRunSecretValues(launchEnv, {
+    secretKeys: Object.keys(configEnv),
+    extraValues: [authToken, ...Object.values(configEnv).filter((value): value is string => typeof value === "string")],
+  });
+  const redacted = redactDiagnosticText(redactRunSecretValues(text, secretValues))
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+  if (redacted.length <= ACP_REQUEST_FAILURE_TITLE_MAX_CHARS) return redacted;
+  const omitted = redacted.length - ACP_REQUEST_FAILURE_TITLE_MAX_CHARS;
+  return `${redacted.slice(0, ACP_REQUEST_FAILURE_TITLE_MAX_CHARS)}… [${omitted} characters omitted]`;
+}
+
 async function emitAcpxFailure(input: {
   ctx: AdapterExecutionContext;
   prepared: AcpxPreparedRuntime;
@@ -3477,10 +3506,12 @@ async function emitAcpxFailure(input: {
     : asString(data.details, asString(data.message, ""));
   const rawMessage = err instanceof Error ? err.message : String(err);
   const message = messageOverride ?? (detail
-    ? sanitizeTerminalSessionFailure({
-      category: "unknown",
-      title: rawMessage.includes(detail) ? rawMessage : `${rawMessage}\n${detail}`,
-    }, prepared.env, ctx.authToken, parseObject(ctx.config.env)).title ?? "ACP request failed."
+    ? sanitizeAcpRequestFailureText(
+      rawMessage.includes(detail) ? rawMessage : `${rawMessage}\n${detail}`,
+      prepared.env,
+      ctx.authToken,
+      parseObject(ctx.config.env),
+    ) || "ACP request failed."
     : rawMessage);
   const classified = classifyError(err, phase);
   if (typeof requestError.code === "number" && Number.isSafeInteger(requestError.code)) {
