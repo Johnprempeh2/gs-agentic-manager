@@ -105,6 +105,7 @@ beforeEach(() => {
   api.sites.mockResolvedValue([site]);
   api.pages.mockResolvedValue([page]);
   api.pageEditor.mockResolvedValue(load);
+  api.page.mockResolvedValue({ ...page, content: data });
   api.revisions.mockResolvedValue(revisions);
   api.media.mockResolvedValue(load.media);
   api.pageComments.mockResolvedValue([]);
@@ -1351,6 +1352,48 @@ describe("Edit copy, Layout and empty pages (GRE-2394)", () => {
   });
 });
 
+describe("an HTML page in the block editor (GRE-4822)", () => {
+  const html = { format: "gs-html", html: "<section><h1>About Greatstone</h1></section>", css: "" };
+  async function renderAt(entry: string) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Where() {
+      const location = useLocation();
+      return <p data-testid="where">{location.pathname}</p>;
+    }
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/website/edit" element={<WebsiteFullScreenEditor companyId="co-1" property={property} onLeave={vi.fn()} />} />
+              <Route path="/website/sites/:siteId/pages/:pageId/design" element={<Where />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+  }
+
+  it("opens in live design, never as Not built yet", async () => {
+    api.pages.mockResolvedValue([page, about]);
+    api.page.mockResolvedValue({ ...about, content: html });
+    api.pageEditor.mockResolvedValue({ ...load, page: about, revisionId: "rev-5", data: html });
+    await renderAt("/website/edit?property=prop-1&page=page-2");
+    expect(api.page).toHaveBeenCalledWith("co-1", "site-1", "page-2");
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe("/website/sites/site-1/pages/page-2/design");
+    expect(document.body.querySelector('[data-testid="website-not-built"]')).toBeNull();
+  });
+
+  it("an empty draft shows no empty state until GSAM knows the page is in blocks", async () => {
+    api.pageEditor.mockResolvedValue({ ...load, data: { root: { props: {} }, content: [] } });
+    api.page.mockReturnValue(new Promise(() => {}));
+    await render();
+    await connect({ editorContract: 2, editorCommands: ["undo", "redo", "save", "add-block", "deselect", "outline", "layout", "import-live"], liveContent: null });
+    expect(document.body.querySelector('[data-testid="website-not-built"]')).toBeNull();
+  });
+});
+
 describe("WebsitePagesTab (GRE-2296)", () => {
   function Where() {
     const location = useLocation();
@@ -1365,6 +1408,7 @@ describe("WebsitePagesTab (GRE-2296)", () => {
             <Routes>
               <Route path="/website" element={<WebsitePagesTab companyId="co-1" property={property} onOpenTab={vi.fn()} />} />
               <Route path="/website/edit" element={<Where />} />
+              <Route path="/website/sites/:siteId/pages/:pageId/design" element={<Where />} />
             </Routes>
           </MemoryRouter>
         </QueryClientProvider>,
@@ -1374,14 +1418,22 @@ describe("WebsitePagesTab (GRE-2296)", () => {
   }
   const where = () => container.querySelector('[data-testid="where"]')?.textContent;
 
-  it("lists the pages, and Edit opens the full-screen editor on that page", async () => {
+  it("lists the pages, and Edit opens that page in live design, which edits HTML pages (GRE-4822)", async () => {
     api.pages.mockResolvedValue([page, about]);
     await renderTab();
     expect(frame()).toBeNull();
     expect(container.textContent).toContain("About");
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Edit About"]')!.click());
     await flush();
-    expect(where()).toBe("/website/edit?property=prop-1&page=page-2");
+    expect(where()).toBe("/website/sites/site-1/pages/page-2/design");
+  });
+
+  it("Edit pages opens the first page in live design", async () => {
+    api.pages.mockResolvedValue([page, about]);
+    await renderTab();
+    await act(async () => button("Edit pages").click());
+    await flush();
+    expect(where()).toBe("/website/sites/site-1/pages/page-1/design");
   });
 
   it("the old in-page editor links open the full-screen editor", async () => {

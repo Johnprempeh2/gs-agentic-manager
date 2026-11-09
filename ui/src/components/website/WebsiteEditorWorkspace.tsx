@@ -32,6 +32,7 @@ import {
 import {
   WEBSITE_FRAME_SANDBOX,
   createWebsiteFrameNonce,
+  isWebsiteHtmlPage,
   websiteFrameSrc,
   type WebsiteEditMode,
   type WebsiteEditorCommand,
@@ -88,6 +89,7 @@ import {
   saveThroughGsam,
   setMotionMessage,
   websiteEditorPath,
+  websitePageDesignPath,
   type BackgroundSelection,
   type BlockMotionOptions,
   type MotionOption,
@@ -185,7 +187,9 @@ export function WebsitePagesTab({
 }) {
   const { site, isLoading, error, refetch } = useWebsiteSite(companyId, property.id);
   const [searchParams] = useSearchParams();
-  const openEditor = useOpenWebsiteEditor();
+  const navigate = useNavigate();
+  // GRE-4822: pages are HTML since the schema 2 release, so Edit opens live design, as Home and Sitemap do.
+  const openPage = (pageId: string) => navigate(websitePageDesignPath(site!.id, pageId));
   const pagesQuery = useQuery({
     queryKey: queryKeys.website.pages(companyId, site?.id ?? ""),
     queryFn: () => websiteModuleApi.pages(companyId, site!.id),
@@ -216,7 +220,7 @@ export function WebsitePagesTab({
           <h2 id="website-pages-title" className="text-sm font-semibold">Pages</h2>
           <p className="text-xs text-muted-foreground">Edit opens the page full screen. Click any words or image on the page to change them.</p>
         </div>
-        <Button type="button" size="sm" onClick={() => openEditor({ propertyId: property.id, pageId: pages[0]!.id })}>
+        <Button type="button" size="sm" onClick={() => openPage(pages[0]!.id)}>
           <PenLine />
           Edit pages
         </Button>
@@ -226,14 +230,14 @@ export function WebsitePagesTab({
           <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
             <button
               type="button"
-              onClick={() => openEditor({ propertyId: property.id, pageId: entry.id })}
+              onClick={() => openPage(entry.id)}
               className="flex min-w-0 flex-1 basis-48 flex-col rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="truncate text-sm font-medium">{entry.title}</span>
               <span className="truncate font-mono text-xs text-muted-foreground">{entry.slug}</span>
             </button>
             <PageStatusPill status={entry.status} />
-            <Button type="button" size="xs" variant="outline" onClick={() => openEditor({ propertyId: property.id, pageId: entry.id })} aria-label={`Edit ${entry.title}`}>
+            <Button type="button" size="xs" variant="outline" onClick={() => openPage(entry.id)} aria-label={`Edit ${entry.title}`}>
               <PenLine />
               Edit
             </Button>
@@ -362,6 +366,18 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   });
   const pages = pagesQuery.data ?? [];
   const page = pages.find((entry) => entry.id === searchParams.get("page")) ?? pages[0] ?? null;
+  /**
+   * GRE-4822: this editor reads blocks only. A page in the HTML format (release schema 2)
+   * has none, so it would open as "Not built yet" over a live page; it opens in live design.
+   */
+  const detailQuery = useQuery({
+    queryKey: queryKeys.website.page(companyId, site.id, page?.id ?? ""),
+    queryFn: () => websiteModuleApi.page(companyId, site.id, page!.id),
+    enabled: !!page,
+  });
+  const htmlPage = isWebsiteHtmlPage(detailQuery.data?.content);
+  /** Until GSAM knows the page is in blocks, no empty state shows: it might be a live HTML page. */
+  const blocksPage = !htmlPage && (detailQuery.isSuccess || detailQuery.isError);
   const comments = useWebsitePageComments(companyId, site.id, page?.id ?? null).data;
   const openComments = comments?.length ?? 0;
   /** A pin clicked in the frame (GRE-2361): the thread the Comments drawer opens on. */
@@ -730,7 +746,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
       if (outlineOn) setEditorState((current) => (current ? { ...current, outline: false } : current));
     }
   };
-  const emptyDraft = ready && draftEmpty === true && (editing || source === "draft");
+  const emptyDraft = ready && blocksPage && draftEmpty === true && (editing || source === "draft");
   const importable = emptyDraft && editing && liveContent !== null;
   /** Edit copy and Preview cover an empty canvas; Layout keeps it to add blocks, with a line above. */
   const coverCanvas = emptyDraft && (!editing || copy);
@@ -738,6 +754,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     if (sessionRef.current?.importLive()) setImporting(true);
     else setMessage({ text: "GSAM could not ask the site's editor to import this page. Reload and try again.", tone: "warn" });
   };
+
+  if (page && htmlPage) return <Navigate replace to={websitePageDesignPath(site.id, page.id)} />;
 
   return (
     <FullScreen>
