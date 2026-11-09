@@ -60,6 +60,36 @@ function unavailableRunProjection<T extends { id: string }>(run: T): T {
   } as unknown as T;
 }
 
+// The same failure on a single run or issue-wide payload (comments, run log,
+// wake context) has no fixed shape, so mask every string except identity,
+// time and enum keys. Strings stay strings so callers and the UI still render.
+const UNAVAILABLE_SAFE_KEY = /^(id|identifier|status|state|kind|type|priority|role)$|(Id|Ids|At)$/;
+
+function maskUnresolvedText<T>(input: T, key: string | null): T {
+  if (typeof input === "string") {
+    return (key && UNAVAILABLE_SAFE_KEY.test(key) ? input : REDACTED_EVENT_VALUE) as T;
+  }
+  if (Array.isArray(input)) return input.map((value) => maskUnresolvedText(value, key)) as T;
+  if (input instanceof Date) return input;
+  const record = asRecord(input);
+  if (!record) return input;
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([entryKey]) => entryKey !== REGISTRY_KEY)
+      .map(([entryKey, value]) => [entryKey, maskUnresolvedText(value, entryKey)]),
+  ) as T;
+}
+
+function unavailableProjection<T>(value: T): T {
+  const mark = (item: unknown) => {
+    const record = item instanceof Date ? null : asRecord(item);
+    return record
+      ? { ...maskUnresolvedText(record, null), secretRedactionState: "unavailable" }
+      : maskUnresolvedText(item, null);
+  };
+  return (Array.isArray(value) ? value.map(mark) : mark(value)) as T;
+}
+
 export function redactRegisteredSecretValues<T>(input: T, values: string[]): T {
   if (typeof input === "string") return redactText(input, values) as T;
   if (Array.isArray(input)) return input.map((value) => redactRegisteredSecretValues(value, values)) as T;
@@ -78,16 +108,25 @@ export function redactRegisteredSecretValues<T>(input: T, values: string[]): T {
 export function createRunSecretRedactionRegistry(db: Db) {
   const provider = getSecretProvider("local_encrypted");
 
-  async function valuesForRuns(rows: Array<{ contextSnapshot: unknown }>) {
+  // Returns null when any registered value cannot be decrypted (GRE-4827).
+  async function valuesForRuns(rows: Array<{ contextSnapshot: unknown }>): Promise<string[] | null> {
     const entries = rows.flatMap((row) => registryEntries(row.contextSnapshot));
     const unique = new Map(entries.map((entry) => [entry.fingerprintSha256, entry]));
-    const values = await Promise.all(
-      [...unique.values()].map((entry) => provider.resolveVersion({
-        material: entry.material,
-        externalRef: null,
-      })),
-    );
-    return values.sort((left, right) => right.length - left.length);
+    try {
+      const values = await Promise.all(
+        [...unique.values()].map((entry) => provider.resolveVersion({
+          material: entry.material,
+          externalRef: null,
+        })),
+      );
+      return values.sort((left, right) => right.length - left.length);
+    } catch {
+      return null;
+    }
+  }
+
+  function redactOrMask<T>(value: T, values: string[] | null): T {
+    return values === null ? unavailableProjection(value) : redactRegisteredSecretValues(value, values);
   }
 
   async function valuesForRun(companyId: string, runId: string) {
@@ -168,8 +207,8 @@ export function createRunSecretRedactionRegistry(db: Db) {
       });
     },
     redactForRun: async <T>(companyId: string, runId: string, value: T): Promise<T> =>
-      redactRegisteredSecretValues(value, await valuesForRun(companyId, runId)),
+      redactOrMask(value, await valuesForRun(companyId, runId)),
     redactForIssue: async <T>(companyId: string, issueId: string, value: T): Promise<T> =>
-      redactRegisteredSecretValues(value, await valuesForIssue(companyId, issueId)),
+      redactOrMask(value, await valuesForIssue(companyId, issueId)),
   };
 }
